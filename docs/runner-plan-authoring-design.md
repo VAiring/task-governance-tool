@@ -5,7 +5,7 @@ structure delegated by the [implementation design](design.md#current-runner-plan
 for the behavior in the
 [Runner Plan authoring specification](runner-plan-authoring-specification.md).
 The shared [Plan values and target admission](design.md#target-plan-implementation),
-[Task Contract revisions](design.md#immutable-task-contract-revisions), and
+[Task Contract revisions](task-operation-design.md#immutable-task-contract-revisions), and
 [post-commit coordinator](design.md#post-commit-coordinator) remain at their
 existing owners.
 

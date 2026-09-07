@@ -21,6 +21,8 @@ VIEWER_SPECIFICATION = "docs/viewer-specification.md"
 VIEWER_DESIGN = "docs/viewer-design.md"
 RUNNER_PLAN_AUTHORING_SPECIFICATION = "docs/runner-plan-authoring-specification.md"
 RUNNER_PLAN_AUTHORING_DESIGN = "docs/runner-plan-authoring-design.md"
+TASK_OPERATION_SPECIFICATION = "docs/task-operation-specification.md"
+TASK_OPERATION_DESIGN = "docs/task-operation-design.md"
 HISTORY_INDEX = "docs/history/README.md"
 RELEASE_INSTALL = "docs/release-install.md"
 ARTIFACT_AUTHORING = "docs/artifact-authoring.md"
@@ -36,6 +38,8 @@ CANONICAL_DOCS = (
     VIEWER_DESIGN,
     RUNNER_PLAN_AUTHORING_SPECIFICATION,
     RUNNER_PLAN_AUTHORING_DESIGN,
+    TASK_OPERATION_SPECIFICATION,
+    TASK_OPERATION_DESIGN,
     "plan.md",
     MODULARIZATION_ROADMAP,
     HISTORY_INDEX,
@@ -79,6 +83,66 @@ ROUTE_SECTIONS = (
     ),
     (
         AUTHORITY,
+        "## Task Operation Detail Authority",
+        ("task-operation-specification.md", "task-operation-design.md"),
+    ),
+    (
+        "docs/specification.md",
+        "### Task Selection And Read Commands",
+        ("task-operation-specification.md#task-selection-and-read-commands",),
+    ),
+    (
+        "docs/specification.md",
+        "## Task State, Scope, Review, And Completion",
+        ("task-operation-specification.md#task-state-scope-review-and-completion",),
+    ),
+    (
+        "docs/specification.md",
+        "## Approved Post-MVP Extension: TG-M16 Reduced Loop Discipline Trial",
+        ("task-operation-specification.md#approved-post-mvp-extension-tg-m16-reduced-loop-discipline-trial",),
+    ),
+    (
+        "docs/specification.md",
+        "### Typed Checkpoint",
+        ("task-operation-specification.md#typed-checkpoint",),
+    ),
+    (
+        "docs/specification.md",
+        "## Current M25 Select-Split-Merge-Register Contract",
+        ("task-operation-specification.md#current-m25-select-split-merge-register-contract",),
+    ),
+    (
+        "docs/specification.md",
+        "## Stored Task Read And Privacy Contract",
+        ("task-operation-specification.md#stored-task-read-and-privacy-contract",),
+    ),
+    (
+        "docs/specification.md",
+        "## Stored Contract Pointer Integrity Contract",
+        ("task-operation-specification.md#stored-contract-pointer-integrity-contract",),
+    ),
+    (
+        DESIGN,
+        "## Task State And Selection",
+        ("task-operation-design.md#task-state-and-selection",),
+    ),
+    (
+        DESIGN,
+        "## Task Contracts, Checkpoints, Handoffs, And Effort",
+        ("task-operation-design.md#task-contracts-checkpoints-handoffs-and-effort",),
+    ),
+    (
+        DESIGN,
+        "## Approved TG-M16 Reduced Loop Discipline Trial Design",
+        ("task-operation-design.md#approved-tg-m16-reduced-loop-discipline-trial-design",),
+    ),
+    (
+        DESIGN,
+        "## Current M25 Select-Split-Merge-Register Design",
+        ("task-operation-design.md#current-m25-select-split-merge-register-design",),
+    ),
+    (
+        AUTHORITY,
         "## Conditional Initiative Roadmaps",
         ("modularization-roadmap.md",),
     ),
@@ -91,8 +155,8 @@ ROUTE_SECTIONS = (
 )
 
 TRIGGER_ROUTE_OWNER_TOKENS = (
-    ("docs/specification.md", VIEWER_SPECIFICATION, RUNNER_PLAN_AUTHORING_SPECIFICATION),
-    ("docs/design.md", VIEWER_DESIGN, RUNNER_PLAN_AUTHORING_DESIGN),
+    ("docs/specification.md", VIEWER_SPECIFICATION, RUNNER_PLAN_AUTHORING_SPECIFICATION, TASK_OPERATION_SPECIFICATION),
+    ("docs/design.md", VIEWER_DESIGN, RUNNER_PLAN_AUTHORING_DESIGN, TASK_OPERATION_DESIGN),
     ("plan.md",),
     (MODULARIZATION_ROADMAP,),
     ("docs/release-install.md",),
@@ -272,6 +336,8 @@ ROLE_TITLES = {
     VIEWER_DESIGN: "# Static Viewer Implementation Design",
     RUNNER_PLAN_AUTHORING_SPECIFICATION: "# Runner Plan Authoring And Control Specification",
     RUNNER_PLAN_AUTHORING_DESIGN: "# Runner Plan Authoring And Control Design",
+    TASK_OPERATION_SPECIFICATION: "# Task Operation Specification",
+    TASK_OPERATION_DESIGN: "# Task Operation Implementation Design",
     "plan.md": "# task-governance-tool Current Decisions And Open Issues",
     MODULARIZATION_ROADMAP: "# Responsibility-Based Modularization Roadmap",
     HISTORY_INDEX: "# Historical Documentation Index",
@@ -918,12 +984,13 @@ def _section_bounds(scan: Scan, heading: str) -> tuple[int, int] | None:
 
 def _expected_registry() -> dict[str, object]:
     return {
-        "schema": "taskgov-document-authority-v8",
+        "schema": "taskgov-document-authority-v9",
         "mandatory_start": ["AGENTS.md", AUTHORITY, "live_task_contract"],
         "current": [
             "docs/specification.md", "docs/design.md", "plan.md",
             VIEWER_SPECIFICATION, VIEWER_DESIGN,
             RUNNER_PLAN_AUTHORING_SPECIFICATION, RUNNER_PLAN_AUTHORING_DESIGN,
+            TASK_OPERATION_SPECIFICATION, TASK_OPERATION_DESIGN,
         ],
         "mixed_execution": [],
         "conditional": [MODULARIZATION_ROADMAP],

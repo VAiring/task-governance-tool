@@ -174,8 +174,8 @@ M25 remains active only as Skill instruction-layer guidance for two explicit
 authority events: a request to register or taskize already-authorized work, and
 an explicit scope addition to an in-progress or review-pending Task. The active
 product and implementation contracts are the
-[specification](docs/specification.md#current-m25-select-split-merge-register-contract)
-and [design](docs/design.md#current-m25-select-split-merge-register-design);
+[specification](docs/task-operation-specification.md#current-m25-select-split-merge-register-contract)
+and [design](docs/task-operation-design.md#current-m25-select-split-merge-register-design);
 the concise operating rule and complete procedure remain in
 [SKILL.md](task-governance-tool/SKILL.md) and the
 [Task workflow](task-governance-tool/references/task_workflow.md).

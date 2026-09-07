@@ -4,8 +4,8 @@ This document owns the current Viewer implementation structure delegated by the
 [implementation design](design.md#static-viewer), for the behavior in the
 [Viewer specification](viewer-specification.md).
 The shared [fixed state resolver](design.md#fixed-state-resolver),
-[stored-Task and batch validation](design.md#shared-stored-task-rowbatch-validator),
-[Contract pointer validation](design.md#stored-contract-pointer-relationship-boundary),
+[stored-Task and batch validation](task-operation-design.md#shared-stored-task-rowbatch-validator),
+[Contract pointer validation](task-operation-design.md#stored-contract-pointer-relationship-boundary),
 [completion history](design.md#completion-cycle-history), and
 [post-commit coordinator](design.md#post-commit-coordinator) remain at their
 existing owners.
@@ -34,7 +34,7 @@ validates them as one source-schema-aware stored-Task/Contract batch before any
 Task, review, or history projection. Exact v18-v22 snapshot validation first
 validates the complete Task batch as part of the full Evidence Ledger, then the
 same-transaction list-order query consumes the
-[private batch proof](design.md#shared-stored-task-rowbatch-validator) instead of
+[private batch proof](task-operation-design.md#shared-stored-task-rowbatch-validator) instead of
 repeating scalar, privacy, and Contract validation. Sources v5-v17 and the
 ordinary Viewer repository entry still validate the selected batch directly.
 Validation failure occurs before rendering or replacement and preserves the

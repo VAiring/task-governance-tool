@@ -5,7 +5,7 @@ by the [product specification](specification.md#current-runner-plan-authoring-an
 Implementation structure belongs in the
 [Runner Plan authoring design](runner-plan-authoring-design.md).
 The shared [Plan values and target admission](specification.md#eligibility-plan-and-materialization),
-[Task Contract](specification.md#task-contract), and
+[Task Contract](task-operation-specification.md#task-contract), and
 [maintenance](specification.md#same-process-maintenance) contracts remain at
 their existing owners.
 

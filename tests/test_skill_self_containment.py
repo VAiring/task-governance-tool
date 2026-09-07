@@ -608,10 +608,10 @@ class SkillSelfContainmentTests(unittest.TestCase):
         reconciliation_path = SKILL_ROOT / "references" / "reconciliation.md"
         reconciliation = reconciliation_path.read_text(encoding="utf-8")
         agents = (ROOT / "AGENTS.md").read_text(encoding="utf-8")
-        specification = (ROOT / "docs" / "specification.md").read_text(
+        specification = (ROOT / "docs" / "task-operation-specification.md").read_text(
             encoding="utf-8"
         )
-        design = (ROOT / "docs" / "design.md").read_text(encoding="utf-8")
+        design = (ROOT / "docs" / "task-operation-design.md").read_text(encoding="utf-8")
         manifest = json.loads(
             (SKILL_ROOT / "release-manifest.json").read_text(encoding="utf-8")
         )
@@ -1116,11 +1116,11 @@ class SkillSelfContainmentTests(unittest.TestCase):
             )
 
     def test_m14_spec_routing_contract_has_fixed_ten_or_eleven_calls(self):
-        specification = (ROOT / "docs" / "specification.md").read_text(
+        specification = (ROOT / "docs" / "task-operation-specification.md").read_text(
             encoding="utf-8"
         )
         graph_start = "The deterministic Skill call graph is:"
-        graph_end = "### Doctor Contract"
+        graph_end = "## Task State, Scope, Review, And Completion"
         self.assertIn(graph_start, specification)
         self.assertIn(graph_end, specification)
         graph = specification.split(graph_start, 1)[1].split(graph_end, 1)[0]

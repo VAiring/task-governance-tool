@@ -27,6 +27,8 @@ EXPECTED_CANONICAL_DOCS = (
     "docs/viewer-design.md",
     "docs/runner-plan-authoring-specification.md",
     "docs/runner-plan-authoring-design.md",
+    "docs/task-operation-specification.md",
+    "docs/task-operation-design.md",
     "plan.md",
     "docs/modularization-roadmap.md",
     "docs/history/README.md",
@@ -207,9 +209,9 @@ class DocumentContractTests(unittest.TestCase):
         self.assertNotIn(secret, serialized)
         self.assertNotIn("Traceback", serialized)
 
-    def test_registry_v8_is_closed(self):
+    def test_registry_v9_is_closed(self):
         expected = {
-            "schema": "taskgov-document-authority-v8",
+            "schema": "taskgov-document-authority-v9",
             "mandatory_start": [
                 "AGENTS.md",
                 "docs/authority.md",
@@ -220,6 +222,8 @@ class DocumentContractTests(unittest.TestCase):
                 "docs/viewer-specification.md", "docs/viewer-design.md",
                 "docs/runner-plan-authoring-specification.md",
                 "docs/runner-plan-authoring-design.md",
+                "docs/task-operation-specification.md",
+                "docs/task-operation-design.md",
             ],
             "mixed_execution": [],
             "conditional": ["docs/modularization-roadmap.md"],
@@ -283,6 +287,19 @@ class DocumentContractTests(unittest.TestCase):
                     "authority_route", self.codes(contract.check_document_contract(root))
                 )
 
+    def test_task_operation_detail_routes_are_required(self):
+        for source, destination in (
+            (contract.AUTHORITY, "task-operation-specification.md"),
+            (contract.AUTHORITY, "task-operation-design.md"),
+            ("docs/specification.md", "task-operation-specification.md#task-state-scope-review-and-completion"),
+            (contract.DESIGN, "task-operation-design.md#task-state-and-selection"),
+        ):
+            with self.subTest(source=source, destination=destination), self.fixture() as root:
+                self.replace(root, source, f"]({destination})", "](design.md)")
+                self.assertIn(
+                    "authority_route", self.codes(contract.check_document_contract(root))
+                )
+
     def test_modularization_roadmap_route_and_live_state_are_checked(self):
         with self.fixture() as root:
             self.replace(
@@ -336,6 +353,66 @@ class DocumentContractTests(unittest.TestCase):
                     contract.DESIGN,
                     "## Current Runner Plan Authoring And Control Design",
                     ("runner-plan-authoring-design.md",),
+                ),
+                (
+                    contract.AUTHORITY,
+                    "## Task Operation Detail Authority",
+                    ("task-operation-specification.md", "task-operation-design.md"),
+                ),
+                (
+                    "docs/specification.md",
+                    "### Task Selection And Read Commands",
+                    ("task-operation-specification.md#task-selection-and-read-commands",),
+                ),
+                (
+                    "docs/specification.md",
+                    "## Task State, Scope, Review, And Completion",
+                    ("task-operation-specification.md#task-state-scope-review-and-completion",),
+                ),
+                (
+                    "docs/specification.md",
+                    "## Approved Post-MVP Extension: TG-M16 Reduced Loop Discipline Trial",
+                    ("task-operation-specification.md#approved-post-mvp-extension-tg-m16-reduced-loop-discipline-trial",),
+                ),
+                (
+                    "docs/specification.md",
+                    "### Typed Checkpoint",
+                    ("task-operation-specification.md#typed-checkpoint",),
+                ),
+                (
+                    "docs/specification.md",
+                    "## Current M25 Select-Split-Merge-Register Contract",
+                    ("task-operation-specification.md#current-m25-select-split-merge-register-contract",),
+                ),
+                (
+                    "docs/specification.md",
+                    "## Stored Task Read And Privacy Contract",
+                    ("task-operation-specification.md#stored-task-read-and-privacy-contract",),
+                ),
+                (
+                    "docs/specification.md",
+                    "## Stored Contract Pointer Integrity Contract",
+                    ("task-operation-specification.md#stored-contract-pointer-integrity-contract",),
+                ),
+                (
+                    contract.DESIGN,
+                    "## Task State And Selection",
+                    ("task-operation-design.md#task-state-and-selection",),
+                ),
+                (
+                    contract.DESIGN,
+                    "## Task Contracts, Checkpoints, Handoffs, And Effort",
+                    ("task-operation-design.md#task-contracts-checkpoints-handoffs-and-effort",),
+                ),
+                (
+                    contract.DESIGN,
+                    "## Approved TG-M16 Reduced Loop Discipline Trial Design",
+                    ("task-operation-design.md#approved-tg-m16-reduced-loop-discipline-trial-design",),
+                ),
+                (
+                    contract.DESIGN,
+                    "## Current M25 Select-Split-Merge-Register Design",
+                    ("task-operation-design.md#current-m25-select-split-merge-register-design",),
                 ),
                 (
                     contract.AUTHORITY,

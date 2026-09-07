@@ -558,3 +558,23 @@ contracts, their index, and the pre-normalization plan from source commit
   [docs/authority.md](../authority.md). Use the public CLI for live Task state
   and evidence. This capture is lineage only and cannot fill a current authority
   gap or satisfy a gate.
+
+## v0.13.0 Task Operation Section Split Lineage
+
+- Immutable history:
+  [v0.13.0/task-operation-section-split.md](v0.13.0/task-operation-section-split.md)
+- Source sections: Task selection, state/Contract, M16, Checkpoint, M25, stored
+  Task read/privacy and Contract pointer integrity in `docs/specification.md`,
+  with the corresponding Task state/selection, Contracts/Checkpoints/Handoffs/
+  Effort, M16, and M25 sections in `docs/design.md`.
+- Source commit: `7fc372423b7d97c04a3108215c22ceaf578e3586`
+- Capture unit: `TG-MOD.10`
+- Capture purpose: preserve only the complete relocated Task operating sections;
+  neighboring Evidence/Runner sections and their aliases remain with their owners.
+- Current replacements:
+  [Task operation specification](../task-operation-specification.md)
+  and [Task operation design](../task-operation-design.md).
+  The unchanged common contracts remain routed by
+  [docs/authority.md](../authority.md). Use the public CLI for live Task state
+  and evidence. This capture is lineage only and cannot fill a current authority
+  gap or satisfy a gate.

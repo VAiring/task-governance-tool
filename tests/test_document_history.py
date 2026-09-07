@@ -301,6 +301,8 @@ class DocumentHistoryTests(unittest.TestCase):
             encoding="utf-8-sig"
         )
         design = (ROOT / "docs" / "design.md").read_text(encoding="utf-8-sig")
+        task_specification = (ROOT / "docs" / "task-operation-specification.md").read_text(encoding="utf-8")
+        task_design = (ROOT / "docs" / "task-operation-design.md").read_text(encoding="utf-8")
         plan = (ROOT / "plan.md").read_text(encoding="utf-8-sig")
 
         selective_start = authority.index("## Selective Current Authority")
@@ -315,19 +317,19 @@ class DocumentHistoryTests(unittest.TestCase):
             1,
         )
 
+        self.assertEqual(specification.count("## Recovery Candidate Validity Contract"), 1)
         current_contracts = (
-            "## Recovery Candidate Validity Contract",
             "## Stored Task Read And Privacy Contract",
             "## Stored Contract Pointer Integrity Contract",
         )
         starts = []
         for heading in current_contracts:
             with self.subTest(heading=heading):
-                self.assertEqual(specification.count(heading), 1)
-                self.assertNotIn(heading, design)
-                start = specification.index(heading)
-                end = specification.find("\n## ", start + 1)
-                section = specification[start : len(specification) if end < 0 else end]
+                self.assertEqual(task_specification.count(heading), 1)
+                self.assertNotIn(heading, task_design)
+                start = task_specification.index(heading)
+                end = task_specification.find("\n## ", start + 1)
+                section = task_specification[start : len(task_specification) if end < 0 else end]
                 starts.append(start)
         self.assertEqual(starts, sorted(starts))
 
@@ -337,17 +339,17 @@ class DocumentHistoryTests(unittest.TestCase):
         )
         for heading in implementation_owners:
             with self.subTest(implementation_owner=heading):
-                self.assertEqual(design.count(heading), 1)
-                self.assertNotIn(heading, specification)
+                self.assertEqual(task_design.count(heading), 1)
+                self.assertNotIn(heading, task_specification)
 
         m25_owners = (
             (
-                specification,
+                task_specification,
                 "## Current M25 Select-Split-Merge-Register Contract",
                 "\n## ",
             ),
             (
-                design,
+                task_design,
                 "## Current M25 Select-Split-Merge-Register Design",
                 "\n## ",
             ),
@@ -366,11 +368,11 @@ class DocumentHistoryTests(unittest.TestCase):
                 self.assertNotIn("Inactive", section)
         self.assertNotIn(
             "## Accepted But Inactive M25 Select-Split-Merge-Register Contract",
-            specification,
+            task_specification,
         )
         self.assertNotIn(
             "## Accepted But Inactive M25 Select-Split-Merge-Register Design",
-            design,
+            task_design,
         )
 
     def test_archives_are_fixed_exact_captures_with_non_authority_banners(self):
@@ -621,6 +623,104 @@ class DocumentHistoryTests(unittest.TestCase):
                 b"## Current Runner Plan Authoring And Control Design\n",
                 b"## Deferred Boundaries",
                 "runner-plan-authoring-design.md",
+            ),
+        )
+        self.assertEqual(len(captured), len(sections))
+        index = (HISTORY_ROOT / "README.md").read_text(encoding="utf-8")
+        self.assertEqual(index.count(f"]({relative})"), 1)
+        self.assertIn(source_commit, index)
+        for block, (path, start_marker, end_marker, replacement) in zip(
+            captured, sections
+        ):
+            with self.subTest(path=path):
+                self.assertIn(path.encode("ascii"), prefix)
+                self.assertIn(f"](../../{replacement})".encode("ascii"), prefix)
+                self.assertIn(f"](../{replacement})", index)
+                source = subprocess.run(
+                    ["git", "show", f"{source_commit}:{path}"],
+                    cwd=ROOT,
+                    check=False,
+                    capture_output=True,
+                )
+                self.assertEqual(source.returncode, 0)
+                start = source.stdout.index(start_marker)
+                end = source.stdout.index(end_marker, start)
+                self.assertEqual(block.split(b"````\n", 1)[0], source.stdout[start:end])
+
+    def test_task_operation_split_capture_preserves_exact_source_sections(self):
+        relative = "v0.13.0/task-operation-section-split.md"
+        source_commit = "7fc372423b7d97c04a3108215c22ceaf578e3586"
+        data = (HISTORY_ROOT / relative).read_bytes()
+        prefix = data.split(b"````markdown\n", 1)[0]
+        self.assertIn(b"NON-AUTHORITATIVE HISTORY", prefix)
+        self.assertIn(source_commit.encode("ascii"), prefix)
+        captured = data.split(b"````markdown\n")[1:]
+        sections = (
+            (
+                'docs/specification.md',
+                b'### Task Selection And Read Commands\n',
+                b'### Doctor Contract',
+                'task-operation-specification.md',
+            ),
+            (
+                'docs/specification.md',
+                b'## Task State, Scope, Review, And Completion\n',
+                b'## Approved Post-MVP Extension: TG-M16 Reduced Loop Discipline Trial',
+                'task-operation-specification.md',
+            ),
+            (
+                'docs/specification.md',
+                b'## Approved Post-MVP Extension: TG-M16 Reduced Loop Discipline Trial\n',
+                b'## Review And Completion',
+                'task-operation-specification.md',
+            ),
+            (
+                'docs/specification.md',
+                b'### Typed Checkpoint\n',
+                b'## Completion Cycle History',
+                'task-operation-specification.md',
+            ),
+            (
+                'docs/specification.md',
+                b'## Current M25 Select-Split-Merge-Register Contract\n',
+                b'<a id="current-schema-v21-verification-ledger-and-bundle-contract"></a>',
+                'task-operation-specification.md',
+            ),
+            (
+                'docs/specification.md',
+                b'## Stored Task Read And Privacy Contract\n',
+                b'## Stored Contract Pointer Integrity Contract',
+                'task-operation-specification.md',
+            ),
+            (
+                'docs/specification.md',
+                b'## Stored Contract Pointer Integrity Contract\n',
+                b'## SQLite, Migration, And Concurrency',
+                'task-operation-specification.md',
+            ),
+            (
+                'docs/design.md',
+                b'## Task State And Selection\n',
+                b'## Completion Evidence And Review',
+                'task-operation-design.md',
+            ),
+            (
+                'docs/design.md',
+                b'## Task Contracts, Checkpoints, Handoffs, And Effort\n',
+                b'## Approved TG-M16 Reduced Loop Discipline Trial Design',
+                'task-operation-design.md',
+            ),
+            (
+                'docs/design.md',
+                b'## Approved TG-M16 Reduced Loop Discipline Trial Design\n',
+                b'## Setup, Doctor, Backup, And Maintenance',
+                'task-operation-design.md',
+            ),
+            (
+                'docs/design.md',
+                b'## Current M25 Select-Split-Merge-Register Design\n',
+                b'<a id="trusted-local-runner-architecture"></a>',
+                'task-operation-design.md',
             ),
         )
         self.assertEqual(len(captured), len(sections))

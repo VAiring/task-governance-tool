@@ -147,8 +147,10 @@ The implementation keeps these narrow ownership boundaries:
 - `evidence_ledger.py` owns authority/criterion canonicalization, closed
   assurance/producer dispatch, Evidence Reference projections and digests,
   and capture-version source guards without SQLite access.
-- `evidence_projection.py` owns canonical Bundle/index encoding, coherent
-  projection capture, digest validation, and index-last publication.
+- `evidence_projection.py` owns canonical Bundle/index construction, stored
+  Bundle reconstruction, digest validation, and captured-basis rendering.
+- `evidence_publication.py` owns storage-backed capture, fixed-path publication,
+  generation/outcome recording, and read-only physical projection status.
 - `artifact_manifest.py` owns safe bounded Git leaf observation, exact rename
   classification/order, opaque/complete manifests, and manifest digests. Git
   observation is separate from the short DB binding transaction.
@@ -1923,9 +1925,18 @@ the retired `derived_analysis` reservation from current schema v22.
   exact artifact-entry normalization, deterministic rename pairing/order, and
   manifest digests. It reuses safe process and stable-snapshot primitives from
   `git_snapshot.py` without routing full manifests through Review Packet.
-- `evidence_projection.py` owns coherent ledger capture, canonical Bundle/index
-  JSON, digest validation, generation comparison, index-last atomic
-  publication, last-good preservation, and repair.
+- `evidence_projection.py` owns the codec, canonical Bundle/index JSON and
+  digest validation, native Bundle construction, stored Bundle reconstruction,
+  and rendering of captured `EvidenceProjectionBasis` values.
+- `evidence_publication.py` consumes `DatabaseTarget` and observation time,
+  captures through the storage API, calls those retained builders, and returns
+  the existing refresh result or physical status. It owns physical path checks,
+  lock/temp/rename handling, Bundle-first/index-last publication, generation
+  comparison and outcome recording, last-good preservation, and setup repair.
+  Capture closes its read connection before rendering; the separate index
+  generation guard retains its read connection through atomic replacement.
+  Completion-time construction stays in its existing transaction boundary;
+  construction-side storage value types remain shared without a DTO layer.
 
 `storage.py` remains the only SQLite owner. `tasks.py` and `contracts.py`
 capture authority inside existing savepoints; `verification_receipts.py`
@@ -3405,7 +3416,7 @@ Runner route; its Runner dispatch has only the `cli -> service` edge.
 |---|---|---|---|---|---|
 | `cli` | `cli.py` | Parse and format the existing public surface and dispatch the Runner route to the parent service. | `service` | No Runner eligibility, authority, persistence, process, native, or cleanup decision; no Runner dispatch to `process_adapter` or `os_adapter`. | Direct process/native CLI branches are physically absent. |
 | `service` | `verification_runner_service.py` | Parent orchestration; sole ownership of opt-in and eligibility, Task/Contract/criterion freshness, canonical repository coordination, target/plan selection, Evidence and terminal persistence, maintenance/recovery coordination, and final cleanup acceptance. | `repository`, `target_plan`, `value_model`, `runtime_identity`, `lifecycle`, `process_adapter` | No OS mechanics and no delegation of authority, business gates, terminal persistence, or cleanup acceptance to a child layer. | It is the sole business and cleanup-acceptance owner. |
-| `repository` | `storage.py`, `tasks.py`, `contracts.py`, `reviews.py`, `verification_receipts.py`, `completion.py`, `evidence_ledger.py`, `evidence_projection.py`, `maintenance.py` | Canonical SQLite, Task/Contract/review/completion state, Evidence, and maintenance repositories and business gates invoked only by the parent service. | `value_model` | No process launch; no import of `process_adapter` or `os_adapter`; no filesystem cleanup ownership. | Schema/Evidence compatibility stays repository-owned with no reverse edge. |
+| `repository` | `storage.py`, `tasks.py`, `contracts.py`, `reviews.py`, `verification_receipts.py`, `completion.py`, `evidence_ledger.py`, `evidence_projection.py`, `evidence_publication.py`, `maintenance.py` | Canonical SQLite, Task/Contract/review/completion state, Evidence, and maintenance repositories and business gates invoked only by the parent service. | `value_model` | No process launch; no import of `process_adapter` or `os_adapter`; no filesystem cleanup ownership. | Schema/Evidence compatibility stays repository-owned with no reverse edge. |
 | `target_plan` | `artifact_manifest.py`, `verification_runner_git.py`, `verification_runner_plan.py` | Parent-invoked exact target observation/materialization and fixed-plan decode/validation. | `repository`, `value_model` | No CLI policy, canonical database ownership, completion decision, trusted-code or verification-command launch, terminal publication, or cleanup acceptance. | Target/plan code is read-only until parent-owned materialization. |
 | `value_model` | `verification_runner.py` | Pure closed Runner identifiers, bounded codes, value validation, and domain encoding used across the boundary. | none | No I/O and no import of CLI, service, repository, persistence, target, runtime, lifecycle, process, native, or business-gate modules. | The module is dependency-pure and has no compatibility shim consumer. |
 | `runtime_identity` | `verification_runner_runtime.py`, `self_status.py` | Parent-invoked fixed executable and package-integrity observation. | `repository`, `value_model` | No process launch, canonical database ownership, business gate, terminal publication, or cleanup acceptance. | Candidate-only runtime material is physically absent. |

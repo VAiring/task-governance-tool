@@ -762,6 +762,7 @@ class RunnerPlanEditTests(unittest.TestCase):
             "task_governance_tool.verification_runner_runtime",
             "task_governance_tool.verification_runner_service",
             "task_governance_tool.evidence_projection",
+            "task_governance_tool.evidence_publication",
             "task_governance_tool.viewer",
             "task_governance_tool.setup",
         )

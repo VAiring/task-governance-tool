@@ -48,6 +48,8 @@ from task_governance_tool.evidence_projection import (
     build_bundle_artifact,
     build_index_artifact,
     build_projection_bundle_artifact,
+)
+from task_governance_tool.evidence_publication import (
     publish_setup_evidence_projection,
 )
 from task_governance_tool.relocation import RelocationContext, RelocationTokenError

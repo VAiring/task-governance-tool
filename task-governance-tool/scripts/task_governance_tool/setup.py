@@ -23,7 +23,7 @@ from task_governance_tool.backup import (
     restore_managed_backup,
     select_managed_backup_for_recovery,
 )
-from task_governance_tool.evidence_projection import (
+from task_governance_tool.evidence_publication import (
     inspect_canonical_evidence_status,
     publish_setup_evidence_projection,
 )

@@ -17,7 +17,8 @@ SCRIPTS_ROOT = ROOT / "task-governance-tool" / "scripts"
 if str(SCRIPTS_ROOT) not in sys.path:
     sys.path.insert(0, str(SCRIPTS_ROOT))
 
-from task_governance_tool import evidence_projection as projection  # noqa: E402
+from task_governance_tool import evidence_projection as construction  # noqa: E402
+from task_governance_tool import evidence_publication as projection  # noqa: E402
 from task_governance_tool.state_paths import (  # noqa: E402
     StatePathError,
     ValidatedFile,
@@ -53,7 +54,7 @@ def _target(root: Path) -> DatabaseTarget:
 
 
 def _bundle_artifact(document: bytes = b'{"bundle":1}\n'):
-    return projection.BundleArtifact(
+    return construction.BundleArtifact(
         payload={},
         payload_bytes=b"{}",
         bundle_digest="sha256:" + "b" * 64,
@@ -64,7 +65,7 @@ def _bundle_artifact(document: bytes = b'{"bundle":1}\n'):
 
 
 def _index_artifact(document: bytes = b'{"index":1}\n'):
-    return projection.IndexArtifact(
+    return construction.IndexArtifact(
         payload={},
         payload_bytes=b"{}",
         index_digest="sha256:" + "c" * 64,
@@ -89,7 +90,7 @@ def _write_sized_file(path: Path, size: int) -> None:
 class EvidenceProjectionPublicationTests(unittest.TestCase):
     def test_routine_orders_bundle_index_and_success_record(self):
         basis = object()
-        rendered = projection._RenderedProjection(
+        rendered = construction._RenderedProjection(
             source_generation=3,
             bundles=((BUNDLE_ID, _bundle_artifact()),),
             index=_index_artifact(),
@@ -179,12 +180,12 @@ class EvidenceProjectionPublicationTests(unittest.TestCase):
         first_basis = object()
         second_basis = object()
         rendered = (
-            projection._RenderedProjection(
+            construction._RenderedProjection(
                 source_generation=1,
                 bundles=((BUNDLE_ID, _bundle_artifact(b"first\n")),),
                 index=_index_artifact(b"first-index\n"),
             ),
-            projection._RenderedProjection(
+            construction._RenderedProjection(
                 source_generation=2,
                 bundles=((BUNDLE_ID, _bundle_artifact(b"second\n")),),
                 index=_index_artifact(b"second-index\n"),
@@ -331,7 +332,7 @@ class EvidenceProjectionPublicationTests(unittest.TestCase):
     def test_setup_force_repairs_a_corrupt_referenced_bundle(self):
         basis = object()
         bundle = _bundle_artifact()
-        rendered = projection._RenderedProjection(
+        rendered = construction._RenderedProjection(
             source_generation=5,
             bundles=((BUNDLE_ID, bundle),),
             index=_index_artifact(),
@@ -397,7 +398,7 @@ class EvidenceProjectionPublicationTests(unittest.TestCase):
     ):
         basis = object()
         bundle = _bundle_artifact()
-        rendered = projection._RenderedProjection(
+        rendered = construction._RenderedProjection(
             source_generation=6,
             bundles=((BUNDLE_ID, bundle),),
             index=_index_artifact(),
@@ -479,7 +480,7 @@ class EvidenceProjectionPublicationTests(unittest.TestCase):
         self,
     ):
         basis = object()
-        rendered = projection._RenderedProjection(
+        rendered = construction._RenderedProjection(
             source_generation=7,
             bundles=(),
             index=_index_artifact(),
@@ -555,7 +556,7 @@ class EvidenceProjectionPublicationTests(unittest.TestCase):
     ):
         basis = object()
         bundle = _bundle_artifact()
-        rendered = projection._RenderedProjection(
+        rendered = construction._RenderedProjection(
             source_generation=8,
             bundles=((BUNDLE_ID, bundle),),
             index=_index_artifact(),
@@ -644,17 +645,17 @@ class EvidenceProjectionPublicationTests(unittest.TestCase):
         from tests.test_m223_bundle_assembly_pure import sample_payload
 
         payload = sample_payload()
-        artifact = projection.build_bundle_artifact(payload)
+        artifact = construction.build_bundle_artifact(payload)
         self.assertLess(len(artifact.payload_bytes), len(artifact.document))
         with (
             mock.patch.object(
-                projection,
+                construction,
                 "BUNDLE_MAX_BYTES",
                 len(artifact.document) - 1,
             ),
-            self.assertRaises(projection.EvidenceProjectionError) as raised,
+            self.assertRaises(construction.EvidenceProjectionError) as raised,
         ):
-            projection.build_bundle_artifact(payload)
+            construction.build_bundle_artifact(payload)
         self.assertEqual(raised.exception.code, "evidence_bundle_too_large")
 
     def test_status_is_current_only_for_exact_files_and_db_digest(self):
@@ -677,7 +678,7 @@ class EvidenceProjectionPublicationTests(unittest.TestCase):
                 ),
                 basis=object(),
             )
-            rendered = projection._RenderedProjection(
+            rendered = construction._RenderedProjection(
                 source_generation=7,
                 bundles=((BUNDLE_ID, bundle),),
                 index=index,
@@ -718,7 +719,7 @@ class EvidenceProjectionPublicationTests(unittest.TestCase):
             evidence_basis_version=0,
             completion_evidence_bundle_id=None,
         )
-        rendered = projection._render_projection(
+        rendered = construction._render_projection(
             EvidenceProjectionBasis(
                 source_schema_version=22,
                 project_id=PROJECT_ID,
@@ -790,6 +791,49 @@ class EvidenceProjectionPublicationTests(unittest.TestCase):
 
         self.assertTrue(connection.closed)
         self.assertIs(captured.basis, basis)
+
+    def test_generation_guard_holds_connection_through_yield_and_closes_on_drift(self):
+        class Connection:
+            closed = False
+
+            def close(self):
+                self.closed = True
+
+        target = SimpleNamespace(
+            project=SimpleNamespace(project_id=PROJECT_ID)
+        )
+        for generation in (9, 10):
+            with self.subTest(generation=generation):
+                connection = Connection()
+                yielded = False
+                expected = (
+                    nullcontext()
+                    if generation == 9
+                    else self.assertRaises(projection._EvidenceSourceChanged)
+                )
+                with (
+                    mock.patch.object(
+                        projection,
+                        "connect_initialized_readonly",
+                        return_value=connection,
+                    ),
+                    mock.patch.object(
+                        projection,
+                        "read_project_maintenance",
+                        return_value=SimpleNamespace(enabled=True),
+                    ),
+                    mock.patch.object(
+                        projection,
+                        "read_evidence_projection_state",
+                        return_value=SimpleNamespace(source_generation=generation),
+                    ),
+                    expected,
+                ):
+                    with projection._generation_guard(target, captured_generation=9):
+                        yielded = True
+                        self.assertFalse(connection.closed)
+                self.assertEqual(yielded, generation == 9)
+                self.assertTrue(connection.closed)
 
 
 if __name__ == "__main__":

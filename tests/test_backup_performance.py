@@ -22,7 +22,7 @@ from task_governance_tool import backup as backup_service
 from task_governance_tool import maintenance as maintenance_service
 from task_governance_tool import viewer_maintenance as viewer_maintenance_service
 from task_governance_tool.backup import discover_managed_backup_metadata
-from task_governance_tool.evidence_projection import (
+from task_governance_tool.evidence_publication import (
     publish_setup_evidence_projection,
 )
 from task_governance_tool.storage import (

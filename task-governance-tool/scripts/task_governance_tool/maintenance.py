@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from task_governance_tool.backup import run_routine_backup
-from task_governance_tool.evidence_projection import (
+from task_governance_tool.evidence_publication import (
     run_routine_evidence_projection,
 )
 from task_governance_tool.storage import DatabaseTarget, utc_now

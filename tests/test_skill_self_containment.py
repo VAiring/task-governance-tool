@@ -1382,6 +1382,7 @@ class SkillSelfContainmentTests(unittest.TestCase):
         )
         for module in (
             "evidence_projection.py",
+            "evidence_publication.py",
             "relocation.py",
             "state_paths.py",
             "state_resolver.py",
@@ -1403,6 +1404,7 @@ class SkillSelfContainmentTests(unittest.TestCase):
         self.assertIn("references/reconciliation.md", manifest["core_files"])
         for module in (
             "evidence_projection.py",
+            "evidence_publication.py",
             "relocation.py",
             "state_paths.py",
             "state_resolver.py",

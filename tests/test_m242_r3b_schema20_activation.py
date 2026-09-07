@@ -26,7 +26,7 @@ from task_governance_tool.backup import (  # noqa: E402
     publish_setup_backup,
     select_managed_backup_for_recovery,
 )
-from task_governance_tool.evidence_projection import (  # noqa: E402
+from task_governance_tool.evidence_publication import (  # noqa: E402
     publish_setup_evidence_projection,
 )
 from task_governance_tool.state_resolver import (  # noqa: E402

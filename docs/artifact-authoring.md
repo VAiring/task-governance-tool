@@ -93,14 +93,33 @@ scope, verification, and review requirements.
 ## Finding The Owner For A Proposed Change
 
 From the live Task Contract and the authority index, identify the existing
-owner of the behavior or structure being changed. Follow the required current
-reading rules, then find the directly coupled implementation and tests using
-their responsibility names and references. Update the owning rule and its
-affected consumers together when the authorized change requires it.
+owner of the behavior or structure being changed. Use headings, anchors, and
+search to locate its complete relevant sections, then read their conditions,
+exceptions, and required common contracts with the coupled implementation and
+tests. A search hit helps locate a responsibility; it does not replace reading
+that responsibility. This works within the current large, unsplit files and
+does not depend on a future physical decomposition.
+
+Follow concrete dependencies when the material reveals additional impact, as
+required by the [Reread Rule](../AGENTS.md#reread-rule). For example, a helper
+call may lead to a shared validation rule and its consumer tests; a schema
+relationship may lead to a migration or compatibility owner. The initial links
+do not cap that reading. Conversely, a schema or CLI label alone does not make
+every document relevant. Update the owning rule and affected consumers together
+when the authorized change requires it.
 
 For example, a change to repository document routing is explained in
 `docs/authority.md` and checked by `tools/document_contract.py`, with its
 focused fixtures in `tests/test_document_contract.py`. A product-behavior change
 instead starts with its specification owner and corresponding design, code,
-and tests. These examples aid discovery; they do not replace the current
-reading rules or add a fixed read-set size.
+and tests. Continue investigating a real missing route or material conflict;
+if it remains unresolved, follow AGENTS.md before changing the affected rule.
+When the governing rules, affected boundary, and verification basis are known
+and no concrete unresolved material impact question remains, normal discovery
+is sufficient. There is no obligation to prove the absence of every possible
+dependency elsewhere in the repository.
+
+These examples aid discovery; they add no recurring Task-loop exercise, reading
+log, counter, score, time budget, approval per read, or read/file/link-depth cap.
+The substantive product, permission, privacy, verification, and review rules
+are unchanged.

@@ -67,10 +67,13 @@ At the start of every Task, read and follow the minimal start set:
 2. `docs/authority.md`
 3. the live Task Contract through the public CLI
 
-Then use the authority index and exact Task Contract to select only the
-applicable current or conditional sections, directly coupled code, config,
-schemas, tests, examples, and fixtures. Files under root `references/` remain
-reference only. Do not load history during normal implementation or search.
+Then use the authority index and exact Task Contract to locate the complete
+relevant current or conditional owner sections, including their conditions and
+exceptions, directly required common contracts, and coupled code, config,
+schemas, tests, examples, and fixtures. Selected links are a starting set, not
+a maximum; follow concrete dependencies as described in the Reread Rule.
+Files under root `references/` remain reference only. Do not load history during
+normal implementation or search.
 
 If these documents conflict:
 
@@ -94,14 +97,27 @@ If these documents conflict:
   milestone or execution-unit boundary before planning, editing, verification,
   or review.
 - Before an implementation-affecting decision, read every owner and exact
-  section selected by `docs/authority.md` and the current Task Contract. Read
-  directly coupled implementation and tests; do not substitute memory or a
-  milestone summary.
-- Escalate to a full read of `docs/specification.md`, `docs/design.md`,
-  `plan.md`, and every affected conditional contract for an authority-layout
-  transition, a cross-cutting behavior/schema/CLI/privacy/permission change, a
-  missing or ambiguous route, or a conflict across owners. Full reads are an
-  exception triggered by scope or uncertainty, not the normal start path.
+  section applicable to the current Task in full, including relevant
+  conditions, exceptions, and directly required common contracts. Read the
+  coupled implementation and tests; do not substitute search snippets, memory,
+  or a milestone summary for those sections.
+- Expand reading when an owner route, call/import dependency, schema
+  relationship, affected test, or observed failure reveals further impact.
+  Read the additional affected responsibility and its governing conditions.
+  A behavior, schema, CLI, privacy, or permission label alone does not require
+  a full read of every governing document.
+- Use wider or full reads of affected owners when an actual authority-layout
+  change, cross-owner impact, conflicting owners, or an incomplete route
+  requires them to establish the governing requirements and change boundary.
+  Unresolved missing authority or material conflict still requires resolution
+  under Source Of Truth before the affected semantic write.
+- Normal investigation is sufficient when the governing rules, affected
+  boundary, and verification basis are identified and no concrete unresolved
+  material impact question remains. This does not require proving that no
+  other dependency exists anywhere. There are no read/file/link-depth caps,
+  persisted reading logs or counters, or extra approval per read. Existing
+  product, permission, privacy, verification, and review requirements retain
+  their force regardless of how their applicable sections are located.
 - If remembered context and current documents differ, follow the current
   documents.
 

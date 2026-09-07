@@ -21,9 +21,11 @@ their routes before loading any other governing document.
 - [Implementation structure](design.md)
 - [Current decisions, open issues, gateways, and non-delegated static contracts](../plan.md)
 
-Read only the exact owner and section selected by the Task Contract and the
-trigger table below. Directly coupled code, schemas, tests, configuration,
-examples, and fixtures remain part of that selected read.
+Use the Task Contract and trigger table below to locate complete relevant
+owner sections, including conditions, exceptions, and directly required common
+contracts. Read the coupled code, schemas, tests, configuration, examples, and
+fixtures. These routes are a starting set, not a maximum: follow concrete
+dependencies that reveal further impact under AGENTS.md's Reread Rule.
 
 The specification remains the product-behavior owner and the design remains
 the implementation-structure owner. No other route transfers either role.
@@ -35,8 +37,8 @@ the implementation-structure owner. No other route transfers either role.
 This is an authoring guide delegated by root `AGENTS.md`, which remains the
 durable repository operating-rule owner. It applies to new or substantially
 revised material and is not an independent product or implementation authority.
-The existing mandatory start set, selective reading, and full-read escalation
-rules remain unchanged.
+The mandatory start set stays above; AGENTS.md owns the reading rules, with
+their selective routing and escalation summarized here.
 
 ## Non-Authoritative History
 
@@ -58,18 +60,25 @@ current gate.
 | Live status, blocker, target, evidence, review, or completion history | Public CLI and live Task Contract; no Git-document mirror |
 | Historical lineage or retired evidence | `docs/history/README.md`, only after naming the exceptional reason |
 
-If a route is missing or ambiguous, stop before a semantic write and record an
-open issue or ask the user. A Task Contract copies existing explicit authority;
-it does not create product scope or acceptance by itself.
+Investigate a missing or ambiguous route through the relevant owners and
+concrete dependencies. If required authority or a material conflict remains
+unresolved, stop before the affected semantic write and record an open issue
+or ask the user. A Task Contract copies existing explicit authority; it does
+not create product scope or acceptance by itself.
 
 ## Full-Read Escalation
 
-Read all of `docs/specification.md`, `docs/design.md`, `plan.md`, and every
-affected additional governing contract when the Task changes the authority
-layout;
-cross-cuts behavior, schema, CLI, privacy, permissions, or completion gates;
-finds conflicting owners; or cannot identify a complete exact route. This is
-an explicit escalation, not the normal start path.
+Expand from the selected sections when actual authority-layout changes,
+cross-owner impact, conflicting owners, or incomplete routes require wider or
+full reads of the affected governing documents. A schema, CLI, privacy, or
+other category label alone does not force every owner document to be read in
+full. The affected requirements and their conditions remain mandatory.
+
+Normal investigation is sufficient once the governing rules, affected boundary,
+and verification basis are identified and no concrete unresolved material
+impact question remains. No exhaustive proof of absent dependencies is needed.
+AGENTS.md's Reread Rule owns this policy; this index imposes no read-set limit
+or additional approval per read.
 
 ## Machine-Readable Registry
 

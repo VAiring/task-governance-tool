@@ -10,12 +10,14 @@ from task_governance_tool.artifact_lock import (
     ArtifactLockError,
     zero_wait_artifact_lock,
 )
+from task_governance_tool.backup_metadata_repository import (
+    ProjectMaintenanceState,
+    read_project_maintenance,
+)
 from task_governance_tool.storage import (
     DatabaseTarget,
-    ProjectMaintenanceState,
     ViewerMaintenanceState,
     connect_initialized_readonly,
-    read_project_maintenance,
     read_viewer_maintenance,
     record_viewer_attempt_outcome,
     record_viewer_publication,

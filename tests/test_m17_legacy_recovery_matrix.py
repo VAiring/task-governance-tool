@@ -22,8 +22,10 @@ from tests.test_db_init import insert_task
 
 from task_governance_tool import setup as setup_service
 from task_governance_tool.state_resolver import resolve_project_state
-from task_governance_tool.storage import (
+from task_governance_tool.backup_metadata_repository import (
     MigrationBackupMetadata,
+)
+from task_governance_tool.storage import (
     SCHEMA_VERSION,
     connect_readonly,
     current_schema_version,

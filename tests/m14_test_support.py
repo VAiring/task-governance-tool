@@ -23,9 +23,11 @@ SOURCE_SCRIPTS_ROOT = SOURCE_SKILL_ROOT / "scripts"
 if str(SOURCE_SCRIPTS_ROOT) not in sys.path:
     sys.path.insert(0, str(SOURCE_SCRIPTS_ROOT))
 
+from task_governance_tool.backup_metadata_repository import (  # noqa: E402
+    MigrationBackupMetadata,
+)
 from task_governance_tool.storage import (  # noqa: E402
     DatabaseTarget,
-    MigrationBackupMetadata,
     ProjectIdentity,
     apply_completion_commit_migration,
     apply_completion_evidence_migration,

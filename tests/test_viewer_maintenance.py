@@ -12,9 +12,11 @@ from tests.m14_test_support import SOURCE_SKILL_ROOT, canonical_test_path
 from task_governance_tool import viewer as viewer_module
 from task_governance_tool import viewer_maintenance as viewer_service
 from task_governance_tool.artifact_lock import ArtifactLockError
+from task_governance_tool.backup_metadata_repository import (
+    configure_project_maintenance,
+)
 from task_governance_tool.storage import (
     StorageError,
-    configure_project_maintenance,
     connect_initialized,
     connect_initialized_readonly,
     initialize_database,

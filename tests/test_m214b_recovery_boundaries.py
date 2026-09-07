@@ -33,9 +33,11 @@ from task_governance_tool.state_resolver import (
     resolve_project_state,
     resolve_setup_project_state,
 )
+from task_governance_tool.backup_metadata_repository import (
+    read_managed_backup_repository,
+)
 from task_governance_tool.storage import (
     StorageError,
-    read_managed_backup_repository,
     validate_sqlite_integer_storage_class,
 )
 

@@ -38,15 +38,17 @@ from task_governance_tool.state_paths import (
     require_contained,
     unlink_validated_file,
 )
+from task_governance_tool.backup_metadata_repository import (
+    ProjectMaintenanceState,
+    read_project_maintenance,
+)
 from task_governance_tool.storage import (
     DatabaseTarget,
     EvidenceProjectionBasis,
     EvidenceProjectionState,
-    ProjectMaintenanceState,
     capture_evidence_projection_basis,
     connect_initialized_readonly,
     read_evidence_projection_state,
-    read_project_maintenance,
     record_evidence_projection_outcome,
     utc_now,
     validate_utc_timestamp,

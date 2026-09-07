@@ -44,9 +44,11 @@ except ModuleNotFoundError:  # noqa: E402
 from task_governance_tool import setup as setup_service
 from task_governance_tool import backup as backup_service
 from task_governance_tool import project_scope as project_scope_service
+from task_governance_tool.backup_metadata_repository import (
+    MigrationBackupMetadata,
+)
 from task_governance_tool.storage import (
     DatabaseTarget,
-    MigrationBackupMetadata,
 )
 
 

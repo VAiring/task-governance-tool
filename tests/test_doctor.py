@@ -34,11 +34,13 @@ from task_governance_tool.state_resolver import (
     canonical_state_paths,
     observe_current_root,
 )
+from task_governance_tool.backup_metadata_repository import (
+    ProjectMaintenanceState,
+)
 from task_governance_tool.storage import (
     SCHEMA_VERSION,
     DatabaseTarget,
     EvidenceProjectionState,
-    ProjectMaintenanceState,
     ViewerMaintenanceState,
 )
 

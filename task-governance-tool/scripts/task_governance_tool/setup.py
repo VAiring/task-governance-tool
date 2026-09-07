@@ -53,18 +53,21 @@ from task_governance_tool.project_binding_repository import (
     read_project_binding_state,
     set_legacy_cleanup_pending,
 )
-from task_governance_tool.storage import (
+from task_governance_tool.backup_metadata_repository import (
     DEFAULT_BACKUP_GENERATIONS,
     DEFAULT_BACKUP_INTERVAL_MINUTES,
-    DatabaseTarget,
     MigrationBackupMetadata,
+    configure_project_maintenance,
+    validate_backup_policy,
+)
+from task_governance_tool.storage import (
+    DatabaseTarget,
     ProjectIdentity,
     SCHEMA_VERSION,
     SetupStorageState,
     StorageError,
     UnboundDatabaseTarget,
     connect_snapshot_readonly,
-    configure_project_maintenance,
     initialize_database,
     initialize_uuid_database,
     migrate_bound_database,
@@ -72,7 +75,6 @@ from task_governance_tool.storage import (
     is_sqlite_busy_or_locked,
     read_viewer_maintenance,
     utc_now,
-    validate_backup_policy,
     validate_completion_cycle_storage,
 )
 from task_governance_tool.state_paths import (

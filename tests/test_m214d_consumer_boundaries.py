@@ -29,9 +29,11 @@ if str(SCRIPTS_ROOT) not in sys.path:
     sys.path.insert(0, str(SCRIPTS_ROOT))
 
 from task_governance_tool import viewer_maintenance  # noqa: E402
+from task_governance_tool.backup_metadata_repository import (  # noqa: E402
+    configure_project_maintenance,
+)
 from task_governance_tool.storage import (  # noqa: E402
     StorageError,
-    configure_project_maintenance,
     connect_initialized_readonly,
     resolve_database_target,
 )

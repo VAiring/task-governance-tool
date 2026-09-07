@@ -25,12 +25,14 @@ from task_governance_tool.backup import discover_managed_backup_metadata
 from task_governance_tool.evidence_publication import (
     publish_setup_evidence_projection,
 )
+from task_governance_tool.backup_metadata_repository import (
+    configure_project_maintenance,
+    read_managed_backup_repository,
+)
 from task_governance_tool.storage import (
     capture_or_reuse_current_authority_snapshot_locked,
-    configure_project_maintenance,
     connect,
     initialize_database,
-    read_managed_backup_repository,
     read_viewer_maintenance,
     resolve_database_target,
     validate_evidence_ledger_storage,

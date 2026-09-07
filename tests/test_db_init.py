@@ -11,8 +11,10 @@ SKILL_ROOT = ROOT / "task-governance-tool"
 SCRIPTS_PATH = SKILL_ROOT / "scripts"
 sys.path.insert(0, str(SCRIPTS_PATH))
 try:
-    from task_governance_tool.storage import (
+    from task_governance_tool.backup_metadata_repository import (
         MigrationBackupMetadata,
+    )
+    from task_governance_tool.storage import (
         SCHEMA_VERSION,
         StorageError,
         apply_completion_commit_migration,

@@ -23,9 +23,11 @@ from task_governance_tool.state_resolver import (  # noqa: E402
     resolve_staged_project_state,
 )
 from task_governance_tool.project_scope import PROJECT_STATE_MESSAGES  # noqa: E402
+from task_governance_tool.backup_metadata_repository import (  # noqa: E402
+    MigrationBackupMetadata,
+)
 from task_governance_tool.storage import (  # noqa: E402
     DatabaseTarget,
-    MigrationBackupMetadata,
     UnboundDatabaseTarget,
     apply_initial_schema_migration,
     connect,

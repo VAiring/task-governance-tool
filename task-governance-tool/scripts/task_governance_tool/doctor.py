@@ -14,10 +14,12 @@ from task_governance_tool.project_scope import (
     ProjectScopeInspection,
     inspect_project_scope,
 )
+from task_governance_tool.backup_metadata_repository import (
+    ProjectMaintenanceState,
+)
 from task_governance_tool.storage import (
     SCHEMA_VERSION,
     EvidenceProjectionState,
-    ProjectMaintenanceState,
     ViewerMaintenanceState,
     utc_now,
 )

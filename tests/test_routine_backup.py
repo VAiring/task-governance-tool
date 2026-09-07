@@ -18,17 +18,19 @@ from task_governance_tool.backup import (
     managed_backup_lock,
     run_routine_backup,
 )
-from task_governance_tool.storage import (
+from task_governance_tool.backup_metadata_repository import (
     MigrationBackupMetadata,
-    StorageError,
-    begin_initialized_write,
     configure_project_maintenance,
-    connect_existing,
-    connect_initialized,
-    initialize_database,
     read_managed_backup_repository,
     record_backup_attempt_outcome,
     record_managed_backup,
+)
+from task_governance_tool.storage import (
+    StorageError,
+    begin_initialized_write,
+    connect_existing,
+    connect_initialized,
+    initialize_database,
     resolve_database_target,
 )
 from task_governance_tool.tasks import add_task

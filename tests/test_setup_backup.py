@@ -27,12 +27,14 @@ from task_governance_tool.backup import (  # noqa: E402
     managed_backup_lock,
     publish_setup_backup,
 )
+from task_governance_tool.backup_metadata_repository import (  # noqa: E402
+    read_managed_backup_repository,
+    read_project_maintenance,
+)
 from task_governance_tool.storage import (  # noqa: E402
     StorageError,
     connect_readonly,
     initialize_database,
-    read_managed_backup_repository,
-    read_project_maintenance,
     resolve_database_target,
 )
 

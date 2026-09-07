@@ -232,11 +232,18 @@ current user request, an approved roadmap, or task-registration input. Copy
 those values deterministically. Never ask for missing Contract fields and
 never infer that duration, effort, or risk makes a Contract mandatory.
 
-Record revision 1 during registration:
+Record revision 1 during registration. For work explicitly authorized in a
+conversation, a stable reference can be recorded as follows:
 
 ```powershell
-python .agents/skills/task-governance-tool/scripts/taskgov.py task add --repo <target-project> --title "Bounded change" --contract-scope "Authorized files and behavior" --contract-acceptance "Exact completion condition" --contract-constraints "No unrelated cleanup" --contract-authority-ref "roadmap:TG-M14.7" --json
+python .agents/skills/task-governance-tool/scripts/taskgov.py task add --repo <target-project> --title "Bounded change" --contract-scope "Authorized files and behavior" --contract-acceptance "Exact completion condition" --contract-constraints "No unrelated cleanup" --contract-authority-ref "conversation:example-session:approved-change-1" --json
 ```
+
+Replace the example session and instruction identifiers with the actual stable
+reference to the authorizing instruction, not its text. `conversation:` is an
+illustrative convention, not a required prefix; other stable authority
+identifiers remain valid, and the initial authority reference remains optional.
+Recording a reference does not authenticate an instruction or grant approval.
 
 Alternatively, activate revision 1 only on an exact revision-zero
 `ready|blocked -> in_progress` transition:
@@ -251,6 +258,15 @@ its reason:
 ```powershell
 python .agents/skills/task-governance-tool/scripts/taskgov.py task edit --repo <target-project> <task-id> --contract-scope "Revised explicit scope" --contract-acceptance "Revised explicit acceptance" --contract-authority-ref "user_instruction:<task-id>:<revision>" --contract-change-reason "User changed the accepted boundary" --json
 ```
+
+The reserved `user_instruction:` form checks the actual Task ID returned by
+taskgov, not a conversation ID, and an allowed positive Contract revision.
+For a semantic edit, use the next Contract revision. The existing concurrent
+write path also accepts the current revision and binds it to the next allocated
+revision; an exact content replay may use an older positive same-Task reference.
+A new `task add` has not returned its Task ID yet: the conversation reference
+above avoids guessing that ID. A conversation ID in the reserved Task-ID slot
+is rejected. These checks do not authenticate user approval.
 
 Do not use a document produced by the current task to authorize that task's own
 expansion. Hand off proposed hardening outside the current Contract. A
@@ -595,6 +611,8 @@ Register only explicit user-approved work. Each final group uses one existing
 `task add`; registration grants no implementation, target-project, Git,
 network, or external-operation permission. A non-zero Contract copies only
 explicit scope, acceptance, constraints, and authority reference.
+For initial reference examples and the reserved Task-ID form, see
+[Task Contract](#task-contract).
 
 When the outcome and registration permission are clear but the authority lacks
 truthful split or complete Contract detail, register one whole-outcome

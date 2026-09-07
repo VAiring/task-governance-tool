@@ -1229,8 +1229,8 @@ def add_task(
     from task_governance_tool.contracts import (
         CONTRACT_ADD_STATUSES,
         add_initial_contract,
-        split_contract_input,
     )
+    from task_governance_tool.contract_content import split_contract_input
 
     task_input, contract_input = split_contract_input(task_input)
     raw_status = task_input.get("status", "ready")
@@ -3120,7 +3120,8 @@ def edit_task(
             return reopened
         reject_done_task_write(existing)
 
-    from task_governance_tool.contracts import edit_contract, split_contract_input
+    from task_governance_tool.contracts import edit_contract
+    from task_governance_tool.contract_content import split_contract_input
 
     edit_input, contract_input = split_contract_input(edit_input)
     if completion_plan is not None:

@@ -29,6 +29,7 @@ from task_governance_tool.storage import (  # noqa: E402
     resolve_database_target,
 )
 from task_governance_tool.tasks import edit_task  # noqa: E402
+from task_governance_tool.contract_content import normalize_contract_input  # noqa: E402
 
 
 def run_taskgov(*args):
@@ -113,6 +114,24 @@ def durable_contract_state(db, task_id):
 
 
 class TaskContractCliTests(unittest.TestCase):
+    def test_content_normalizes_supplied_values_without_database_input(self):
+        content = normalize_contract_input(
+            {
+                "contract_scope": "  Scope\r\nwith detail  ",
+                "contract_acceptance": "  Acceptance\rline  ",
+            },
+            task_id="tg_task_content",
+            revision=1,
+            initial=True,
+        )
+        self.assertEqual(content, {
+            "scope": "Scope\nwith detail",
+            "acceptance": "Acceptance\nline",
+            "constraints_text": "",
+            "authority_ref": "",
+            "change_reason": "",
+        })
+
     def test_revision_zero_preserves_ordinary_shapes_and_show_adds_fixed_contract(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

@@ -14,7 +14,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Literal
 
-from task_governance_tool.contracts import CONTRACT_INPUT_FIELDS
+from task_governance_tool.contract_content import CONTRACT_INPUT_FIELDS
 from task_governance_tool.reviews import (
     ReviewTargetAuthorityBasis,
     read_review_target_authority_basis,

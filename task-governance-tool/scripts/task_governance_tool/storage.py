@@ -14700,7 +14700,7 @@ def _validated_contract_revision_rows(
 ) -> dict[tuple[str, str, int], sqlite3.Row]:
     """Validate the exact Contract revisions selected by current authority."""
 
-    from task_governance_tool.contracts import _validate_stored_contract
+    from task_governance_tool.contract_content import _validate_stored_contract
     from task_governance_tool.tasks import TaskRepositoryError
 
     contracts: dict[tuple[str, str, int], sqlite3.Row] = {}

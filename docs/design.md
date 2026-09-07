@@ -159,7 +159,9 @@ The implementation keeps these narrow ownership boundaries:
   observation is separate from the short DB binding transaction.
 - `reviews.py` owns review target, receipt, finding, and deterministic gate
   evaluation; `review_packet.py` owns bounded read-only review context.
-- `contracts.py` owns immutable Task Contract revisions and invalidation.
+- `contract_content.py` owns Contract field selection, normalization, authority
+  value validation, and supplied stored-row content validation/projection.
+- `contracts.py` owns Contract reads, immutable revisions, and invalidation.
 - `checkpoints.py` owns optional append-only checkpoints.
 - `handoffs.py` owns the local handoff outbox; selection never depends on
   handoff or adapter state.
@@ -2624,6 +2626,13 @@ rather than copied into CI or multiple test modules.
 
 ### Immutable Task Contract Revisions
 
+`contract_content.py` validates supplied values or rows without database I/O,
+using the shared value/error helpers. `contracts.py` retains revision-zero
+projection, current/latest queries, activation, allocation, replay, and
+transaction/event coordination; `storage.py` calls the same content validator
+for rows it selects. Content validation does not own DB-backed Task/Contract
+pointer integrity.
+
 Schema v8 gives Tasks a current revision pointer and adds append-only
 `task_contract_revisions`. Revision 0 has no row and projects empty fields.
 Each positive row stores normalized scope, acceptance, optional constraints,
@@ -3425,7 +3434,7 @@ Runner route; its Runner dispatch has only the `cli -> service` edge.
 |---|---|---|---|---|---|
 | `cli` | `cli.py` | Parse and format the existing public surface and dispatch the Runner route to the parent service. | `service` | No Runner eligibility, authority, persistence, process, native, or cleanup decision; no Runner dispatch to `process_adapter` or `os_adapter`. | Direct process/native CLI branches are physically absent. |
 | `service` | `verification_runner_service.py` | Parent orchestration; sole ownership of opt-in and eligibility, Task/Contract/criterion freshness, canonical repository coordination, target/plan selection, Evidence and terminal persistence, maintenance/recovery coordination, and final cleanup acceptance. | `repository`, `target_plan`, `value_model`, `runtime_identity`, `lifecycle`, `process_adapter` | No OS mechanics and no delegation of authority, business gates, terminal persistence, or cleanup acceptance to a child layer. | It is the sole business and cleanup-acceptance owner. |
-| `repository` | `storage.py`, `tasks.py`, `task_values.py`, `contracts.py`, `reviews.py`, `verification_receipts.py`, `completion.py`, `evidence_ledger.py`, `evidence_projection.py`, `evidence_publication.py`, `maintenance.py` | Canonical SQLite, Task/Contract/review/completion state, Evidence, and maintenance repositories and business gates invoked only by the parent service. | `value_model` | No process launch; no import of `process_adapter` or `os_adapter`; no filesystem cleanup ownership. | Schema/Evidence compatibility stays repository-owned with no reverse edge. |
+| `repository` | `storage.py`, `tasks.py`, `task_values.py`, `contracts.py`, `contract_content.py`, `reviews.py`, `verification_receipts.py`, `completion.py`, `evidence_ledger.py`, `evidence_projection.py`, `evidence_publication.py`, `maintenance.py` | Canonical SQLite, Task/Contract/review/completion state, Evidence, and maintenance repositories and business gates invoked only by the parent service. | `value_model` | No process launch; no import of `process_adapter` or `os_adapter`; no filesystem cleanup ownership. | Schema/Evidence compatibility stays repository-owned with no reverse edge. |
 | `target_plan` | `artifact_manifest.py`, `verification_runner_git.py`, `verification_runner_plan.py` | Parent-invoked exact target observation/materialization and fixed-plan decode/validation. | `repository`, `value_model` | No CLI policy, canonical database ownership, completion decision, trusted-code or verification-command launch, terminal publication, or cleanup acceptance. | Target/plan code is read-only until parent-owned materialization. |
 | `value_model` | `verification_runner.py` | Pure closed Runner identifiers, bounded codes, value validation, and domain encoding used across the boundary. | none | No I/O and no import of CLI, service, repository, persistence, target, runtime, lifecycle, process, native, or business-gate modules. | The module is dependency-pure and has no compatibility shim consumer. |
 | `runtime_identity` | `verification_runner_runtime.py`, `_verification_runner_executable_win32.py`, `self_status.py` | Parent-invoked fixed executable and package-integrity observation. | `repository`, `value_model` | No process launch, canonical database ownership, business gate, terminal publication, or cleanup acceptance. | Candidate-only runtime material is physically absent. |

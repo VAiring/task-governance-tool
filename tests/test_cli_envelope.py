@@ -12,7 +12,8 @@ SKILL_ROOT = ROOT / "task-governance-tool"
 sys.path.insert(0, str(SKILL_ROOT / "scripts"))
 try:
     from task_governance_tool import cli as cli_service
-    from task_governance_tool.cli import build_parser, make_context, success_result
+    from task_governance_tool.cli import make_context, success_result
+    from task_governance_tool.cli_parser import build_parser
 finally:
     sys.path.pop(0)
 

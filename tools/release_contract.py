@@ -43,7 +43,7 @@ if str(_RUNTIME_SCRIPTS) not in sys.path:
     sys.path.insert(0, str(_RUNTIME_SCRIPTS))
 
 from task_governance_tool import __version__  # noqa: E402
-from task_governance_tool.cli import build_parser  # noqa: E402
+from task_governance_tool.cli_parser import build_parser  # noqa: E402
 from task_governance_tool.self_status import inspect_local_package  # noqa: E402
 from task_governance_tool.storage import SCHEMA_VERSION  # noqa: E402
 from task_governance_tool.viewer import SNAPSHOT_VERSION  # noqa: E402

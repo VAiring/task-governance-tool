@@ -100,8 +100,10 @@ logs.
 
 The implementation keeps these narrow ownership boundaries:
 
-- `cli.py` parses the public surface, resolves lexical root options, dispatches
-  services, and formats bounded JSON or text.
+- `cli_parser.py` owns public parser construction, common options, and
+  sanitized parser error types.
+- `cli.py` preprocesses lexical root options, uses that parser, orchestrates
+  state and maintenance, dispatches services, and formats bounded JSON or text.
 - `compact.py` owns compact task projections and final byte caps.
 - `project_scope.py` validates the governed root, physical package layout,
   self-host exception, containment, and effective Git-ignore preflight.

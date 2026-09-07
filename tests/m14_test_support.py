@@ -628,9 +628,10 @@ def internal_command_context(*args: str):
     """Build a CLI context with an explicit private storage target."""
 
     from task_governance_tool import cli as cli_module
+    from task_governance_tool.cli_parser import build_parser
 
     filtered, target = _prepare_internal_invocation(*args)
-    parsed = cli_module.build_parser().parse_args(filtered)
+    parsed = build_parser().parse_args(filtered)
     return cli_module.make_context(parsed, target_override=target)
 
 

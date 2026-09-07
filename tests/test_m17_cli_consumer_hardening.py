@@ -14,6 +14,7 @@ from unittest import mock
 from tests.m14_test_support import make_physical_install
 
 from task_governance_tool import cli as cli_service
+from task_governance_tool.cli_parser import build_parser
 from task_governance_tool import setup as setup_service
 from task_governance_tool.storage import StorageError, connect
 
@@ -211,7 +212,7 @@ class M17CliConsumerHardeningTests(unittest.TestCase):
             self.assertFalse(install.db_path.exists())
 
     def test_resolve_context_target_never_falls_back_to_another_resolver(self):
-        args = cli_service.build_parser().parse_args(
+        args = build_parser().parse_args(
             ["task", "list", "--repo", ".", "--json"]
         )
         context = cli_service.make_context(args)

@@ -47,10 +47,10 @@ try:
     from task_governance_tool import reviews as review_service
     from task_governance_tool import storage as storage_service
     from task_governance_tool.tasks import (
-        TaskValidationError,
         edit_task,
         list_tasks_for_viewer,
     )
+    from task_governance_tool.task_values import TaskValidationError
 finally:
     sys.path.pop(0)
 

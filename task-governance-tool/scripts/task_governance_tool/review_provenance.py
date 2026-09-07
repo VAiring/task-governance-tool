@@ -134,7 +134,7 @@ def generate_review_provenance_id() -> str:
 
 def _reject_private_or_raw_content(field: str, value: str) -> None:
     # The lazy import keeps this pure module safe for storage.py to import.
-    from task_governance_tool.tasks import reject_private_or_raw_content
+    from task_governance_tool.task_values import reject_private_or_raw_content
 
     reject_private_or_raw_content(field, value)
 
@@ -586,7 +586,7 @@ def validate_stored_review_provenance_v1(
 ) -> dict[str, Any]:
     """Validate and return one exact stored/public v1 provenance object."""
 
-    from task_governance_tool.tasks import TaskValidationError
+    from task_governance_tool.task_values import TaskValidationError
 
     try:
         if (

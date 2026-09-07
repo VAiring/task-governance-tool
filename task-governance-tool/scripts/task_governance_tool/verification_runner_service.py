@@ -66,8 +66,8 @@ from task_governance_tool.storage import (
     read_pending_verification_runner_cleanup,
     utc_now,
 )
-from task_governance_tool.tasks import (
-    read_internal_task,
+from task_governance_tool.tasks import read_internal_task
+from task_governance_tool.task_values import (
     validate_choice,
     validate_task_id,
 )

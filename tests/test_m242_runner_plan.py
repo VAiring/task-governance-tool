@@ -63,7 +63,7 @@ try:
         capture_runner_plan_authoring_source,
         publish_verification_runner_plan,
     )
-    from task_governance_tool.tasks import TaskValidationError
+    from task_governance_tool.task_values import TaskValidationError
     from task_governance_tool.state_paths import StatePathError
 finally:
     sys.path.pop(0)

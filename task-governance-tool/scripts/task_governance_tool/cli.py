@@ -96,7 +96,6 @@ from task_governance_tool.setup import run_setup
 from task_governance_tool.tasks import (
     CURRENT_STATUSES,
     TaskRepositoryError,
-    TaskValidationError,
     add_task,
     build_completion_request,
     edit_task,
@@ -105,6 +104,9 @@ from task_governance_tool.tasks import (
     read_internal_task,
     show_task,
     validate_current_status_filter,
+)
+from task_governance_tool.task_values import (
+    TaskValidationError,
     validate_task_id,
 )
 from task_governance_tool.verification_runner_plan_edit import (

@@ -17,12 +17,14 @@ from task_governance_tool.storage import (
 )
 from task_governance_tool.tasks import (
     TaskRepositoryError,
-    TaskValidationError,
     begin_task_write,
     create_task_event,
     generate_id,
     read_internal_task,
     reject_done_task_write,
+)
+from task_governance_tool.task_values import (
+    TaskValidationError,
     validate_legacy_m19_7_stored_text,
     validate_task_id,
     validate_text,

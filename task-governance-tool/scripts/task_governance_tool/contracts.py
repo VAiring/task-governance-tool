@@ -15,14 +15,16 @@ from task_governance_tool.storage import (
     utc_now,
 )
 from task_governance_tool.tasks import (
-    SQLITE_INT64_MAX,
     TaskEditBasisPrecommitValidator,
     TaskRepositoryError,
-    TaskValidationError,
     bounded_transition_summary,
     create_task_event,
     read_internal_task as read_validated_internal_task,
     row_to_task,
+)
+from task_governance_tool.task_values import (
+    SQLITE_INT64_MAX,
+    TaskValidationError,
     validate_legacy_m19_7_stored_text,
     validate_sqlite_int64,
     validate_text,

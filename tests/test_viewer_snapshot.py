@@ -52,12 +52,12 @@ from task_governance_tool.storage import (  # noqa: E402
 from task_governance_tool import tasks as tasks_module  # noqa: E402
 from task_governance_tool import storage as storage_module  # noqa: E402
 from task_governance_tool.tasks import (  # noqa: E402
-    STATUSES,
     VIEWER_TASK_FIELDS,
     _list_tasks_for_validated_viewer_snapshot,
     add_task,
     list_tasks_for_viewer,
 )
+from task_governance_tool.task_values import STATUSES  # noqa: E402
 from task_governance_tool.reviews import (  # noqa: E402
     add_review_finding,
     add_review_receipt,

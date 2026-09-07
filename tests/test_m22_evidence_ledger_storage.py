@@ -28,6 +28,7 @@ from tests.verification_receipt_test_support import (
 
 from task_governance_tool import storage as storage_module
 from task_governance_tool import tasks as tasks_module
+from task_governance_tool import task_values as values_module
 from task_governance_tool import reviews as review_service
 from task_governance_tool.reviews import read_review_evidence
 from task_governance_tool.evidence_ledger import (
@@ -62,7 +63,7 @@ from task_governance_tool.storage import (
     validate_stored_review_receipt_projection,
     verification_expectation_digest,
 )
-from task_governance_tool.tasks import TASK_VERIFICATION_INPUT_LIMIT
+from task_governance_tool.task_values import TASK_VERIFICATION_INPUT_LIMIT
 
 
 MIGRATION_TIME = "2026-08-04T01:02:03Z"
@@ -1814,10 +1815,10 @@ class EvidenceLedgerStorageTests(unittest.TestCase):
                             forbidden_value=forbidden_value,
                         )
                         with mock.patch.object(
-                            tasks_module,
+                            values_module,
                             "reject_private_or_raw_content",
                         ), mock.patch.object(
-                            tasks_module,
+                            values_module,
                             "_reject_private_or_raw_content_value",
                         ):
                             validate_evidence_ledger_storage(connection)
@@ -1881,15 +1882,15 @@ class EvidenceLedgerStorageTests(unittest.TestCase):
     def test_authority_privacy_scans_share_one_success_cache(self):
         with tempfile.TemporaryDirectory() as temp:
             db, _, _ = seed_historical_authority_receipt(Path(temp))
-            real_detector = tasks_module.reject_private_or_raw_content
-            real_legacy_detector = tasks_module.validate_legacy_m19_7_stored_text
+            real_detector = values_module.reject_private_or_raw_content
+            real_legacy_detector = values_module.validate_legacy_m19_7_stored_text
             with closing(connect(db)) as connection:
                 with mock.patch.object(
-                    tasks_module,
+                    values_module,
                     "reject_private_or_raw_content",
                     wraps=real_detector,
                 ) as detector, mock.patch.object(
-                    tasks_module,
+                    values_module,
                     "validate_legacy_m19_7_stored_text",
                     wraps=real_legacy_detector,
                 ) as legacy_detector:
@@ -1964,7 +1965,7 @@ class EvidenceLedgerStorageTests(unittest.TestCase):
                 title="Same-call privacy reuse task",
                 verification="Same-call verification expectation",
             )
-            real_detector = tasks_module.reject_private_or_raw_content
+            real_detector = values_module.reject_private_or_raw_content
             with closing(connect(db)) as connection:
                 stored = connection.execute(
                     "SELECT title, description, verification FROM tasks "
@@ -1972,10 +1973,14 @@ class EvidenceLedgerStorageTests(unittest.TestCase):
                     (task["task_id"],),
                 ).fetchone()
                 with mock.patch.object(
-                    tasks_module,
+                    values_module,
                     "reject_private_or_raw_content",
                     wraps=real_detector,
-                ) as detector:
+                ) as detector, mock.patch.object(
+                    tasks_module,
+                    "reject_private_or_raw_content",
+                    new=detector,
+                ):
                     for expected_count in (1, 2):
                         validate_evidence_ledger_storage(connection)
                         observed = [
@@ -2028,13 +2033,13 @@ class EvidenceLedgerStorageTests(unittest.TestCase):
         privacy_success_cache: set[tuple[str, str, str]] = set()
         value = "Safe stored constraints"
         with mock.patch.object(
-            tasks_module,
+            values_module,
             "reject_private_or_raw_content",
-            wraps=tasks_module.reject_private_or_raw_content,
+            wraps=values_module.reject_private_or_raw_content,
         ) as detector, mock.patch.object(
-            tasks_module,
+            values_module,
             "validate_legacy_m19_7_stored_text",
-            wraps=tasks_module.validate_legacy_m19_7_stored_text,
+            wraps=values_module.validate_legacy_m19_7_stored_text,
         ) as legacy_detector:
             for legacy_m19_7_stored in (False, True, False, True):
                 storage_module._validate_evidence_ledger_stored_privacy(

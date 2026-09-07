@@ -16,7 +16,7 @@ SCRIPTS_ROOT = (
 sys.path.insert(0, str(SCRIPTS_ROOT))
 
 from task_governance_tool import storage as storage_module  # noqa: E402
-from task_governance_tool import tasks as tasks_module  # noqa: E402
+from task_governance_tool import task_values as values_module  # noqa: E402
 from task_governance_tool.artifact_lock import ArtifactLockError  # noqa: E402
 from task_governance_tool.artifact_manifest import (  # noqa: E402
     ArtifactManifestError,
@@ -33,10 +33,8 @@ from task_governance_tool.review_provenance import (  # noqa: E402
     INVALID_REVIEW_PROVENANCE_MESSAGE,
     ReviewProvenanceError,
 )
-from task_governance_tool.tasks import (  # noqa: E402
-    TaskRepositoryError,
-    TaskValidationError,
-)
+from task_governance_tool.tasks import TaskRepositoryError  # noqa: E402
+from task_governance_tool.task_values import TaskValidationError  # noqa: E402
 from task_governance_tool.verification_receipts import (  # noqa: E402
     VerificationReceiptError,
 )
@@ -349,7 +347,7 @@ class Python314ExceptionReportingTests(unittest.TestCase):
         class StorageFailure(unittest.TestCase):
             def runTest(self):
                 with mock.patch.object(
-                    tasks_module,
+                    values_module,
                     "reject_private_or_raw_content",
                     side_effect=injected,
                 ):

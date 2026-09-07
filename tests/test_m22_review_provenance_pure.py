@@ -28,7 +28,7 @@ try:
         project_review_provenance,
         validate_stored_review_provenance_v1,
     )
-    from task_governance_tool.tasks import TaskValidationError
+    from task_governance_tool.task_values import TaskValidationError
 finally:
     sys.path.pop(0)
 

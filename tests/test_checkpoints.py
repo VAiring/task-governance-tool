@@ -27,9 +27,9 @@ from task_governance_tool.storage import (  # noqa: E402
 )
 from task_governance_tool.tasks import (  # noqa: E402
     TaskRepositoryError,
-    TaskValidationError,
     add_task,
 )
+from task_governance_tool.task_values import TaskValidationError  # noqa: E402
 
 
 def checkpoint_connection(

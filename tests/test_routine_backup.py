@@ -12,6 +12,7 @@ from tests.m14_test_support import SOURCE_SKILL_ROOT
 from task_governance_tool import backup as backup_service
 from task_governance_tool import storage as storage_service
 from task_governance_tool import tasks as tasks_service
+from task_governance_tool import task_values as values_service
 from task_governance_tool.backup import (
     discover_managed_backup_metadata,
     managed_backup_lock,
@@ -94,12 +95,16 @@ class RoutineBackupTests(unittest.TestCase):
                 )
                 connection.commit()
 
-            real_detector = tasks_service.reject_private_or_raw_content
+            real_detector = values_service.reject_private_or_raw_content
             with mock.patch.object(
-                tasks_service,
+                values_service,
                 "reject_private_or_raw_content",
                 wraps=real_detector,
-            ) as detector:
+            ) as detector, mock.patch.object(
+                tasks_service,
+                "reject_private_or_raw_content",
+                new=detector,
+            ):
                 backup_service._copy(target, metadata(1, 0, 3))
 
             observed = [call.args for call in detector.call_args_list]
@@ -142,10 +147,15 @@ class RoutineBackupTests(unittest.TestCase):
                     wraps=backup_service.os.replace,
                 ) as replace_file,
                 mock.patch.object(
-                    tasks_service,
+                    values_service,
                     "reject_private_or_raw_content",
                     wraps=real_detector,
                 ) as detector,
+                mock.patch.object(
+                    tasks_service,
+                    "reject_private_or_raw_content",
+                    new=detector,
+                ),
             ):
                 with self.assertRaises(StorageError):
                     backup_service._copy(target, metadata(2, 1, 3))
@@ -178,7 +188,7 @@ class RoutineBackupTests(unittest.TestCase):
             real_reconcile = backup_service._reconcile_v11
             real_publication_validation = backup_service._validate_publication_source
             real_artifact_validation = backup_service._artifact_schema_version
-            real_detector = tasks_service.reject_private_or_raw_content
+            real_detector = values_service.reject_private_or_raw_content
             root_caches = []
 
             def capture_copy(*args, **kwargs):
@@ -207,10 +217,15 @@ class RoutineBackupTests(unittest.TestCase):
                     wraps=real_artifact_validation,
                 ) as artifact_validation,
                 mock.patch.object(
-                    tasks_service,
+                    values_service,
                     "reject_private_or_raw_content",
                     wraps=real_detector,
                 ) as detector,
+                mock.patch.object(
+                    tasks_service,
+                    "reject_private_or_raw_content",
+                    new=detector,
+                ),
             ):
                 first = run_routine_backup(target, observed_at=timestamp(0))
 
@@ -341,7 +356,7 @@ class RoutineBackupTests(unittest.TestCase):
             forbidden = "Authorization: post-reconcile-private-value"
             real_copy = backup_service._copy
             real_record = backup_service.record_managed_backup
-            real_detector = tasks_service.reject_private_or_raw_content
+            real_detector = values_service.reject_private_or_raw_content
             root_caches = []
             mutated_artifacts = []
 
@@ -377,10 +392,15 @@ class RoutineBackupTests(unittest.TestCase):
                     side_effect=record_then_mutate,
                 ),
                 mock.patch.object(
-                    tasks_service,
+                    values_service,
                     "reject_private_or_raw_content",
                     wraps=real_detector,
                 ) as detector,
+                mock.patch.object(
+                    tasks_service,
+                    "reject_private_or_raw_content",
+                    new=detector,
+                ),
             ):
                 result = run_routine_backup(target, observed_at=timestamp(0))
 

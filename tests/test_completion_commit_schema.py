@@ -13,10 +13,10 @@ if str(SCRIPTS_ROOT) not in sys.path:
 
 from task_governance_tool.storage import connect, initialize_database, resolve_database_target  # noqa: E402
 from task_governance_tool.tasks import (  # noqa: E402
-    TaskValidationError,
     add_task,
     find_task_ids_by_completion_commit_hash,
 )
+from task_governance_tool.task_values import TaskValidationError  # noqa: E402
 
 
 SCRIPT_PATH = SCRIPTS_ROOT / "taskgov.py"

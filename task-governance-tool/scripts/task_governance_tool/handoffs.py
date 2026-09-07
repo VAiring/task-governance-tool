@@ -11,9 +11,9 @@ from datetime import datetime
 from typing import Any, Sequence
 
 from task_governance_tool.storage import ProjectIdentity, utc_now
-from task_governance_tool.tasks import (
+from task_governance_tool.tasks import read_internal_task
+from task_governance_tool.task_values import (
     TaskValidationError,
-    read_internal_task,
     validate_limit,
     validate_task_id,
     validate_text,

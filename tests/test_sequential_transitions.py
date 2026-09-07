@@ -24,9 +24,9 @@ try:
     from task_governance_tool.storage import connect_initialized, resolve_database_target
     from task_governance_tool.tasks import (
         TaskRepositoryError,
-        TaskValidationError,
         edit_task,
     )
+    from task_governance_tool.task_values import TaskValidationError
 finally:
     sys.path.pop(0)
 

@@ -6,7 +6,7 @@ import argparse
 from typing import Any
 
 from task_governance_tool import __version__
-from task_governance_tool.tasks import TASK_VERIFICATION_INPUT_LIMIT
+from task_governance_tool.task_values import TASK_VERIFICATION_INPUT_LIMIT
 
 
 EXIT_USAGE = 1

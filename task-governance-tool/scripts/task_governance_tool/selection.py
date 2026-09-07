@@ -13,12 +13,14 @@ from task_governance_tool.ordering import (
 )
 from task_governance_tool.storage import ProjectIdentity
 from task_governance_tool.tasks import (
-    KINDS,
-    PRIORITIES,
     fetch_stored_task_rows,
     row_to_task,
-    validate_choice,
     validate_current_stored_task_rows,
+)
+from task_governance_tool.task_values import (
+    KINDS,
+    PRIORITIES,
+    validate_choice,
     validate_lane,
     validate_limit,
 )

@@ -36,10 +36,12 @@ from task_governance_tool.verification_runner import (
     VerificationRunnerGateSelection,
 )
 from task_governance_tool.tasks import (
-    SQLITE_INT64_MAX,
     TaskRepositoryError,
-    TaskValidationError,
     read_internal_task,
+)
+from task_governance_tool.task_values import (
+    SQLITE_INT64_MAX,
+    TaskValidationError,
     validate_sqlite_int64,
     validate_task_id,
     validate_text,

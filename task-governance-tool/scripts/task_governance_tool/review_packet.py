@@ -37,11 +37,13 @@ from task_governance_tool.storage import (
     stored_task_verification_limit,
 )
 from task_governance_tool.tasks import (
+    TaskRepositoryError,
+    read_internal_task,
+)
+from task_governance_tool.task_values import (
     STATUSES,
     TEXT_LIMITS,
-    TaskRepositoryError,
     TaskValidationError,
-    read_internal_task,
     reject_private_or_raw_content,
     validate_choice,
     validate_review_tier,

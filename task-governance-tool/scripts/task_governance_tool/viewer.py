@@ -27,10 +27,10 @@ from task_governance_tool.storage import (
     validate_snapshot_database_for_viewer,
 )
 from task_governance_tool.tasks import (
-    STATUSES,
     _list_tasks_for_validated_viewer_snapshot,
     list_tasks_for_viewer,
 )
+from task_governance_tool.task_values import STATUSES
 from task_governance_tool.viewer_config import (
     VIEWER_REFRESH_DISABLED_SECONDS,
     VIEWER_REFRESH_MAX_SECONDS,

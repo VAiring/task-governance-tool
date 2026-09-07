@@ -83,7 +83,7 @@ def _is_json_integer(value: object) -> bool:
 def _validate_public_text_privacy(field: str, value: object) -> None:
     if not isinstance(value, str):
         raise completion_history_inconsistent()
-    from task_governance_tool.tasks import (
+    from task_governance_tool.task_values import (
         TaskValidationError,
         reject_private_or_raw_content,
     )

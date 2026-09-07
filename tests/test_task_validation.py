@@ -13,6 +13,11 @@ sys.path.insert(0, str(SKILL_ROOT / "scripts"))
 try:
     from task_governance_tool import tasks as tasks_module
     from task_governance_tool.tasks import (
+        validate_stored_task_rows,
+        validate_task_edit_input,
+        validate_task_input,
+    )
+    from task_governance_tool.task_values import (
         COMBINED_PRIVACY_PATTERN,
         PRIVACY_PATTERNS,
         STRICT_RAW_OUTPUT_FIELDS,
@@ -22,9 +27,6 @@ try:
         _legacy_m19_7_stored_guard_value,
         validate_legacy_m19_7_stored_text,
         validate_event_summary,
-        validate_stored_task_rows,
-        validate_task_edit_input,
-        validate_task_input,
         validate_text,
     )
     from task_governance_tool.storage import (
@@ -49,6 +51,16 @@ class TaskValidationTests(unittest.TestCase):
         )
         combined_match = COMBINED_PRIVACY_PATTERN.search(value) is not None
         self.assertEqual(combined_match, original_match)
+
+    def test_shared_value_error_preserves_task_exception_identity(self):
+        self.assertIs(tasks_module.TaskValidationError, TaskValidationError)
+        with self.assertRaises(tasks_module.TaskValidationError) as captured:
+            validate_text("title", 42)
+        self.assertIs(type(captured.exception), TaskValidationError)
+        self.assertEqual(
+            (captured.exception.code, captured.exception.message, captured.exception.field),
+            ("invalid_argument", "title must be a string", "title"),
+        )
 
     def test_valid_task_input_normalizes_review_tier_and_lane_order(self):
         validated = validate_task_input(

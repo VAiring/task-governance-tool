@@ -19,7 +19,6 @@ from task_governance_tool.tasks import (
     EditTaskResult,
     RunnerSelectionProvider,
     TaskRepositoryError,
-    TaskValidationError,
     capture_completion_basis,
     complete_task,
     prepare_completion_plan,
@@ -29,6 +28,7 @@ from task_governance_tool.tasks import (
     validate_completion_selector_prerequisites,
     validate_completion_state_basis,
 )
+from task_governance_tool.task_values import TaskValidationError
 from task_governance_tool.verification_runner import VerificationRunnerGateSelection
 
 

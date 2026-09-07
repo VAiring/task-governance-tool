@@ -9,7 +9,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
-from task_governance_tool.tasks import reject_private_or_raw_content
+from task_governance_tool.task_values import reject_private_or_raw_content
 from task_governance_tool.verification_runner_plan import (
     PLAN_BLOB_UTF8_BYTE_LIMIT,
     PLAN_STEP_LIMIT,

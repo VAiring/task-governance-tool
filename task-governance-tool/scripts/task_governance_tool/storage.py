@@ -1144,7 +1144,7 @@ def verification_command_label_is_summary(value: object) -> bool:
     ):
         return False
     try:
-        from task_governance_tool.tasks import TaskValidationError, validate_text
+        from task_governance_tool.task_values import TaskValidationError, validate_text
 
         return (
             validate_text(
@@ -16961,7 +16961,7 @@ def _validate_evidence_ledger_stored_privacy(
     privacy_key = (privacy_mode, field, value)
     if privacy_key in privacy_success_cache:
         return
-    from task_governance_tool.tasks import (
+    from task_governance_tool.task_values import (
         TaskValidationError,
         reject_private_or_raw_content,
         validate_legacy_m19_7_stored_text,

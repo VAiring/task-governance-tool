@@ -12,11 +12,12 @@ SKILL_ROOT = ROOT / "task-governance-tool"
 sys.path.insert(0, str(SKILL_ROOT / "scripts"))
 try:
     from task_governance_tool import tasks as tasks_module
+    from task_governance_tool import stored_task_validation as stored_tasks_module
     from task_governance_tool.tasks import (
-        validate_stored_task_rows,
         validate_task_edit_input,
         validate_task_input,
     )
+    from task_governance_tool.stored_task_validation import validate_stored_task_rows
     from task_governance_tool.task_values import (
         COMBINED_PRIVACY_PATTERN,
         PRIVACY_PATTERNS,
@@ -315,9 +316,9 @@ class TaskValidationTests(unittest.TestCase):
             for index in range(100)
         ]
         with mock.patch.object(
-            tasks_module,
+            stored_tasks_module,
             "reject_private_or_raw_content",
-            wraps=tasks_module.reject_private_or_raw_content,
+            wraps=stored_tasks_module.reject_private_or_raw_content,
         ) as privacy_check:
             validate_stored_task_rows(
                 rows,
@@ -354,9 +355,9 @@ class TaskValidationTests(unittest.TestCase):
             for index in range(2)
         ]
         with mock.patch.object(
-            tasks_module,
+            stored_tasks_module,
             "reject_private_or_raw_content",
-            wraps=tasks_module.reject_private_or_raw_content,
+            wraps=stored_tasks_module.reject_private_or_raw_content,
         ) as privacy_check:
             result = validate_stored_task_rows(
                 rows,

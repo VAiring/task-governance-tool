@@ -21,7 +21,7 @@ SKILL_ROOT = ROOT / "task-governance-tool"
 sys.path.insert(0, str(SKILL_ROOT / "scripts"))
 try:
     from task_governance_tool.storage import StorageError
-    from task_governance_tool.tasks import validate_stored_task_rows
+    from task_governance_tool.stored_task_validation import validate_stored_task_rows
 finally:
     sys.path.pop(0)
 

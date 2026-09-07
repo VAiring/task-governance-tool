@@ -252,7 +252,7 @@ def validate_stored_task_verification(
     a structural storage failure.
     """
 
-    from task_governance_tool.tasks import (  # Avoid the storage/tasks cycle.
+    from task_governance_tool.stored_task_validation import (  # Avoid the storage/validator cycle.
         validate_stored_task_rows,
     )
 
@@ -279,7 +279,7 @@ def _read_validated_current_task_row(
 ) -> sqlite3.Row | None:
     """Read and validate one locked/current Task without an import cycle."""
 
-    from task_governance_tool.tasks import (
+    from task_governance_tool.stored_task_validation import (
         fetch_validated_current_task_row,
     )
 
@@ -298,7 +298,7 @@ def _read_task_for_authority_capture(
 ) -> sqlite3.Row | None:
     """Validate one locked Task immediately before its authority row exists."""
 
-    from task_governance_tool.tasks import validate_stored_task_rows
+    from task_governance_tool.stored_task_validation import validate_stored_task_rows
 
     try:
         row = connection.execute(
@@ -13042,7 +13042,8 @@ def apply_evidence_ledger_capture_migration(
             "evidence-ledger migration requires complete schema version 17",
         )
 
-    from task_governance_tool.tasks import TaskRepositoryError, validate_stored_task_rows
+    from task_governance_tool.tasks import TaskRepositoryError
+    from task_governance_tool.stored_task_validation import validate_stored_task_rows
 
     connection.execute("BEGIN IMMEDIATE")
     try:
@@ -17453,7 +17454,8 @@ def _validate_evidence_ledger_rows(
         links=links,
     )
 
-    from task_governance_tool.tasks import TaskRepositoryError, validate_stored_task_rows
+    from task_governance_tool.tasks import TaskRepositoryError
+    from task_governance_tool.stored_task_validation import validate_stored_task_rows
 
     task_rows = connection.execute("SELECT * FROM tasks ORDER BY task_id").fetchall()
     expected_project_id = (
@@ -23661,7 +23663,7 @@ def read_setup_state(
             validate_schema21_storage(connection)
         elif version == PRIVATE_SCHEMA22_VERSION:
             validate_schema22_storage(connection)
-        from task_governance_tool.tasks import validate_stored_task_rows
+        from task_governance_tool.stored_task_validation import validate_stored_task_rows
 
         try:
             task_rows = connection.execute(

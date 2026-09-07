@@ -44,6 +44,7 @@ try:
     )
     from task_governance_tool import cli as cli_module
     from task_governance_tool import tasks as task_service
+    from task_governance_tool import stored_task_validation as stored_tasks_service
     from task_governance_tool import reviews as review_service
     from task_governance_tool import storage as storage_service
     from task_governance_tool.tasks import (
@@ -2101,7 +2102,7 @@ class ReviewEvidenceTests(unittest.TestCase):
                             ),
                             self.assertRaises(StorageError) as failure,
                         ):
-                            task_service.fetch_validated_current_task_row(
+                            stored_tasks_service.fetch_validated_current_task_row(
                                 connection,
                                 project_id=target.project.project_id,
                                 task_id=task_id,

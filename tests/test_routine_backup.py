@@ -11,7 +11,7 @@ from tests.m14_test_support import SOURCE_SKILL_ROOT
 
 from task_governance_tool import backup as backup_service
 from task_governance_tool import storage as storage_service
-from task_governance_tool import tasks as tasks_service
+from task_governance_tool import stored_task_validation as stored_tasks_service
 from task_governance_tool import task_values as values_service
 from task_governance_tool.backup import (
     discover_managed_backup_metadata,
@@ -101,7 +101,7 @@ class RoutineBackupTests(unittest.TestCase):
                 "reject_private_or_raw_content",
                 wraps=real_detector,
             ) as detector, mock.patch.object(
-                tasks_service,
+                stored_tasks_service,
                 "reject_private_or_raw_content",
                 new=detector,
             ):
@@ -152,7 +152,7 @@ class RoutineBackupTests(unittest.TestCase):
                     wraps=real_detector,
                 ) as detector,
                 mock.patch.object(
-                    tasks_service,
+                    stored_tasks_service,
                     "reject_private_or_raw_content",
                     new=detector,
                 ),
@@ -222,7 +222,7 @@ class RoutineBackupTests(unittest.TestCase):
                     wraps=real_detector,
                 ) as detector,
                 mock.patch.object(
-                    tasks_service,
+                    stored_tasks_service,
                     "reject_private_or_raw_content",
                     new=detector,
                 ),
@@ -397,7 +397,7 @@ class RoutineBackupTests(unittest.TestCase):
                     wraps=real_detector,
                 ) as detector,
                 mock.patch.object(
-                    tasks_service,
+                    stored_tasks_service,
                     "reject_private_or_raw_content",
                     new=detector,
                 ),

@@ -12,9 +12,9 @@ from task_governance_tool.ordering import (
     incomplete_predecessor_sql,
 )
 from task_governance_tool.storage import ProjectIdentity
-from task_governance_tool.tasks import (
+from task_governance_tool.tasks import row_to_task
+from task_governance_tool.stored_task_validation import (
     fetch_stored_task_rows,
-    row_to_task,
     validate_current_stored_task_rows,
 )
 from task_governance_tool.task_values import (

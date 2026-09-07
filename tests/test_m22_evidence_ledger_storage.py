@@ -27,7 +27,7 @@ from tests.verification_receipt_test_support import (
 )
 
 from task_governance_tool import storage as storage_module
-from task_governance_tool import tasks as tasks_module
+from task_governance_tool import stored_task_validation as stored_tasks_module
 from task_governance_tool import task_values as values_module
 from task_governance_tool import reviews as review_service
 from task_governance_tool.reviews import read_review_evidence
@@ -1977,7 +1977,7 @@ class EvidenceLedgerStorageTests(unittest.TestCase):
                     "reject_private_or_raw_content",
                     wraps=real_detector,
                 ) as detector, mock.patch.object(
-                    tasks_module,
+                    stored_tasks_module,
                     "reject_private_or_raw_content",
                     new=detector,
                 ):
@@ -2017,7 +2017,7 @@ class EvidenceLedgerStorageTests(unittest.TestCase):
                 for invalid_seed in invalid_seeds:
                     with self.subTest(seed=invalid_seed):
                         with self.assertRaises(StorageError) as failure:
-                            tasks_module.validate_stored_task_rows(
+                            stored_tasks_module.validate_stored_task_rows(
                                 rows,
                                 connection=connection,
                                 source_schema_version=18,
@@ -4276,7 +4276,7 @@ class EvidenceLedgerStorageTests(unittest.TestCase):
                 statements: list[str] = []
                 connection.set_trace_callback(statements.append)
                 try:
-                    tasks_module.validate_current_stored_task_rows(
+                    stored_tasks_module.validate_current_stored_task_rows(
                         connection,
                         task_rows,
                         expected_project_id=tasks[0]["project_id"],

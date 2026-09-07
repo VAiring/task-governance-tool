@@ -130,12 +130,13 @@ The implementation keeps these narrow ownership boundaries:
 - `task_values.py` owns shared Task scalar/text/privacy validation, its
   constants, and the existing `TaskValidationError` type. Task, Contract,
   Review, and storage consumers import these values directly.
-- `tasks.py`, `ordering.py`, and `selection.py` own Task operation validation, lifecycle,
-  current/list projections, the source-schema-aware stored Task row/batch
-  and Contract-relationship validator, the shared sequential predecessor
-  predicate, and next-task selection. `storage.py` supplies source-schema
-  capability and the fixed stored-state failure boundary rather than
-  duplicating Task semantics.
+- `tasks.py`, `ordering.py`, and `selection.py` own Task operation validation,
+  lifecycle, current/list projections, the shared sequential predecessor
+  predicate, and next-task selection.
+- `stored_task_validation.py` owns source-schema-aware stored Task row/batch
+  validation, raw fetches, Contract relationships, and same-snapshot Task reads.
+  `storage.py` supplies source-schema limits and the fixed stored-state failure
+  boundary rather than duplicating Task semantics.
 - `completion.py`, `completion_workflow.py`, and `git_snapshot.py` own typed
   completion evidence, read-only Git observations, completion planning, and
   review-to-commit snapshot binding.
@@ -1614,8 +1615,12 @@ not raw logs.
 
 ### Shared Stored Task Row/Batch Validator
 
-`tasks.py` owns one source-schema-aware validator for complete stored Task
-rows. Its capability object is constructed once per top-level read from the
+`stored_task_validation.py` owns one source-schema-aware validator for complete stored Task
+rows. Raw fetches, scalar/relationship composition, current authority checks,
+and the single-Task snapshot helper stay together in that repository-facing
+module. Task operations, row projection, and Viewer proof consumption stay in
+`tasks.py`; connection creation and proof issuance remain in `storage.py`.
+Its capability object is constructed once per top-level read from the
 already-observed source schema and describes the verification limit (500
 through v17, 1,000 at v18) and the
 presence of review-target base, Contract pointer, and completion-history
@@ -1666,7 +1671,7 @@ applies the existing fixed maintenance warning.
 
 For source schema v8 and later, `validate_stored_task_rows` receives the active
 SQLite connection in addition to the already loaded complete Task batch. Only
-after all stored-Task scalar checks pass, `tasks.py` extracts the exact selected
+after all stored-Task scalar checks pass, `stored_task_validation.py` extracts the exact selected
 Task IDs and performs one `task_contract_revisions` query whose predicate is a
 single JSON-encoded ID set consumed by `json_each`. The query intentionally
 does not filter `project_id`, so a foreign owner using a selected Task ID is
@@ -3434,7 +3439,7 @@ Runner route; its Runner dispatch has only the `cli -> service` edge.
 |---|---|---|---|---|---|
 | `cli` | `cli.py` | Parse and format the existing public surface and dispatch the Runner route to the parent service. | `service` | No Runner eligibility, authority, persistence, process, native, or cleanup decision; no Runner dispatch to `process_adapter` or `os_adapter`. | Direct process/native CLI branches are physically absent. |
 | `service` | `verification_runner_service.py` | Parent orchestration; sole ownership of opt-in and eligibility, Task/Contract/criterion freshness, canonical repository coordination, target/plan selection, Evidence and terminal persistence, maintenance/recovery coordination, and final cleanup acceptance. | `repository`, `target_plan`, `value_model`, `runtime_identity`, `lifecycle`, `process_adapter` | No OS mechanics and no delegation of authority, business gates, terminal persistence, or cleanup acceptance to a child layer. | It is the sole business and cleanup-acceptance owner. |
-| `repository` | `storage.py`, `tasks.py`, `task_values.py`, `contracts.py`, `contract_content.py`, `reviews.py`, `verification_receipts.py`, `completion.py`, `evidence_ledger.py`, `evidence_projection.py`, `evidence_publication.py`, `maintenance.py` | Canonical SQLite, Task/Contract/review/completion state, Evidence, and maintenance repositories and business gates invoked only by the parent service. | `value_model` | No process launch; no import of `process_adapter` or `os_adapter`; no filesystem cleanup ownership. | Schema/Evidence compatibility stays repository-owned with no reverse edge. |
+| `repository` | `storage.py`, `tasks.py`, `stored_task_validation.py`, `task_values.py`, `contracts.py`, `contract_content.py`, `reviews.py`, `verification_receipts.py`, `completion.py`, `evidence_ledger.py`, `evidence_projection.py`, `evidence_publication.py`, `maintenance.py` | Canonical SQLite, Task/Contract/review/completion state, Evidence, and maintenance repositories and business gates invoked only by the parent service. | `value_model` | No process launch; no import of `process_adapter` or `os_adapter`; no filesystem cleanup ownership. | Schema/Evidence compatibility stays repository-owned with no reverse edge. |
 | `target_plan` | `artifact_manifest.py`, `verification_runner_git.py`, `verification_runner_plan.py` | Parent-invoked exact target observation/materialization and fixed-plan decode/validation. | `repository`, `value_model` | No CLI policy, canonical database ownership, completion decision, trusted-code or verification-command launch, terminal publication, or cleanup acceptance. | Target/plan code is read-only until parent-owned materialization. |
 | `value_model` | `verification_runner.py` | Pure closed Runner identifiers, bounded codes, value validation, and domain encoding used across the boundary. | none | No I/O and no import of CLI, service, repository, persistence, target, runtime, lifecycle, process, native, or business-gate modules. | The module is dependency-pure and has no compatibility shim consumer. |
 | `runtime_identity` | `verification_runner_runtime.py`, `_verification_runner_executable_win32.py`, `self_status.py` | Parent-invoked fixed executable and package-integrity observation. | `repository`, `value_model` | No process launch, canonical database ownership, business gate, terminal publication, or cleanup acceptance. | Candidate-only runtime material is physically absent. |

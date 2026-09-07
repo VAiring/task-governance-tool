@@ -50,6 +50,7 @@ from task_governance_tool.storage import (  # noqa: E402
     validate_snapshot_database_for_viewer,
 )
 from task_governance_tool import tasks as tasks_module  # noqa: E402
+from task_governance_tool import stored_task_validation as stored_tasks_module  # noqa: E402
 from task_governance_tool import storage as storage_module  # noqa: E402
 from task_governance_tool.tasks import (  # noqa: E402
     VIEWER_TASK_FIELDS,
@@ -211,7 +212,7 @@ class ViewerSnapshotTests(unittest.TestCase):
                 )
 
             validated_batch_sizes = []
-            real_validator = tasks_module.validate_stored_task_rows
+            real_validator = stored_tasks_module.validate_stored_task_rows
 
             def counted_validator(rows, *args, **kwargs):
                 validated_batch_sizes.append(len(rows))
@@ -220,9 +221,14 @@ class ViewerSnapshotTests(unittest.TestCase):
             with (
                 closing(connect_snapshot_readonly(target.db_path)) as connection,
                 mock.patch.object(
-                    tasks_module,
+                    stored_tasks_module,
                     "validate_stored_task_rows",
                     side_effect=counted_validator,
+                ) as validator,
+                mock.patch.object(
+                    tasks_module,
+                    "validate_stored_task_rows",
+                    new=validator,
                 ),
                 mock.patch.object(
                     tasks_module,
@@ -466,7 +472,7 @@ class ViewerSnapshotTests(unittest.TestCase):
                 _stop_schema20_runtime_oracle()
 
             validated_batch_sizes = []
-            real_validator = tasks_module.validate_stored_task_rows
+            real_validator = stored_tasks_module.validate_stored_task_rows
 
             def counted_validator(rows, *args, **kwargs):
                 validated_batch_sizes.append(len(rows))
@@ -475,9 +481,14 @@ class ViewerSnapshotTests(unittest.TestCase):
             with (
                 closing(connect_snapshot_readonly(target.db_path)) as connection,
                 mock.patch.object(
-                    tasks_module,
+                    stored_tasks_module,
                     "validate_stored_task_rows",
                     side_effect=counted_validator,
+                ) as validator,
+                mock.patch.object(
+                    tasks_module,
+                    "validate_stored_task_rows",
+                    new=validator,
                 ),
                 mock.patch.object(
                     tasks_module,

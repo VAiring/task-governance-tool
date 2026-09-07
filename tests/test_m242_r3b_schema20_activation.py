@@ -62,6 +62,7 @@ _SCHEMA20_RUNTIME_PATCH_TARGETS = (
     "task_governance_tool.setup.SCHEMA_VERSION",
     "task_governance_tool.state_resolver.SCHEMA_VERSION",
     "task_governance_tool.storage.SCHEMA_VERSION",
+    "task_governance_tool.stored_task_validation.SCHEMA_VERSION",
     "task_governance_tool.tasks.SCHEMA_VERSION",
     "task_governance_tool.verification_receipts.SCHEMA_VERSION",
     "task_governance_tool.viewer.SCHEMA_VERSION",

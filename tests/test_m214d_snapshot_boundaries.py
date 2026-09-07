@@ -22,7 +22,7 @@ ROOT = Path(__file__).resolve().parents[1]
 SCRIPTS_ROOT = ROOT / "task-governance-tool" / "scripts"
 sys.path.insert(0, str(SCRIPTS_ROOT))
 try:
-    from task_governance_tool import tasks as tasks_module
+    from task_governance_tool import stored_task_validation as stored_tasks_module
     from task_governance_tool.storage import (
         StorageError,
         capture_or_reuse_current_authority_snapshot_locked,
@@ -49,7 +49,7 @@ class StoredContractSnapshotBoundaryTests(unittest.TestCase):
 
             task_selected = threading.Event()
             writer_finished = threading.Event()
-            original_fetch = tasks_module.fetch_stored_task_row
+            original_fetch = stored_tasks_module.fetch_stored_task_row
 
             def fetch_then_release_writer(
                 connection: sqlite3.Connection,
@@ -118,11 +118,11 @@ class StoredContractSnapshotBoundaryTests(unittest.TestCase):
                 with ThreadPoolExecutor(max_workers=1) as pool:
                     published = pool.submit(publish_next_revision)
                     with patch.object(
-                        tasks_module,
+                        stored_tasks_module,
                         "fetch_stored_task_row",
                         side_effect=fetch_then_release_writer,
                     ):
-                        observed = tasks_module.fetch_validated_current_task_row(
+                        observed = stored_tasks_module.fetch_validated_current_task_row(
                             reader,
                             project_id=task["project_id"],
                             task_id=task["task_id"],
@@ -132,7 +132,7 @@ class StoredContractSnapshotBoundaryTests(unittest.TestCase):
                 self.assertIsNotNone(observed)
                 self.assertEqual(observed["current_contract_revision"], 1)
                 self.assertFalse(reader.in_transaction)
-                refreshed = tasks_module.fetch_validated_current_task_row(
+                refreshed = stored_tasks_module.fetch_validated_current_task_row(
                     reader,
                     project_id=task["project_id"],
                     task_id=task["task_id"],
@@ -158,7 +158,7 @@ class StoredContractSnapshotBoundaryTests(unittest.TestCase):
                     created_at="2026-08-03T00:00:01Z",
                 )
 
-                observed = tasks_module.fetch_validated_current_task_row(
+                observed = stored_tasks_module.fetch_validated_current_task_row(
                     connection,
                     project_id=task["project_id"],
                     task_id=task["task_id"],
@@ -193,7 +193,7 @@ class StoredContractSnapshotBoundaryTests(unittest.TestCase):
             with closing(self.connect(db)) as connection:
                 self.assertFalse(connection.in_transaction)
                 with self.assertRaises(StorageError) as caught:
-                    tasks_module.fetch_validated_current_task_row(
+                    stored_tasks_module.fetch_validated_current_task_row(
                         connection,
                         project_id=task["project_id"],
                         task_id=task["task_id"],

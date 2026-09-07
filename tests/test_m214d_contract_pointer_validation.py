@@ -26,7 +26,7 @@ try:
         StorageError,
         validate_stored_task_verification,
     )
-    from task_governance_tool.tasks import validate_stored_task_rows
+    from task_governance_tool.stored_task_validation import validate_stored_task_rows
 finally:
     sys.path.pop(0)
 

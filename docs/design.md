@@ -116,6 +116,8 @@ The implementation keeps these narrow ownership boundaries:
 - `storage.py` owns SQLite connections, migrations, validation, repositories,
   and transaction-scoped queries. Feature modules do not open raw SQLite
   connections.
+- `schema_completion_cycles.py` owns the ordered completion-cycle SQL
+  definitions; migration execution and transaction ownership stay in `storage.py`.
 - `tasks.py`, `ordering.py`, and `selection.py` own task validation, lifecycle,
   current/list projections, the source-schema-aware stored Task row/batch
   and Contract-relationship validator, the shared sequential predecessor

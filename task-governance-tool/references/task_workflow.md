@@ -10,6 +10,7 @@ checkpointing, or completing work with `task-governance-tool`.
 - [Bounded Operating Loop](#bounded-operating-loop)
 - [Selection And Execution Boundary](#selection-and-execution-boundary)
 - [Task Contract](#task-contract)
+  - [Concise Contracts With Current Owners](#concise-contracts-with-current-owners)
 - [Optional Effort Advisory](#optional-effort-advisory)
 - [Optional Continuation Checkpoint](#optional-continuation-checkpoint)
 - [Pause, Resume, And Block](#pause-resume-and-block)
@@ -282,6 +283,45 @@ external-operation intent or evidence, use
 `operation_sequence=<positive canonical integer>` only as correlation or
 idempotency metadata. Current explicit authority for the operation remains
 separate.
+
+### Concise Contracts With Current Owners
+
+A concise Contract can retain the Task-specific outcome, scope, acceptance,
+exceptions, and existing consultation conditions while referencing shared rules
+at their current owners. References do not replace those Task-specific facts or
+create a second authority. There is no word/line target or mandatory truncation.
+
+For example, suppose an explicit registration instruction is:
+
+> Register a Task to clarify the existing CLI example in README.md. A directly
+> linked example fixture may also change, only if needed to validate that example.
+> The example must match the implemented CLI and pass existing document checks
+> and Tier 1 review. Keep CLI behavior unchanged; consult the user if changing it
+> is necessary. Apply the project's current shared mutation and verification
+> rules and its current product authority routing.
+
+In this illustrative target, those owners are `AGENTS.md#target-project-safety`,
+`AGENTS.md#testing-and-verification-rules`, and
+`docs/authority.md#trigger-routing`. These references resolve from that target's
+root, not the installed package. Their names are examples, not required project
+files; use the governing project's actual current owners and their applicable
+conditions and exceptions.
+
+The existing `task add` fields can capture that instruction without copying the
+shared rules into the Contract:
+
+| Field | Example value |
+|---|---|
+| `--title` | Clarify the README CLI example |
+| `--contract-scope` | Clarify README.md's existing CLI example; only its directly linked fixture may also change, if needed to validate the example. |
+| `--contract-acceptance` | Example matches implemented CLI; existing document checks and Tier 1 review pass. |
+| `--contract-constraints` | Preserve CLI behavior; consult the user if changing it is necessary. Apply current AGENTS.md#target-project-safety and AGENTS.md#testing-and-verification-rules, with product owners routed by docs/authority.md#trigger-routing. |
+| `--contract-authority-ref` | conversation:example-session:approved-change-1 |
+| `--review-tier` | 1 |
+
+The fixture exception and consultation condition are explicit input in this
+example, not defaults to add to other Tasks. Referring to common owners keeps
+their rules applicable without duplicating them or broadening permission.
 
 ## Optional Effort Advisory
 

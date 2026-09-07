@@ -103,7 +103,9 @@ The implementation keeps these narrow ownership boundaries:
 - `cli_parser.py` owns public parser construction, common options, and
   sanitized parser error types.
 - `cli.py` preprocesses lexical root options, uses that parser, orchestrates
-  state and maintenance, dispatches services, and emits bounded JSON or text.
+  state and maintenance, and dispatches services and output emission.
+- `cli_output.py` owns the shared `CommandResult`, result construction, JSON
+  size/identity fitting, bounded errors, and JSON/text stream emission.
 - `cli_text.py` formats the existing Task, completion-check, Handoff, Review,
   and Verification Receipt human text from supplied projections. It does not
   select Tasks or perform operations; Review Packet rendering stays in
@@ -266,6 +268,11 @@ builds a no-write plan. `doctor` is the sole diagnostic, is inherently
 read-only, never repairs anything, and is not a normal Task-loop prerequisite.
 
 ### Output Boundary
+
+`cli_output.py` carries the shared result and formats its public envelope.
+Its internal mutation and maintenance metadata is preserved for `cli.py`,
+never serialized. Command context, dispatch, connection ownership, and the
+post-commit coordinator remain in the orchestration layer.
 
 JSON uses the stable envelope:
 

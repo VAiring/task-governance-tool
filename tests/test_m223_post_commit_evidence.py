@@ -14,7 +14,8 @@ if str(SCRIPTS_ROOT) not in sys.path:
 
 from task_governance_tool import cli as cli_service
 from task_governance_tool import maintenance as maintenance_service
-from task_governance_tool.cli import CommandResult, apply_post_commit_maintenance
+from task_governance_tool.cli import apply_post_commit_maintenance
+from task_governance_tool.cli_output import CommandResult
 from task_governance_tool.maintenance import (
     BACKUP_WARNING_MESSAGES,
     EVIDENCE_WARNING_MESSAGES,

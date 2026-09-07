@@ -12,8 +12,10 @@ SKILL_ROOT = ROOT / "task-governance-tool"
 sys.path.insert(0, str(SKILL_ROOT / "scripts"))
 try:
     from task_governance_tool import cli as cli_service
-    from task_governance_tool.cli import make_context, success_result
+    from task_governance_tool.cli import make_context
+    from task_governance_tool.cli_output import CommandResult, success_result
     from task_governance_tool.cli_parser import build_parser
+    from task_governance_tool.maintenance import MutationOutcome
 finally:
     sys.path.pop(0)
 
@@ -44,6 +46,25 @@ class CliEnvelopeTests(unittest.TestCase):
         self.assertEqual(payload["errors"], [])
         self.assertEqual(payload["warnings"], [])
         self.assertNotIn("db_path", payload)
+
+    def test_result_keeps_maintenance_metadata_out_of_public_envelope(self):
+        outcome = MutationOutcome(state_changed=True, viewer_relevant=False)
+        target = object()
+        result = CommandResult(
+            ok=True,
+            command="task.edit",
+            data={"task": None},
+            mutation_outcome=outcome,
+            maintenance_target=target,
+        )
+
+        self.assertIs(result.mutation_outcome, outcome)
+        self.assertIs(result.maintenance_target, target)
+        payload = result.to_json_object()
+        self.assertEqual(set(payload), ENVELOPE_KEYS)
+        self.assertEqual(json.loads(json.dumps(payload)), payload)
+        self.assertNotIn("mutation_outcome", repr(result))
+        self.assertNotIn("maintenance_target", repr(result))
 
     def test_argparse_validation_error_uses_path_free_json_envelope(self):
         with tempfile.TemporaryDirectory() as tmp:

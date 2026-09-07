@@ -35,7 +35,7 @@ try:
         project_compact_next_task,
         truncate_utf8,
     )
-    from task_governance_tool.cli import (
+    from task_governance_tool.cli_output import (
         CommandResult,
         fit_bounded_json_identity,
         fit_bounded_json_result,

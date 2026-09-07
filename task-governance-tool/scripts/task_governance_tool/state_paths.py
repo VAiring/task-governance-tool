@@ -572,49 +572,6 @@ def copy_physical_file_exclusive(
         raise
 
 
-def rename_no_replace(
-    source: ValidatedFile | ValidatedDirectory,
-    destination: Path,
-    *,
-    root: Path,
-) -> ValidatedFile | ValidatedDirectory:
-    """Move one validated sibling-tree entry without replacement on Windows."""
-
-    require_contained(source.path, root)
-    require_contained(destination, root)
-    _assert_parent_chain(source.path, root)
-    _assert_parent_chain(destination, root)
-    if path_lexically_exists(destination):
-        raise _failure()
-    if isinstance(source, ValidatedFile):
-        if not _same_file_identity(source.path, source.identity):
-            raise _failure()
-    elif not _same_directory_identity(source.path, source.identity):
-        raise _failure()
-
-    # The supported Windows runtime gives os.rename no-replace semantics.
-    # POSIX os.rename may replace an existing empty directory or file, so an
-    # unverified port must fail closed instead of emulating this with replace.
-    if os.name != "nt":
-        raise StatePathError(
-            code="unsupported_no_replace",
-            message=STATE_PATH_FAILURE_MESSAGE,
-        )
-    try:
-        os.rename(source.path, destination)
-    except OSError as exc:
-        raise _failure() from exc
-    if path_lexically_exists(source.path):
-        raise _failure()
-    if isinstance(source, ValidatedFile):
-        if not _same_file_identity(destination, source.identity):
-            raise _failure()
-        return ValidatedFile(destination, source.identity, source.sha256)
-    if not _same_directory_identity(destination, source.identity):
-        raise _failure()
-    return ValidatedDirectory(destination, source.identity)
-
-
 def unlink_validated_file(file: ValidatedFile, *, root: Path) -> None:
     require_contained(file.path, root)
     _assert_parent_chain(file.path, root)

@@ -18,7 +18,6 @@ from task_governance_tool.state_paths import (  # noqa: E402
     create_exclusive_durable_file,
     hash_physical_file,
     inspect_physical_directory,
-    rename_no_replace,
 )
 from task_governance_tool.state_transition import (  # noqa: E402
     CleanupInventoryEntry,
@@ -35,6 +34,7 @@ from task_governance_tool.state_transition import (  # noqa: E402
     remove_stage_residue,
     retire_legacy_inventory,
 )
+from task_governance_tool.windows_no_replace import rename_no_replace  # noqa: E402
 
 
 PROJECT_ID = "project-0123456789ab"
@@ -99,6 +99,32 @@ class StatePathPrimitiveTests(unittest.TestCase):
                     max_bytes=16,
                 )
             self.assertEqual(marker.path.read_bytes(), b"marker")
+
+    @unittest.skipUnless(os.name == "nt", "Windows is the verified no-replace runtime")
+    def test_no_replace_rename_publishes_validated_file_and_directory(self):
+        for kind in ("file", "directory"):
+            with self.subTest(kind=kind), tempfile.TemporaryDirectory() as tmp:
+                state = make_state_root(Path(tmp))
+                source = state / "source"
+                destination = state / "destination"
+                if kind == "file":
+                    source.write_bytes(b"source")
+                    validated = hash_physical_file(source, root=state)
+                else:
+                    source.mkdir()
+                    (source / "child").write_bytes(b"child")
+                    validated = inspect_physical_directory(source, root=state)
+
+                published = rename_no_replace(validated, destination, root=state)
+
+                self.assertFalse(source.exists())
+                self.assertEqual(published.path, destination)
+                self.assertEqual(published.identity, validated.identity)
+                if kind == "file":
+                    self.assertEqual(published.sha256, validated.sha256)
+                    self.assertEqual(destination.read_bytes(), b"source")
+                else:
+                    self.assertEqual((destination / "child").read_bytes(), b"child")
 
     @unittest.skipUnless(os.name == "nt", "Windows is the verified no-replace runtime")
     def test_no_replace_rename_preserves_both_entries_on_collision(self):

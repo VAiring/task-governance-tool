@@ -30,10 +30,10 @@ from task_governance_tool.state_paths import (
     inspect_physical_file,
     path_lexically_exists,
     remove_explicit_files_and_directories,
-    rename_no_replace,
     rmdir_validated_directory,
     require_contained,
 )
+from task_governance_tool.windows_no_replace import rename_no_replace
 
 
 RUNNER_FAILURE_MESSAGE = "verification runner state could not be changed safely"

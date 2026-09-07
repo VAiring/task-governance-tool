@@ -107,7 +107,10 @@ The implementation keeps these narrow ownership boundaries:
 - `compact.py` owns compact task projections and final byte caps.
 - `project_scope.py` validates the governed root, physical package layout,
   self-host exception, containment, and effective Git-ignore preflight.
-- `state_paths.py` defines fixed state names and containment rules.
+- `state_paths.py` defines fixed state names and shared containment and
+  physical-identity validation.
+- `windows_no_replace.py` owns the Windows no-replace rename operation using
+  those shared validators; callers retain publication and cleanup policy.
 - `state_resolver.py` is the sole production resolver for fixed state, bounded
   legacy discovery, identity, binding, recovery observations, and artifact
   targets.

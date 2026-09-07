@@ -41,7 +41,6 @@ from task_governance_tool.state_paths import (
     path_lexically_exists,
     read_physical_file_bounded,
     remove_explicit_files_and_directories,
-    rename_no_replace,
     require_contained,
     rmdir_if_empty,
     unlink_validated_file,
@@ -52,6 +51,7 @@ from task_governance_tool.storage import (
     validate_cleanup_inventory,
     validate_identity_project_id,
 )
+from task_governance_tool.windows_no_replace import rename_no_replace
 
 
 STATE_TRANSITION_FAILURE_MESSAGE = "setup completed only partially; rerun setup"

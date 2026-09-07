@@ -35,7 +35,6 @@ from task_governance_tool.state_paths import (
     inspect_physical_file,
     path_lexically_exists,
     read_physical_file_bounded,
-    rename_no_replace,
     require_contained,
     unlink_validated_file,
 )
@@ -55,6 +54,7 @@ from task_governance_tool.storage import (
     utc_now,
     validate_utc_timestamp,
 )
+from task_governance_tool.windows_no_replace import rename_no_replace
 
 
 BUNDLE_DOMAIN = b"taskgov-completion-evidence-bundle-v1\0"

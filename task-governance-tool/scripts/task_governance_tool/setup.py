@@ -80,7 +80,6 @@ from task_governance_tool.state_paths import (
     hash_physical_file,
     inspect_physical_directory,
     path_lexically_exists,
-    rename_no_replace,
     unlink_validated_file,
 )
 from task_governance_tool.state_resolver import (
@@ -116,6 +115,7 @@ from task_governance_tool.viewer_config import (
     ViewerConfigError,
     load_viewer_refresh_interval,
 )
+from task_governance_tool.windows_no_replace import rename_no_replace
 
 
 SETUP_WRITE_ORDER = (

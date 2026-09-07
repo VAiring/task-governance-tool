@@ -37,11 +37,13 @@ from task_governance_tool.state_resolver import (
 from task_governance_tool.backup_metadata_repository import (
     ProjectMaintenanceState,
 )
+from task_governance_tool.viewer_metadata_repository import (
+    ViewerMaintenanceState,
+)
 from task_governance_tool.storage import (
     SCHEMA_VERSION,
     DatabaseTarget,
     EvidenceProjectionState,
-    ViewerMaintenanceState,
 )
 
 

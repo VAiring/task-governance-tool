@@ -15,14 +15,16 @@ from task_governance_tool.artifact_lock import ArtifactLockError
 from task_governance_tool.backup_metadata_repository import (
     configure_project_maintenance,
 )
+from task_governance_tool.viewer_metadata_repository import (
+    read_viewer_maintenance,
+    record_viewer_attempt_outcome,
+    record_viewer_publication,
+)
 from task_governance_tool.storage import (
     StorageError,
     connect_initialized,
     connect_initialized_readonly,
     initialize_database,
-    read_viewer_maintenance,
-    record_viewer_attempt_outcome,
-    record_viewer_publication,
     resolve_database_target,
 )
 from task_governance_tool.tasks import add_task

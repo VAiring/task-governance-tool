@@ -60,6 +60,9 @@ from task_governance_tool.backup_metadata_repository import (
     configure_project_maintenance,
     validate_backup_policy,
 )
+from task_governance_tool.viewer_metadata_repository import (
+    read_viewer_maintenance,
+)
 from task_governance_tool.storage import (
     DatabaseTarget,
     ProjectIdentity,
@@ -73,7 +76,6 @@ from task_governance_tool.storage import (
     migrate_bound_database,
     inspect_setup_state,
     is_sqlite_busy_or_locked,
-    read_viewer_maintenance,
     utc_now,
     validate_completion_cycle_storage,
 )

@@ -133,9 +133,13 @@ The implementation keeps these narrow ownership boundaries:
   storage-owned admission, including the existing migration-source path;
   physical copy, reconciliation, pruning, locking, and recovery selection stay
   with their existing callers.
+- `viewer_metadata_repository.py` owns Viewer maintenance read/seed and
+  publication/attempt-outcome metadata. It keeps storage-owned admission and
+  the existing short writer transactions; snapshot capture, rendering, file
+  publication, policy, and locking stay with their existing callers.
 - `storage.py` remains the shared entry for migrations, initialized admission,
   repositories, and transaction-scoped queries, re-exporting the connection
-  primitives, binding APIs, and backup metadata APIs for existing callers.
+  primitives, binding APIs, and backup/Viewer metadata APIs for existing callers.
   Feature modules do not open raw SQLite connections; Task-row error mapping remains with
   stored-state validation.
 - `schema_completion_cycles.py` owns the ordered completion-cycle SQL
@@ -2613,7 +2617,7 @@ for a stale recovery plan.
 and backup-policy configuration, plus managed-generation, pointer, outcome,
 and retention writes and their direct record validation. The shared
 `ProjectMaintenanceState` retains its Viewer fields; Viewer publication writes
-remain in their existing owner. Storage retains schema admission and migration
+belong to `viewer_metadata_repository.py`. Storage retains schema admission and migration
 orchestration, and backup/setup retain physical publication and reconciliation.
 
 Schema v10 has one `project_maintenance` row with immutable one-way

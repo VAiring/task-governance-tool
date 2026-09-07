@@ -34,6 +34,9 @@ from task_governance_tool import viewer_maintenance  # noqa: E402
 from task_governance_tool.backup_metadata_repository import (  # noqa: E402
     configure_project_maintenance,
 )
+from task_governance_tool.viewer_metadata_repository import (
+    read_viewer_maintenance,
+)
 from task_governance_tool.storage import (  # noqa: E402
     DatabaseTarget,
     StorageError,
@@ -42,7 +45,6 @@ from task_governance_tool.storage import (  # noqa: E402
     connect,
     connect_initialized_readonly,
     current_schema_version,
-    read_viewer_maintenance,
     resolve_database_target,
 )
 from task_governance_tool.tasks import add_task  # noqa: E402

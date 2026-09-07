@@ -18,6 +18,9 @@ SCRIPTS_ROOT = ROOT / "task-governance-tool" / "scripts"
 if str(SCRIPTS_ROOT) not in sys.path:
     sys.path.insert(0, str(SCRIPTS_ROOT))
 
+from task_governance_tool.viewer_metadata_repository import (
+    ensure_viewer_maintenance_row,
+)
 from task_governance_tool.storage import (  # noqa: E402
     DATABASE_BUSY_MESSAGE,
     SCHEMA_VERSION,
@@ -42,7 +45,6 @@ from task_governance_tool.storage import (  # noqa: E402
     connect,
     connect_snapshot_readonly,
     ensure_project_meta,
-    ensure_viewer_maintenance_row,
     initial_schema_sql,
     initialize_database,
     resolve_database_target,

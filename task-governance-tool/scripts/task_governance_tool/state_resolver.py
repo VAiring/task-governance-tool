@@ -37,6 +37,9 @@ from task_governance_tool.backup_metadata_repository import (
     read_project_maintenance,
     validate_migration_backup_metadata,
 )
+from task_governance_tool.viewer_metadata_repository import (
+    read_viewer_maintenance,
+)
 from task_governance_tool.storage import (
     SCHEMA_VERSION,
     DatabaseTarget,
@@ -51,7 +54,6 @@ from task_governance_tool.storage import (
     missing_migration_versions,
     normalized_path_for_hash,
     read_doctor_state,
-    read_viewer_maintenance,
     sanitize_project_display_name,
     schema_objects_inconsistent_with_version,
     table_exists,

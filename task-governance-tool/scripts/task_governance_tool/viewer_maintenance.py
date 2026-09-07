@@ -14,13 +14,15 @@ from task_governance_tool.backup_metadata_repository import (
     ProjectMaintenanceState,
     read_project_maintenance,
 )
-from task_governance_tool.storage import (
-    DatabaseTarget,
+from task_governance_tool.viewer_metadata_repository import (
     ViewerMaintenanceState,
-    connect_initialized_readonly,
     read_viewer_maintenance,
     record_viewer_attempt_outcome,
     record_viewer_publication,
+)
+from task_governance_tool.storage import (
+    DatabaseTarget,
+    connect_initialized_readonly,
     utc_now,
     validate_utc_timestamp,
 )

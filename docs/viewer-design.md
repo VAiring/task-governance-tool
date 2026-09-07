@@ -12,6 +12,11 @@ existing owners.
 
 ## Snapshot And Publication
 
+`viewer_metadata_repository.py` owns the maintenance read/seed and publication
+and attempt-outcome records, using storage-owned admission and the existing
+writer transactions. Snapshot capture/proofs, rendering, policy, locking, and
+file publication remain with their current owners.
+
 The Viewer is a replaceable projection, never authority:
 
 ```text

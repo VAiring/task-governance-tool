@@ -44,6 +44,38 @@ change. Avoid chains of index pages that hide the actual owner. These are
 authoring choices, not limits on the number of links or documents a reader may
 need.
 
+## Current Rules And Development Lineage
+
+When authoring or revising current specifications, designs, or shipped Skill
+guidance, describe behavior by its function and responsibility. Do not use a
+development Task number or milestone as a substitute for a feature name,
+applicability condition, or current rule. The text and its directly linked
+current owners must explain the applicable behavior, conditions, exceptions,
+permissions, and gates without requiring a past Task or development-history
+lookup.
+
+Keep completed Tasks' work allocation and one-time change instructions separate
+from durable product and implementation rules. Apply the existing
+[documentation-maintenance policy](../AGENTS.md#documentation-maintenance) when
+authorized cleanup removes or relocates that execution prose: retain every
+still-applicable rule in its current owner, preserve unfinished Tasks' authority
+and anchors, and follow the existing history and authority-transition rules.
+Completion alone does not authorize a document or history mutation.
+
+This is not a blanket ban on numbers or identifiers. Fixed contract values,
+schema and migration versions, actual file names, and compatibility anchors
+may need their exact spelling; explain their present meaning where used rather
+than renaming them solely for this guidance. Approved unfinished execution
+plans may identify their Tasks, and non-authoritative history and immutable
+published records may preserve development lineage. Neither supplies missing
+current rules.
+
+Within the existing review of the changed material, check whether a reader who
+does not know the development Tasks can identify the current rule and its
+exceptions, and whether completed execution instructions have been mistaken
+for current obligations. Apply this check to the authorized write scope; it
+adds no review stage, approval step, normal-loop command, or unrelated retrofit.
+
 ## Code Boundaries And Related Tests
 
 Group code by its reason to change and the responsibility it owns. A useful

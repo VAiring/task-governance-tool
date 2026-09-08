@@ -40,10 +40,12 @@ from task_governance_tool.backup_metadata_repository import (
 from task_governance_tool.viewer_metadata_repository import (
     ViewerMaintenanceState,
 )
+from task_governance_tool.evidence_projection_metadata_repository import (
+    EvidenceProjectionState,
+)
 from task_governance_tool.storage import (
     SCHEMA_VERSION,
     DatabaseTarget,
-    EvidenceProjectionState,
 )
 
 

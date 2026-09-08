@@ -137,9 +137,13 @@ The implementation keeps these narrow ownership boundaries:
   publication/attempt-outcome metadata. It keeps storage-owned admission and
   the existing short writer transactions; snapshot capture, rendering, file
   publication, policy, and locking stay with their existing callers.
+- `evidence_projection_metadata_repository.py` owns projection-state read/seed,
+  cycle-owned source-generation advance, and publication outcomes. Locked entries
+  reuse the caller's transaction; the outer outcome writer uses storage admission.
+  Bundle construction/capture and file publication remain with existing owners.
 - `storage.py` remains the shared entry for migrations, initialized admission,
   repositories, and transaction-scoped queries, re-exporting the connection
-  primitives, binding APIs, and backup/Viewer metadata APIs for existing callers.
+  primitives, binding APIs, and operational metadata APIs for existing callers.
   Feature modules do not open raw SQLite connections; Task-row error mapping remains with
   stored-state validation.
 - `schema_completion_cycles.py` owns the ordered completion-cycle SQL

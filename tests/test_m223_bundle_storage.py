@@ -33,6 +33,10 @@ from task_governance_tool import tasks as task_service
 from task_governance_tool.evidence_projection import (
     build_projection_bundle_artifact,
 )
+from task_governance_tool.evidence_projection_metadata_repository import (
+    read_evidence_projection_state,
+    record_evidence_projection_outcome_locked,
+)
 from task_governance_tool.storage import (
     SCHEMA_VERSION,
     StorageError,
@@ -41,8 +45,6 @@ from task_governance_tool.storage import (
     capture_evidence_projection_basis,
     connect,
     current_schema_version,
-    read_evidence_projection_state,
-    record_evidence_projection_outcome_locked,
     validate_completion_evidence_bundle_storage,
     validate_evidence_ledger_storage,
     validate_evidence_ledger_storage_for_recovery,

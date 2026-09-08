@@ -25,7 +25,8 @@ routed by the [authority index](authority.md).
 This section is the current implementation owner for Review
 provenance, schema-v18 capture, schema-v19 Bundle construction and projection,
 and their schema-v20-through-v22 Runner integration. They preserve legacy rows
-without inventing evidence, keep SQLite ownership in `storage.py`, and exclude
+without inventing evidence, keep SQLite access in the storage/repository
+boundary, and exclude
 the retired `derived_analysis` reservation from current schema v22.
 
 ### Capture And Projection Module Ownership
@@ -43,17 +44,23 @@ the retired `derived_analysis` reservation from current schema v22.
 - `evidence_projection.py` owns the codec, canonical Bundle/index JSON and
   digest validation, native Bundle construction, stored Bundle reconstruction,
   and rendering of captured `EvidenceProjectionBasis` values.
+- `evidence_projection_metadata_repository.py` owns projection-state read/seed,
+  source-generation advance, and outcome records. Cycle insertion and its
+  generation advance retain one caller-owned writer; the outer outcome entry
+  keeps the initialized writer boundary. Viewer generation logic stays separate.
 - `evidence_publication.py` consumes `DatabaseTarget` and observation time,
   captures through the storage API, calls those retained builders, and returns
   the existing refresh result or physical status. It owns physical path checks,
   lock/temp/rename handling, Bundle-first/index-last publication, generation
-  comparison and outcome recording, last-good preservation, and setup repair.
+  comparison and outcome-recording calls, last-good preservation, and setup repair.
   Capture closes its read connection before rendering; the separate index
   generation guard retains its read connection through atomic replacement.
   Completion-time construction stays in its existing transaction boundary;
   construction-side storage value types remain shared without a DTO layer.
 
-`storage.py` remains the only SQLite owner. `tasks.py` and `contracts.py`
+`storage.py` retains shared SQLite admission, Evidence validation/capture, and
+completion persistence; the projection metadata repository owns only its state
+rows. `tasks.py` and `contracts.py`
 capture authority inside existing savepoints; `verification_receipts.py`
 derives subject-v1 bindings; it and `reviews.py` create typed References inside
 their source writes; target capture creates one manifest and subject-capable

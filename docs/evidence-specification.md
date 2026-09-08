@@ -10,7 +10,7 @@ Implementation structure belongs in the [Evidence design](evidence-design.md).
 [completion history](review-completion-specification.md#completion-cycle-history), and
 [Task operations](task-operation-specification.md) retain their own contracts.
 The shared [schema-v21 Runner protocol](specification.md#schema-v21-persistence-compatibility-and-shared-runner-protocol),
-[current persistence](specification.md#current-schema-v22-persistence-contract),
+[current persistence](database-specification.md#current-schema-v22-persistence-contract),
 [Runner execution](runner-execution-specification.md),
 [maintenance](setup-state-specification.md#same-process-maintenance), and
 [privacy/stable errors](specification.md#privacy-safety-and-stable-errors) remain

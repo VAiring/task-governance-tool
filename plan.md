@@ -225,8 +225,8 @@ post-commit maintenance runs Evidence, Viewer, then backup. Viewer snapshot v4
 accepts v5-v22 but adds no Evidence UI.
 
 Schema v22 uses the current
-[persistence contract](docs/specification.md#current-schema-v22-persistence-contract)
-and [reservation-cleanup design](docs/design.md#schema22-reservation-cleanup-design):
+[persistence contract](docs/database-specification.md#current-schema-v22-persistence-contract)
+and [reservation-cleanup design](docs/database-design.md#schema22-reservation-cleanup-design):
 explicit setup reaches 22 from supported older sources and exact-22 reentry is
 validation-only. Current Evidence enum/order and DDL allow-lists no longer
 reserve `derived_analysis`, `llm_derived`, or `batch_analyzer`; old-schema DDL

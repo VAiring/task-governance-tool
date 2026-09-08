@@ -37,6 +37,8 @@ EXPECTED_CANONICAL_DOCS = (
     "docs/review-completion-design.md",
     "docs/setup-state-specification.md",
     "docs/setup-state-design.md",
+    "docs/database-specification.md",
+    "docs/database-design.md",
     "plan.md",
     "docs/modularization-roadmap.md",
     "docs/history/README.md",
@@ -217,9 +219,9 @@ class DocumentContractTests(unittest.TestCase):
         self.assertNotIn(secret, serialized)
         self.assertNotIn("Traceback", serialized)
 
-    def test_registry_v13_is_closed(self):
+    def test_registry_v14_is_closed(self):
         expected = {
-            "schema": "taskgov-document-authority-v13",
+            "schema": "taskgov-document-authority-v14",
             "mandatory_start": [
                 "AGENTS.md",
                 "docs/authority.md",
@@ -240,6 +242,8 @@ class DocumentContractTests(unittest.TestCase):
                 "docs/review-completion-design.md",
                 "docs/setup-state-specification.md",
                 "docs/setup-state-design.md",
+                "docs/database-specification.md",
+                "docs/database-design.md",
             ],
             "mixed_execution": [],
             "conditional": ["docs/modularization-roadmap.md"],
@@ -703,6 +707,51 @@ class DocumentContractTests(unittest.TestCase):
                     contract.DESIGN,
                     "## Setup, Doctor, Backup, And Maintenance",
                     ("setup-state-design.md#setup-doctor-backup-and-maintenance",),
+                ),
+                (
+                    contract.AUTHORITY,
+                    "## Database Persistence And Migration Detail Authority",
+                    ("database-specification.md", "database-design.md"),
+                ),
+                (
+                    "docs/specification.md",
+                    "### Migration And Activation Boundary",
+                    ("database-specification.md#migration-and-activation-boundary",),
+                ),
+                (
+                    "docs/specification.md",
+                    "### Initialization And Supported Schemas",
+                    ("database-specification.md#initialization-and-supported-schemas",),
+                ),
+                (
+                    "docs/specification.md",
+                    "### Schema-v20 Foundation And Admission",
+                    ("database-specification.md#schema-v20-foundation-and-admission",),
+                ),
+                (
+                    "docs/specification.md",
+                    "### Current Schema-v22 Persistence Contract",
+                    ("database-specification.md#current-schema-v22-persistence-contract",),
+                ),
+                (
+                    contract.DESIGN,
+                    "### Migration Sequence",
+                    ("database-design.md#migration-sequence",),
+                ),
+                (
+                    contract.DESIGN,
+                    "### Schema-v20 Physical Foundation",
+                    ("database-design.md#schema-v20-physical-foundation",),
+                ),
+                (
+                    contract.DESIGN,
+                    "## Current Schema-v22 Reservation Cleanup Design",
+                    ("database-design.md#current-schema-v22-reservation-cleanup-design",),
+                ),
+                (
+                    contract.DESIGN,
+                    "## Schema-v21 Runner Gate-Basis Design",
+                    ("database-design.md#schema-v21-runner-gate-basis-design",),
                 ),
                 (
                     contract.AUTHORITY,

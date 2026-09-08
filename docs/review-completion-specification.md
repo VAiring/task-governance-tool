@@ -11,7 +11,7 @@ Implementation structure belongs in the
 their separate owners. Shared [CLI/output](specification.md#public-cli-and-output-contract),
 [privacy and stable errors](specification.md#privacy-safety-and-stable-errors),
 [SQLite operation](specification.md#sqlite-migration-and-concurrency),
-[current persistence](specification.md#current-schema-v22-persistence-contract),
+[current persistence](database-specification.md#current-schema-v22-persistence-contract),
 [the schema-v21/v22 Runner protocol](specification.md#schema-v21-persistence-compatibility-and-shared-runner-protocol),
 and [maintenance](setup-state-specification.md#same-process-maintenance) remain with the
 owners routed by the [authority index](authority.md).

@@ -10,8 +10,8 @@ for the behavior in the [Evidence specification](evidence-specification.md).
 and [Task operations](task-operation-design.md) retain their own owners.
 Shared [runtime ownership](design.md#runtime-module-boundaries),
 [connection/transaction rules](design.md#journal-and-connection-rules),
-[schema-v21 Runner gate basis](design.md#schema21-runner-gate-basis-design),
-[current persistence](design.md#schema22-reservation-cleanup-design),
+[schema-v21 Runner gate basis](database-design.md#schema21-runner-gate-basis-design),
+[current persistence](database-design.md#schema22-reservation-cleanup-design),
 [Runner execution](runner-execution-design.md),
 [post-commit coordination](setup-state-design.md#post-commit-coordinator),
 [privacy/failure rules](design.md#privacy-safety-and-failure-boundaries), and

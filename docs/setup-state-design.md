@@ -6,8 +6,8 @@ setup/Doctor/backup/maintenance structure delegated by the
 [Setup and state operation specification](setup-state-specification.md).
 Shared [runtime ownership](design.md#runtime-module-boundaries),
 [connection/transaction rules](design.md#journal-and-connection-rules),
-[migration](design.md#migration-sequence),
-[current persistence](design.md#schema22-reservation-cleanup-design),
+[migration](database-design.md#migration-sequence),
+[current persistence](database-design.md#schema22-reservation-cleanup-design),
 [privacy/failure rules](design.md#privacy-safety-and-failure-boundaries), and
 [global test design](design.md#validation-and-test-design) retain their owners.
 [Stored Task validation](task-operation-design.md#shared-stored-task-rowbatch-validator),

@@ -664,3 +664,24 @@ contracts, their index, and the pre-normalization plan from source commit
   [docs/authority.md](../authority.md). Use the public CLI for live Task state
   and evidence. This capture is lineage only and cannot fill a current authority
   gap or satisfy a gate.
+
+## v0.13.0 Database Persistence And Migration Section Split Lineage
+
+- Immutable history:
+  [v0.13.0/database-section-split.md](v0.13.0/database-section-split.md)
+- Source sections: Migration/Activation, Initialization/Supported Schemas,
+  schema-v20 Foundation/Admission, and current schema-v22 persistence in
+  `docs/specification.md`; Migration Sequence and the complete schema-v20,
+  schema-v22 cleanup, and schema-v21 gate-basis subtrees in `docs/design.md`.
+- Source commit: `524e48698ddaf5f4bc118dadb417eb75039a0994`
+- Capture unit: `TG-MOD.14`
+- Capture purpose: preserve only the eight complete relocated database sections.
+  Shared Runner protocol, operational read/write, connection/transaction,
+  runtime ownership, and feature operations retain their existing owners.
+- Current replacements:
+  [Database specification](../database-specification.md)
+  and [Database design](../database-design.md).
+  The unchanged common contracts remain routed by
+  [docs/authority.md](../authority.md). Use the public CLI for live Task state
+  and evidence. This capture is lineage only and cannot fill a current authority
+  gap or satisfy a gate.

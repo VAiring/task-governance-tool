@@ -8,7 +8,7 @@ The [Runner Plan authoring/control contract](runner-plan-authoring-specification
 remains separate. Shared [Task Contract](task-operation-specification.md#task-contract),
 [review target and completion](review-completion-specification.md),
 [schema-v21/v22 Runner gate protocol](specification.md#schema-v21-persistence-compatibility-and-shared-runner-protocol),
-[current persistence](specification.md#current-schema-v22-persistence-contract),
+[current persistence](database-specification.md#current-schema-v22-persistence-contract),
 [maintenance](setup-state-specification.md#same-process-maintenance), and
 [privacy/stable errors](specification.md#privacy-safety-and-stable-errors) retain
 their existing owners, routed by the [authority index](authority.md).
@@ -273,7 +273,7 @@ then discards Runner-only data; its UI and public field set do not change. A
 version-`0` graph remains audit-only and cannot populate completion-cycle or
 Bundle Runner pointers. A version-`1` graph follows only the shared schema-v21/v22
 [completion protocol](specification.md#schema-v21-persistence-compatibility-and-shared-runner-protocol). The Runner service adds no further schema/DDL or
-separate workflow action beyond the [current schema-v22 persistence contract](specification.md#current-schema-v22-persistence-contract).
+separate workflow action beyond the [current schema-v22 persistence contract](database-specification.md#current-schema-v22-persistence-contract).
 
 This boundary governs trusted code; it does not claim hostile-code containment,
 network isolation, LPAC/AppContainer confinement, or zero capability. Candidate

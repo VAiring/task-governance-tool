@@ -31,6 +31,8 @@ REVIEW_COMPLETION_SPECIFICATION = "docs/review-completion-specification.md"
 REVIEW_COMPLETION_DESIGN = "docs/review-completion-design.md"
 SETUP_STATE_SPECIFICATION = "docs/setup-state-specification.md"
 SETUP_STATE_DESIGN = "docs/setup-state-design.md"
+DATABASE_SPECIFICATION = "docs/database-specification.md"
+DATABASE_DESIGN = "docs/database-design.md"
 HISTORY_INDEX = "docs/history/README.md"
 RELEASE_INSTALL = "docs/release-install.md"
 ARTIFACT_AUTHORING = "docs/artifact-authoring.md"
@@ -56,6 +58,8 @@ CANONICAL_DOCS = (
     REVIEW_COMPLETION_DESIGN,
     SETUP_STATE_SPECIFICATION,
     SETUP_STATE_DESIGN,
+    DATABASE_SPECIFICATION,
+    DATABASE_DESIGN,
     "plan.md",
     MODULARIZATION_ROADMAP,
     HISTORY_INDEX,
@@ -344,6 +348,51 @@ ROUTE_SECTIONS = (
     ),
     (
         AUTHORITY,
+        "## Database Persistence And Migration Detail Authority",
+        ("database-specification.md", "database-design.md"),
+    ),
+    (
+        "docs/specification.md",
+        "### Migration And Activation Boundary",
+        ("database-specification.md#migration-and-activation-boundary",),
+    ),
+    (
+        "docs/specification.md",
+        "### Initialization And Supported Schemas",
+        ("database-specification.md#initialization-and-supported-schemas",),
+    ),
+    (
+        "docs/specification.md",
+        "### Schema-v20 Foundation And Admission",
+        ("database-specification.md#schema-v20-foundation-and-admission",),
+    ),
+    (
+        "docs/specification.md",
+        "### Current Schema-v22 Persistence Contract",
+        ("database-specification.md#current-schema-v22-persistence-contract",),
+    ),
+    (
+        DESIGN,
+        "### Migration Sequence",
+        ("database-design.md#migration-sequence",),
+    ),
+    (
+        DESIGN,
+        "### Schema-v20 Physical Foundation",
+        ("database-design.md#schema-v20-physical-foundation",),
+    ),
+    (
+        DESIGN,
+        "## Current Schema-v22 Reservation Cleanup Design",
+        ("database-design.md#current-schema-v22-reservation-cleanup-design",),
+    ),
+    (
+        DESIGN,
+        "## Schema-v21 Runner Gate-Basis Design",
+        ("database-design.md#schema-v21-runner-gate-basis-design",),
+    ),
+    (
+        AUTHORITY,
         "## Conditional Initiative Roadmaps",
         ("modularization-roadmap.md",),
     ),
@@ -356,8 +405,8 @@ ROUTE_SECTIONS = (
 )
 
 TRIGGER_ROUTE_OWNER_TOKENS = (
-    ("docs/specification.md", VIEWER_SPECIFICATION, RUNNER_PLAN_AUTHORING_SPECIFICATION, TASK_OPERATION_SPECIFICATION, RUNNER_EXECUTION_SPECIFICATION, EVIDENCE_SPECIFICATION, REVIEW_COMPLETION_SPECIFICATION, SETUP_STATE_SPECIFICATION),
-    ("docs/design.md", VIEWER_DESIGN, RUNNER_PLAN_AUTHORING_DESIGN, TASK_OPERATION_DESIGN, RUNNER_EXECUTION_DESIGN, EVIDENCE_DESIGN, REVIEW_COMPLETION_DESIGN, SETUP_STATE_DESIGN),
+    ("docs/specification.md", VIEWER_SPECIFICATION, RUNNER_PLAN_AUTHORING_SPECIFICATION, TASK_OPERATION_SPECIFICATION, RUNNER_EXECUTION_SPECIFICATION, EVIDENCE_SPECIFICATION, REVIEW_COMPLETION_SPECIFICATION, SETUP_STATE_SPECIFICATION, DATABASE_SPECIFICATION),
+    ("docs/design.md", VIEWER_DESIGN, RUNNER_PLAN_AUTHORING_DESIGN, TASK_OPERATION_DESIGN, RUNNER_EXECUTION_DESIGN, EVIDENCE_DESIGN, REVIEW_COMPLETION_DESIGN, SETUP_STATE_DESIGN, DATABASE_DESIGN),
     ("plan.md",),
     (MODULARIZATION_ROADMAP,),
     ("docs/release-install.md",),
@@ -547,6 +596,8 @@ ROLE_TITLES = {
     REVIEW_COMPLETION_DESIGN: "# Review And Completion Implementation Design",
     SETUP_STATE_SPECIFICATION: "# Setup And State Operation Specification",
     SETUP_STATE_DESIGN: "# Setup And State Operation Implementation Design",
+    DATABASE_SPECIFICATION: "# Database Persistence And Migration Specification",
+    DATABASE_DESIGN: "# Database Persistence And Migration Implementation Design",
     "plan.md": "# task-governance-tool Current Decisions And Open Issues",
     MODULARIZATION_ROADMAP: "# Responsibility-Based Modularization Roadmap",
     HISTORY_INDEX: "# Historical Documentation Index",
@@ -1193,7 +1244,7 @@ def _section_bounds(scan: Scan, heading: str) -> tuple[int, int] | None:
 
 def _expected_registry() -> dict[str, object]:
     return {
-        "schema": "taskgov-document-authority-v13",
+        "schema": "taskgov-document-authority-v14",
         "mandatory_start": ["AGENTS.md", AUTHORITY, "live_task_contract"],
         "current": [
             "docs/specification.md", "docs/design.md", "plan.md",
@@ -1204,6 +1255,7 @@ def _expected_registry() -> dict[str, object]:
             EVIDENCE_SPECIFICATION, EVIDENCE_DESIGN,
             REVIEW_COMPLETION_SPECIFICATION, REVIEW_COMPLETION_DESIGN,
             SETUP_STATE_SPECIFICATION, SETUP_STATE_DESIGN,
+            DATABASE_SPECIFICATION, DATABASE_DESIGN,
         ],
         "mixed_execution": [],
         "conditional": [MODULARIZATION_ROADMAP],

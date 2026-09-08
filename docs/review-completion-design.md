@@ -11,9 +11,9 @@ Product behavior belongs in the
 retain their separate owners. Shared [runtime ownership](design.md#runtime-module-boundaries),
 [CLI/serialization](design.md#public-cli-and-serialization),
 [connection/transaction rules](design.md#journal-and-connection-rules),
-[migration](design.md#migration-sequence),
-[current persistence](design.md#schema22-reservation-cleanup-design),
-[the schema-v21/v22 Runner gate protocol](design.md#schema21-runner-gate-basis-design),
+[migration](database-design.md#migration-sequence),
+[current persistence](database-design.md#schema22-reservation-cleanup-design),
+[the schema-v21/v22 Runner gate protocol](database-design.md#schema21-runner-gate-basis-design),
 [post-commit coordination](setup-state-design.md#post-commit-coordinator),
 [privacy/failure rules](design.md#privacy-safety-and-failure-boundaries), and
 [global test design](design.md#validation-and-test-design) remain with the owners
@@ -379,8 +379,8 @@ It exposes no IDs, counts, values, hashes, SQL, or paths.
 
 This section defines the manual Verification Receipt arm and its integration
 with the sole three-branch selector under
-[Schema-v21 Runner Gate-Basis Design](design.md#schema21-runner-gate-basis-design),
-retained by [current schema v22](design.md#schema22-reservation-cleanup-design). It
+[Schema-v21 Runner Gate-Basis Design](database-design.md#schema21-runner-gate-basis-design),
+retained by [current schema v22](database-design.md#schema22-reservation-cleanup-design). It
 does not rewrite the immutable v0.10.0 artifact or claim a later published
 artifact identity. Schema, parser, completion, Viewer compatibility, Skill
 guidance, package inventory, and tests form one supported boundary.

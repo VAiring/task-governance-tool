@@ -1054,6 +1054,86 @@ class DocumentHistoryTests(unittest.TestCase):
                 end = source.stdout.index(end_marker, start)
                 self.assertEqual(block.split(b"````\n", 1)[0], source.stdout[start:end])
 
+    def test_database_split_capture_preserves_exact_source_sections(self):
+        relative = "v0.13.0/database-section-split.md"
+        source_commit = "524e48698ddaf5f4bc118dadb417eb75039a0994"
+        data = (HISTORY_ROOT / relative).read_bytes()
+        prefix = data.split(b"````markdown\n", 1)[0]
+        self.assertIn(b"NON-AUTHORITATIVE HISTORY", prefix)
+        self.assertIn(source_commit.encode("ascii"), prefix)
+        captured = data.split(b"````markdown\n")[1:]
+        sections = (
+            (
+                "docs/specification.md",
+                b"### Migration And Activation Boundary\n",
+                b"<a id=\"schema-v19-bundle-foundation-schema-v20v21-native-writer-and-evidence-json\"></a>\n",
+                "database-specification.md",
+            ),
+            (
+                "docs/specification.md",
+                b"### Initialization And Supported Schemas\n",
+                b"### Schema-v20 Foundation And Admission\n",
+                "database-specification.md",
+            ),
+            (
+                "docs/specification.md",
+                b"### Schema-v20 Foundation And Admission\n",
+                b"<a id=\"current-schema-v21-persistence-contract\"></a>\n",
+                "database-specification.md",
+            ),
+            (
+                "docs/specification.md",
+                b"<a id=\"current-schema-v21-persistence-contract\"></a>\n",
+                b"<a id=\"schema-v21-persistence-contract\"></a>\n",
+                "database-specification.md",
+            ),
+            (
+                "docs/design.md",
+                b"### Migration Sequence\n",
+                b"### Schema-v20 Physical Foundation\n",
+                "database-design.md",
+            ),
+            (
+                "docs/design.md",
+                b"### Schema-v20 Physical Foundation\n",
+                b"<a id=\"schema22-reservation-cleanup-design\"></a>\n",
+                "database-design.md",
+            ),
+            (
+                "docs/design.md",
+                b"<a id=\"schema22-reservation-cleanup-design\"></a>\n",
+                b"<a id=\"schema21-runner-gate-basis-design\"></a>\n",
+                "database-design.md",
+            ),
+            (
+                "docs/design.md",
+                b"<a id=\"schema21-runner-gate-basis-design\"></a>\n",
+                b"## Stable Project Identity, Binding, And Relocation\n",
+                "database-design.md",
+            ),
+        )
+        self.assertEqual(len(captured), len(sections))
+        index = (HISTORY_ROOT / "README.md").read_text(encoding="utf-8")
+        self.assertEqual(index.count(f"]({relative})"), 1)
+        self.assertIn(source_commit, index)
+        for block, (path, start_marker, end_marker, replacement) in zip(
+            captured, sections
+        ):
+            with self.subTest(path=path):
+                self.assertIn(path.encode("ascii"), prefix)
+                self.assertIn(f"](../../{replacement})".encode("ascii"), prefix)
+                self.assertIn(f"](../{replacement})", index)
+                source = subprocess.run(
+                    ["git", "show", f"{source_commit}:{path}"],
+                    cwd=ROOT,
+                    check=False,
+                    capture_output=True,
+                )
+                self.assertEqual(source.returncode, 0)
+                start = source.stdout.index(start_marker)
+                end = source.stdout.index(end_marker, start)
+                self.assertEqual(block.split(b"````\n", 1)[0], source.stdout[start:end])
+
     def test_m23_authority_split_capture_preserves_exact_source_provenance(self):
         data = M23_AUTHORITY_SPLIT_CAPTURE.read_bytes()
         self.assertEqual(

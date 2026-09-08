@@ -8,7 +8,7 @@ The [Runner Plan authoring/control design](runner-plan-authoring-design.md)
 remains separate. Shared [runtime ownership](design.md#runtime-module-boundaries),
 [CLI/serialization](design.md#public-cli-and-serialization),
 [connection/transaction](design.md#journal-and-connection-rules),
-[schema-v21 Runner gate basis](design.md#schema-v21-runner-gate-basis-design),
+[schema-v21 Runner gate basis](database-design.md#schema-v21-runner-gate-basis-design),
 [current schema-v22 integration](review-completion-design.md#current-schema-v22-manual-receipt-arm-and-bundle-integration),
 [post-commit coordination](setup-state-design.md#post-commit-coordinator),
 [privacy/failure](design.md#privacy-safety-and-failure-boundaries), and

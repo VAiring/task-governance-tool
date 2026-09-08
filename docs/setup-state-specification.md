@@ -9,7 +9,7 @@ Shared [CLI/output](specification.md#public-cli-and-output-contract),
 [package and state layout](specification.md#package-runtime-and-generated-state),
 [privacy and stable errors](specification.md#privacy-safety-and-stable-errors),
 [SQLite operation](specification.md#sqlite-migration-and-concurrency),
-and [current persistence](specification.md#current-schema-v22-persistence-contract)
+and [current persistence](database-specification.md#current-schema-v22-persistence-contract)
 remain with their existing owners.
 [Stored Task validation](task-operation-specification.md#stored-task-read-and-privacy-contract),
 [Evidence publication](evidence-specification.md#canonical-evidence-bundle-and-index-formats),

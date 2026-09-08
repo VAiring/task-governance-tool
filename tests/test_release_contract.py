@@ -21,6 +21,7 @@ from tools.test_lanes import (
     CI_CHECK_INVOCATION,
     CI_LANE_INVOCATION,
     CI_MATRIX_INVOCATION,
+    CI_PLATFORM_SMOKE_INVOCATION,
 )
 
 
@@ -412,6 +413,7 @@ class ReleaseContractCheckerTests(unittest.TestCase):
         self.assertEqual(workflow.count(CI_CHECK_INVOCATION), 1)
         self.assertEqual(workflow.count(CI_MATRIX_INVOCATION), 1)
         self.assertEqual(workflow.count(CI_LANE_INVOCATION), 1)
+        self.assertEqual(workflow.count(CI_PLATFORM_SMOKE_INVOCATION), 1)
         for removed in (
             "$requiredFiles",
             "$publicTokens",
@@ -445,7 +447,7 @@ class ReleaseContractCheckerTests(unittest.TestCase):
         def relocate_candidate_condition(text: str) -> str:
             candidate = (
                 "    if: ${{ always() && github.event_name == "
-                "'workflow_dispatch' }}\n"
+                "'workflow_dispatch' && inputs.platform_only != true }}\n"
             )
             changed = text.replace(
                 candidate,
@@ -490,8 +492,7 @@ class ReleaseContractCheckerTests(unittest.TestCase):
             (
                 "test_job_restricted_to_dispatch",
                 lambda text: text.replace(
-                    "  test:\n",
-                    "  test:\n"
+                    "    if: ${{ inputs.platform_only != true }}\n",
                     "    if: github.event_name == 'workflow_dispatch'\n",
                     1,
                 ),
@@ -581,8 +582,10 @@ class ReleaseContractCheckerTests(unittest.TestCase):
                 fixture = copy_release_fixture(Path(temporary))
                 fixture_workflow = fixture / ".github" / "workflows" / "ci.yml"
                 original = fixture_workflow.read_text(encoding="utf-8")
+                changed = mutate(original)
+                self.assertNotEqual(changed, original)
                 fixture_workflow.write_text(
-                    mutate(original),
+                    changed,
                     encoding="utf-8",
                 )
 
@@ -597,6 +600,111 @@ class ReleaseContractCheckerTests(unittest.TestCase):
             result = check_fixture(fixture)
 
             self.assertIn("required_file_missing", issue_codes(result))
+
+    def test_ci_platform_description_wording_can_change(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            fixture = copy_release_fixture(Path(temporary))
+            fixture_workflow = fixture / ".github" / "workflows" / "ci.yml"
+            text = fixture_workflow.read_text(encoding="utf-8")
+            original = (
+                "description: Run initial platform checks only "
+                "(not a release candidate)"
+            )
+            self.assertIn(original, text)
+            fixture_workflow.write_text(
+                text.replace(original, "description: Initial OS smoke checks", 1),
+                encoding="utf-8",
+                newline="\n",
+            )
+
+            result = check_fixture(fixture)
+
+            self.assertTrue(result.ok, result.issues)
+
+    def test_ci_initial_platform_and_full_candidate_boundaries_fail_closed(self):
+        workflow = (ROOT / ".github" / "workflows" / "ci.yml").read_text(
+            encoding="utf-8"
+        )
+        platform_job = workflow[
+            workflow.index("\n  platform-smoke:\n") :
+            workflow.index("\n  release-candidate:\n")
+        ]
+        mutations = (
+            (
+                "platform_job_missing",
+                platform_job,
+                "",
+                "ci_platform_invalid",
+            ),
+            (
+                "platform_entry_replaced",
+                CI_PLATFORM_SMOKE_INVOCATION,
+                "python tools/test_lanes.py --repo . --lane all",
+                "ci_platform_invalid",
+            ),
+            (
+                "platform_entry_commented",
+                f"run: {CI_PLATFORM_SMOKE_INVOCATION}",
+                f"# run: {CI_PLATFORM_SMOKE_INVOCATION}",
+                "ci_platform_invalid",
+            ),
+            (
+                "macos_missing",
+                "os: [ubuntu-24.04, macos-15]",
+                "os: [ubuntu-24.04]",
+                "ci_platform_invalid",
+            ),
+            (
+                "ubuntu_version_changed",
+                "os: [ubuntu-24.04, macos-15]",
+                "os: [ubuntu-22.04, macos-15]",
+                "ci_platform_invalid",
+            ),
+            (
+                "macos_intel",
+                "os: [ubuntu-24.04, macos-15]",
+                "os: [ubuntu-24.04, macos-15-intel]",
+                "ci_platform_invalid",
+            ),
+            (
+                "platform_input_not_boolean",
+                "        type: boolean",
+                "        type: string",
+                "ci_event_policy_invalid",
+            ),
+            (
+                "platform_only_by_default",
+                "        default: false",
+                "        default: true",
+                "ci_event_policy_invalid",
+            ),
+            (
+                "windows_only_for_initial_mode",
+                "    if: ${{ inputs.platform_only != true }}",
+                "    if: ${{ inputs.platform_only == true }}",
+                "ci_test_policy_wiring_invalid",
+            ),
+            (
+                "initial_mode_claims_candidate",
+                " && inputs.platform_only != true",
+                "",
+                "ci_candidate_gate_invalid",
+            ),
+        )
+        for name, original, changed, expected_code in mutations:
+            with self.subTest(name=name), tempfile.TemporaryDirectory() as temporary:
+                fixture = copy_release_fixture(Path(temporary))
+                fixture_workflow = fixture / ".github" / "workflows" / "ci.yml"
+                text = fixture_workflow.read_text(encoding="utf-8")
+                self.assertIn(original, text)
+                fixture_workflow.write_text(
+                    text.replace(original, changed, 1),
+                    encoding="utf-8",
+                )
+
+                result = check_fixture(fixture)
+
+                self.assertIn(expected_code, issue_codes(result), result.issues)
 
     def test_uninjected_runtime_facts_fail_closed_for_another_repository(self):
         with tempfile.TemporaryDirectory() as temporary:

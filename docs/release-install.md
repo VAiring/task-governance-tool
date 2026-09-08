@@ -596,12 +596,19 @@ The current CI policy parallelizes all three base-lane jobs on pushes to
 `fast` on 3.14. After complete discovery and ownership validation, pull-request
 and push `release` selections defer only the two closed wall-clock qualifier
 identities; their deterministic functional and capacity coverage remains.
-A release candidate requires an exact-ref manual `workflow_dispatch`: its
+A release candidate requires an exact-ref manual `workflow_dispatch` with
+`platform_only` omitted or false: its
 matrix is monolithic `all` on both Python versions with no qualifier deferral,
 and the explicit `Full release-candidate gate` must succeed. The checker and
 lane runner are repository tooling, not installable `taskgov` commands or
 target-project writes. A prior v0.10.0 result, Task receipt, approval object,
 or historical gate never satisfies a future candidate.
+
+The separate initial-platform job checks CLI startup and common processing on
+Ubuntu 24.04 x86-64 and macOS 15 Apple Silicon with Python 3.12. An explicit
+manual `platform_only=true` runs only policy and initial checks; it skips the
+Windows full matrix and candidate gate and is not release qualification or a
+claim of ordinary-function or Runner support on the added platforms.
 
 Candidate validation checks this CI policy and wiring locally only. It does not invoke
 `workflow_dispatch`, contact GitHub, or satisfy a later externally authorized

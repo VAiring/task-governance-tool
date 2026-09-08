@@ -31,6 +31,7 @@ from tools.test_lanes import (  # noqa: E402
     CI_EVENTS,
     CI_LANE_INVOCATION,
     CI_MATRIX_INVOCATION,
+    CI_PLATFORM_SMOKE_INVOCATION,
     CI_PUSH_BRANCHES,
     CI_PYTHON_VERSIONS,
     RELEASE_CANDIDATE_EVENT,
@@ -281,14 +282,22 @@ def _parse_ci_triggers(
         elif current is None or indent <= 2:
             return None
         else:
-            bodies[current].append(stripped)
+            bodies[current].append(line)
 
     if set(events) != set(CI_EVENTS) or len(events) != len(CI_EVENTS):
         return None
-    if bodies.get("pull_request") or bodies.get("workflow_dispatch"):
+    if bodies.get("pull_request"):
         return None
-    push_body = bodies.get("push")
-    if push_body is None or not push_body or push_body[0] != "branches:":
+    dispatch_body = bodies.get("workflow_dispatch", [])
+    if (
+        len(dispatch_body) != 5
+        or dispatch_body[:2] != ["    inputs:", "      platform_only:"]
+        or not dispatch_body[2].startswith("        description: ")
+        or dispatch_body[3:] != ["        type: boolean", "        default: false"]
+    ):
+        return None
+    push_body = [line.strip() for line in bodies.get("push", [])]
+    if not push_body or push_body[0] != "branches:":
         return None
     branches = tuple(
         line[2:].strip()
@@ -944,15 +953,18 @@ def _workflow_checks(
     jobs = _parse_ci_jobs(workflow)
     jobs_valid = (
         jobs is not None
-        and tuple(jobs) == ("policy", "test", "release-candidate")
+        and tuple(jobs)
+        == ("policy", "test", "platform-smoke", "release-candidate")
     )
     policy_block = jobs.get("policy", "") if jobs is not None else ""
     test_block = jobs.get("test", "") if jobs is not None else ""
+    platform_block = jobs.get("platform-smoke", "") if jobs is not None else ""
     candidate_block = (
         jobs.get("release-candidate", "") if jobs is not None else ""
     )
     policy_steps = _parse_named_steps(policy_block)
     test_steps = _parse_named_steps(test_block)
+    platform_steps = _parse_named_steps(platform_block)
 
     expected_checkout = (
         "        uses: actions/checkout@v6",
@@ -994,11 +1006,21 @@ def _workflow_checks(
             "    name: Windows tests (${{ matrix.lane }}, "
             "Python ${{ matrix.python-version }})"
         ),
+        "    if: ${{ inputs.platform_only != true }}",
         "    needs: policy",
         "    runs-on: windows-latest",
         "    strategy:",
         "      fail-fast: false",
         "      matrix: ${{ fromJSON(needs.policy.outputs.matrix) }}",
+    )
+    expected_platform_preamble = (
+        "    name: Initial platform checks (${{ matrix.os }}, Python 3.12)",
+        "    needs: policy",
+        "    runs-on: ${{ matrix.os }}",
+        "    strategy:",
+        "      fail-fast: false",
+        "      matrix:",
+        "        os: [ubuntu-24.04, macos-15]",
     )
     policy_valid = (
         jobs_valid
@@ -1033,6 +1055,18 @@ def _workflow_checks(
         and test_steps.get("Run test lane")
         == (f"        run: {CI_LANE_INVOCATION}",)
     )
+    platform_valid = (
+        jobs_valid
+        and platform_steps is not None
+        and tuple(platform_steps)
+        == ("Checkout", "Set up Python", "Run initial platform checks")
+        and _job_preamble(platform_block) == expected_platform_preamble
+        and platform_steps.get("Checkout") == expected_checkout
+        and platform_steps.get("Set up Python") == expected_policy_python
+        and platform_steps.get("Run initial platform checks")
+        == (f"        run: {CI_PLATFORM_SMOKE_INVOCATION}",)
+        and run_commands.count(CI_PLATFORM_SMOKE_INVOCATION) == 1
+    )
     if (
         not policy_valid
         or not test_valid
@@ -1053,6 +1087,7 @@ def _workflow_checks(
         (
             "    if: ${{ always() && github.event_name == "
             f"'{RELEASE_CANDIDATE_EVENT}' "
+            "&& inputs.platform_only != true "
             "}}"
         ),
         "    needs:",
@@ -1084,16 +1119,12 @@ def _workflow_checks(
                 "CI does not enforce the complete manual release-candidate gate",
             )
         )
-    if (
-        "runs-on: windows-latest" not in workflow
-        or "ubuntu-" in workflow
-        or "macos-" in workflow
-    ):
+    if not platform_valid:
         issues.append(
             ContractIssue(
                 "ci_platform_invalid",
                 ".github/workflows/ci.yml",
-                "CI platform differs from the verified Windows boundary",
+                "CI does not preserve the bounded initial-platform checks",
             )
         )
     return versions

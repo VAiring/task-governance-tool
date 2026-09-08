@@ -875,12 +875,15 @@ Every run first validates the complete manifest. A base lane is an ordered
 filter of standard discovery, while `all` runs the original discovered suite
 in its original order. New `test*.py` modules therefore fail closed until
 classified; new methods in an owned module inherit that module's lane.
-The mixed backup/Viewer performance module is the only narrower allocation:
+The mixed backup/Viewer performance module is the only timing allocation:
 its exact four discovered identities must equal the closed functional/capacity
 and manual-timing sets, or validation fails before execution. Local lane runs
 without a CI event retain the complete base lane. Pull-request and push
-selection remove only the two manual-timing identities; manual dispatch removes
-nothing.
+selection remove only the two manual-timing identities; full manual dispatch
+removes nothing. The separate initial-platform selection is an ordered filter
+of complete validated discovery using `PLATFORM_SMOKE_MODULES` in
+`tools/test_lanes.py`. It begins with CLI startup/help and pure Task validation,
+is not a fourth base lane, and does not disable tests in the exhaustive suite.
 
 The retired LPAC module, mandatory native fixture, and dedicated route tests are
 absent from standard discovery. No such residue remains
@@ -893,12 +896,20 @@ CI obtains one compact include matrix from this same policy. Pull requests run
 all three base lanes on Python 3.12 and `fast` on 3.14; the release selection
 retains deterministic performance-fixture behavior/capacity but defers the two
 wall-clock qualifiers. Pushes to `main` run all three base lanes independently
-on both versions with the same exact deferral. Manual `workflow_dispatch` runs
+on both versions with the same exact deferral. Default manual `workflow_dispatch` runs
 monolithic `all` on both versions without that deferral, and an
 `always()` aggregate job fails unless policy validation and the full matrix
 succeed. The workflow trigger remains limited to pull requests, pushes to
 `main`, and manual dispatch; a candidate gate cannot be replaced by a skipped
 dependency job.
+
+The additional initial-platform job uses Ubuntu 24.04 x86-64 and macOS 15
+Apple Silicon with Python 3.12 and the same repository runner's
+`--platform-smoke` entry. Manual `platform_only=true` selects policy and initial
+checks alone; the Windows matrix and candidate gate are explicitly skipped and
+no release qualification is claimed. The default full route retains both
+Windows versions and its aggregate gate. Additional-platform initial checks
+do not themselves establish ordinary-function or Runner support.
 
 Tier-2 changes use two independent exact-target reviews. Tests hard-fail count,
 byte, subprocess, attempt, and render limits; performance budgets never justify

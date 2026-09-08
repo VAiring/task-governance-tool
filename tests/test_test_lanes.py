@@ -18,12 +18,14 @@ from tools.test_lanes import (
     DETERMINISTIC_PERFORMANCE_TEST_IDS,
     LANE_MODULES,
     MANUAL_TIMING_QUALIFICATION_TEST_IDS,
+    PLATFORM_SMOKE_MODULES,
     RELEASE_CANDIDATE_EVENT,
     TestLaneError,
     build_lane_plan,
     ci_matrix,
     discover_tests,
     main as lane_main,
+    platform_smoke_suite,
     validate_ci_policy,
     validate_ci_selection,
     validate_ci_test_allocation,
@@ -498,6 +500,69 @@ class TestLanePolicyTests(unittest.TestCase):
             },
         )
         self.assertEqual(tuple(CI_POLICY), ("pull_request", "push", "workflow_dispatch"))
+
+    def test_initial_platform_selection_preserves_the_exhaustive_partition(self):
+        inventory = discover_tests(ROOT)
+        self.assertEqual(
+            PLATFORM_SMOKE_MODULES,
+            ("test_cli_help", "test_task_validation"),
+        )
+        expected = tuple(
+            test_id
+            for test_id, module in zip(
+                inventory.plan.test_ids, inventory.plan.test_modules, strict=True
+            )
+            if module in PLATFORM_SMOKE_MODULES
+        )
+        self.assertTrue(expected)
+        self.assertEqual(
+            tuple(case.id() for case in flatten_suite(platform_smoke_suite(inventory))),
+            expected,
+        )
+        self.assertEqual(inventory.plan.ids_for(ALL_LANE), standard_discovery_ids())
+        with mock.patch("tools.test_lanes.PLATFORM_SMOKE_MODULES", ("test_missing",)):
+            assert_lane_error(
+                self, "platform_smoke_invalid", lambda: platform_smoke_suite(inventory)
+            )
+
+    def test_initial_platform_cli_runs_only_the_selected_suite(self):
+        inventory = discover_tests(ROOT)
+        expected = tuple(
+            case.id() for case in flatten_suite(platform_smoke_suite(inventory))
+        )
+        observed = []
+
+        def record_suite(suite):
+            observed.append(tuple(case.id() for case in flatten_suite(suite)))
+            return mock.Mock(testsRun=len(expected), wasSuccessful=lambda: True)
+
+        stderr = io.StringIO()
+        with (
+            mock.patch("tools.test_lanes.discover_tests", return_value=inventory),
+            mock.patch("tools.test_lanes.unittest.TextTestRunner") as runner,
+            mock.patch("sys.stderr", stderr),
+        ):
+            runner.return_value.run.side_effect = record_suite
+            self.assertEqual(lane_main(["--platform-smoke"]), 0)
+        self.assertEqual(observed, [expected])
+        self.assertEqual(
+            stderr.getvalue(),
+            f"initial platform checks ({len(expected)} tests; not release qualification)\n",
+        )
+
+    def test_initial_platform_mode_rejects_mixed_event_options_before_discovery(self):
+        with (
+            mock.patch("tools.test_lanes.discover_tests") as discovery,
+            mock.patch("sys.stderr", io.StringIO()),
+        ):
+            self.assertEqual(
+                lane_main([
+                    "--platform-smoke", "--ci-event", "push",
+                    "--expected-python", "3.12",
+                ]),
+                2,
+            )
+            discovery.assert_not_called()
 
     def test_ci_selection_rejects_unknown_rows_and_runtime_mismatch(self):
         validate_ci_selection(

@@ -1338,8 +1338,9 @@ class SkillSelfContainmentTests(unittest.TestCase):
         ):
             self.assertNotIn(removed_duplicate, workflow)
         self.assertIn("runs-on: windows-latest", workflow)
-        self.assertNotIn("ubuntu-", workflow)
-        self.assertNotIn("macos-", workflow)
+        self.assertIn("os: [ubuntu-24.04, macos-15]", workflow)
+        self.assertIn("Initial platform checks", workflow)
+        self.assertIn("inputs.platform_only != true", workflow)
 
     def test_tracked_skill_package_contains_runtime_but_no_generated_state(self):
         result = subprocess.run(

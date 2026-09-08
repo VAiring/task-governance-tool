@@ -119,12 +119,24 @@ gates. It is not the product contract, execution ledger, or evidence store:
   before execution.
 - Pull requests schedule all three base-lane jobs on Python 3.12 and `fast` on
   3.14; pushes to `main` schedule every base lane on both versions; manual
-  `workflow_dispatch` runs `all` on both versions.
+  `workflow_dispatch` runs `all` on both versions by default.
 - Complete discovery and base-lane ownership are validated before event
   selection. Pull-request and push release selections retain the two
   deterministic backup/Viewer functional-capacity tests and defer only the two
   closed wall-clock qualification identities. Manual `workflow_dispatch`
-  defers nothing, so both full-version `all` jobs execute the qualifiers.
+  defers nothing in its default full mode, so both full-version `all` jobs
+  execute the qualifiers.
+- An additional initial-platform job runs the closed common-processing and
+  CLI-startup selection owned by `tools/test_lanes.py` on Ubuntu 24.04 x86-64
+  and macOS 15 Apple Silicon with Python 3.12. It retains complete discovery
+  and lane validation before selection; later approved OS-operation and
+  ordinary-flow tests use the same entry. This is not a claim of supported
+  ordinary flows or Runner behavior on those platforms.
+- Manual `platform_only=true` runs policy validation and these initial checks
+  without the Windows full matrix or release-candidate gate. It is an explicit
+  initial-check route, never a substitute for full candidate qualification.
+  Omission or `false` preserves the existing Windows event matrix and full
+  manual gate; pull-request and push coverage are unchanged.
 - A future release candidate requires the explicit aggregate manual gate after
   policy validation and both full-version jobs. This repository CI policy
   grants no push, dispatch, tag, Release, or other external mutation

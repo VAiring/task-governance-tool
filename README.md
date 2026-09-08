@@ -585,12 +585,12 @@ CI consumes the same repository-only policy:
 |---|---|---|
 | pull request | `fast`, `integration`, `release` | `fast` |
 | push to `main` | `fast`, `integration`, `release` | `fast`, `integration`, `release` |
-| manual `workflow_dispatch` | `all` | `all` |
+| default manual `workflow_dispatch` | `all` | `all` |
 
 Every event first validates the complete standard discovery inventory and
 base-lane ownership. Pull-request and push `release` selections then defer only
 the two closed wall-clock qualifier identities while retaining their separate
-deterministic functional and capacity tests. Manual `workflow_dispatch`
+deterministic functional and capacity tests. Default manual `workflow_dispatch`
 defers nothing.
 
 The manual matrix is the complete release-candidate gate; its aggregate
@@ -598,6 +598,13 @@ job fails unless policy validation and both full-version jobs succeed.
 An `operation_sequence` value may correlate separately authorized candidate
 work, but neither that value nor a successful gate authorizes workflow
 dispatch, push, tag, or publication.
+
+An additional initial-platform job runs CLI startup and common-processing
+checks on Ubuntu 24.04 x86-64 and macOS 15 Apple Silicon with Python 3.12.
+Manual `platform_only=true` runs policy and these initial checks alone,
+skipping the Windows full matrix and candidate gate. This mode is not release
+qualification or a claim of ordinary-function or Runner support on those OSes;
+omitting the input or selecting `false` retains the full manual route.
 
 The repository-only release checker is offline and read-only. It derives the
 CLI leaves and runtime release versions from their owning Python modules, uses

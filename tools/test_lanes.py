@@ -34,6 +34,8 @@ CI_LANE_INVOCATION = (
     '--ci-event "${{ github.event_name }}" '
     '--expected-python "${{ matrix.python-version }}"'
 )
+CI_PLATFORM_SMOKE_INVOCATION = "python tools/test_lanes.py --repo . --platform-smoke"
+PLATFORM_SMOKE_MODULES = ("test_cli_help", "test_task_validation")
 PERFORMANCE_TEST_MODULE = "test_backup_performance"
 DETERMINISTIC_PERFORMANCE_TEST_IDS = (
     "test_backup_performance.BackupPerformanceTests."
@@ -454,6 +456,19 @@ def discover_tests(
     return DiscoveredTests(suite=suite, cases=cases, plan=plan)
 
 
+def platform_smoke_suite(inventory: DiscoveredTests) -> unittest.TestSuite:
+    """Select the current initial-platform coverage after full lane validation."""
+
+    modules = frozenset(PLATFORM_SMOKE_MODULES)
+    if not modules or not modules.issubset(inventory.plan.test_modules):
+        raise TestLaneError("platform_smoke_invalid")
+    return unittest.TestSuite(
+        case
+        for case, module in zip(inventory.cases, inventory.plan.test_modules, strict=True)
+        if module in modules
+    )
+
+
 def validate_ci_policy() -> None:
     """Fail closed when the repository CI policy loses its exact coverage."""
 
@@ -537,6 +552,7 @@ def _build_parser() -> argparse.ArgumentParser:
     mode.add_argument("--check", action="store_true")
     mode.add_argument("--lane", choices=(*BASE_LANES, ALL_LANE))
     mode.add_argument("--matrix-event", choices=CI_EVENTS)
+    mode.add_argument("--platform-smoke", action="store_true")
     parser.add_argument("--ci-event", choices=CI_EVENTS)
     parser.add_argument("--expected-python", choices=CI_PYTHON_VERSIONS)
     return parser
@@ -573,7 +589,7 @@ def main(argv: Sequence[str] | None = None) -> int:
 
         if (args.ci_event is None) != (args.expected_python is None):
             raise TestLaneError("test_lane_arguments_invalid")
-        if args.check and args.ci_event is not None:
+        if (args.check or args.platform_smoke) and args.ci_event is not None:
             raise TestLaneError("test_lane_arguments_invalid")
         if args.lane is not None and args.ci_event is not None:
             validate_ci_selection(
@@ -587,16 +603,22 @@ def main(argv: Sequence[str] | None = None) -> int:
             _print_check(inventory.plan)
             return 0
 
-        lane = args.lane
-        if lane is None:
-            raise TestLaneError("test_lane_arguments_invalid")
-        selected_ids = inventory.ids_for(lane, ci_event=args.ci_event)
-        suite = inventory.suite_for(lane, ci_event=args.ci_event)
-        expected_count = len(selected_ids)
-        print(
-            f"test lane: {lane} ({expected_count} tests)",
-            file=sys.stderr,
-        )
+        if args.platform_smoke:
+            suite = platform_smoke_suite(inventory)
+            expected_count = suite.countTestCases()
+            label = (
+                f"initial platform checks ({expected_count} tests; "
+                "not release qualification)"
+            )
+        else:
+            lane = args.lane
+            if lane is None:
+                raise TestLaneError("test_lane_arguments_invalid")
+            selected_ids = inventory.ids_for(lane, ci_event=args.ci_event)
+            suite = inventory.suite_for(lane, ci_event=args.ci_event)
+            expected_count = len(selected_ids)
+            label = f"test lane: {lane} ({expected_count} tests)"
+        print(label, file=sys.stderr)
         result = unittest.TextTestRunner(verbosity=1).run(suite)
         if not result.wasSuccessful():
             return 1

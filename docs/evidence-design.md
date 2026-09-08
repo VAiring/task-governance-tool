@@ -55,6 +55,11 @@ the retired `derived_analysis` reservation from current schema v22.
 - `evidence_projection.py` owns the codec, canonical Bundle/index JSON and
   digest validation, native Bundle construction, stored Bundle reconstruction,
   and rendering of captured `EvidenceProjectionBasis` values.
+- `completion_bundle_repository.py` owns prepared Bundle validation and
+  Bundle/member/Finding-snapshot writes on the caller's connection, reusing
+  local criterion-link persistence and the existing stored Bundle reader.
+  Native sealing, cycle coordination, and outer commit/rollback stay with their
+  existing owners.
 - `evidence_projection_metadata_repository.py` owns projection-state read/seed,
   source-generation advance, and outcome records. Cycle insertion and its
   generation advance retain one caller-owned writer; the outer outcome entry
@@ -70,7 +75,7 @@ the retired `derived_analysis` reservation from current schema v22.
   construction-side storage value types remain shared without a DTO layer.
 
 `storage.py` retains shared SQLite admission, all-source Evidence validation
-assembly, Bundle acquisition and projection capture, and completion persistence.
+assembly, Bundle acquisition and projection capture, and cycle persistence.
 It consumes the Evidence and Review repositories without changing global versus
 selected validation scope; necessary shared value types remain there. The
 projection metadata repository owns only its state rows.

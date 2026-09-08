@@ -144,7 +144,7 @@ The implementation keeps these narrow ownership boundaries:
 - `storage.py` remains the shared entry for migrations, initialized admission,
   repositories, and transaction-scoped queries, re-exporting the connection
   primitives, binding, operational metadata, Review, Verification Receipt, and
-  completion-history, Evidence, and Runner repository APIs for existing callers.
+  completion-history/Bundle, Evidence, and Runner repository APIs for existing callers.
   Feature modules do not open raw SQLite connections; Task-row error mapping remains with
   stored-state validation.
 - `schema_completion_cycles.py` owns the ordered completion-cycle SQL
@@ -179,6 +179,10 @@ The implementation keeps these narrow ownership boundaries:
   Shared cycle/Receipt and Evidence/Bundle validators remain storage-owned.
 - `completion_history_projection.py` owns the bounded public cycle projection;
   `storage.py` alone inserts immutable cycles.
+- `completion_bundle_repository.py` owns prepared Bundle validation and
+  Bundle/member/Finding-snapshot persistence on the caller's writer. Shared
+  stored Bundle reads and native Bundle/cycle coordination remain in `storage.py`;
+  the repository neither opens a connection nor commits the operation.
 - `verification_receipts.py` owns caller Receipt validation, exact-current
   classification, completion-gate evaluation, and the bounded Task-show read
   model.

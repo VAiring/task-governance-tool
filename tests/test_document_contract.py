@@ -31,6 +31,8 @@ EXPECTED_CANONICAL_DOCS = (
     "docs/task-operation-design.md",
     "docs/runner-execution-specification.md",
     "docs/runner-execution-design.md",
+    "docs/evidence-specification.md",
+    "docs/evidence-design.md",
     "plan.md",
     "docs/modularization-roadmap.md",
     "docs/history/README.md",
@@ -211,9 +213,9 @@ class DocumentContractTests(unittest.TestCase):
         self.assertNotIn(secret, serialized)
         self.assertNotIn("Traceback", serialized)
 
-    def test_registry_v10_is_closed(self):
+    def test_registry_v11_is_closed(self):
         expected = {
-            "schema": "taskgov-document-authority-v10",
+            "schema": "taskgov-document-authority-v11",
             "mandatory_start": [
                 "AGENTS.md",
                 "docs/authority.md",
@@ -228,6 +230,8 @@ class DocumentContractTests(unittest.TestCase):
                 "docs/task-operation-design.md",
                 "docs/runner-execution-specification.md",
                 "docs/runner-execution-design.md",
+                "docs/evidence-specification.md",
+                "docs/evidence-design.md",
             ],
             "mixed_execution": [],
             "conditional": ["docs/modularization-roadmap.md"],
@@ -320,6 +324,25 @@ class DocumentContractTests(unittest.TestCase):
                     old_link = f"]({destination})"
                     new_link = "](design.md)"
                 self.replace(root, source, old_link, new_link)
+                self.assertIn(
+                    "authority_route", self.codes(contract.check_document_contract(root))
+                )
+
+    def test_evidence_detail_routes_are_required(self):
+        for source, destination in (
+            (contract.AUTHORITY, "evidence-specification.md"),
+            (contract.AUTHORITY, "evidence-design.md"),
+            ("docs/specification.md", "evidence-specification.md#versioned-review-provenance-and-bundle-boundary"),
+            ("docs/specification.md", "evidence-specification.md#authority-snapshot-whole-field-criteria-and-references"),
+            ("docs/specification.md", "evidence-specification.md#schema-v19-bundle-foundation-schema-v20v21-native-writer-and-evidence-json"),
+            ("docs/specification.md", "evidence-specification.md#assurance-evidence-references-and-finding-snapshots"),
+            ("docs/specification.md", "evidence-specification.md#canonical-evidence-bundle-and-index-formats"),
+            ("docs/specification.md", "evidence-specification.md#evidence-interpretation-and-retired-analyzer-boundary"),
+            (contract.DESIGN, "evidence-design.md#provenance-evidence-ledger-and-bundle-structure"),
+            (contract.DESIGN, "evidence-design.md#test-only-independent-evidence-reader"),
+        ):
+            with self.subTest(source=source, destination=destination), self.fixture() as root:
+                self.replace(root, source, f"]({destination})", "](design.md)")
                 self.assertIn(
                     "authority_route", self.codes(contract.check_document_contract(root))
                 )
@@ -457,6 +480,51 @@ class DocumentContractTests(unittest.TestCase):
                     contract.DESIGN,
                     "## Runner Parent Service And Audit Graph",
                     ("runner-execution-design.md#runner-parent-service-and-audit-graph",),
+                ),
+                (
+                    contract.AUTHORITY,
+                    "## Evidence Detail Authority",
+                    ("evidence-specification.md", "evidence-design.md"),
+                ),
+                (
+                    "docs/specification.md",
+                    "### Versioned Review Provenance And Bundle Boundary",
+                    ("evidence-specification.md#versioned-review-provenance-and-bundle-boundary",),
+                ),
+                (
+                    "docs/specification.md",
+                    "### Authority Snapshot, Whole-Field Criteria, And References",
+                    ("evidence-specification.md#authority-snapshot-whole-field-criteria-and-references",),
+                ),
+                (
+                    "docs/specification.md",
+                    "### Schema-v19 Bundle Foundation, Schema-v20/v21/v22 Native Writer, And Evidence JSON",
+                    ("evidence-specification.md#schema-v19-bundle-foundation-schema-v20v21-native-writer-and-evidence-json",),
+                ),
+                (
+                    "docs/specification.md",
+                    "### Assurance, Evidence References, And Finding Snapshots",
+                    ("evidence-specification.md#assurance-evidence-references-and-finding-snapshots",),
+                ),
+                (
+                    "docs/specification.md",
+                    "### Canonical Evidence Bundle And Index Formats",
+                    ("evidence-specification.md#canonical-evidence-bundle-and-index-formats",),
+                ),
+                (
+                    "docs/specification.md",
+                    "## Evidence Interpretation And Retired Analyzer Boundary",
+                    ("evidence-specification.md#evidence-interpretation-and-retired-analyzer-boundary",),
+                ),
+                (
+                    contract.DESIGN,
+                    "### Provenance, Evidence Ledger, And Bundle Structure",
+                    ("evidence-design.md#provenance-evidence-ledger-and-bundle-structure",),
+                ),
+                (
+                    contract.DESIGN,
+                    "## Test-Only Independent Evidence Reader",
+                    ("evidence-design.md#test-only-independent-evidence-reader",),
                 ),
                 (
                     contract.AUTHORITY,

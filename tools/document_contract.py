@@ -25,6 +25,8 @@ TASK_OPERATION_SPECIFICATION = "docs/task-operation-specification.md"
 TASK_OPERATION_DESIGN = "docs/task-operation-design.md"
 RUNNER_EXECUTION_SPECIFICATION = "docs/runner-execution-specification.md"
 RUNNER_EXECUTION_DESIGN = "docs/runner-execution-design.md"
+EVIDENCE_SPECIFICATION = "docs/evidence-specification.md"
+EVIDENCE_DESIGN = "docs/evidence-design.md"
 HISTORY_INDEX = "docs/history/README.md"
 RELEASE_INSTALL = "docs/release-install.md"
 ARTIFACT_AUTHORING = "docs/artifact-authoring.md"
@@ -44,6 +46,8 @@ CANONICAL_DOCS = (
     TASK_OPERATION_DESIGN,
     RUNNER_EXECUTION_SPECIFICATION,
     RUNNER_EXECUTION_DESIGN,
+    EVIDENCE_SPECIFICATION,
+    EVIDENCE_DESIGN,
     "plan.md",
     MODULARIZATION_ROADMAP,
     HISTORY_INDEX,
@@ -167,6 +171,51 @@ ROUTE_SECTIONS = (
     ),
     (
         AUTHORITY,
+        "## Evidence Detail Authority",
+        ("evidence-specification.md", "evidence-design.md"),
+    ),
+    (
+        "docs/specification.md",
+        "### Versioned Review Provenance And Bundle Boundary",
+        ("evidence-specification.md#versioned-review-provenance-and-bundle-boundary",),
+    ),
+    (
+        "docs/specification.md",
+        "### Authority Snapshot, Whole-Field Criteria, And References",
+        ("evidence-specification.md#authority-snapshot-whole-field-criteria-and-references",),
+    ),
+    (
+        "docs/specification.md",
+        "### Schema-v19 Bundle Foundation, Schema-v20/v21/v22 Native Writer, And Evidence JSON",
+        ("evidence-specification.md#schema-v19-bundle-foundation-schema-v20v21-native-writer-and-evidence-json",),
+    ),
+    (
+        "docs/specification.md",
+        "### Assurance, Evidence References, And Finding Snapshots",
+        ("evidence-specification.md#assurance-evidence-references-and-finding-snapshots",),
+    ),
+    (
+        "docs/specification.md",
+        "### Canonical Evidence Bundle And Index Formats",
+        ("evidence-specification.md#canonical-evidence-bundle-and-index-formats",),
+    ),
+    (
+        "docs/specification.md",
+        "## Evidence Interpretation And Retired Analyzer Boundary",
+        ("evidence-specification.md#evidence-interpretation-and-retired-analyzer-boundary",),
+    ),
+    (
+        DESIGN,
+        "### Provenance, Evidence Ledger, And Bundle Structure",
+        ("evidence-design.md#provenance-evidence-ledger-and-bundle-structure",),
+    ),
+    (
+        DESIGN,
+        "## Test-Only Independent Evidence Reader",
+        ("evidence-design.md#test-only-independent-evidence-reader",),
+    ),
+    (
+        AUTHORITY,
         "## Conditional Initiative Roadmaps",
         ("modularization-roadmap.md",),
     ),
@@ -179,8 +228,8 @@ ROUTE_SECTIONS = (
 )
 
 TRIGGER_ROUTE_OWNER_TOKENS = (
-    ("docs/specification.md", VIEWER_SPECIFICATION, RUNNER_PLAN_AUTHORING_SPECIFICATION, TASK_OPERATION_SPECIFICATION, RUNNER_EXECUTION_SPECIFICATION),
-    ("docs/design.md", VIEWER_DESIGN, RUNNER_PLAN_AUTHORING_DESIGN, TASK_OPERATION_DESIGN, RUNNER_EXECUTION_DESIGN),
+    ("docs/specification.md", VIEWER_SPECIFICATION, RUNNER_PLAN_AUTHORING_SPECIFICATION, TASK_OPERATION_SPECIFICATION, RUNNER_EXECUTION_SPECIFICATION, EVIDENCE_SPECIFICATION),
+    ("docs/design.md", VIEWER_DESIGN, RUNNER_PLAN_AUTHORING_DESIGN, TASK_OPERATION_DESIGN, RUNNER_EXECUTION_DESIGN, EVIDENCE_DESIGN),
     ("plan.md",),
     (MODULARIZATION_ROADMAP,),
     ("docs/release-install.md",),
@@ -364,6 +413,8 @@ ROLE_TITLES = {
     TASK_OPERATION_DESIGN: "# Task Operation Implementation Design",
     RUNNER_EXECUTION_SPECIFICATION: "# Runner Execution Specification",
     RUNNER_EXECUTION_DESIGN: "# Runner Execution Implementation Design",
+    EVIDENCE_SPECIFICATION: "# Evidence Specification",
+    EVIDENCE_DESIGN: "# Evidence Implementation Design",
     "plan.md": "# task-governance-tool Current Decisions And Open Issues",
     MODULARIZATION_ROADMAP: "# Responsibility-Based Modularization Roadmap",
     HISTORY_INDEX: "# Historical Documentation Index",
@@ -1010,7 +1061,7 @@ def _section_bounds(scan: Scan, heading: str) -> tuple[int, int] | None:
 
 def _expected_registry() -> dict[str, object]:
     return {
-        "schema": "taskgov-document-authority-v10",
+        "schema": "taskgov-document-authority-v11",
         "mandatory_start": ["AGENTS.md", AUTHORITY, "live_task_contract"],
         "current": [
             "docs/specification.md", "docs/design.md", "plan.md",
@@ -1018,6 +1069,7 @@ def _expected_registry() -> dict[str, object]:
             RUNNER_PLAN_AUTHORING_SPECIFICATION, RUNNER_PLAN_AUTHORING_DESIGN,
             TASK_OPERATION_SPECIFICATION, TASK_OPERATION_DESIGN,
             RUNNER_EXECUTION_SPECIFICATION, RUNNER_EXECUTION_DESIGN,
+            EVIDENCE_SPECIFICATION, EVIDENCE_DESIGN,
         ],
         "mixed_execution": [],
         "conditional": [MODULARIZATION_ROADMAP],

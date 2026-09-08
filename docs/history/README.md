@@ -597,3 +597,24 @@ contracts, their index, and the pre-normalization plan from source commit
   [docs/authority.md](../authority.md). Use the public CLI for live Task state
   and evidence. This capture is lineage only and cannot fill a current authority
   gap or satisfy a gate.
+
+## v0.13.0 Evidence Section Split Lineage
+
+- Immutable history:
+  [v0.13.0/evidence-section-split.md](v0.13.0/evidence-section-split.md)
+- Source sections: provenance, authority snapshots/criteria/References, Bundle
+  foundation, Reference/Finding snapshots and canonical Bundle/index formats,
+  and interpretation in `docs/specification.md`; Provenance/Evidence Ledger/
+  Bundle Structure and the test-only independent reader in `docs/design.md`.
+- Source commit: `c3c9323370ab24f6eddf10694ccf34e9c4ebbc3a`
+- Capture unit: `TG-MOD.12`
+- Capture purpose: preserve only the complete relocated Evidence sections;
+  Review/Verification operations, completion gates, shared Runner protocol,
+  persistence, and ordinary Task state retain their owners.
+- Current replacements:
+  [Evidence specification](../evidence-specification.md)
+  and [Evidence design](../evidence-design.md).
+  The unchanged common contracts remain routed by
+  [docs/authority.md](../authority.md). Use the public CLI for live Task state
+  and evidence. This capture is lineage only and cannot fill a current authority
+  gap or satisfy a gate.

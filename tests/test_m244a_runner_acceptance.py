@@ -36,6 +36,8 @@ if str(SCRIPTS_ROOT) not in sys.path:
 
 from task_governance_tool import storage  # noqa: E402
 from task_governance_tool import verification_runner_service as service  # noqa: E402
+from task_governance_tool import verification_runner_selection as selection  # noqa: E402
+from task_governance_tool.tasks import read_internal_task  # noqa: E402
 from task_governance_tool.verification_runner import (  # noqa: E402
     RUNNER_CONTRACT_VERSION, runner_observation_source_projection,
 )
@@ -420,7 +422,7 @@ class M244ARunnerAcceptanceTests(unittest.TestCase):
             with closing(storage.connect(target.db_path)) as connection:
                 self.assertEqual(storage.apply_migrations(connection), ([22], []))
             with closing(storage.connect_initialized_readonly(target)) as connection:
-                task = service.read_internal_task(
+                task = read_internal_task(
                     connection,
                     target.project.project_id,
                     resolution.task_id,
@@ -436,7 +438,7 @@ class M244ARunnerAcceptanceTests(unittest.TestCase):
                  graph["attempt"].gate_eligibility_version,
                  graph["observation"].gate_eligibility_version), ("pass", 0, 0, 0))
             self.assertEqual(task["review_target_runner_basis_version"], 0)
-            self.assertIsNone(service.select_current_verification_runner_basis(
+            self.assertIsNone(selection.select_current_verification_runner_basis(
                 target, task=task))
 
     def test_process_create_failure_is_terminal_and_parent_blocking(self):

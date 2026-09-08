@@ -218,6 +218,10 @@ The implementation keeps these narrow ownership boundaries:
   Evidence repository APIs; storage retains schema admission and the Evidence
   validation repository owns Bundle validation. The service retains selection,
   process/lock ownership, and outer commit/rollback.
+- `verification_runner_selection.py` owns current-basis and snapshot selection,
+  stored physical-basis checks, and the terminal classification shared by launch.
+  It remains in the Runner service layer; `verification_runner_service.py`
+  retains T1/T2 orchestration, process execution, locking, and cleanup.
 - `evidence_publication.py` owns storage-backed capture, fixed-path publication,
   generation/outcome recording, and read-only physical projection status.
 - `artifact_manifest.py` owns safe bounded Git leaf observation, exact rename

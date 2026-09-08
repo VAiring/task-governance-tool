@@ -33,6 +33,7 @@ from task_governance_tool import cli as cli_module  # noqa: E402
 from task_governance_tool.cli_text import review_text  # noqa: E402
 from task_governance_tool import verification_runner_process as runner_process  # noqa: E402
 from task_governance_tool import verification_runner_service as service  # noqa: E402
+from task_governance_tool import verification_runner_selection as selection  # noqa: E402
 from task_governance_tool.artifact_manifest import (  # noqa: E402
     opaque_artifact_observation,
 )
@@ -1802,7 +1803,7 @@ class VerificationRunnerServiceTests(unittest.TestCase):
                 cli_module,
                 "select_current_verification_runner_basis",
                 side_effect=lambda _target, *, task: (
-                    service.select_current_verification_runner_basis(
+                    selection.select_current_verification_runner_basis(
                         fixture.target,
                         task=task,
                     )

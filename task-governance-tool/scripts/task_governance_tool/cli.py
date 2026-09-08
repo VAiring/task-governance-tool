@@ -140,9 +140,11 @@ from task_governance_tool.verification_receipts import (
     VerificationReceiptError,
     add_verification_receipt,
 )
+from task_governance_tool.verification_runner_selection import (
+    select_current_verification_runner_basis,
+)
 from task_governance_tool.verification_runner_service import (
     VerificationRunnerServiceError,
-    select_current_verification_runner_basis,
     set_review_target_with_optional_runner,
 )
 RUNNER_PLAN_UNCONFIRMED_WARNING = {

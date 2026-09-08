@@ -29,6 +29,7 @@ from task_governance_tool import evidence_validation_repository as evidence_vali
 from task_governance_tool import verification_runner_repository as runner_repository
 from task_governance_tool import tasks as tasks_module
 from task_governance_tool import verification_runner_service as service
+from task_governance_tool import verification_runner_selection as selection
 from task_governance_tool.storage import utc_now
 
 
@@ -325,7 +326,7 @@ def _complete_runner_pass(fixture: RunnerServiceFixture) -> None:
     _persist_terminal(fixture, intent, branch="pass")
     _seed_review_receipts(fixture)
     with mock.patch.object(
-        service,
+        selection,
         "_stored_runner_physical_basis_matches",
         return_value=True,
     ):
@@ -397,7 +398,7 @@ class M243CRunnerGateTests(unittest.TestCase):
                     return True
 
                 with mock.patch.object(
-                    service,
+                    selection,
                     "_stored_runner_physical_basis_matches",
                     side_effect=assert_no_outer_read_transaction,
                 ):
@@ -448,7 +449,7 @@ class M243CRunnerGateTests(unittest.TestCase):
                 "_validated_verification_runner_graph",
                 new=validate_graph,
             ), mock.patch.object(
-                service,
+                selection,
                 "_stored_runner_physical_basis_matches",
                 return_value=True,
             ), mock.patch.object(
@@ -848,7 +849,7 @@ class M243CRunnerGateTests(unittest.TestCase):
             )
             self.assertEqual(finding.returncode, 0, finding.stdout)
             with mock.patch.object(
-                service,
+                selection,
                 "_stored_runner_physical_basis_matches",
                 return_value=True,
             ):
@@ -885,15 +886,15 @@ class M243CRunnerGateTests(unittest.TestCase):
                     skill_root=installed_skill_root,
                 )
                 with mock.patch.object(
-                    service,
+                    selection,
                     "capture_verification_runner_plan",
                     return_value=None,
                 ), mock.patch.object(
-                    service,
+                    selection,
                     "resolve_verification_runner_plan",
                     return_value=prepared.plan,
                 ), mock.patch.object(
-                    service,
+                    selection,
                     "capture_runner_implementation",
                     return_value=prepared.implementation,
                 ), mock.patch(
@@ -912,7 +913,7 @@ class M243CRunnerGateTests(unittest.TestCase):
                     _seed_review_receipts(fixture)
 
                     with mock.patch.object(
-                        service,
+                        selection,
                         "observe_staged_runner_target",
                         side_effect=AssertionError(
                             "completion reread the ambient index"
@@ -943,7 +944,7 @@ class M243CRunnerGateTests(unittest.TestCase):
                                 )
                             )
                         self.assertTrue(
-                            service._stored_runner_physical_basis_matches(
+                            selection._stored_runner_physical_basis_matches(
                                 installed_target,
                                 snapshot,
                                 completion_revision=revision,
@@ -1014,11 +1015,11 @@ class M243CRunnerGateTests(unittest.TestCase):
             # Only Plan admission and the existing private target seam are
             # substituted; package capture and physical comparison stay real.
             with mock.patch.object(
-                service,
+                selection,
                 "capture_verification_runner_plan",
                 return_value=None,
             ), mock.patch.object(
-                service,
+                selection,
                 "resolve_verification_runner_plan",
                 return_value=prepared.plan,
             ), mock.patch(
@@ -1090,7 +1091,10 @@ class M243CRunnerGateTests(unittest.TestCase):
             self.assertEqual(tree_snapshot(fixture.db.parent), state_before)
 
     def test_completion_workflow_does_not_import_runner_service(self):
-        module_name = "task_governance_tool.verification_runner_service"
+        module_names = {
+            "task_governance_tool.verification_runner_service",
+            "task_governance_tool.verification_runner_selection",
+        }
         syntax = ast.parse(
             Path(completion_workflow.__file__).read_text(encoding="utf-8")
         )
@@ -1098,9 +1102,9 @@ class M243CRunnerGateTests(unittest.TestCase):
         for node in ast.walk(syntax):
             if isinstance(node, ast.Import):
                 forbidden_imports.extend(
-                    alias.name for alias in node.names if alias.name == module_name
+                    alias.name for alias in node.names if alias.name in module_names
                 )
-            elif isinstance(node, ast.ImportFrom) and node.module == module_name:
+            elif isinstance(node, ast.ImportFrom) and node.module in module_names:
                 forbidden_imports.append(node.module)
 
         self.assertEqual(forbidden_imports, [])
@@ -1182,7 +1186,7 @@ class M243CRunnerGateTests(unittest.TestCase):
             _prepared, intent = _launch(fixture)
 
             with mock.patch.object(
-                service,
+                selection,
                 "_stored_runner_physical_basis_matches",
                 return_value=True,
             ):
@@ -1202,7 +1206,7 @@ class M243CRunnerGateTests(unittest.TestCase):
 
             observation = _persist_terminal(fixture, intent, branch="pass")
             with mock.patch.object(
-                service,
+                selection,
                 "_stored_runner_physical_basis_matches",
                 return_value=True,
             ):
@@ -1302,7 +1306,7 @@ class M243CRunnerGateTests(unittest.TestCase):
             self.assertEqual(receipt_count, 0)
 
             with mock.patch.object(
-                service,
+                selection,
                 "_stored_runner_physical_basis_matches",
                 side_effect=AssertionError("done history inspected current package"),
             ):
@@ -1322,7 +1326,7 @@ class M243CRunnerGateTests(unittest.TestCase):
             observation = _persist_terminal(fixture, intent, branch="fallback")
 
             with mock.patch.object(
-                service,
+                selection,
                 "_stored_runner_physical_basis_matches",
                 return_value=True,
             ):
@@ -1403,7 +1407,7 @@ class M243CRunnerGateTests(unittest.TestCase):
                 observation = _persist_terminal(fixture, intent, branch=branch)
 
                 with mock.patch.object(
-                    service,
+                    selection,
                     "_stored_runner_physical_basis_matches",
                     return_value=True,
                 ):
@@ -1538,7 +1542,7 @@ class M243CRunnerGateTests(unittest.TestCase):
                 "capture_completion_basis",
                 side_effect=retarget_after_capture,
             ), mock.patch.object(
-                service,
+                selection,
                 "_stored_runner_physical_basis_matches",
                 return_value=True,
             ):
@@ -1626,7 +1630,7 @@ class M243CRunnerGateTests(unittest.TestCase):
             _persist_terminal(fixture, intent, branch="blocking")
 
             with mock.patch.object(
-                service,
+                selection,
                 "_stored_runner_physical_basis_matches",
                 return_value=True,
             ):

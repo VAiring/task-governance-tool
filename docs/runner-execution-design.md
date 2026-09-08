@@ -47,7 +47,7 @@ Runner route; its Runner dispatch has only the `cli -> service` edge.
 | Layer id | Exact owned modules | Sole Runner responsibility | Allowed Runner-layer imports | Forbidden responsibility or reverse edge | Current boundary |
 |---|---|---|---|---|---|
 | `cli` | `cli.py` | Parse and format the existing public surface and dispatch the Runner route to the parent service. | `service` | No Runner eligibility, authority, persistence, process, native, or cleanup decision; no Runner dispatch to `process_adapter` or `os_adapter`. | Direct process/native CLI branches are physically absent. |
-| `service` | `verification_runner_service.py` | Parent orchestration; sole ownership of opt-in and eligibility, Task/Contract/criterion freshness, canonical repository coordination, target/plan selection, Evidence and terminal persistence, maintenance/recovery coordination, and final cleanup acceptance. | `repository`, `target_plan`, `value_model`, `runtime_identity`, `lifecycle`, `process_adapter` | No OS mechanics and no delegation of authority, business gates, terminal persistence, or cleanup acceptance to a child layer. | It is the sole business and cleanup-acceptance owner. |
+| `service` | `verification_runner_service.py`, `verification_runner_selection.py` | Parent orchestration; sole ownership of opt-in and eligibility, Task/Contract/criterion freshness, canonical repository coordination, target/plan selection, Evidence and terminal persistence, maintenance/recovery coordination, and final cleanup acceptance. | `repository`, `target_plan`, `value_model`, `runtime_identity`, `lifecycle`, `process_adapter` | No OS mechanics and no delegation of authority, business gates, terminal persistence, or cleanup acceptance to a child layer. | It is the sole business and cleanup-acceptance owner. |
 | `repository` | `storage.py`, `sqlite_connection.py`, `project_binding_repository.py`, `backup_metadata_repository.py`, `viewer_metadata_repository.py`, `evidence_projection_metadata_repository.py`, `evidence_repository.py`, `evidence_validation_repository.py`, `completion_bundle_repository.py`, `verification_runner_repository.py`, `review_repository.py`, `verification_receipt_repository.py`, `schema_verification_runner.py`, `tasks.py`, `stored_task_validation.py`, `task_values.py`, `contracts.py`, `contract_content.py`, `reviews.py`, `verification_receipts.py`, `completion.py`, `evidence_ledger.py`, `evidence_projection.py`, `evidence_publication.py`, `maintenance.py` | Canonical SQLite, Task/Contract/review/completion state, Evidence, and maintenance repositories and business gates invoked only by the parent service. | `value_model` | No process launch; no import of `process_adapter` or `os_adapter`; no filesystem cleanup ownership. | Schema/Evidence compatibility stays repository-owned with no reverse edge. |
 | `target_plan` | `artifact_manifest.py`, `verification_runner_git.py`, `verification_runner_plan.py` | Parent-invoked exact target observation/materialization and fixed-plan decode/validation. | `repository`, `value_model` | No CLI policy, canonical database ownership, completion decision, trusted-code or verification-command launch, terminal publication, or cleanup acceptance. | Target/plan code is read-only until parent-owned materialization. |
 | `value_model` | `verification_runner.py` | Pure closed Runner identifiers, bounded codes, value validation, and domain encoding used across the boundary. | none | No I/O and no import of CLI, service, repository, persistence, target, runtime, lifecycle, process, native, or business-gate modules. | The module is dependency-pure and has no compatibility shim consumer. |
@@ -451,6 +451,14 @@ one internal prepared-capture seam from `reviews.py`; the ordinary review
 service delegates to the same seam, so target normalization, Git observation,
 manifest construction, authority capture, event bytes, output, and maintenance
 classification have one owner.
+
+`verification_runner_selection.py` owns the non-execution current-basis and
+snapshot selectors, stored physical-basis checks, and shared terminal
+classification in the same service layer. CLI selection consumers call it
+directly, and the launch service reuses its terminal classifier. Selection keeps
+its existing snapshot/physical-check/reread order and exact successor-commit
+basis; T1/T2, process execution, locking, and cleanup stay in
+`verification_runner_service.py`.
 
 The service returns the stored target result with exactly
 `verification_route` and `blocking_code` for JSON success. The text formatter

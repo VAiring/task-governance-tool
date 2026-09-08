@@ -16,6 +16,7 @@ from tests.test_m23s_schema22_projection import _source
 from tests.test_m23s_schema22_validation import _bundle_artifacts, storage
 from task_governance_tool import reviews, tasks, verification_receipts
 from task_governance_tool import verification_runner_service as service
+from task_governance_tool import verification_runner_selection as runner_selection
 
 
 def _matching_commit(fixture):
@@ -31,8 +32,8 @@ def _selection(connection, target, task_id):
         connection, project_id=target.project.project_id, task_id=task_id
     )
     # Reuse the existing closed terminal classification, not a new gate table.
-    mode = service._terminal_runner_mode(snapshot["resolution"], snapshot["observation"])
-    return service._selection_from_snapshot(
+    mode = runner_selection._terminal_runner_mode(snapshot["resolution"], snapshot["observation"])
+    return runner_selection._selection_from_snapshot(
         snapshot, project_id=target.project.project_id, task_id=task_id, mode=mode
     )
 
@@ -230,9 +231,9 @@ class Schema22LifecycleTests(unittest.TestCase):
             before_files = tree_snapshot(fixture.db.parent)
             # Existing Plan seams stay unchanged. Both the public connection
             # admission and the physical package comparison remain real.
-            with mock.patch.object(service, "capture_verification_runner_plan", return_value=None), \
-                 mock.patch.object(service, "resolve_verification_runner_plan", return_value=prepared.plan):
-                current = service.select_current_verification_runner_basis(fixture.target, task=task)
+            with mock.patch.object(runner_selection, "capture_verification_runner_plan", return_value=None), \
+                 mock.patch.object(runner_selection, "resolve_verification_runner_plan", return_value=prepared.plan):
+                current = runner_selection.select_current_verification_runner_basis(fixture.target, task=task)
                 self.assertEqual(current.mode, "runner_observation")
                 with closing(storage.connect(fixture.db)) as connection:
                     _completion_plan(connection, fixture.target, fixture.task_id, commit, selection=current)
@@ -241,7 +242,7 @@ class Schema22LifecycleTests(unittest.TestCase):
                 refresh_test_manifest(installed)
                 self.assertNotEqual(service.capture_runner_implementation(installed).implementation_digest,
                                     implementation_before.implementation_digest)
-                stale = service.select_current_verification_runner_basis(fixture.target, task=task)
+                stale = runner_selection.select_current_verification_runner_basis(fixture.target, task=task)
                 self.assertEqual(stale.mode, "stale")
                 with closing(storage.connect(fixture.db)) as connection:
                     gate = verification_receipts.current_verification_gate(connection, task=task,

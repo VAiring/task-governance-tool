@@ -16,13 +16,15 @@ from typing import Any, Callable, ContextManager
 from task_governance_tool.completion_history_projection import (
     format_completion_history,
 )
+from task_governance_tool.completion_history_repository import (
+    read_completion_histories_for_tasks,
+)
 from task_governance_tool.storage import (
     SCHEMA_VERSION,
     CompletionHistory,
     DatabaseTarget,
     StorageError,
     operational_sqlite_error,
-    read_completion_histories_for_tasks,
     utc_now,
     validate_snapshot_database_for_viewer,
 )

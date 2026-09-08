@@ -29,6 +29,9 @@ from task_governance_tool.reviews import (  # noqa: E402
     add_review_receipt,
     set_review_target,
 )
+from task_governance_tool.completion_history_repository import (  # noqa: E402
+    read_completion_histories_for_tasks,
+)
 from task_governance_tool.storage import (  # noqa: E402
     ProjectIdentity,
     StorageError,
@@ -39,7 +42,6 @@ from task_governance_tool.storage import (  # noqa: E402
     apply_verification_receipts_migration,
     connect,
     connect_initialized_readonly,
-    read_completion_histories_for_tasks,
     resolve_database_target,
 )
 from tests.test_completion_cycle_activation import make_captureless_done  # noqa: E402

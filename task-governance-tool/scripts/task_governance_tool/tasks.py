@@ -47,6 +47,9 @@ from task_governance_tool.ordering import (
     first_out_of_order_advanced_task,
     incomplete_predecessor_sql,
 )
+from task_governance_tool.completion_history_repository import (
+    read_completion_history,
+)
 from task_governance_tool.storage import (
     SCHEMA_VERSION,
     CompletionHistory,
@@ -70,7 +73,6 @@ from task_governance_tool.storage import (
     persist_evidence_reference_locked,
     prepare_native_completion_cycle_locked,
     read_native_completion_bundle_basis_locked,
-    read_completion_history,
     utc_now,
 )
 from task_governance_tool.stored_task_validation import (

@@ -143,8 +143,8 @@ The implementation keeps these narrow ownership boundaries:
   Bundle construction/capture and file publication remain with existing owners.
 - `storage.py` remains the shared entry for migrations, initialized admission,
   repositories, and transaction-scoped queries, re-exporting the connection
-  primitives, binding, operational metadata, Review, and Verification Receipt APIs for
-  existing callers.
+  primitives, binding, operational metadata, Review, Verification Receipt, and
+  completion-history read APIs for existing callers.
   Feature modules do not open raw SQLite connections; Task-row error mapping remains with
   stored-state validation.
 - `schema_completion_cycles.py` owns the ordered completion-cycle SQL
@@ -174,6 +174,9 @@ The implementation keeps these narrow ownership boundaries:
 - `completion.py`, `completion_workflow.py`, and `git_snapshot.py` own typed
   completion evidence, read-only Git observations, completion planning, and
   review-to-commit snapshot binding.
+- `completion_history_repository.py` owns latest, single-Task, and batched
+  history reads plus their metadata queries on the caller's connection.
+  Shared cycle/Receipt and Evidence/Bundle validators remain storage-owned.
 - `completion_history_projection.py` owns the bounded public cycle projection;
   `storage.py` alone inserts immutable cycles.
 - `verification_receipts.py` owns caller Receipt validation, exact-current

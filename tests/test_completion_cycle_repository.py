@@ -20,6 +20,11 @@ from task_governance_tool.relocation import (  # noqa: E402
     decode_relocation_token,
     encode_relocation_token,
 )
+from task_governance_tool.completion_history_repository import (  # noqa: E402
+    read_completion_histories_for_tasks,
+    read_completion_history,
+    read_latest_completion_cycle,
+)
 from task_governance_tool.storage import (  # noqa: E402
     SQLITE_INT64_MAX,
     DatabaseTarget,
@@ -27,9 +32,6 @@ from task_governance_tool.storage import (  # noqa: E402
     apply_completion_cycle_history_migration,
     connect,
     insert_completion_cycle_locked,
-    read_completion_histories_for_tasks,
-    read_completion_history,
-    read_latest_completion_cycle,
     resolve_database_target,
     select_completion_gate_basis_locked,
     validate_completion_cycle_storage,

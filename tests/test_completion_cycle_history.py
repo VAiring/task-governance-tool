@@ -15,6 +15,9 @@ SCRIPT_PATH = SCRIPTS_ROOT / "taskgov.py"
 if str(SCRIPTS_ROOT) not in sys.path:
     sys.path.insert(0, str(SCRIPTS_ROOT))
 
+from task_governance_tool.completion_history_repository import (  # noqa: E402
+    read_completion_history,
+)
 from task_governance_tool.storage import (  # noqa: E402
     SCHEMA_VERSION,
     DatabaseTarget,
@@ -26,7 +29,6 @@ from task_governance_tool.storage import (  # noqa: E402
     connect_snapshot_readonly,
     current_schema_version,
     insert_completion_cycle_locked,
-    read_completion_history,
     resolve_database_target,
     validate_completion_cycle_storage,
 )

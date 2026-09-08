@@ -316,6 +316,14 @@ cycle already exists. A later done uses fresh gates and the next ordinal.
 
 ### Public History Projection
 
+`completion_history_repository.py` owns latest-cycle, single-Task and batch
+history retrieval and metadata queries. It uses the caller's connection and
+the existing storage-owned cycle/Receipt and Evidence validators; shared
+types, Bundle validation/acquisition and completion writes remain in storage.
+The single-Task reader retains its selected Bundle-history validation, while
+the Viewer batch reader retains its upstream global-snapshot validation
+assumption. These paths do not acquire a connection or start a transaction.
+
 `task show` reads total, incomplete-legacy aggregate, and newest-first rows in
 the same snapshot as all other Task data. The exact wrapper is:
 

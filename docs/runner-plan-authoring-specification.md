@@ -21,6 +21,12 @@ Runner execution, Evidence, Viewer, and completion behavior remain unchanged.
 
 ### Closed Draft And Actions
 
+The [approved OS-specific Runner guarantees](runner-execution-specification.md#approved-os-specific-runner-guarantees)
+do not yet change the current draft/Plan members, required limit values, or
+privacy precedence below. Their OS-specific representation is synchronized
+with Plan validation and consumers when implemented, not inferred by authoring
+or activated by this conditional approval.
+
 Authoring reuses the one existing ignored physical file
 `<physical-package>/config/verification-runner.json` and the exact current
 PlanV1, EntryV1, and StepV1 member sets. It adds no PlanV2, second config,

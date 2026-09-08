@@ -17,6 +17,48 @@ their existing owners, routed by the [authority index](authority.md).
 
 ## Trusted-Local Verification Runner
 
+### Approved OS-Specific Runner Guarantees
+
+These approved changes are implementation acceptance boundaries, not current
+Linux/macOS Runner support. The corresponding current requirements below
+remain applicable until each affected implementation, owner, and consumer is
+synchronized and its required verification and review pass. Ordinary-function
+support alone does not activate the Runner. Replace the conditional wording
+for each completed change with its current owning contract; this section adds
+no roadmap, new execution unit, or further approval gate.
+
+| Platform | CPU control | Memory and simultaneous-process limits | Process management |
+|---|---|---|---|
+| Windows | Retain aggregate user CPU control through the existing Job. | Retain the existing Job memory and active-process limits. | Retain existing Job-based descendant management and cleanup. |
+| Linux/macOS | Enforce CPU per process; bound the whole execution with wall timeout. Do not claim a tree-wide aggregate CPU limit. | Initially unsupported; their absence alone does not prevent PASS or require later implementation. | Stop and clean up the ordinary managed process group. Intentional daemon escape is outside the guarantee. |
+
+For Linux/macOS, unavailable memory or cumulative-process observations are
+unmeasured, not fabricated zeroes or proof of a limit. CPU observations must
+describe the actually measured scope separately from the per-process CPU
+limit. Unavailable auxiliary measurements alone do not prevent PASS; an
+execution failure or uncertain managed-process cleanup still prevents
+completion. This approval does not preselect a new Plan/result version or a
+null/zero encoding: the affected Plan, result, and Evidence owners are
+synchronized with those implementations while preserved evidence retains its
+original meaning.
+
+Remove the execution-lifetime lease that prevents executable writes or
+replacement, together with lease-only ownership and release machinery. Retain
+the parent-verified fixed absolute executable and no shell or PATH lookup.
+`python.exe`, Windows-specific environment entries, Windows quoting, and
+UTF-16 limits cease to be common cross-OS requirements; native Windows
+environment, quoting, and size requirements remain on Windows. This does not
+authorize changing or installing the user's Python environment.
+
+Explicit trusted-local opt-in, current Task/Contract/criterion/Plan/target
+binding, private materialization, output limits and non-retention, and the
+existing service-owned completion and cleanup decisions remain mandatory.
+The scope is reliable execution of trusted code, not hostile-code isolation,
+tracking intentional process-group escape, all-environment coverage, or
+identical Windows-native guarantees on every OS. Real-OS acceptance uses the
+representative platforms in the [ordinary runtime boundary](specification.md#package-runtime-and-generated-state);
+an unexecuted path remains unverified.
+
 ### Eligibility, Plan, And Materialization
 
 The Runner is explicit opt-in for repositories

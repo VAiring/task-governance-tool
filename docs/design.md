@@ -335,9 +335,10 @@ reuse remain part of the lock behavior, not just cross-process exclusion.
 
 Real-OS checks begin with the added file operations and ordinary Task/storage
 flows, using the early CI entry where needed. Runner environment/process
-changes follow normal-function acceptance and remain a separate implementation
-responsibility; this boundary neither changes its current executable-hold,
-resource, result, nor cleanup contract. No all-function relocation, file-count
+changes follow normal-function acceptance under the
+[approved OS-specific Runner guarantees](runner-execution-specification.md#approved-os-specific-runner-guarantees).
+That conditional boundary does not itself change the current executable-hold,
+resource, result, or cleanup contract. No all-function relocation, file-count
 target, or Windows-equivalent native implementation is an acceptance condition.
 
 ## Public CLI And Serialization

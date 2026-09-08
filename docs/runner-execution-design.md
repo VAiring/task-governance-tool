@@ -211,6 +211,20 @@ dispatch consumption.
 
 ### Typed Process Value Boundary
 
+The [approved OS-specific guarantees](runner-execution-specification.md#approved-os-specific-runner-guarantees)
+are conditional implementation boundaries. Runtime identity retains fixed
+absolute executable observation while removing its execution-lifetime lease;
+the process/OS adapters own native environment, limits, launch, accounting,
+and managed-group termination. Plan and typed-result validation, parent result
+mapping, and Evidence consumers must express the supported OS limits and
+actual measurement scope together in their owning changes. They do not move
+Task policy, SQLite, or Evidence assembly into native adapters.
+The service remains the sole [cleanup-acceptance owner](#cleanup-acceptance-and-privacy).
+Until those changes land, the current record shapes, Windows bounds,
+environment, executable lease, and accounting rules below remain unchanged;
+this document update alone introduces no native module, format, or runtime
+behavior.
+
 The following are logical immutable in-process records, not a public schema or
 implemented transport. Their member sets are closed:
 

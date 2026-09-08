@@ -16,6 +16,11 @@ from task_governance_tool.evidence_ledger import (
     build_evidence_reference,
 )
 from task_governance_tool.reviews import DIFF_FINGERPRINT
+from task_governance_tool.verification_receipt_repository import (
+    insert_verification_receipt_locked,
+    read_verification_receipt_snapshot,
+    verification_command_label_is_summary,
+)
 from task_governance_tool.storage import (
     SCHEMA_VERSION,
     CompletionCycle,
@@ -24,12 +29,9 @@ from task_governance_tool.storage import (
     StorageError,
     begin_initialized_write,
     completion_history_inconsistent,
-    insert_verification_receipt_locked,
     persist_evidence_reference_locked,
-    read_verification_receipt_snapshot,
     require_current_verification_runner_selection,
     stored_task_verification_limit,
-    verification_command_label_is_summary,
     verification_expectation_digest,
 )
 from task_governance_tool.verification_runner import (

@@ -18,6 +18,9 @@ if str(SCRIPTS_ROOT) not in sys.path:
     sys.path.insert(0, str(SCRIPTS_ROOT))
 
 from task_governance_tool import storage
+from task_governance_tool.verification_receipt_repository import (
+    insert_verification_receipt_locked,
+)
 from task_governance_tool.review_repository import (
     insert_review_receipt_with_provenance_locked,
 )
@@ -2225,7 +2228,7 @@ class R3ASchema20StorageTests(unittest.TestCase):
         )
 
         with mock.patch.object(storage, "utc_now", return_value=NOW):
-            verification_receipt = storage.insert_verification_receipt_locked(
+            verification_receipt = insert_verification_receipt_locked(
                 connection,
                 project_id=str(basis["project_id"]),
                 task_id=str(basis["task_id"]),

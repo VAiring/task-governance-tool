@@ -381,8 +381,10 @@ guidance, package inventory, and tests form one supported boundary.
 `verification_receipts.py` owns Receipt input validation,
 exact-current classification, manual-Receipt-arm evaluation, and the bounded public read
 model. The single service selector combines that arm with the closed Runner
-basis; callers do not choose a branch. `storage.py` alone owns schema, migration,
-append/read queries, and Receipt uniqueness. `tasks.py` and
+basis; callers do not choose a branch. `verification_receipt_repository.py`
+owns stored-row validation and Receipt snapshot/append queries on the caller's
+connection. `storage.py` retains schema, migration, full database admission,
+and the schema-enforced Receipt uniqueness boundary. `tasks.py` and
 `completion_workflow.py` consume the selected gate result; neither opens raw
 SQLite or interprets verification prose.
 `cli.py` owns only parser/dispatch/formatting for the one Receipt write leaf.

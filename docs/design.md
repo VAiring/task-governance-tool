@@ -143,7 +143,7 @@ The implementation keeps these narrow ownership boundaries:
   Bundle construction/capture and file publication remain with existing owners.
 - `storage.py` remains the shared entry for migrations, initialized admission,
   repositories, and transaction-scoped queries, re-exporting the connection
-  primitives, binding, operational metadata, and Review repository APIs for
+  primitives, binding, operational metadata, Review, and Verification Receipt APIs for
   existing callers.
   Feature modules do not open raw SQLite connections; Task-row error mapping remains with
   stored-state validation.
@@ -178,8 +178,12 @@ The implementation keeps these narrow ownership boundaries:
   `storage.py` alone inserts immutable cycles.
 - `verification_receipts.py` owns caller Receipt validation, exact-current
   classification, completion-gate evaluation, and the bounded Task-show read
-  model; `storage.py` alone owns Receipt persistence, migration structure, and
-  version-aware legacy-label/internal-subject stored-row validation.
+  model.
+- `verification_receipt_repository.py` owns Receipt snapshots, append queries,
+  and version-aware legacy-label/internal-subject stored-row validation using
+  the caller's connection and writer. `storage.py` retains schema/migrations
+  and full database admission; Evidence References, events, and outer
+  commit/rollback remain with their existing owners.
 - `review_provenance.py` owns the closed Review provenance matrix, canonical
   v1/v0/null public union, and provenance digest without SQLite access.
 - `review_repository.py` owns stored Review Receipt/Finding validation,

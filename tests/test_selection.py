@@ -11,8 +11,10 @@ if str(SCRIPTS_ROOT) not in sys.path:
     sys.path.insert(0, str(SCRIPTS_ROOT))
 
 from task_governance_tool.selection import select_next_tasks  # noqa: E402
-from task_governance_tool.storage import (  # noqa: E402
+from task_governance_tool.evidence_repository import (  # noqa: E402
     capture_or_reuse_current_authority_snapshot_locked,
+)
+from task_governance_tool.storage import (  # noqa: E402
     connect,
     initialize_database,
     resolve_database_target,

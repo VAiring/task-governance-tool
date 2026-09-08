@@ -144,7 +144,7 @@ The implementation keeps these narrow ownership boundaries:
 - `storage.py` remains the shared entry for migrations, initialized admission,
   repositories, and transaction-scoped queries, re-exporting the connection
   primitives, binding, operational metadata, Review, Verification Receipt, and
-  completion-history read APIs for existing callers.
+  completion-history and Evidence repository APIs for existing callers.
   Feature modules do not open raw SQLite connections; Task-row error mapping remains with
   stored-state validation.
 - `schema_completion_cycles.py` owns the ordered completion-cycle SQL
@@ -196,6 +196,11 @@ The implementation keeps these narrow ownership boundaries:
 - `evidence_ledger.py` owns authority/criterion canonicalization, closed
   assurance/producer dispatch, Evidence Reference projections and digests,
   and capture-version source guards without SQLite access.
+- `evidence_repository.py` owns authority/criterion, manifest, Reference, and
+  criterion-link persistence and their local stored-data validation on the
+  caller's connection. Its manifest-only Reference reader is shared by selected
+  Task and Runner consumers; all-source validation assembly, Bundle acquisition,
+  projection capture, and outer transactions remain with their existing owners.
 - `evidence_projection.py` owns canonical Bundle/index construction, stored
   Bundle reconstruction, digest validation, and captured-basis rendering.
 - `evidence_publication.py` owns storage-backed capture, fixed-path publication,

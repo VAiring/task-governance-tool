@@ -23,9 +23,11 @@ SCRIPTS_ROOT = ROOT / "task-governance-tool" / "scripts"
 sys.path.insert(0, str(SCRIPTS_ROOT))
 try:
     from task_governance_tool import stored_task_validation as stored_tasks_module
+    from task_governance_tool.evidence_repository import (
+        capture_or_reuse_current_authority_snapshot_locked,
+    )
     from task_governance_tool.storage import (
         StorageError,
-        capture_or_reuse_current_authority_snapshot_locked,
     )
 finally:
     sys.path.pop(0)

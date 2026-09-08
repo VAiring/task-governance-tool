@@ -62,7 +62,7 @@ def insert_current_row(connection, project_id, task_id, title, *, priority="norm
         """,
         (task_id, project_id, title, priority, updated_at, updated_at),
     )
-    from task_governance_tool.storage import (
+    from task_governance_tool.evidence_repository import (
         capture_or_reuse_current_authority_snapshot_locked,
     )
 

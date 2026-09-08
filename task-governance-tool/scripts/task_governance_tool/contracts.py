@@ -12,9 +12,11 @@ from task_governance_tool.contract_content import (
     normalize_contract_input,
 )
 from task_governance_tool.ordering import first_out_of_order_advanced_task
+from task_governance_tool.evidence_repository import (
+    capture_or_reuse_current_authority_snapshot_locked,
+)
 from task_governance_tool.storage import (
     ProjectIdentity,
-    capture_or_reuse_current_authority_snapshot_locked,
     current_schema_version,
     utc_now,
 )

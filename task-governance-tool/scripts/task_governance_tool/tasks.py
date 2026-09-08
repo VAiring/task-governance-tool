@@ -50,6 +50,10 @@ from task_governance_tool.ordering import (
 from task_governance_tool.completion_history_repository import (
     read_completion_history,
 )
+from task_governance_tool.evidence_repository import (
+    capture_or_reuse_current_authority_snapshot_locked,
+    persist_evidence_reference_locked,
+)
 from task_governance_tool.storage import (
     SCHEMA_VERSION,
     CompletionHistory,
@@ -64,13 +68,11 @@ from task_governance_tool.storage import (
     _consume_validated_viewer_task_batch,
     allocate_native_completion_identity_locked,
     begin_initialized_write,
-    capture_or_reuse_current_authority_snapshot_locked,
     completion_history_inconsistent,
     current_schema_version,
     insert_completion_cycle_locked,
     insert_native_completion_cycle_locked,
     match_current_done_completion_cycle_locked,
-    persist_evidence_reference_locked,
     prepare_native_completion_cycle_locked,
     read_native_completion_bundle_basis_locked,
     utc_now,

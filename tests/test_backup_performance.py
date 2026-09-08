@@ -32,8 +32,10 @@ from task_governance_tool.backup_metadata_repository import (
 from task_governance_tool.viewer_metadata_repository import (
     read_viewer_maintenance,
 )
-from task_governance_tool.storage import (
+from task_governance_tool.evidence_repository import (
     capture_or_reuse_current_authority_snapshot_locked,
+)
+from task_governance_tool.storage import (
     connect,
     initialize_database,
     resolve_database_target,

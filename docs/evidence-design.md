@@ -41,6 +41,13 @@ the retired `derived_analysis` reservation from current schema v22.
   canonicalization, whole-field criteria, Evidence Reference projections and
   digests, and public allow-lists. Active link, Bundle, omission, and Runner
   source assembly is delegated to the owning service/projection boundary.
+- `evidence_repository.py` owns authority/criteria capture and reads, stored
+  manifest validation, Reference reads and row comparison, and manifest,
+  Reference, and criterion-link persistence. These operations reuse the caller's
+  connection and transaction. The selected Task and Runner readers consume its
+  manifest-only Reference validation; the shared all-source coordinator reuses
+  the same manifest expectations and owner-indexed Reference query without
+  narrowing its source set. Selected Task all-kind inventory remains separate.
 - `artifact_manifest.py` owns bounded shell-free Git tree/index observation,
   exact artifact-entry normalization, deterministic rename pairing/order, and
   manifest digests. It reuses safe process and stable-snapshot primitives from
@@ -62,9 +69,11 @@ the retired `derived_analysis` reservation from current schema v22.
   Completion-time construction stays in its existing transaction boundary;
   construction-side storage value types remain shared without a DTO layer.
 
-`storage.py` retains shared SQLite admission, Evidence validation/capture, and
-completion persistence, including its global validation consumers of the Review
-repository; the projection metadata repository owns only its state rows.
+`storage.py` retains shared SQLite admission, all-source Evidence validation
+assembly, Bundle acquisition and projection capture, and completion persistence.
+It consumes the Evidence and Review repositories without changing global versus
+selected validation scope; necessary shared value types remain there. The
+projection metadata repository owns only its state rows.
 `tasks.py` and `contracts.py`
 capture authority inside existing savepoints; `verification_receipts.py`
 derives subject-v1 bindings; it and `reviews.py` create typed References inside

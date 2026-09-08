@@ -46,6 +46,10 @@ from task_governance_tool.review_repository import (
 from task_governance_tool.verification_receipt_repository import (
     read_verification_receipt_snapshot,
 )
+from task_governance_tool.evidence_repository import (
+    _validated_authority_context,
+    capture_or_reuse_current_authority_snapshot_locked,
+)
 from task_governance_tool.storage import (
     SCHEMA_VERSION,
     SQLITE_INT64_MAX,
@@ -55,7 +59,6 @@ from task_governance_tool.storage import (
     apply_migrations,
     apply_verification_receipts_migration,
     authority_snapshot_basis_digest,
-    capture_or_reuse_current_authority_snapshot_locked,
     connect,
     connect_initialized,
     contract_criterion_digest,
@@ -1898,7 +1901,7 @@ class EvidenceLedgerStorageTests(unittest.TestCase):
                     "validate_legacy_m19_7_stored_text",
                     wraps=real_legacy_detector,
                 ) as legacy_detector:
-                    authority = storage_module._validated_authority_context(
+                    authority = _validated_authority_context(
                         connection
                     )
             observed = [call.args for call in detector.call_args_list]

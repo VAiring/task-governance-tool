@@ -21,6 +21,9 @@ from task_governance_tool.verification_receipt_repository import (
     read_verification_receipt_snapshot,
     verification_command_label_is_summary,
 )
+from task_governance_tool.evidence_repository import (
+    persist_evidence_reference_locked,
+)
 from task_governance_tool.storage import (
     SCHEMA_VERSION,
     CompletionCycle,
@@ -29,7 +32,6 @@ from task_governance_tool.storage import (
     StorageError,
     begin_initialized_write,
     completion_history_inconsistent,
-    persist_evidence_reference_locked,
     require_current_verification_runner_selection,
     stored_task_verification_limit,
     verification_expectation_digest,

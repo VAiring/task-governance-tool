@@ -43,6 +43,10 @@ from task_governance_tool.review_repository import (
     validate_stored_review_finding_projection,
     validate_stored_review_receipt_projection,
 )
+from task_governance_tool.evidence_repository import (
+    persist_artifact_manifest_locked,
+    persist_evidence_reference_locked,
+)
 from task_governance_tool.storage import (
     COMPLETION_RECEIPT_VALIDATION_CHUNK_SIZE,
     SCHEMA_VERSION,
@@ -53,8 +57,6 @@ from task_governance_tool.storage import (
     evidence_ledger_sqlite_error,
     is_sqlite_busy_or_locked,
     operational_sqlite_error,
-    persist_artifact_manifest_locked,
-    persist_evidence_reference_locked,
     utc_now,
     validate_selected_task_receipt_evidence,
 )

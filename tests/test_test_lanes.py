@@ -18,6 +18,8 @@ from tools.test_lanes import (
     DETERMINISTIC_PERFORMANCE_TEST_IDS,
     LANE_MODULES,
     MANUAL_TIMING_QUALIFICATION_TEST_IDS,
+    PLATFORM_ORDINARY_HOSTS,
+    PLATFORM_ORDINARY_TEST_IDS,
     PLATFORM_SMOKE_MODULES,
     RELEASE_CANDIDATE_EVENT,
     TestLaneError,
@@ -519,7 +521,9 @@ class TestLanePolicyTests(unittest.TestCase):
         )
         self.assertTrue(expected)
         self.assertEqual(
-            tuple(case.id() for case in flatten_suite(platform_smoke_suite(inventory))),
+            tuple(case.id() for case in flatten_suite(
+                platform_smoke_suite(inventory, runtime_platform="win32")
+            )),
             expected,
         )
         self.assertEqual(inventory.plan.ids_for(ALL_LANE), standard_discovery_ids())
@@ -527,6 +531,34 @@ class TestLanePolicyTests(unittest.TestCase):
             assert_lane_error(
                 self, "platform_smoke_invalid", lambda: platform_smoke_suite(inventory)
             )
+
+    def test_ordinary_platform_selection_reuses_exact_existing_cases(self):
+        inventory = discover_tests(ROOT)
+        self.assertEqual(PLATFORM_ORDINARY_HOSTS, ("linux",))
+        self.assertTrue(PLATFORM_ORDINARY_TEST_IDS)
+        for platform in ("win32", "linux", "darwin"):
+            with self.subTest(platform=platform):
+                expected = tuple(
+                    test_id
+                    for test_id, module in zip(
+                        inventory.plan.test_ids, inventory.plan.test_modules, strict=True
+                    )
+                    if module in PLATFORM_SMOKE_MODULES or (
+                        platform in PLATFORM_ORDINARY_HOSTS
+                        and test_id in PLATFORM_ORDINARY_TEST_IDS
+                    )
+                )
+                self.assertEqual(
+                    tuple(case.id() for case in flatten_suite(
+                        platform_smoke_suite(inventory, runtime_platform=platform)
+                    )),
+                    expected,
+                )
+        with mock.patch("tools.test_lanes.PLATFORM_ORDINARY_TEST_IDS", ("missing.test",)):
+            assert_lane_error(
+                self, "platform_smoke_invalid", lambda: platform_smoke_suite(inventory)
+            )
+        self.assertEqual(inventory.plan.ids_for(ALL_LANE), standard_discovery_ids())
 
     def test_initial_platform_cli_runs_only_the_selected_suite(self):
         inventory = discover_tests(ROOT)
@@ -550,7 +582,7 @@ class TestLanePolicyTests(unittest.TestCase):
         self.assertEqual(observed, [expected])
         self.assertEqual(
             stderr.getvalue(),
-            f"initial platform checks ({len(expected)} tests; not release qualification)\n",
+            f"platform checks ({len(expected)} tests; not release qualification)\n",
         )
 
     def test_initial_platform_mode_rejects_mixed_event_options_before_discovery(self):

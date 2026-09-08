@@ -1014,7 +1014,7 @@ def _workflow_checks(
         "      matrix: ${{ fromJSON(needs.policy.outputs.matrix) }}",
     )
     expected_platform_preamble = (
-        "    name: Initial platform checks (${{ matrix.os }}, Python 3.12)",
+        "    name: Platform checks (${{ matrix.os }}, Python 3.12)",
         "    needs: policy",
         "    runs-on: ${{ matrix.os }}",
         "    strategy:",
@@ -1059,11 +1059,11 @@ def _workflow_checks(
         jobs_valid
         and platform_steps is not None
         and tuple(platform_steps)
-        == ("Checkout", "Set up Python", "Run initial platform checks")
+        == ("Checkout", "Set up Python", "Run platform checks")
         and _job_preamble(platform_block) == expected_platform_preamble
         and platform_steps.get("Checkout") == expected_checkout
         and platform_steps.get("Set up Python") == expected_policy_python
-        and platform_steps.get("Run initial platform checks")
+        and platform_steps.get("Run platform checks")
         == (f"        run: {CI_PLATFORM_SMOKE_INVOCATION}",)
         and run_commands.count(CI_PLATFORM_SMOKE_INVOCATION) == 1
     )
@@ -1124,7 +1124,7 @@ def _workflow_checks(
             ContractIssue(
                 "ci_platform_invalid",
                 ".github/workflows/ci.yml",
-                "CI does not preserve the bounded initial-platform checks",
+                "CI does not preserve the bounded platform checks",
             )
         )
     return versions

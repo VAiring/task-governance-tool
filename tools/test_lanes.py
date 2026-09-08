@@ -41,6 +41,25 @@ PLATFORM_SMOKE_MODULES = (
     "test_state_transition_primitives",
     "test_task_validation",
 )
+PLATFORM_ORDINARY_HOSTS = ("linux",)
+PLATFORM_ORDINARY_TEST_IDS = (
+    "test_m14_integrated_acceptance.M14IntegratedAcceptanceTests."
+    "test_setup_doctor_and_default_flow_are_integrated_and_target_safe",
+    "test_m224_evidence_acceptance.M224EvidenceAcceptanceTests."
+    "test_current_v1_null_bundles_and_report_consumer_are_consistent",
+    "test_setup.SetupCommandTests."
+    "test_git_project_requires_effective_canonical_state_ignore",
+    "test_setup_recovery.SetupManagedBackupRecoveryTests."
+    "test_setup_preview_and_write_restore_current_managed_generation",
+    "test_setup_recovery.SetupManagedBackupRecoveryTests."
+    "test_existing_unreadable_primary_is_never_replaced_from_backup",
+    "test_post_commit_maintenance.PostCommitMaintenanceTests."
+    "test_physical_install_invalid_viewer_config_preserves_primary_success",
+    "test_routine_backup.RoutineBackupTests."
+    "test_lock_deferred_and_copy_failure_both_remain_due",
+    "test_m223_evidence_projection_integration.EvidenceResolverBoundaryTests."
+    "test_public_setup_repairs_safe_oversized_index_only_in_setup_mode",
+)
 PERFORMANCE_TEST_MODULE = "test_backup_performance"
 DETERMINISTIC_PERFORMANCE_TEST_IDS = (
     "test_backup_performance.BackupPerformanceTests."
@@ -462,16 +481,25 @@ def discover_tests(
     return DiscoveredTests(suite=suite, cases=cases, plan=plan)
 
 
-def platform_smoke_suite(inventory: DiscoveredTests) -> unittest.TestSuite:
-    """Select the current initial-platform coverage after full lane validation."""
+def platform_smoke_suite(
+    inventory: DiscoveredTests, *, runtime_platform: str | None = None,
+) -> unittest.TestSuite:
+    """Select platform coverage from complete discovery without changing base lanes."""
 
     modules = frozenset(PLATFORM_SMOKE_MODULES)
-    if not modules or not modules.issubset(inventory.plan.test_modules):
+    ordinary_ids = frozenset(PLATFORM_ORDINARY_TEST_IDS)
+    if (
+        not modules or not modules.issubset(inventory.plan.test_modules)
+        or not ordinary_ids.issubset(inventory.plan.test_ids)
+    ):
         raise TestLaneError("platform_smoke_invalid")
+    platform = sys.platform if runtime_platform is None else runtime_platform
+    if platform not in PLATFORM_ORDINARY_HOSTS:
+        ordinary_ids = frozenset()
     return unittest.TestSuite(
         case
         for case, module in zip(inventory.cases, inventory.plan.test_modules, strict=True)
-        if module in modules
+        if module in modules or case.id() in ordinary_ids
     )
 
 
@@ -613,7 +641,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             suite = platform_smoke_suite(inventory)
             expected_count = suite.countTestCases()
             label = (
-                f"initial platform checks ({expected_count} tests; "
+                f"platform checks ({expected_count} tests; "
                 "not release qualification)"
             )
         else:

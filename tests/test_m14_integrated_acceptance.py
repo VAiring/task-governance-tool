@@ -13,7 +13,8 @@ from pathlib import Path
 from typing import Any
 from unittest import mock
 
-from tests.m14_test_support import file_snapshot, make_physical_install
+from tests.m14_test_support import file_snapshot, make_physical_install, tree_snapshot
+from tests.test_viewer_renderer import embedded_snapshot
 from tools.release_contract import check_release_contract
 
 
@@ -24,6 +25,7 @@ if str(SCRIPTS_ROOT) not in sys.path:
     sys.path.insert(0, str(SCRIPTS_ROOT))
 
 from task_governance_tool import __version__  # noqa: E402
+from task_governance_tool.artifact_lock import zero_wait_artifact_lock  # noqa: E402
 from task_governance_tool.setup import run_setup  # noqa: E402
 
 
@@ -715,17 +717,36 @@ class M14IntegratedAcceptanceTests(unittest.TestCase):
                 )
                 graph_payloads.append(receipt)
 
-            completed, _ = self.run_json(
-                install,
-                "task",
-                "complete",
-                task_id,
-                "--verification-complete",
-                "--review-complete",
-                "--commit-not-required",
-            )
+            database_target = install.target
+            index_path = database_target.resolved_evidence_index
+            last_good_index = index_path.read_bytes()
+            with zero_wait_artifact_lock(database_target.resolved_evidence_lock):
+                completed, _ = self.run_json(
+                    install,
+                    "task",
+                    "complete",
+                    task_id,
+                    "--verification-complete",
+                    "--review-complete",
+                    "--commit-not-required",
+                )
+                self.assertEqual(
+                    completed["warnings"],
+                    [{
+                        "code": "evidence_projection_deferred",
+                        "message": (
+                            "Evidence projection refresh was deferred; "
+                            "task result is unchanged"
+                        ),
+                    }],
+                )
+                self.assertEqual(index_path.read_bytes(), last_good_index)
             graph_payloads.append(completed)
             self.assertEqual(completed["data"]["task"]["status"], "done")
+
+            viewer = embedded_snapshot(install.viewer_path.read_text(encoding="utf-8"))
+            viewer_task = next(task for task in viewer["tasks"] if task["task_id"] == task_id)
+            self.assertEqual(viewer_task["status"], "done")
 
             self.assertEqual(
                 [payload["command"] for payload in graph_payloads],
@@ -742,6 +763,42 @@ class M14IntegratedAcceptanceTests(unittest.TestCase):
             )
             self.assertNotIn("doctor", enabled_graph)
             self.assertNotIn("task.checkpoint", enabled_graph)
+
+            before_repair_preview = tree_snapshot(install.project_root)
+            repair_preview, _ = self.run_json(install, "setup", "--read-only")
+            self.assertEqual(repair_preview["data"]["status"], "setup_preview")
+            self.assertEqual(
+                repair_preview["data"]["planned_writes"],
+                ["evidence_projection_publish"],
+            )
+            self.assertEqual(repair_preview["data"]["completed_writes"], [])
+            self.assertEqual(repair_preview["data"]["evidence_status"], "repair_required")
+            self.assertEqual(tree_snapshot(install.project_root), before_repair_preview)
+
+            repaired, _ = self.run_json(install, "setup")
+            self.assertEqual(repaired["data"]["status"], "setup_complete")
+            self.assertEqual(
+                repaired["data"]["completed_writes"],
+                ["evidence_projection_publish"],
+            )
+            self.assertEqual(repaired["data"]["evidence_status"], "published")
+            self.assertNotEqual(index_path.read_bytes(), last_good_index)
+            index = json.loads(index_path.read_bytes())
+            entries = [entry for entry in index["payload"]["entries"] if entry["task_id"] == task_id]
+            self.assertEqual(len(entries), 1)
+            entry = entries[0]
+            self.assertEqual(entry["bundle_state"], "native")
+            self.assertEqual(
+                entry["completion_cycle_id"],
+                viewer_task["completion_history"]["cycles"][0]["completion_cycle_id"],
+            )
+            bundle_path = database_target.resolved_evidence_root.joinpath(
+                *entry["bundle_file"].split("/")
+            )
+            bundle = json.loads(bundle_path.read_bytes())["payload"]
+            self.assertEqual(bundle["bundle_id"], entry["bundle_id"])
+            self.assertEqual(bundle["completion_cycle_id"], entry["completion_cycle_id"])
+            self.assertEqual(bundle["task"]["title"], completed["data"]["task"]["title"])
 
             self.assertEqual(
                 file_snapshot(install.project_root, exclude_state=True),

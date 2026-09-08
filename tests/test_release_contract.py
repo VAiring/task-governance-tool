@@ -607,7 +607,7 @@ class ReleaseContractCheckerTests(unittest.TestCase):
             fixture_workflow = fixture / ".github" / "workflows" / "ci.yml"
             text = fixture_workflow.read_text(encoding="utf-8")
             original = (
-                "description: Run initial platform checks only "
+                "description: Run platform checks only "
                 "(not a release candidate)"
             )
             self.assertIn(original, text)

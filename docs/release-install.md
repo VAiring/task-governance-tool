@@ -604,12 +604,13 @@ lane runner are repository tooling, not installable `taskgov` commands or
 target-project writes. A prior v0.10.0 result, Task receipt, approval object,
 or historical gate never satisfies a future candidate.
 
-The separate initial-platform job checks CLI startup, common processing, and
+The separate platform job checks CLI startup, common processing, and
 applicable artifact operations on Ubuntu 24.04 x86-64 and macOS 15 Apple Silicon
-with Python 3.12. An explicit
-manual `platform_only=true` runs only policy and initial checks; it skips the
+with Python 3.12. Linux additionally runs selected existing physical-install,
+ordinary Task completion, Evidence, Viewer, Backup, and recovery integration tests.
+An explicit manual `platform_only=true` runs only policy and platform checks; it skips the
 Windows full matrix and candidate gate and is not release qualification or a
-claim of ordinary-function or Runner support on the added platforms.
+change to the published platform or Runner support boundary.
 
 Candidate validation checks this CI policy and wiring locally only. It does not invoke
 `workflow_dispatch`, contact GitHub, or satisfy a later externally authorized

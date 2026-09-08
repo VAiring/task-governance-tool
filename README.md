@@ -599,12 +599,13 @@ An `operation_sequence` value may correlate separately authorized candidate
 work, but neither that value nor a successful gate authorizes workflow
 dispatch, push, tag, or publication.
 
-An additional initial-platform job runs CLI startup, common processing, and
+An additional platform job runs CLI startup, common processing, and
 applicable artifact-operation checks on Ubuntu 24.04 x86-64 and macOS 15
-Apple Silicon with Python 3.12.
-Manual `platform_only=true` runs policy and these initial checks alone,
+Apple Silicon with Python 3.12. Linux also runs selected existing physical-install,
+ordinary Task completion, Evidence, Viewer, Backup, and recovery integration tests.
+Manual `platform_only=true` runs policy and these platform checks alone,
 skipping the Windows full matrix and candidate gate. This mode is not release
-qualification or a claim of ordinary-function or Runner support on those OSes;
+qualification or a change to the published platform or Runner support boundary;
 omitting the input or selecting `false` retains the full manual route.
 
 The repository-only release checker is offline and read-only. It derives the

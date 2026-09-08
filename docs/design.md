@@ -889,12 +889,15 @@ its exact four discovered identities must equal the closed functional/capacity
 and manual-timing sets, or validation fails before execution. Local lane runs
 without a CI event retain the complete base lane. Pull-request and push
 selection remove only the two manual-timing identities; full manual dispatch
-removes nothing. The separate initial-platform selection is an ordered filter
-of complete validated discovery using `PLATFORM_SMOKE_MODULES` in
-`tools/test_lanes.py`. It covers CLI startup/help, pure Task validation, and
-the implemented artifact operations; OS-specific native cases run only on
-their applicable host. It is not a fourth base lane and does not disable tests
-in the exhaustive suite.
+removes nothing. The separate platform selection is an ordered filter of
+complete validated discovery in `tools/test_lanes.py`. `PLATFORM_SMOKE_MODULES`
+selects CLI startup/help, pure Task validation, and implemented artifact
+operations; OS-specific native cases run only on their applicable host.
+`PLATFORM_ORDINARY_TEST_IDS` adds selected existing physical-install, Task
+completion, Evidence, Viewer, Backup, and recovery cases on Linux. The host
+selection is repository CI policy, not a product command or LLM choice. Missing
+selected identities fail before execution. This is not a fourth base lane and
+does not disable or duplicate tests in the exhaustive suite.
 
 The retired LPAC module, mandatory native fixture, and dedicated route tests are
 absent from standard discovery. No such residue remains
@@ -914,13 +917,16 @@ succeed. The workflow trigger remains limited to pull requests, pushes to
 `main`, and manual dispatch; a candidate gate cannot be replaced by a skipped
 dependency job.
 
-The additional initial-platform job uses Ubuntu 24.04 x86-64 and macOS 15
+The additional platform job uses Ubuntu 24.04 x86-64 and macOS 15
 Apple Silicon with Python 3.12 and the same repository runner's
-`--platform-smoke` entry. Manual `platform_only=true` selects policy and initial
+`--platform-smoke` entry. Linux includes the ordinary-flow selection; macOS
+currently retains the common and artifact-operation selection. Manual
+`platform_only=true` selects policy and platform
 checks alone; the Windows matrix and candidate gate are explicitly skipped and
 no release qualification is claimed. The default full route retains both
-Windows versions and its aggregate gate. Additional-platform initial checks
-do not themselves establish ordinary-function or Runner support.
+Windows versions and its aggregate gate. Platform checks do not themselves
+qualify a release or establish Runner support; published platform support
+remains owned by the release/install contract.
 
 Tier-2 changes use two independent exact-target reviews. Tests hard-fail count,
 byte, subprocess, attempt, and render limits; performance budgets never justify

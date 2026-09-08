@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
     inputs:
       platform_only:
-        description: Run initial platform checks only (not a release candidate)
+        description: Run platform checks only (not a release candidate)
         type: boolean
         default: false
 
@@ -134,7 +134,7 @@ jobs:
         run: python tools/test_lanes.py --repo . --lane "${{ matrix.lane }}" --ci-event "${{ github.event_name }}" --expected-python "${{ matrix.python-version }}"
 
   platform-smoke:
-    name: Initial platform checks (${{ matrix.os }}, Python 3.12)
+    name: Platform checks (${{ matrix.os }}, Python 3.12)
     needs: policy
     runs-on: ${{ matrix.os }}
     strategy:
@@ -154,7 +154,7 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Run initial platform checks
+      - name: Run platform checks
         run: python tools/test_lanes.py --repo . --platform-smoke
 
   release-candidate:

@@ -126,16 +126,17 @@ gates. It is not the product contract, execution ledger, or evidence store:
   closed wall-clock qualification identities. Manual `workflow_dispatch`
   defers nothing in its default full mode, so both full-version `all` jobs
   execute the qualifiers.
-- An additional initial-platform job runs the closed common-processing,
+- An additional platform job runs the closed common-processing,
   CLI-startup, and applicable artifact-operation selection owned by
   `tools/test_lanes.py` on Ubuntu 24.04 x86-64 and macOS 15 Apple Silicon with
   Python 3.12. It retains complete discovery and lane validation before
-  selection; later approved ordinary-flow tests use the same entry.
-  This is not a claim of supported
-  ordinary flows or Runner behavior on those platforms.
-- Manual `platform_only=true` runs policy validation and these initial checks
+  selection. Linux also selects existing physical-install, Task completion,
+  Evidence, Viewer, Backup, and representative recovery integration tests by
+  exact identity through the same entry. Published support remains with the
+  release/install contract; Runner execution is not in this selection.
+- Manual `platform_only=true` runs policy validation and these platform checks
   without the Windows full matrix or release-candidate gate. It is an explicit
-  initial-check route, never a substitute for full candidate qualification.
+  platform-check route, never a substitute for full candidate qualification.
   Omission or `false` preserves the existing Windows event matrix and full
   manual gate; pull-request and push coverage are unchanged.
 - A future release candidate requires the explicit aggregate manual gate after

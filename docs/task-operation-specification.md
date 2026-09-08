@@ -233,10 +233,12 @@ explicit empty value clears it. The exact
 Semantic change accepts only the locked next revision placeholder; exact replay
 may accept an older same-Task positive placeholder. A caller-supplied authority
 label never creates a revision when Contract content did not change. Omission
-may therefore carry forward byte-identical, already-validated legacy M19.7
-constraints as immutable lineage; it does not validate caller-supplied legacy
-vocabulary or grant new authority. Any explicitly supplied constraints use the
-normal strict input guard.
+may therefore carry forward byte-identical constraints already validated by
+the [stored legacy counter compatibility path](specification.md#privacy-safety-and-stable-errors)
+as immutable lineage. This path preserves bounded positive canonical integer
+`dispatch_authorization` counters in stored text; it does not validate
+caller-supplied legacy vocabulary or grant new authority. Any explicitly
+supplied constraints use the normal strict input guard.
 
 A semantic revision appends immutable history, advances the pointer, clears
 completion evidence, preserves generation 0 if review never began or otherwise
@@ -333,8 +335,9 @@ endpoints and generation bridge remain reliable. A bounded observation failure
 may report `activity_generation_uncertain`. These fields are advisory
 bookkeeping, never Task authority or a completion gate.
 
-## Approved Post-MVP Extension: TG-M16 Reduced Loop Discipline Trial
+## Reduced Loop Discipline
 
+<a id="reduced-loop-discipline"></a>
 <a id="approved-post-mvp-extension-tg-m16-reduced-loop-discipline-trial"></a>
 
 The nonempty deterministic `exceeded` list is the sole predicate that changes
@@ -395,10 +398,11 @@ and change no status, scope, acceptance, selection, review, evidence, or gate.
 `task show`/default current expose only the latest object.
 
 The stored-summary read path alone retains bounded compatibility for the
-already-recorded M19.7 numeric `dispatch_authorization` JSON field and returns
-the original summary unchanged. New checkpoint input uses the normal strict
-guard, and the compatibility read neither records nor authorizes an external
-operation.
+already-recorded numeric `dispatch_authorization` JSON counter and returns the
+original summary unchanged, under the
+[stored legacy counter privacy contract](specification.md#privacy-safety-and-stable-errors).
+New checkpoint input uses the normal strict guard, and the compatibility read
+neither records nor authorizes an external operation.
 
 Command data is exactly `checkpoint`, `created`, `replayed`, and `event`.
 Checkpoint keys are `checkpoint_id`, `task_id`, `contract_revision`,
@@ -406,17 +410,17 @@ Checkpoint keys are `checkpoint_id`, `task_id`, `contract_revision`,
 output contains only ID, type, and time; replay event is null. Text is
 `Checkpoint <checkpoint_id>: recorded|replayed for task <task_id>\n`.
 
-## Current M25 Select-Split-Merge-Register Contract
+## Task Decomposition And Registration
 
+<a id="task-decomposition-and-registration"></a>
 <a id="current-m25-select-split-merge-register-contract"></a>
 
-M25.1, Task `tg_task_8e33e15cd97a28ee`, froze design authority for two and
-only two explicit user-authority events: an instruction to register or taskize
-already-authorized work, and an explicit scope addition to an `in_progress` or
-`review_pending` Task. M25.2, Task `tg_task_d891cd538d9e7364`, activates that
-contract only in current Skill and task-workflow guidance. Discovery, a test
-failure, an Effort result, task size, or model preference does not create either
-event.
+Task decomposition and registration apply to two and only two explicit
+user-authority events: an instruction to register or taskize already-authorized
+work, and an explicit scope addition to an `in_progress` or `review_pending`
+Task. This contract is implemented only in current Skill and task-workflow
+guidance. Discovery, a test failure, an Effort result, task size, or model
+preference does not create either event.
 
 ### Candidate-First Split And One Global Merge
 
@@ -568,7 +572,7 @@ global Merge.
 
 ### Active Instruction-Layer Boundary
 
-M25 Select-Split-Merge-Register is active only in current `SKILL.md` and
+Select-Split-Merge-Register is active only in current `SKILL.md` and
 `references/task_workflow.md`. It changes no public command, normal Task-loop
 call count, SQLite schema, JSON contract, Viewer field, automatic Task creation,
 runtime Task splitting, parent/child or dependency model, background LLM work,

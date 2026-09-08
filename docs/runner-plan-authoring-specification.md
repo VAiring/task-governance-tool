@@ -222,7 +222,9 @@ database, Evidence, Viewer, or history projection contains Runner Draft/Plan
 bytes, steps, argv, publisher paths, rejected input, or publisher exception
 detail.
 
-### Disable, Evidence, And Activation Boundary
+<a id="disable-evidence-and-activation-boundary"></a>
+
+### Disable, Evidence, And Runtime Boundary
 
 `disable` affects only admission of future attempts; it neither cancels an
 in-flight process nor deletes entries, canonical files, Runner graph rows,
@@ -234,9 +236,7 @@ them satisfy a new current gate.
 
 Authoring never calls `review target set`, captures a review target, launches a
 process, creates a Receipt or Runner graph, or changes the existing
-target-plan/process/lifecycle/native/completion/Evidence/Viewer paths. The
-activation revision synchronizes `AGENTS.md`, the public CLI, active
-specification/design/plan, CLI contract reference, README opt-in examples,
-package manifest, and focused tests. The Skill and normal Task loop remain
-unchanged. TG-RPA.6 performs acceptance-only full offline validation; a
-correction returns to its owning predecessor Task.
+target-plan/process/lifecycle/native/completion/Evidence/Viewer paths.
+Authoring adds no Skill trigger or normal Task-loop call.
+[Test coverage and contract synchronization](runner-plan-authoring-design.md#test-coverage-and-contract-synchronization)
+follow the current authoring responsibilities.

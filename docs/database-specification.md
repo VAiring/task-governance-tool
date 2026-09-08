@@ -23,10 +23,10 @@ basis fields through the storage/repository layer. Receipt ownership, target,
 uniqueness, link, and qualifying relationships are validated in SQLite and
 again on read. Existing cycle rows receive only the version-0/null-digest/
 null-link legacy discriminator; the migration synthesizes no Receipt from Task
-verification prose, events, `verification_attestation`, completion cycles, M20
-observations, command history, or review receipts. Existing done Tasks and
-cycles therefore remain honest legacy attestation history. The insert guard
-also preserves the pre-existing sole compatibility bridge's exact
+verification prose, events, `verification_attestation`, completion cycles,
+prior operational observations, command history, or review receipts. Existing
+done Tasks and cycles therefore remain honest legacy attestation history. The
+insert guard also preserves the pre-existing sole compatibility bridge's exact
 `legacy_current_done` partial version-0/null/null shape while rejecting every
 other new version-0 cycle.
 

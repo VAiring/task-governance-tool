@@ -101,7 +101,7 @@ gates. It is not the product contract, execution ledger, or evidence store:
 - The accepted Release body, tag, archive, and checksum are immutable by
   project policy. Defects use a reviewed forward-fix candidate and new version,
   not history rewrite, retag, asset replacement, or Release deletion.
-- Completed M19 approval objects and exact gate evidence authorize no future
+- Completed release approval objects and exact gate evidence authorize no future
   write. Any future release, push, tag, Release, or CI dispatch needs its own
   exact current authority.
 - Exact artifact identities and install/upgrade boundaries live in
@@ -145,7 +145,7 @@ gates. It is not the product contract, execution ledger, or evidence store:
 - New caller input uses `operation_sequence=<positive canonical integer>` only
   as neutral correlation or idempotency evidence. It never grants authority,
   and current approval for an external operation remains separate.
-- Exact stored TG-M19.7 `dispatch_authorization` counter forms remain readable
+- Exact stored legacy `dispatch_authorization` counter forms remain readable
   only in legacy Contract constraints and checkpoint summaries. The reader
   preserves their original bytes and grants no write, dispatch, or other
   authority; all new input and completion-history public text use the normal
@@ -156,15 +156,16 @@ gates. It is not the product contract, execution ledger, or evidence store:
   supplied legacy vocabulary.
 
 <a id="m25-select-split-merge-register"></a>
+<a id="m25-active-select-split-merge-register-guidance"></a>
 
-### M25 Active Select-Split-Merge-Register Guidance
+### Task Decomposition And Registration Guidance
 
-M25 remains active only as Skill instruction-layer guidance for two explicit
+Select-Split-Merge-Register remains active only as Skill instruction-layer guidance for two explicit
 authority events: a request to register or taskize already-authorized work, and
 an explicit scope addition to an in-progress or review-pending Task. The active
 product and implementation contracts are the
-[specification](docs/task-operation-specification.md#current-m25-select-split-merge-register-contract)
-and [design](docs/task-operation-design.md#current-m25-select-split-merge-register-design);
+[specification](docs/task-operation-specification.md#task-decomposition-and-registration)
+and [design](docs/task-operation-design.md#task-decomposition-and-registration-design);
 the concise operating rule and complete procedure remain in
 [SKILL.md](task-governance-tool/SKILL.md) and the
 [Task workflow](task-governance-tool/references/task_workflow.md).
@@ -190,7 +191,7 @@ unit. The Task database alone owns live state and evidence.
 The schema-v18-origin Verification Receipt behavior retained by current schema
 v22 is defined by the active [specification](docs/specification.md) and
 [design](docs/design.md). Completed
-M21 design, activation, acceptance, and correction narrative is preserved only
+Verification Receipt design, activation, acceptance, and correction narrative is preserved only
 in [indexed non-authoritative history](docs/history/v0.11.0/pre-m22-completed-execution.md).
 That history supplies no current gate or implementation authority.
 

@@ -11,7 +11,7 @@ verification Runner with a closed manual fallback. Schema v20 remains a
 supported migration source and
 audit-only Runner lineage; schema v22 is current persistence and retains the
 schema-v21 Runner gate protocol unchanged.
-M25 Select-Split-Merge-Register is active only in the Skill instruction layer.
+Select-Split-Merge-Register is active only in the Skill instruction layer.
 The Task database owns live state and evidence; completed execution narrative
 belongs only in indexed history.
 
@@ -550,9 +550,11 @@ Current detail is owned by the [Review and completion design](review-completion-
 
 Current detail is owned by the [Task operation design](task-operation-design.md#task-contracts-checkpoints-handoffs-and-effort).
 
-## Approved TG-M16 Reduced Loop Discipline Trial Design
+<a id="approved-tg-m16-reduced-loop-discipline-trial-design"></a>
 
-Current detail is owned by the [Task operation design](task-operation-design.md#approved-tg-m16-reduced-loop-discipline-trial-design).
+## Reduced Loop Discipline Design
+
+Current detail is owned by the [Task operation design](task-operation-design.md#reduced-loop-discipline-design).
 
 ## Setup, Doctor, Backup, And Maintenance
 
@@ -636,7 +638,7 @@ integer>` passes without preprocessing and represents correlation or
 idempotency evidence only. External authority remains an independent current
 user/Contract decision.
 
-The singular legacy M19.7 stored-text helper creates a privacy-only guard view:
+The bounded legacy counter stored-text helper creates a privacy-only guard view:
 it substitutes bounded lowercase positive-canonical-integer equality and
 numeric JSON counter forms with a fixed non-secret sentinel, runs the complete
 ordinary detector set, and returns the original text. Call sites are limited
@@ -659,7 +661,7 @@ output.
 Git subprocesses use fixed argument vectors, no shell, bounded timeout, safe
 environment, disabled optional locks/lazy fetching, and no target-project
 write. Taskgov never creates a commit, branch, PR, Issue, tag, Release, or
-network request as product behavior. TG-M19 release operations are repository
+network request as product behavior. Release operations are repository
 release work performed only under their separate approvals, not new Taskgov
 commands.
 
@@ -732,7 +734,9 @@ design. The exact publication-commit form is indexed by
 [the historical documentation index](history/README.md); no active product or
 release guarantee depends on that historical copy.
 
-## Current M25 Select-Split-Merge-Register Design
+<a id="current-m25-select-split-merge-register-design"></a>
+
+## Task Decomposition And Registration Design
 
 <a id="session-local-select-split-merge-classifier"></a>
 <a id="registration-adapter-and-partial-add-recovery"></a>
@@ -741,7 +745,7 @@ release guarantee depends on that historical copy.
 <a id="atomic-instruction-layer-synchronization-boundary"></a>
 <a id="neutral-forward-test-boundary"></a>
 
-Current detail is owned by the [Task operation design](task-operation-design.md#current-m25-select-split-merge-register-design).
+Current detail is owned by the [Task operation design](task-operation-design.md#task-decomposition-and-registration-design).
 
 <a id="trusted-local-runner-architecture"></a>
 
@@ -796,7 +800,7 @@ a real consuming project or Git state. Tests cover:
   History state, CSP, text-only DOM, and absence of storage/network APIs;
 - package self-containment, manifest integrity, project-scoped/self-host
   layouts, ignore rules, Windows Python 3.12/3.14, and junction rejection;
-- M16 fresh-session behavioral fixtures plus the current manual/fallback
+- Reduced-loop fresh-session behavioral fixtures plus the current manual/fallback
   ten-call default flow and mechanically enabled eleven-call flow, with the
   Receiptless Runner-pass branch one call lower; and
 - release archive reproducibility, license/manifest/archive inclusion,
@@ -887,7 +891,7 @@ stale detection, parent/child/checklist execution units, manual backup/restore/
 export, generic browser-state persistence, live server, browser launch,
 network synchronization, and update checking.
 
-Any extension to M25 Select-Split-Merge-Register must preserve local-first
+Any extension to Select-Split-Merge-Register must preserve local-first
 operation, current privacy and target-project safety, explicit authority for
 mutation, narrow
 repository boundaries, and concise Skill guidance. It requires synchronized

@@ -352,8 +352,9 @@ placeholders. Text prints only counts, flags, and newest non-content fields.
 
 The formatter revalidates stored completion revision, evidence reason,
 completion-hash, target value, and target-base text through the ordinary
-privacy matcher before building a public cycle. It has no legacy M19.7
-projection. A rejection maps to the fixed
+privacy matcher before building a public cycle. It does not use the legacy
+`dispatch_authorization` counter projection for stored Contract constraints
+and checkpoint summaries. A rejection maps to the fixed
 `completion_history_inconsistent` error and never exposes the offending field
 or value; `task show` and Viewer use this same formatter.
 

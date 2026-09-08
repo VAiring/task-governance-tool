@@ -119,8 +119,9 @@ At eligible load, read state at most once before snapshot decode. Owned state
 is immediately cleared with `replaceState(null, "")` even when invalid,
 stale, non-reload, or later decode fails. Clear failure disables restore.
 Non-file state is untouched. `history.scrollRestoration` must exist, accept
-`manual`, and read back manual before save/restore; otherwise M15.6 is disabled
-but reload continues. State-read failure does not skip the manual-mode attempt.
+`manual`, and read back manual before save/restore; otherwise UI-state capture
+and restore are disabled but reload continues. State-read failure does not skip
+the manual-mode attempt.
 
 Restore only on navigation type reload, after successful clear, with exact
 keys/types/bounds, age 0-300,000 ms, current options, visible selected Task,

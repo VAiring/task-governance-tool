@@ -166,7 +166,7 @@ Use this deterministic graph for a normal no-finding Tier 2 task:
 
    Taskgov derives the Verification Receipt subject from the locked
    capture-version-1 target; there is no label or replacement subject input.
-   It executes no command for the M21 branch and stores no command body or
+   It executes no command for the manual verification branch and stores no command body or
    output. A `fail`, `timeout`, or `partial` Receipt is immutable; set a fresh
    target generation before a new run can become current. A pending, stale, or
    cleanup-only Runner basis remains stale; every other exact-current terminal
@@ -178,7 +178,7 @@ When step 2 is needed, the manual/fallback path is at most ten governance
 subprocess calls with the Effort Advisory disabled and eleven when an existing valid profile enables
 it. The Effort branch is a boolean route from `task show`, not an LLM
 choice. For a Task with specified verification, the count includes one
-Verification Receipt on an M21 branch and two actual Tier 2 review-receipt
+Verification Receipt on a manual verification branch and two actual Tier 2 review-receipt
 writes; the qualifying Runner-pass branch omits that Verification Receipt call
 and remains bounded to nine or ten calls respectively. The count excludes the two independent review
 model decisions, the external verification process, and real progress notes.
@@ -277,7 +277,7 @@ another scope question.
 
 Any explicitly supplied constraints use strict normal privacy validation.
 Omitting later constraints preserves the already-validated prior bytes,
-including bounded M19.7 legacy lineage; that carry-forward is not acceptance
+including [bounded legacy counter forms](cli_contracts.md#errors-and-privacy); that carry-forward is not acceptance
 of caller-supplied legacy vocabulary and grants no authority. For future
 external-operation intent or evidence, use
 `operation_sequence=<positive canonical integer>` only as correlation or
@@ -364,7 +364,8 @@ completion. It does not change task status, selection, gates, or
 `tasks.updated_at`. Default `task current` and `task show` expose only the
 latest checkpoint; compact selection intentionally omits its content.
 New checkpoint content uses strict normal privacy validation. The bounded
-legacy reader exists only to return an already-stored M19.7 checkpoint summary
+legacy reader exists only to return an already-stored checkpoint summary with
+[bounded legacy counter forms](cli_contracts.md#errors-and-privacy)
 unchanged; it creates no Task or external-operation authority.
 
 ## Pause, Resume, And Block
@@ -465,7 +466,7 @@ python .agents/skills/task-governance-tool/scripts/taskgov.py verification recei
 ```
 
 Only an exact-current `pass/full` Receipt on marker `0` or the exact closed
-no-launch fallback satisfies that M21 branch. A missing Receipt or a current
+no-launch fallback satisfies that manual verification branch. A missing Receipt or a current
 `fail`, `timeout`, or `partial` Receipt blocks it; explicitly set a fresh target
 before retrying. A pending, stale, or cleanup-only Runner basis remains stale;
 every other exact-current terminal Runner result blocks and cannot be

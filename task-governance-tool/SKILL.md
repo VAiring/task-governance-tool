@@ -201,7 +201,7 @@ expectation or the exact-current closed no-launch `m21_fallback`—runs the gove
 outside taskgov and records one aggregate attestation with `verification receipt
 add` before preparing review. `not_required` and `runner_pass` proceed without
 verification or a Receipt. `blocked` reports the existing gate code and cannot
-be overridden by a Receipt. For the M21 branch,
+be overridden by a Receipt. For this manual verification branch,
 taskgov does not run the external command or retain its body or output. It
 derives the version-1 verification subject from the locked target's authority
 snapshot and verification criterion; there is no caller label or replacement

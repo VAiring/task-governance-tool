@@ -115,7 +115,7 @@ schema and current enums. Explicit setup migrates complete v21 state to v22;
 new native Bundles use source 22/format 2, while retained source-19/20/21
 Bundle payloads, bytes, and digests remain unchanged.
 
-The M23 Analyzer runtime is retired. Independent Evidence reading/validation
+The Analyzer runtime is retired. Independent Evidence reading/validation
 remains only in repository tests; no report or model runtime replaces it.
 Package updates preserve local state, including inert old analysis artifacts,
 and the supported configuration files described in `docs/release-install.md`.
@@ -433,7 +433,8 @@ correlation or idempotency evidence; it never grants permission to dispatch,
 push, publish, or perform another external action.
 
 One read-only compatibility seam preserves the original bytes of already
-stored M19.7 Contract constraints and checkpoint summaries. It creates no
+stored Contract constraints and checkpoint summaries containing the
+[bounded legacy counter forms](docs/specification.md#privacy-safety-and-stable-errors). It creates no
 write or authority. Omitted Contract constraints retain already-validated
 prior bytes under the existing carry-forward rule, while explicit new
 constraints use the strict input guard. Completion-history public text has no

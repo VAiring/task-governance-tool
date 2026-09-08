@@ -700,23 +700,23 @@ class SkillSelfContainmentTests(unittest.TestCase):
         ):
             self.assertIn(phrase, normalized)
 
-        specification_m16 = " ".join(
+        specification_loop_discipline = " ".join(
             specification.split(
-                "## Approved Post-MVP Extension: TG-M16 Reduced Loop Discipline Trial",
+                "## Reduced Loop Discipline",
                 1,
             )[1]
             .split("\n## ", 1)[0]
             .split()
         )
-        design_m16 = " ".join(
+        design_loop_discipline = " ".join(
             design.split(
-                "## Approved TG-M16 Reduced Loop Discipline Trial Design",
+                "## Reduced Loop Discipline Design",
                 1,
             )[1]
             .split("\n## ", 1)[0]
             .split()
         )
-        for authority in (specification_m16, design_m16):
+        for authority in (specification_loop_discipline, design_loop_discipline):
             self.assertIn("two materially equivalent", authority)
             self.assertIn("current authority", authority)
             self.assertIn("fresh target", authority)

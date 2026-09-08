@@ -11,7 +11,7 @@ verification Runner with a closed manual fallback. Schema v20 remains a
 supported migration source and
 audit-only Runner lineage; only fresh gate-eligible evidence under the unchanged
 schema-v21 protocol retained by schema v22 may
-satisfy the Runner branch. M25 Select-Split-Merge-Register is active only as
+satisfy the Runner branch. Select-Split-Merge-Register is active only as
 Skill instruction-layer guidance. Completed execution narrative belongs only in
 indexed history, and
 the Task database owns live state and evidence.
@@ -267,9 +267,11 @@ section. Shared contracts retain their existing owners.
 
 Current detail is owned by the [Task operation specification](task-operation-specification.md#task-state-scope-review-and-completion).
 
-## Approved Post-MVP Extension: TG-M16 Reduced Loop Discipline Trial
+<a id="approved-post-mvp-extension-tg-m16-reduced-loop-discipline-trial"></a>
 
-Current detail is owned by the [Task operation specification](task-operation-specification.md#approved-post-mvp-extension-tg-m16-reduced-loop-discipline-trial).
+## Reduced Loop Discipline
+
+Current detail is owned by the [Task operation specification](task-operation-specification.md#reduced-loop-discipline).
 
 ## Review And Completion
 
@@ -305,7 +307,9 @@ Current detail is owned by the [Task operation specification](task-operation-spe
 
 Current detail is owned by the [Review and completion specification](review-completion-specification.md#completion-cycle-history).
 
-## Current M25 Select-Split-Merge-Register Contract
+<a id="current-m25-select-split-merge-register-contract"></a>
+
+## Task Decomposition And Registration
 
 <a id="candidate-first-split-and-one-global-merge"></a>
 <a id="explicit-registration-and-contract-population"></a>
@@ -313,7 +317,7 @@ Current detail is owned by the [Review and completion specification](review-comp
 <a id="explicit-mid-task-scope-addition"></a>
 <a id="active-instruction-layer-boundary"></a>
 
-Current detail is owned by the [Task operation specification](task-operation-specification.md#current-m25-select-split-merge-register-contract).
+Current detail is owned by the [Task operation specification](task-operation-specification.md#task-decomposition-and-registration).
 
 <a id="current-schema-v21-verification-ledger-and-bundle-contract"></a>
 
@@ -755,7 +759,7 @@ only correlation or idempotency evidence: it neither contains nor grants
 authority, and the exact current approval for any external operation remains
 separate.
 
-One read-only compatibility path preserves exact already-stored M19.7 text.
+One read-only compatibility path preserves already-stored legacy counter text.
 Only stored Contract constraints and stored checkpoint summary reads may
 replace the bounded lowercase `dispatch_authorization` equality or numeric
 JSON counter with a non-secret sentinel while running every other privacy
@@ -911,7 +915,7 @@ beyond the one-shot envelope, external Issue lifecycle/sync until its intake
 contract, cross-project profiles, daily network update checks, reviewer
 identity/signatures/attestation, and a generic workflow engine.
 
-Deferred features and the retired TG-M20S study result never change current
+Deferred features and retired study results never change current
 acceptance, add a normal-loop command, or authorize target/external mutation
 until their separately approved implementation and synchronization gates
-complete. Active M25 instruction guidance adds none of those capabilities.
+complete. Active Task decomposition guidance adds none of those capabilities.

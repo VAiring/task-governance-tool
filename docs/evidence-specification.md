@@ -387,7 +387,7 @@ Facts, caller declarations, LLM inference, and uncertainty are not
 interchangeable. Derived explanations do not satisfy verification, review,
 completion, or release gates and cannot upgrade the assurance of their sources.
 
-The M23 Analyzer runtime is retired. `derived_analysis`, `llm_derived`, and
+The Analyzer runtime is retired. `derived_analysis`, `llm_derived`, and
 `batch_analyzer` remain only in old-schema compatibility/rejection vocabulary;
 current schema v22 removes their unused reservations. Unrelated
 `deterministically_derived` uses remain supported. Reservation cleanup preserves

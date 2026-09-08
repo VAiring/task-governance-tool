@@ -116,8 +116,8 @@ ROUTE_SECTIONS = (
     ),
     (
         "docs/specification.md",
-        "## Approved Post-MVP Extension: TG-M16 Reduced Loop Discipline Trial",
-        ("task-operation-specification.md#approved-post-mvp-extension-tg-m16-reduced-loop-discipline-trial",),
+        "## Reduced Loop Discipline",
+        ("task-operation-specification.md#reduced-loop-discipline",),
     ),
     (
         "docs/specification.md",
@@ -126,8 +126,8 @@ ROUTE_SECTIONS = (
     ),
     (
         "docs/specification.md",
-        "## Current M25 Select-Split-Merge-Register Contract",
-        ("task-operation-specification.md#current-m25-select-split-merge-register-contract",),
+        "## Task Decomposition And Registration",
+        ("task-operation-specification.md#task-decomposition-and-registration",),
     ),
     (
         "docs/specification.md",
@@ -151,13 +151,13 @@ ROUTE_SECTIONS = (
     ),
     (
         DESIGN,
-        "## Approved TG-M16 Reduced Loop Discipline Trial Design",
-        ("task-operation-design.md#approved-tg-m16-reduced-loop-discipline-trial-design",),
+        "## Reduced Loop Discipline Design",
+        ("task-operation-design.md#reduced-loop-discipline-design",),
     ),
     (
         DESIGN,
-        "## Current M25 Select-Split-Merge-Register Design",
-        ("task-operation-design.md#current-m25-select-split-merge-register-design",),
+        "## Task Decomposition And Registration Design",
+        ("task-operation-design.md#task-decomposition-and-registration-design",),
     ),
     (
         AUTHORITY,

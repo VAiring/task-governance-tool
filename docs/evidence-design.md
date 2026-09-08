@@ -289,8 +289,11 @@ index/Bundle reader and validation core. `tests/evidence_reader_codec.py` owns
 its pure canonical JSON codec; `tests/evidence_test_support.py` owns reusable
 fixtures with a separate reference encoder. The oracle preserves the full
 selected index entry, including its Bundle-version discriminator, and the exact
-Bundle envelope or explicit legacy absence. Its existing regression and M24
-integration tests remain the consumers.
+Bundle envelope or explicit legacy absence. Its consumers include the
+independent-reader regression tests, Runner schema-v20 Evidence compatibility
+(`tests/test_m242_evidence_compatibility.py`), schema-v21 compatibility
+(`tests/test_m243b_schema21_compatibility.py`), and legacy/fresh completion
+acceptance (`tests/test_m244b_legacy_fresh_acceptance.py`).
 
 These test helpers import neither SQLite/storage nor the producing Evidence
 semantic validator. They may reuse the existing bounded physical-filesystem
@@ -298,7 +301,7 @@ primitives in `state_paths.py`; independence does not require duplicate I/O or
 Windows infrastructure. They have no Analyzer descriptor, packet, report,
 outbox, process, model, or publication responsibility.
 
-The installable package contains no M23 Analyzer or standalone Evidence-reader
+The installable package contains no Analyzer or standalone Evidence-reader
 runtime. Analyzer-only path derivation is removed from `state_paths.py` and
 `state_resolver.py`; shared Evidence paths and filesystem primitives retain
 their existing owners and behavior. Old ignored analysis artifacts are left

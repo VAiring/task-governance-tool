@@ -551,8 +551,9 @@ current gate by historical projection alone.
 
 Normal and new input rejects both `dispatch_authorization=<value>` and the JSON
 key `"dispatch_authorization":<value>`. The only compatibility is a read-only,
-original-text projection for already-stored M19.7 Contract constraints and
-checkpoint summaries. Omitted Contract constraints may retain those
+original-text projection for already-stored Contract constraints and checkpoint
+summaries containing the [bounded legacy counter forms](specification.md#privacy-safety-and-stable-errors).
+Omitted Contract constraints may retain those
 already-validated bytes under the existing carry-forward contract; explicit
 input cannot use the compatibility reader. Completion-history public text has
 no exception and is strictly revalidated before `task show` or Viewer output.
@@ -616,7 +617,7 @@ supplies that authorization.
 
 ## Current Candidate Summary
 
-The M23 Analyzer runtime is retired from the candidate package. Independent
+The Analyzer runtime is retired from the candidate package. Independent
 Evidence reading/validation remains test-only. Existing ignored analysis
 artifacts stay inert and untouched; packaged-core replacement preserves state
 and the three supported configuration files listed above.

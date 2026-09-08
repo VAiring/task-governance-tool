@@ -185,31 +185,34 @@ by itself. A Plan-only branch is the only supported way to make a config change
 without a basis edit. `replace` implies one bounded stdin read; other actions
 do not read stdin.
 
-### Activation And Test Allocation
+<a id="activation-and-test-allocation"></a>
 
-The sequential implementation allocation is deliberately narrow:
+### Test Coverage And Contract Synchronization
 
-- TG-RPA.2 owns only shared pure Plan values, draft decode, transforms, and
-  focused action/round-trip/privacy tests, including privacy precedence over a
-  recognized leaf's grammar or size failure and no candidate emission, plus
-  release-manifest synchronization for its changed packaged files;
-- TG-RPA.3 owns only the physical publisher and focused path, no-op
-  confirmation, drift, replacement, failure-cleanup, and privacy tests, plus
-  release-manifest
-  synchronization for its changed packaged files;
-- TG-RPA.4 owns only the internal coordination service and focused DB/order/
-  partial-success/no-launch tests, plus release-manifest synchronization for
-  its changed packaged files;
-- TG-RPA.5 alone connects the public parser and synchronizes active formal
-  documents, `AGENTS.md`, CLI contract reference, README opt-in examples, final
-  package-manifest state, help/output behavior, and focused end-to-end tests;
-- TG-RPA.6 changes no product behavior and runs final exact-target acceptance,
-  including the full deterministic offline suite.
+The tests follow the authoring responsibilities above:
 
-Every unit is Tier 2 and receives two independent exact-target reviews. Earlier
-code units run their focused tests plus manifest/lane/document checks as
-applicable; they do not repeat the full suite. The full suite is reserved for
-TG-RPA.6. No unit adds a schema/migration, PlanV2, setup/doctor/Viewer/Evidence
-route, Skill trigger, public leaf, Runner execution command, automatic command
-discovery, re-enable action, hostile-code claim, network action, or M24
-redesign.
+- Shared Plan values, draft decode, and transforms have focused action,
+  round-trip, and privacy coverage, including privacy precedence over a
+  recognized leaf's grammar or size failure and no candidate emission.
+- The physical publisher has focused path, no-op confirmation, drift,
+  replacement, failure-cleanup, and privacy coverage.
+- The parent coordination service has focused database ordering,
+  partial-success, and no-launch coverage.
+- Public CLI integration has end-to-end, help/output, and compatibility
+  coverage for the existing `task edit` leaf.
+
+The public CLI, active formal owners, CLI contract reference, README opt-in
+examples, and package manifest describe the same authoring boundary. Changed
+packaged files retain release-manifest synchronization. Focused tests and
+applicable manifest, lane, and document checks verify the changed
+responsibilities; the full deterministic offline suite provides integrated
+acceptance. The active Task Contract and existing repository
+[verification](../AGENTS.md#testing-and-verification-rules) and
+[review](../AGENTS.md#review-standard) rules determine the checks and review
+gates for a change.
+
+Authoring reuses the current schema and PlanV1. Its control boundary adds no
+setup/doctor/Viewer/Evidence route, Skill trigger, public leaf, Runner execution
+command, automatic command discovery, re-enable action, hostile-code
+qualification, or network action. Runner execution and its qualification
+remain with the [Runner execution owner](runner-execution-design.md#trusted-local-runner-architecture).

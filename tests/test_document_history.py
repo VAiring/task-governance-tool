@@ -343,25 +343,25 @@ class DocumentHistoryTests(unittest.TestCase):
                 self.assertEqual(task_design.count(heading), 1)
                 self.assertNotIn(heading, task_specification)
 
-        m25_owners = (
+        decomposition_owners = (
             (
                 task_specification,
-                "## Current M25 Select-Split-Merge-Register Contract",
+                "## Task Decomposition And Registration",
                 "\n## ",
             ),
             (
                 task_design,
-                "## Current M25 Select-Split-Merge-Register Design",
+                "## Task Decomposition And Registration Design",
                 "\n## ",
             ),
             (
                 plan,
-                "### M25 Active Select-Split-Merge-Register Guidance",
+                "### Task Decomposition And Registration Guidance",
                 "\n### ",
             ),
         )
-        for owner, heading, next_heading in m25_owners:
-            with self.subTest(m25_owner=heading):
+        for owner, heading, next_heading in decomposition_owners:
+            with self.subTest(decomposition_owner=heading):
                 self.assertEqual(owner.count(heading), 1)
                 start = owner.index(heading)
                 end = owner.find(next_heading, start + 1)

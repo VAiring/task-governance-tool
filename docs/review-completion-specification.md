@@ -329,8 +329,9 @@ events remain only `task_event_id`, `task_id`, `project_id`, `event_type`,
 
 Before a cycle is emitted, every public free-form completion-evidence and
 review-target text field is revalidated with the normal strict privacy guard.
-Completion history has no M19.7 compatibility exception. Private or corrupt
-stored text fails with the existing sanitized
+The stored `dispatch_authorization` counter compatibility exception for Contract
+constraints and checkpoint summaries does not apply to completion history.
+Private or corrupt stored text fails with the existing sanitized
 `completion_history_inconsistent` result rather than being redacted or
 returned.
 

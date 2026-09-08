@@ -253,11 +253,13 @@ completion evidence, clears/advances any started review target, moves
 review-pending to in-progress, updates time, and appends a content-free
 `contract_revised` event atomically. Old Contracts and review history remain.
 
-Stored Contract projection has one narrow legacy M19.7 seam: only
-`constraints_text` is validated through the bounded legacy reader and returned
-unchanged. Normal Contract input never selects that reader. When later
-constraints are omitted, the established carry-forward rule may copy those
-already-validated bytes into the new immutable revision; this preserves
+Stored Contract projection has one narrow compatibility path for legacy
+operation counters: only `constraints_text` uses the bounded stored-text reader
+for positive canonical integer `dispatch_authorization` counters and is returned unchanged.
+The exact [privacy-only guard](design.md#privacy-safety-and-failure-boundaries)
+retains all other detectors. Normal Contract input never selects that reader.
+When later constraints are omitted, the established carry-forward rule may copy
+those already-validated bytes into the new immutable revision; this preserves
 lineage and supplies neither caller-input acceptance nor authority.
 
 Concurrent identical input records once and replays; different valid input
@@ -281,10 +283,11 @@ reject it. Current/show expose only the latest checkpoint; Viewer excludes
 checkpoint content. A checkpoint is optional and changes no Task status,
 scope, selection, review, evidence, or completion gate.
 
-Only stored checkpoint `summary` projection may use the bounded M19.7 reader
-for the former numeric `dispatch_authorization` JSON field. It returns the
-original canonical stored summary and writes nothing. New summaries and all
-other checkpoint fields use the ordinary privacy path.
+Only stored checkpoint `summary` projection may use the bounded legacy
+operation-counter reader for the former numeric `dispatch_authorization` JSON
+field, under the shared [privacy-only guard](design.md#privacy-safety-and-failure-boundaries).
+It returns the original canonical stored summary and writes nothing. New
+summaries and all other checkpoint fields use the ordinary privacy path.
 
 ### Local Handoff Outbox
 
@@ -381,8 +384,9 @@ handoff, changes status, expands scope/acceptance, or blocks completion.
 `task show` mechanically exposes enablement. The Skill calls `task effort`
 once at the existing verification/review boundary only when enabled.
 
-## Approved TG-M16 Reduced Loop Discipline Trial Design
+## Reduced Loop Discipline Design
 
+<a id="reduced-loop-discipline-design"></a>
 <a id="approved-tg-m16-reduced-loop-discipline-trial-design"></a>
 
 The existing Effort result chooses:
@@ -428,19 +432,19 @@ completion still requires fresh qualifying PASS receipts. After two
 materially equivalent unsuccessful cycles without new evidence, no third
 equivalent cycle runs; the same bounded blocker/decision path applies.
 
-No M16 setup stage, Task seed, policy version, instruction-chain inspection,
-target `AGENTS.md` mutation, persisted counter, alternate state machine, or
-normal-loop call exists.
+No reconciliation setup stage, Task seed, policy version, instruction-chain
+inspection, target `AGENTS.md` mutation, persisted counter, alternate state
+machine, or normal-loop call exists.
 
-## Current M25 Select-Split-Merge-Register Design
+## Task Decomposition And Registration Design
 
+<a id="task-decomposition-and-registration-design"></a>
 <a id="current-m25-select-split-merge-register-design"></a>
 
-M25.1, Task `tg_task_8e33e15cd97a28ee`, froze the instruction-layer design in
-`docs/specification.md`. M25.2, Task `tg_task_d891cd538d9e7364`, activates it
-only in Skill guidance and the task-workflow package reference. The
-deterministic CLI, repository interfaces, schema, Viewer, Runner, and command
-inventory remain unchanged.
+The [Task decomposition and registration contract](task-operation-specification.md#task-decomposition-and-registration)
+is implemented in Skill guidance and the task-workflow package reference. The
+classifier is instruction-layer behavior; it adds no deterministic CLI,
+repository interface, schema, Viewer, Runner, or command-inventory behavior.
 
 ### Session-Local Select-Split-Merge Classifier
 
@@ -571,37 +575,34 @@ proposal is not persisted as a new model or reconstructed from Handoff. The
 same event cannot run another Split after global Merge. Scope preservation
 precedes any pause or block, and the normal Task loop gains no new call.
 
-### Atomic Instruction-Layer Synchronization Boundary
+### Instruction-Layer Ownership And Synchronization
 
-M25.2 changes these surfaces in one reviewed Tier 2 revision:
+<a id="atomic-instruction-layer-synchronization-boundary"></a>
 
-- add only the concise trigger gate and disposition rules to
-  `task-governance-tool/SKILL.md`;
-- place the full one-pass sequence, responsibility/fragment cases, Tier table,
-  ordering examples, and recovery rules in
-  `task-governance-tool/references/task_workflow.md`;
-- update `task-governance-tool/release-manifest.json` only for the changed
-  package digests under the current version/release rules;
-- switch the formerly inactive markers and implementation-facing routing in
-  `docs/specification.md` and `docs/design.md`, and synchronize the approved
-  static execution contract in `plan.md`; and
-- update `tests/test_skill_self_containment.py`,
-  `tests/test_m14_integrated_acceptance.py`, and
-  `tests/test_document_history.py`, adding a focused test module only if those
-  owning suites cannot express the behavioral cases without duplication.
+The concise trigger gate and disposition rules belong in
+`task-governance-tool/SKILL.md`. The full one-pass sequence,
+responsibility/fragment cases, Tier table, ordering examples, and recovery rules
+belong in `task-governance-tool/references/task_workflow.md`. Package digests in
+`task-governance-tool/release-manifest.json` track the shipped guidance under the
+current version/release rules. Display metadata in
+`task-governance-tool/agents/openai.yaml` describes the same registration and
+scope-preservation triggers.
 
-`task-governance-tool/agents/openai.yaml` is in the synchronization review set
-and remains byte-identical because its current registration and
-scope-preservation metadata already covers the two triggers. Scripts,
-migrations, repositories, CLI parsing/output, Viewer code/template, and public
-command leaves are outside the write set and must be proven unchanged.
+The product and implementation owners route the current instruction-layer
+contract, while `plan.md` retains its separately owned decisions and static
+contracts. Coupled checks belong in `tests/test_skill_self_containment.py`,
+`tests/test_m14_integrated_acceptance.py`, and `tests/test_document_history.py`.
+The classifier itself has no implementation in runtime scripts, migrations,
+repositories, CLI parsing/output, or Viewer code/template, and introduces no
+public command leaf. Each authorized change uses its applicable scope and
+existing verification and review gates.
 
 ### Neutral Forward-Test Boundary
 
-M25.2 acceptance uses fresh, minimal-context agents that receive the
-candidate Skill and neutral workloads, not the expected branch or M20S study
-result. A separate evaluator checks both the response and resulting Task DB.
-The fixed matrix includes:
+Neutral forward tests for this instruction layer give fresh, minimal-context
+agents the candidate Skill and neutral workloads without revealing the expected
+branch or prior study result. A separate evaluator checks both the response and
+resulting Task DB. The reusable coverage matrix includes:
 
 - responsibility slices that share files, tests, commands, or fixtures yet
   remain separate; an internal enabling slice without standalone user value;
@@ -626,4 +627,6 @@ The fixed matrix includes:
 Positive, negative, and unknown cases use parallel wording and equal available
 authority so the prompt does not reveal the expected result. A valid result
 must match the specification branch and actual stored effects; self-reported
-intent alone is insufficient.
+intent alone is insufficient. This matrix describes verification coverage;
+whether forward testing is required for a particular change follows its current
+Task Contract and the repository's existing validation rules.

@@ -608,11 +608,13 @@ receipt-blocking evaluation. Trimmed-empty verification remains
 `required=false,satisfied=true,blocking_code=null` with a null subject.
 
 For a schema-v21 or schema-v22 live target, the existing gate shape has a closed basis matrix.
-Marker `0` keeps the M21 Receipt behavior. Marker `2` with a non-current,
+Marker `0` uses the [manual Verification Receipt rules](#verification-receipt).
+Marker `2` with a non-current,
 pending, or cleanup-only graph is stale and uses `evidence_basis_stale`; any
 other exact-current terminal Runner result except the two admitted results uses
 `verification_receipt_blocking`. The exact-current closed no-launch
-`m21_fallback` delegates to M21. An exact-current qualifying complete-plan
+`m21_fallback` delegates to those same manual Verification Receipt rules.
+An exact-current qualifying complete-plan
 Runner pass is satisfied with no Receipt, so `qualifying_receipt_id` is null
 and the Receipt-only counts may all be zero.
 
@@ -652,8 +654,8 @@ gate. Text output reports only bounded counts and the latest cycle's
 non-content fields.
 
 Stored public completion-evidence and review-target text is strictly
-privacy-revalidated before projection. Completion history has no M19.7
-compatibility exception; rejected or corrupt stored text returns
+privacy-revalidated before projection. Completion history has no
+[legacy counter compatibility exception](#errors-and-privacy); rejected or corrupt stored text returns
 `completion_history_inconsistent` without exposing the value. `task show` and
 Viewer use the same bounded projection.
 
@@ -714,7 +716,7 @@ Exact replay of the latest checkpoint for the same Contract revision returns
 
 Checkpoint use is never automatic or required. It does not change task status,
 selection, gates, or `tasks.updated_at`. Done tasks remain immutable.
-Only an already-stored M19.7 checkpoint summary may use the bounded legacy
+Only an already-stored checkpoint summary may use the bounded legacy
 numeric `dispatch_authorization` JSON reader. It returns the original summary
 unchanged and authorizes no write or external operation. New checkpoint input
 and every other checkpoint field use strict normal validation.
@@ -802,7 +804,7 @@ Contract-only, require explicit later authority and a reason, invalidate
 current completion/review eligibility, and use immutable successive revisions.
 Canonically unchanged input is a write-free replay.
 Omitted later constraints retain the byte-identical, already-validated prior
-value, including bounded M19.7 legacy lineage; explicit constraints use strict
+value, including [bounded legacy counter forms](#errors-and-privacy); explicit constraints use strict
 normal validation. Carry-forward does not accept caller-supplied legacy
 vocabulary or grant authority.
 
@@ -900,7 +902,7 @@ qualifying Runner pass, pending basis, stale basis, cleanup-only basis, or any
 other structurally valid terminal result rejects Receipt add with
 `evidence_basis_stale`. A retry after `fail`, `timeout`, or `partial` requires
 an explicitly fresh target.
-Taskgov does not execute a command for this M21 branch, infer coverage,
+Taskgov does not execute a command for this manual verification branch, infer coverage,
 authenticate the external runner, or retain a command body, arguments, exit
 code, stdout/stderr, log, exception, environment, or result file.
 
@@ -1231,7 +1233,7 @@ A schema-v20-through-v22 index uses `format_version=2` and adds
 v1, and 2 for a native Bundle v2. New v22 Bundles use `format_version=2`, a
 closed verification-basis union of `caller_attestation`, `not_required`, or
 `runner_observation`, and a matching nullable `runner_observation` field. The
-two M21 arms keep that field null; the Runner arm contains only the qualifying
+`caller_attestation` and `not_required` arms keep that field null; the Runner arm contains only the qualifying
 sanitized observation. Retained source-19/20/21 Bundle bytes and digests are unchanged. The index
 is published last, SQLite remains canonical, and JSON is never imported or
 displayed by the Viewer.
@@ -1396,6 +1398,7 @@ Normal/new input rejects the equality form
 `"dispatch_authorization":<value>`, including numeric values. Use
 `operation_sequence=<positive canonical integer>` for future
 external-operation correlation or idempotency evidence. It is not authority.
-The sole legacy reader is confined to already-stored M19.7 Contract
-constraints and checkpoint summaries, preserves their original text, performs
+The sole legacy reader is confined to already-stored bounded lowercase
+`dispatch_authorization` positive-canonical-integer equality and numeric JSON
+counter forms in Contract constraints and checkpoint summaries. It preserves their original text, performs
 no write, and leaves compound credentials or tokens rejected.

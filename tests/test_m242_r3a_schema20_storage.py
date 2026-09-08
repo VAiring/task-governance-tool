@@ -18,6 +18,9 @@ if str(SCRIPTS_ROOT) not in sys.path:
     sys.path.insert(0, str(SCRIPTS_ROOT))
 
 from task_governance_tool import storage
+from task_governance_tool.review_repository import (
+    insert_review_receipt_with_provenance_locked,
+)
 from task_governance_tool.schema_completion_evidence_bundles import (
     _completion_evidence_bundle_v20_table_sql,
 )
@@ -2269,7 +2272,7 @@ class R3ASchema20StorageTests(unittest.TestCase):
         )
 
         review_receipt_id = "tg_review_receipt_" + "b" * 16
-        stored_review = storage.insert_review_receipt_with_provenance_locked(
+        stored_review = insert_review_receipt_with_provenance_locked(
             connection,
             {
                 "review_receipt_id": review_receipt_id,

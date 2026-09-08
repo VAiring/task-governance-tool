@@ -33,6 +33,10 @@ the retired `derived_analysis` reservation from current schema v22.
 
 - `review_provenance.py` owns the closed enum/matrix, public v1/v0/null union,
   option normalization, and provenance digest; it owns no SQLite access.
+- `review_repository.py` owns stored Receipt/Finding projection validation,
+  provenance/code relation reads, and Receipt/provenance insertion on the
+  caller-owned connection. Reference creation, events, and outer transaction
+  ownership remain in the existing service/storage boundary.
 - `evidence_ledger.py` owns assurance/producer validation, authority-basis
   canonicalization, whole-field criteria, Evidence Reference projections and
   digests, and public allow-lists. Active link, Bundle, omission, and Runner
@@ -59,8 +63,9 @@ the retired `derived_analysis` reservation from current schema v22.
   construction-side storage value types remain shared without a DTO layer.
 
 `storage.py` retains shared SQLite admission, Evidence validation/capture, and
-completion persistence; the projection metadata repository owns only its state
-rows. `tasks.py` and `contracts.py`
+completion persistence, including its global validation consumers of the Review
+repository; the projection metadata repository owns only its state rows.
+`tasks.py` and `contracts.py`
 capture authority inside existing savepoints; `verification_receipts.py`
 derives subject-v1 bindings; it and `reviews.py` create typed References inside
 their source writes; target capture creates one manifest and subject-capable

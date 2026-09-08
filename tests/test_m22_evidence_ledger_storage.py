@@ -39,6 +39,10 @@ from task_governance_tool.evidence_ledger import (
     contract_criterion_digest as pure_contract_criterion_digest,
     verification_expectation_digest as pure_verification_expectation_digest,
 )
+from task_governance_tool.review_repository import (
+    read_review_receipt_with_provenance,
+    validate_stored_review_receipt_projection,
+)
 from task_governance_tool.storage import (
     SCHEMA_VERSION,
     SQLITE_INT64_MAX,
@@ -55,12 +59,10 @@ from task_governance_tool.storage import (
     current_schema_version,
     inspect_setup_state,
     read_verification_receipt_snapshot,
-    read_review_receipt_with_provenance,
     stored_task_verification_limit,
     validate_evidence_ledger_storage,
     validate_evidence_ledger_storage_for_recovery,
     validate_selected_task_receipt_evidence,
-    validate_stored_review_receipt_projection,
     verification_expectation_digest,
 )
 from task_governance_tool.task_values import TASK_VERIFICATION_INPUT_LIMIT

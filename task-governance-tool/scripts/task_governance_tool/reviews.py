@@ -35,26 +35,28 @@ from task_governance_tool.review_provenance import (
     normalize_review_provenance_input,
     project_review_provenance,
 )
-from task_governance_tool.storage import (
-    COMPLETION_RECEIPT_VALIDATION_CHUNK_SIZE,
+from task_governance_tool.review_repository import (
     REVIEW_FINDING_ID_PATTERN,
     REVIEW_RECEIPT_ID_PATTERN,
+    insert_review_receipt_with_provenance_locked,
+    read_review_receipt_with_provenance,
+    validate_stored_review_finding_projection,
+    validate_stored_review_receipt_projection,
+)
+from task_governance_tool.storage import (
+    COMPLETION_RECEIPT_VALIDATION_CHUNK_SIZE,
     SCHEMA_VERSION,
     DatabaseTarget,
     ProjectIdentity,
     StorageError,
     begin_initialized_write,
     evidence_ledger_sqlite_error,
-    insert_review_receipt_with_provenance_locked,
     is_sqlite_busy_or_locked,
     operational_sqlite_error,
     persist_artifact_manifest_locked,
     persist_evidence_reference_locked,
-    read_review_receipt_with_provenance,
     utc_now,
     validate_selected_task_receipt_evidence,
-    validate_stored_review_finding_projection,
-    validate_stored_review_receipt_projection,
 )
 from task_governance_tool.tasks import (
     TaskRepositoryError,

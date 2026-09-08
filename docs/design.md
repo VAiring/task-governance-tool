@@ -143,7 +143,8 @@ The implementation keeps these narrow ownership boundaries:
   Bundle construction/capture and file publication remain with existing owners.
 - `storage.py` remains the shared entry for migrations, initialized admission,
   repositories, and transaction-scoped queries, re-exporting the connection
-  primitives, binding APIs, and operational metadata APIs for existing callers.
+  primitives, binding, operational metadata, and Review repository APIs for
+  existing callers.
   Feature modules do not open raw SQLite connections; Task-row error mapping remains with
   stored-state validation.
 - `schema_completion_cycles.py` owns the ordered completion-cycle SQL
@@ -181,6 +182,10 @@ The implementation keeps these narrow ownership boundaries:
   version-aware legacy-label/internal-subject stored-row validation.
 - `review_provenance.py` owns the closed Review provenance matrix, canonical
   v1/v0/null public union, and provenance digest without SQLite access.
+- `review_repository.py` owns stored Review Receipt/Finding validation,
+  provenance relation reads, and atomic Receipt/provenance insertion using the
+  caller's connection and writer. Shared admission, Evidence Reference creation,
+  events, and outer commit/rollback remain with their existing owners.
 - `evidence_ledger.py` owns authority/criterion canonicalization, closed
   assurance/producer dispatch, Evidence Reference projections and digests,
   and capture-version source guards without SQLite access.
@@ -191,8 +196,8 @@ The implementation keeps these narrow ownership boundaries:
 - `artifact_manifest.py` owns safe bounded Git leaf observation, exact rename
   classification/order, opaque/complete manifests, and manifest digests. Git
   observation is separate from the short DB binding transaction.
-- `reviews.py` owns review target, receipt, finding, and deterministic gate
-  evaluation; `review_packet.py` owns bounded read-only review context.
+- `reviews.py` owns review target, receipt, finding operations and deterministic
+  gate evaluation; `review_packet.py` owns bounded read-only review context.
 - `contract_content.py` owns Contract field selection, normalization, authority
   value validation, and supplied stored-row content validation/projection.
 - `contracts.py` owns Contract reads, immutable revisions, and invalidation.

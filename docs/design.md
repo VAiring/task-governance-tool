@@ -894,7 +894,7 @@ complete validated discovery in `tools/test_lanes.py`. `PLATFORM_SMOKE_MODULES`
 selects CLI startup/help, pure Task validation, and implemented artifact
 operations; OS-specific native cases run only on their applicable host.
 `PLATFORM_ORDINARY_TEST_IDS` adds selected existing physical-install, Task
-completion, Evidence, Viewer, Backup, and recovery cases on Linux. The host
+completion, Evidence, Viewer, Backup, and recovery cases on Linux and macOS. The host
 selection is repository CI policy, not a product command or LLM choice. Missing
 selected identities fail before execution. This is not a fourth base lane and
 does not disable or duplicate tests in the exhaustive suite.
@@ -919,8 +919,8 @@ dependency job.
 
 The additional platform job uses Ubuntu 24.04 x86-64 and macOS 15
 Apple Silicon with Python 3.12 and the same repository runner's
-`--platform-smoke` entry. Linux includes the ordinary-flow selection; macOS
-currently retains the common and artifact-operation selection. Manual
+`--platform-smoke` entry. Both hosts include the ordinary-flow selection
+alongside the common and artifact-operation selection. Manual
 `platform_only=true` selects policy and platform
 checks alone; the Windows matrix and candidate gate are explicitly skipped and
 no release qualification is claimed. The default full route retains both

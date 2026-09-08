@@ -601,7 +601,7 @@ dispatch, push, tag, or publication.
 
 An additional platform job runs CLI startup, common processing, and
 applicable artifact-operation checks on Ubuntu 24.04 x86-64 and macOS 15
-Apple Silicon with Python 3.12. Linux also runs selected existing physical-install,
+Apple Silicon with Python 3.12. Both hosts also run selected existing physical-install,
 ordinary Task completion, Evidence, Viewer, Backup, and recovery integration tests.
 Manual `platform_only=true` runs policy and these platform checks alone,
 skipping the Windows full matrix and candidate gate. This mode is not release

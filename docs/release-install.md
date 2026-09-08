@@ -606,7 +606,7 @@ or historical gate never satisfies a future candidate.
 
 The separate platform job checks CLI startup, common processing, and
 applicable artifact operations on Ubuntu 24.04 x86-64 and macOS 15 Apple Silicon
-with Python 3.12. Linux additionally runs selected existing physical-install,
+with Python 3.12. Both hosts additionally run selected existing physical-install,
 ordinary Task completion, Evidence, Viewer, Backup, and recovery integration tests.
 An explicit manual `platform_only=true` runs only policy and platform checks; it skips the
 Windows full matrix and candidate gate and is not release qualification or a

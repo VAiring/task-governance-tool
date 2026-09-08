@@ -130,7 +130,7 @@ gates. It is not the product contract, execution ledger, or evidence store:
   CLI-startup, and applicable artifact-operation selection owned by
   `tools/test_lanes.py` on Ubuntu 24.04 x86-64 and macOS 15 Apple Silicon with
   Python 3.12. It retains complete discovery and lane validation before
-  selection. Linux also selects existing physical-install, Task completion,
+  selection. Both hosts also select existing physical-install, Task completion,
   Evidence, Viewer, Backup, and representative recovery integration tests by
   exact identity through the same entry. Published support remains with the
   release/install contract; Runner execution is not in this selection.

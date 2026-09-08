@@ -534,7 +534,7 @@ class TestLanePolicyTests(unittest.TestCase):
 
     def test_ordinary_platform_selection_reuses_exact_existing_cases(self):
         inventory = discover_tests(ROOT)
-        self.assertEqual(PLATFORM_ORDINARY_HOSTS, ("linux",))
+        self.assertEqual(PLATFORM_ORDINARY_HOSTS, ("linux", "darwin"))
         self.assertTrue(PLATFORM_ORDINARY_TEST_IDS)
         for platform in ("win32", "linux", "darwin"):
             with self.subTest(platform=platform):

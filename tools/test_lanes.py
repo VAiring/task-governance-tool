@@ -41,7 +41,7 @@ PLATFORM_SMOKE_MODULES = (
     "test_state_transition_primitives",
     "test_task_validation",
 )
-PLATFORM_ORDINARY_HOSTS = ("linux",)
+PLATFORM_ORDINARY_HOSTS = ("linux", "darwin")
 PLATFORM_ORDINARY_TEST_IDS = (
     "test_m14_integrated_acceptance.M14IntegratedAcceptanceTests."
     "test_setup_doctor_and_default_flow_are_integrated_and_target_safe",

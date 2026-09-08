@@ -37,8 +37,8 @@ from task_governance_tool.tasks import (  # noqa: E402
     add_task,
     create_task_event,
     row_to_event,
-    show_task,
 )
+from task_governance_tool.task_show_projection import show_task  # noqa: E402
 from task_governance_tool.viewer import build_viewer_snapshot  # noqa: E402
 from tests.m14_test_support import (  # noqa: E402
     create_v14_target,

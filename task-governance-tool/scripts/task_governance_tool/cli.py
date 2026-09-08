@@ -110,6 +110,7 @@ from task_governance_tool.review_packet import (
     prepare_review_packet,
 )
 from task_governance_tool.setup import run_setup
+from task_governance_tool.task_show_projection import show_task
 from task_governance_tool.tasks import (
     CURRENT_STATUSES,
     TaskRepositoryError,
@@ -119,7 +120,6 @@ from task_governance_tool.tasks import (
     list_current_tasks,
     list_tasks,
     read_internal_task,
-    show_task,
     validate_current_status_filter,
 )
 from task_governance_tool.task_values import (

@@ -28,6 +28,7 @@ from task_governance_tool import storage as storage_module
 from task_governance_tool import evidence_validation_repository as evidence_validation_repo
 from task_governance_tool import verification_runner_repository as runner_repository
 from task_governance_tool import tasks as tasks_module
+from task_governance_tool import task_show_projection
 from task_governance_tool import verification_runner_service as service
 from task_governance_tool import verification_runner_selection as selection
 from task_governance_tool.storage import utc_now
@@ -343,7 +344,7 @@ def _show_task_through_task_local_connection(
     with closing(
         storage_module.connect_initialized_task_readonly(fixture.target)
     ) as connection:
-        return tasks_module.show_task(
+        return task_show_projection.show_task(
             connection,
             fixture.target.project,
             task_id,

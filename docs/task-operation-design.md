@@ -56,8 +56,11 @@ not raw logs.
 `stored_task_validation.py` owns one source-schema-aware validator for complete stored Task
 rows. Raw fetches, scalar/relationship composition, current authority checks,
 and the single-Task snapshot helper stay together in that repository-facing
-module. Task operations, row projection, and Viewer proof consumption stay in
-`tasks.py`; connection creation and proof issuance remain in `storage.py`.
+module. Task operations, shared row converters, and Viewer proof consumption stay
+in `tasks.py`; `task_show_projection.py` assembles the Task detail result from
+the caller's snapshot and existing validation/readers. Its latest-history
+summary is only a text fallback, not an additional public JSON field.
+Connection creation and proof issuance remain in `storage.py`.
 Its capability object is constructed once per top-level read from the
 already-observed source schema and describes the verification limit (500
 through v17, 1,000 at v18) and the

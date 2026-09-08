@@ -170,6 +170,9 @@ The implementation keeps these narrow ownership boundaries:
 - `tasks.py`, `ordering.py`, and `selection.py` own Task operation validation,
   lifecycle, current/list projections, the shared sequential predecessor
   predicate, and next-task selection.
+- `task_show_projection.py` assembles Task detail on the caller's snapshot,
+  including its result type and internal latest-history text fallback.
+  CLI Runner selection and connection orchestration remain in `cli.py`.
 - `stored_task_validation.py` owns source-schema-aware stored Task row/batch
   validation, raw fetches, Contract relationships, and same-snapshot Task reads.
   `storage.py` supplies source-schema limits and the fixed stored-state failure

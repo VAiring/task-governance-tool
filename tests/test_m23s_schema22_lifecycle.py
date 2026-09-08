@@ -15,6 +15,7 @@ from tests.test_m23s_schema22_migration import _logical_snapshot
 from tests.test_m23s_schema22_projection import _source
 from tests.test_m23s_schema22_validation import _bundle_artifacts, storage
 from task_governance_tool import reviews, tasks, verification_receipts
+from task_governance_tool import task_show_projection
 from task_governance_tool import verification_runner_service as service
 from task_governance_tool import verification_runner_selection as runner_selection
 
@@ -139,7 +140,7 @@ class Schema22LifecycleTests(unittest.TestCase):
                     self.assertEqual(storage.current_schema_version(connection), 22)
                     selected = _selection(connection, fixture.target, fixture.task_id)
                     before = _logical_snapshot(connection)
-                    shown = tasks.show_task(connection, fixture.target.project, fixture.task_id,
+                    shown = task_show_projection.show_task(connection, fixture.target.project, fixture.task_id,
                                             runner_selection=selected)
                     self.assertEqual(shown.verification_evidence["gate"]["blocking_code"], code)
                     self.assertEqual(shown.verification_evidence["gate"]["satisfied"], branch == "pass")
@@ -205,7 +206,7 @@ class Schema22LifecycleTests(unittest.TestCase):
                 for bundle_id, artifact in old_artifacts.items():
                     self.assertEqual(artifacts[bundle_id], artifact)
                     self.assertEqual(artifact.payload["source_schema_version"], 21)
-                shown = tasks.show_task(connection, fixture.target.project, fixture.task_id)
+                shown = task_show_projection.show_task(connection, fixture.target.project, fixture.task_id)
                 self.assertEqual(shown.completion_history["total"], 2)
 
     def test_explicit22_selector_retains_real_implementation_drift_invalidation(self):

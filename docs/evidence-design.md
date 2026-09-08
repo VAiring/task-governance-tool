@@ -13,7 +13,7 @@ Shared [runtime ownership](design.md#runtime-module-boundaries),
 [schema-v21 Runner gate basis](design.md#schema21-runner-gate-basis-design),
 [current persistence](design.md#schema22-reservation-cleanup-design),
 [Runner execution](runner-execution-design.md),
-[post-commit coordination](design.md#post-commit-coordinator),
+[post-commit coordination](setup-state-design.md#post-commit-coordinator),
 [privacy/failure rules](design.md#privacy-safety-and-failure-boundaries), and
 [global test design](design.md#validation-and-test-design) remain with the owners
 routed by the [authority index](authority.md).

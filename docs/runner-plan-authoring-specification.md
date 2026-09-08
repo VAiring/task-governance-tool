@@ -6,7 +6,7 @@ Implementation structure belongs in the
 [Runner Plan authoring design](runner-plan-authoring-design.md).
 The shared [Plan values and target admission](runner-execution-specification.md#eligibility-plan-and-materialization),
 [Task Contract](task-operation-specification.md#task-contract), and
-[maintenance](specification.md#same-process-maintenance) contracts remain at
+[maintenance](setup-state-specification.md#same-process-maintenance) contracts remain at
 their existing owners.
 
 ## Current Runner Plan Authoring And Control Contract

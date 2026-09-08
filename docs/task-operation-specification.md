@@ -617,7 +617,7 @@ A current stored Task fault always fails closed with exit 2, code
 `project_state_unreadable`, and message
 `project state could not be read safely`. A normal command returns its existing
 command-specific empty data shape, no warning, no partial projection, no
-rejected bytes, and no write. Doctor uses its [component mapping](specification.md#doctor-contract).
+rejected bytes, and no write. Doctor uses its [component mapping](setup-state-specification.md#doctor-contract).
 A routine post-commit Viewer refresh preserves the committed business result
 and last-good Viewer and emits only the existing fixed
 `viewer_refresh_failed` warning; setup preflight fails no-write with the fixed

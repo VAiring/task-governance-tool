@@ -642,3 +642,25 @@ contracts, their index, and the pre-normalization plan from source commit
   [docs/authority.md](../authority.md). Use the public CLI for live Task state
   and evidence. This capture is lineage only and cannot fill a current authority
   gap or satisfy a gate.
+
+## v0.13.0 Setup And State Operation Section Split Lineage
+
+- Immutable history:
+  [v0.13.0/setup-state-section-split.md](v0.13.0/setup-state-section-split.md)
+- Source sections: Doctor and Effective Git-Ignore, Recovery Candidate Validity,
+  Stable Project Identity/Relocation, and Setup/Maintenance in
+  `docs/specification.md`; Fixed State Resolver, Identity/Binding/Relocation,
+  and Setup/Doctor/Backup/Maintenance in `docs/design.md`.
+- Source commit: `a5fac6b0533c0f7cfc3c46cee76344ff440d2711`
+- Capture unit: `TG-MOD.15`
+- Capture purpose: preserve only the eight complete relocated Setup and state
+  operation sections. Shared CLI/output, privacy, connection/transaction,
+  persistence, migration, Task stored-row, Evidence, and Viewer contracts retain
+  their existing owners.
+- Current replacements:
+  [Setup and state specification](../setup-state-specification.md)
+  and [Setup and state design](../setup-state-design.md).
+  The unchanged common contracts remain routed by
+  [docs/authority.md](../authority.md). Use the public CLI for live Task state
+  and evidence. This capture is lineage only and cannot fill a current authority
+  gap or satisfy a gate.

@@ -14,7 +14,7 @@ retain their separate owners. Shared [runtime ownership](design.md#runtime-modul
 [migration](design.md#migration-sequence),
 [current persistence](design.md#schema22-reservation-cleanup-design),
 [the schema-v21/v22 Runner gate protocol](design.md#schema21-runner-gate-basis-design),
-[post-commit coordination](design.md#post-commit-coordinator),
+[post-commit coordination](setup-state-design.md#post-commit-coordinator),
 [privacy/failure rules](design.md#privacy-safety-and-failure-boundaries), and
 [global test design](design.md#validation-and-test-design) remain with the owners
 routed by the [authority index](authority.md).

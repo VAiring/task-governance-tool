@@ -35,6 +35,8 @@ EXPECTED_CANONICAL_DOCS = (
     "docs/evidence-design.md",
     "docs/review-completion-specification.md",
     "docs/review-completion-design.md",
+    "docs/setup-state-specification.md",
+    "docs/setup-state-design.md",
     "plan.md",
     "docs/modularization-roadmap.md",
     "docs/history/README.md",
@@ -215,9 +217,9 @@ class DocumentContractTests(unittest.TestCase):
         self.assertNotIn(secret, serialized)
         self.assertNotIn("Traceback", serialized)
 
-    def test_registry_v12_is_closed(self):
+    def test_registry_v13_is_closed(self):
         expected = {
-            "schema": "taskgov-document-authority-v12",
+            "schema": "taskgov-document-authority-v13",
             "mandatory_start": [
                 "AGENTS.md",
                 "docs/authority.md",
@@ -236,6 +238,8 @@ class DocumentContractTests(unittest.TestCase):
                 "docs/evidence-design.md",
                 "docs/review-completion-specification.md",
                 "docs/review-completion-design.md",
+                "docs/setup-state-specification.md",
+                "docs/setup-state-design.md",
             ],
             "mixed_execution": [],
             "conditional": ["docs/modularization-roadmap.md"],
@@ -378,6 +382,25 @@ class DocumentContractTests(unittest.TestCase):
                     old_link = f"]({destination})"
                     new_link = "](design.md)"
                 self.replace(root, source, old_link, new_link)
+                self.assertIn(
+                    "authority_route", self.codes(contract.check_document_contract(root))
+                )
+
+    def test_setup_state_detail_routes_are_required(self):
+        for source, destination in (
+            (contract.AUTHORITY, "setup-state-specification.md"),
+            (contract.AUTHORITY, "setup-state-design.md"),
+            ("docs/specification.md", "setup-state-specification.md#doctor-contract"),
+            ("docs/specification.md", "setup-state-specification.md#effective-git-ignore-preflight"),
+            ("docs/specification.md", "setup-state-specification.md#recovery-candidate-validity-contract"),
+            ("docs/specification.md", "setup-state-specification.md#stable-project-identity-and-relocation"),
+            ("docs/specification.md", "setup-state-specification.md#setup-recovery-evidence-backup-and-viewer-maintenance"),
+            (contract.DESIGN, "setup-state-design.md#fixed-state-resolver"),
+            (contract.DESIGN, "setup-state-design.md#stable-project-identity-binding-and-relocation"),
+            (contract.DESIGN, "setup-state-design.md#setup-doctor-backup-and-maintenance"),
+        ):
+            with self.subTest(source=source, destination=destination), self.fixture() as root:
+                self.replace(root, source, f"]({destination})", "](design.md)")
                 self.assertIn(
                     "authority_route", self.codes(contract.check_document_contract(root))
                 )
@@ -635,6 +658,51 @@ class DocumentContractTests(unittest.TestCase):
                     contract.DESIGN,
                     "## Current Schema-v22 Manual Receipt Arm And Bundle Integration",
                     ("review-completion-design.md#current-schema-v22-manual-receipt-arm-and-bundle-integration",),
+                ),
+                (
+                    contract.AUTHORITY,
+                    "## Setup And State Operation Detail Authority",
+                    ("setup-state-specification.md", "setup-state-design.md",),
+                ),
+                (
+                    "docs/specification.md",
+                    "### Doctor Contract",
+                    ("setup-state-specification.md#doctor-contract",),
+                ),
+                (
+                    "docs/specification.md",
+                    "### Effective Git-Ignore Preflight",
+                    ("setup-state-specification.md#effective-git-ignore-preflight",),
+                ),
+                (
+                    "docs/specification.md",
+                    "## Recovery Candidate Validity Contract",
+                    ("setup-state-specification.md#recovery-candidate-validity-contract",),
+                ),
+                (
+                    "docs/specification.md",
+                    "## Stable Project Identity And Relocation",
+                    ("setup-state-specification.md#stable-project-identity-and-relocation",),
+                ),
+                (
+                    "docs/specification.md",
+                    "## Setup, Recovery, Evidence, Backup, And Viewer Maintenance",
+                    ("setup-state-specification.md#setup-recovery-evidence-backup-and-viewer-maintenance",),
+                ),
+                (
+                    contract.DESIGN,
+                    "### Fixed State Resolver",
+                    ("setup-state-design.md#fixed-state-resolver",),
+                ),
+                (
+                    contract.DESIGN,
+                    "## Stable Project Identity, Binding, And Relocation",
+                    ("setup-state-design.md#stable-project-identity-binding-and-relocation",),
+                ),
+                (
+                    contract.DESIGN,
+                    "## Setup, Doctor, Backup, And Maintenance",
+                    ("setup-state-design.md#setup-doctor-backup-and-maintenance",),
                 ),
                 (
                     contract.AUTHORITY,

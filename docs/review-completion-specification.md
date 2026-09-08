@@ -13,7 +13,7 @@ their separate owners. Shared [CLI/output](specification.md#public-cli-and-outpu
 [SQLite operation](specification.md#sqlite-migration-and-concurrency),
 [current persistence](specification.md#current-schema-v22-persistence-contract),
 [the schema-v21/v22 Runner protocol](specification.md#schema-v21-persistence-compatibility-and-shared-runner-protocol),
-and [maintenance](specification.md#same-process-maintenance) remain with the
+and [maintenance](setup-state-specification.md#same-process-maintenance) remain with the
 owners routed by the [authority index](authority.md).
 
 <a id="review-target-receipt-and-finding-ledger"></a>

@@ -3,11 +3,11 @@
 This document owns the current Viewer implementation structure delegated by the
 [implementation design](design.md#static-viewer), for the behavior in the
 [Viewer specification](viewer-specification.md).
-The shared [fixed state resolver](design.md#fixed-state-resolver),
+The shared [fixed state resolver](setup-state-design.md#fixed-state-resolver),
 [stored-Task and batch validation](task-operation-design.md#shared-stored-task-rowbatch-validator),
 [Contract pointer validation](task-operation-design.md#stored-contract-pointer-relationship-boundary),
 [completion history](review-completion-design.md#completion-cycle-history), and
-[post-commit coordinator](design.md#post-commit-coordinator) remain at their
+[post-commit coordinator](setup-state-design.md#post-commit-coordinator) remain at their
 existing owners.
 
 ## Snapshot And Publication

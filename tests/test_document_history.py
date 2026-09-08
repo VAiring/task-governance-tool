@@ -301,6 +301,7 @@ class DocumentHistoryTests(unittest.TestCase):
             encoding="utf-8-sig"
         )
         design = (ROOT / "docs" / "design.md").read_text(encoding="utf-8-sig")
+        setup_specification = (ROOT / "docs" / "setup-state-specification.md").read_text(encoding="utf-8")
         task_specification = (ROOT / "docs" / "task-operation-specification.md").read_text(encoding="utf-8")
         task_design = (ROOT / "docs" / "task-operation-design.md").read_text(encoding="utf-8")
         plan = (ROOT / "plan.md").read_text(encoding="utf-8-sig")
@@ -317,7 +318,7 @@ class DocumentHistoryTests(unittest.TestCase):
             1,
         )
 
-        self.assertEqual(specification.count("## Recovery Candidate Validity Contract"), 1)
+        self.assertEqual(setup_specification.count("## Recovery Candidate Validity Contract"), 1)
         current_contracts = (
             "## Stored Task Read And Privacy Contract",
             "## Stored Contract Pointer Integrity Contract",
@@ -949,6 +950,86 @@ class DocumentHistoryTests(unittest.TestCase):
                 b"<a id=\"schema-v21-manual-receipt-arm-and-bundle-integration\"></a>\n",
                 b"## Task Contracts, Checkpoints, Handoffs, And Effort\n",
                 "review-completion-design.md",
+            ),
+        )
+        self.assertEqual(len(captured), len(sections))
+        index = (HISTORY_ROOT / "README.md").read_text(encoding="utf-8")
+        self.assertEqual(index.count(f"]({relative})"), 1)
+        self.assertIn(source_commit, index)
+        for block, (path, start_marker, end_marker, replacement) in zip(
+            captured, sections
+        ):
+            with self.subTest(path=path):
+                self.assertIn(path.encode("ascii"), prefix)
+                self.assertIn(f"](../../{replacement})".encode("ascii"), prefix)
+                self.assertIn(f"](../{replacement})", index)
+                source = subprocess.run(
+                    ["git", "show", f"{source_commit}:{path}"],
+                    cwd=ROOT,
+                    check=False,
+                    capture_output=True,
+                )
+                self.assertEqual(source.returncode, 0)
+                start = source.stdout.index(start_marker)
+                end = source.stdout.index(end_marker, start)
+                self.assertEqual(block.split(b"````\n", 1)[0], source.stdout[start:end])
+
+    def test_setup_state_split_capture_preserves_exact_source_sections(self):
+        relative = "v0.13.0/setup-state-section-split.md"
+        source_commit = "a5fac6b0533c0f7cfc3c46cee76344ff440d2711"
+        data = (HISTORY_ROOT / relative).read_bytes()
+        prefix = data.split(b"````markdown\n", 1)[0]
+        self.assertIn(b"NON-AUTHORITATIVE HISTORY", prefix)
+        self.assertIn(source_commit.encode("ascii"), prefix)
+        captured = data.split(b"````markdown\n")[1:]
+        sections = (
+            (
+                "docs/specification.md",
+                b"### Doctor Contract\n",
+                b"### Effective Git-Ignore Preflight\n",
+                "setup-state-specification.md",
+            ),
+            (
+                "docs/specification.md",
+                b"### Effective Git-Ignore Preflight\n",
+                b"## Task State, Scope, Review, And Completion\n",
+                "setup-state-specification.md",
+            ),
+            (
+                "docs/specification.md",
+                b"## Recovery Candidate Validity Contract\n",
+                b"## Stored Task Read And Privacy Contract\n",
+                "setup-state-specification.md",
+            ),
+            (
+                "docs/specification.md",
+                b"## Stable Project Identity And Relocation\n",
+                b"## Setup, Recovery, Evidence, Backup, And Viewer Maintenance\n",
+                "setup-state-specification.md",
+            ),
+            (
+                "docs/specification.md",
+                b"## Setup, Recovery, Evidence, Backup, And Viewer Maintenance\n",
+                b"## Static Task Viewer\n",
+                "setup-state-specification.md",
+            ),
+            (
+                "docs/design.md",
+                b"### Fixed State Resolver\n",
+                b"### Journal And Connection Rules\n",
+                "setup-state-design.md",
+            ),
+            (
+                "docs/design.md",
+                b"## Stable Project Identity, Binding, And Relocation\n",
+                b"## Task State And Selection\n",
+                "setup-state-design.md",
+            ),
+            (
+                "docs/design.md",
+                b"## Setup, Doctor, Backup, And Maintenance\n",
+                b"## Static Viewer\n",
+                "setup-state-design.md",
             ),
         )
         self.assertEqual(len(captured), len(sections))

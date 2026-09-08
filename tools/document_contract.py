@@ -29,6 +29,8 @@ EVIDENCE_SPECIFICATION = "docs/evidence-specification.md"
 EVIDENCE_DESIGN = "docs/evidence-design.md"
 REVIEW_COMPLETION_SPECIFICATION = "docs/review-completion-specification.md"
 REVIEW_COMPLETION_DESIGN = "docs/review-completion-design.md"
+SETUP_STATE_SPECIFICATION = "docs/setup-state-specification.md"
+SETUP_STATE_DESIGN = "docs/setup-state-design.md"
 HISTORY_INDEX = "docs/history/README.md"
 RELEASE_INSTALL = "docs/release-install.md"
 ARTIFACT_AUTHORING = "docs/artifact-authoring.md"
@@ -52,6 +54,8 @@ CANONICAL_DOCS = (
     EVIDENCE_DESIGN,
     REVIEW_COMPLETION_SPECIFICATION,
     REVIEW_COMPLETION_DESIGN,
+    SETUP_STATE_SPECIFICATION,
+    SETUP_STATE_DESIGN,
     "plan.md",
     MODULARIZATION_ROADMAP,
     HISTORY_INDEX,
@@ -295,6 +299,51 @@ ROUTE_SECTIONS = (
     ),
     (
         AUTHORITY,
+        "## Setup And State Operation Detail Authority",
+        ("setup-state-specification.md", "setup-state-design.md",),
+    ),
+    (
+        "docs/specification.md",
+        "### Doctor Contract",
+        ("setup-state-specification.md#doctor-contract",),
+    ),
+    (
+        "docs/specification.md",
+        "### Effective Git-Ignore Preflight",
+        ("setup-state-specification.md#effective-git-ignore-preflight",),
+    ),
+    (
+        "docs/specification.md",
+        "## Recovery Candidate Validity Contract",
+        ("setup-state-specification.md#recovery-candidate-validity-contract",),
+    ),
+    (
+        "docs/specification.md",
+        "## Stable Project Identity And Relocation",
+        ("setup-state-specification.md#stable-project-identity-and-relocation",),
+    ),
+    (
+        "docs/specification.md",
+        "## Setup, Recovery, Evidence, Backup, And Viewer Maintenance",
+        ("setup-state-specification.md#setup-recovery-evidence-backup-and-viewer-maintenance",),
+    ),
+    (
+        DESIGN,
+        "### Fixed State Resolver",
+        ("setup-state-design.md#fixed-state-resolver",),
+    ),
+    (
+        DESIGN,
+        "## Stable Project Identity, Binding, And Relocation",
+        ("setup-state-design.md#stable-project-identity-binding-and-relocation",),
+    ),
+    (
+        DESIGN,
+        "## Setup, Doctor, Backup, And Maintenance",
+        ("setup-state-design.md#setup-doctor-backup-and-maintenance",),
+    ),
+    (
+        AUTHORITY,
         "## Conditional Initiative Roadmaps",
         ("modularization-roadmap.md",),
     ),
@@ -307,8 +356,8 @@ ROUTE_SECTIONS = (
 )
 
 TRIGGER_ROUTE_OWNER_TOKENS = (
-    ("docs/specification.md", VIEWER_SPECIFICATION, RUNNER_PLAN_AUTHORING_SPECIFICATION, TASK_OPERATION_SPECIFICATION, RUNNER_EXECUTION_SPECIFICATION, EVIDENCE_SPECIFICATION, REVIEW_COMPLETION_SPECIFICATION),
-    ("docs/design.md", VIEWER_DESIGN, RUNNER_PLAN_AUTHORING_DESIGN, TASK_OPERATION_DESIGN, RUNNER_EXECUTION_DESIGN, EVIDENCE_DESIGN, REVIEW_COMPLETION_DESIGN),
+    ("docs/specification.md", VIEWER_SPECIFICATION, RUNNER_PLAN_AUTHORING_SPECIFICATION, TASK_OPERATION_SPECIFICATION, RUNNER_EXECUTION_SPECIFICATION, EVIDENCE_SPECIFICATION, REVIEW_COMPLETION_SPECIFICATION, SETUP_STATE_SPECIFICATION),
+    ("docs/design.md", VIEWER_DESIGN, RUNNER_PLAN_AUTHORING_DESIGN, TASK_OPERATION_DESIGN, RUNNER_EXECUTION_DESIGN, EVIDENCE_DESIGN, REVIEW_COMPLETION_DESIGN, SETUP_STATE_DESIGN),
     ("plan.md",),
     (MODULARIZATION_ROADMAP,),
     ("docs/release-install.md",),
@@ -496,6 +545,8 @@ ROLE_TITLES = {
     EVIDENCE_DESIGN: "# Evidence Implementation Design",
     REVIEW_COMPLETION_SPECIFICATION: "# Review And Completion Specification",
     REVIEW_COMPLETION_DESIGN: "# Review And Completion Implementation Design",
+    SETUP_STATE_SPECIFICATION: "# Setup And State Operation Specification",
+    SETUP_STATE_DESIGN: "# Setup And State Operation Implementation Design",
     "plan.md": "# task-governance-tool Current Decisions And Open Issues",
     MODULARIZATION_ROADMAP: "# Responsibility-Based Modularization Roadmap",
     HISTORY_INDEX: "# Historical Documentation Index",
@@ -1142,7 +1193,7 @@ def _section_bounds(scan: Scan, heading: str) -> tuple[int, int] | None:
 
 def _expected_registry() -> dict[str, object]:
     return {
-        "schema": "taskgov-document-authority-v12",
+        "schema": "taskgov-document-authority-v13",
         "mandatory_start": ["AGENTS.md", AUTHORITY, "live_task_contract"],
         "current": [
             "docs/specification.md", "docs/design.md", "plan.md",
@@ -1152,6 +1203,7 @@ def _expected_registry() -> dict[str, object]:
             RUNNER_EXECUTION_SPECIFICATION, RUNNER_EXECUTION_DESIGN,
             EVIDENCE_SPECIFICATION, EVIDENCE_DESIGN,
             REVIEW_COMPLETION_SPECIFICATION, REVIEW_COMPLETION_DESIGN,
+            SETUP_STATE_SPECIFICATION, SETUP_STATE_DESIGN,
         ],
         "mixed_execution": [],
         "conditional": [MODULARIZATION_ROADMAP],

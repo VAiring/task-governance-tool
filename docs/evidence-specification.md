@@ -12,7 +12,7 @@ Implementation structure belongs in the [Evidence design](evidence-design.md).
 The shared [schema-v21 Runner protocol](specification.md#schema-v21-persistence-compatibility-and-shared-runner-protocol),
 [current persistence](specification.md#current-schema-v22-persistence-contract),
 [Runner execution](runner-execution-specification.md),
-[maintenance](specification.md#same-process-maintenance), and
+[maintenance](setup-state-specification.md#same-process-maintenance), and
 [privacy/stable errors](specification.md#privacy-safety-and-stable-errors) remain
 with their existing owners, routed by the [authority index](authority.md).
 

@@ -3,8 +3,8 @@
 This document owns the current Viewer product behavior delegated by the
 [product specification](specification.md#static-task-viewer). Implementation
 structure belongs in the [Viewer design](viewer-design.md).
-The shared [setup](specification.md#setup-contract),
-[maintenance](specification.md#same-process-maintenance),
+The shared [setup](setup-state-specification.md#setup-contract),
+[maintenance](setup-state-specification.md#same-process-maintenance),
 [stored-Task read](task-operation-specification.md#stored-task-read-and-privacy-contract), and
 [completion-history](review-completion-specification.md#completion-cycle-history) contracts remain
 at their existing owners.

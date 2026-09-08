@@ -104,6 +104,9 @@ The implementation keeps these narrow ownership boundaries:
   sanitized parser error types.
 - `cli.py` preprocesses lexical root options, uses that parser, orchestrates
   state and maintenance, and dispatches services and output emission.
+- `cli_handoff.py` owns the Handoff command family and its fixed result shapes.
+  It reuses CLI context/read helpers; state resolution, retained-read cleanup,
+  dispatch, and post-commit coordination remain in `cli.py`.
 - `cli_output.py` owns the shared `CommandResult`, result construction, JSON
   size/identity fitting, bounded errors, and JSON/text stream emission.
 - `cli_text.py` formats the existing Task, completion-check, Handoff, Review,

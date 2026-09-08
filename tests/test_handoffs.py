@@ -977,7 +977,7 @@ class HandoffCommandTests(unittest.TestCase):
                 return connection
 
             with mock.patch(
-                "task_governance_tool.cli.connect_initialized",
+                "task_governance_tool.cli_handoff.connect_initialized",
                 side_effect=fail_first_commit,
             ) as connect_mock:
                 recovered = handle_command(context_for("Recovered after busy commit"))
@@ -990,7 +990,7 @@ class HandoffCommandTests(unittest.TestCase):
                 return CommitFailingConnection(connect_initialized(target))
 
             with mock.patch(
-                "task_governance_tool.cli.connect_initialized",
+                "task_governance_tool.cli_handoff.connect_initialized",
                 side_effect=always_fail_commit,
             ) as connect_mock:
                 failed = handle_command(context_for("Must never become durable"))
@@ -1034,7 +1034,7 @@ class HandoffCommandTests(unittest.TestCase):
             "--json",
         )
         with mock.patch(
-            "task_governance_tool.cli.connect_initialized",
+            "task_governance_tool.cli_handoff.connect_initialized",
             side_effect=sqlite3.OperationalError("database is locked"),
         ) as connect_mock:
             result = handle_command(context)

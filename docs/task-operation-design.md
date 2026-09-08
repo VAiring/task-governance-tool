@@ -285,6 +285,11 @@ other checkpoint fields use the ordinary privacy path.
 
 ### Local Handoff Outbox
 
+`cli_handoff.py` owns command handling for record/list/show/withdraw, including
+the record transaction and its single fresh-transaction retry. Shared context,
+state resolution, retained-reader cleanup, and post-commit coordination remain
+in `cli.py`; `handoffs.py` retains the outbox domain operations below.
+
 Schema v7 owns `handoff_records` with source Task/current Contract revision,
 canonical idempotency key, optional explicit occurrence ID, bounded
 summary/rationale, state, adapter/delivery metadata, internal claim lease,

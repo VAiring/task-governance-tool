@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import stat
+import sys
 from contextlib import contextmanager, suppress
 from dataclasses import dataclass
 from errno import EACCES, EAGAIN, EDEADLK
@@ -49,6 +50,10 @@ def _acquire(descriptor: int) -> None:
 
     import fcntl
 
+    if sys.platform == "linux":
+        fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        return
+
     fcntl.lockf(
         descriptor,
         fcntl.LOCK_EX | fcntl.LOCK_NB,
@@ -67,6 +72,10 @@ def _release(descriptor: int) -> None:
         return
 
     import fcntl
+
+    if sys.platform == "linux":
+        fcntl.flock(descriptor, fcntl.LOCK_UN)
+        return
 
     fcntl.lockf(
         descriptor,

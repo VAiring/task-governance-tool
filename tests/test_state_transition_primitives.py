@@ -100,7 +100,10 @@ class StatePathPrimitiveTests(unittest.TestCase):
                 )
             self.assertEqual(marker.path.read_bytes(), b"marker")
 
-    @unittest.skipUnless(os.name == "nt", "Windows is the verified no-replace runtime")
+    @unittest.skipUnless(
+        os.name == "nt" or sys.platform == "linux",
+        "requires Windows or Linux no-replace semantics",
+    )
     def test_no_replace_rename_publishes_validated_file_and_directory(self):
         for kind in ("file", "directory"):
             with self.subTest(kind=kind), tempfile.TemporaryDirectory() as tmp:
@@ -126,7 +129,10 @@ class StatePathPrimitiveTests(unittest.TestCase):
                 else:
                     self.assertEqual((destination / "child").read_bytes(), b"child")
 
-    @unittest.skipUnless(os.name == "nt", "Windows is the verified no-replace runtime")
+    @unittest.skipUnless(
+        os.name == "nt" or sys.platform == "linux",
+        "requires Windows or Linux no-replace semantics",
+    )
     def test_no_replace_rename_preserves_both_entries_on_collision(self):
         for kind in ("file", "directory"):
             with self.subTest(kind=kind), tempfile.TemporaryDirectory() as tmp:
@@ -316,7 +322,10 @@ class PersistedCleanupPrimitiveTests(unittest.TestCase):
                 inventory.fingerprint,
             )
 
-    @unittest.skipUnless(os.name == "nt", "Windows is the verified no-replace runtime")
+    @unittest.skipUnless(
+        os.name == "nt" or sys.platform == "linux",
+        "requires Windows or Linux no-replace semantics",
+    )
     def test_cleanup_moves_then_deletes_recorded_files_and_preserves_unrelated(self):
         with tempfile.TemporaryDirectory() as tmp:
             state = make_state_root(Path(tmp))
@@ -334,7 +343,10 @@ class PersistedCleanupPrimitiveTests(unittest.TestCase):
             _, retirement = cleanup_roots(state, PROJECT_ID)
             self.assertFalse(retirement.exists())
 
-    @unittest.skipUnless(os.name == "nt", "Windows is the verified no-replace runtime")
+    @unittest.skipUnless(
+        os.name == "nt" or sys.platform == "linux",
+        "requires Windows or Linux no-replace semantics",
+    )
     def test_mixed_old_and_retirement_state_resumes_from_persisted_inventory(self):
         with tempfile.TemporaryDirectory() as tmp:
             state = make_state_root(Path(tmp))

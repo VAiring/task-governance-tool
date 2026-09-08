@@ -35,7 +35,12 @@ CI_LANE_INVOCATION = (
     '--expected-python "${{ matrix.python-version }}"'
 )
 CI_PLATFORM_SMOKE_INVOCATION = "python tools/test_lanes.py --repo . --platform-smoke"
-PLATFORM_SMOKE_MODULES = ("test_cli_help", "test_task_validation")
+PLATFORM_SMOKE_MODULES = (
+    "test_cli_help",
+    "test_os_artifact_operations",
+    "test_state_transition_primitives",
+    "test_task_validation",
+)
 PERFORMANCE_TEST_MODULE = "test_backup_performance"
 DETERMINISTIC_PERFORMANCE_TEST_IDS = (
     "test_backup_performance.BackupPerformanceTests."
@@ -149,6 +154,7 @@ LANE_MODULES: dict[str, tuple[str, ...]] = {
         "test_m243c_runner_gate",
         "test_m244a_runner_acceptance",
         "test_m244b_legacy_fresh_acceptance",
+        "test_os_artifact_operations",
         "test_post_commit_maintenance",
         "test_project_identity_bindings",
         "test_routine_backup",

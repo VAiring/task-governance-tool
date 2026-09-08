@@ -8,6 +8,7 @@ source and rejects an occupied destination without replacement.
 from __future__ import annotations
 
 import os
+import sys
 from pathlib import Path
 
 from task_governance_tool.state_paths import (
@@ -44,17 +45,17 @@ def rename_no_replace(
     elif not _same_directory_identity(source.path, source.identity):
         raise _failure()
 
-    # The supported Windows runtime gives os.rename no-replace semantics.
-    # POSIX os.rename may replace an existing empty directory or file, so an
-    # unverified port must fail closed instead of emulating this with replace.
-    if os.name != "nt":
-        raise StatePathError(
-            code="unsupported_no_replace",
-            message=STATE_PATH_FAILURE_MESSAGE,
-        )
     try:
-        from task_governance_tool.windows_no_replace import rename_no_replace as move
-
+        if sys.platform == "linux":
+            from task_governance_tool.linux_no_replace import rename_no_replace as move
+        elif os.name == "nt":
+            from task_governance_tool.windows_no_replace import rename_no_replace as move
+        else:
+            # Other ports must supply a native no-replace operation first.
+            raise StatePathError(
+                code="unsupported_no_replace",
+                message=STATE_PATH_FAILURE_MESSAGE,
+            )
         move(source.path, destination)
     except OSError as exc:
         raise _failure() from exc

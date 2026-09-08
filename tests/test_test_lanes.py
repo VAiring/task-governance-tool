@@ -505,7 +505,10 @@ class TestLanePolicyTests(unittest.TestCase):
         inventory = discover_tests(ROOT)
         self.assertEqual(
             PLATFORM_SMOKE_MODULES,
-            ("test_cli_help", "test_task_validation"),
+            (
+                "test_cli_help", "test_os_artifact_operations",
+                "test_state_transition_primitives", "test_task_validation",
+            ),
         )
         expected = tuple(
             test_id

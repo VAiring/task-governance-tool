@@ -119,8 +119,8 @@ The implementation keeps these narrow ownership boundaries:
 - `state_paths.py` defines fixed state names and shared containment and
   physical-identity validation.
 - `no_replace.py` owns the OS-neutral no-replace entry using those shared
-  validators and selecting `windows_no_replace.py` for the native Windows
-  move; callers retain publication and cleanup policy.
+  validators and selecting `windows_no_replace.py` or `linux_no_replace.py`
+  for the native move; callers retain publication and cleanup policy.
 - `state_resolver.py` is the sole production resolver for fixed state, bounded
   legacy discovery, identity, binding, recovery observations, and artifact
   targets.
@@ -312,11 +312,19 @@ before adding Linux/macOS implementations. `artifact_lock.py` retains shared
 lock validation/lifetime; the native acquire/release mechanism changes behind
 it. Windows acquire/release calls reside in `_artifact_lock_windows.py`,
 selected internally by `artifact_lock.py`; callers keep the existing
-`zero_wait_artifact_lock` entry point and error handling. `no_replace.py`
-retains containment and identity checks before and after the native move;
-`windows_no_replace.py` owns only the Windows rename call. Setup, backup,
-Evidence, and Viewer callers retain their operation-specific publication and
-recovery policy.
+`zero_wait_artifact_lock` entry point and error handling. On Linux the internal
+acquire/release functions use non-waiting `fcntl.flock` on the independently
+opened descriptor, so same-process and cross-process contention are both
+rejected. Other OS lock mechanics remain unchanged until implemented.
+`no_replace.py` retains containment and identity checks before and after the
+native move;
+`windows_no_replace.py` owns only the Windows rename call, while
+`linux_no_replace.py` calls libc `renameat2` with `RENAME_NOREPLACE` and the
+filesystem-encoded paths. Missing API or rejected operation raises a failure;
+it does not fall back to rename, replace, or copy/delete. These Linux
+primitives do not themselves establish full ordinary-function support.
+Setup, backup, Evidence, and Viewer callers retain their operation-specific
+publication and recovery policy.
 Existing replace-based publication is not converted to no-replace publication.
 The existing same-process double-acquisition rejection and subsequent lock
 reuse remain part of the lock behavior, not just cross-process exclusion.
@@ -882,8 +890,10 @@ without a CI event retain the complete base lane. Pull-request and push
 selection remove only the two manual-timing identities; full manual dispatch
 removes nothing. The separate initial-platform selection is an ordered filter
 of complete validated discovery using `PLATFORM_SMOKE_MODULES` in
-`tools/test_lanes.py`. It begins with CLI startup/help and pure Task validation,
-is not a fourth base lane, and does not disable tests in the exhaustive suite.
+`tools/test_lanes.py`. It covers CLI startup/help, pure Task validation, and
+the implemented artifact operations; OS-specific native cases run only on
+their applicable host. It is not a fourth base lane and does not disable tests
+in the exhaustive suite.
 
 The retired LPAC module, mandatory native fixture, and dedicated route tests are
 absent from standard discovery. No such residue remains

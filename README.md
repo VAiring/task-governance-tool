@@ -599,8 +599,9 @@ An `operation_sequence` value may correlate separately authorized candidate
 work, but neither that value nor a successful gate authorizes workflow
 dispatch, push, tag, or publication.
 
-An additional initial-platform job runs CLI startup and common-processing
-checks on Ubuntu 24.04 x86-64 and macOS 15 Apple Silicon with Python 3.12.
+An additional initial-platform job runs CLI startup, common processing, and
+applicable artifact-operation checks on Ubuntu 24.04 x86-64 and macOS 15
+Apple Silicon with Python 3.12.
 Manual `platform_only=true` runs policy and these initial checks alone,
 skipping the Windows full matrix and candidate gate. This mode is not release
 qualification or a claim of ordinary-function or Runner support on those OSes;

@@ -22,6 +22,7 @@ if str(SCRIPTS_ROOT) not in sys.path:
     sys.path.insert(0, str(SCRIPTS_ROOT))
 
 from task_governance_tool import cli as cli_service  # noqa: E402
+from task_governance_tool import cli_handoff as handoff_cli_service  # noqa: E402
 from task_governance_tool import verification_runner_service as runner_service  # noqa: E402
 from task_governance_tool.storage import (  # noqa: E402
     DATABASE_BUSY_MESSAGE,
@@ -527,7 +528,7 @@ class WriteContentionTests(unittest.TestCase):
                 return wrapper
 
             with mock.patch.object(
-                cli_service,
+                handoff_cli_service,
                 "connect_initialized",
                 side_effect=locked_commit_connection,
             ) as connect_mock:

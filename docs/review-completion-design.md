@@ -318,8 +318,9 @@ cycle already exists. A later done uses fresh gates and the next ordinal.
 
 `completion_history_repository.py` owns latest-cycle, single-Task and batch
 history retrieval and metadata queries. It uses the caller's connection and
-the existing storage-owned cycle/Receipt and Evidence validators; shared
-types, Bundle validation/acquisition and completion writes remain in storage.
+the existing storage-owned cycle/Receipt checks and shared Evidence validation
+repository. The latter owns Bundle validation/acquisition; shared types and
+completion writes remain in storage.
 The single-Task reader retains its selected Bundle-history validation, while
 the Viewer batch reader retains its upstream global-snapshot validation
 assumption. These paths do not acquire a connection or start a transaction.

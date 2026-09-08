@@ -153,7 +153,7 @@ The implementation keeps these narrow ownership boundaries:
   definitions and versioned completion Verification-basis guards; storage
   retains migrations, validation, and transaction ownership.
 - `schema_evidence_ledger.py` owns the ordered Evidence Ledger capture SQL and
-  its provenance trigger; storage retains validation and migration execution.
+  its provenance trigger; storage retains schema validation and migration execution.
 - `schema_completion_evidence_bundles.py` owns the ordered Bundle SQL
   definitions, versioned Bundle tables, criterion-link matrices, cycle
   Evidence-basis guards, and their immutable predecessor schema tags; storage
@@ -176,12 +176,13 @@ The implementation keeps these narrow ownership boundaries:
   review-to-commit snapshot binding.
 - `completion_history_repository.py` owns latest, single-Task, and batched
   history reads plus their metadata queries on the caller's connection.
-  Shared cycle/Receipt and Evidence/Bundle validators remain storage-owned.
+  It uses shared storage cycle/Receipt checks and the Evidence validation repository.
 - `completion_history_projection.py` owns the bounded public cycle projection;
   `storage.py` alone inserts immutable cycles.
 - `completion_bundle_repository.py` owns prepared Bundle validation and
-  Bundle/member/Finding-snapshot persistence on the caller's writer. Shared
-  stored Bundle reads and native Bundle/cycle coordination remain in `storage.py`;
+  Bundle/member/Finding-snapshot persistence on the caller's writer. It uses
+  the Evidence validation repository's stored Bundle reader; native Bundle/cycle
+  coordination remains in `storage.py`;
   the repository neither opens a connection nor commits the operation.
 - `verification_receipts.py` owns caller Receipt validation, exact-current
   classification, completion-gate evaluation, and the bounded Task-show read
@@ -203,16 +204,20 @@ The implementation keeps these narrow ownership boundaries:
 - `evidence_repository.py` owns authority/criterion, manifest, Reference, and
   criterion-link persistence and their local stored-data validation on the
   caller's connection. Its manifest-only Reference reader is shared by selected
-  Task and Runner consumers; all-source validation assembly, Bundle acquisition,
-  projection capture, and outer transactions remain with their existing owners.
+  Task and Runner consumers.
+- `evidence_validation_repository.py` owns shared all-source and selected
+  Evidence validation, Bundle relation/history validation, stored/native Bundle
+  acquisition, and projection snapshot assembly on the caller's connection.
+  It consumes the local Evidence, Runner, and Bundle persistence repositories;
+  global admission, recovery policy, and outer transactions remain storage-owned.
 - `evidence_projection.py` owns canonical Bundle/index construction, stored
   Bundle reconstruction, digest validation, and captured-basis rendering.
 - `verification_runner_repository.py` owns stored Runner record types, graph
   validation, generation/current snapshot reads, and T1, terminal, and restart-
   cleanup database operations on the caller's connection. It uses the local
-  Evidence repository APIs; storage retains schema admission and shared Bundle
-  validation, while the service retains selection, process/lock ownership, and
-  outer commit/rollback.
+  Evidence repository APIs; storage retains schema admission and the Evidence
+  validation repository owns Bundle validation. The service retains selection,
+  process/lock ownership, and outer commit/rollback.
 - `evidence_publication.py` owns storage-backed capture, fixed-path publication,
   generation/outcome recording, and read-only physical projection status.
 - `artifact_manifest.py` owns safe bounded Git leaf observation, exact rename

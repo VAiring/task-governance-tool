@@ -47,10 +47,12 @@ from task_governance_tool.evidence_projection_metadata_repository import (
     read_evidence_projection_state,
     record_evidence_projection_outcome,
 )
+from task_governance_tool.evidence_validation_repository import (
+    capture_evidence_projection_basis,
+)
 from task_governance_tool.storage import (
     DatabaseTarget,
     EvidenceProjectionBasis,
-    capture_evidence_projection_basis,
     connect_initialized_readonly,
     utc_now,
     validate_utc_timestamp,

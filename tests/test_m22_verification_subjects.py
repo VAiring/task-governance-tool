@@ -28,6 +28,7 @@ from tests.verification_receipt_test_support import (
 
 from task_governance_tool import cli as cli_service
 from task_governance_tool import storage as storage_service
+from task_governance_tool import evidence_validation_repository as evidence_validation_repo
 from task_governance_tool import verification_receipts as verification_receipt_service
 from task_governance_tool.maintenance import MutationOutcome
 from task_governance_tool.storage import (
@@ -819,7 +820,7 @@ class M22VerificationSubjectTests(unittest.TestCase):
                             if validation_calls == 1:
                                 return real_validate_basis(*args, **kwargs)
                             with mock.patch.object(
-                                storage_service,
+                                evidence_validation_repo,
                                 "validate_selected_task_receipt_evidence",
                                 side_effect=injected_error,
                             ):

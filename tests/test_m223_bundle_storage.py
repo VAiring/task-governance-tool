@@ -37,15 +37,17 @@ from task_governance_tool.evidence_projection_metadata_repository import (
     read_evidence_projection_state,
     record_evidence_projection_outcome_locked,
 )
+from task_governance_tool.evidence_validation_repository import (
+    capture_evidence_projection_basis,
+    validate_completion_evidence_bundle_storage,
+)
 from task_governance_tool.storage import (
     SCHEMA_VERSION,
     StorageError,
     apply_completion_evidence_bundle_migration,
     apply_migrations,
-    capture_evidence_projection_basis,
     connect,
     current_schema_version,
-    validate_completion_evidence_bundle_storage,
     validate_evidence_ledger_storage,
     validate_evidence_ledger_storage_for_recovery,
 )

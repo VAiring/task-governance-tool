@@ -47,6 +47,7 @@ try:
     from task_governance_tool import stored_task_validation as stored_tasks_service
     from task_governance_tool import reviews as review_service
     from task_governance_tool import storage as storage_service
+    from task_governance_tool import evidence_validation_repository as evidence_validation_repo
     from task_governance_tool.tasks import (
         edit_task,
         list_tasks_for_viewer,
@@ -2096,7 +2097,7 @@ class ReviewEvidenceTests(unittest.TestCase):
                         changes_before = connection.total_changes
                         with (
                             mock.patch.object(
-                                storage_service,
+                                evidence_validation_repo,
                                 "_validate_selected_reference_source_chunk",
                                 side_effect=busy,
                             ),

@@ -255,13 +255,15 @@ def persist_completion_evidence_bundle_locked(
     from task_governance_tool.evidence_repository import (
         persist_criterion_evidence_link_locked,
     )
+    from task_governance_tool.evidence_validation_repository import (
+        read_completion_evidence_bundle,
+    )
     from task_governance_tool.storage import (
         _EVIDENCE_LEDGER_REQUIRED_COLUMNS,
         _prepared_row,
         _require_evidence_writer,
         current_schema_version,
         evidence_ledger_inconsistent,
-        read_completion_evidence_bundle,
     )
 
     _require_evidence_writer(connection)

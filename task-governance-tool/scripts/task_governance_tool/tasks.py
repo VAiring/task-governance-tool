@@ -54,6 +54,9 @@ from task_governance_tool.evidence_repository import (
     capture_or_reuse_current_authority_snapshot_locked,
     persist_evidence_reference_locked,
 )
+from task_governance_tool.evidence_validation_repository import (
+    read_native_completion_bundle_basis_locked,
+)
 from task_governance_tool.storage import (
     SCHEMA_VERSION,
     CompletionHistory,
@@ -74,7 +77,6 @@ from task_governance_tool.storage import (
     insert_native_completion_cycle_locked,
     match_current_done_completion_cycle_locked,
     prepare_native_completion_cycle_locked,
-    read_native_completion_bundle_basis_locked,
     utc_now,
 )
 from task_governance_tool.stored_task_validation import (

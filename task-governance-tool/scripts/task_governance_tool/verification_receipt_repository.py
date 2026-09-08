@@ -276,6 +276,9 @@ def read_verification_receipt_snapshot(
     recent_limit: int = 10,
 ) -> VerificationReceiptSnapshot:
     """Read one Task's bounded audit rows and exact current Receipt basis."""
+    from task_governance_tool.evidence_validation_repository import (
+        validate_selected_task_receipt_evidence,
+    )
     from task_governance_tool.storage import (
         COMPLETION_RECEIPT_VALIDATION_CHUNK_SIZE,
         LOWER_HEX_64_PATTERN,
@@ -284,7 +287,6 @@ def read_verification_receipt_snapshot(
         current_schema_version,
         evidence_ledger_boundary_error,
         table_exists,
-        validate_selected_task_receipt_evidence,
     )
 
 

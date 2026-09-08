@@ -25,6 +25,7 @@ from tests.verification_receipt_test_support import (
 from task_governance_tool import completion_workflow
 from task_governance_tool import cli as cli_module
 from task_governance_tool import storage as storage_module
+from task_governance_tool import evidence_validation_repository as evidence_validation_repo
 from task_governance_tool import verification_runner_repository as runner_repository
 from task_governance_tool import tasks as tasks_module
 from task_governance_tool import verification_runner_service as service
@@ -575,6 +576,10 @@ class M243CRunnerGateTests(unittest.TestCase):
                 storage_module,
                 "_validated_completion_evidence_projection_bases",
                 side_effect=AssertionError("history used the global Bundle validator"),
+            ) as validate_bundles, mock.patch.object(
+                evidence_validation_repo,
+                "_validated_completion_evidence_projection_bases",
+                new=validate_bundles,
             ):
                 shown = _show_task_through_task_local_connection(
                     fixture,
@@ -637,6 +642,10 @@ class M243CRunnerGateTests(unittest.TestCase):
                 storage_module,
                 "_validated_completion_evidence_projection_bases",
                 side_effect=AssertionError("history used the global Bundle validator"),
+            ) as validate_bundles, mock.patch.object(
+                evidence_validation_repo,
+                "_validated_completion_evidence_projection_bases",
+                new=validate_bundles,
             ):
                 shown = _show_task_through_task_local_connection(
                     fixture,
@@ -705,6 +714,10 @@ class M243CRunnerGateTests(unittest.TestCase):
                 storage_module,
                 "_validated_completion_evidence_projection_bases",
                 side_effect=AssertionError("history used the global Bundle validator"),
+            ) as validate_bundles, mock.patch.object(
+                evidence_validation_repo,
+                "_validated_completion_evidence_projection_bases",
+                new=validate_bundles,
             ):
                 shown = _show_task_through_task_local_connection(
                     fixture,
@@ -729,7 +742,7 @@ class M243CRunnerGateTests(unittest.TestCase):
             ),
         )
         global_bundle_validator = getattr(
-            storage_module,
+            evidence_validation_repo,
             "_validated_completion_evidence_projection_bases",
         )
         for name, corrupt, selected_code in cases:
@@ -780,6 +793,10 @@ class M243CRunnerGateTests(unittest.TestCase):
                     side_effect=AssertionError(
                         "history used the global Bundle validator"
                     ),
+                ) as validate_bundles, mock.patch.object(
+                    evidence_validation_repo,
+                    "_validated_completion_evidence_projection_bases",
+                    new=validate_bundles,
                 ):
                     shown = _show_task_through_task_local_connection(
                         fixture,

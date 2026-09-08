@@ -27,6 +27,7 @@ from tests.verification_receipt_test_support import (
 )
 
 from task_governance_tool import storage as storage_module
+from task_governance_tool import evidence_validation_repository as evidence_validation_repo
 from task_governance_tool import stored_task_validation as stored_tasks_module
 from task_governance_tool import task_values as values_module
 from task_governance_tool import reviews as review_service
@@ -50,6 +51,9 @@ from task_governance_tool.evidence_repository import (
     _validated_authority_context,
     capture_or_reuse_current_authority_snapshot_locked,
 )
+from task_governance_tool.evidence_validation_repository import (
+    validate_selected_task_receipt_evidence,
+)
 from task_governance_tool.storage import (
     SCHEMA_VERSION,
     SQLITE_INT64_MAX,
@@ -67,7 +71,6 @@ from task_governance_tool.storage import (
     stored_task_verification_limit,
     validate_evidence_ledger_storage,
     validate_evidence_ledger_storage_for_recovery,
-    validate_selected_task_receipt_evidence,
     verification_expectation_digest,
 )
 from task_governance_tool.task_values import TASK_VERIFICATION_INPUT_LIMIT
@@ -3477,7 +3480,7 @@ class EvidenceLedgerStorageTests(unittest.TestCase):
                                 (task_id,),
                             ).fetchone()
                             real_validator = (
-                                storage_module.validate_selected_task_receipt_evidence
+                                evidence_validation_repo.validate_selected_task_receipt_evidence
                             )
                             with (
                                 mock.patch.object(
@@ -3486,7 +3489,7 @@ class EvidenceLedgerStorageTests(unittest.TestCase):
                                     5,
                                 ),
                                 mock.patch.object(
-                                    storage_module,
+                                    evidence_validation_repo,
                                     "validate_selected_task_receipt_evidence",
                                     wraps=real_validator,
                                 ) as selected_validator,

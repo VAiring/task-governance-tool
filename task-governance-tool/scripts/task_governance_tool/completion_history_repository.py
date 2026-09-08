@@ -15,10 +15,12 @@ def read_latest_completion_cycle(
     project_id: str,
     task_id: str,
 ) -> _storage.CompletionCycle | None:
+    from task_governance_tool.evidence_validation_repository import (
+        _validate_selected_completion_cycle_evidence,
+    )
     from task_governance_tool.storage import (
         _cycle_from_row,
         _validate_cycle_receipts,
-        _validate_selected_completion_cycle_evidence,
     )
 
     row = connection.execute(
@@ -121,13 +123,15 @@ def read_completion_history(
     task_id: str,
     limit: int = 10,
 ) -> _storage.CompletionHistory:
+    from task_governance_tool.evidence_validation_repository import (
+        _validate_selected_completion_cycle_evidence,
+        _validate_selected_schema21_completion_bundle_history,
+    )
     from task_governance_tool.storage import (
         CompletionHistory,
         StorageError,
         _cycle_from_row,
         _validate_cycle_receipts,
-        _validate_selected_completion_cycle_evidence,
-        _validate_selected_schema21_completion_bundle_history,
     )
 
     if type(limit) is not int or not 1 <= limit <= 10:
@@ -176,12 +180,14 @@ def read_completion_histories_for_tasks(
 ) -> dict[str, _storage.CompletionHistory]:
     """Read bounded histories for at most the Viewer's existing 500 Tasks."""
 
+    from task_governance_tool.evidence_validation_repository import (
+        _validate_selected_completion_cycle_evidence,
+    )
     from task_governance_tool.storage import (
         CompletionHistory,
         StorageError,
         _cycle_from_row,
         _validate_cycle_receipts_batch,
-        _validate_selected_completion_cycle_evidence,
     )
 
     if (

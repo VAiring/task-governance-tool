@@ -57,16 +57,24 @@ the retired `derived_analysis` reservation from current schema v22.
   and rendering of captured `EvidenceProjectionBasis` values.
 - `completion_bundle_repository.py` owns prepared Bundle validation and
   Bundle/member/Finding-snapshot writes on the caller's connection, reusing
-  local criterion-link persistence and the existing stored Bundle reader.
+  local criterion-link persistence and the shared Evidence validation
+  repository's stored Bundle reader.
   Native sealing, cycle coordination, and outer commit/rollback stay with their
   existing owners.
+- `evidence_validation_repository.py` owns all-source and selected Evidence
+  validation, Bundle row/relation and selected-history validation, stored/native
+  Bundle acquisition, and Evidence projection snapshot assembly. It consumes
+  the existing local Evidence, Runner graph, and prepared Bundle validators
+  without duplicating them. Global versus selected scope, exact historical
+  generation, and same-snapshot validated values retain their existing meaning.
 - `evidence_projection_metadata_repository.py` owns projection-state read/seed,
   source-generation advance, and outcome records. Cycle insertion and its
   generation advance retain one caller-owned writer; the outer outcome entry
   keeps the initialized writer boundary. Viewer generation logic stays separate.
 - `evidence_publication.py` consumes `DatabaseTarget` and observation time,
-  captures through the storage API, calls those retained builders, and returns
-  the existing refresh result or physical status. It owns physical path checks,
+  captures through the Evidence validation repository API, calls those retained
+  builders, and returns the existing refresh result or physical status.
+  It owns physical path checks,
   lock/temp/rename handling, Bundle-first/index-last publication, generation
   comparison and outcome-recording calls, last-good preservation, and setup repair.
   Capture closes its read connection before rendering; the separate index
@@ -74,10 +82,10 @@ the retired `derived_analysis` reservation from current schema v22.
   Completion-time construction stays in its existing transaction boundary;
   construction-side storage value types remain shared without a DTO layer.
 
-`storage.py` retains shared SQLite admission, all-source Evidence validation
-assembly, Bundle acquisition and projection capture, and cycle persistence.
-It consumes the Evidence and Review repositories without changing global versus
-selected validation scope; necessary shared value types remain there. The
+`storage.py` retains shared SQLite admission, recovery validation policy, native
+cycle coordination, and cycle persistence. It consumes the Evidence and Review
+repositories without changing global versus selected validation scope;
+necessary shared value types remain there. The
 projection metadata repository owns only its state rows.
 `tasks.py` and `contracts.py`
 capture authority inside existing savepoints; `verification_receipts.py`

@@ -34,9 +34,11 @@ import sys
 if str(SCRIPTS_ROOT) not in sys.path:
     sys.path.insert(0, str(SCRIPTS_ROOT))
 
+from task_governance_tool.evidence_validation_repository import (  # noqa: E402
+    capture_evidence_projection_basis,
+)
 from task_governance_tool.storage import (  # noqa: E402
     StorageError,
-    capture_evidence_projection_basis,
     connect_readonly,
 )
 

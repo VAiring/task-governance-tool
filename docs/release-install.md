@@ -34,8 +34,8 @@ manual verification path.
 | SQLite schema | v22 |
 | Viewer snapshot | v4, accepting source schemas v5-v22 (v5 through v22) |
 | Public command leaves | 21 |
-| Supported runtime | Python 3.12 or newer on Windows |
-| Verified platform | Windows |
+| Supported runtime | Python 3.12 or newer on Windows, Linux, and macOS (ordinary functions) |
+| Verified platform | Windows x86-64; Ubuntu 24.04 x86-64; macOS 15 Apple Silicon |
 | Candidate commit / `main` | not fixed; unpublished local candidate |
 | Tag | none; unpublished local candidate |
 | GitHub Release | none; unpublished local candidate |
@@ -48,7 +48,17 @@ manual verification path.
 | Workflow/name/job | `.github/workflows/ci.yml`, `CI`, `test` |
 | CI Python matrix | 3.12 and 3.14 |
 
-Linux and macOS are not claimed as supported for this candidate.
+Ordinary support covers physical installation, setup/read-only use, the Task
+lifecycle through manual verification and completion, Evidence JSON, Viewer,
+backup, and representative recovery. Windows retains the Python 3.12/3.14
+full-suite policy; the representative Linux/macOS platform checks use Python
+3.12. This is not a claim for every distribution, Intel Mac, filesystem, or
+cross-OS transfer of existing state.
+
+Runner execution remains Windows-only. Linux/macOS use manual verification
+without Runner opt-in until their separate Runner implementation and real-OS
+verification are complete. This candidate support boundary does not change
+the immutable published v0.10.0 artifact or its Windows-only support.
 
 ## Immutable Published v0.10.0 Identity
 
@@ -125,7 +135,7 @@ or inspect a target project's local state.
 Install one physical package copy per governed project at exactly:
 
 ```text
-<target-project>\.agents\skills\task-governance-tool
+<target-project>/.agents/skills/task-governance-tool
 ```
 
 No other ordinary stateful layout is supported. Before installation or update,
@@ -166,6 +176,13 @@ From the target-project root, preview setup before the explicit write:
 ```powershell
 python .agents/skills/task-governance-tool/scripts/taskgov.py setup --read-only --json
 python .agents/skills/task-governance-tool/scripts/taskgov.py setup --json
+```
+
+On Linux/macOS, use the same physical package with `python3`:
+
+```sh
+python3 .agents/skills/task-governance-tool/scripts/taskgov.py setup --read-only --json
+python3 .agents/skills/task-governance-tool/scripts/taskgov.py setup --json
 ```
 
 When running from inside the installed Skill directory, supply the target

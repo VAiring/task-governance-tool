@@ -87,8 +87,11 @@ fixed package entry/manifest files identify that source shape and no competing
 project-scoped install exists. It uses the same package-local state resolver;
 it is not a second state mode or install recommendation.
 
-The supported runtime is Python 3.12 or newer on Windows. CI verifies exactly
-Python 3.12 and 3.14; no Linux or macOS support claim is inferred.
+The supported runtime is Python 3.12 or newer for ordinary functionality on
+Windows, Linux, and macOS. Windows retains the Python 3.12/3.14 full-suite
+policy; representative Ubuntu 24.04 x86-64 and macOS 15 Apple Silicon checks
+use Python 3.12. Runner execution remains Windows-only. Exact support and
+publication boundaries belong to [the release/install record](release-install.md).
 
 The package is self-contained. `scripts/taskgov.py` disables bytecode creation
 before package imports. Release archives contain the package only, including

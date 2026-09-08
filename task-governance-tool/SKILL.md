@@ -14,12 +14,20 @@ decisions as authority. Treat taskgov state only as an execution aid.
 Use one physical copy at
 `.agents/skills/task-governance-tool` inside the governed project. Stateful use
 from a user-wide copy, symbolic link, or Windows junction is unsupported.
-Require Windows and Python 3.12 or later.
+Require Python 3.12 or later. Ordinary Task use supports Windows, Linux, and
+macOS; Runner execution remains Windows-only. Use manual verification on
+Linux/macOS; do not opt into the unimplemented POSIX Runner.
 
 From the target-project root, invoke:
 
 ```powershell
 python .agents/skills/task-governance-tool/scripts/taskgov.py <command> --json
+```
+
+On Linux/macOS, use `python3` with the same physical path and arguments:
+
+```sh
+python3 .agents/skills/task-governance-tool/scripts/taskgov.py <command> --json
 ```
 
 When launching from inside the Skill directory, add

@@ -332,21 +332,25 @@ class ReleaseContractCheckerTests(unittest.TestCase):
                     {issue.subject for issue in result.issues},
                 )
 
-        with tempfile.TemporaryDirectory() as temporary:
-            fixture = copy_release_fixture(Path(temporary))
-            release = fixture / "docs" / "release-install.md"
-            release.write_text(
-                release.read_text(encoding="utf-8").replace(
-                    "| SQLite schema | v22 |",
-                    "| SQLite schema | v99 |",
-                    1,
-                ),
-                encoding="utf-8",
-            )
+        identity_mutations = (
+            ("| SQLite schema | v22 |", "| SQLite schema | v99 |"),
+            (
+                "| Supported runtime | Python 3.12 or newer on Windows, Linux, "
+                "and macOS (ordinary functions) |",
+                "| Supported runtime | Python 3.12 or newer on Windows |",
+            ),
+        )
+        for original, changed in identity_mutations:
+            with self.subTest(original=original), tempfile.TemporaryDirectory() as temporary:
+                fixture = copy_release_fixture(Path(temporary))
+                release = fixture / "docs" / "release-install.md"
+                text = release.read_text(encoding="utf-8")
+                self.assertIn(original, text)
+                release.write_text(text.replace(original, changed, 1), encoding="utf-8")
 
-            result = check_fixture(fixture)
+                result = check_fixture(fixture)
 
-            self.assertIn("documented_runtime_mismatch", issue_codes(result))
+                self.assertIn("documented_runtime_mismatch", issue_codes(result))
 
     def test_generated_tracked_artifacts_fail_but_untracked_state_does_not(self):
         forbidden = (

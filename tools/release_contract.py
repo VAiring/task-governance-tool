@@ -839,7 +839,10 @@ def _documentation_checks(
                 )
             )
         if ci_versions:
-            expected_runtime = f"Python {ci_versions[0]} or newer on Windows"
+            expected_runtime = (
+                f"Python {ci_versions[0]} or newer on Windows, Linux, and macOS "
+                "(ordinary functions)"
+            )
             if table.get("Supported runtime") != expected_runtime:
                 issues.append(
                     ContractIssue(

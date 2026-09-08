@@ -29,14 +29,17 @@ identified attribution duty requiring a `NOTICE`, so no `NOTICE` is included.
 
 ## Install
 
-Python 3.12 or newer on Windows is the supported runtime. Windows is the
-CI-verified platform; Linux and macOS are not claimed as supported.
+Python 3.12 or newer supports ordinary Task use on Windows, Linux, and macOS.
+The representative platforms are Windows x86-64, Ubuntu 24.04 x86-64, and
+macOS 15 Apple Silicon. Windows CI retains Python 3.12/3.14; the additional
+platform checks use 3.12. Runner execution remains Windows-only; Linux/macOS
+use manual verification. See [the support boundary](docs/release-install.md#current-candidate-identity).
 
 Install one physical copy of the installable `task-governance-tool/` folder for
 each governed project at exactly:
 
 ```text
-<target-project>\.agents\skills\task-governance-tool
+<target-project>/.agents/skills/task-governance-tool
 ```
 
 Only this project-scoped physical layout is supported for ordinary use. Show
@@ -63,6 +66,13 @@ From the target-project root, preview and then perform setup:
 ```powershell
 python .agents/skills/task-governance-tool/scripts/taskgov.py setup --read-only --json
 python .agents/skills/task-governance-tool/scripts/taskgov.py setup --json
+```
+
+On Linux/macOS, use the same physical package and arguments with `python3`:
+
+```sh
+python3 .agents/skills/task-governance-tool/scripts/taskgov.py setup --read-only --json
+python3 .agents/skills/task-governance-tool/scripts/taskgov.py setup --json
 ```
 
 `setup` is the only initializer and migrator. It also performs the one-way
@@ -537,7 +547,7 @@ authorized here.
 
 ## Development Checks
 
-For current development and any later release candidate, run at least:
+On Windows, for current development and any later release candidate, run at least:
 
 ```powershell
 python tools\document_contract.py --repo .
@@ -548,6 +558,19 @@ python task-governance-tool\scripts\taskgov.py --help
 python task-governance-tool\scripts\taskgov.py --version
 git diff --check
 ```
+
+For the representative Linux/macOS checks, use:
+
+```sh
+python3 tools/document_contract.py --repo .
+python3 tools/release_contract.py --repo .
+python3 tools/test_lanes.py --repo . --check
+python3 tools/test_lanes.py --repo . --platform-smoke
+git diff --check
+```
+
+These selected platform checks supplement, not replace, Windows full-suite
+candidate qualification. They do not run the Windows-only Runner tests.
 
 The document checker is offline and read-only. It validates this repository's
 closed authority registry, route-section structure, owner/anchor/link

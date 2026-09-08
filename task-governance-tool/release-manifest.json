@@ -1,10 +1,10 @@
 {
   "core_files": {
     "LICENSE": "sha256:cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
-    "SKILL.md": "sha256:bd0ea96c1dbf9af949f10f2aefcc03457b4448f8b268504147390a50b1d6b988",
+    "SKILL.md": "sha256:29f6b7ce7d2d3c858a8c0ec18e69d7c9234360262b0f23196ba5413f31c060e5",
     "agents/openai.yaml": "sha256:088f6070969a6ff72d09a7d1bfc059c1ab7c0e490c54931d8dae354cad925402",
     "assets/task-viewer.template.html": "sha256:7f0868c39120f51016955df3d72d413ae0ccbd03ef52f67158b140c51ea9b563",
-    "references/cli_contracts.md": "sha256:35123fb5189fb4d6583cd713a5ed7948a0046fa60b49a33b8a128e86e7d70900",
+    "references/cli_contracts.md": "sha256:939f546265138d5e7854b78e89516bb136454e96c3f798b2bffd7c8b666da5e4",
     "references/reconciliation.md": "sha256:8ab7b5e734034a8dc186b274de5c1ce65eb17496e7a5690011585292670688aa",
     "references/task_workflow.md": "sha256:06ebcbeff008d3229f092ee6b3c65e2cfb8fbc59f40b21d99718b938e948052f",
     "scripts/task_governance_tool/__init__.py": "sha256:345bfca5a3d585ad1257214bfe76557a7e05f0bb176cabe0e0c1678ec92763f8",

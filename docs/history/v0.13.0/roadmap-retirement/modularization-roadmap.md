@@ -1,3 +1,29 @@
+> [!CAUTION]
+> **NON-AUTHORITATIVE HISTORY — FINAL MODULARIZATION ROADMAP CAPTURE**
+>
+> This file preserves the complete final text of
+> `docs/modularization-roadmap.md` from source commit
+> `3776fddae65acd691486b359aacd060cd5b5791f`.
+> The TG-MOD.21 authority-layout transition retires that active source.
+> Words such as current, approved, or active in the captured body describe
+> only that revision and grant no present authority.
+>
+> Current positive owners remain root [AGENTS.md](../../../../AGENTS.md),
+> the [authority index](../../../authority.md), the active
+> [specification](../../../specification.md) and [design](../../../design.md),
+> root [plan.md](../../../../plan.md), and the
+> [artifact authoring guide](../../../artifact-authoring.md).
+> Use the public CLI for live Task state and evidence. History never fills a
+> current authority gap or satisfies a verification, review, or completion gate.
+>
+> Source path: `docs/modularization-roadmap.md`
+>
+> Source commit: `3776fddae65acd691486b359aacd060cd5b5791f`
+>
+> Capture unit: `TG-MOD.21`
+>
+> Captured body begins below.
+
 # Responsibility-Based Modularization Roadmap
 
 <a id="modularization-roadmap"></a>

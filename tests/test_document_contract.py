@@ -40,7 +40,6 @@ EXPECTED_CANONICAL_DOCS = (
     "docs/database-specification.md",
     "docs/database-design.md",
     "plan.md",
-    "docs/modularization-roadmap.md",
     "docs/history/README.md",
 )
 EXPECTED_METRIC_DOCS = EXPECTED_CANONICAL_DOCS + (
@@ -219,9 +218,9 @@ class DocumentContractTests(unittest.TestCase):
         self.assertNotIn(secret, serialized)
         self.assertNotIn("Traceback", serialized)
 
-    def test_registry_v14_is_closed(self):
+    def test_registry_v15_is_closed(self):
         expected = {
-            "schema": "taskgov-document-authority-v14",
+            "schema": "taskgov-document-authority-v15",
             "mandatory_start": [
                 "AGENTS.md",
                 "docs/authority.md",
@@ -246,7 +245,7 @@ class DocumentContractTests(unittest.TestCase):
                 "docs/database-design.md",
             ],
             "mixed_execution": [],
-            "conditional": ["docs/modularization-roadmap.md"],
+            "conditional": [],
             "history_index": "docs/history/README.md",
         }
         with self.fixture() as root:
@@ -268,7 +267,6 @@ class DocumentContractTests(unittest.TestCase):
                 lambda value: value["conditional"].append("docs/conditional.md"),
             ),
             ("missing_owner", lambda value: value["current"].pop()),
-            ("missing_conditional_owner", lambda value: value["conditional"].pop()),
             ("unknown_key", lambda value: value.__setitem__("unknown", [])),
         )
         for name, mutate in mutations:
@@ -408,24 +406,6 @@ class DocumentContractTests(unittest.TestCase):
                 self.assertIn(
                     "authority_route", self.codes(contract.check_document_contract(root))
                 )
-
-    def test_modularization_roadmap_route_and_live_state_are_checked(self):
-        with self.fixture() as root:
-            self.replace(
-                root,
-                contract.AUTHORITY,
-                "](modularization-roadmap.md)",
-                "](design.md)",
-            )
-            self.assertIn(
-                "authority_route", self.codes(contract.check_document_contract(root))
-            )
-
-        with self.fixture() as root:
-            self.append(root, "docs/modularization-roadmap.md", "\nstatus: in_progress\n")
-            self.assertIn(
-                "volatile_state", self.codes(contract.check_document_contract(root))
-            )
 
     def test_active_route_sections_links_and_anchors_fail_closed(self):
         self.assertEqual(
@@ -752,11 +732,6 @@ class DocumentContractTests(unittest.TestCase):
                     contract.DESIGN,
                     "## Schema-v21 Runner Gate-Basis Design",
                     ("database-design.md#schema-v21-runner-gate-basis-design",),
-                ),
-                (
-                    contract.AUTHORITY,
-                    "## Conditional Initiative Roadmaps",
-                    ("modularization-roadmap.md",),
                 ),
                 (
                     contract.AUTHORITY,

@@ -36,7 +36,6 @@ DATABASE_DESIGN = "docs/database-design.md"
 HISTORY_INDEX = "docs/history/README.md"
 RELEASE_INSTALL = "docs/release-install.md"
 ARTIFACT_AUTHORING = "docs/artifact-authoring.md"
-MODULARIZATION_ROADMAP = "docs/modularization-roadmap.md"
 
 CANONICAL_DOCS = (
     "AGENTS.md",
@@ -61,7 +60,6 @@ CANONICAL_DOCS = (
     DATABASE_SPECIFICATION,
     DATABASE_DESIGN,
     "plan.md",
-    MODULARIZATION_ROADMAP,
     HISTORY_INDEX,
 )
 METRIC_DOCS = CANONICAL_DOCS + (RELEASE_INSTALL, ARTIFACT_AUTHORING)
@@ -393,11 +391,6 @@ ROUTE_SECTIONS = (
     ),
     (
         AUTHORITY,
-        "## Conditional Initiative Roadmaps",
-        ("modularization-roadmap.md",),
-    ),
-    (
-        AUTHORITY,
         "## Delegated Repository Operating Guides",
         ("artifact-authoring.md",),
     ),
@@ -408,7 +401,6 @@ TRIGGER_ROUTE_OWNER_TOKENS = (
     ("docs/specification.md", VIEWER_SPECIFICATION, RUNNER_PLAN_AUTHORING_SPECIFICATION, TASK_OPERATION_SPECIFICATION, RUNNER_EXECUTION_SPECIFICATION, EVIDENCE_SPECIFICATION, REVIEW_COMPLETION_SPECIFICATION, SETUP_STATE_SPECIFICATION, DATABASE_SPECIFICATION),
     ("docs/design.md", VIEWER_DESIGN, RUNNER_PLAN_AUTHORING_DESIGN, TASK_OPERATION_DESIGN, RUNNER_EXECUTION_DESIGN, EVIDENCE_DESIGN, REVIEW_COMPLETION_DESIGN, SETUP_STATE_DESIGN, DATABASE_DESIGN),
     ("plan.md",),
-    (MODULARIZATION_ROADMAP,),
     ("docs/release-install.md",),
     (),
     ("docs/history/README.md",),
@@ -599,7 +591,6 @@ ROLE_TITLES = {
     DATABASE_SPECIFICATION: "# Database Persistence And Migration Specification",
     DATABASE_DESIGN: "# Database Persistence And Migration Implementation Design",
     "plan.md": "# task-governance-tool Current Decisions And Open Issues",
-    MODULARIZATION_ROADMAP: "# Responsibility-Based Modularization Roadmap",
     HISTORY_INDEX: "# Historical Documentation Index",
     RELEASE_INSTALL: "# Release Candidate And Published Install Record",
     ARTIFACT_AUTHORING: "# Artifact Authoring Guide",
@@ -1244,7 +1235,7 @@ def _section_bounds(scan: Scan, heading: str) -> tuple[int, int] | None:
 
 def _expected_registry() -> dict[str, object]:
     return {
-        "schema": "taskgov-document-authority-v14",
+        "schema": "taskgov-document-authority-v15",
         "mandatory_start": ["AGENTS.md", AUTHORITY, "live_task_contract"],
         "current": [
             "docs/specification.md", "docs/design.md", "plan.md",
@@ -1258,7 +1249,7 @@ def _expected_registry() -> dict[str, object]:
             DATABASE_SPECIFICATION, DATABASE_DESIGN,
         ],
         "mixed_execution": [],
-        "conditional": [MODULARIZATION_ROADMAP],
+        "conditional": [],
         "history_index": HISTORY_INDEX,
     }
 

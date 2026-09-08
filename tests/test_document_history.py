@@ -449,6 +449,64 @@ class DocumentHistoryTests(unittest.TestCase):
         ):
             self.assertIn(target, prefix)
 
+    def test_modularization_roadmap_retirement_preserves_complete_source_and_routes(self):
+        from tools import document_contract
+
+        source_commit = "3776fddae65acd691486b359aacd060cd5b5791f"
+        source_path = "docs/modularization-roadmap.md"
+        capture_relative = (
+            "v0.13.0/roadmap-retirement/modularization-roadmap.md"
+        )
+        captured = subprocess.run(
+            ["git", "show", f"{source_commit}:{source_path}"],
+            cwd=ROOT,
+            check=False,
+            capture_output=True,
+        )
+        self.assertEqual(captured.returncode, 0)
+        self.assertTrue(captured.stdout)
+        data = (HISTORY_ROOT / capture_relative).read_bytes()
+        self.assertEqual(data[-len(captured.stdout) :], captured.stdout)
+        self.assertEqual(data.count(captured.stdout), 1)
+        prefix = data[: -len(captured.stdout)].decode("utf-8")
+        self.assertTrue(document_contract._first_structural_history_marker(prefix))
+        self.assertIn(source_commit, prefix)
+        self.assertIn(source_path, prefix)
+
+        issues = []
+        index = (HISTORY_ROOT / "README.md").read_text(encoding="utf-8")
+        index_scan = document_contract._scan(
+            "docs/history/README.md", index, issues
+        )
+        self.assertEqual(
+            sum(link.target == capture_relative for link in index_scan.links),
+            1,
+        )
+        self.assertIn(source_commit, index)
+        self.assertFalse((ROOT / source_path).exists())
+
+        authority_scan = document_contract._scan(
+            "docs/authority.md",
+            (ROOT / "docs/authority.md").read_text(encoding="utf-8"),
+            issues,
+        )
+        registry = document_contract._registry(authority_scan, issues)
+        self.assertIsNotNone(registry)
+        self.assertEqual(registry["conditional"], [])
+        self.assertNotIn(
+            "modularization-roadmap.md",
+            {link.target.partition("#")[0] for link in authority_scan.links},
+        )
+        plan_scan = document_contract._scan(
+            "plan.md", (ROOT / "plan.md").read_text(encoding="utf-8"), issues
+        )
+        self.assertNotIn("responsibility-based-modularization", plan_scan.anchors)
+        self.assertNotIn(
+            source_path,
+            {link.target.partition("#")[0] for link in plan_scan.links},
+        )
+        self.assertEqual(issues, [])
+
     def test_history_index_routes_retired_entries_and_indexes_every_capture(self):
         index = (HISTORY_ROOT / "README.md").read_text(encoding="utf-8")
         self.assertIn("not current", index)

@@ -685,3 +685,22 @@ contracts, their index, and the pre-normalization plan from source commit
   [docs/authority.md](../authority.md). Use the public CLI for live Task state
   and evidence. This capture is lineage only and cannot fill a current authority
   gap or satisfy a gate.
+
+## v0.13.0 Modularization Roadmap Retirement Lineage
+
+- Immutable history:
+  [v0.13.0/roadmap-retirement/modularization-roadmap.md](v0.13.0/roadmap-retirement/modularization-roadmap.md)
+- Source path: `docs/modularization-roadmap.md`
+- Source commit: `3776fddae65acd691486b359aacd060cd5b5791f`
+- Capture unit: `TG-MOD.21`
+- Capture purpose: preserve the complete final roadmap before its same-revision
+  physical retirement and removal from active authority routing.
+- Current replacements: [AGENTS.md](../../AGENTS.md),
+  [docs/authority.md](../authority.md),
+  [docs/specification.md](../specification.md),
+  [docs/design.md](../design.md), [plan.md](../../plan.md), and the
+  [artifact authoring guide](../artifact-authoring.md).
+  The captured roadmap and its old relative links are historical lineage only,
+  not current routing or a requirement for subsequent development. Use the
+  public CLI for live Task state and evidence; history cannot fill a current
+  authority gap or satisfy a gate.

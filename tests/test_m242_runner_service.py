@@ -40,8 +40,10 @@ from task_governance_tool.reviews import ReviewEvidenceError, ReviewTargetResult
 from task_governance_tool.storage import (  # noqa: E402
     StorageError,
     connect_initialized_readonly,
-    read_verification_runner_generation_locked,
     resolve_database_target,
+)
+from task_governance_tool.verification_runner_repository import (  # noqa: E402
+    read_verification_runner_generation_locked,
 )
 from task_governance_tool.verification_runner import (  # noqa: E402
     RUNNER_CONTRACT_VERSION,

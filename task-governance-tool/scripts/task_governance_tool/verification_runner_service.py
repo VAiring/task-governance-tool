@@ -50,21 +50,23 @@ from task_governance_tool.storage import (
     DatabaseTarget,
     PreparedCriterionEvidenceLink,
     StorageError,
-    VerificationRunnerAttempt,
-    VerificationRunnerObservation,
-    VerificationRunnerResolution,
-    VerificationRunnerSandboxEvent,
     begin_initialized_write,
     connect_initialized,
     connect_initialized_readonly,
     connect_initialized_task_readonly,
+    utc_now,
+)
+from task_governance_tool.verification_runner_repository import (
+    VerificationRunnerAttempt,
+    VerificationRunnerObservation,
+    VerificationRunnerResolution,
+    VerificationRunnerSandboxEvent,
     insert_verification_runner_resolution_locked,
     persist_verification_runner_restart_cleanup_locked,
     persist_verification_runner_terminal_locked,
     read_current_verification_runner_gate_snapshot,
     read_current_verification_runner_target_basis,
     read_pending_verification_runner_cleanup,
-    utc_now,
 )
 from task_governance_tool.tasks import read_internal_task
 from task_governance_tool.task_values import (

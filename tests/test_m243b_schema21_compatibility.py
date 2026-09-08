@@ -54,6 +54,7 @@ from task_governance_tool.evidence_publication import (
 )
 from task_governance_tool.relocation import RelocationContext, RelocationTokenError
 from task_governance_tool import storage as storage_module
+from task_governance_tool import verification_runner_repository as runner_repository
 from task_governance_tool.storage import (
     CompletionCycle,
     CompletionGateBasis,
@@ -2277,13 +2278,17 @@ class M243BSchema21CompatibilityTests(unittest.TestCase):
                         token=token,
                     )
                 graph_validator = (
-                    storage_module._validated_verification_runner_graph
+                    runner_repository._validated_verification_runner_graph
                 )
                 with mock.patch.object(
                     storage_module,
                     "_validated_verification_runner_graph",
                     wraps=graph_validator,
-                ) as validate_graph:
+                ) as validate_graph, mock.patch.object(
+                    runner_repository,
+                    "_validated_verification_runner_graph",
+                    new=validate_graph,
+                ):
                     storage_module.validate_completion_evidence_bundle_storage(
                         connection
                     )

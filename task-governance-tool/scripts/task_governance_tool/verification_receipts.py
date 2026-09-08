@@ -32,9 +32,11 @@ from task_governance_tool.storage import (
     StorageError,
     begin_initialized_write,
     completion_history_inconsistent,
-    require_current_verification_runner_selection,
     stored_task_verification_limit,
     verification_expectation_digest,
+)
+from task_governance_tool.verification_runner_repository import (
+    require_current_verification_runner_selection,
 )
 from task_governance_tool.verification_runner import (
     VerificationRunnerGateSelection,

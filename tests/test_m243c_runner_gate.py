@@ -25,6 +25,7 @@ from tests.verification_receipt_test_support import (
 from task_governance_tool import completion_workflow
 from task_governance_tool import cli as cli_module
 from task_governance_tool import storage as storage_module
+from task_governance_tool import verification_runner_repository as runner_repository
 from task_governance_tool import tasks as tasks_module
 from task_governance_tool import verification_runner_service as service
 from task_governance_tool.storage import utc_now
@@ -429,7 +430,7 @@ class M243CRunnerGateTests(unittest.TestCase):
             _persist_terminal(fixture, intent, branch="pass")
 
             original_graph_validator = (
-                storage_module._validated_verification_runner_graph
+                runner_repository._validated_verification_runner_graph
             )
 
             def selected_graph_only(connection, **kwargs):
@@ -441,6 +442,10 @@ class M243CRunnerGateTests(unittest.TestCase):
                 storage_module,
                 "_validated_verification_runner_graph",
                 side_effect=selected_graph_only,
+            ) as validate_graph, mock.patch.object(
+                runner_repository,
+                "_validated_verification_runner_graph",
+                new=validate_graph,
             ), mock.patch.object(
                 service,
                 "_stored_runner_physical_basis_matches",
@@ -546,7 +551,7 @@ class M243CRunnerGateTests(unittest.TestCase):
                 )
 
             original_graph_validator = (
-                storage_module._validated_verification_runner_graph
+                runner_repository._validated_verification_runner_graph
             )
             selected_generations: list[int] = []
 
@@ -562,6 +567,10 @@ class M243CRunnerGateTests(unittest.TestCase):
                 storage_module,
                 "_validated_verification_runner_graph",
                 side_effect=historical_generation_only,
+            ) as validate_graph, mock.patch.object(
+                runner_repository,
+                "_validated_verification_runner_graph",
+                new=validate_graph,
             ), mock.patch.object(
                 storage_module,
                 "_validated_completion_evidence_projection_bases",
@@ -620,6 +629,10 @@ class M243CRunnerGateTests(unittest.TestCase):
                 storage_module,
                 "_validated_verification_runner_graph",
                 side_effect=AssertionError("manual history invoked Runner validation"),
+            ) as validate_graph, mock.patch.object(
+                runner_repository,
+                "_validated_verification_runner_graph",
+                new=validate_graph,
             ), mock.patch.object(
                 storage_module,
                 "_validated_completion_evidence_projection_bases",
@@ -669,7 +682,7 @@ class M243CRunnerGateTests(unittest.TestCase):
             self.assertGreater(current_generation, cycle_generation)
 
             original_graph_validator = (
-                storage_module._validated_verification_runner_graph
+                runner_repository._validated_verification_runner_graph
             )
             selected_generations: list[int] = []
 
@@ -684,6 +697,10 @@ class M243CRunnerGateTests(unittest.TestCase):
                 storage_module,
                 "_validated_verification_runner_graph",
                 side_effect=historical_generation_only,
+            ) as validate_graph, mock.patch.object(
+                runner_repository,
+                "_validated_verification_runner_graph",
+                new=validate_graph,
             ), mock.patch.object(
                 storage_module,
                 "_validated_completion_evidence_projection_bases",

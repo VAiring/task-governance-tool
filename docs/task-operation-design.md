@@ -8,8 +8,8 @@ the [Task operation specification](task-operation-specification.md).
 The shared [runtime ownership](design.md#runtime-module-boundaries),
 [CLI/serialization](design.md#public-cli-and-serialization),
 [connection/transaction](design.md#journal-and-connection-rules),
-[completion/review](design.md#completion-evidence-and-review),
-[completion history](design.md#completion-cycle-history), and
+[completion/review](review-completion-design.md),
+[completion history](review-completion-design.md#completion-cycle-history), and
 [privacy/failure](design.md#privacy-safety-and-failure-boundaries) contracts
 remain with their existing owner. Evidence and Runner detail retain their
 separate owners routed by the [authority index](authority.md).
@@ -193,7 +193,7 @@ clears current completion evidence and review target/base, advances review
 generation, clears completion time and hold reasons, and appends
 `task_reopened`. It preserves prior events, receipts, findings, Contract
 revisions, and completion cycles. Schema-v16 reopen additionally validates and
-links the latest saved cycle under [completion history](design.md#completion-cycle-history). All other done writes return
+links the latest saved cycle under [completion history](review-completion-design.md#completion-cycle-history). All other done writes return
 `done_task_requires_reopen`.
 
 A review-tier increase is a normal edit. A decrease needs one sanitized reason

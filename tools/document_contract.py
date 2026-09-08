@@ -27,6 +27,8 @@ RUNNER_EXECUTION_SPECIFICATION = "docs/runner-execution-specification.md"
 RUNNER_EXECUTION_DESIGN = "docs/runner-execution-design.md"
 EVIDENCE_SPECIFICATION = "docs/evidence-specification.md"
 EVIDENCE_DESIGN = "docs/evidence-design.md"
+REVIEW_COMPLETION_SPECIFICATION = "docs/review-completion-specification.md"
+REVIEW_COMPLETION_DESIGN = "docs/review-completion-design.md"
 HISTORY_INDEX = "docs/history/README.md"
 RELEASE_INSTALL = "docs/release-install.md"
 ARTIFACT_AUTHORING = "docs/artifact-authoring.md"
@@ -48,6 +50,8 @@ CANONICAL_DOCS = (
     RUNNER_EXECUTION_DESIGN,
     EVIDENCE_SPECIFICATION,
     EVIDENCE_DESIGN,
+    REVIEW_COMPLETION_SPECIFICATION,
+    REVIEW_COMPLETION_DESIGN,
     "plan.md",
     MODULARIZATION_ROADMAP,
     HISTORY_INDEX,
@@ -216,6 +220,81 @@ ROUTE_SECTIONS = (
     ),
     (
         AUTHORITY,
+        "## Review And Completion Detail Authority",
+        ("review-completion-specification.md", "review-completion-design.md"),
+    ),
+    (
+        "docs/specification.md",
+        "### Review Target, Receipt, And Finding Ledger",
+        ("review-completion-specification.md#review-target-receipt-and-finding-ledger",),
+    ),
+    (
+        "docs/specification.md",
+        "### Git Snapshot And Target Binding",
+        ("review-completion-specification.md#git-snapshot-and-target-binding",),
+    ),
+    (
+        "docs/specification.md",
+        "### Review Packet",
+        ("review-completion-specification.md#review-packet",),
+    ),
+    (
+        "docs/specification.md",
+        "### Completion Evidence And Commands",
+        ("review-completion-specification.md#completion-evidence-and-commands",),
+    ),
+    (
+        "docs/specification.md",
+        "## Completion Cycle History",
+        ("review-completion-specification.md#completion-cycle-history",),
+    ),
+    (
+        "docs/specification.md",
+        "### Receipt Meaning And Record",
+        ("review-completion-specification.md#receipt-meaning-and-record",),
+    ),
+    (
+        "docs/specification.md",
+        "### Verification Receipt Eligibility And Manual Completion",
+        ("review-completion-specification.md#verification-receipt-eligibility-and-manual-completion",),
+    ),
+    (
+        "docs/specification.md",
+        "### Public And Read Projection",
+        ("review-completion-specification.md#public-and-read-projection",),
+    ),
+    (
+        DESIGN,
+        "### Typed Completion Evidence",
+        ("review-completion-design.md#typed-completion-evidence",),
+    ),
+    (
+        DESIGN,
+        "### Review Target And Git Snapshot",
+        ("review-completion-design.md#review-target-and-git-snapshot",),
+    ),
+    (
+        DESIGN,
+        "### Receipts, Findings, And Gate",
+        ("review-completion-design.md#receipts-findings-and-gate",),
+    ),
+    (
+        DESIGN,
+        "### Review Packet",
+        ("review-completion-design.md#review-packet",),
+    ),
+    (
+        DESIGN,
+        "## Completion Cycle History",
+        ("review-completion-design.md#completion-cycle-history",),
+    ),
+    (
+        DESIGN,
+        "## Current Schema-v22 Manual Receipt Arm And Bundle Integration",
+        ("review-completion-design.md#current-schema-v22-manual-receipt-arm-and-bundle-integration",),
+    ),
+    (
+        AUTHORITY,
         "## Conditional Initiative Roadmaps",
         ("modularization-roadmap.md",),
     ),
@@ -228,8 +307,8 @@ ROUTE_SECTIONS = (
 )
 
 TRIGGER_ROUTE_OWNER_TOKENS = (
-    ("docs/specification.md", VIEWER_SPECIFICATION, RUNNER_PLAN_AUTHORING_SPECIFICATION, TASK_OPERATION_SPECIFICATION, RUNNER_EXECUTION_SPECIFICATION, EVIDENCE_SPECIFICATION),
-    ("docs/design.md", VIEWER_DESIGN, RUNNER_PLAN_AUTHORING_DESIGN, TASK_OPERATION_DESIGN, RUNNER_EXECUTION_DESIGN, EVIDENCE_DESIGN),
+    ("docs/specification.md", VIEWER_SPECIFICATION, RUNNER_PLAN_AUTHORING_SPECIFICATION, TASK_OPERATION_SPECIFICATION, RUNNER_EXECUTION_SPECIFICATION, EVIDENCE_SPECIFICATION, REVIEW_COMPLETION_SPECIFICATION),
+    ("docs/design.md", VIEWER_DESIGN, RUNNER_PLAN_AUTHORING_DESIGN, TASK_OPERATION_DESIGN, RUNNER_EXECUTION_DESIGN, EVIDENCE_DESIGN, REVIEW_COMPLETION_DESIGN),
     ("plan.md",),
     (MODULARIZATION_ROADMAP,),
     ("docs/release-install.md",),
@@ -415,6 +494,8 @@ ROLE_TITLES = {
     RUNNER_EXECUTION_DESIGN: "# Runner Execution Implementation Design",
     EVIDENCE_SPECIFICATION: "# Evidence Specification",
     EVIDENCE_DESIGN: "# Evidence Implementation Design",
+    REVIEW_COMPLETION_SPECIFICATION: "# Review And Completion Specification",
+    REVIEW_COMPLETION_DESIGN: "# Review And Completion Implementation Design",
     "plan.md": "# task-governance-tool Current Decisions And Open Issues",
     MODULARIZATION_ROADMAP: "# Responsibility-Based Modularization Roadmap",
     HISTORY_INDEX: "# Historical Documentation Index",
@@ -1061,7 +1142,7 @@ def _section_bounds(scan: Scan, heading: str) -> tuple[int, int] | None:
 
 def _expected_registry() -> dict[str, object]:
     return {
-        "schema": "taskgov-document-authority-v11",
+        "schema": "taskgov-document-authority-v12",
         "mandatory_start": ["AGENTS.md", AUTHORITY, "live_task_contract"],
         "current": [
             "docs/specification.md", "docs/design.md", "plan.md",
@@ -1070,6 +1151,7 @@ def _expected_registry() -> dict[str, object]:
             TASK_OPERATION_SPECIFICATION, TASK_OPERATION_DESIGN,
             RUNNER_EXECUTION_SPECIFICATION, RUNNER_EXECUTION_DESIGN,
             EVIDENCE_SPECIFICATION, EVIDENCE_DESIGN,
+            REVIEW_COMPLETION_SPECIFICATION, REVIEW_COMPLETION_DESIGN,
         ],
         "mixed_execution": [],
         "conditional": [MODULARIZATION_ROADMAP],

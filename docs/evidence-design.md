@@ -4,9 +4,9 @@ This document owns provenance, Evidence Ledger capture, Bundle construction and
 projection, publication, and the test-only independent reader delegated by the
 [implementation design](design.md#provenance-evidence-ledger-and-bundle-structure),
 for the behavior in the [Evidence specification](evidence-specification.md).
-[Review operations](design.md#completion-evidence-and-review),
-[native completion transactions](design.md#native-done-and-reopen-transactions),
-[manual Receipt integration](design.md#current-schema-v22-manual-receipt-arm-and-bundle-integration),
+[Review operations](review-completion-design.md),
+[native completion transactions](review-completion-design.md#native-done-and-reopen-transactions),
+[manual Receipt integration](review-completion-design.md#current-schema-v22-manual-receipt-arm-and-bundle-integration),
 and [Task operations](task-operation-design.md) retain their own owners.
 Shared [runtime ownership](design.md#runtime-module-boundaries),
 [connection/transaction rules](design.md#journal-and-connection-rules),
@@ -167,7 +167,7 @@ compares the exact commit with its first parent or empty tree. Leaves normalize
 to `relative_posix_path mode full_object_id`. A bytewise path merge produces
 add/delete/modify; a second pass converts only a unique exact mode/object
 delete-add pair to rename. Ambiguous duplicates and content-changing moves stay
-delete+add. One pure sorter applies the [artifact-entry tuple](specification.md#git-snapshot-and-target-binding) with null first and
+delete+add. One pure sorter applies the [artifact-entry tuple](review-completion-specification.md#git-snapshot-and-target-binding) with null first and
 unsigned UTF-8 comparison, then assigns contiguous zero-based ordinals.
 
 Observation is shell-free and uses bounded timeouts, null stdin, disabled

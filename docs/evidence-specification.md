@@ -5,9 +5,9 @@ Evidence References, sealed Bundle/Finding snapshots, canonical Evidence JSON,
 and the retained interpretation boundary delegated by the
 [product specification](specification.md#current-schema-v22-verification-ledger-and-bundle-contract).
 Implementation structure belongs in the [Evidence design](evidence-design.md).
-[Review operations](specification.md#review-and-completion),
-[Verification Receipt eligibility](specification.md#verification-receipt-eligibility-and-manual-completion),
-[completion history](specification.md#completion-cycle-history), and
+[Review operations](review-completion-specification.md),
+[Verification Receipt eligibility](review-completion-specification.md#verification-receipt-eligibility-and-manual-completion),
+[completion history](review-completion-specification.md#completion-cycle-history), and
 [Task operations](task-operation-specification.md) retain their own contracts.
 The shared [schema-v21 Runner protocol](specification.md#schema-v21-persistence-compatibility-and-shared-runner-protocol),
 [current persistence](specification.md#current-schema-v22-persistence-contract),

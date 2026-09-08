@@ -28,7 +28,7 @@ fixtures. These routes are a starting set, not a maximum: follow concrete
 dependencies that reveal further impact under AGENTS.md's Reread Rule.
 
 The specification and design retain their product and implementation roles.
-Their Task operation, Viewer, Runner execution, Runner Plan authoring, and Evidence sections
+Their Task operation, Viewer, Runner execution, Runner Plan authoring, Evidence, and Review/completion sections
 delegate only the corresponding detail below; product and implementation ownership remain distinct.
 
 ## Viewer Detail Authority
@@ -85,6 +85,19 @@ schema-v21/v22 Runner protocol, persistence, privacy, connection/transaction,
 maintenance, and global test contracts remain with their existing owners and
 are linked directly from the detail.
 
+## Review And Completion Detail Authority
+
+- [Review and completion behavior](review-completion-specification.md)
+- [Review and completion structure](review-completion-design.md)
+
+These are the current owners of Review targets, receipts, Findings, Packets,
+Verification Receipt operations and eligibility, completion evidence, cycles,
+and reopen integration. Evidence formats/provenance and ordinary Task state,
+Contracts, and Checkpoints remain separate. Shared CLI/output, persistence,
+migration, schema-v21/v22 Runner protocol, privacy, connection/transaction,
+maintenance, and global test contracts remain with their existing owners and
+are linked directly from the detail.
+
 ## Conditional Initiative Roadmaps
 
 - [Responsibility-based modularization](modularization-roadmap.md)
@@ -117,8 +130,8 @@ current gate.
 
 | Trigger | Required selective route |
 |---|---|
-| Supported product behavior, public CLI/JSON, persistence, privacy, setup, Viewer, or current gate | Exact section in `docs/specification.md`; Viewer detail in `docs/viewer-specification.md`; Runner Plan authoring detail in `docs/runner-plan-authoring-specification.md`; Task operation detail in `docs/task-operation-specification.md`; Runner execution detail in `docs/runner-execution-specification.md`; Evidence detail in `docs/evidence-specification.md` |
-| Module ownership, storage/process boundary, migration mechanics, or test architecture | Exact section in `docs/design.md`; Viewer detail in `docs/viewer-design.md`; Runner Plan authoring detail in `docs/runner-plan-authoring-design.md`; Task operation detail in `docs/task-operation-design.md`; Runner execution detail in `docs/runner-execution-design.md`; Evidence detail in `docs/evidence-design.md` |
+| Supported product behavior, public CLI/JSON, persistence, privacy, setup, Viewer, or current gate | Exact section in `docs/specification.md`; Viewer detail in `docs/viewer-specification.md`; Runner Plan authoring detail in `docs/runner-plan-authoring-specification.md`; Task operation detail in `docs/task-operation-specification.md`; Runner execution detail in `docs/runner-execution-specification.md`; Evidence detail in `docs/evidence-specification.md`; Review/completion detail in `docs/review-completion-specification.md` |
+| Module ownership, storage/process boundary, migration mechanics, or test architecture | Exact section in `docs/design.md`; Viewer detail in `docs/viewer-design.md`; Runner Plan authoring detail in `docs/runner-plan-authoring-design.md`; Task operation detail in `docs/task-operation-design.md`; Runner execution detail in `docs/runner-execution-design.md`; Evidence detail in `docs/evidence-design.md`; Review/completion detail in `docs/review-completion-design.md` |
 | Current decision, open issue, cross-sequence gateway, or static contract | Exact section in `plan.md` |
 | Authorized modularization planning or a Task selecting that initiative | `docs/modularization-roadmap.md`; existing product/design owners and exact Task Contract still apply |
 | Published artifact, install, upgrade, tag, or Release identity | `docs/release-install.md` |
@@ -153,9 +166,9 @@ enforced meaning.
 
 ```json
 {
-  "schema": "taskgov-document-authority-v11",
+  "schema": "taskgov-document-authority-v12",
   "mandatory_start": ["AGENTS.md", "docs/authority.md", "live_task_contract"],
-  "current": ["docs/specification.md", "docs/design.md", "plan.md", "docs/viewer-specification.md", "docs/viewer-design.md", "docs/runner-plan-authoring-specification.md", "docs/runner-plan-authoring-design.md", "docs/task-operation-specification.md", "docs/task-operation-design.md", "docs/runner-execution-specification.md", "docs/runner-execution-design.md", "docs/evidence-specification.md", "docs/evidence-design.md"],
+  "current": ["docs/specification.md", "docs/design.md", "plan.md", "docs/viewer-specification.md", "docs/viewer-design.md", "docs/runner-plan-authoring-specification.md", "docs/runner-plan-authoring-design.md", "docs/task-operation-specification.md", "docs/task-operation-design.md", "docs/runner-execution-specification.md", "docs/runner-execution-design.md", "docs/evidence-specification.md", "docs/evidence-design.md", "docs/review-completion-specification.md", "docs/review-completion-design.md"],
   "mixed_execution": [],
   "conditional": ["docs/modularization-roadmap.md"],
   "history_index": "docs/history/README.md"

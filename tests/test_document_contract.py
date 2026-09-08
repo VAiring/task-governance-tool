@@ -33,6 +33,8 @@ EXPECTED_CANONICAL_DOCS = (
     "docs/runner-execution-design.md",
     "docs/evidence-specification.md",
     "docs/evidence-design.md",
+    "docs/review-completion-specification.md",
+    "docs/review-completion-design.md",
     "plan.md",
     "docs/modularization-roadmap.md",
     "docs/history/README.md",
@@ -213,9 +215,9 @@ class DocumentContractTests(unittest.TestCase):
         self.assertNotIn(secret, serialized)
         self.assertNotIn("Traceback", serialized)
 
-    def test_registry_v11_is_closed(self):
+    def test_registry_v12_is_closed(self):
         expected = {
-            "schema": "taskgov-document-authority-v11",
+            "schema": "taskgov-document-authority-v12",
             "mandatory_start": [
                 "AGENTS.md",
                 "docs/authority.md",
@@ -232,6 +234,8 @@ class DocumentContractTests(unittest.TestCase):
                 "docs/runner-execution-design.md",
                 "docs/evidence-specification.md",
                 "docs/evidence-design.md",
+                "docs/review-completion-specification.md",
+                "docs/review-completion-design.md",
             ],
             "mixed_execution": [],
             "conditional": ["docs/modularization-roadmap.md"],
@@ -343,6 +347,37 @@ class DocumentContractTests(unittest.TestCase):
         ):
             with self.subTest(source=source, destination=destination), self.fixture() as root:
                 self.replace(root, source, f"]({destination})", "](design.md)")
+                self.assertIn(
+                    "authority_route", self.codes(contract.check_document_contract(root))
+                )
+
+    def test_review_completion_detail_routes_are_required(self):
+        for source, destination in (
+            (contract.AUTHORITY, "review-completion-specification.md"),
+            (contract.AUTHORITY, "review-completion-design.md"),
+            ("docs/specification.md", "review-completion-specification.md#review-target-receipt-and-finding-ledger"),
+            ("docs/specification.md", "review-completion-specification.md#git-snapshot-and-target-binding"),
+            ("docs/specification.md", "review-completion-specification.md#review-packet"),
+            ("docs/specification.md", "review-completion-specification.md#completion-evidence-and-commands"),
+            ("docs/specification.md", "review-completion-specification.md#completion-cycle-history"),
+            ("docs/specification.md", "review-completion-specification.md#receipt-meaning-and-record"),
+            ("docs/specification.md", "review-completion-specification.md#verification-receipt-eligibility-and-manual-completion"),
+            ("docs/specification.md", "review-completion-specification.md#public-and-read-projection"),
+            (contract.DESIGN, "review-completion-design.md#typed-completion-evidence"),
+            (contract.DESIGN, "review-completion-design.md#review-target-and-git-snapshot"),
+            (contract.DESIGN, "review-completion-design.md#receipts-findings-and-gate"),
+            (contract.DESIGN, "review-completion-design.md#review-packet"),
+            (contract.DESIGN, "review-completion-design.md#completion-cycle-history"),
+            (contract.DESIGN, "review-completion-design.md#current-schema-v22-manual-receipt-arm-and-bundle-integration"),
+        ):
+            with self.subTest(source=source, destination=destination), self.fixture() as root:
+                if source == "docs/specification.md":
+                    old_link = f"[Review and completion specification]({destination})"
+                    new_link = "[Review and completion specification](design.md)"
+                else:
+                    old_link = f"]({destination})"
+                    new_link = "](design.md)"
+                self.replace(root, source, old_link, new_link)
                 self.assertIn(
                     "authority_route", self.codes(contract.check_document_contract(root))
                 )
@@ -525,6 +560,81 @@ class DocumentContractTests(unittest.TestCase):
                     contract.DESIGN,
                     "## Test-Only Independent Evidence Reader",
                     ("evidence-design.md#test-only-independent-evidence-reader",),
+                ),
+                (
+                    contract.AUTHORITY,
+                    "## Review And Completion Detail Authority",
+                    ("review-completion-specification.md", "review-completion-design.md"),
+                ),
+                (
+                    "docs/specification.md",
+                    "### Review Target, Receipt, And Finding Ledger",
+                    ("review-completion-specification.md#review-target-receipt-and-finding-ledger",),
+                ),
+                (
+                    "docs/specification.md",
+                    "### Git Snapshot And Target Binding",
+                    ("review-completion-specification.md#git-snapshot-and-target-binding",),
+                ),
+                (
+                    "docs/specification.md",
+                    "### Review Packet",
+                    ("review-completion-specification.md#review-packet",),
+                ),
+                (
+                    "docs/specification.md",
+                    "### Completion Evidence And Commands",
+                    ("review-completion-specification.md#completion-evidence-and-commands",),
+                ),
+                (
+                    "docs/specification.md",
+                    "## Completion Cycle History",
+                    ("review-completion-specification.md#completion-cycle-history",),
+                ),
+                (
+                    "docs/specification.md",
+                    "### Receipt Meaning And Record",
+                    ("review-completion-specification.md#receipt-meaning-and-record",),
+                ),
+                (
+                    "docs/specification.md",
+                    "### Verification Receipt Eligibility And Manual Completion",
+                    ("review-completion-specification.md#verification-receipt-eligibility-and-manual-completion",),
+                ),
+                (
+                    "docs/specification.md",
+                    "### Public And Read Projection",
+                    ("review-completion-specification.md#public-and-read-projection",),
+                ),
+                (
+                    contract.DESIGN,
+                    "### Typed Completion Evidence",
+                    ("review-completion-design.md#typed-completion-evidence",),
+                ),
+                (
+                    contract.DESIGN,
+                    "### Review Target And Git Snapshot",
+                    ("review-completion-design.md#review-target-and-git-snapshot",),
+                ),
+                (
+                    contract.DESIGN,
+                    "### Receipts, Findings, And Gate",
+                    ("review-completion-design.md#receipts-findings-and-gate",),
+                ),
+                (
+                    contract.DESIGN,
+                    "### Review Packet",
+                    ("review-completion-design.md#review-packet",),
+                ),
+                (
+                    contract.DESIGN,
+                    "## Completion Cycle History",
+                    ("review-completion-design.md#completion-cycle-history",),
+                ),
+                (
+                    contract.DESIGN,
+                    "## Current Schema-v22 Manual Receipt Arm And Bundle Integration",
+                    ("review-completion-design.md#current-schema-v22-manual-receipt-arm-and-bundle-integration",),
                 ),
                 (
                     contract.AUTHORITY,

@@ -6,7 +6,7 @@ by the [product specification](specification.md#trusted-local-verification-runne
 Implementation structure belongs in the [Runner execution design](runner-execution-design.md).
 The [Runner Plan authoring/control contract](runner-plan-authoring-specification.md)
 remains separate. Shared [Task Contract](task-operation-specification.md#task-contract),
-[review target and completion](specification.md#review-and-completion),
+[review target and completion](review-completion-specification.md),
 [schema-v21/v22 Runner gate protocol](specification.md#schema-v21-persistence-compatibility-and-shared-runner-protocol),
 [current persistence](specification.md#current-schema-v22-persistence-contract),
 [maintenance](specification.md#same-process-maintenance), and

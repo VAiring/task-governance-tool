@@ -618,3 +618,27 @@ contracts, their index, and the pre-normalization plan from source commit
   [docs/authority.md](../authority.md). Use the public CLI for live Task state
   and evidence. This capture is lineage only and cannot fill a current authority
   gap or satisfy a gate.
+
+## v0.13.0 Review And Completion Section Split Lineage
+
+- Immutable history:
+  [v0.13.0/review-completion-section-split.md](v0.13.0/review-completion-section-split.md)
+- Source sections: Review Target/Receipt/Finding operations, Git Snapshot/Target
+  Binding, Review Packet, Completion Evidence/Commands, Completion Cycle History,
+  and Verification Receipt meaning/eligibility/public read in
+  `docs/specification.md`; typed completion, review target, review gate,
+  Review Packet, Completion Cycle History, and the complete manual Receipt arm
+  and Bundle integration in `docs/design.md`.
+- Source commit: `45f96941f8abb5b39d267710d5dceccee3623147`
+- Capture unit: `TG-MOD.13`
+- Capture purpose: preserve only the 14 complete relocated Review, Verification,
+  and completion sections. Evidence formats/provenance, ordinary Task state,
+  Checkpoint, shared Runner protocol, persistence, migration, and connection
+  rules retain their existing owners.
+- Current replacements:
+  [Review and completion specification](../review-completion-specification.md)
+  and [Review and completion design](../review-completion-design.md).
+  The unchanged common contracts remain routed by
+  [docs/authority.md](../authority.md). Use the public CLI for live Task state
+  and evidence. This capture is lineage only and cannot fill a current authority
+  gap or satisfy a gate.

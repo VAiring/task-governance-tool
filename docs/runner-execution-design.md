@@ -9,7 +9,7 @@ remains separate. Shared [runtime ownership](design.md#runtime-module-boundaries
 [CLI/serialization](design.md#public-cli-and-serialization),
 [connection/transaction](design.md#journal-and-connection-rules),
 [schema-v21 Runner gate basis](design.md#schema-v21-runner-gate-basis-design),
-[current schema-v22 integration](design.md#current-schema-v22-manual-receipt-arm-and-bundle-integration),
+[current schema-v22 integration](review-completion-design.md#current-schema-v22-manual-receipt-arm-and-bundle-integration),
 [post-commit coordination](design.md#post-commit-coordinator),
 [privacy/failure](design.md#privacy-safety-and-failure-boundaries), and
 [global validation/test design](design.md#validation-and-test-design) retain

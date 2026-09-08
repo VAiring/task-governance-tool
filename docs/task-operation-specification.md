@@ -6,10 +6,10 @@ Effort Advisory, and instruction-layer operation delegated by the
 Implementation structure belongs in the [Task operation design](task-operation-design.md).
 The shared [CLI/output](specification.md#public-cli-and-output-contract),
 [privacy and stable errors](specification.md#privacy-safety-and-stable-errors),
-[review and completion](specification.md#review-and-completion),
-[completion history](specification.md#completion-cycle-history), and
+[review and completion](review-completion-specification.md),
+[completion history](review-completion-specification.md#completion-cycle-history), and
 [SQLite operation](specification.md#sqlite-migration-and-concurrency) contracts
-remain with the product entry owner. Evidence and Runner detail retain their
+remain with their existing owners. Evidence and Runner detail retain their
 separate current owners routed by the [authority index](authority.md).
 
 ## Task Selection And Read Commands

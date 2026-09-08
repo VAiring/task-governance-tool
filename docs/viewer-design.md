@@ -6,7 +6,7 @@ This document owns the current Viewer implementation structure delegated by the
 The shared [fixed state resolver](design.md#fixed-state-resolver),
 [stored-Task and batch validation](task-operation-design.md#shared-stored-task-rowbatch-validator),
 [Contract pointer validation](task-operation-design.md#stored-contract-pointer-relationship-boundary),
-[completion history](design.md#completion-cycle-history), and
+[completion history](review-completion-design.md#completion-cycle-history), and
 [post-commit coordinator](design.md#post-commit-coordinator) remain at their
 existing owners.
 

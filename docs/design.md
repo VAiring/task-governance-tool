@@ -284,6 +284,45 @@ standard suite, not a fourth maintained list.
 The runner disables bytecode generation, performs no network or repository
 write, and is not an installable package module or public CLI leaf.
 
+### OS Operation Boundary
+
+The [approved platform expansion](specification.md#package-runtime-and-generated-state)
+separates only operations whose mechanics differ by OS. The following is the
+implementation boundary for that expansion; the module inventory above and
+the [Runner registry](runner-execution-design.md#closed-runner-slice-module-registry)
+continue to describe the implemented runtime until their owning changes land.
+
+| Operation | Shared or existing caller responsibility | OS implementation responsibility |
+|---|---|---|
+| Artifact lock | Validate the target and open-file identity, own the lifetime, and map contention/failure through existing callers. | Acquire and release a non-waiting exclusive lock. |
+| No-replace publication | Validate containment, source/destination identity, publication order, and failure cleanup. | Perform the no-replace move without an overwrite fallback. |
+| Execution environment | Select the admitted runtime and its use period under the Runner contract. | Observe the executable through OS-specific mechanics and construct the OS environment. |
+| Process management | Define the execution request; interpret results, decide cleanup acceptance, and construct/persist Evidence through the existing Runner owners. | Launch, monitor, stop, enforce the applicable OS limits, and release native resources. |
+
+Use small internal operation entry points to select the OS implementation;
+consumers call the same operation without repeating Windows/Linux/macOS
+selection. Do not introduce a general plugin registry or wrap standard-library
+operations that already provide the required portable behavior. Task completion,
+SQLite transaction ownership, canonical path resolution, and Evidence assembly
+do not move into native adapters.
+
+Connect the existing Windows lock and no-replace behavior to those entry points
+before adding Linux/macOS implementations. `artifact_lock.py` retains shared
+lock validation/lifetime; the native acquire/release mechanism changes behind
+it. The validation now coupled to `windows_no_replace.py` stays shared when
+its operation gains an OS-neutral entry point. Setup, backup, Evidence, and
+Viewer callers retain their operation-specific publication and recovery policy.
+Existing replace-based publication is not converted to no-replace publication.
+The existing same-process double-acquisition rejection and subsequent lock
+reuse remain part of the lock behavior, not just cross-process exclusion.
+
+Real-OS checks begin with the added file operations and ordinary Task/storage
+flows, using the early CI entry where needed. Runner environment/process
+changes follow normal-function acceptance and remain a separate implementation
+responsibility; this boundary neither changes its current executable-hold,
+resource, result, nor cleanup contract. No all-function relocation, file-count
+target, or Windows-equivalent native implementation is an acceptance condition.
+
 ## Public CLI And Serialization
 
 ### Command Surface

@@ -100,6 +100,30 @@ source package's canonical state and is not install guidance for consumers.
 Python 3.12 or newer is required. Windows is the CI-verified platform; exact
 CI runtimes are Python 3.12 and 3.14. Linux and macOS are unverified.
 
+The approved platform expansion retains Windows x86-64 and initially targets
+one Ubuntu 24.04 x86-64 environment and one macOS Apple Silicon environment.
+This is an implementation boundary, not a claim that those additional
+platforms are already supported. Normal functionality is accepted before
+Runner execution: setup, the Task lifecycle through completion, Evidence JSON,
+Viewer, backup, and their applicable recovery paths must work on each added
+OS. A Windows-only mock result does not establish that OS's support.
+
+OS-dependent operations use the shared/OS responsibility boundary in
+[the implementation design](design.md#os-operation-boundary). Existing Task
+decisions, SQLite transactions, Evidence construction, fixed state ownership,
+and no-write inspection remain with their current owners. There is no public
+OS-selection command or per-Task LLM platform choice. No-replace publication
+must not silently fall back to an operation that can overwrite a destination.
+
+The separate Runner expansion has an approved direction but still requires
+its own contract synchronization, implementation, and real-OS verification.
+Normal-function acceptance does not activate Runner support or alter the
+[current Runner contract](runner-execution-specification.md). The initial
+expansion does not require all Linux distributions, Intel Macs, every
+filesystem, cross-OS transfer of existing state, or identical Windows-native
+guarantees on every OS. The published artifact and candidate support claims
+remain governed by [the release/install record](release-install.md).
+
 The static package includes its manifest, Skill metadata and instructions,
 runtime modules, one-level references, and bundled Viewer template. Generated
 state and target-local presentation configuration are not release-package

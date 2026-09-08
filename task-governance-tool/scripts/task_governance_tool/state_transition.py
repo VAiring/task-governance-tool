@@ -53,7 +53,7 @@ from task_governance_tool.storage import (
     LOWER_HEX_64_PATTERN,
     StorageError,
 )
-from task_governance_tool.windows_no_replace import rename_no_replace
+from task_governance_tool.no_replace import rename_no_replace
 
 
 STATE_TRANSITION_FAILURE_MESSAGE = "setup completed only partially; rerun setup"

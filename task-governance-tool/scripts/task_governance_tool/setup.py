@@ -121,7 +121,7 @@ from task_governance_tool.viewer_config import (
     ViewerConfigError,
     load_viewer_refresh_interval,
 )
-from task_governance_tool.windows_no_replace import rename_no_replace
+from task_governance_tool.no_replace import rename_no_replace
 
 
 SETUP_WRITE_ORDER = (

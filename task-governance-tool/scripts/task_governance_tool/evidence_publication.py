@@ -57,7 +57,7 @@ from task_governance_tool.storage import (
     utc_now,
     validate_utc_timestamp,
 )
-from task_governance_tool.windows_no_replace import rename_no_replace
+from task_governance_tool.no_replace import rename_no_replace
 
 
 MAX_PUBLICATIONS_PER_ATTEMPT = 2

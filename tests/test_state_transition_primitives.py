@@ -34,7 +34,7 @@ from task_governance_tool.state_transition import (  # noqa: E402
     remove_stage_residue,
     retire_legacy_inventory,
 )
-from task_governance_tool.windows_no_replace import rename_no_replace  # noqa: E402
+from task_governance_tool.no_replace import rename_no_replace  # noqa: E402
 
 
 PROJECT_ID = "project-0123456789ab"
@@ -128,17 +128,29 @@ class StatePathPrimitiveTests(unittest.TestCase):
 
     @unittest.skipUnless(os.name == "nt", "Windows is the verified no-replace runtime")
     def test_no_replace_rename_preserves_both_entries_on_collision(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            state = make_state_root(Path(tmp))
-            source = state / "source"
-            destination = state / "destination"
-            source.write_bytes(b"source")
-            destination.write_bytes(b"destination")
-            validated = hash_physical_file(source, root=state)
-            with self.assertRaises(StatePathError):
-                rename_no_replace(validated, destination, root=state)
-            self.assertEqual(source.read_bytes(), b"source")
-            self.assertEqual(destination.read_bytes(), b"destination")
+        for kind in ("file", "directory"):
+            with self.subTest(kind=kind), tempfile.TemporaryDirectory() as tmp:
+                state = make_state_root(Path(tmp))
+                source = state / "source"
+                destination = state / "destination"
+                if kind == "file":
+                    source.write_bytes(b"source")
+                    destination.write_bytes(b"destination")
+                    validated = hash_physical_file(source, root=state)
+                else:
+                    source.mkdir()
+                    destination.mkdir()
+                    (source / "child").write_bytes(b"source")
+                    (destination / "child").write_bytes(b"destination")
+                    validated = inspect_physical_directory(source, root=state)
+                with self.assertRaises(StatePathError):
+                    rename_no_replace(validated, destination, root=state)
+                if kind == "file":
+                    self.assertEqual(source.read_bytes(), b"source")
+                    self.assertEqual(destination.read_bytes(), b"destination")
+                else:
+                    self.assertEqual((source / "child").read_bytes(), b"source")
+                    self.assertEqual((destination / "child").read_bytes(), b"destination")
 
 
 class StageOwnerAndResidueTests(unittest.TestCase):

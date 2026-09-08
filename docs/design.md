@@ -118,8 +118,9 @@ The implementation keeps these narrow ownership boundaries:
   self-host exception, containment, and effective Git-ignore preflight.
 - `state_paths.py` defines fixed state names and shared containment and
   physical-identity validation.
-- `windows_no_replace.py` owns the Windows no-replace rename operation using
-  those shared validators; callers retain publication and cleanup policy.
+- `no_replace.py` owns the OS-neutral no-replace entry using those shared
+  validators and selecting `windows_no_replace.py` for the native Windows
+  move; callers retain publication and cleanup policy.
 - `state_resolver.py` is the sole production resolver for fixed state, bounded
   legacy discovery, identity, binding, recovery observations, and artifact
   targets.
@@ -311,10 +312,11 @@ before adding Linux/macOS implementations. `artifact_lock.py` retains shared
 lock validation/lifetime; the native acquire/release mechanism changes behind
 it. Windows acquire/release calls reside in `_artifact_lock_windows.py`,
 selected internally by `artifact_lock.py`; callers keep the existing
-`zero_wait_artifact_lock` entry point and error handling. The validation now
-coupled to `windows_no_replace.py` stays shared when
-its operation gains an OS-neutral entry point. Setup, backup, Evidence, and
-Viewer callers retain their operation-specific publication and recovery policy.
+`zero_wait_artifact_lock` entry point and error handling. `no_replace.py`
+retains containment and identity checks before and after the native move;
+`windows_no_replace.py` owns only the Windows rename call. Setup, backup,
+Evidence, and Viewer callers retain their operation-specific publication and
+recovery policy.
 Existing replace-based publication is not converted to no-replace publication.
 The existing same-process double-acquisition rejection and subsequent lock
 reuse remain part of the lock behavior, not just cross-process exclusion.

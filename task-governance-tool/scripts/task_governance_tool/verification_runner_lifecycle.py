@@ -33,7 +33,7 @@ from task_governance_tool.state_paths import (
     rmdir_validated_directory,
     require_contained,
 )
-from task_governance_tool.windows_no_replace import rename_no_replace
+from task_governance_tool.no_replace import rename_no_replace
 
 
 RUNNER_FAILURE_MESSAGE = "verification runner state could not be changed safely"

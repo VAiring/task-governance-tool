@@ -48,6 +48,8 @@ def rename_no_replace(
     try:
         if sys.platform == "linux":
             from task_governance_tool.linux_no_replace import rename_no_replace as move
+        elif sys.platform == "darwin":
+            from task_governance_tool.macos_no_replace import rename_no_replace as move
         elif os.name == "nt":
             from task_governance_tool.windows_no_replace import rename_no_replace as move
         else:

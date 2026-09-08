@@ -119,8 +119,9 @@ The implementation keeps these narrow ownership boundaries:
 - `state_paths.py` defines fixed state names and shared containment and
   physical-identity validation.
 - `no_replace.py` owns the OS-neutral no-replace entry using those shared
-  validators and selecting `windows_no_replace.py` or `linux_no_replace.py`
-  for the native move; callers retain publication and cleanup policy.
+  validators and selecting `windows_no_replace.py`, `linux_no_replace.py`, or
+  `macos_no_replace.py` for the native move; callers retain publication and
+  cleanup policy.
 - `state_resolver.py` is the sole production resolver for fixed state, bounded
   legacy discovery, identity, binding, recovery observations, and artifact
   targets.
@@ -307,21 +308,21 @@ operations that already provide the required portable behavior. Task completion,
 SQLite transaction ownership, canonical path resolution, and Evidence assembly
 do not move into native adapters.
 
-Connect the existing Windows lock and no-replace behavior to those entry points
-before adding Linux/macOS implementations. `artifact_lock.py` retains shared
-lock validation/lifetime; the native acquire/release mechanism changes behind
+`artifact_lock.py` retains shared lock validation/lifetime; the native
+acquire/release mechanism changes behind
 it. Windows acquire/release calls reside in `_artifact_lock_windows.py`,
 selected internally by `artifact_lock.py`; callers keep the existing
-`zero_wait_artifact_lock` entry point and error handling. On Linux the internal
-acquire/release functions use non-waiting `fcntl.flock` on the independently
-opened descriptor, so same-process and cross-process contention are both
-rejected. Other OS lock mechanics remain unchanged until implemented.
+`zero_wait_artifact_lock` entry point and error handling. On Linux and macOS
+the internal acquire/release functions use non-waiting `fcntl.flock` on the
+independently opened descriptor, so same-process and cross-process contention
+are both rejected. Other OS lock mechanics remain unchanged.
 `no_replace.py` retains containment and identity checks before and after the
 native move;
 `windows_no_replace.py` owns only the Windows rename call, while
-`linux_no_replace.py` calls libc `renameat2` with `RENAME_NOREPLACE` and the
+`linux_no_replace.py` calls libc `renameat2` with `RENAME_NOREPLACE`, and
+`macos_no_replace.py` calls `renamex_np` with `RENAME_EXCL`. Both use
 filesystem-encoded paths. Missing API or rejected operation raises a failure;
-it does not fall back to rename, replace, or copy/delete. These Linux
+neither falls back to rename, replace, or copy/delete. These OS
 primitives do not themselves establish full ordinary-function support.
 Setup, backup, Evidence, and Viewer callers retain their operation-specific
 publication and recovery policy.

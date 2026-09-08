@@ -101,8 +101,8 @@ class StatePathPrimitiveTests(unittest.TestCase):
             self.assertEqual(marker.path.read_bytes(), b"marker")
 
     @unittest.skipUnless(
-        os.name == "nt" or sys.platform == "linux",
-        "requires Windows or Linux no-replace semantics",
+        os.name == "nt" or sys.platform in {"linux", "darwin"},
+        "requires Windows, Linux, or macOS no-replace semantics",
     )
     def test_no_replace_rename_publishes_validated_file_and_directory(self):
         for kind in ("file", "directory"):
@@ -130,8 +130,8 @@ class StatePathPrimitiveTests(unittest.TestCase):
                     self.assertEqual((destination / "child").read_bytes(), b"child")
 
     @unittest.skipUnless(
-        os.name == "nt" or sys.platform == "linux",
-        "requires Windows or Linux no-replace semantics",
+        os.name == "nt" or sys.platform in {"linux", "darwin"},
+        "requires Windows, Linux, or macOS no-replace semantics",
     )
     def test_no_replace_rename_preserves_both_entries_on_collision(self):
         for kind in ("file", "directory"):
@@ -323,8 +323,8 @@ class PersistedCleanupPrimitiveTests(unittest.TestCase):
             )
 
     @unittest.skipUnless(
-        os.name == "nt" or sys.platform == "linux",
-        "requires Windows or Linux no-replace semantics",
+        os.name == "nt" or sys.platform in {"linux", "darwin"},
+        "requires Windows, Linux, or macOS no-replace semantics",
     )
     def test_cleanup_moves_then_deletes_recorded_files_and_preserves_unrelated(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -344,8 +344,8 @@ class PersistedCleanupPrimitiveTests(unittest.TestCase):
             self.assertFalse(retirement.exists())
 
     @unittest.skipUnless(
-        os.name == "nt" or sys.platform == "linux",
-        "requires Windows or Linux no-replace semantics",
+        os.name == "nt" or sys.platform in {"linux", "darwin"},
+        "requires Windows, Linux, or macOS no-replace semantics",
     )
     def test_mixed_old_and_retirement_state_resumes_from_persisted_inventory(self):
         with tempfile.TemporaryDirectory() as tmp:

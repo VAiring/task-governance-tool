@@ -50,7 +50,7 @@ def _acquire(descriptor: int) -> None:
 
     import fcntl
 
-    if sys.platform == "linux":
+    if sys.platform in {"linux", "darwin"}:
         fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
         return
 
@@ -73,7 +73,7 @@ def _release(descriptor: int) -> None:
 
     import fcntl
 
-    if sys.platform == "linux":
+    if sys.platform in {"linux", "darwin"}:
         fcntl.flock(descriptor, fcntl.LOCK_UN)
         return
 

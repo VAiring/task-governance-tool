@@ -18,7 +18,12 @@ SCRIPTS_ROOT = ROOT / "task-governance-tool" / "scripts"
 if str(SCRIPTS_ROOT) not in sys.path:
     sys.path.insert(0, str(SCRIPTS_ROOT))
 
-from task_governance_tool import artifact_lock, linux_no_replace, no_replace  # noqa: E402
+from task_governance_tool import (  # noqa: E402
+    artifact_lock,
+    linux_no_replace,
+    macos_no_replace,
+    no_replace,
+)
 from task_governance_tool.state_paths import (  # noqa: E402
     StatePathError,
     hash_physical_file,
@@ -43,8 +48,8 @@ except ArtifactLockError as exc:
 
 class ArtifactLockOperationTests(unittest.TestCase):
     @unittest.skipUnless(
-        os.name == "nt" or sys.platform == "linux",
-        "native lock contention is enabled on Windows and Linux",
+        os.name == "nt" or sys.platform in {"linux", "darwin"},
+        "native lock contention is enabled on Windows, Linux, and macOS",
     )
     def test_same_process_contention_preserves_outer_lock_and_reuses_after_release(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -62,8 +67,8 @@ class ArtifactLockOperationTests(unittest.TestCase):
             self.assertEqual(path.read_bytes(), b"\0")
 
     @unittest.skipUnless(
-        os.name == "nt" or sys.platform == "linux",
-        "native lock contention is enabled on Windows and Linux",
+        os.name == "nt" or sys.platform in {"linux", "darwin"},
+        "native lock contention is enabled on Windows, Linux, and macOS",
     )
     def test_independent_process_contends_then_acquires_after_release(self):
         def probe(path: Path) -> str:
@@ -116,10 +121,14 @@ class ArtifactLockOperationTests(unittest.TestCase):
                     pass
 
 
-class LinuxNoReplaceOperationTests(unittest.TestCase):
-    @unittest.skipUnless(sys.platform == "linux", "requires native Linux renameat2")
+class NoReplaceOperationTests(unittest.TestCase):
+    @unittest.skipUnless(
+        sys.platform in {"linux", "darwin"},
+        "requires native Linux or macOS no-replace rename",
+    )
     def test_racing_file_or_empty_directory_destination_is_never_replaced(self):
-        native_move = linux_no_replace.rename_no_replace
+        native_module = linux_no_replace if sys.platform == "linux" else macos_no_replace
+        native_move = native_module.rename_no_replace
         for kind in ("file", "directory"):
             with self.subTest(kind=kind), tempfile.TemporaryDirectory() as temporary:
                 root = Path(temporary)
@@ -145,7 +154,7 @@ class LinuxNoReplaceOperationTests(unittest.TestCase):
                     native_move(admitted_source, admitted_destination)
 
                 with (
-                    mock.patch.object(linux_no_replace, "rename_no_replace", side_effect=race) as move,
+                    mock.patch.object(native_module, "rename_no_replace", side_effect=race) as move,
                     mock.patch.object(os, "rename", side_effect=AssertionError("overwrite fallback")) as rename,
                     mock.patch.object(os, "replace", side_effect=AssertionError("overwrite fallback")) as replace,
                 ):
@@ -165,60 +174,72 @@ class LinuxNoReplaceOperationTests(unittest.TestCase):
                     self.assertEqual(list(destination.iterdir()), [])
 
     def test_unavailable_api_and_filesystem_rejection_fail_without_overwrite_fallback(self):
-        for failure, expected_errno in (
-            ("loader", errno.ENOSYS),
-            ("symbol", errno.ENOSYS),
-            ("kernel", errno.ENOSYS),
-            ("filesystem", errno.EINVAL),
+        for platform, native_module, symbol, filesystem_errno in (
+            ("linux", linux_no_replace, "renameat2", errno.EINVAL),
+            ("darwin", macos_no_replace, "renamex_np", errno.ENOTSUP),
         ):
-            for kind in ("file", "directory"):
-                with self.subTest(failure=failure, kind=kind), tempfile.TemporaryDirectory() as temporary:
-                    root = Path(temporary)
-                    source = root / "source"
-                    destination = root / "destination"
-                    if kind == "file":
-                        source.write_bytes(b"source")
-                        validated = hash_physical_file(source, root=root)
-                    else:
-                        source.mkdir()
-                        (source / "child").write_bytes(b"source")
-                        validated = inspect_physical_directory(source, root=root)
-                    syscall = mock.Mock(return_value=-1)
-                    library = (
-                        SimpleNamespace()
-                        if failure == "symbol"
-                        else SimpleNamespace(renameat2=syscall)
-                    )
+            for failure, expected_errno in (
+                ("loader", errno.ENOSYS),
+                ("symbol", errno.ENOSYS),
+                ("kernel", errno.ENOSYS),
+                ("filesystem", filesystem_errno),
+            ):
+                for kind in ("file", "directory"):
                     with (
-                        mock.patch.object(sys, "platform", "linux"),
-                        mock.patch.object(
-                            linux_no_replace.ctypes,
-                            "CDLL",
-                            return_value=library,
-                            side_effect=OSError("unavailable") if failure == "loader" else None,
-                        ) as load,
-                        mock.patch.object(linux_no_replace.ctypes, "get_errno", return_value=expected_errno),
-                        mock.patch.object(os, "rename", side_effect=AssertionError("overwrite fallback")) as rename,
-                        mock.patch.object(os, "replace", side_effect=AssertionError("overwrite fallback")) as replace,
+                        self.subTest(platform=platform, failure=failure, kind=kind),
+                        tempfile.TemporaryDirectory() as temporary,
                     ):
-                        with self.assertRaises(StatePathError) as caught:
-                            no_replace.rename_no_replace(validated, destination, root=root)
-                        load.assert_called_once_with(None, use_errno=True)
-                        rename.assert_not_called()
-                        replace.assert_not_called()
-                    self.assertEqual(caught.exception.code, "state_path_invalid")
-                    self.assertEqual(caught.exception.__cause__.errno, expected_errno)
-                    if failure in {"kernel", "filesystem"}:
-                        syscall.assert_called_once_with(
-                            -100, os.fsencode(source), -100, os.fsencode(destination), 1
+                        root = Path(temporary)
+                        source = root / "source"
+                        destination = root / "destination"
+                        if kind == "file":
+                            source.write_bytes(b"source")
+                            validated = hash_physical_file(source, root=root)
+                        else:
+                            source.mkdir()
+                            (source / "child").write_bytes(b"source")
+                            validated = inspect_physical_directory(source, root=root)
+                        syscall = mock.Mock(return_value=-1)
+                        library = (
+                            SimpleNamespace()
+                            if failure == "symbol"
+                            else SimpleNamespace(**{symbol: syscall})
                         )
-                    else:
-                        syscall.assert_not_called()
-                    self.assertFalse(destination.exists())
-                    if kind == "file":
-                        self.assertEqual(source.read_bytes(), b"source")
-                    else:
-                        self.assertEqual((source / "child").read_bytes(), b"source")
+                        with (
+                            mock.patch.object(sys, "platform", platform),
+                            mock.patch.object(
+                                native_module.ctypes,
+                                "CDLL",
+                                return_value=library,
+                                side_effect=OSError("unavailable") if failure == "loader" else None,
+                            ) as load,
+                            mock.patch.object(native_module.ctypes, "get_errno", return_value=expected_errno),
+                            mock.patch.object(os, "rename", side_effect=AssertionError("overwrite fallback")) as rename,
+                            mock.patch.object(os, "replace", side_effect=AssertionError("overwrite fallback")) as replace,
+                        ):
+                            with self.assertRaises(StatePathError) as caught:
+                                no_replace.rename_no_replace(validated, destination, root=root)
+                            load.assert_called_once_with(None, use_errno=True)
+                            rename.assert_not_called()
+                            replace.assert_not_called()
+                        self.assertEqual(caught.exception.code, "state_path_invalid")
+                        self.assertEqual(caught.exception.__cause__.errno, expected_errno)
+                        if failure in {"kernel", "filesystem"}:
+                            if platform == "linux":
+                                syscall.assert_called_once_with(
+                                    -100, os.fsencode(source), -100, os.fsencode(destination), 1
+                                )
+                            else:
+                                syscall.assert_called_once_with(
+                                    os.fsencode(source), os.fsencode(destination), 4
+                                )
+                        else:
+                            syscall.assert_not_called()
+                        self.assertFalse(destination.exists())
+                        if kind == "file":
+                            self.assertEqual(source.read_bytes(), b"source")
+                        else:
+                            self.assertEqual((source / "child").read_bytes(), b"source")
 
 
 if __name__ == "__main__":

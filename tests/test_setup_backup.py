@@ -266,9 +266,10 @@ class SetupBackupTests(unittest.TestCase):
             create_v9_target(target)
 
             with managed_backup_lock(target):
-                with self.assertRaisesRegex(StorageError, "setup backup"):
+                with self.assertRaisesRegex(StorageError, "setup backup") as caught:
                     with managed_backup_lock(target):
                         self.fail("contended lock was acquired")
+                self.assertEqual(caught.exception.code, "backup_lock_contended")
 
             with managed_backup_lock(target):
                 pass

@@ -42,9 +42,9 @@ def _same_open_file(path: Path, details: os.stat_result) -> bool:
 def _acquire(descriptor: int) -> None:
     os.lseek(descriptor, 0, os.SEEK_SET)
     if os.name == "nt":
-        import msvcrt
+        from task_governance_tool._artifact_lock_windows import acquire
 
-        msvcrt.locking(descriptor, msvcrt.LK_NBLCK, 1)
+        acquire(descriptor)
         return
 
     import fcntl
@@ -61,9 +61,9 @@ def _acquire(descriptor: int) -> None:
 def _release(descriptor: int) -> None:
     os.lseek(descriptor, 0, os.SEEK_SET)
     if os.name == "nt":
-        import msvcrt
+        from task_governance_tool._artifact_lock_windows import release
 
-        msvcrt.locking(descriptor, msvcrt.LK_UNLCK, 1)
+        release(descriptor)
         return
 
     import fcntl

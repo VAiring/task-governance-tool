@@ -309,7 +309,10 @@ do not move into native adapters.
 Connect the existing Windows lock and no-replace behavior to those entry points
 before adding Linux/macOS implementations. `artifact_lock.py` retains shared
 lock validation/lifetime; the native acquire/release mechanism changes behind
-it. The validation now coupled to `windows_no_replace.py` stays shared when
+it. Windows acquire/release calls reside in `_artifact_lock_windows.py`,
+selected internally by `artifact_lock.py`; callers keep the existing
+`zero_wait_artifact_lock` entry point and error handling. The validation now
+coupled to `windows_no_replace.py` stays shared when
 its operation gains an OS-neutral entry point. Setup, backup, Evidence, and
 Viewer callers retain their operation-specific publication and recovery policy.
 Existing replace-based publication is not converted to no-replace publication.

@@ -619,23 +619,12 @@ def run_process_request(
 ) -> RunnerProcessResultV1:
     """Dispatch one closed request to the supported platform implementation."""
 
-    if sys.platform == "linux":
+    if sys.platform in {"linux", "darwin"}:
         from task_governance_tool._verification_runner_process_posix import (
             run_process_request as run_posix_request,
         )
 
         return run_posix_request(request)
-    if sys.platform == "darwin":
-        if type(request) is not RunnerProcessRequestV1:
-            _fail()
-        # macOS preparation is connected, but public launch remains inactive.
-        # The service still owns private-tree cleanup and manual fallback.
-        return _result(
-            request, outcome="blocked_prelaunch", reason="runtime_unavailable",
-            launch_state="no_launch", failed_step_ordinal=None, duration_ms=0,
-            steps=(), process_zero=True, handles_closed=True,
-            raw_output_discarded=True,
-        )
     if sys.platform != "win32":
         _fail("runtime_unavailable")
     from task_governance_tool._verification_runner_process_win32 import (

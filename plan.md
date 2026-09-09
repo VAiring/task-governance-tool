@@ -137,8 +137,7 @@ gates. It is not the product contract, execution ledger, or evidence store:
   release/install contract; Runner preparation follows its current
   [design](docs/runner-execution-design.md#typed-process-value-boundary), and
   private process tests follow their [execution owner](docs/runner-execution-design.md#private-posix-process-execution).
-  Linux additionally selects the public Runner-to-completion/Evidence module;
-  macOS excludes that module and retains its private process coverage. Test
+  Both hosts additionally select the public Runner-to-completion/Evidence module. Test
   selection does not itself activate an unsupported public Runner route.
 - Manual `platform_only=true` runs policy validation and these platform checks
   without the Windows full matrix or release-candidate gate. It is an explicit

@@ -113,11 +113,9 @@ and no-write inspection remain with their current owners. There is no public
 OS-selection command or per-Task LLM platform choice. No-replace publication
 must not silently fall back to an operation that can overwrite a destination.
 
-Public Runner execution supports Windows and Linux under the explicit opt-in
+Public Runner execution supports Windows, Linux, and macOS under the explicit opt-in
 and OS-specific guarantees in the [current Runner contract](runner-execution-specification.md).
-macOS remains on manual verification without Runner opt-in; its private POSIX
-adapter checks do not establish public execution or completion acceptance. The
-initial expansion does not require all Linux distributions, Intel Macs, every
+The initial expansion does not require all Linux distributions, Intel Macs, every
 filesystem, cross-OS transfer of existing state, or identical Windows-native
 guarantees on every OS. The published artifact and candidate support claims
 remain governed by [the release/install record](release-install.md).

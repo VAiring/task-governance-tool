@@ -298,7 +298,7 @@ class RunnerProcessPureTests(unittest.TestCase):
         self.assertFalse(hasattr(process, "StepProcessResult"))
         self.assertFalse(hasattr(process, "run_process_steps"))
 
-    def test_common_dispatch_uses_linux_adapter_and_keeps_macos_no_launch(self):
+    def test_common_dispatch_uses_posix_adapter_on_linux_and_macos(self):
         from task_governance_tool import _verification_runner_process_posix
 
         attempt = PurePosixPath("/private") / ATTEMPT_ID
@@ -371,28 +371,8 @@ class RunnerProcessPureTests(unittest.TestCase):
                 return_value=expected_result,
             ) as run_posix:
                 result = process.run_process_request(request)
-                if platform == "linux":
-                    self.assertIs(result, expected_result)
-                    run_posix.assert_called_once_with(request)
-                else:
-                    run_posix.assert_not_called()
-                    self.assertIs(type(result), process.RunnerProcessResultV1)
-                    self.assertEqual(result.version, request.version)
-                    self.assertEqual(result.attempt_id, request.attempt_id)
-                    self.assertEqual(result.runner_policy_digest, RUNNER_POSIX_POLICY_DIGEST)
-                    self.assertEqual(
-                        (result.outcome, result.reason, result.launch_state),
-                        ("blocked_prelaunch", "runtime_unavailable", "no_launch"),
-                    )
-                    self.assertEqual(result.duration_ms, 0)
-                    self.assertEqual(result.steps, ())
-                    self.assertIsNone(result.failed_step_ordinal)
-                    self.assertIsNone(result.cpu_time_ms)
-                    self.assertIsNone(result.peak_job_memory_bytes)
-                    self.assertIsNone(result.total_process_count)
-                    self.assertTrue(result.process_zero)
-                    self.assertTrue(result.handles_closed)
-                    self.assertTrue(result.raw_output_discarded)
+                self.assertIs(result, expected_result)
+                run_posix.assert_called_once_with(request)
                 self.assertEqual(
                     process.build_clean_environment(request.scratch_root),
                     expected_environment,

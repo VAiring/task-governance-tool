@@ -1,4 +1,4 @@
-"""Real Linux public Runner-to-completion acceptance in temporary installs."""
+"""Real POSIX public Runner-to-completion acceptance in temporary installs."""
 
 from __future__ import annotations
 
@@ -25,8 +25,8 @@ PRIVATE_ARGUMENT = "TG_OS_R8_ARGUMENT_MUST_NOT_PERSIST_23aeb1"
 PARENT_ENVIRONMENT = "TG_OS_R8_PARENT_ENVIRONMENT_96cad2"
 
 
-@unittest.skipUnless(sys.platform == "linux", "requires the actual public Linux Runner")
-class LinuxRunnerPublicGateTests(unittest.TestCase):
+@unittest.skipUnless(sys.platform in {"linux", "darwin"}, "requires the actual public POSIX Runner")
+class PosixRunnerPublicGateTests(unittest.TestCase):
     def setUp(self):
         temporary = tempfile.TemporaryDirectory()
         self.addCleanup(temporary.cleanup)
@@ -123,7 +123,7 @@ class LinuxRunnerPublicGateTests(unittest.TestCase):
         setup = self._run("setup", "--json")
         self.assertIs(setup["maintenance_enabled"], True)
         task = self._run(
-            "task", "add", "--title", "Temporary Linux Runner gate fixture",
+            "task", "add", "--title", "Temporary POSIX Runner gate fixture",
             "--status", "in_progress", "--review-tier", "1",
             "--verification", "python checks/first.py and python checks/second.py",
             "--contract-scope", "Exercise the committed temporary fixture only",

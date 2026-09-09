@@ -53,7 +53,7 @@ Runner route; its Runner dispatch has only the `cli -> service` edge.
 | `value_model` | `verification_runner.py` | Pure closed Runner identifiers, bounded codes, value validation, and domain encoding used across the boundary. | none | No I/O and no import of CLI, service, repository, persistence, target, runtime, lifecycle, process, native, or business-gate modules. | The module is dependency-pure and has no compatibility shim consumer. |
 | `runtime_identity` | `verification_runner_runtime.py`, `_verification_runner_executable_win32.py`, `_verification_runner_executable_posix.py`, `self_status.py` | Parent-invoked fixed executable and package-integrity observation. | `repository`, `value_model` | No process launch, canonical database ownership, business gate, terminal publication, or cleanup acceptance. | Windows and POSIX observation are stateless; Candidate-only runtime material is physically absent. |
 | `lifecycle` | `verification_runner_lifecycle.py` | Parent-requested creation, inventory, quarantine, removal, and absence proof for the one owned private attempt tree. | none | No process start, Job/stdio/handle ownership, SQLite, Evidence, business gate, terminal publication, or final cleanup acceptance. | Profile/recovery alternatives are physically absent. |
-| `process_adapter` | `verification_runner_process.py`, `_verification_runner_process_win32.py`, `_verification_runner_process_posix.py` | Own the closed common request/result and OS dispatch, native admission and applicable limits, process-group management, output discard, process-zero and handle-closure proofs. | `value_model`, `os_adapter` | No canonical state or target-tree cleanup; no import of CLI, service, repository, storage, Task, Contract, review, Evidence, completion, setup, backup, maintenance, or another business gate. | Common dispatch executes Windows Job and Linux POSIX requests. The macOS common entry returns proved no-launch; its private POSIX adapter remains directly testable. |
+| `process_adapter` | `verification_runner_process.py`, `_verification_runner_process_win32.py`, `_verification_runner_process_posix.py` | Own the closed common request/result and OS dispatch, native admission and applicable limits, process-group management, output discard, process-zero and handle-closure proofs. | `value_model`, `os_adapter` | No canonical state or target-tree cleanup; no import of CLI, service, repository, storage, Task, Contract, review, Evidence, completion, setup, backup, maintenance, or another business gate. | Common dispatch executes Windows Job and Linux/macOS POSIX requests. |
 | `os_adapter` | `_verification_runner_win32.py` | Thin Windows Job, process, stdio, accounting, termination, wait, and handle primitives. | `value_model` | No parent policy, repository, persistence, gate, cleanup acceptance, LPAC/AppContainer/profile/ACL/ETW/registry-recovery module, or reverse import. | Only thin native primitives remain. |
 
 The complete inter-layer edge set is therefore exactly:
@@ -232,7 +232,7 @@ membership, or UTF-16 bounds. Windows admission and execution retain those
 native requirements in `_verification_runner_process_win32.py`. POSIX policy
 values and accounting are admitted by the common records and readers. The
 [private POSIX adapter](#private-posix-process-execution) implements execution;
-the common entry dispatches to it on Linux, but not macOS.
+the common entry dispatches to it on Linux and macOS.
 
 The following are logical immutable in-process records, not a public schema or
 implemented transport. Their member sets are closed:
@@ -308,13 +308,10 @@ signal, OS-neutral bounded value checks, pure result relations, and the common
 `build_clean_environment(scratch_root)` and `run_process_request(request)`
 dispatchers. Environment preparation selects the Windows implementation or
 the Linux/macOS builder. Process dispatch executes the Windows implementation
-on `win32` and the POSIX implementation on `linux`. On `darwin`, it returns
-`blocked_prelaunch/runtime_unavailable/no_launch` before resource acquisition:
-zero duration, empty step results, null failed ordinal and accounting, and all
-three process cleanup proofs true. It preserves the request's policy identity.
-The service consumes this closed result, proves private-tree absence, and
-persists the existing manual fallback. No native launch or uncertain process
-failure is represented by this known no-launch result. Other OS values retain
+on `win32` and the shared POSIX implementation on `linux` and `darwin`.
+The service retains final cleanup acceptance and the existing closed no-launch
+fallback; native launch or uncertain process failure is not represented as a
+known no-launch result. Other OS values retain
 the `runtime_unavailable` admission error. Common values accept POSIX path flavor
 without admitting a foreign path to a native process operation.
 
@@ -513,7 +510,7 @@ The private POSIX `run_process_request()` consumes the same closed request and
 returns the same closed result. Native admission requires the POSIX policy,
 physical no-follow executable/target/scratch paths, contained entrypoint/cwd,
 and the exact clean environment before resources are acquired. Common dispatch
-selects it for Linux; direct macOS calls remain private. Parent-service policy
+selects it for Linux and macOS. Parent-service policy
 and lifecycle ownership do not move into the adapter.
 
 Each step uses `subprocess.Popen` with the fixed executable and literal argv,
@@ -545,9 +542,9 @@ supervisor is introduced.
 
 `test_os_runner_process` exercises this private boundary with applicable real
 Linux/macOS processes; `test_os_runner_process_failures` covers cross-host
-mocked failures. `test_os_runner_gate` separately exercises Linux public
+mocked failures. `test_os_runner_gate` separately exercises Linux/macOS public
 target-set dispatch through completion and the independently read Evidence
-Bundle. Private process checks do not replace macOS public execution and
+Bundle. Private process checks do not replace public execution and
 completion acceptance.
 
 ### Cleanup Acceptance And Privacy

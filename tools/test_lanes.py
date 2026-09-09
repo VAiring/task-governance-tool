@@ -45,7 +45,7 @@ PLATFORM_SMOKE_MODULES = (
     "test_task_validation",
 )
 PLATFORM_ORDINARY_HOSTS = ("linux", "darwin")
-PLATFORM_RUNNER_GATE_HOSTS = ("linux",)
+PLATFORM_RUNNER_GATE_HOSTS = ("linux", "darwin")
 PLATFORM_RUNNER_GATE_MODULE = "test_os_runner_gate"
 PLATFORM_ORDINARY_TEST_IDS = (
     "test_m14_integrated_acceptance.M14IntegratedAcceptanceTests."

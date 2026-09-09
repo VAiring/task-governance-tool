@@ -32,8 +32,8 @@ identified attribution duty requiring a `NOTICE`, so no `NOTICE` is included.
 Python 3.12 or newer supports ordinary Task use on Windows, Linux, and macOS.
 The representative platforms are Windows x86-64, Ubuntu 24.04 x86-64, and
 macOS 15 Apple Silicon. Windows CI retains Python 3.12/3.14; the additional
-platform checks use 3.12. Public Runner execution supports Windows and Linux;
-macOS uses manual verification. See [the support boundary](docs/release-install.md#current-candidate-identity).
+platform checks use 3.12. Public Runner execution supports Windows, Linux, and
+macOS under explicit opt-in. See [the support boundary](docs/release-install.md#current-candidate-identity).
 
 Install one physical copy of the installable `task-governance-tool/` folder for
 each governed project at exactly:
@@ -497,8 +497,8 @@ Get-Content -Raw -Encoding utf8 .\runner-plan-draft.json |
 For a v2 draft, set `version` to `2` and replace the two flat limit fields with
 `"windows_limits": {"memory_mib": 256, "process_limit": 4}` or null. The pair
 is Windows-only: Windows requires it before launch; null does not mean an
-applied or unlimited limit. Linux does not apply the Windows pair; macOS public
-Runner execution remains inactive. Explicit v2 replace upgrades an existing v1
+applied or unlimited limit. Linux/macOS do not apply the Windows pair.
+Explicit v2 replace upgrades an existing v1
 Plan while preserving unrelated entry values and bases; other actions preserve
 its version. No automatic migration or additional normal-loop call is introduced.
 
@@ -636,8 +636,7 @@ An additional platform job runs CLI startup, common processing, and
 applicable artifact-operation checks on Ubuntu 24.04 x86-64 and macOS 15
 Apple Silicon with Python 3.12. Both hosts also run selected existing physical-install,
 ordinary Task completion, Evidence, Viewer, Backup, and recovery integration tests.
-Linux additionally runs the public Runner-to-completion/Evidence tests; macOS
-does not select that module.
+Both hosts additionally run the public Runner-to-completion/Evidence tests.
 Manual `platform_only=true` runs policy and these platform checks alone,
 skipping the Windows full matrix and candidate gate. This mode is not release
 qualification or a change to the published platform or Runner support boundary;

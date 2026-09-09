@@ -337,7 +337,7 @@ class LinuxRunnerPublicGateTests(unittest.TestCase):
         self._complete(error="verification_receipt_blocking")
         self._assert_gate("verification_receipt_blocking")
         index = read_evidence_index(self.install.fixed_root / "evidence")
-        self.assertEqual(index.entries, [])
+        self.assertEqual(index.entries, ())
         self._assert_cleanup_and_privacy()
         self.assertEqual(self._target_snapshot(), before)
 

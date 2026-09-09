@@ -32,6 +32,7 @@ from task_governance_tool import _verification_runner_win32 as runner_win32  # n
 from task_governance_tool import cli as cli_module  # noqa: E402
 from task_governance_tool.cli_text import review_text  # noqa: E402
 from task_governance_tool import _verification_runner_process_win32 as runner_process  # noqa: E402
+from task_governance_tool import _verification_runner_process_posix as posix_process  # noqa: E402
 from task_governance_tool import verification_runner_process as common_process  # noqa: E402
 from task_governance_tool import verification_runner_service as service  # noqa: E402
 from task_governance_tool import verification_runner_selection as selection  # noqa: E402
@@ -779,91 +780,93 @@ class VerificationRunnerServiceTests(unittest.TestCase):
                     1,
                 )
 
-    def test_common_posix_no_launch_result_cleans_up_and_requires_receipt(self):
-        for platform in ("linux", "darwin"):
-            with self.subTest(platform=platform), tempfile.TemporaryDirectory() as temporary:
-                fixture = RunnerServiceFixture(Path(temporary))
-                prepared = replace(
-                    fixture.prepared(), runner_policy_digest=RUNNER_POSIX_POLICY_DIGEST,
-                )
-                paths = service._runner_paths(fixture.target)
-                process_results = []
+    def test_common_macos_no_launch_result_cleans_up_and_requires_receipt(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            fixture = RunnerServiceFixture(Path(temporary))
+            prepared = replace(
+                fixture.prepared(), runner_policy_digest=RUNNER_POSIX_POLICY_DIGEST,
+            )
+            paths = service._runner_paths(fixture.target)
+            process_results = []
 
-                def run_common(request):
-                    self.assertEqual(
-                        (request.materialized_root / "focused.py").read_text(encoding="utf-8"),
-                        "print('staged')\n",
-                    )
-                    self.assertTrue(request.scratch_root.is_dir())
-                    # Keep fixture filesystem/locking native to the host. Only
-                    # this real common dispatch selects the unlaunched OS route.
-                    with mock.patch.object(common_process.sys, "platform", platform):
-                        observed = common_process.run_process_request(request)
-                    process_results.append(observed)
-                    return observed
-
-                with service.zero_wait_runner_lock(paths):
-                    intent = service._persist_launch_intent(fixture.target, prepared)
-                    with mock.patch.object(
-                        service, "_physical_basis_matches", return_value=True,
-                    ), mock.patch.object(
-                        service, "observe_fixed_package_runtime",
-                        return_value=Path(sys.executable).resolve(),
-                    ), mock.patch.object(
-                        service, "build_clean_environment", return_value=(),
-                    ), mock.patch.object(
-                        service, "run_process_request", side_effect=run_common,
-                    ) as dispatch, mock.patch.object(
-                        service, "cleanup_attempt_tree", wraps=service.cleanup_attempt_tree,
-                    ) as cleanup, mock.patch.object(
-                        runner_process, "run_process_request",
-                    ) as windows_dispatch:
-                        result = service._run_intent_under_lock(
-                            fixture.target, paths, prepared, intent,
-                            cancel_requested=lambda: False,
-                        )
-                    dispatch.assert_called_once()
-                    windows_dispatch.assert_not_called()
-                    cleanup.assert_called_once_with(
-                        paths, intent.attempt.verification_runner_attempt_id,
-                    )
-                    self.assertEqual(len(process_results), 1)
-                    self.assertEqual(process_results[0].steps, ())
-                    self.assertTrue(process_results[0].process_zero)
-                    self.assertTrue(process_results[0].handles_closed)
-                    self.assertTrue(process_results[0].raw_output_discarded)
-                    self.assertFalse(
-                        (paths.attempts / intent.attempt.verification_runner_attempt_id).exists()
-                    )
-                    self.assertFalse(
-                        (paths.quarantine / intent.attempt.verification_runner_attempt_id).exists()
-                    )
-
-                self.assertEqual(result.verification_route, "receipt_required")
-                self.assertIsNone(result.blocking_code)
-                generation = fixture.generation(1)
-                self.assertEqual(generation["state"], "terminal")
+            def run_common(request):
                 self.assertEqual(
-                    generation["resolution"].runner_policy_digest, RUNNER_POSIX_POLICY_DIGEST,
+                    (request.materialized_root / "focused.py").read_text(encoding="utf-8"),
+                    "print('staged')\n",
                 )
-                observation = generation["observation"]
-                self.assertEqual(
-                    (observation.route, observation.outcome, observation.reason,
-                     observation.launch_state),
-                    ("m21_fallback", "blocked_prelaunch", "runtime_unavailable", "no_launch"),
+                self.assertTrue(request.scratch_root.is_dir())
+                # Keep fixture filesystem/locking native to the host. Only
+                # this real common dispatch selects the unlaunched OS route.
+                with mock.patch.object(common_process.sys, "platform", "darwin"):
+                    observed = common_process.run_process_request(request)
+                process_results.append(observed)
+                return observed
+
+            with service.zero_wait_runner_lock(paths):
+                intent = service._persist_launch_intent(fixture.target, prepared)
+                with mock.patch.object(
+                    service, "_physical_basis_matches", return_value=True,
+                ), mock.patch.object(
+                    service, "observe_fixed_package_runtime",
+                    return_value=Path(sys.executable).resolve(),
+                ), mock.patch.object(
+                    service, "build_clean_environment", return_value=(),
+                ), mock.patch.object(
+                    service, "run_process_request", side_effect=run_common,
+                ) as dispatch, mock.patch.object(
+                    service, "cleanup_attempt_tree", wraps=service.cleanup_attempt_tree,
+                ) as cleanup, mock.patch.object(
+                    runner_process, "run_process_request",
+                ) as windows_dispatch, mock.patch.object(
+                    posix_process, "run_process_request",
+                ) as posix_dispatch:
+                    result = service._run_intent_under_lock(
+                        fixture.target, paths, prepared, intent,
+                        cancel_requested=lambda: False,
+                    )
+                dispatch.assert_called_once()
+                windows_dispatch.assert_not_called()
+                posix_dispatch.assert_not_called()
+                cleanup.assert_called_once_with(
+                    paths, intent.attempt.verification_runner_attempt_id,
                 )
-                self.assertEqual(observation.complete_plan, 0)
-                self.assertEqual(observation.completed_step_count, 0)
-                self.assertEqual(observation.duration_ms, 0)
-                self.assertIsNone(observation.cpu_time_ms)
-                self.assertIsNone(observation.peak_job_memory_bytes)
-                self.assertIsNone(observation.total_process_count)
-                self.assertEqual(row_counts(fixture.db), {
-                    "verification_runner_resolutions": 1,
-                    "verification_runner_attempts": 1,
-                    "verification_runner_observations": 1,
-                    "verification_runner_sandbox_events": 1,
-                })
+                self.assertEqual(len(process_results), 1)
+                self.assertEqual(process_results[0].steps, ())
+                self.assertTrue(process_results[0].process_zero)
+                self.assertTrue(process_results[0].handles_closed)
+                self.assertTrue(process_results[0].raw_output_discarded)
+                self.assertFalse(
+                    (paths.attempts / intent.attempt.verification_runner_attempt_id).exists()
+                )
+                self.assertFalse(
+                    (paths.quarantine / intent.attempt.verification_runner_attempt_id).exists()
+                )
+
+            self.assertEqual(result.verification_route, "receipt_required")
+            self.assertIsNone(result.blocking_code)
+            generation = fixture.generation(1)
+            self.assertEqual(generation["state"], "terminal")
+            self.assertEqual(
+                generation["resolution"].runner_policy_digest, RUNNER_POSIX_POLICY_DIGEST,
+            )
+            observation = generation["observation"]
+            self.assertEqual(
+                (observation.route, observation.outcome, observation.reason,
+                 observation.launch_state),
+                ("m21_fallback", "blocked_prelaunch", "runtime_unavailable", "no_launch"),
+            )
+            self.assertEqual(observation.complete_plan, 0)
+            self.assertEqual(observation.completed_step_count, 0)
+            self.assertEqual(observation.duration_ms, 0)
+            self.assertIsNone(observation.cpu_time_ms)
+            self.assertIsNone(observation.peak_job_memory_bytes)
+            self.assertIsNone(observation.total_process_count)
+            self.assertEqual(row_counts(fixture.db), {
+                "verification_runner_resolutions": 1,
+                "verification_runner_attempts": 1,
+                "verification_runner_observations": 1,
+                "verification_runner_sandbox_events": 1,
+            })
 
     def test_runtime_observation_failure_terminalizes_without_a_lease(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -1870,96 +1873,104 @@ class VerificationRunnerServiceTests(unittest.TestCase):
                 self.assertNotIn(credential_value.encode("utf-8"), retained)
 
     def test_false_process_proof_is_pending_then_restart_cleanup_allows_next_generation(self):
-        with tempfile.TemporaryDirectory() as temporary:
-            fixture = RunnerServiceFixture(Path(temporary))
-            prepared = fixture.prepared()
-            paths = service._runner_paths(fixture.target)
+        for policy in (RUNNER_POLICY_DIGEST, RUNNER_POSIX_POLICY_DIGEST):
+            with self.subTest(policy=policy), tempfile.TemporaryDirectory() as temporary:
+                fixture = RunnerServiceFixture(Path(temporary))
+                prepared = replace(fixture.prepared(), runner_policy_digest=policy)
+                paths = service._runner_paths(fixture.target)
 
-            def unproved_result(request):
-                return RunnerProcessResultV1(
-                    version=RUNNER_CONTRACT_VERSION,
-                    attempt_id=request.attempt_id,
-                    outcome="cleanup_failed",
-                    reason="process_cleanup_failed",
-                    launch_state="launched",
-                    failed_step_ordinal=None,
-                    duration_ms=1,
-                    cpu_time_ms=None,
-                    peak_job_memory_bytes=None,
-                    total_process_count=None,
-                    process_zero=False,
-                    handles_closed=True,
-                    raw_output_discarded=True,
-                    steps=(),
+                def unproved_result(request):
+                    return RunnerProcessResultV1(
+                        version=RUNNER_CONTRACT_VERSION,
+                        attempt_id=request.attempt_id,
+                        outcome="cleanup_failed",
+                        reason="process_cleanup_failed",
+                        launch_state="launched",
+                        failed_step_ordinal=None,
+                        duration_ms=1,
+                        cpu_time_ms=None,
+                        peak_job_memory_bytes=None,
+                        total_process_count=None,
+                        process_zero=False,
+                        handles_closed=True,
+                        raw_output_discarded=True,
+                        steps=(),
+                        runner_policy_digest=request.runner_policy_digest,
+                    )
+
+                with service.zero_wait_runner_lock(paths):
+                    intent = service._persist_launch_intent(fixture.target, prepared)
+                    with mock.patch.object(
+                        service,
+                        "materialize_runner_target",
+                        return_value=None,
+                    ), mock.patch.object(
+                        service,
+                        "_basis_is_current",
+                        return_value=True,
+                    ), mock.patch.object(
+                        service,
+                        "observe_fixed_package_runtime",
+                        return_value=Path(sys.executable).resolve(),
+                    ), mock.patch.object(
+                        service,
+                        "build_clean_environment",
+                        return_value=(),
+                    ), mock.patch.object(
+                        service,
+                        "run_process_request",
+                        side_effect=unproved_result,
+                    ):
+                        with self.assertRaises(
+                            service.VerificationRunnerServiceError
+                        ) as raised:
+                            service._run_intent_under_lock(
+                                fixture.target,
+                                paths,
+                                prepared,
+                                intent,
+                                cancel_requested=lambda: False,
+                            )
+                    self.assertEqual(raised.exception.code, "runner_state_invalid")
+
+                pending = fixture.generation(1)
+                self.assertEqual(pending["state"], "pending")
+                attempt_root = (
+                    paths.attempts / intent.attempt.verification_runner_attempt_id
                 )
+                self.assertTrue(attempt_root.is_dir())
 
-            with service.zero_wait_runner_lock(paths):
-                intent = service._persist_launch_intent(fixture.target, prepared)
-                with mock.patch.object(
-                    service,
-                    "materialize_runner_target",
-                    return_value=None,
-                ), mock.patch.object(
-                    service,
-                    "_basis_is_current",
-                    return_value=True,
-                ), mock.patch.object(
-                    service,
-                    "observe_fixed_package_runtime",
-                    return_value=Path(sys.executable).resolve(),
-                ), mock.patch.object(
-                    service,
-                    "run_process_request",
-                    side_effect=unproved_result,
-                ):
+                with service.zero_wait_runner_lock(paths) as inventory:
                     with self.assertRaises(
                         service.VerificationRunnerServiceError
-                    ) as raised:
-                        service._run_intent_under_lock(
+                    ) as cleanup_error:
+                        service._deny_unresolved_attempt(
                             fixture.target,
                             paths,
-                            prepared,
-                            intent,
-                            cancel_requested=lambda: False,
+                            inventory,
                         )
-                self.assertEqual(raised.exception.code, "runner_state_invalid")
+                self.assertEqual(cleanup_error.exception.code, "runner_state_invalid")
+                cleaned = fixture.generation(1)
+                self.assertEqual(cleaned["state"], "restart_cleaned")
+                self.assertIsNone(cleaned["observation"])
+                self.assertIsNone(cleaned["cleanup_event"].terminal_observation_id)
+                self.assertFalse(attempt_root.exists())
 
-            pending = fixture.generation(1)
-            self.assertEqual(pending["state"], "pending")
-            attempt_root = (
-                paths.attempts / intent.attempt.verification_runner_attempt_id
-            )
-            self.assertTrue(attempt_root.is_dir())
-
-            with service.zero_wait_runner_lock(paths) as inventory:
-                with self.assertRaises(
-                    service.VerificationRunnerServiceError
-                ) as cleanup_error:
+                next_prepared = replace(
+                    fixture.prepared(fixture.authority()), runner_policy_digest=policy,
+                )
+                with service.zero_wait_runner_lock(paths) as inventory:
                     service._deny_unresolved_attempt(
                         fixture.target,
                         paths,
                         inventory,
                     )
-            self.assertEqual(cleanup_error.exception.code, "runner_state_invalid")
-            cleaned = fixture.generation(1)
-            self.assertEqual(cleaned["state"], "restart_cleaned")
-            self.assertIsNone(cleaned["observation"])
-            self.assertIsNone(cleaned["cleanup_event"].terminal_observation_id)
-            self.assertFalse(attempt_root.exists())
-
-            next_prepared = fixture.prepared(fixture.authority())
-            with service.zero_wait_runner_lock(paths) as inventory:
-                service._deny_unresolved_attempt(
-                    fixture.target,
-                    paths,
-                    inventory,
-                )
-                next_intent = service._persist_launch_intent(
-                    fixture.target,
-                    next_prepared,
-                )
-            self.assertEqual(next_intent.resolution.target_generation, 2)
-            self.assertEqual(fixture.generation(2)["state"], "pending")
+                    next_intent = service._persist_launch_intent(
+                        fixture.target,
+                        next_prepared,
+                    )
+                self.assertEqual(next_intent.resolution.target_generation, 2)
+                self.assertEqual(fixture.generation(2)["state"], "pending")
 
     def test_t2_basis_race_becomes_cleanup_only_and_next_generation_is_allowed(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -2059,13 +2070,18 @@ class VerificationRunnerServiceTests(unittest.TestCase):
         self.assertFalse(service._process_result_matches_request(windows_request, windows_over))
         self.assertFalse(service._process_result_matches_request(posix_request, object()))
 
-    def test_posix_policy_is_copied_to_terminal_graph_without_auxiliary_fabrication(self):
+    def test_common_linux_dispatch_copies_policy_and_unmeasured_auxiliary_to_terminal(self):
         with tempfile.TemporaryDirectory() as temporary:
             fixture = RunnerServiceFixture(Path(temporary))
             prepared = replace(
                 fixture.prepared(), runner_policy_digest=RUNNER_POSIX_POLICY_DIGEST,
             )
             paths = service._runner_paths(fixture.target)
+
+            def run_common(request):
+                with mock.patch.object(common_process.sys, "platform", "linux"):
+                    return common_process.run_process_request(request)
+
             with service.zero_wait_runner_lock(paths):
                 intent = service._persist_launch_intent(fixture.target, prepared)
                 self.assertEqual(intent.resolution.runner_policy_digest, RUNNER_POSIX_POLICY_DIGEST)
@@ -2081,8 +2097,12 @@ class VerificationRunnerServiceTests(unittest.TestCase):
                 ), mock.patch.object(
                     service, "build_clean_environment", return_value=(),
                 ), mock.patch.object(
-                    service, "run_process_request", side_effect=passing_process_result,
-                ) as process:
+                    service, "run_process_request", side_effect=run_common,
+                ) as process, mock.patch.object(
+                    posix_process, "run_process_request", side_effect=passing_process_result,
+                ) as native_dispatch, mock.patch.object(
+                    runner_process, "run_process_request",
+                ) as windows_dispatch:
                     result = service._run_intent_under_lock(
                         fixture.target, paths, prepared, intent,
                         cancel_requested=lambda: False,
@@ -2091,6 +2111,8 @@ class VerificationRunnerServiceTests(unittest.TestCase):
                 self.assertEqual(
                     process.call_args.args[0].runner_policy_digest, RUNNER_POSIX_POLICY_DIGEST,
                 )
+                native_dispatch.assert_called_once_with(process.call_args.args[0])
+                windows_dispatch.assert_not_called()
             stored = fixture.generation(1)
             self.assertEqual(stored["resolution"].runner_policy_digest, RUNNER_POSIX_POLICY_DIGEST)
             self.assertEqual(stored["observation"].complete_plan, 1)

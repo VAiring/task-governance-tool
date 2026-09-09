@@ -32,9 +32,12 @@ from task_governance_tool import task_show_projection
 from task_governance_tool import verification_runner_service as service
 from task_governance_tool import verification_runner_selection as selection
 from task_governance_tool.storage import utc_now
+from task_governance_tool.verification_runner import (
+    RUNNER_POLICY_DIGEST, RUNNER_POSIX_POLICY_DIGEST,
+)
 
 
-def _launch(fixture: RunnerServiceFixture):
+def _launch(fixture: RunnerServiceFixture, *, policy: str = RUNNER_POLICY_DIGEST):
     started = run_taskgov_internal(
         "task",
         "edit",
@@ -50,12 +53,15 @@ def _launch(fixture: RunnerServiceFixture):
     )
     if started.returncode != 0:
         raise AssertionError(started.stdout)
-    prepared = fixture.prepared()
+    prepared = replace(fixture.prepared(), runner_policy_digest=policy)
     intent = service._persist_launch_intent(fixture.target, prepared)
     return prepared, intent
 
 
-def _persist_terminal(fixture: RunnerServiceFixture, intent, *, branch: str):
+def _persist_terminal(
+    fixture: RunnerServiceFixture, intent, *, branch: str,
+    fallback_reason: str = "runtime_unavailable",
+):
     observed_at = utc_now()
     if branch == "pass":
         values = {
@@ -75,7 +81,7 @@ def _persist_terminal(fixture: RunnerServiceFixture, intent, *, branch: str):
             "route": "m21_fallback",
             "launch_state": "no_launch",
             "outcome": "blocked_prelaunch",
-            "reason": "runtime_unavailable",
+            "reason": fallback_reason,
             "complete_plan": 0,
             "completed_step_count": 0,
             "failed_step_ordinal": None,
@@ -98,6 +104,9 @@ def _persist_terminal(fixture: RunnerServiceFixture, intent, *, branch: str):
         }
     else:
         raise AssertionError("unsupported test branch")
+    if intent.resolution.runner_policy_digest == RUNNER_POSIX_POLICY_DIGEST:
+        values["peak_job_memory_bytes"] = None
+        values["total_process_count"] = None
     observation = service._observation_row(
         intent.resolution,
         intent.attempt,
@@ -1321,84 +1330,91 @@ class M243CRunnerGateTests(unittest.TestCase):
             self.assertNotIn(observation_id, replay.stdout)
 
     def test_closed_fallback_uses_m21_receipt_and_caller_attestation_bundle(self):
-        with tempfile.TemporaryDirectory() as temporary:
-            fixture = RunnerServiceFixture(Path(temporary))
-            _prepared, intent = _launch(fixture)
-            observation = _persist_terminal(fixture, intent, branch="fallback")
-
-            with mock.patch.object(
-                selection,
-                "_stored_runner_physical_basis_matches",
-                return_value=True,
-            ):
-                before = show_task(
-                    fixture.db,
-                    fixture.repo,
-                    fixture.task_id,
-                    json_output=True,
+        for policy, reason in (
+            (RUNNER_POLICY_DIGEST, "runtime_unavailable"),
+            (RUNNER_POSIX_POLICY_DIGEST, "runtime_unavailable"),
+            (RUNNER_POSIX_POLICY_DIGEST, "process_setup_failed"),
+        ):
+            with self.subTest(policy=policy, reason=reason), tempfile.TemporaryDirectory() as temporary:
+                fixture = RunnerServiceFixture(Path(temporary))
+                _prepared, intent = _launch(fixture, policy=policy)
+                observation = _persist_terminal(
+                    fixture, intent, branch="fallback", fallback_reason=reason,
                 )
-                receipt = add_receipt(
-                    fixture.db,
-                    fixture.repo,
-                    fixture.task_id,
-                    1,
-                )
-                _seed_review_receipts(fixture)
-                completed = _complete_with_matching_commit(fixture)
 
-            self.assertEqual(before.returncode, 0, before.stdout)
-            self.assertEqual(
-                json.loads(before.stdout)["data"]["verification_evidence"][
-                    "gate"
-                ]["blocking_code"],
-                "verification_receipt_required",
-            )
-            self.assertEqual(receipt.returncode, 0, receipt.stdout)
-            self.assertEqual(completed.returncode, 0, completed.stdout)
-            receipt_id = json.loads(receipt.stdout)["data"]["receipt"][
-                "verification_receipt_id"
-            ]
+                with mock.patch.object(
+                    selection,
+                    "_stored_runner_physical_basis_matches",
+                    return_value=True,
+                ):
+                    before = show_task(
+                        fixture.db,
+                        fixture.repo,
+                        fixture.task_id,
+                        json_output=True,
+                    )
+                    receipt = add_receipt(
+                        fixture.db,
+                        fixture.repo,
+                        fixture.task_id,
+                        1,
+                    )
+                    _seed_review_receipts(fixture)
+                    completed = _complete_with_matching_commit(fixture)
 
-            with closing(sqlite3.connect(fixture.db)) as connection:
-                connection.row_factory = sqlite3.Row
-                cycle = dict(
-                    connection.execute(
-                        "SELECT * FROM task_completion_cycles "
-                        "WHERE task_id = ? ORDER BY saved_cycle_ordinal DESC "
-                        "LIMIT 1",
-                        (fixture.task_id,),
-                    ).fetchone()
+                self.assertEqual(before.returncode, 0, before.stdout)
+                self.assertEqual(
+                    json.loads(before.stdout)["data"]["verification_evidence"][
+                        "gate"
+                    ]["blocking_code"],
+                    "verification_receipt_required",
                 )
-                bundle = dict(
-                    connection.execute(
-                        "SELECT * FROM completion_evidence_bundles "
-                        "WHERE completion_evidence_bundle_id = ?",
+                self.assertEqual(receipt.returncode, 0, receipt.stdout)
+                self.assertEqual(completed.returncode, 0, completed.stdout)
+                receipt_id = json.loads(receipt.stdout)["data"]["receipt"][
+                    "verification_receipt_id"
+                ]
+
+                with closing(sqlite3.connect(fixture.db)) as connection:
+                    connection.row_factory = sqlite3.Row
+                    cycle = dict(
+                        connection.execute(
+                            "SELECT * FROM task_completion_cycles "
+                            "WHERE task_id = ? ORDER BY saved_cycle_ordinal DESC "
+                            "LIMIT 1",
+                            (fixture.task_id,),
+                        ).fetchone()
+                    )
+                    bundle = dict(
+                        connection.execute(
+                            "SELECT * FROM completion_evidence_bundles "
+                            "WHERE completion_evidence_bundle_id = ?",
+                            (cycle["completion_evidence_bundle_id"],),
+                        ).fetchone()
+                    )
+                    runner_members = connection.execute(
+                        "SELECT COUNT(*) FROM completion_bundle_members AS member "
+                        "LEFT JOIN evidence_references AS reference "
+                        "ON reference.evidence_reference_id = member.evidence_reference_id "
+                        "LEFT JOIN criterion_evidence_links AS link "
+                        "ON link.criterion_evidence_link_id = member.criterion_evidence_link_id "
+                        "WHERE member.completion_evidence_bundle_id = ? AND "
+                        "(reference.source_kind = 'runner_observation' "
+                        "OR link.relation = 'runner_observation')",
                         (cycle["completion_evidence_bundle_id"],),
-                    ).fetchone()
-                )
-                runner_members = connection.execute(
-                    "SELECT COUNT(*) FROM completion_bundle_members AS member "
-                    "LEFT JOIN evidence_references AS reference "
-                    "ON reference.evidence_reference_id = member.evidence_reference_id "
-                    "LEFT JOIN criterion_evidence_links AS link "
-                    "ON link.criterion_evidence_link_id = member.criterion_evidence_link_id "
-                    "WHERE member.completion_evidence_bundle_id = ? AND "
-                    "(reference.source_kind = 'runner_observation' "
-                    "OR link.relation = 'runner_observation')",
-                    (cycle["completion_evidence_bundle_id"],),
-                ).fetchone()[0]
+                    ).fetchone()[0]
 
-            self.assertEqual(cycle["verification_basis_kind"], "caller_attestation")
-            self.assertEqual(cycle["verification_receipt_id"], receipt_id)
-            self.assertIsNone(cycle["verification_runner_observation_id"])
-            self.assertEqual(bundle["verification_basis_kind"], "caller_attestation")
-            self.assertEqual(bundle["verification_receipt_id"], receipt_id)
-            self.assertIsNone(bundle["verification_runner_observation_id"])
-            self.assertEqual(runner_members, 0)
-            self.assertNotEqual(
-                observation.verification_runner_observation_id,
-                cycle["verification_runner_observation_id"],
-            )
+                self.assertEqual(cycle["verification_basis_kind"], "caller_attestation")
+                self.assertEqual(cycle["verification_receipt_id"], receipt_id)
+                self.assertIsNone(cycle["verification_runner_observation_id"])
+                self.assertEqual(bundle["verification_basis_kind"], "caller_attestation")
+                self.assertEqual(bundle["verification_receipt_id"], receipt_id)
+                self.assertIsNone(bundle["verification_runner_observation_id"])
+                self.assertEqual(runner_members, 0)
+                self.assertNotEqual(
+                    observation.verification_runner_observation_id,
+                    cycle["verification_runner_observation_id"],
+                )
 
     def test_compatibility_edit_uses_the_same_runner_pass_and_fallback_selector(self):
         for branch in ("pass", "fallback"):
@@ -1624,42 +1640,97 @@ class M243CRunnerGateTests(unittest.TestCase):
             )
             selector.assert_not_called()
 
+    def test_posix_pending_cleanup_only_and_stale_target_refuse_completion(self):
+        for state in ("pending", "restart_cleaned", "stale_target"):
+            with self.subTest(state=state), tempfile.TemporaryDirectory() as temporary:
+                fixture = RunnerServiceFixture(Path(temporary))
+                _prepared, intent = _launch(fixture, policy=RUNNER_POSIX_POLICY_DIGEST)
+                if state == "restart_cleaned":
+                    service._persist_cleanup_only(fixture.target, intent.attempt)
+                elif state == "stale_target":
+                    _persist_terminal(fixture, intent, branch="pass")
+                self.assertEqual(
+                    fixture.generation(1)["state"],
+                    "terminal" if state == "stale_target" else state,
+                )
+                before = tree_snapshot(fixture.db.parent)
+                with mock.patch.object(
+                    selection, "_stored_runner_physical_basis_matches",
+                    return_value=state != "stale_target",
+                ):
+                    shown = show_task(
+                        fixture.db, fixture.repo, fixture.task_id, json_output=True,
+                    )
+                    receipt = add_receipt(fixture.db, fixture.repo, fixture.task_id, 1)
+                    checked = _complete_with_matching_commit(fixture, check=True)
+                self.assertEqual(shown.returncode, 0, shown.stdout)
+                self.assertEqual(
+                    json.loads(shown.stdout)["data"]["verification_evidence"]["gate"],
+                    {
+                        "required": True, "satisfied": False,
+                        "blocking_code": "evidence_basis_stale",
+                        "qualifying_receipt_id": None,
+                    },
+                )
+                self.assertNotEqual(receipt.returncode, 0)
+                self.assertEqual(
+                    json.loads(receipt.stdout)["errors"][0]["code"], "evidence_basis_stale",
+                )
+                self.assertEqual(checked.returncode, 0, checked.stdout)
+                self.assertEqual(
+                    json.loads(checked.stdout)["data"]["blocking_codes"], ["evidence_basis_stale"],
+                )
+                self.assertEqual(tree_snapshot(fixture.db.parent), before)
+
     def test_other_terminal_is_blocking_and_receipt_cannot_override_it(self):
-        with tempfile.TemporaryDirectory() as temporary:
-            fixture = RunnerServiceFixture(Path(temporary))
-            _prepared, intent = _launch(fixture)
-            _persist_terminal(fixture, intent, branch="blocking")
+        for policy, branch, reason in (
+            (RUNNER_POLICY_DIGEST, "blocking", "runtime_unavailable"),
+            (RUNNER_POSIX_POLICY_DIGEST, "blocking", "runtime_unavailable"),
+            (RUNNER_POSIX_POLICY_DIGEST, "fallback", "process_boundary_unproved"),
+        ):
+            with self.subTest(policy=policy, branch=branch), tempfile.TemporaryDirectory() as temporary:
+                fixture = RunnerServiceFixture(Path(temporary))
+                _prepared, intent = _launch(fixture, policy=policy)
+                _persist_terminal(fixture, intent, branch=branch, fallback_reason=reason)
 
-            with mock.patch.object(
-                selection,
-                "_stored_runner_physical_basis_matches",
-                return_value=True,
-            ):
-                shown = show_task(
-                    fixture.db,
-                    fixture.repo,
-                    fixture.task_id,
-                    json_output=True,
+                with mock.patch.object(
+                    selection,
+                    "_stored_runner_physical_basis_matches",
+                    return_value=True,
+                ):
+                    shown = show_task(
+                        fixture.db,
+                        fixture.repo,
+                        fixture.task_id,
+                        json_output=True,
+                    )
+                    receipt = add_receipt(
+                        fixture.db,
+                        fixture.repo,
+                        fixture.task_id,
+                        1,
+                    )
+
+                    checked = _complete_with_matching_commit(fixture, check=True)
+
+                self.assertEqual(shown.returncode, 0, shown.stdout)
+                self.assertEqual(
+                    json.loads(shown.stdout)["data"]["verification_evidence"][
+                        "gate"
+                    ]["blocking_code"],
+                    "verification_receipt_blocking",
                 )
-                receipt = add_receipt(
-                    fixture.db,
-                    fixture.repo,
-                    fixture.task_id,
-                    1,
+                self.assertNotEqual(receipt.returncode, 0)
+                self.assertEqual(
+                    json.loads(receipt.stdout)["errors"][0]["code"],
+                    "evidence_basis_stale",
                 )
 
-            self.assertEqual(shown.returncode, 0, shown.stdout)
-            self.assertEqual(
-                json.loads(shown.stdout)["data"]["verification_evidence"][
-                    "gate"
-                ]["blocking_code"],
-                "verification_receipt_blocking",
-            )
-            self.assertNotEqual(receipt.returncode, 0)
-            self.assertEqual(
-                json.loads(receipt.stdout)["errors"][0]["code"],
-                "evidence_basis_stale",
-            )
+                self.assertEqual(checked.returncode, 0, checked.stdout)
+                self.assertEqual(
+                    json.loads(checked.stdout)["data"]["blocking_codes"],
+                    ["verification_receipt_blocking"],
+                )
 
 
 if __name__ == "__main__":

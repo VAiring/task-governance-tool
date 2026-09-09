@@ -20,6 +20,8 @@ from tools.test_lanes import (
     MANUAL_TIMING_QUALIFICATION_TEST_IDS,
     PLATFORM_ORDINARY_HOSTS,
     PLATFORM_ORDINARY_TEST_IDS,
+    PLATFORM_RUNNER_GATE_HOSTS,
+    PLATFORM_RUNNER_GATE_MODULE,
     PLATFORM_SMOKE_MODULES,
     RELEASE_CANDIDATE_EVENT,
     TestLaneError,
@@ -537,6 +539,8 @@ class TestLanePolicyTests(unittest.TestCase):
     def test_ordinary_platform_selection_reuses_exact_existing_cases(self):
         inventory = discover_tests(ROOT)
         self.assertEqual(PLATFORM_ORDINARY_HOSTS, ("linux", "darwin"))
+        self.assertEqual(PLATFORM_RUNNER_GATE_HOSTS, ("linux",))
+        self.assertEqual(PLATFORM_RUNNER_GATE_MODULE, "test_os_runner_gate")
         self.assertTrue(PLATFORM_ORDINARY_TEST_IDS)
         for platform in ("win32", "linux", "darwin"):
             with self.subTest(platform=platform):
@@ -548,6 +552,9 @@ class TestLanePolicyTests(unittest.TestCase):
                     if module in PLATFORM_SMOKE_MODULES or (
                         platform in PLATFORM_ORDINARY_HOSTS
                         and test_id in PLATFORM_ORDINARY_TEST_IDS
+                    ) or (
+                        platform in PLATFORM_RUNNER_GATE_HOSTS
+                        and module == PLATFORM_RUNNER_GATE_MODULE
                     )
                 )
                 self.assertEqual(
@@ -557,6 +564,10 @@ class TestLanePolicyTests(unittest.TestCase):
                     expected,
                 )
         with mock.patch("tools.test_lanes.PLATFORM_ORDINARY_TEST_IDS", ("missing.test",)):
+            assert_lane_error(
+                self, "platform_smoke_invalid", lambda: platform_smoke_suite(inventory)
+            )
+        with mock.patch("tools.test_lanes.PLATFORM_RUNNER_GATE_MODULE", "test_missing"):
             assert_lane_error(
                 self, "platform_smoke_invalid", lambda: platform_smoke_suite(inventory)
             )

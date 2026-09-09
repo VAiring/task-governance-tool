@@ -1,10 +1,10 @@
 {
   "core_files": {
     "LICENSE": "sha256:cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
-    "SKILL.md": "sha256:29f6b7ce7d2d3c858a8c0ec18e69d7c9234360262b0f23196ba5413f31c060e5",
+    "SKILL.md": "sha256:f74a1ebbbf8d21e1eb7fd5992130108a2fb920402c6edec3ba4466325c950dda",
     "agents/openai.yaml": "sha256:088f6070969a6ff72d09a7d1bfc059c1ab7c0e490c54931d8dae354cad925402",
     "assets/task-viewer.template.html": "sha256:7f0868c39120f51016955df3d72d413ae0ccbd03ef52f67158b140c51ea9b563",
-    "references/cli_contracts.md": "sha256:de7da33ec3e0a97e5d28410f0728c605b3b0a683d482fd7346ae68403175a669",
+    "references/cli_contracts.md": "sha256:86bf430e82ebacff7b3f909bfc3b401e5066d4bc6fe121779025fd1c1ac08cb6",
     "references/reconciliation.md": "sha256:8ab7b5e734034a8dc186b274de5c1ce65eb17496e7a5690011585292670688aa",
     "references/task_workflow.md": "sha256:06ebcbeff008d3229f092ee6b3c65e2cfb8fbc59f40b21d99718b938e948052f",
     "scripts/task_governance_tool/__init__.py": "sha256:345bfca5a3d585ad1257214bfe76557a7e05f0bb176cabe0e0c1678ec92763f8",
@@ -80,7 +80,7 @@
     "scripts/task_governance_tool/verification_runner_plan_authoring.py": "sha256:a4d11e626f44a62a32477841c7356db0aadad21431c910690e4682f0fa1181e5",
     "scripts/task_governance_tool/verification_runner_plan_edit.py": "sha256:c7940d39d686a7c4e79a49389c564df93e76fdf64160e7c465739a1e36ac616d",
     "scripts/task_governance_tool/verification_runner_plan_publisher.py": "sha256:27f11df1783161e92e2d13967675c280b999d25eab52f3af5389ab59c360a64c",
-    "scripts/task_governance_tool/verification_runner_process.py": "sha256:e3bb89fdd22f3f7814bed6e683ff4ded988b93f8b029acf3b9cd8b55427b40c0",
+    "scripts/task_governance_tool/verification_runner_process.py": "sha256:100c8273bf77ab6e4450ec2dc43aaf8ea990ee985393cd103214abaa38186937",
     "scripts/task_governance_tool/verification_runner_repository.py": "sha256:efc0f687c7340c1728b3d360c79fe0dbdcd7eca5b87843f4c44026554fc357b9",
     "scripts/task_governance_tool/verification_runner_runtime.py": "sha256:682e421f09569bfebd81f31a52fadbdf3a2bb30f8930db331b78cbe4983ac506",
     "scripts/task_governance_tool/verification_runner_selection.py": "sha256:d09020dec906bc45b4844c79da9aab155a8f3a70a149ebee7b41cffdf6ed9303",

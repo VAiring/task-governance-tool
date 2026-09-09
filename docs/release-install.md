@@ -55,10 +55,12 @@ full-suite policy; the representative Linux/macOS platform checks use Python
 3.12. This is not a claim for every distribution, Intel Mac, filesystem, or
 cross-OS transfer of existing state.
 
-Runner execution remains Windows-only. Linux/macOS use manual verification
-without Runner opt-in until their separate Runner implementation and real-OS
-verification are complete. This candidate support boundary does not change
-the immutable published v0.10.0 artifact or its Windows-only support.
+Public Runner execution supports Windows and Linux under the
+[OS-specific Runner contract](runner-execution-specification.md#approved-os-specific-runner-guarantees).
+macOS uses manual verification without Runner opt-in; private adapter checks do
+not establish its public execution or completion acceptance. This candidate
+support boundary does not change the immutable published v0.10.0 artifact or
+its Windows-only support.
 
 ## Immutable Published v0.10.0 Identity
 
@@ -625,6 +627,8 @@ The separate platform job checks CLI startup, common processing, and
 applicable artifact operations on Ubuntu 24.04 x86-64 and macOS 15 Apple Silicon
 with Python 3.12. Both hosts additionally run selected existing physical-install,
 ordinary Task completion, Evidence, Viewer, Backup, and recovery integration tests.
+Linux additionally selects the public Runner-to-completion/Evidence tests;
+macOS does not select that module.
 An explicit manual `platform_only=true` runs only policy and platform checks; it skips the
 Windows full matrix and candidate gate and is not release qualification or a
 change to the published platform or Runner support boundary.

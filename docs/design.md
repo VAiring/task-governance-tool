@@ -90,7 +90,8 @@ it is not a second state mode or install recommendation.
 The supported runtime is Python 3.12 or newer for ordinary functionality on
 Windows, Linux, and macOS. Windows retains the Python 3.12/3.14 full-suite
 policy; representative Ubuntu 24.04 x86-64 and macOS 15 Apple Silicon checks
-use Python 3.12. Public Runner execution remains Windows-only. Exact support and
+use Python 3.12. Public Runner execution supports Windows and Linux; macOS
+retains manual verification. Exact support and
 publication boundaries belong to [the release/install record](release-install.md).
 
 The package is self-contained. `scripts/taskgov.py` disables bytecode creation
@@ -336,10 +337,11 @@ reuse remain part of the lock behavior, not just cross-process exclusion.
 Real-OS checks cover file operations, ordinary Task/storage flows,
 [Runner preparation](runner-execution-design.md#typed-process-value-boundary),
 and [private POSIX execution](runner-execution-design.md#private-posix-process-execution)
-through the repository platform entry. POSIX environment and fixed-image
-observation are connected, but public POSIX process launch remains inactive under
-[approved OS-specific Runner guarantees](runner-execution-specification.md#approved-os-specific-runner-guarantees).
-Private checks do not establish public execution or completion qualification. No
+through the repository platform entry. Linux public dispatch connects the POSIX
+adapter to the existing parent service, completion, and Evidence path under the
+[OS-specific Runner guarantees](runner-execution-specification.md#approved-os-specific-runner-guarantees).
+macOS retains proved no-launch through common dispatch; private checks do not
+establish its public execution or completion acceptance. No
 all-function relocation, file-count target, or Windows-equivalent native
 implementation is an acceptance condition.
 
@@ -902,8 +904,11 @@ operations, Runner preparation, and private POSIX process tests. OS-specific
 native cases run only on their applicable host. Runner preparation covers
 native fixed-image and clean-environment observation plus exact private materialization and cleanup,
 without launching a POSIX Runner. The private process tests follow their
-[execution owner](runner-execution-design.md#private-posix-process-execution);
-neither selection qualifies public POSIX completion.
+[execution owner](runner-execution-design.md#private-posix-process-execution).
+The separate Linux-only `test_os_runner_gate` module exercises public Runner
+dispatch through completion and independent Evidence reading. Platform selection
+excludes that module on macOS; its native guard skips it on other hosts in the
+exhaustive base suite, where it belongs to `integration`.
 `PLATFORM_ORDINARY_TEST_IDS` adds selected existing physical-install, Task
 completion, Evidence, Viewer, Backup, and recovery cases on Linux and macOS. The host
 selection is repository CI policy, not a product command or LLM choice. Missing
@@ -932,7 +937,8 @@ The additional platform job uses Ubuntu 24.04 x86-64 and macOS 15
 Apple Silicon with Python 3.12 and the same repository runner's
 `--platform-smoke` entry. Both hosts include the ordinary-flow selection
 alongside the common, artifact-operation, Runner-preparation, and private
-Runner-process selection.
+Runner-process selection. Linux also selects the public Runner gate module;
+macOS does not.
 Manual `platform_only=true` selects policy and platform
 checks alone; the Windows matrix and candidate gate are explicitly skipped and
 no release qualification is claimed. The default full route retains both

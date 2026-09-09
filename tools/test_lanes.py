@@ -45,6 +45,8 @@ PLATFORM_SMOKE_MODULES = (
     "test_task_validation",
 )
 PLATFORM_ORDINARY_HOSTS = ("linux", "darwin")
+PLATFORM_RUNNER_GATE_HOSTS = ("linux",)
+PLATFORM_RUNNER_GATE_MODULE = "test_os_runner_gate"
 PLATFORM_ORDINARY_TEST_IDS = (
     "test_m14_integrated_acceptance.M14IntegratedAcceptanceTests."
     "test_setup_doctor_and_default_flow_are_integrated_and_target_safe",
@@ -177,6 +179,7 @@ LANE_MODULES: dict[str, tuple[str, ...]] = {
         "test_m244a_runner_acceptance",
         "test_m244b_legacy_fresh_acceptance",
         "test_os_artifact_operations",
+        "test_os_runner_gate",
         "test_os_runner_preparation",
         "test_os_runner_process",
         "test_os_runner_process_failures",
@@ -497,11 +500,14 @@ def platform_smoke_suite(
     if (
         not modules or not modules.issubset(inventory.plan.test_modules)
         or not ordinary_ids.issubset(inventory.plan.test_ids)
+        or PLATFORM_RUNNER_GATE_MODULE not in inventory.plan.test_modules
     ):
         raise TestLaneError("platform_smoke_invalid")
     platform = sys.platform if runtime_platform is None else runtime_platform
     if platform not in PLATFORM_ORDINARY_HOSTS:
         ordinary_ids = frozenset()
+    if platform in PLATFORM_RUNNER_GATE_HOSTS:
+        modules = modules | {PLATFORM_RUNNER_GATE_MODULE}
     return unittest.TestSuite(
         case
         for case, module in zip(inventory.cases, inventory.plan.test_modules, strict=True)

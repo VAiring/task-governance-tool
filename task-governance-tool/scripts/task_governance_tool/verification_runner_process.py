@@ -617,12 +617,18 @@ def build_clean_environment(scratch_root: Path) -> tuple[tuple[str, str], ...]:
 def run_process_request(
     request: RunnerProcessRequestV1,
 ) -> RunnerProcessResultV1:
-    """Dispatch one closed request; no POSIX launch is currently supported."""
+    """Dispatch one closed request to the supported platform implementation."""
 
-    if sys.platform in {"linux", "darwin"}:
+    if sys.platform == "linux":
+        from task_governance_tool._verification_runner_process_posix import (
+            run_process_request as run_posix_request,
+        )
+
+        return run_posix_request(request)
+    if sys.platform == "darwin":
         if type(request) is not RunnerProcessRequestV1:
             _fail()
-        # Preparation is connected, but no POSIX process resource is acquired.
+        # macOS preparation is connected, but public launch remains inactive.
         # The service still owns private-tree cleanup and manual fallback.
         return _result(
             request, outcome="blocked_prelaunch", reason="runtime_unavailable",

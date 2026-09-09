@@ -79,9 +79,9 @@ Omitting `--repo` means the current directory and never re-roots it to an
 enclosing Git worktree. A non-Git directory is valid. Stateful use supports
 one physical project-scoped package only; user-wide, symbolic-link, and
 Windows junction layouts are unsupported. Python 3.12 or later is required.
-Ordinary Task use supports Windows, Linux, and macOS. Runner execution remains
-Windows-only; Linux/macOS use the existing manual verification path and must
-not opt into the unimplemented POSIX Runner. There is no OS-selection command.
+Ordinary Task use supports Windows, Linux, and macOS. The explicit trusted-local
+Runner supports Windows and Linux; macOS still uses the existing manual
+verification path without Runner opt-in. There is no OS-selection command.
 
 The complete public command inventory is exactly these 21 leaves:
 

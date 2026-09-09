@@ -19,13 +19,10 @@ their existing owners, routed by the [authority index](authority.md).
 
 ### Approved OS-Specific Runner Guarantees
 
-These approved changes are implementation acceptance boundaries, not current
-Linux/macOS Runner support. The corresponding current requirements below
-remain applicable until each affected implementation, owner, and consumer is
-synchronized and its required verification and review pass. Ordinary-function
-support alone does not activate the Runner. Replace the conditional wording
-for each completed change with its current owning contract; this section adds
-no roadmap, new execution unit, or further approval gate.
+These guarantees govern public Runner execution on Windows and Linux and the
+private macOS process adapter. Public macOS launch remains inactive under the
+[eligibility boundary](#eligibility-plan-and-materialization). Ordinary-function
+support or private adapter checks alone do not activate public Runner execution.
 
 | Platform | CPU control | Memory and simultaneous-process limits | Process management |
 |---|---|---|---|
@@ -34,8 +31,8 @@ no roadmap, new execution unit, or further approval gate.
 
 The current [policy and accounting contract](#runner-policy-and-accounting)
 defines the distinct measurement scopes and unmeasured values consumed by
-process records, storage, and Evidence. It does not activate public Linux/macOS
-launch.
+process records, storage, and Evidence; selecting a policy label alone does not
+activate an unsupported public dispatch.
 Unavailable auxiliary measurements alone do not prevent PASS; an execution
 failure or uncertain managed-process cleanup still prevents completion.
 
@@ -57,15 +54,15 @@ environment construction, quoting, native size checks, and Job/stdio
 execution stay in Windows implementations behind adapter dispatch. Linux/macOS
 preparation uses native fixed-runtime observation and a closed clean environment,
 with the existing private target/scratch, exact Git materialization, and lifecycle
-cleanup. A private POSIX adapter implements bounded execution, but only Windows
-execution is active through the public route. The common Linux/macOS process
-entry returns
+cleanup. Windows and Linux execution are active through the existing public
+target-set route; Linux dispatches to the private POSIX adapter. The common
+macOS process entry returns
 the proved `blocked_prelaunch/runtime_unavailable/no_launch` result before
 resource acquisition; the parent still requires private-tree absence before
-the existing manual fallback. Private adapter checks do not activate public
-POSIX execution or completion qualification, change a Python environment, or
-authorize installation. The [private execution design](runner-execution-design.md#private-posix-process-execution)
-owns the mechanism; macOS-specific execution acceptance remains separate.
+the existing manual fallback. The [private execution design](runner-execution-design.md#private-posix-process-execution)
+owns the shared POSIX mechanism; private macOS checks do not establish its public
+execution or completion acceptance. Runtime preparation does not change a
+Python environment or authorize installation.
 
 The Runner is explicit opt-in for repositories
 the user already trusts. Untrusted, external, unsupported, or visually verified
@@ -133,8 +130,8 @@ resources, a measured zero, or an applied limit. Windows requires the pair for
 every step and returns the existing proved no-launch
 `blocked_prelaunch/process_setup_failed` result if any pair is absent, before
 admission or resource acquisition for any step. Linux/macOS do not require or
-apply this Windows-only pair; their Runner activation remains conditional on
-the later OS adapter units. CPU and wall-time bounds remain required.
+apply this Windows-only pair. CPU and wall-time bounds remain required;
+public OS availability follows the eligibility boundary above.
 
 Plan version and raw/semantic digests distinguish v2 from v1. Integer limits
 normalize to the same selected-entry values and digest as before; null pairs
@@ -272,7 +269,7 @@ owns checked aggregation and request/result policy matching.
 The parent selects the POSIX policy on Linux/macOS and the legacy Windows
 policy otherwise, captures it before intent, and binds it through the request
 and live freshness checks. Selection of a label never activates an unsupported
-OS adapter; only Windows launch through public dispatch is active. Historical
+OS adapter; public dispatch executes on Windows and Linux only. Historical
 reads validate the captured policy and graph without comparing them with the
 current OS or rewriting old evidence. Standalone Evidence compatibility remains governed by
 the [Evidence format owner](evidence-specification.md#canonical-evidence-bundle-and-index-formats).

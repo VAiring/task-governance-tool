@@ -15,8 +15,8 @@ Use one physical copy at
 `.agents/skills/task-governance-tool` inside the governed project. Stateful use
 from a user-wide copy, symbolic link, or Windows junction is unsupported.
 Require Python 3.12 or later. Ordinary Task use supports Windows, Linux, and
-macOS; Runner execution remains Windows-only. Use manual verification on
-Linux/macOS; do not opt into the unimplemented POSIX Runner.
+macOS. The explicit trusted-local Runner supports Windows and Linux; macOS
+still uses manual verification without Runner opt-in.
 
 From the target-project root, invoke:
 

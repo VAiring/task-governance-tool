@@ -311,13 +311,6 @@ def _utf8_bytes(value: str) -> int:
         raise _plan_error() from exc
 
 
-def _utf16_units(value: str) -> int:
-    try:
-        return len(value.encode("utf-16-le", errors="strict")) // 2
-    except UnicodeEncodeError as exc:
-        raise _plan_error() from exc
-
-
 def _exact_mapping(value: object, keys: frozenset[str]) -> dict[str, Any]:
     if type(value) is not dict or frozenset(value) != keys:
         raise _plan_error()
@@ -380,7 +373,6 @@ def _literal_arg(value: object) -> str:
     if (
         type(value) is not str
         or _utf8_bytes(value) > 4_096
-        or _utf16_units(value) > 4_096
         or any(unicodedata.category(character) == "Cc" for character in value)
     ):
         raise _plan_error()

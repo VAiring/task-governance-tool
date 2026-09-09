@@ -25,6 +25,9 @@ from task_governance_tool import verification_runner_process as process  # noqa:
 from task_governance_tool import (  # noqa: E402
     _verification_runner_executable_win32 as runtime,
 )
+from task_governance_tool import (  # noqa: E402
+    _verification_runner_process_win32 as process_windows,
+)
 from task_governance_tool.verification_runner import (  # noqa: E402
     RUNNER_CONTRACT_VERSION,
 )
@@ -764,7 +767,7 @@ class RunnerWin32NativeTests(unittest.TestCase):
             executable=executable,
             materialized_root=target,
             scratch_root=scratch,
-            clean_environment=process.build_clean_environment(
+            clean_environment=process_windows.build_clean_environment(
                 win32.verified_windows_directory(),
                 scratch,
             ),
@@ -789,7 +792,7 @@ class RunnerWin32NativeTests(unittest.TestCase):
         )
 
     def _environment_block(self, scratch: Path) -> str:
-        entries = process.build_clean_environment(
+        entries = process_windows.build_clean_environment(
             win32.verified_windows_directory(),
             scratch,
         )
@@ -1061,7 +1064,7 @@ class RunnerWin32NativeTests(unittest.TestCase):
                 f"Path({str(marker)!r}).write_text('started', encoding='utf-8')\n"
                 "import time\ntime.sleep(30)\n"
             )
-            command_line = process.quote_windows_argv(
+            command_line = process_windows.quote_windows_argv(
                 (str(Path(sys.executable)), "-I", "-B", "-c", source)
             )
             environment_block = self._environment_block(scratch)
@@ -1150,7 +1153,7 @@ class RunnerWin32NativeTests(unittest.TestCase):
                 with self.assertRaises(win32.RunnerWin32Error) as raised:
                     win32.create_suspended_child(
                         application=invalid_executable,
-                        command_line=process.quote_windows_argv(
+                        command_line=process_windows.quote_windows_argv(
                             (str(invalid_executable),)
                         ),
                         environment_block=self._environment_block(scratch),
@@ -1204,7 +1207,7 @@ class RunnerWin32NativeTests(unittest.TestCase):
         self.assertFalse(cleanup_failed.handles_closed)
         self.assertTrue(cleanup_failed.raw_output_discarded)
 
-        with trace_runner_prelaunch(process, win32) as prelaunch_trace, patch.object(
+        with trace_runner_prelaunch(process_windows, win32) as prelaunch_trace, patch.object(
             win32.SuspendedChild,
             "resume_once",
             side_effect=win32.RunnerWin32Error("process_resume_failed"),

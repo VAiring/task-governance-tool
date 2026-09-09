@@ -57,7 +57,8 @@ recognition, every caller-supplied StepV1 string leaf (`step_id`, `mode`,
 `entrypoint`, each `argv` item, and `cwd`) is passed unchanged through the
 existing common deny-by-default privacy guard under the fixed field label
 `Runner Plan draft`. This check precedes that leaf's enum, grammar, UTF-8,
-UTF-16, and candidate validation. A privacy rejection for an otherwise
+and candidate validation. Native Windows UTF-16 checks belong to process
+admission, not the shared Plan decoder. A privacy rejection for an otherwise
 recognized string leaf therefore takes precedence over `invalid_argument` and
 returns `privacy_rejected`; malformed or duplicate JSON, unknown or missing
 members, non-string member types, and raw-document overflow remain

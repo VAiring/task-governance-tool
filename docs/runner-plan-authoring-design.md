@@ -68,7 +68,7 @@ The draft decoder, and not the shared PlanV1 reader decoder, applies the
 existing pure `task_values.reject_private_or_raw_content` guard to every recognized
 caller-supplied StepV1 string leaf with the fixed field label
 `Runner Plan draft`. It performs that complete leaf pass before enum, grammar,
-UTF-8, UTF-16, candidate, or transform validation, returns the existing
+UTF-8, candidate, or transform validation, returns the existing
 `privacy_rejected` error without the rejected value, and emits no candidate on
 failure. It does not call `validate_text`, add a second privacy pattern set, or
 change admission of an existing physical PlanV1 source.

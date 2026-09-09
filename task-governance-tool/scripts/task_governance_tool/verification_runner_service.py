@@ -9,7 +9,6 @@ process and lifecycle cleanup proofs succeed.
 
 from __future__ import annotations
 
-import os
 import secrets
 import sqlite3
 from contextlib import closing
@@ -114,13 +113,11 @@ from task_governance_tool.verification_runner_process import (
     build_clean_environment,
     run_process_request,
 )
-from task_governance_tool._verification_runner_executable_win32 import (
-    observe_fixed_package_runtime,
-)
 from task_governance_tool.verification_runner_runtime import (
     RunnerImplementationIdentity,
     VerificationRunnerRuntimeError,
     capture_runner_implementation,
+    observe_fixed_package_runtime,
 )
 from task_governance_tool.verification_runner_selection import _terminal_runner_mode
 
@@ -1060,9 +1057,6 @@ def _run_intent_under_lock(
         if type(requested) is not bool:
             raise RunnerProcessError("process_setup_failed")
         cancel_signal = RunnerCancelSignal(requested)
-        system_root_value = os.environ.get("SystemRoot")
-        if not system_root_value:
-            raise RunnerProcessError("process_setup_failed")
         steps = _process_steps(prepared.plan)
     except RunnerProcessError:
         return _complete_prelaunch(
@@ -1089,7 +1083,6 @@ def _run_intent_under_lock(
         )
         runtime_bound = True
         clean_environment = build_clean_environment(
-            Path(system_root_value),
             attempt_paths.scratch,
         )
         request = RunnerProcessRequestV1(

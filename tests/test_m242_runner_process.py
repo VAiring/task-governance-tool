@@ -11,7 +11,7 @@ import tempfile
 import threading
 import unittest
 from dataclasses import dataclass, replace
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -22,6 +22,9 @@ if str(SCRIPTS_ROOT) not in sys.path:
     sys.path.insert(0, str(SCRIPTS_ROOT))
 
 from task_governance_tool import _verification_runner_win32 as win32  # noqa: E402
+from task_governance_tool import (  # noqa: E402
+    _verification_runner_process_win32 as process_windows,
+)
 from task_governance_tool import verification_runner_process as process  # noqa: E402
 from task_governance_tool.verification_runner import (  # noqa: E402
     RUNNER_CONTRACT_VERSION,
@@ -94,11 +97,11 @@ def _request(
     signal: process.RunnerCancelSignal | None = None,
 ) -> process.RunnerProcessRequestV1:
     with patch.object(
-        process._win32,
+        process_windows._win32,
         "verified_windows_directory",
         return_value=layout.windows,
     ):
-        clean_environment = process.build_clean_environment(
+        clean_environment = process_windows.build_clean_environment(
             layout.windows,
             layout.scratch,
         )
@@ -117,13 +120,13 @@ def _request(
 def _admit(
     request: process.RunnerProcessRequestV1,
     layout: _Layout,
-) -> process._AdmittedRequest:
+) -> process_windows._AdmittedRequest:
     with patch.object(
-        process._win32,
+        process_windows._win32,
         "verified_windows_directory",
         return_value=layout.windows,
     ):
-        return process._admit_request(request)
+        return process_windows._admit_request(request)
 
 
 def _run(
@@ -131,11 +134,11 @@ def _run(
     layout: _Layout,
 ) -> process.RunnerProcessResultV1:
     with patch.object(
-        process._win32,
+        process_windows._win32,
         "verified_windows_directory",
         return_value=layout.windows,
     ):
-        return process.run_process_request(request)
+        return process_windows.run_process_request(request)
 
 
 def _step_result(
@@ -160,8 +163,8 @@ def _execution(
     process_zero: bool = True,
     handles_closed: bool = True,
     raw_output_discarded: bool = True,
-) -> process._StepExecution:
-    return process._StepExecution(
+) -> process_windows._StepExecution:
+    return process_windows._StepExecution(
         result,
         None,
         process_zero,
@@ -243,6 +246,76 @@ class RunnerProcessPureTests(unittest.TestCase):
         self.assertFalse(hasattr(process, "StepProcessResult"))
         self.assertFalse(hasattr(process, "run_process_steps"))
 
+    def test_common_posix_values_and_windows_only_dispatch(self):
+        attempt = PurePosixPath("/private") / ATTEMPT_ID
+        request = process.RunnerProcessRequestV1(
+            RUNNER_CONTRACT_VERSION,
+            ATTEMPT_ID,
+            PurePosixPath("/runtime/python3"),
+            attempt / "target",
+            attempt / "scratch",
+            (("HOME", "/private/home"), ("TMPDIR", "/private/tmp")),
+            (_step(argv=("日本語", "")),),
+            process.RunnerCancelSignal(),
+        )
+        self.assertEqual(request.executable.name, "python3")
+        self.assertEqual(len(request.clean_environment), 2)
+        with self.assertRaises(process.RunnerProcessError):
+            process_windows._admit_request(request)
+
+        invalid_environments = (
+            (("", "value"),),
+            (("A=B", "value"),),
+            (("bad\nkey", "value"),),
+            (("HOME", "one"), ("HOME", "two")),
+            (("HOME", "\ud800"),),
+            (("HOME", "x" * 4097),),
+            tuple((f"KEY{index}", "value") for index in range(12)),
+        )
+        for entries in invalid_environments:
+            with self.subTest(entries=entries), self.assertRaises(
+                process.RunnerProcessError
+            ):
+                replace(request, clean_environment=entries)
+        with self.assertRaises(process.RunnerProcessError):
+            replace(request, executable=PurePosixPath("relative/python3"))
+
+        expected_result = object()
+        expected_environment = (("HOME", "prepared"),)
+        with patch.object(
+            process.sys, "platform", "win32"
+        ), patch.object(
+            process_windows, "run_process_request", return_value=expected_result
+        ) as run_windows, patch.object(
+            process_windows,
+            "prepare_clean_environment",
+            return_value=expected_environment,
+        ) as prepare_windows:
+            self.assertIs(process.run_process_request(request), expected_result)
+            self.assertEqual(
+                process.build_clean_environment(request.scratch_root),
+                expected_environment,
+            )
+        run_windows.assert_called_once_with(request)
+        prepare_windows.assert_called_once_with(request.scratch_root)
+
+        for platform in ("linux", "darwin"):
+            with self.subTest(platform=platform), patch.object(
+                process.sys, "platform", platform
+            ), patch.object(
+                process_windows, "run_process_request"
+            ) as run_windows, patch.object(
+                process_windows, "prepare_clean_environment"
+            ) as prepare_windows:
+                with self.assertRaises(process.RunnerProcessError) as launched:
+                    process.run_process_request(request)
+                self.assertEqual(launched.exception.code, "runtime_unavailable")
+                with self.assertRaises(process.RunnerProcessError) as prepared:
+                    process.build_clean_environment(request.scratch_root)
+                self.assertEqual(prepared.exception.code, "runtime_unavailable")
+                run_windows.assert_not_called()
+                prepare_windows.assert_not_called()
+
     def test_central_identity_and_fixed_bootstrap(self):
         self.assertEqual(
             process.RUNNER_CONTRACT_VERSION,
@@ -269,13 +342,13 @@ class RunnerProcessPureTests(unittest.TestCase):
     def test_command_line_exact_utf16_bound_and_windows_roundtrip(self):
         exact = ("p.exe", "x" * 24_570)
         self.assertEqual(
-            len(process.quote_windows_argv(exact).encode("utf-16-le")) // 2,
+            len(process_windows.quote_windows_argv(exact).encode("utf-16-le")) // 2,
             24_576,
         )
         with self.assertRaises(process.RunnerProcessError):
-            process.quote_windows_argv(("p.exe", "x" * 24_571))
+            process_windows.quote_windows_argv(("p.exe", "x" * 24_571))
         with self.assertRaises(process.RunnerProcessError):
-            process.quote_windows_argv(("p.exe", "\ud800"))
+            process_windows.quote_windows_argv(("p.exe", "\ud800"))
         if os.name == "nt":
             fixtures = (
                 ("program.exe",),
@@ -296,7 +369,7 @@ class RunnerProcessPureTests(unittest.TestCase):
             )
             for argv in fixtures:
                 with self.subTest(argv=argv):
-                    serialized = process.quote_windows_argv(argv)
+                    serialized = process_windows.quote_windows_argv(argv)
                     self.assertEqual(
                         win32.command_line_to_argv(serialized),
                         argv,
@@ -341,7 +414,7 @@ class RunnerProcessPureTests(unittest.TestCase):
             layout = _make_layout(Path(temporary).resolve())
             request = _request(layout)
             keys = tuple(key for key, _value in request.clean_environment)
-            self.assertEqual(keys, process._ENVIRONMENT_KEYS)
+            self.assertEqual(keys, process_windows._ENVIRONMENT_KEYS)
             self.assertTrue(
                 set(keys).isdisjoint(
                     {"PATH", "HTTP_PROXY", "TOKEN", "PYTHONPATH"}
@@ -364,19 +437,23 @@ class RunnerProcessPureTests(unittest.TestCase):
                     replace(request, **changes)
             wrong_environment = list(request.clean_environment)
             wrong_environment[0] = ("PATH", wrong_environment[0][1])
-            with self.assertRaises(process.RunnerProcessError):
-                replace(
-                    request,
-                    clean_environment=tuple(wrong_environment),
-                )
+            wrong_request = replace(
+                request,
+                clean_environment=tuple(wrong_environment),
+            )
+            with patch.object(
+                process_windows._win32, "create_job"
+            ) as create_job, self.assertRaises(process.RunnerProcessError):
+                _run(wrong_request, layout)
+            create_job.assert_not_called()
             other_windows = Path(temporary).resolve() / "OtherWindows"
             other_windows.mkdir()
             with patch.object(
-                process._win32,
+                process_windows._win32,
                 "verified_windows_directory",
                 return_value=other_windows,
             ), self.assertRaises(process.RunnerProcessError):
-                process.build_clean_environment(
+                process_windows.build_clean_environment(
                     layout.windows,
                     layout.scratch,
                 )
@@ -405,7 +482,7 @@ class RunnerProcessPureTests(unittest.TestCase):
             )
             for request in (missing, overlong):
                 with self.subTest(request=request), patch.object(
-                    process._win32,
+                    process_windows._win32,
                     "create_job",
                 ) as create_job, self.assertRaises(
                     process.RunnerProcessError
@@ -429,7 +506,7 @@ class RunnerProcessPureTests(unittest.TestCase):
             os.replace(replacement, script)
             with self.assertRaises(process.RunnerProcessError):
                 for observation in admitted.steps[0].observations:
-                    process._ensure_same_observation(observation)
+                    process_windows._ensure_same_observation(observation)
 
     def test_path_recheck_ignores_only_non_reparse_windows_attributes(self):
         path = Path("C:/runner/scratch/tmp")
@@ -441,28 +518,28 @@ class RunnerProcessPureTests(unittest.TestCase):
         before = SimpleNamespace(**common, st_file_attributes=0x10)
         after = SimpleNamespace(**common, st_file_attributes=0x30)
 
-        self.assertFalse(process._is_reparse(before))
-        self.assertFalse(process._is_reparse(after))
+        self.assertFalse(process_windows._is_reparse(before))
+        self.assertFalse(process_windows._is_reparse(after))
         self.assertEqual(
-            process._path_component_identity(path, before),
-            process._path_component_identity(path, after),
+            process_windows._path_component_identity(path, before),
+            process_windows._path_component_identity(path, after),
         )
-        baseline = process._PathObservation(
+        baseline = process_windows._PathObservation(
             path,
             True,
-            (process._path_component_identity(path, before),),
+            (process_windows._path_component_identity(path, before),),
         )
-        current = process._PathObservation(
+        current = process_windows._PathObservation(
             path,
             True,
-            (process._path_component_identity(path, after),),
+            (process_windows._path_component_identity(path, after),),
         )
         with patch.object(
-            process,
+            process_windows,
             "_observe_physical_path",
             return_value=current,
         ) as observe:
-            process._ensure_same_observation(baseline)
+            process_windows._ensure_same_observation(baseline)
         observe.assert_called_once_with(path, directory=True)
 
         stable_entry = baseline.chain[0]
@@ -478,24 +555,24 @@ class RunnerProcessPureTests(unittest.TestCase):
         }
         for difference, changed_entry in changed_entries.items():
             with self.subTest(difference=difference), patch.object(
-                process,
+                process_windows,
                 "_observe_physical_path",
-                return_value=process._PathObservation(
+                return_value=process_windows._PathObservation(
                     path,
                     True,
                     (changed_entry,),
                 ),
             ), self.assertRaises(process.RunnerProcessError) as raised:
-                process._ensure_same_observation(baseline)
+                process_windows._ensure_same_observation(baseline)
             self.assertEqual(raised.exception.code, "process_boundary_unproved")
 
         self.assertTrue(
-            process._is_reparse(
+            process_windows._is_reparse(
                 SimpleNamespace(
                     **common,
                     st_file_attributes=(
                         before.st_file_attributes
-                        | process._FILE_ATTRIBUTE_REPARSE_POINT
+                        | process_windows._FILE_ATTRIBUTE_REPARSE_POINT
                     ),
                 )
             )
@@ -522,7 +599,7 @@ class RunnerProcessPureTests(unittest.TestCase):
                         st_mode=details.st_mode,
                         st_file_attributes=(
                             int(getattr(details, "st_file_attributes", 0))
-                            | process._FILE_ATTRIBUTE_REPARSE_POINT
+                            | process_windows._FILE_ATTRIBUTE_REPARSE_POINT
                         ),
                     )
 
@@ -531,7 +608,7 @@ class RunnerProcessPureTests(unittest.TestCase):
                     "lstat",
                     new=reparse_lstat,
                 ), self.assertRaises(process.RunnerProcessError) as raised:
-                    process._observe_physical_path(leaf, directory=False)
+                    process_windows._observe_physical_path(leaf, directory=False)
                 self.assertEqual(raised.exception.code, "process_boundary_unproved")
 
     def test_result_pairing_proofs_and_privacy_are_closed(self):
@@ -608,7 +685,7 @@ class RunnerProcessPureTests(unittest.TestCase):
 
     def test_native_error_codes_map_to_local_non_sandbox_taxonomy(self):
         self.assertEqual(
-            set(process._NATIVE_REASON_MAP),
+            set(process_windows._NATIVE_REASON_MAP),
             {
                 "sandbox_unavailable",
                 "sandbox_setup_failed",
@@ -624,7 +701,7 @@ class RunnerProcessPureTests(unittest.TestCase):
         self.assertTrue(
             all(
                 "sandbox" not in reason
-                for reason in process._NATIVE_REASON_MAP.values()
+                for reason in process_windows._NATIVE_REASON_MAP.values()
             )
         )
         self.assertNotIn("process_limit", process._LOCAL_REASONS)
@@ -641,7 +718,7 @@ class RunnerProcessPureTests(unittest.TestCase):
             layout = _make_layout(Path(temporary).resolve())
             request = _request(layout)
             with patch.object(
-                process._win32,
+                process_windows._win32,
                 "create_job",
                 side_effect=win32.RunnerWin32Error("sandbox_cleanup_failed"),
             ):
@@ -688,7 +765,7 @@ class RunnerProcessPureTests(unittest.TestCase):
             layout = _make_layout(Path(temporary).resolve())
             request = _request(layout)
             with patch.object(
-                process._win32,
+                process_windows._win32,
                 "create_job",
                 side_effect=win32.RunnerWin32Error("job_state_unproved"),
             ):
@@ -697,15 +774,15 @@ class RunnerProcessPureTests(unittest.TestCase):
             job = Job()
             pipes = Pipes()
             with patch.object(
-                process._win32,
+                process_windows._win32,
                 "create_job",
                 return_value=job,
             ), patch.object(
-                process._win32,
+                process_windows._win32,
                 "create_stdio_pipes",
                 return_value=pipes,
             ), patch.object(
-                process._win32,
+                process_windows._win32,
                 "create_suspended_child",
                 side_effect=win32.RunnerWin32Error("job_state_unproved"),
             ):
@@ -801,19 +878,19 @@ class RunnerProcessPureTests(unittest.TestCase):
             child = Child()
             drain = Drain(request.cancel_signal)
             with patch.object(
-                process._win32,
+                process_windows._win32,
                 "create_job",
                 return_value=job,
             ), patch.object(
-                process._win32,
+                process_windows._win32,
                 "create_stdio_pipes",
                 return_value=pipes,
             ), patch.object(
-                process._win32,
+                process_windows._win32,
                 "create_suspended_child",
                 return_value=child,
             ), patch.object(
-                process,
+                process_windows,
                 "_DiscardingDrain",
                 return_value=drain,
             ):
@@ -940,22 +1017,22 @@ class RunnerProcessPureTests(unittest.TestCase):
             child = Child()
             drain = Drain()
             with patch.object(
-                process._win32,
+                process_windows._win32,
                 "create_job",
                 return_value=job,
             ), patch.object(
-                process._win32,
+                process_windows._win32,
                 "create_stdio_pipes",
                 return_value=pipes,
             ), patch.object(
-                process._win32,
+                process_windows._win32,
                 "create_suspended_child",
                 return_value=child,
             ), patch.object(
-                process,
+                process_windows,
                 "_DiscardingDrain",
                 return_value=drain,
-            ), patch.object(process.time, "sleep") as sleep:
+            ), patch.object(process_windows.time, "sleep") as sleep:
                 result = _run(request, layout)
 
         self.assertEqual(
@@ -1013,15 +1090,15 @@ class RunnerProcessPureTests(unittest.TestCase):
             job = Job()
             pipes = Pipes()
             with patch.object(
-                process._win32,
+                process_windows._win32,
                 "create_job",
                 return_value=job,
             ), patch.object(
-                process._win32,
+                process_windows._win32,
                 "create_stdio_pipes",
                 return_value=pipes,
             ), patch.object(
-                process._win32,
+                process_windows._win32,
                 "create_suspended_child",
                 side_effect=win32.RunnerWin32Error("process_create_failed"),
             ):
@@ -1054,7 +1131,7 @@ class RunnerProcessPureTests(unittest.TestCase):
                 steps=(_step(1, "one"), _step(2, "two"), _step(3, "three")),
             )
             with patch.object(
-                process,
+                process_windows,
                 "_execute_step",
                 side_effect=(_execution(first), _execution(failure)),
             ) as execute:
@@ -1086,7 +1163,7 @@ class RunnerProcessPureTests(unittest.TestCase):
                 steps=(_step(1, "one"), _step(2, "two")),
             )
             with patch.object(
-                process,
+                process_windows,
                 "_execute_step",
                 return_value=_execution(first_no_launch),
             ):
@@ -1106,7 +1183,7 @@ class RunnerProcessPureTests(unittest.TestCase):
                     (None, None, None),
                 )
                 with patch.object(
-                    process,
+                    process_windows,
                     "_execute_step",
                     side_effect=(
                         _execution(prior_pass),
@@ -1139,7 +1216,7 @@ class RunnerProcessPureTests(unittest.TestCase):
             layout = _make_layout(Path(temporary).resolve())
             first_signal = process.RunnerCancelSignal(True)
             first_request = _request(layout, signal=first_signal)
-            with patch.object(process, "_execute_step") as execute:
+            with patch.object(process_windows, "_execute_step") as execute:
                 first = _run(first_request, layout)
             execute.assert_not_called()
             self.assertEqual(first.outcome, "blocked_prelaunch")
@@ -1155,12 +1232,12 @@ class RunnerProcessPureTests(unittest.TestCase):
                 signal=between_signal,
             )
 
-            def execute_once(**_kwargs: object) -> process._StepExecution:
+            def execute_once(**_kwargs: object) -> process_windows._StepExecution:
                 between_signal.request()
                 return _execution(_step_result(1, accounting=(3, 256, 2)))
 
             with patch.object(
-                process,
+                process_windows,
                 "_execute_step",
                 side_effect=execute_once,
             ) as execute:
@@ -1219,23 +1296,23 @@ class RunnerProcessPureTests(unittest.TestCase):
             job = Job()
             pipes = Pipes()
             with patch.object(
-                process._win32,
+                process_windows._win32,
                 "verified_windows_directory",
                 return_value=layout.windows,
             ), patch.object(
-                process._win32,
+                process_windows._win32,
                 "create_job",
                 return_value=job,
             ), patch.object(
-                process._win32,
+                process_windows._win32,
                 "create_stdio_pipes",
                 return_value=pipes,
             ), patch.object(
-                process._win32,
+                process_windows._win32,
                 "create_suspended_child",
                 side_effect=KeyboardInterrupt(),
             ):
-                result = process.run_process_request(request)
+                result = process_windows.run_process_request(request)
         self.assertTrue(job.terminated)
         self.assertTrue(job.zero_waited)
         self.assertTrue(job.closed)
@@ -1290,15 +1367,15 @@ class RunnerProcessPureTests(unittest.TestCase):
             job = Job()
             pipes = Pipes()
             with patch.object(
-                process._win32,
+                process_windows._win32,
                 "create_job",
                 return_value=job,
             ), patch.object(
-                process._win32,
+                process_windows._win32,
                 "create_stdio_pipes",
                 return_value=pipes,
             ), patch.object(
-                process._win32,
+                process_windows._win32,
                 "create_suspended_child",
                 side_effect=win32.RunnerWin32Error(
                     "process_create_failed",
@@ -1330,7 +1407,7 @@ class RunnerProcessPureTests(unittest.TestCase):
 
     def test_later_post_create_failure_preserves_prefix_without_partial_accounting(self):
         prior = _step_result(1, accounting=(2, 100, 2))
-        request_only = process._RequestOnlyCreateFailure(2, True, True, True)
+        request_only = process_windows._RequestOnlyCreateFailure(2, True, True, True)
         with tempfile.TemporaryDirectory() as temporary:
             layout = _make_layout(Path(temporary).resolve())
             request = _request(
@@ -1338,7 +1415,7 @@ class RunnerProcessPureTests(unittest.TestCase):
                 steps=(_step(1, "one"), _step(2, "two"), _step(3, "three")),
             )
             with patch.object(
-                process,
+                process_windows,
                 "_execute_step",
                 side_effect=(_execution(prior), request_only),
             ) as execute:

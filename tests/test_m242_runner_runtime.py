@@ -103,6 +103,28 @@ class RunnerRuntimeManifestTests(unittest.TestCase):
 
 
 class RunnerFixedExecutableObservationTests(unittest.TestCase):
+    def test_common_observation_dispatches_only_to_the_supported_os(self):
+        target = Path("target").absolute()
+        scratch = Path("scratch").absolute()
+        executable = Path("python.exe").absolute()
+        with mock.patch.object(
+            runtime_executable, "observe_fixed_package_runtime", return_value=executable
+        ) as observe:
+            with mock.patch.object(runtime.sys, "platform", "win32"):
+                self.assertIs(
+                    runtime.observe_fixed_package_runtime(target, scratch), executable
+                )
+            observe.assert_called_once_with(target, scratch)
+            observe.reset_mock()
+            for platform in ("linux", "darwin"):
+                with self.subTest(platform=platform), mock.patch.object(
+                    runtime.sys, "platform", platform
+                ):
+                    with self.assertRaises(runtime.VerificationRunnerRuntimeError) as caught:
+                        runtime.observe_fixed_package_runtime(target, scratch)
+                    self.assertEqual(caught.exception.code, "runtime_unavailable")
+            observe.assert_not_called()
+
     def test_parent_observation_returns_only_the_verified_absolute_path(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

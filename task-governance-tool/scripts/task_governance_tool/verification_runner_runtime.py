@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -84,9 +85,26 @@ def capture_runner_implementation(
     )
 
 
+def observe_fixed_package_runtime(
+    materialized_root: Path, scratch_root: Path
+) -> Path:
+    """Select the native fixed-runtime observation without a fallback executable."""
+
+    if sys.platform == "win32":
+        from task_governance_tool import _verification_runner_executable_win32
+
+        return _verification_runner_executable_win32.observe_fixed_package_runtime(
+            materialized_root, scratch_root
+        )
+    raise VerificationRunnerRuntimeError(
+        "runtime_unavailable", "the fixed Runner runtime is unavailable"
+    )
+
+
 __all__ = [
     "RUNNER_IMPLEMENTATION_DIGEST_DOMAIN",
     "RunnerImplementationIdentity",
     "VerificationRunnerRuntimeError",
     "capture_runner_implementation",
+    "observe_fixed_package_runtime",
 ]

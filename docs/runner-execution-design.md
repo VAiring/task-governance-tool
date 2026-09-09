@@ -53,7 +53,7 @@ Runner route; its Runner dispatch has only the `cli -> service` edge.
 | `value_model` | `verification_runner.py` | Pure closed Runner identifiers, bounded codes, value validation, and domain encoding used across the boundary. | none | No I/O and no import of CLI, service, repository, persistence, target, runtime, lifecycle, process, native, or business-gate modules. | The module is dependency-pure and has no compatibility shim consumer. |
 | `runtime_identity` | `verification_runner_runtime.py`, `_verification_runner_executable_win32.py`, `self_status.py` | Parent-invoked fixed executable and package-integrity observation. | `repository`, `value_model` | No process launch, canonical database ownership, business gate, terminal publication, or cleanup acceptance. | Candidate-only runtime material is physically absent. |
 | `lifecycle` | `verification_runner_lifecycle.py` | Parent-requested creation, inventory, quarantine, removal, and absence proof for the one owned private attempt tree. | none | No process start, Job/stdio/handle ownership, SQLite, Evidence, business gate, terminal publication, or final cleanup acceptance. | Profile/recovery alternatives are physically absent. |
-| `process_adapter` | `verification_runner_process.py` | Consume the closed request, establish the Job before trusted code, enforce process/resource/output/time bounds, drain and discard output, terminate and wait for process-tree zero, close handles, and return the closed result. | `value_model`, `os_adapter` | No canonical state or target-tree cleanup; no import of CLI, service, repository, storage, Task, Contract, review, Evidence, completion, setup, backup, maintenance, or another business gate. | Candidate/AppContainer/profile/ACL branches and business-freshness callbacks are absent. |
+| `process_adapter` | `verification_runner_process.py`, `_verification_runner_process_win32.py` | Own the closed common request/result and OS dispatch; the Windows implementation establishes the Job before trusted code, enforces native process/resource/output/time bounds, discards output, proves process-tree zero, closes handles, and returns the closed result. | `value_model`, `os_adapter` | No canonical state or target-tree cleanup; no import of CLI, service, repository, storage, Task, Contract, review, Evidence, completion, setup, backup, maintenance, or another business gate. | Common values and entry are OS-neutral; Windows mechanics remain private in the same layer. No POSIX launch is active. |
 | `os_adapter` | `_verification_runner_win32.py` | Thin Windows Job, process, stdio, accounting, termination, wait, and handle primitives. | `value_model` | No parent policy, repository, persistence, gate, cleanup acceptance, LPAC/AppContainer/profile/ACL/ETW/registry-recovery module, or reverse import. | Only thin native primitives remain. |
 
 The complete inter-layer edge set is therefore exactly:
@@ -178,7 +178,7 @@ decodes strict UTF-8 JSON with duplicate-member, float, non-finite,
 unknown-member, and type rejection. It validates the exact [Runner Plan shape](runner-execution-specification.md#eligibility-plan-and-materialization)
 and only the plan-known scalar/collection bounds before selection. Final
 Windows quoting, fixed executable/bootstrap insertion, materialized absolute
-paths, and the `command_line_utf16_units` bound remain process-request
+paths, and the `command_line_utf16_units` bound remain Windows process-request
 admission and are not evaluated by this module. Raw bytes use ordinary
 labeled SHA-256. Canonical normalized plan and selected-entry values use the
 domains `taskgov-verification-runner-plan-v1\0` and
@@ -219,10 +219,11 @@ mapping, and Evidence consumers must express the supported OS limits and
 actual measurement scope together in their owning changes. They do not move
 Task policy, SQLite, or Evidence assembly into native adapters.
 The service remains the sole [cleanup-acceptance owner](#cleanup-acceptance-and-privacy).
-Until those changes land, the current record shapes, Windows bounds,
-environment, and accounting rules below remain unchanged;
-this document update alone introduces no native module, format, or runtime
-behavior.
+Common values and dispatch no longer impose Windows path flavor, environment
+membership, or UTF-16 bounds. Windows admission and execution retain those
+native requirements in `_verification_runner_process_win32.py`. The resource
+and accounting rules remain unchanged until their corresponding approved
+changes land; no POSIX launch is active.
 
 The following are logical immutable in-process records, not a public schema or
 implemented transport. Their member sets are closed:
@@ -251,23 +252,19 @@ RunnerProcessBoundsV1:
   attempt_id = ASCII /tg_verification_runner_attempt_[0-9a-f]{16}/ (47 bytes)
   identifier = ASCII /[a-z0-9][a-z0-9._-]{0,63}/ (1..64 bytes)
   result_code = ASCII /[a-z][a-z0-9_]{0,63}/ (1..64 bytes)
-  absolute_path = well-formed Unicode, absolute normalized Windows path, no NUL or Unicode Cc, no "." or ".." segment, 1..4096 UTF-8 bytes and 1..4096 UTF-16 code units
+  absolute_path = well-formed Unicode, absolute PurePath in its own path flavor, no NUL or Unicode Cc, no "." or ".." segment, 1..4096 UTF-8 bytes
   relative_path = "." or 1..32 "/"-separated ASCII /[A-Za-z0-9_][A-Za-z0-9._-]{0,127}/ components, no "." or ".." component, total 1..512 bytes
   script_entrypoint = non-dot relative_path ending in ".py"
   module_entrypoint = 1..16 "."-separated ASCII /[A-Za-z_][A-Za-z0-9_]{0,63}/ components, total 1..512 bytes
-  literal_arg = well-formed Unicode with no Unicode Cc, 0..4096 UTF-8 bytes and 0..4096 UTF-16 code units
+  literal_arg = well-formed Unicode with no Unicode Cc, 0..4096 UTF-8 bytes
   path_ownership = executable is a parent-verified fixed absolute package-runtime identity outside materialized_root and scratch_root with no PATH lookup; materialized_root and scratch_root are distinct target and scratch children of one owned attempt root; no symlink or reparse traversal
   resolved_relative_path = every entrypoint and cwd resolves beneath materialized_root
   step_count = 1..16; argv_count_per_step = 0..64
   timeout_seconds = 1..900; total_timeout_seconds = 1..1800
   cpu_seconds = 1..900; memory_mib = 64..2048; process_limit = 1..32
   output_byte_limit = 1048576
-  command_line_utf16_units <= 24576 after exact Windows quoting and fixed bootstrap insertion
-  clean_environment_entry_count = 11; clean_environment_value_utf8_bytes = 1..4096
-  clean_environment_keys = APPDATA, HOME, LOCALAPPDATA, PYTHONDONTWRITEBYTECODE, PYTHONNOUSERSITE, PYTHONUTF8, SystemRoot, TEMP, TMP, USERPROFILE, WINDIR
-  clean_environment_paths = APPDATA=scratch_root/roaming; HOME=USERPROFILE=scratch_root/home; LOCALAPPDATA=scratch_root/local; TEMP=TMP=scratch_root/tmp; SystemRoot=WINDIR=parent-verified Windows directory
-  clean_environment_literals = PYTHONDONTWRITEBYTECODE=PYTHONNOUSERSITE=PYTHONUTF8="1"
-  clean_environment_block_utf16_units <= 24576 including the terminal double NUL
+  clean_environment_entry_count = 0..11; clean_environment_key_and_value_utf8_bytes = 1..4096
+  clean_environment_keys = unique nonempty strings with no "=" or Unicode Cc; values have no Unicode Cc
   result_version = 1; result_attempt_id = request.attempt_id
   result_outcome = result_code; result_reason = null or result_code
   step_result_outcome = result_code; step_result_reason = null or result_code
@@ -287,7 +284,21 @@ identity, uses no `PATH` lookup, and is outside `materialized_root` and
 private attempt root as its distinct `target` and `scratch` children. Every
 resolved `entrypoint` and `cwd` remains under `materialized_root`.
 
-`clean_environment` is an ordered tuple containing exactly the 11
+`verification_runner_process.py` owns the immutable records, cancellation
+signal, OS-neutral bounded value checks, pure result relations, and the common
+`build_clean_environment(scratch_root)` and `run_process_request(request)`
+dispatchers. They select only the Windows implementation at present; another
+OS reports `runtime_unavailable` without launch. Common values accept POSIX
+path flavor without admitting a foreign path to a native process operation.
+
+The Windows implementation owns physical native `Path` admission, the
+`python.exe` name requirement, quoting, environment construction, Job/stdio
+operations, and the execution loop. Windows paths and literal arguments retain
+their 4096 UTF-16-unit bound; the exact quoted command line including fixed
+bootstrap stays within 24576 UTF-16 units. It enforces these and the following
+environment requirements before acquiring process resources.
+
+On Windows, `clean_environment` is an ordered tuple containing exactly the 11
 case-insensitively unique keys `APPDATA`, `HOME`, `LOCALAPPDATA`,
 `PYTHONDONTWRITEBYTECODE`, `PYTHONNOUSERSITE`, `PYTHONUTF8`, `SystemRoot`,
 `TEMP`, `TMP`, `USERPROFILE`, and `WINDIR`, in that order. `APPDATA` is
@@ -296,10 +307,13 @@ case-insensitively unique keys `APPDATA`, `HOME`, `LOCALAPPDATA`,
 `scratch_root/tmp`; `SystemRoot` and `WINDIR` are the same parent-verified
 Windows directory; and the three `PYTHON*` values are exactly `"1"`. It has no
 additional or ambient key, and all path values satisfy `absolute_path`.
+The environment block stays within 24576 UTF-16 units including the terminal
+double NUL. The Windows builder reads `SystemRoot` and corroborates it against
+the native Windows directory; the service does not read OS environment keys.
 
 Within `runtime_identity`, `verification_runner_runtime.py` owns manifest
 validation, `RunnerImplementationIdentity`, implementation digest, and the
-shared runtime error. The Windows-specific
+shared runtime error and native-observation dispatch. The Windows-specific
 `_verification_runner_executable_win32.py` owns the stateless
 `observe_fixed_package_runtime()` path and identity observation. It consumes
 the existing materialized/scratch roots and returns only the verified absolute
@@ -312,7 +326,7 @@ image path of the current parent process. `sys.executable` is used only to
 corroborate the same physical file; neither value is resolved through `PATH`,
 configuration, a plan, or target material. The runtime-identity layer observes
 every path component without following a symlink or reparse point, requires a
-normalized absolute regular `python.exe` outside the owned target and scratch
+normalized absolute regular `python.exe` on Windows outside the owned target and scratch
 trees, and corroborates the physical identity of the observed paths. A definite
 observation failure is a sanitized admission failure with no alternate
 executable. No file-sharing restriction is retained across execution. This
@@ -332,8 +346,9 @@ reparse check.
 `identifier`; `mode` is exactly `script|module`; `entrypoint` satisfies the
 matching entrypoint grammar; `argv` is a tuple of `literal_arg`; and `cwd`
 satisfies `relative_path`. These counts, per-member sizes, and aggregate
-command-line/environment-block limits are all enforced before process-adapter
-entry. The request admits no other scalar or collection shape. Resource,
+command-line/environment-block limits are enforced by common value validation
+or Windows admission before native resource acquisition. The request admits
+no other scalar or collection shape. Resource,
 timeout, and output values use the exact [numeric bounds](#typed-process-value-boundary); `shell` and
 `path_lookup` are exactly false. Request paths, argv, and environment are
 transient and never copied into a result or durable row.

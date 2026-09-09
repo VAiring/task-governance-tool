@@ -42,11 +42,6 @@ null/zero encoding: the affected Plan, result, and Evidence owners are
 synchronized with those implementations while preserved evidence retains its
 original meaning.
 
-`python.exe`, Windows-specific environment entries, Windows quoting, and
-UTF-16 limits cease to be common cross-OS requirements; native Windows
-environment, quoting, and size requirements remain on Windows. This does not
-authorize changing or installing the user's Python environment.
-
 Explicit trusted-local opt-in, current Task/Contract/criterion/Plan/target
 binding, private materialization, output limits and non-retention, and the
 existing service-owned completion and cleanup decisions remain mandatory.
@@ -57,6 +52,15 @@ representative platforms in the [ordinary runtime boundary](specification.md#pac
 an unexecuted path remains unverified.
 
 ### Eligibility, Plan, And Materialization
+
+Common process values and entry points use bounded Unicode/UTF-8 values and
+absolute paths without requiring a Windows path flavor, `python.exe`, Windows
+environment keys, or UTF-16 units. Windows-specific runtime observation,
+environment construction, quoting, native size checks, and Job/stdio
+execution stay in Windows implementations behind adapter dispatch. Only the
+Windows Runner is currently active; accepting POSIX-shaped common values does
+not enable POSIX launch. No Python environment change or installation is
+authorized by this separation.
 
 The Runner is explicit opt-in for repositories
 the user already trusts. Untrusted, external, unsupported, or visually verified
@@ -117,7 +121,7 @@ grammars, entry and step counts, literal-argument counts and sizes, total
 timeout, and the declared resource/output values. The final quoted Windows
 command line depends on the later fixed executable, bootstrap insertion, and
 materialized absolute paths. Its `command_line_utf16_units <= 24576` check
-therefore remains a process-request admission check and is not
+therefore remains a Windows process-request admission check and is not
 approximated or pre-authorized by plan validation.
 
 An absent config directory or plan file produces no plan source. It does not

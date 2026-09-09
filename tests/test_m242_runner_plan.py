@@ -769,6 +769,7 @@ class StrictPlanValidationTests(VerificationRunnerPlanTestCase):
             {"process_limit": 33},
             {"output_byte_limit": 1_048_575},
             {"argv": ["a" * 4_097]},
+            {"argv": ["\U0001f600" * 1_025]},
             {"argv": ["line\nbreak"]},
         )
         for update in invalid_step_updates:
@@ -778,10 +779,22 @@ class StrictPlanValidationTests(VerificationRunnerPlanTestCase):
                 )
                 self.assert_invalid_value(value)
 
+        surrogate_value = plan_payload(
+            entries=[entry_payload(steps=[step_payload(argv=["\ud800"])])]
+        )
+        escaped_source = source_from_raw(
+            json.dumps(surrogate_value, ensure_ascii=True).encode("utf-8")
+        )
+        self.assert_plan_error(lambda: resolve(escaped_source))
+
         size_boundary = plan_payload()
         size_boundary["entries"][0]["steps"][0]["argv"] = ["a" * 4_096]
         selected = resolve(source_from_value(size_boundary))
         self.assertEqual(len(selected.steps[0].argv[0]), 4_096)
+
+        size_boundary["entries"][0]["steps"][0]["argv"] = ["\U0001f600" * 1_024]
+        selected = resolve(source_from_value(size_boundary))
+        self.assertEqual(len(selected.steps[0].argv[0].encode("utf-8")), 4_096)
 
         count_boundary = plan_payload()
         count_boundary["entries"][0]["steps"][0]["argv"] = [

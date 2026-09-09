@@ -149,7 +149,7 @@ creation and cleanup.
 
 ```
 VerificationRunnerPlanSource = raw_blob, raw_digest
-VerificationRunnerPlanStep = ordinal plus normalized StepV1,
+VerificationRunnerPlanStep = ordinal plus normalized StepV1/StepV2,
   with shell=false and path_lookup=false
 VerificationRunnerPlanResolution = plan_state, route, reason,
   plan_blob_object_id, plan_raw_digest, plan_id, plan_version,
@@ -182,7 +182,15 @@ paths, and the `command_line_utf16_units` bound remain Windows process-request
 admission and are not evaluated by this module. Raw bytes use ordinary
 labeled SHA-256. Canonical normalized plan and selected-entry values use the
 domains `taskgov-verification-runner-plan-v1\0` and
-`taskgov-verification-runner-plan-entry-v1\0`. `trusted_local = true` plus one
+`taskgov-verification-runner-plan-entry-v1\0`. Both physical versions normalize
+steps to the existing flat `memory_mib`/`process_limit` pair, either the two
+bounded integers or both null. Integer selected-entry values/digests remain
+byte-compatible; null pairs differ. The normalized whole Plan retains its
+actual version, so explicit v2 publication changes the whole-Plan digest and
+resolution seal. Physical encoding uses that owning Plan version. The pure
+value model owns `RUNNER_PLAN_VERSIONS={1,2}` for repository and Evidence
+consumers; they do not import the Plan reader or rewrite old rows.
+`trusted_local = true` plus one
 exact basis selects `plan_state=runner`, `route=runner`; false opt-in, absence,
 or no current-Task entry is a closed manual fallback; a current-Task mismatch,
 duplicate basis, ambiguity, or malformed input raises one sanitized bounded
@@ -261,7 +269,7 @@ RunnerProcessBoundsV1:
   resolved_relative_path = every entrypoint and cwd resolves beneath materialized_root
   step_count = 1..16; argv_count_per_step = 0..64
   timeout_seconds = 1..900; total_timeout_seconds = 1..1800
-  cpu_seconds = 1..900; memory_mib = 64..2048; process_limit = 1..32
+  cpu_seconds = 1..900; windows_limits = (memory_mib 64..2048, process_limit 1..32) or (null, null)
   output_byte_limit = 1048576
   clean_environment_entry_count = 0..11; clean_environment_key_and_value_utf8_bytes = 1..4096
   clean_environment_keys = unique nonempty strings with no "=" or Unicode Cc; values have no Unicode Cc
@@ -297,6 +305,15 @@ operations, and the execution loop. Windows paths and literal arguments retain
 their 4096 UTF-16-unit bound; the exact quoted command line including fixed
 bootstrap stays within 24576 UTF-16 units. It enforces these and the following
 environment requirements before acquiring process resources.
+At the Windows process entry, a missing limit pair in any step returns the
+closed `blocked_prelaunch/process_setup_failed/no_launch` result before native
+admission or acquisition for any step: zero duration, no step results, and all
+three cleanup proofs true. This known-input case does not catch or reclassify
+other admission errors. The service copies normalized limit pairs unchanged;
+after proving private-tree cleanup it uses the existing manual-fallback rule.
+Configured Windows limits continue into the same Job setup. Common result
+validation compares memory use against the bound only when it is configured;
+this does not change result accounting fields or their current nullability.
 
 On Windows, `clean_environment` is an ordered tuple containing exactly the 11
 case-insensitively unique keys `APPDATA`, `HOME`, `LOCALAPPDATA`,

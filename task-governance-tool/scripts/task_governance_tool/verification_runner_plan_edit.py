@@ -49,7 +49,7 @@ from task_governance_tool.verification_runner_plan import (
 )
 from task_governance_tool.verification_runner_plan_authoring import (
     RunnerPlanActionResult,
-    RunnerPlanDraftV1,
+    RunnerPlanDraft,
     decode_runner_plan_draft,
     detach_verification_runner_plan,
     disable_verification_runner_plan,
@@ -156,7 +156,7 @@ def _validate_target(target: DatabaseTarget) -> tuple[Path, Path]:
 def _validate_action_and_draft(
     action: Any,
     draft_blob: Any,
-) -> tuple[RunnerPlanAction | None, RunnerPlanDraftV1 | None]:
+) -> tuple[RunnerPlanAction | None, RunnerPlanDraft | None]:
     if action is None:
         if draft_blob is not None:
             raise _invalid_argument()
@@ -355,7 +355,7 @@ def _apply_action(
     *,
     task_id: str,
     basis: VerificationRunnerPlanBasis | None,
-    draft: RunnerPlanDraftV1 | None,
+    draft: RunnerPlanDraft | None,
 ) -> RunnerPlanActionResult:
     if action == "replace":
         if basis is None or draft is None:
@@ -553,7 +553,7 @@ def _edit_plan_only(
     task_id: str,
     *,
     action: RunnerPlanAction,
-    draft: RunnerPlanDraftV1 | None,
+    draft: RunnerPlanDraft | None,
 ) -> TaskRunnerPlanEditResult:
     preflight, public, authority = _read_task_preflight(
         target,
@@ -597,7 +597,7 @@ def _edit_combined(
     task_id: str,
     *,
     action: RunnerPlanAction,
-    draft: RunnerPlanDraftV1 | None,
+    draft: RunnerPlanDraft | None,
     effort_profile: Any | None,
     runner_selector: RunnerSelectionProvider | None,
     edit_input: dict[str, Any],

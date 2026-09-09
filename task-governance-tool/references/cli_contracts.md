@@ -766,14 +766,19 @@ are closed:
 
 | Action | Standard input | Plan effect |
 |---|---|---|
-| `replace` | one document | Upsert the addressed Task entry from a strict `RunnerPlanDraftV1`; this is the only initial-set action. |
+| `replace` | one document | Upsert the addressed Task entry from a strict versioned `RunnerPlanDraft`; this is the only initial-set action. |
 | `rebind` | not read | Require one addressed entry, preserve its steps and position, and bind it to the exact current or future Task basis. |
 | `detach` | not read | Remove every addressed Task entry while preserving all unrelated entries and order. |
 | `disable` | not read | Set only global `trusted_local=false`; preserve Plan ID, entries, and order. |
 
-The `replace` stdin document contains exactly `version=1` and `steps`, is capped
+The `replace` stdin document contains exactly `version=1|2` and `steps`, is capped
 at 65,536 UTF-8 bytes by one read of at most 65,537 bytes, and contains one
-through 16 exact existing StepV1 objects. Task ID, Contract revision,
+through 16 exact Step objects matching that version. V1 retains required
+`memory_mib` and `process_limit`; v2 replaces them with `windows_limits`, either
+the object containing both bounded integers or null. These limits apply only
+to Windows; Windows requires them before launch. An explicit v2 replace
+upgrades a v1 Plan, preserving unrelated entry values and bases; other actions
+preserve the version and no action downgrades v2. Task ID, Contract revision,
 verification digests, criterion digest, and `coverage=full` are derived by the
 tool. No action discovers commands, infers coverage, changes setup, or
 re-enables a disabled Plan.

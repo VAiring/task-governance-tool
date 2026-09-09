@@ -14,6 +14,7 @@ import sqlite3
 from dataclasses import dataclass
 from typing import Any
 
+from task_governance_tool.verification_runner import RUNNER_PLAN_VERSIONS
 
 VERIFICATION_RUNNER_RESOLUTION_ID_PATTERN = re.compile(
     r"^tg_verification_runner_resolution_[0-9a-f]{16}$"
@@ -518,7 +519,8 @@ def _validated_verification_runner_graph(
                 or type(value.plan_id) is not str
                 or VERIFICATION_RUNNER_IDENTIFIER_PATTERN.fullmatch(value.plan_id)
                 is None
-                or value.plan_version != 1
+                or type(value.plan_version) is not int
+                or value.plan_version not in RUNNER_PLAN_VERSIONS
                 or type(value.plan_semantic_digest) is not str
                 or SHA256_DIGEST_PATTERN.fullmatch(value.plan_semantic_digest)
                 is None

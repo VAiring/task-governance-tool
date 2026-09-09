@@ -16,31 +16,26 @@ authoring. The product retains exactly 21 public command leaves and adds only an
 explicit action option to the existing `task edit` leaf. This contract grants no
 config write, Task side effect, process launch, target mutation, or external
 operation without that invocation. `review target set` remains the sole Runner
-dispatch. Schema v22, setup non-generation, current PlanV1 capture/resolution,
+dispatch. Schema v22, setup non-generation, current Plan capture/resolution,
 Runner execution, Evidence, Viewer, and completion behavior remain unchanged.
 
 ### Closed Draft And Actions
 
-The [approved OS-specific Runner guarantees](runner-execution-specification.md#approved-os-specific-runner-guarantees)
-do not yet change the current draft/Plan members, required limit values, or
-privacy precedence below. Their OS-specific representation is synchronized
-with Plan validation and consumers when implemented, not inferred by authoring
-or activated by this conditional approval.
-
 Authoring reuses the one existing ignored physical file
 `<physical-package>/config/verification-runner.json` and the exact current
-PlanV1, EntryV1, and StepV1 member sets. It adds no PlanV2, second config,
+PlanV1/PlanV2 and corresponding Step member sets. It adds no second config,
 per-entry enabled flag, tombstone, setup generation, or Git-tracked plan. The
 only new caller document is strict UTF-8 JSON from standard input with the
 closed shape:
 
 ```text
-RunnerPlanDraftV1 = version, steps
+RunnerPlanDraft = version, steps
 ```
 
-`version` is exactly integer `1`. The raw stdin document is capped at 65,536
+`version` is exactly integer `1|2`. The raw stdin document is capped at 65,536
 UTF-8 bytes by reading at most one byte beyond the limit before rejection.
-`steps` is one through 16 exact StepV1 objects under all existing per-step,
+`steps` is one through 16 exact StepV1 or StepV2 objects matching that version
+under all existing per-step,
 aggregate timeout, literal-argument, and separate 65,536-byte final-plan
 bounds. Unknown, missing, duplicate, floating,
 non-finite, differently typed, malformed, trailing, empty, or over-bound input
@@ -53,17 +48,18 @@ test sufficiency, or trust from repository files, project documentation,
 verification prose, prior evidence, or an LLM decision.
 
 After bounded UTF-8, duplicate-free JSON, closed-member, and member-type
-recognition, every caller-supplied StepV1 string leaf (`step_id`, `mode`,
+recognition of either known Step shape, every caller-supplied string leaf (`step_id`, `mode`,
 `entrypoint`, each `argv` item, and `cwd`) is passed unchanged through the
 existing common deny-by-default privacy guard under the fixed field label
-`Runner Plan draft`. This check precedes that leaf's enum, grammar, UTF-8,
-and candidate validation. Native Windows UTF-16 checks belong to process
+`Runner Plan draft`. This complete pass precedes draft version and matching
+Step-version validation, leaf enum, grammar, UTF-8, and candidate validation.
+Native Windows UTF-16 checks belong to process
 admission, not the shared Plan decoder. A privacy rejection for an otherwise
 recognized string leaf therefore takes precedence over `invalid_argument` and
 returns `privacy_rejected`; malformed or duplicate JSON, unknown or missing
 members, non-string member types, and raw-document overflow remain
 `invalid_argument`. The guard is draft-input admission only: it neither changes
-current PlanV1 reader validation nor reclassifies an existing manually authored
+current Plan reader validation nor reclassifies an existing manually authored
 Plan source.
 
 The existing-leaf option is
@@ -72,19 +68,29 @@ and effects are:
 
 | Action | Standard input | Exact Plan effect |
 |---|---|---|
-| `replace` | one RunnerPlanDraftV1 | Remove every entry for the addressed Task and insert one future-basis entry with the supplied steps at the earliest removed position, or append it when none existed. It is the only initial-set/upsert action. |
+| `replace` | one RunnerPlanDraft | Remove every entry for the addressed Task and insert one future-basis entry with the supplied steps at the earliest removed position, or append it when none existed. It is the only initial-set/upsert action. |
 | `rebind` | not read | Require one existing entry for the Task, preserve its steps and position, and replace only its basis with the exact future basis. |
 | `detach` | not read | Remove every entry for the addressed Task while preserving all other relative order; absence is an idempotent no-op and an empty entries array remains a valid retained Plan. |
 | `disable` | not read | Set only global `trusted_local=false`; preserve Plan ID, every entry, and their order. An absent or already-disabled Plan is an idempotent no-op and no file is created for absence. |
 
-On the first `replace` when the file is absent, taskgov creates PlanV1 with
-`version=1`, fixed `plan_id="taskgov-local-plan"`,
+On the first `replace` when the file is absent, taskgov creates a Plan with
+the draft's version, fixed `plan_id="taskgov-local-plan"`,
 `trusted_local=true`, and the one derived entry. On every present Plan,
 `plan_id`, unrelated entries, and their order are preserved. `replace`,
 `rebind`, and `detach` never change `trusted_local`; in particular, they do not
 re-enable a disabled Plan. This contract adds no dedicated re-enable action or
 restore workflow. It does not claim that a user cannot later make a separately
 authorized direct local edit.
+
+Only an explicit version-2 `replace` upgrades an existing v1 Plan to v2.
+That publication re-encodes every step into the v2 shape while preserving
+unrelated entry bases, order, limit values, and selected-entry digests. The
+whole-Plan version and raw/semantic digests change; old basis/history records
+are not rewritten. A v1 draft replacing an entry in a v2 Plan retains v2.
+`rebind`, `detach`, and `disable` preserve the source version. There is no
+automatic upgrade, downgrade, extra config, normal-loop call, or inferred OS
+choice. The [StepV2 limit semantics](runner-execution-specification.md#eligibility-plan-and-materialization)
+apply equally to decoding, authoring, and execution.
 
 Per-Task cardinality is closed: `replace` and `detach` deterministically repair
 zero, one, or multiple distinct-basis entries as defined above; `rebind`
@@ -212,7 +218,7 @@ The new authoring failure map is closed:
 
 | Condition | Code / exit | Fixed public message |
 |---|---|---|
-| caller StepV1 string rejected by the common privacy guard | `privacy_rejected` / 1 | `Runner Plan draft appears to contain a secret, raw log, or dump content` |
+| caller Step string rejected by the common privacy guard | `privacy_rejected` / 1 | `Runner Plan draft appears to contain a secret, raw log, or dump content` |
 | invalid action, stdin draft, candidate, or caller value | `invalid_argument` / 1 | `arguments are invalid` |
 | incompatible Task-edit options | `invalid_option_combination` / 1 | `Runner Plan action cannot be combined with these task edit options` |
 | required disposition omitted for an enabled exact-match entry | `runner_plan_action_required` / 1 | `Runner Plan action is required for this Task basis change` |

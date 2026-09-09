@@ -31,7 +31,10 @@ from task_governance_tool.state_paths import (
     path_lexically_exists,
     require_contained,
 )
-from task_governance_tool.verification_runner import RUNNER_MAX_OUTPUT_BYTES
+from task_governance_tool.verification_runner import (
+    RUNNER_MAX_OUTPUT_BYTES,
+    RUNNER_PLAN_VERSIONS,
+)
 
 
 PLAN_VERSION = 1
@@ -72,6 +75,8 @@ _STEP_KEYS = frozenset(
         "output_byte_limit",
     }
 )
+_WINDOWS_LIMIT_KEYS = frozenset({"memory_mib", "process_limit"})
+_STEP_V2_KEYS = (_STEP_KEYS - _WINDOWS_LIMIT_KEYS) | {"windows_limits"}
 _IDENTIFIER = re.compile(r"[a-z0-9][a-z0-9._-]{0,63}\Z")
 _TASK_ID = re.compile(r"tg_task_[0-9a-f]{16}\Z")
 _HEX64 = re.compile(r"[0-9a-f]{64}\Z")
@@ -409,8 +414,9 @@ class VerificationRunnerPlanStep:
     cwd: str
     timeout_seconds: int
     cpu_seconds: int
-    memory_mib: int
-    process_limit: int
+    # Windows-only configuration; paired None means no Windows limits supplied.
+    memory_mib: int | None
+    process_limit: int | None
     output_byte_limit: int
     shell: bool = False
     path_lookup: bool = False
@@ -428,8 +434,14 @@ class VerificationRunnerPlanStep:
             or _relative_path(self.cwd) != self.cwd
             or _positive_int(self.timeout_seconds, 1, 900) != self.timeout_seconds
             or _positive_int(self.cpu_seconds, 1, 900) != self.cpu_seconds
-            or _positive_int(self.memory_mib, 64, 2_048) != self.memory_mib
-            or _positive_int(self.process_limit, 1, 32) != self.process_limit
+            or (
+                (self.memory_mib is not None or self.process_limit is not None)
+                and (
+                    _positive_int(self.memory_mib, 64, 2_048) != self.memory_mib
+                    or _positive_int(self.process_limit, 1, 32)
+                    != self.process_limit
+                )
+            )
             or type(self.output_byte_limit) is not int
             or self.output_byte_limit != RUNNER_MAX_OUTPUT_BYTES
             or self.shell is not False
@@ -461,10 +473,14 @@ class VerificationRunnerPlanStep:
             "timeout_seconds": self.timeout_seconds,
         }
 
-    def physical_value(self) -> dict[str, Any]:
-        """Return the exact closed StepV1 file representation."""
+    def physical_value(self, plan_version: int = PLAN_VERSION) -> dict[str, Any]:
+        """Return the closed step representation for its owning Plan version."""
 
-        return {
+        if type(plan_version) is not int or plan_version not in RUNNER_PLAN_VERSIONS:
+            raise _plan_error()
+        if plan_version == 1 and self.memory_mib is None:
+            raise _plan_error()
+        value: dict[str, Any] = {
             "argv": list(self.argv),
             "cpu_seconds": self.cpu_seconds,
             "cwd": self.cwd,
@@ -476,6 +492,18 @@ class VerificationRunnerPlanStep:
             "step_id": self.step_id,
             "timeout_seconds": self.timeout_seconds,
         }
+        if plan_version == 2:
+            del value["memory_mib"]
+            del value["process_limit"]
+            value["windows_limits"] = (
+                None
+                if self.memory_mib is None
+                else {
+                    "memory_mib": self.memory_mib,
+                    "process_limit": self.process_limit,
+                }
+            )
+        return value
 
 
 @dataclass(frozen=True)
@@ -529,11 +557,11 @@ class VerificationRunnerPlanEntry:
             "verification_expectation_digest": self.verification_expectation_digest,
         }
 
-    def physical_value(self) -> dict[str, Any]:
+    def physical_value(self, plan_version: int = PLAN_VERSION) -> dict[str, Any]:
         return {
             "contract_revision": self.contract_revision,
             "coverage": self.coverage,
-            "steps": [step.physical_value() for step in self.steps],
+            "steps": [step.physical_value(plan_version) for step in self.steps],
             "task_id": self.task_id,
             "verification_criterion_digest": self.verification_criterion_digest,
             "verification_expectation_digest": self.verification_expectation_digest,
@@ -550,7 +578,7 @@ class VerificationRunnerPlan:
     def __post_init__(self) -> None:
         if (
             type(self.version) is not int
-            or self.version != PLAN_VERSION
+            or self.version not in RUNNER_PLAN_VERSIONS
             or _identifier(self.plan_id) != self.plan_id
             or type(self.trusted_local) is not bool
             or type(self.entries) is not tuple
@@ -558,6 +586,12 @@ class VerificationRunnerPlan:
                 type(entry) is not VerificationRunnerPlanEntry
                 for entry in self.entries
             )
+        ):
+            raise _plan_error()
+        if self.version == 1 and any(
+            step.memory_mib is None
+            for entry in self.entries
+            for step in entry.steps
         ):
             raise _plan_error()
         if len(self.entries) > PLAN_ENTRY_LIMIT:
@@ -577,10 +611,10 @@ class VerificationRunnerPlan:
         }
 
     def physical_value(self) -> dict[str, Any]:
-        """Return the exact closed PlanV1 file representation."""
+        """Return the exact closed file representation for this Plan version."""
 
         return {
-            "entries": [entry.physical_value() for entry in self.entries],
+            "entries": [entry.physical_value(self.version) for entry in self.entries],
             "plan_id": self.plan_id,
             "trusted_local": self.trusted_local,
             "version": self.version,
@@ -623,13 +657,18 @@ class VerificationRunnerPlanResolution:
                 or type(self.plan_raw_digest) is not str
                 or _DIGEST.fullmatch(self.plan_raw_digest) is None
                 or _identifier(self.plan_id) != self.plan_id
-                or self.plan_version != PLAN_VERSION
+                or type(self.plan_version) is not int
+                or self.plan_version not in RUNNER_PLAN_VERSIONS
                 or type(self.plan_semantic_digest) is not str
                 or _DIGEST.fullmatch(self.plan_semantic_digest) is None
                 or type(self.selected_entry_digest) is not str
                 or _DIGEST.fullmatch(self.selected_entry_digest) is None
                 or self.coverage != "full"
                 or not 1 <= len(self.steps) <= PLAN_STEP_LIMIT
+                or (
+                    self.plan_version == 1
+                    and any(step.memory_mib is None for step in self.steps)
+                )
             ):
                 raise _plan_error()
             return
@@ -660,7 +699,8 @@ class VerificationRunnerPlanResolution:
                     type(self.plan_raw_digest) is not str
                     or _DIGEST.fullmatch(self.plan_raw_digest) is None
                     or _identifier(self.plan_id) != self.plan_id
-                    or self.plan_version != PLAN_VERSION
+                    or type(self.plan_version) is not int
+                    or self.plan_version not in RUNNER_PLAN_VERSIONS
                     or type(self.plan_semantic_digest) is not str
                     or _DIGEST.fullmatch(self.plan_semantic_digest) is None
                 )
@@ -673,12 +713,34 @@ class VerificationRunnerPlanResolution:
         return len(self.steps)
 
 
-def _parse_step(value: object, ordinal: int) -> VerificationRunnerPlanStep:
-    item = _exact_mapping(value, _STEP_KEYS)
+def _step_windows_limits(
+    item: dict[str, Any],
+    *,
+    plan_version: int,
+) -> tuple[Any, Any]:
+    if plan_version == 1:
+        return item["memory_mib"], item["process_limit"]
+    limits = item["windows_limits"]
+    if limits is None:
+        return None, None
+    limits = _exact_mapping(limits, _WINDOWS_LIMIT_KEYS)
+    if any(type(limits[key]) is not int for key in _WINDOWS_LIMIT_KEYS):
+        raise _plan_error()
+    return limits["memory_mib"], limits["process_limit"]
+
+
+def _parse_step(
+    value: object,
+    ordinal: int,
+    *,
+    plan_version: int,
+) -> VerificationRunnerPlanStep:
+    item = _exact_mapping(value, _STEP_KEYS if plan_version == 1 else _STEP_V2_KEYS)
     argv = item["argv"]
     if type(argv) is not list or len(argv) > PLAN_ARG_LIMIT:
         raise _plan_error()
-    return VerificationRunnerPlanStep(
+    memory_mib, process_limit = _step_windows_limits(item, plan_version=plan_version)
+    step = VerificationRunnerPlanStep(
         ordinal=ordinal,
         step_id=_identifier(item["step_id"]),
         mode=item["mode"],
@@ -687,16 +749,28 @@ def _parse_step(value: object, ordinal: int) -> VerificationRunnerPlanStep:
         cwd=item["cwd"],
         timeout_seconds=item["timeout_seconds"],
         cpu_seconds=item["cpu_seconds"],
-        memory_mib=item["memory_mib"],
-        process_limit=item["process_limit"],
+        memory_mib=memory_mib,
+        process_limit=process_limit,
         output_byte_limit=item["output_byte_limit"],
     )
+    if plan_version == 1 and step.memory_mib is None:
+        raise _plan_error()
+    return step
 
 
 def verification_runner_plan_step_string_leaves(value: object) -> tuple[str, ...]:
-    """Recognize one StepV1 shape and return its caller-controlled strings."""
+    """Recognize either closed step shape before Draft version or value checks."""
 
-    item = _exact_mapping(value, _STEP_KEYS)
+    if type(value) is not dict:
+        raise _plan_error()
+    if frozenset(value) == _STEP_KEYS:
+        plan_version = 1
+    elif frozenset(value) == _STEP_V2_KEYS:
+        plan_version = 2
+    else:
+        raise _plan_error()
+    item = value
+    memory_mib, process_limit = _step_windows_limits(item, plan_version=plan_version)
     argv = item["argv"]
     string_fields = (
         item["step_id"],
@@ -707,10 +781,10 @@ def verification_runner_plan_step_string_leaves(value: object) -> tuple[str, ...
     integer_fields = (
         item["timeout_seconds"],
         item["cpu_seconds"],
-        item["memory_mib"],
-        item["process_limit"],
         item["output_byte_limit"],
     )
+    if plan_version == 1 or item["windows_limits"] is not None:
+        integer_fields += (memory_mib, process_limit)
     if (
         any(type(field) is not str for field in string_fields)
         or any(type(field) is not int for field in integer_fields)
@@ -723,13 +797,20 @@ def verification_runner_plan_step_string_leaves(value: object) -> tuple[str, ...
 
 def decode_verification_runner_plan_steps(
     value: object,
+    *,
+    plan_version: int = PLAN_VERSION,
 ) -> tuple[VerificationRunnerPlanStep, ...]:
-    """Decode one exact bounded ordered StepV1 collection."""
+    """Decode one exact bounded ordered collection for the Plan/Draft version."""
 
-    if type(value) is not list or not 1 <= len(value) <= PLAN_STEP_LIMIT:
+    if (
+        type(plan_version) is not int
+        or plan_version not in RUNNER_PLAN_VERSIONS
+        or type(value) is not list
+        or not 1 <= len(value) <= PLAN_STEP_LIMIT
+    ):
         raise _plan_error()
     steps = tuple(
-        _parse_step(step, ordinal)
+        _parse_step(step, ordinal, plan_version=plan_version)
         for ordinal, step in enumerate(value, start=1)
     )
     if (
@@ -740,9 +821,12 @@ def decode_verification_runner_plan_steps(
     return steps
 
 
-def _parse_entry(value: object) -> VerificationRunnerPlanEntry:
+def _parse_entry(value: object, *, plan_version: int) -> VerificationRunnerPlanEntry:
     item = _exact_mapping(value, _ENTRY_KEYS)
-    steps = decode_verification_runner_plan_steps(item["steps"])
+    steps = decode_verification_runner_plan_steps(
+        item["steps"],
+        plan_version=plan_version,
+    )
     expectation = item["verification_expectation_digest"]
     criterion = item["verification_criterion_digest"]
     if (
@@ -805,12 +889,12 @@ def decode_verification_runner_json(raw_blob: bytes) -> Any:
 
 
 def decode_verification_runner_plan(raw_blob: bytes) -> VerificationRunnerPlan:
-    """Decode and validate one complete physical PlanV1 value."""
+    """Decode and validate one complete physical Plan value."""
 
     decoded = _exact_mapping(decode_verification_runner_json(raw_blob), _PLAN_KEYS)
     if (
         type(decoded["version"]) is not int
-        or decoded["version"] != PLAN_VERSION
+        or decoded["version"] not in RUNNER_PLAN_VERSIONS
         or type(decoded["trusted_local"]) is not bool
     ):
         raise _plan_error()
@@ -819,15 +903,18 @@ def decode_verification_runner_plan(raw_blob: bytes) -> VerificationRunnerPlan:
     if type(raw_entries) is not list or len(raw_entries) > PLAN_ENTRY_LIMIT:
         raise _plan_error("plan_too_large")
     return VerificationRunnerPlan(
-        version=PLAN_VERSION,
+        version=decoded["version"],
         plan_id=plan_id,
         trusted_local=decoded["trusted_local"],
-        entries=tuple(_parse_entry(item) for item in raw_entries),
+        entries=tuple(
+            _parse_entry(item, plan_version=decoded["version"])
+            for item in raw_entries
+        ),
     )
 
 
 def encode_verification_runner_plan(plan: VerificationRunnerPlan) -> bytes:
-    """Encode one validated PlanV1 as complete canonical physical bytes."""
+    """Encode one validated Plan as complete canonical physical bytes."""
 
     if type(plan) is not VerificationRunnerPlan:
         raise _plan_error()
@@ -852,6 +939,7 @@ def _fallback(
     reason: str,
     source: VerificationRunnerPlanSource | None,
     plan_id: str | None = None,
+    plan_version: int | None = None,
     plan_semantic_digest: str | None = None,
 ) -> VerificationRunnerPlanResolution:
     return VerificationRunnerPlanResolution(
@@ -861,7 +949,7 @@ def _fallback(
         plan_blob_object_id=None,
         plan_raw_digest=None if source is None else source.raw_digest,
         plan_id=plan_id,
-        plan_version=None if source is None else PLAN_VERSION,
+        plan_version=plan_version,
         plan_semantic_digest=plan_semantic_digest,
         selected_entry_digest=None,
         coverage="not_applicable",
@@ -899,6 +987,7 @@ def resolve_verification_runner_plan(
             reason="trusted_local_disabled",
             source=source,
             plan_id=plan.plan_id,
+            plan_version=plan.version,
             plan_semantic_digest=semantic_digest,
         )
 
@@ -911,6 +1000,7 @@ def resolve_verification_runner_plan(
             reason="plan_entry_absent",
             source=source,
             plan_id=plan.plan_id,
+            plan_version=plan.version,
             plan_semantic_digest=semantic_digest,
         )
     if len(for_task) != 1:
@@ -925,7 +1015,7 @@ def resolve_verification_runner_plan(
         plan_blob_object_id=None,
         plan_raw_digest=source.raw_digest,
         plan_id=plan.plan_id,
-        plan_version=PLAN_VERSION,
+        plan_version=plan.version,
         plan_semantic_digest=semantic_digest,
         selected_entry_digest=_domain_digest(
             PLAN_ENTRY_DOMAIN,

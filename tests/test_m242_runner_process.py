@@ -316,6 +316,42 @@ class RunnerProcessPureTests(unittest.TestCase):
                 run_windows.assert_not_called()
                 prepare_windows.assert_not_called()
 
+    def test_windows_limits_are_optional_values_but_required_before_any_launch(self):
+        without_limits = _step(memory_mib=None, process_limit=None)
+        self.assertIsNone(without_limits.memory_mib)
+        self.assertIsNone(without_limits.process_limit)
+        for changes in (
+            {"memory_mib": None}, {"process_limit": None},
+            {"memory_mib": 0}, {"process_limit": False},
+        ):
+            with self.subTest(changes=changes), self.assertRaises(process.RunnerProcessError):
+                _step(**changes)
+
+        with tempfile.TemporaryDirectory() as temporary:
+            layout = _make_layout(Path(temporary).resolve())
+            for steps in (
+                (without_limits,),
+                (_step(), replace(without_limits, ordinal=2, step_id="second")),
+            ):
+                request = _request(layout, steps=steps)
+                with self.subTest(count=len(steps)), patch.object(
+                    process_windows, "_admit_request"
+                ) as admit, patch.object(process_windows._win32, "create_job") as create_job:
+                    result = process_windows.run_process_request(request)
+                admit.assert_not_called()
+                create_job.assert_not_called()
+                self.assertEqual(
+                    (result.outcome, result.reason, result.launch_state),
+                    ("blocked_prelaunch", "process_setup_failed", "no_launch"),
+                )
+                self.assertEqual(result.steps, ())
+                self.assertTrue(result.process_zero)
+                self.assertTrue(result.handles_closed)
+                self.assertTrue(result.raw_output_discarded)
+                self.assertIsNone(result.cpu_time_ms)
+                self.assertIsNone(result.peak_job_memory_bytes)
+                self.assertIsNone(result.total_process_count)
+
     def test_central_identity_and_fixed_bootstrap(self):
         self.assertEqual(
             process.RUNNER_CONTRACT_VERSION,

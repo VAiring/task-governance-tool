@@ -1261,6 +1261,30 @@ class M243BSchema21CompatibilityTests(unittest.TestCase):
                 with self.assertRaises(EvidenceConsumerError):
                     _consumer_source(malformed)
 
+    def test_plan_v2_bundle_and_independent_reader_keep_version_binding(self):
+        legacy = build_bundle_artifact(_source21_runner_payload())
+        payload = _source21_runner_payload()
+        payload["runner_observation"]["plan_version"] = 2
+        _refresh_runner_reference_digest(payload)
+        current = build_bundle_artifact(payload)
+        source = _consumer_source(current.payload)
+        self.assertEqual(source.source, current.envelope)
+        self.assertEqual(current.payload["runner_observation"]["plan_version"], 2)
+        self.assertNotEqual(current.bundle_digest, legacy.bundle_digest)
+        self.assertEqual(
+            build_bundle_artifact(_source21_runner_payload()).document,
+            legacy.document,
+        )
+        for version in (0, 3, True, "2"):
+            with self.subTest(version=version):
+                malformed = deepcopy(current.payload)
+                malformed["runner_observation"]["plan_version"] = version
+                _refresh_runner_reference_digest(malformed)
+                with self.assertRaises(EvidenceProjectionError):
+                    build_bundle_artifact(malformed)
+                with self.assertRaises(EvidenceConsumerError):
+                    _consumer_source(malformed)
+
     def test_private_runner_eligibility_seam_is_closed_and_digest_stable(
         self,
     ) -> None:

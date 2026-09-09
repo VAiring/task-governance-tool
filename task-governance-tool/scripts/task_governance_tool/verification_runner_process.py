@@ -222,8 +222,8 @@ class RunnerProcessStepV1:
     path_lookup: bool
     timeout_seconds: int
     cpu_seconds: int
-    memory_mib: int
-    process_limit: int
+    memory_mib: int | None
+    process_limit: int | None
     output_byte_limit: int
 
     def __post_init__(self) -> None:
@@ -256,10 +256,15 @@ class RunnerProcessStepV1:
             or not 1 <= self.timeout_seconds <= 900
             or type(self.cpu_seconds) is not int
             or not 1 <= self.cpu_seconds <= 900
-            or type(self.memory_mib) is not int
-            or not 64 <= self.memory_mib <= 2048
-            or type(self.process_limit) is not int
-            or not 1 <= self.process_limit <= 32
+            or not (
+                (self.memory_mib is None and self.process_limit is None)
+                or (
+                    type(self.memory_mib) is int
+                    and 64 <= self.memory_mib <= 2048
+                    and type(self.process_limit) is int
+                    and 1 <= self.process_limit <= 32
+                )
+            )
             or type(self.output_byte_limit) is not int
             or self.output_byte_limit != MAX_OUTPUT_BYTES
         ):
@@ -560,8 +565,10 @@ def _validate_result_for_request(
         if step_result.cpu_time_ms is not None and (
             step_result.cpu_time_ms > step.cpu_seconds * 1000
             or step_result.peak_job_memory_bytes is None
-            or step_result.peak_job_memory_bytes
-            > step.memory_mib * 1_048_576
+            or (
+                step.memory_mib is not None
+                and step_result.peak_job_memory_bytes > step.memory_mib * 1_048_576
+            )
         ):
             _fail("process_tree_unproved")
 

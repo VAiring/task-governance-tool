@@ -1638,7 +1638,7 @@ def _validate_runner_observation(value: object) -> dict[str, Any]:
         or runner["plan_blob_object_id"] is not None
         or _identifier(runner["plan_id"], _RUNNER_PLAN_IDENTIFIER)
         != runner["plan_id"]
-        or _integer(runner["plan_version"]) != 1
+        or _integer(runner["plan_version"]) not in {1, 2}
         or runner["runner_implementation_version"]
         != "taskgov-verification-runner/1"
         or runner["runtime_digest"] is not None

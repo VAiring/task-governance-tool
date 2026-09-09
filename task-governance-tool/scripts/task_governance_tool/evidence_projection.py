@@ -14,6 +14,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
 
+from task_governance_tool.verification_runner import RUNNER_PLAN_VERSIONS
 from task_governance_tool.evidence_ledger import (
     EvidenceLedgerError,
     EvidenceSource,
@@ -531,7 +532,7 @@ def _runner_observation(value: object) -> dict[str, Any]:
         or type(observation["plan_id"]) is not str
         or _DECLARED_IDENTIFIER.fullmatch(observation["plan_id"]) is None
         or type(observation["plan_version"]) is not int
-        or observation["plan_version"] != 1
+        or observation["plan_version"] not in RUNNER_PLAN_VERSIONS
         or observation["runner_implementation_version"]
         != "taskgov-verification-runner/1"
         or observation["runtime_digest"] is not None

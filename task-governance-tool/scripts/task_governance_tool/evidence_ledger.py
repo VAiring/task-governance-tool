@@ -13,6 +13,7 @@ import re
 from dataclasses import InitVar, dataclass, field
 from typing import Any, Mapping
 
+from task_governance_tool.verification_runner import RUNNER_PLAN_VERSIONS
 
 AUTHORITY_SNAPSHOT_DOMAIN = b"taskgov-authority-snapshot-v1\0"
 CONTRACT_CRITERION_DOMAIN = b"taskgov-contract-criterion-v1\0"
@@ -859,7 +860,7 @@ class EvidenceSource:
                 <= projection["total_step_count"]
                 or projection["plan_blob_object_id"] is not None
                 or type(projection["plan_version"]) is not int
-                or projection["plan_version"] != 1
+                or projection["plan_version"] not in RUNNER_PLAN_VERSIONS
                 or projection["runner_implementation_version"]
                 != "taskgov-verification-runner/1"
                 or projection["runtime_digest"] is not None

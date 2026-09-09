@@ -14,6 +14,7 @@ RUNNER_IMPLEMENTATION_VERSION = "taskgov-verification-runner/1"
 RUNNER_TRIGGER = "review_target_set_v1"
 RUNNER_EXECUTABLE_ID = "taskgov_python"
 RUNNER_MAX_OUTPUT_BYTES = 1_048_576
+RUNNER_PLAN_VERSIONS = frozenset({1, 2})
 RUNNER_POLICY_DIGEST = (
     "sha256:8910c1edfd525be0def6a2c3afb65adab11e5a32e9a60ebbf898c175ffd60fa8"
 )

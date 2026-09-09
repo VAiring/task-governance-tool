@@ -466,7 +466,8 @@ review target. The first explicit `replace` against an absent Plan creates the
 fixed local Plan with `trusted_local=true`; this is the repository's
 trusted-local Runner opt-in. For that initial entry or a deliberate step
 replacement, prepare a strict draft containing only `version` and one through
-16 existing StepV1 objects, then explicitly choose `replace`:
+16 version-matched Step objects, then explicitly choose `replace`. This v1
+example remains valid for Windows:
 
 ```json
 {
@@ -492,6 +493,14 @@ replacement, prepare a strict draft containing only `version` and one through
 Get-Content -Raw -Encoding utf8 .\runner-plan-draft.json |
   python .agents/skills/task-governance-tool/scripts/taskgov.py task edit --repo . <task-id> --runner-plan-action replace --json
 ```
+
+For a v2 draft, set `version` to `2` and replace the two flat limit fields with
+`"windows_limits": {"memory_mib": 256, "process_limit": 4}` or null. The pair
+is Windows-only: Windows requires it before launch; null does not mean an
+applied or unlimited limit. Linux/macOS Runner activation remains a later
+execution unit. Explicit v2 replace upgrades an existing v1 Plan while
+preserving unrelated entry values and bases; other actions preserve its
+version. No automatic migration or additional normal-loop call is introduced.
 
 The other actions read no stdin:
 

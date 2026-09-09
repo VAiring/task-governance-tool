@@ -8,6 +8,7 @@ import sys
 import tempfile
 import unittest
 from copy import deepcopy
+from dataclasses import replace
 from pathlib import Path
 from unittest import mock
 
@@ -101,6 +102,16 @@ def step_payload(**updates):
         "memory_mib": 128,
         "process_limit": 2,
         "output_byte_limit": 1_048_576,
+    }
+    value.update(updates)
+    return value
+
+
+def step_payload_v2(**updates):
+    value = step_payload()
+    value["windows_limits"] = {
+        "memory_mib": value.pop("memory_mib"),
+        "process_limit": value.pop("process_limit"),
     }
     value.update(updates)
     return value
@@ -765,6 +776,7 @@ class StrictPlanValidationTests(VerificationRunnerPlanTestCase):
             {"cpu_seconds": True},
             {"memory_mib": 63},
             {"memory_mib": 2_049},
+            {"memory_mib": None, "process_limit": None},
             {"process_limit": 0},
             {"process_limit": 33},
             {"output_byte_limit": 1_048_575},
@@ -870,6 +882,100 @@ class PlanValueAndEncodingTests(VerificationRunnerPlanTestCase):
         self.assertEqual(
             noncanonical_resolution.selected_entry_digest,
             canonical_resolution.selected_entry_digest,
+        )
+
+    def test_v2_windows_limits_round_trip_preserves_normalized_entry_digest(self):
+        for limits in (
+            None,
+            {"memory_mib": 64, "process_limit": 1},
+            {"memory_mib": 128, "process_limit": 2},
+            {"memory_mib": 2_048, "process_limit": 32},
+        ):
+            with self.subTest(limits=limits):
+                step = step_payload_v2(windows_limits=limits)
+                value = plan_payload(
+                    version=2,
+                    entries=[entry_payload(steps=[step])],
+                )
+                raw = json.dumps(value, indent=2).encode("utf-8")
+                plan = decode_verification_runner_plan(raw)
+                encoded = encode_verification_runner_plan(plan)
+                self.assertEqual(encoded, canonical_json_bytes(value))
+                self.assertEqual(decode_verification_runner_plan(encoded), plan)
+                self.assertEqual(
+                    plan.entries[0].steps[0].physical_value(plan_version=2),
+                    step,
+                )
+                memory = None if limits is None else limits["memory_mib"]
+                processes = None if limits is None else limits["process_limit"]
+                normalized_entry = canonical_entry(
+                    entry_payload(
+                        steps=[step_payload(memory_mib=memory, process_limit=processes)]
+                    )
+                )
+                self.assertEqual(plan.entries[0].canonical_value(), normalized_entry)
+                resolution = resolve(source_from_raw(encoded))
+                self.assertEqual(resolution.plan_version, 2)
+                self.assertEqual(
+                    (resolution.steps[0].memory_mib, resolution.steps[0].process_limit),
+                    (memory, processes),
+                )
+                self.assertEqual(
+                    resolution.selected_entry_digest,
+                    domain_digest(PLAN_ENTRY_DOMAIN, normalized_entry),
+                )
+                self.assertEqual(
+                    resolution.plan_semantic_digest,
+                    domain_digest(
+                        PLAN_SEMANTIC_DOMAIN,
+                        {**value, "entries": [normalized_entry]},
+                    ),
+                )
+                for fallback_value, expected_state in (
+                    ({**value, "trusted_local": False}, "disabled"),
+                    ({**value, "entries": []}, "no_match"),
+                ):
+                    fallback = resolve(source_from_value(fallback_value))
+                    self.assertEqual(fallback.plan_state, expected_state)
+                    self.assertEqual(fallback.plan_version, 2)
+                    self.assertEqual(fallback.steps, ())
+                    self.assertIsNone(fallback.selected_entry_digest)
+                if limits is not None:
+                    legacy = resolve(
+                        source_from_value(
+                            plan_payload(
+                                entries=[
+                                    entry_payload(
+                                        steps=[step_payload(**limits)]
+                                    )
+                                ]
+                            )
+                        )
+                    )
+                    self.assertEqual(
+                        resolution.selected_entry_digest, legacy.selected_entry_digest
+                    )
+                    self.assertNotEqual(
+                        resolution.plan_semantic_digest, legacy.plan_semantic_digest
+                    )
+
+    def test_nullable_limit_pair_cannot_enter_a_version_one_plan_value(self):
+        legacy = decoded_plan()
+        entry = legacy.entries[0]
+        nullable_step = replace(entry.steps[0], memory_mib=None, process_limit=None)
+        nullable_entry = replace(entry, steps=(nullable_step,))
+        for updates in (
+            {"memory_mib": None},
+            {"process_limit": None},
+        ):
+            with self.subTest(updates=updates):
+                self.assert_plan_error(lambda: replace(entry.steps[0], **updates))
+        self.assert_plan_error(lambda: replace(legacy, entries=(nullable_entry,)))
+        self.assert_plan_error(lambda: nullable_step.physical_value(plan_version=1))
+        version_two = replace(legacy, version=2, entries=(nullable_entry,))
+        self.assertEqual(
+            decode_verification_runner_plan(encode_verification_runner_plan(version_two)),
+            version_two,
         )
 
     def test_plan_value_allows_distinct_bases_but_rejects_exact_duplicates(self):
@@ -1063,12 +1169,12 @@ class RunnerPlanAuthoringTests(VerificationRunnerPlanTestCase):
     def test_draft_value_is_factory_owned(self):
         steps = decode_runner_plan_draft(draft_bytes()).steps
         for build in (
-            lambda: authoring_module.RunnerPlanDraftV1(),
-            lambda: authoring_module.RunnerPlanDraftV1(version=1, steps=steps),
+            lambda: authoring_module.RunnerPlanDraft(),
+            lambda: authoring_module.RunnerPlanDraft(version=1, steps=steps),
         ):
             self.assert_authoring_error(build, "invalid_argument")
 
-        forged = object.__new__(authoring_module.RunnerPlanDraftV1)
+        forged = object.__new__(authoring_module.RunnerPlanDraft)
         object.__setattr__(forged, "version", 1)
         object.__setattr__(forged, "steps", steps)
         self.assert_authoring_error(
@@ -1079,6 +1185,103 @@ class RunnerPlanAuthoringTests(VerificationRunnerPlanTestCase):
             ),
             "invalid_argument",
         )
+
+        nullable = decode_runner_plan_draft(
+            draft_bytes(version=2, steps=[step_payload_v2(windows_limits=None)])
+        )
+        object.__setattr__(nullable, "version", 1)
+        self.assert_authoring_error(nullable.__post_init__, "invalid_argument")
+
+    def test_v2_draft_and_plan_share_closed_windows_limit_validation(self):
+        for limits in (None, {"memory_mib": 128, "process_limit": 2}):
+            with self.subTest(valid_limits=limits):
+                step = step_payload_v2(windows_limits=limits)
+                draft = decode_runner_plan_draft(draft_bytes(version=2, steps=[step]))
+                created = replace_verification_runner_plan(
+                    None, basis=plan_basis(), draft=draft
+                )
+                self.assertEqual(draft.version, 2)
+                self.assertEqual(created.plan.version, 2)
+                self.assertEqual(created.plan.plan_id, INITIAL_PLAN_ID)
+                self.assertEqual(created.plan.entries[0].steps, draft.steps)
+                self.assertEqual(
+                    json.loads(created.candidate_bytes)["entries"][0]["steps"],
+                    [step],
+                )
+                self.assertEqual(
+                    decode_verification_runner_plan(created.candidate_bytes),
+                    created.plan,
+                )
+
+        invalid_limits = (
+            {},
+            [],
+            True,
+            "unsupported",
+            {"memory_mib": 128},
+            {"process_limit": 2},
+            {"memory_mib": 128, "process_limit": 2, "extra": 1},
+            {"memory_mib": None, "process_limit": None},
+            {"memory_mib": None, "process_limit": 2},
+            {"memory_mib": 128, "process_limit": None},
+            {"memory_mib": True, "process_limit": 2},
+            {"memory_mib": 128, "process_limit": True},
+            {"memory_mib": 128.0, "process_limit": 2},
+            {"memory_mib": 128, "process_limit": "2"},
+            {"memory_mib": 63, "process_limit": 2},
+            {"memory_mib": 2_049, "process_limit": 2},
+            {"memory_mib": 128, "process_limit": 0},
+            {"memory_mib": 128, "process_limit": 33},
+        )
+        invalid_steps = [step_payload_v2(windows_limits=value) for value in invalid_limits]
+        missing_limits = step_payload_v2()
+        del missing_limits["windows_limits"]
+        invalid_steps.extend(
+            (
+                missing_limits,
+                step_payload_v2(memory_mib=128),
+                step_payload_v2(process_limit=2),
+            )
+        )
+        for step in invalid_steps:
+            with self.subTest(invalid_step=step):
+                self.assert_authoring_error(
+                    lambda: decode_runner_plan_draft(draft_bytes(version=2, steps=[step])),
+                    "invalid_argument",
+                )
+                self.assert_plan_error(
+                    lambda: decode_verification_runner_plan(
+                        canonical_json_bytes(
+                            plan_payload(version=2, entries=[entry_payload(steps=[step])])
+                        )
+                    ),
+                    "plan_invalid",
+                )
+
+        for version, step in (
+            (1, step_payload_v2()),
+            (1, step_payload_v2(windows_limits=None)),
+            (1, step_payload(memory_mib=None, process_limit=None)),
+            (2, step_payload()),
+            (3, step_payload_v2()),
+        ):
+            with self.subTest(version=version, step=step):
+                self.assert_authoring_error(
+                    lambda: decode_runner_plan_draft(
+                        draft_bytes(version=version, steps=[step])
+                    ),
+                    "invalid_argument",
+                )
+                self.assert_plan_error(
+                    lambda: decode_verification_runner_plan(
+                        canonical_json_bytes(
+                            plan_payload(
+                                version=version, entries=[entry_payload(steps=[step])]
+                            )
+                        )
+                    ),
+                    "plan_invalid",
+                )
 
     def test_draft_privacy_guard_receives_every_original_string_leaf(self):
         steps = [
@@ -1138,7 +1341,7 @@ class RunnerPlanAuthoringTests(VerificationRunnerPlanTestCase):
             ({"cwd": secret}, {}),
             ({"argv": ["x" * 4_097 + " " + secret]}, {}),
             ({"timeout_seconds": 0, "argv": [secret]}, {}),
-            ({"argv": [secret]}, {"version": 2}),
+            ({"argv": [secret]}, {"version": 3}),
         )
         for step_update, draft_update in leaf_cases:
             with self.subTest(step_update=tuple(step_update), draft_update=draft_update):
@@ -1198,6 +1401,63 @@ class RunnerPlanAuthoringTests(VerificationRunnerPlanTestCase):
             lambda: decode_runner_plan_draft(duplicate),
             "invalid_argument",
         )
+
+    def test_known_version_shapes_are_recognized_before_draft_privacy(self):
+        secret = "api_key=TOP_SECRET_VALUE"
+        for version, build in ((1, step_payload_v2), (2, step_payload)):
+            with self.subTest(version=version):
+                self.assert_authoring_error(
+                    lambda: decode_runner_plan_draft(
+                        draft_bytes(version=version, steps=[build()])
+                    ),
+                    "invalid_argument",
+                )
+                with self.assertRaises(TaskValidationError) as raised:
+                    decode_runner_plan_draft(
+                        draft_bytes(version=version, steps=[build(argv=[secret])])
+                    )
+                self.assertEqual(raised.exception.code, "privacy_rejected")
+                self.assertEqual(raised.exception.field, PRIVACY_FIELD)
+                self.assertNotIn(secret, str(raised.exception))
+
+        for limits in (
+            {"memory_mib": 63, "process_limit": 2},
+            None,
+        ):
+            with self.subTest(recognized_limits=limits):
+                with self.assertRaises(TaskValidationError) as raised:
+                    decode_runner_plan_draft(
+                        draft_bytes(
+                            version=2,
+                            steps=[step_payload_v2(argv=[secret], windows_limits=limits)],
+                        )
+                    )
+                self.assertEqual(raised.exception.code, "privacy_rejected")
+
+        for limits in (
+            {"memory_mib": 128},
+            {"memory_mib": "128", "process_limit": 2},
+            {"memory_mib": 128, "process_limit": 2, "extra": 1},
+        ):
+            with self.subTest(unrecognized_limits=limits):
+                with mock.patch.object(
+                    authoring_module, "reject_private_or_raw_content"
+                ) as privacy_guard:
+                    self.assert_authoring_error(
+                        lambda: decode_runner_plan_draft(
+                            draft_bytes(
+                                version=2,
+                                steps=[
+                                    step_payload_v2(argv=[secret]),
+                                    step_payload_v2(
+                                        step_id="later", windows_limits=limits
+                                    ),
+                                ],
+                            )
+                        ),
+                        "invalid_argument",
+                    )
+                privacy_guard.assert_not_called()
 
     def test_replace_creates_appends_repairs_and_recognizes_no_op(self):
         future = plan_basis(
@@ -1284,6 +1544,7 @@ class RunnerPlanAuthoringTests(VerificationRunnerPlanTestCase):
         rebound = rebind_verification_runner_plan(present, basis=future)
         self.assertTrue(rebound.changed)
         self.assertEqual(rebound.plan.plan_id, present.plan_id)
+        self.assertEqual(rebound.plan.version, 1)
         self.assertEqual(rebound.plan.trusted_local, present.trusted_local)
         self.assertEqual(rebound.plan.entries[0], present.entries[0])
         self.assertEqual(rebound.plan.entries[1].basis(), future)
@@ -1349,6 +1610,7 @@ class RunnerPlanAuthoringTests(VerificationRunnerPlanTestCase):
         self.assertTrue(detached.changed)
         self.assertEqual(detached.plan.entries, ())
         self.assertEqual(detached.plan.plan_id, multiple.plan_id)
+        self.assertEqual(detached.plan.version, 1)
         self.assertIs(detached.plan.trusted_local, False)
 
         other_a = "tg_task_1111111111111111"
@@ -1389,7 +1651,89 @@ class RunnerPlanAuthoringTests(VerificationRunnerPlanTestCase):
         self.assertTrue(result.changed)
         self.assertIs(result.plan.trusted_local, False)
         self.assertEqual(result.plan.plan_id, enabled_plan.plan_id)
+        self.assertEqual(result.plan.version, 1)
         self.assertEqual(result.plan.entries, enabled_plan.entries)
+
+    def test_explicit_replace_upgrades_and_other_actions_preserve_plan_version(self):
+        other_b = "tg_task_1111111111111111"
+        legacy = decoded_plan(
+            entries=[
+                entry_payload(task_id=OTHER_TASK_ID),
+                entry_payload(),
+                entry_payload(task_id=other_b),
+            ]
+        )
+        legacy_bytes = encode_verification_runner_plan(legacy)
+        draft = decode_runner_plan_draft(draft_bytes(version=2, steps=[step_payload_v2()]))
+        upgraded = replace_verification_runner_plan(
+            legacy, basis=plan_basis(), draft=draft
+        )
+        self.assertTrue(upgraded.changed)
+        self.assertEqual(upgraded.plan.version, 2)
+        self.assertEqual(upgraded.plan.plan_id, legacy.plan_id)
+        self.assertEqual(upgraded.plan.trusted_local, legacy.trusted_local)
+        self.assertEqual(upgraded.plan.entries, legacy.entries)
+        self.assertEqual(
+            [entry.task_id for entry in upgraded.plan.entries],
+            [OTHER_TASK_ID, TASK_ID, other_b],
+        )
+        self.assertNotEqual(upgraded.candidate_bytes, legacy_bytes)
+        self.assertEqual(
+            decode_verification_runner_plan(upgraded.candidate_bytes), upgraded.plan
+        )
+        encoded = json.loads(upgraded.candidate_bytes)
+        for entry in encoded["entries"]:
+            self.assertEqual(entry["steps"], [step_payload_v2()])
+        for task_id in (TASK_ID, OTHER_TASK_ID, other_b):
+            with self.subTest(preserved_task=task_id):
+                before = resolve(source_from_raw(legacy_bytes), task_id=task_id)
+                after = resolve(source_from_raw(upgraded.candidate_bytes), task_id=task_id)
+                self.assertEqual((before.plan_version, after.plan_version), (1, 2))
+                self.assertEqual(before.steps, after.steps)
+                self.assertEqual(before.selected_entry_digest, after.selected_entry_digest)
+                self.assertNotEqual(before.plan_raw_digest, after.plan_raw_digest)
+                self.assertNotEqual(before.plan_semantic_digest, after.plan_semantic_digest)
+
+        legacy_draft = decode_runner_plan_draft(draft_bytes())
+        unchanged = replace_verification_runner_plan(
+            upgraded.plan, basis=plan_basis(), draft=legacy_draft
+        )
+        self.assertFalse(unchanged.changed)
+        self.assertIs(unchanged.plan, upgraded.plan)
+        self.assertIsNone(unchanged.candidate_bytes)
+        changed = replace_verification_runner_plan(
+            upgraded.plan,
+            basis=plan_basis(),
+            draft=decode_runner_plan_draft(
+                draft_bytes(steps=[step_payload(argv=["changed"])])
+            ),
+        )
+        self.assertEqual(changed.plan.version, 2)
+        self.assertEqual(changed.plan.entries[0], upgraded.plan.entries[0])
+        self.assertEqual(changed.plan.entries[2], upgraded.plan.entries[2])
+        self.assertEqual(changed.plan.entries[1].steps[0].argv, ("changed",))
+
+        future = plan_basis(contract_revision=CONTRACT_REVISION + 1)
+        rebound = rebind_verification_runner_plan(upgraded.plan, basis=future)
+        detached = detach_verification_runner_plan(upgraded.plan, task_id=TASK_ID)
+        disabled = disable_verification_runner_plan(upgraded.plan)
+        for result in (rebound, detached, disabled):
+            self.assertTrue(result.changed)
+            self.assertEqual(result.plan.version, 2)
+            self.assertEqual(result.plan.plan_id, upgraded.plan.plan_id)
+            self.assertEqual(
+                decode_verification_runner_plan(result.candidate_bytes), result.plan
+            )
+        self.assertEqual(rebound.plan.entries[1].basis(), future)
+        self.assertEqual(rebound.plan.entries[1].steps, upgraded.plan.entries[1].steps)
+        self.assertEqual(rebound.plan.entries[0], upgraded.plan.entries[0])
+        self.assertEqual(rebound.plan.entries[2], upgraded.plan.entries[2])
+        self.assertEqual(
+            detached.plan.entries,
+            (upgraded.plan.entries[0], upgraded.plan.entries[2]),
+        )
+        self.assertEqual(disabled.plan.entries, upgraded.plan.entries)
+        self.assertIs(disabled.plan.trusted_local, False)
 
     def test_changed_candidate_enforces_entry_and_exact_byte_bounds(self):
         full_plan = decoded_plan(

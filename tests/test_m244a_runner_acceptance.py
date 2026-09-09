@@ -50,6 +50,12 @@ from task_governance_tool.verification_runner_process import (  # noqa: E402
 
 class M244ARunnerAcceptanceTests(unittest.TestCase):
     def test_public_plan_replace_reaches_exact_commit_runner_pass(self):
+        self._assert_public_plan_replace_runner_pass(plan_version=1)
+
+    def test_public_v2_windows_plan_reaches_exact_commit_runner_pass(self):
+        self._assert_public_plan_replace_runner_pass(plan_version=2)
+
+    def _assert_public_plan_replace_runner_pass(self, *, plan_version):
         # This is intentionally non-SKIP: another OS cannot manufacture PASS.
         self.assertEqual(os.name, "nt", "TG-RRI.3 requires a real Windows Job")
         raw_output_secret = "TG_RRI3_RAW_OUTPUT_MUST_NOT_PERSIST_61e9a4"
@@ -141,23 +147,25 @@ class M244ARunnerAcceptanceTests(unittest.TestCase):
             index_before = (repo / ".git" / "index").read_bytes()
             refs_before = git(repo, "show-ref").stdout
 
+            step = {
+                "step_id": "rri3-canary",
+                "mode": "script",
+                "entrypoint": "checks/run.py",
+                "argv": [],
+                "cwd": ".",
+                "timeout_seconds": 30,
+                "cpu_seconds": 20,
+                "output_byte_limit": 1_048_576,
+            }
+            limits = {"memory_mib": 128, "process_limit": 2}
+            if plan_version == 1:
+                step.update(limits)
+            else:
+                step["windows_limits"] = limits
             draft = json.dumps(
                 {
-                    "version": 1,
-                    "steps": [
-                        {
-                            "step_id": "rri3-canary",
-                            "mode": "script",
-                            "entrypoint": "checks/run.py",
-                            "argv": [],
-                            "cwd": ".",
-                            "timeout_seconds": 30,
-                            "cpu_seconds": 20,
-                            "memory_mib": 128,
-                            "process_limit": 2,
-                            "output_byte_limit": 1_048_576,
-                        }
-                    ],
+                    "version": plan_version,
+                    "steps": [step],
                 },
                 ensure_ascii=False,
                 sort_keys=True,
@@ -223,6 +231,7 @@ class M244ARunnerAcceptanceTests(unittest.TestCase):
                 0,
             )
             plan = json.loads(plan_path.read_text(encoding="utf-8"))
+            self.assertEqual(plan["version"], plan_version)
             self.assertIs(plan["trusted_local"], True)
             self.assertEqual(
                 [entry["task_id"] for entry in plan["entries"]],
@@ -319,6 +328,7 @@ class M244ARunnerAcceptanceTests(unittest.TestCase):
 
             self.assertIsNotNone(task)
             observation = graph["observation"]
+            self.assertEqual(graph["resolution"].plan_version, plan_version)
             self.assertEqual(graph["state"], "terminal")
             self.assertEqual(
                 (

@@ -58,6 +58,7 @@ from task_governance_tool.verification_runner_git import (  # noqa: E402
 from task_governance_tool.verification_runner_plan import (  # noqa: E402
     VerificationRunnerPlanResolution,
     VerificationRunnerPlanStep,
+    decode_verification_runner_plan_steps,
 )
 from task_governance_tool.verification_runner_lifecycle import (  # noqa: E402
     inspect_runner_layout,
@@ -1357,6 +1358,113 @@ class VerificationRunnerServiceTests(unittest.TestCase):
                     service._physical_basis_matches(fixture.target, prepared)
                 )
             preflight.assert_called_once_with(fixture.repo, prepared.target)
+
+    def test_v2_windows_limits_are_copied_to_process_steps(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            fixture = RunnerServiceFixture(Path(temporary))
+            prepared = fixture.prepared()
+            physical_step = prepared.plan.steps[0].physical_value(plan_version=2)
+            for limits, expected in (
+                ({"memory_mib": 256, "process_limit": 4}, (256, 4)),
+                (None, (None, None)),
+            ):
+                with self.subTest(windows_limits=limits):
+                    steps = decode_verification_runner_plan_steps(
+                        [dict(physical_step, windows_limits=limits)],
+                        plan_version=2,
+                    )
+                    plan = replace(prepared.plan, plan_version=2, steps=steps)
+                    process_steps = service._process_steps(plan)
+                    self.assertEqual(len(process_steps), 1)
+                    converted = process_steps[0]
+                    self.assertEqual(
+                        (converted.memory_mib, converted.process_limit), expected,
+                    )
+                    self.assertEqual(converted.ordinal, steps[0].ordinal)
+                    self.assertEqual(converted.argv, steps[0].argv)
+                    self.assertEqual(
+                        converted.timeout_seconds, steps[0].timeout_seconds,
+                    )
+                    self.assertEqual(converted.cpu_seconds, steps[0].cpu_seconds)
+                    self.assertEqual(
+                        converted.output_byte_limit, steps[0].output_byte_limit,
+                    )
+                    self.assertFalse(converted.shell)
+                    self.assertFalse(converted.path_lookup)
+
+    @unittest.skipUnless(sys.platform == "win32", "Windows no-launch admission")
+    def test_v2_missing_windows_limits_terminalize_as_manual_fallback(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            fixture = RunnerServiceFixture(Path(temporary))
+            prepared = fixture.prepared()
+            physical_step = prepared.plan.steps[0].physical_value(plan_version=2)
+            steps = decode_verification_runner_plan_steps(
+                [dict(physical_step, windows_limits=None)], plan_version=2,
+            )
+            prepared = replace(
+                prepared,
+                plan=replace(prepared.plan, plan_version=2, steps=steps),
+            )
+            paths = service._runner_paths(fixture.target)
+            with service.zero_wait_runner_lock(paths):
+                intent = service._persist_launch_intent(fixture.target, prepared)
+                with mock.patch.object(
+                    service, "materialize_runner_target", return_value=None,
+                ), mock.patch.object(
+                    service, "_basis_is_current", return_value=True,
+                ), mock.patch.object(
+                    service, "_physical_basis_matches", return_value=True,
+                ), mock.patch.object(
+                    service,
+                    "observe_fixed_package_runtime",
+                    return_value=Path(sys.executable).resolve(),
+                ), mock.patch.object(
+                    runner_process,
+                    "run_process_request",
+                    wraps=runner_process.run_process_request,
+                ) as process, mock.patch.object(
+                    runner_process,
+                    "_admit_request",
+                    side_effect=AssertionError("native admission must not run"),
+                ) as admission:
+                    result = service._run_intent_under_lock(
+                        fixture.target,
+                        paths,
+                        prepared,
+                        intent,
+                        cancel_requested=lambda: False,
+                    )
+                process.assert_called_once()
+                admission.assert_not_called()
+                request_step = process.call_args.args[0].steps[0]
+                self.assertIsNone(request_step.memory_mib)
+                self.assertIsNone(request_step.process_limit)
+                self.assertEqual(result.verification_route, "receipt_required")
+                self.assertIsNone(result.blocking_code)
+
+            generation = fixture.generation(1)
+            self.assertEqual(generation["state"], "terminal")
+            self.assertEqual(generation["resolution"].plan_version, 2)
+            observation = generation["observation"]
+            self.assertEqual(
+                (
+                    observation.route,
+                    observation.launch_state,
+                    observation.outcome,
+                    observation.reason,
+                    observation.complete_plan,
+                    observation.completed_step_count,
+                ),
+                ("m21_fallback", "no_launch", "blocked_prelaunch",
+                 "process_setup_failed", 0, 0),
+            )
+            self.assertEqual(
+                generation["cleanup_event"].terminal_observation_id,
+                observation.verification_runner_observation_id,
+            )
+            inventory = inspect_runner_layout(paths)
+            self.assertEqual(inventory.attempt_ids, ())
+            self.assertEqual(inventory.quarantine_ids, ())
 
     def test_launched_pass_maps_to_one_runner_terminal_graph(self):
         with tempfile.TemporaryDirectory() as temporary:

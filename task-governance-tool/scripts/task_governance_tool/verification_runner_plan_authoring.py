@@ -1,4 +1,4 @@
-"""Pure closed Runner Plan draft decoding and PlanV1 action transforms.
+"""Pure closed Runner Plan draft decoding and version-preserving transforms.
 
 This module performs no filesystem, SQLite, Git, CLI, process, Evidence,
 Viewer, or logging I/O.  Physical publication remains a later boundary.
@@ -10,11 +10,11 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from task_governance_tool.task_values import reject_private_or_raw_content
+from task_governance_tool.verification_runner import RUNNER_PLAN_VERSIONS
 from task_governance_tool.verification_runner_plan import (
     PLAN_BLOB_UTF8_BYTE_LIMIT,
     PLAN_STEP_LIMIT,
     PLAN_TOTAL_TIMEOUT_SECONDS,
-    PLAN_VERSION,
     VerificationRunnerPlan,
     VerificationRunnerPlanBasis,
     VerificationRunnerPlanEntry,
@@ -49,7 +49,7 @@ def _entry_required() -> VerificationRunnerPlanError:
 
 
 @dataclass(frozen=True, init=False)
-class RunnerPlanDraftV1:
+class RunnerPlanDraft:
     version: int
     steps: tuple[VerificationRunnerPlanStep, ...]
     _admission: object = field(init=False, repr=False, compare=False)
@@ -61,7 +61,7 @@ class RunnerPlanDraftV1:
         if (
             getattr(self, "_admission", None) is not _DRAFT_ADMISSION
             or type(self.version) is not int
-            or self.version != PLAN_VERSION
+            or self.version not in RUNNER_PLAN_VERSIONS
             or type(self.steps) is not tuple
             or not 1 <= len(self.steps) <= PLAN_STEP_LIMIT
             or any(
@@ -72,6 +72,10 @@ class RunnerPlanDraftV1:
             or len({step.step_id for step in self.steps}) != len(self.steps)
             or sum(step.timeout_seconds for step in self.steps)
             > PLAN_TOTAL_TIMEOUT_SECONDS
+            or (
+                self.version == 1
+                and any(step.memory_mib is None for step in self.steps)
+            )
         ):
             raise _invalid_argument()
 
@@ -108,7 +112,7 @@ def _exact_draft(value: Any) -> dict[str, Any]:
     return value
 
 
-def decode_runner_plan_draft(raw_blob: bytes) -> RunnerPlanDraftV1:
+def decode_runner_plan_draft(raw_blob: bytes) -> RunnerPlanDraft:
     """Decode one bounded draft with privacy before leaf grammar and bounds."""
 
     if type(raw_blob) is not bytes or len(raw_blob) > PLAN_BLOB_UTF8_BYTE_LIMIT:
@@ -126,14 +130,17 @@ def decode_runner_plan_draft(raw_blob: bytes) -> RunnerPlanDraftV1:
     for leaf in string_leaves:
         reject_private_or_raw_content(PRIVACY_FIELD, leaf)
 
-    if value["version"] != PLAN_VERSION:
+    if value["version"] not in RUNNER_PLAN_VERSIONS:
         raise _invalid_argument()
     try:
-        steps = decode_verification_runner_plan_steps(value["steps"])
+        steps = decode_verification_runner_plan_steps(
+            value["steps"],
+            plan_version=value["version"],
+        )
     except VerificationRunnerPlanError as exc:
         raise _invalid_argument() from exc
-    draft = object.__new__(RunnerPlanDraftV1)
-    object.__setattr__(draft, "version", PLAN_VERSION)
+    draft = object.__new__(RunnerPlanDraft)
+    object.__setattr__(draft, "version", value["version"])
     object.__setattr__(draft, "steps", steps)
     object.__setattr__(draft, "_admission", _DRAFT_ADMISSION)
     draft.__post_init__()
@@ -150,13 +157,14 @@ def _changed_result(plan: VerificationRunnerPlan) -> RunnerPlanActionResult:
 
 def _build_candidate_plan(
     *,
+    version: int,
     plan_id: str,
     trusted_local: bool,
     entries: tuple[VerificationRunnerPlanEntry, ...],
 ) -> VerificationRunnerPlan:
     try:
         return VerificationRunnerPlan(
-            version=PLAN_VERSION,
+            version=version,
             plan_id=plan_id,
             trusted_local=trusted_local,
             entries=entries,
@@ -188,12 +196,12 @@ def replace_verification_runner_plan(
     plan: VerificationRunnerPlan | None,
     *,
     basis: VerificationRunnerPlanBasis,
-    draft: RunnerPlanDraftV1,
+    draft: RunnerPlanDraft,
 ) -> RunnerPlanActionResult:
     if plan is not None and type(plan) is not VerificationRunnerPlan:
         raise _invalid_argument()
     if (
-        type(draft) is not RunnerPlanDraftV1
+        type(draft) is not RunnerPlanDraft
         or getattr(draft, "_admission", None) is not _DRAFT_ADMISSION
     ):
         raise _invalid_argument()
@@ -201,6 +209,7 @@ def replace_verification_runner_plan(
     if plan is None:
         return _changed_result(
             _build_candidate_plan(
+                version=draft.version,
                 plan_id=INITIAL_PLAN_ID,
                 trusted_local=True,
                 entries=(replacement,),
@@ -216,6 +225,7 @@ def replace_verification_runner_plan(
     entries = [entry for entry in plan.entries if entry.task_id != basis.task_id]
     entries.insert(insertion, replacement)
     candidate_plan = _build_candidate_plan(
+        version=max(plan.version, draft.version),
         plan_id=plan.plan_id,
         trusted_local=plan.trusted_local,
         entries=tuple(entries),
@@ -253,6 +263,7 @@ def rebind_verification_runner_plan(
     entries[index] = rebound
     return _changed_result(
         _build_candidate_plan(
+            version=plan.version,
             plan_id=plan.plan_id,
             trusted_local=plan.trusted_local,
             entries=tuple(entries),
@@ -280,6 +291,7 @@ def detach_verification_runner_plan(
         return RunnerPlanActionResult(plan=plan, candidate_bytes=None)
     return _changed_result(
         _build_candidate_plan(
+            version=plan.version,
             plan_id=plan.plan_id,
             trusted_local=plan.trusted_local,
             entries=entries,
@@ -298,6 +310,7 @@ def disable_verification_runner_plan(
         return RunnerPlanActionResult(plan=plan, candidate_bytes=None)
     return _changed_result(
         _build_candidate_plan(
+            version=plan.version,
             plan_id=plan.plan_id,
             trusted_local=False,
             entries=plan.entries,

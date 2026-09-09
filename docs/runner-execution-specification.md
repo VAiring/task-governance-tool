@@ -92,18 +92,22 @@ case-insensitive form of the physical plan path is registered in the current
 index and that the physical spelling is effectively ignored; uncertainty
 blocks. A staged snapshot therefore cannot register the same Windows path
 under another letter case while using it as plan authority. Its
-version-one JSON has these closed member sets; an unknown, missing, duplicate,
+version-one and version-two JSON have these closed member sets; an unknown, missing, duplicate,
 or differently typed member is invalid:
 
 ```text
-PlanV1 = version, plan_id, trusted_local, entries
+PlanV1 / PlanV2 = version, plan_id, trusted_local, entries
 EntryV1 = task_id, contract_revision, verification_expectation_digest,
   verification_criterion_digest, coverage, steps
 StepV1 = step_id, mode, entrypoint, argv, cwd, timeout_seconds, cpu_seconds,
   memory_mib, process_limit, output_byte_limit
+StepV2 = step_id, mode, entrypoint, argv, cwd, timeout_seconds, cpu_seconds,
+  windows_limits, output_byte_limit
+WindowsLimits = memory_mib, process_limit
 ```
 
-`version` is exactly `1`; `plan_id` and every `step_id` use the bounded Runner
+`version` is exactly integer `1|2` and selects StepV1 or StepV2 for every
+entry; the Entry member set is unchanged. `plan_id` and every `step_id` use the bounded Runner
 identifier grammar; `trusted_local` is a JSON Boolean and is the explicit
 project opt-in; and `entries` contains zero through 64 distinct exact bases.
 Each entry names one Task ID, Contract revision in
@@ -115,6 +119,23 @@ literal arguments, one bounded relative working directory, the already frozen
 numeric process bounds, and `output_byte_limit = 1048576`. Order supplies the
 one-based ordinal. `shell` and `PATH` lookup are not plan inputs and remain
 fixed false.
+
+StepV1 retains required integer `memory_mib=64..2048` and
+`process_limit=1..32`, interpreted as Windows Job limits. StepV2 instead has
+exactly `windows_limits`, either the closed object with those same two bounds
+or JSON null. Null means no Windows settings were supplied, not unlimited
+resources, a measured zero, or an applied limit. Windows requires the pair for
+every step and returns the existing proved no-launch
+`blocked_prelaunch/process_setup_failed` result if any pair is absent, before
+admission or resource acquisition for any step. Linux/macOS do not require or
+apply this Windows-only pair; their Runner activation remains conditional on
+the later OS adapter units. CPU and wall-time bounds remain required.
+
+Plan version and raw/semantic digests distinguish v2 from v1. Integer limits
+normalize to the same selected-entry values and digest as before; null pairs
+are distinct. Existing Plan files and stored history are never implicitly
+rewritten. Current gate-eligible Runner graph and Bundle readers admit plan versions 1 and 2
+without changing the schema or Evidence format.
 
 Plan validation checks only bounds knowable from the plan: member types and byte
 grammars, entry and step counts, literal-argument counts and sizes, total

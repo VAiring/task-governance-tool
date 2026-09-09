@@ -875,6 +875,23 @@ def run_process_request(
 ) -> RunnerProcessResultV1:
     """Execute one fully admitted request and return only its closed result."""
 
+    if type(request) is RunnerProcessRequestV1 and any(
+        step.memory_mib is None for step in request.steps
+    ):
+        # A supported common value can omit Windows-only settings. Reject the
+        # whole request before admission or resources, not after an earlier step.
+        return _result(
+            request,
+            outcome="blocked_prelaunch",
+            reason="process_setup_failed",
+            launch_state="no_launch",
+            failed_step_ordinal=None,
+            duration_ms=0,
+            steps=(),
+            process_zero=True,
+            handles_closed=True,
+            raw_output_discarded=True,
+        )
     admitted = _admit_request(request)
     started = time.monotonic()
     completed: list[RunnerProcessStepResultV1] = []

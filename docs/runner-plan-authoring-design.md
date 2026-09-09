@@ -26,8 +26,8 @@ graph. It adds these exact ownership boundaries:
 
 | Owner | Responsibility | Forbidden responsibility |
 |---|---|---|
-| `verification_runner_plan.py` | Existing physical capture/resolution plus shared pure PlanV1 value decode, validation, and canonical encoding used by both readers and authoring. | No Plan publication, Task/SQLite write, CLI decision, process launch, or Runner graph write. |
-| `verification_runner_plan_authoring.py` | Strict RunnerPlanDraftV1 decode and pure `replace|rebind|detach|disable` transforms over one validated PlanV1 value. | No filesystem, SQLite, Git, target, CLI, process, Evidence, Viewer, or logging I/O. |
+| `verification_runner_plan.py` | Existing physical capture/resolution plus shared pure PlanV1/PlanV2 value decode, validation, and canonical encoding used by both readers and authoring. | No Plan publication, Task/SQLite write, CLI decision, process launch, or Runner graph write. |
+| `verification_runner_plan_authoring.py` | Strict versioned RunnerPlanDraft decode and pure `replace|rebind|detach|disable` transforms over one validated Plan value. | No filesystem, SQLite, Git, target, CLI, process, Evidence, Viewer, or logging I/O. |
 | `verification_runner_plan_publisher.py` | Capture/revalidate the one canonical physical authoring source for every action and, when supplied, publish one already-canonical bounded candidate through the complete-file replacement boundary. | No Task or Contract decision, database access, action selection, process launch, target materialization, or Runner graph write. |
 | `verification_runner_plan_edit.py` | Parent control orchestration, option compatibility, current/future basis selection, DB-first sequencing, publisher invocation, and typed success/partial-success result. | No parser/text formatting, Runner dispatch, process/lifecycle/native call, schema change, Evidence/Viewer write, automatic action, or command inference. |
 | `cli.py` | Parse the one action option, read bounded stdin for `replace`, call the parent control service, format the closed result/warning, and schedule ordinary maintenance for a committed Task mutation. | No Plan semantics, basis derivation, physical publication, Runner launch, or second approval protocol. |
@@ -42,6 +42,7 @@ verification_runner_plan_edit -> verification_runner_plan_publisher
 verification_runner_plan_publisher -> verification_runner_plan
 verification_runner_plan_publisher -> state_paths
 verification_runner_plan_authoring -> verification_runner_plan
+verification_runner_plan_authoring -> verification_runner (supported Plan version values only)
 verification_runner_plan_authoring -> task_values (common privacy guard only)
 ```
 
@@ -49,14 +50,14 @@ These edges do not alter the existing Runner-layer registry or add a reverse
 edge into `verification_runner_service`, `verification_runner_process`,
 `verification_runner_lifecycle`, `_verification_runner_win32`, storage,
 completion, Evidence, or Viewer. The execution reader continues to capture and
-resolve the same PlanV1 bytes; it neither imports nor invokes authoring or its
+resolve the same supported Plan bytes; it neither imports nor invokes authoring or its
 publisher.
 
 `verification_runner_plan.py` may expose immutable Plan/Entry value objects and
 pure canonical decode/encode helpers instead of duplicating its existing
 closed validators. Its current `VerificationRunnerPlanSource`, source capture,
 error sanitization, normalized digest, exact-basis selection, and fallback/
-block behavior remain byte- and semantics-compatible. The authoring transform
+block behavior remain byte- and semantics-compatible for v1. The authoring transform
 accepts only a validated value and the future basis supplied by its parent. It
 preserves Plan ID, global trust except for `disable`, all unrelated entries,
 and their order, with the cardinality and insertion rules fixed by the
@@ -64,14 +65,23 @@ specification. It creates the fixed initial Plan only for `replace` against an
 absent source. No action reads the ambient target, verifies entrypoint
 existence, predicts command success, or evaluates test coverage.
 
-The draft decoder, and not the shared PlanV1 reader decoder, applies the
+The immutable `RunnerPlanDraft` retains its explicit version. Initial replace
+uses it; present-Plan replace uses the maximum of source and draft versions.
+Other actions retain the source version. The explicit v1-to-v2 upgrade is the
+only exception to preserving unrelated physical Step representation; their
+normalized values and entry digests remain unchanged. Encoding is selected by
+the owning Plan version, while canonical normalized values retain the existing
+flat limit pair and digest domains defined by the execution design.
+
+The draft decoder, and not the shared Plan reader decoder, applies the
 existing pure `task_values.reject_private_or_raw_content` guard to every recognized
-caller-supplied StepV1 string leaf with the fixed field label
+caller-supplied StepV1/StepV2 string leaf with the fixed field label
 `Runner Plan draft`. It performs that complete leaf pass before enum, grammar,
-UTF-8, candidate, or transform validation, returns the existing
+UTF-8, draft version/Step-version consistency, candidate, or transform validation, returns the existing
 `privacy_rejected` error without the rejected value, and emits no candidate on
 failure. It does not call `validate_text`, add a second privacy pattern set, or
-change admission of an existing physical PlanV1 source.
+change admission of an existing physical Plan source. Closed known Step shape
+and member-type recognition precede privacy; version selection does not.
 
 `runner_plan_update.status=unchanged` means the pure action produces the same
 normalized Plan semantics. A semantic no-op returns no publication candidate
@@ -211,7 +221,7 @@ acceptance. The active Task Contract and existing repository
 [review](../AGENTS.md#review-standard) rules determine the checks and review
 gates for a change.
 
-Authoring reuses the current schema and PlanV1. Its control boundary adds no
+Authoring reuses the current schema and supported Plan versions. Its control boundary adds no
 setup/doctor/Viewer/Evidence route, Skill trigger, public leaf, Runner execution
 command, automatic command discovery, re-enable action, hostile-code
 qualification, or network action. Runner execution and its qualification

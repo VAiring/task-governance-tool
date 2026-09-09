@@ -9,7 +9,7 @@ import tempfile
 import unittest
 from contextlib import ExitStack, closing, contextmanager
 from dataclasses import replace
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from types import SimpleNamespace
 from unittest import mock
 
@@ -49,6 +49,8 @@ from task_governance_tool.verification_runner_repository import (  # noqa: E402
 from task_governance_tool.verification_runner import (  # noqa: E402
     RUNNER_CONTRACT_VERSION,
     RUNNER_IMPLEMENTATION_VERSION,
+    RUNNER_POLICY_DIGEST,
+    RUNNER_POSIX_POLICY_DIGEST,
 )
 from task_governance_tool.verification_runner_git import (  # noqa: E402
     VerificationRunnerGitError,
@@ -65,8 +67,11 @@ from task_governance_tool.verification_runner_lifecycle import (  # noqa: E402
 )
 from task_governance_tool.verification_runner_process import (  # noqa: E402
     RunnerProcessError,
+    RunnerCancelSignal,
+    RunnerProcessRequestV1,
     RunnerProcessResultV1,
     RunnerProcessStepResultV1,
+    RunnerProcessStepV1,
 )
 from task_governance_tool.verification_runner_runtime import (  # noqa: E402
     RunnerImplementationIdentity,
@@ -82,14 +87,17 @@ DIGEST_E = "sha256:" + "e" * 64
 
 
 def passing_process_result(request) -> RunnerProcessResultV1:
+    policy = getattr(request, "runner_policy_digest", RUNNER_POLICY_DIGEST)
+    auxiliary = None if policy == RUNNER_POSIX_POLICY_DIGEST else 1
     step = RunnerProcessStepResultV1(
         ordinal=1,
         outcome="pass",
         reason=None,
         launch_state="launched",
         cpu_time_ms=1,
-        peak_job_memory_bytes=1,
-        total_process_count=1,
+        peak_job_memory_bytes=auxiliary,
+        total_process_count=auxiliary,
+        runner_policy_digest=policy,
     )
     return RunnerProcessResultV1(
         version=RUNNER_CONTRACT_VERSION,
@@ -100,12 +108,30 @@ def passing_process_result(request) -> RunnerProcessResultV1:
         failed_step_ordinal=None,
         duration_ms=1,
         cpu_time_ms=1,
-        peak_job_memory_bytes=1,
-        total_process_count=1,
+        peak_job_memory_bytes=auxiliary,
+        total_process_count=auxiliary,
         process_zero=True,
         handles_closed=True,
         raw_output_discarded=True,
         steps=(step,),
+        runner_policy_digest=policy,
+    )
+
+
+def process_request(policy: str) -> RunnerProcessRequestV1:
+    attempt_id = "tg_verification_runner_attempt_0123456789abcdef"
+    attempt = PurePosixPath("/private") / attempt_id
+    step = RunnerProcessStepV1(
+        ordinal=1, step_id="focused", mode="script", entrypoint="focused.py",
+        argv=(), cwd=".", shell=False, path_lookup=False, timeout_seconds=30,
+        cpu_seconds=1, memory_mib=128, process_limit=2, output_byte_limit=1_048_576,
+    )
+    return RunnerProcessRequestV1(
+        version=RUNNER_CONTRACT_VERSION, attempt_id=attempt_id,
+        executable=PurePosixPath("/runtime/python3"),
+        materialized_root=attempt / "target", scratch_root=attempt / "scratch",
+        clean_environment=(), steps=(step,), cancel_signal=RunnerCancelSignal(),
+        runner_policy_digest=policy,
     )
 
 
@@ -1895,11 +1921,7 @@ class VerificationRunnerServiceTests(unittest.TestCase):
             self.assertEqual(fixture.generation(3)["state"], "pending")
 
     def test_mapper_rejects_wrong_attempt_or_nonprefix_ordinals(self):
-        request = SimpleNamespace(
-            version=RUNNER_CONTRACT_VERSION,
-            attempt_id="tg_verification_runner_attempt_0123456789abcdef",
-            steps=(SimpleNamespace(ordinal=1),),
-        )
+        request = process_request(RUNNER_POLICY_DIGEST)
         step_two = RunnerProcessStepResultV1(
             ordinal=2,
             outcome="pass",
@@ -1928,6 +1950,138 @@ class VerificationRunnerServiceTests(unittest.TestCase):
         self.assertFalse(service._process_result_matches_request(request, wrong_attempt))
         right_attempt = replace(wrong_attempt, attempt_id=request.attempt_id)
         self.assertFalse(service._process_result_matches_request(request, right_attempt))
+
+    def test_mapper_checks_policy_and_uses_its_actual_cpu_scope(self):
+        posix_request = process_request(RUNNER_POSIX_POLICY_DIGEST)
+        result = passing_process_result(posix_request)
+        result = replace(
+            result, cpu_time_ms=2_001,
+            steps=(replace(result.steps[0], cpu_time_ms=2_001),),
+        )
+        self.assertTrue(service._process_result_matches_request(posix_request, result))
+        self.assertFalse(service._process_result_matches_request(
+            process_request(RUNNER_POLICY_DIGEST), result,
+        ))
+        windows_request = process_request(RUNNER_POLICY_DIGEST)
+        windows_result = passing_process_result(windows_request)
+        self.assertTrue(service._process_result_matches_request(windows_request, windows_result))
+        windows_over = replace(
+            windows_result, cpu_time_ms=2_001,
+            steps=(replace(windows_result.steps[0], cpu_time_ms=2_001),),
+        )
+        self.assertFalse(service._process_result_matches_request(windows_request, windows_over))
+        self.assertFalse(service._process_result_matches_request(posix_request, object()))
+
+    def test_posix_policy_is_copied_to_terminal_graph_without_auxiliary_fabrication(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            fixture = RunnerServiceFixture(Path(temporary))
+            prepared = replace(
+                fixture.prepared(), runner_policy_digest=RUNNER_POSIX_POLICY_DIGEST,
+            )
+            paths = service._runner_paths(fixture.target)
+            with service.zero_wait_runner_lock(paths):
+                intent = service._persist_launch_intent(fixture.target, prepared)
+                self.assertEqual(intent.resolution.runner_policy_digest, RUNNER_POSIX_POLICY_DIGEST)
+                with mock.patch.object(
+                    service, "materialize_runner_target", return_value=None,
+                ), mock.patch.object(
+                    service, "_basis_is_current", return_value=True,
+                ), mock.patch.object(
+                    service, "_physical_basis_matches", return_value=True,
+                ), mock.patch.object(
+                    service, "observe_fixed_package_runtime",
+                    return_value=Path(sys.executable).resolve(),
+                ), mock.patch.object(
+                    service, "build_clean_environment", return_value=(),
+                ), mock.patch.object(
+                    service, "run_process_request", side_effect=passing_process_result,
+                ) as process:
+                    result = service._run_intent_under_lock(
+                        fixture.target, paths, prepared, intent,
+                        cancel_requested=lambda: False,
+                    )
+                self.assertEqual(result.verification_route, "runner_pass")
+                self.assertEqual(
+                    process.call_args.args[0].runner_policy_digest, RUNNER_POSIX_POLICY_DIGEST,
+                )
+            stored = fixture.generation(1)
+            self.assertEqual(stored["resolution"].runner_policy_digest, RUNNER_POSIX_POLICY_DIGEST)
+            self.assertEqual(stored["observation"].complete_plan, 1)
+            self.assertEqual(stored["observation"].cpu_time_ms, 1)
+            self.assertIsNone(stored["observation"].peak_job_memory_bytes)
+            self.assertIsNone(stored["observation"].total_process_count)
+            self.assertEqual(
+                selection._terminal_runner_mode(stored["resolution"], stored["observation"]),
+                "runner_observation",
+            )
+
+    def test_preparation_captures_policy_and_revalidation_rejects_policy_drift(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            fixture = RunnerServiceFixture(Path(temporary))
+            original = fixture.prepared()
+            with ExitStack() as stack:
+                for name, value in (
+                    ("capture_verification_runner_plan", object()),
+                    ("resolve_verification_runner_plan", original.plan),
+                    ("capture_runner_implementation", original.implementation),
+                    ("observe_staged_runner_target", original.target),
+                    ("preflight_runner_material", original.material),
+                    ("current_runner_policy_digest", RUNNER_POSIX_POLICY_DIGEST),
+                ):
+                    stack.enter_context(mock.patch.object(service, name, return_value=value))
+                prepared = service._prepare_runner(
+                    fixture.target, original.authority, kind="git_snapshot", revision=None,
+                )
+                self.assertEqual(prepared.runner_policy_digest, RUNNER_POSIX_POLICY_DIGEST)
+                self.assertTrue(service._physical_basis_matches(fixture.target, prepared))
+                self.assertFalse(service._physical_basis_matches(fixture.target, original))
+                with self.assertRaises(service.VerificationRunnerServiceError) as raised:
+                    service._revalidate_prepared_runner(
+                        fixture.target, original, kind="git_snapshot", revision=None,
+                    )
+                self.assertEqual(raised.exception.code, "runner_state_invalid")
+
+    def test_current_policy_freshness_keeps_package_error_precedence(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            fixture = RunnerServiceFixture(Path(temporary))
+            prepared = fixture.prepared()
+            intent = service._persist_launch_intent(fixture.target, prepared)
+            snapshot = {"resolution": intent.resolution}
+            with ExitStack() as stack:
+                for name, value in (
+                    ("capture_verification_runner_plan", object()),
+                    ("resolve_verification_runner_plan", prepared.plan),
+                    ("capture_runner_implementation", prepared.implementation),
+                    ("observe_staged_runner_target", prepared.target),
+                    ("preflight_runner_material", prepared.material),
+                ):
+                    stack.enter_context(mock.patch.object(selection, name, return_value=value))
+                package = stack.enter_context(mock.patch.object(
+                    selection, "inspect_local_package", return_value=SimpleNamespace(status="clean"),
+                ))
+                for stored_policy in (RUNNER_POLICY_DIGEST, RUNNER_POSIX_POLICY_DIGEST):
+                    snapshot["resolution"] = replace(
+                        intent.resolution, runner_policy_digest=stored_policy,
+                    )
+                    for policy in (RUNNER_POLICY_DIGEST, RUNNER_POSIX_POLICY_DIGEST):
+                        with self.subTest(stored=stored_policy, current=policy), mock.patch.object(
+                            selection, "current_runner_policy_digest", return_value=policy,
+                        ):
+                            self.assertEqual(
+                                selection._stored_runner_physical_basis_matches(fixture.target, snapshot),
+                                stored_policy == policy,
+                            )
+                package.return_value = SimpleNamespace(status="modified")
+                with mock.patch.object(selection, "current_runner_policy_digest") as policy:
+                    with self.assertRaises(StorageError) as raised:
+                        selection._stored_runner_physical_basis_matches(fixture.target, snapshot)
+                self.assertEqual(raised.exception.code, "package_core_modified")
+                policy.assert_not_called()
+            with mock.patch.object(selection, "current_runner_policy_digest") as policy:
+                self.assertIsNone(selection.select_current_verification_runner_basis(
+                    fixture.target, task={"status": "done"},
+                ))
+            policy.assert_not_called()
 
     def test_complete_plan_requires_every_planned_step_to_pass(self):
         with tempfile.TemporaryDirectory() as temporary:

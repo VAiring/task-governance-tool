@@ -25,8 +25,11 @@ from tests.m223_test_support import (  # noqa: E402
 )
 from tests.test_m17_recovery_hardening import _setup_current as _setup_runtime_current  # noqa: E402
 from tests.test_m243b_schema21_compatibility import (  # noqa: E402
+    _eligibility_one_graph,
+    _insert_eligibility_one_graph,
     _physical_current21_install,
     _schema21_runtime,
+    _seed_targeted_m21_fixture,
 )
 from tests.test_m242_r3b_schema20_activation import (  # noqa: E402
     _add_task,
@@ -45,8 +48,12 @@ from task_governance_tool.state_resolver import (  # noqa: E402
 )
 from task_governance_tool.storage import (  # noqa: E402
     StorageError,
+    connect,
     connect_readonly,
     current_schema_version,
+)
+from task_governance_tool.verification_runner import (  # noqa: E402
+    RUNNER_POSIX_POLICY_DIGEST,
 )
 
 
@@ -715,6 +722,51 @@ class M243BSchema21RecoveryTests(unittest.TestCase):
                     ),
                     before_names,
                 )
+
+    def test_posix_accounting_fault_rejects_backup_and_recovery(self) -> None:
+        with tempfile.TemporaryDirectory(
+            prefix=".tmp-posix-recovery-accounting-", dir=ROOT,
+        ) as temporary:
+            install, _target, task_id, _commit = _seed_targeted_m21_fixture(
+                self, Path(temporary), record_receipt=False,
+            )
+            target = resolve_setup_project_state(
+                skill_root=install.skill_root, repo=install.project_root,
+            ).target
+            self.assertIsNotNone(target)
+            backup_service.publish_setup_backup(target, 3)
+            candidate = backup_service.select_managed_backup_for_recovery(target)
+            self.assertIsNotNone(candidate)
+            backups_path = candidate.path.parent
+            before_names = tuple(
+                sorted(path.name for path in backups_path.iterdir())
+            )
+            with closing(connect(target.db_path)) as connection:
+                # Coherent graph digests isolate the policy/accounting defect.
+                with mock.patch(
+                    "task_governance_tool.evidence_ledger.runner_accounting_valid",
+                    return_value=True,
+                ):
+                    graph = _eligibility_one_graph(
+                        connection, task_id=task_id, token="d" * 16,
+                        terminal_branch="runner_pass",
+                        policy_digest=RUNNER_POSIX_POLICY_DIGEST,
+                        accounting=(10, 0, None),
+                    )
+                with connection:
+                    _insert_eligibility_one_graph(connection, graph)
+            with backup_service.managed_backup_lock(target):
+                with self.assertRaises(StorageError):
+                    backup_service.publish_setup_backup(target, 4)
+            self.assertEqual(
+                tuple(sorted(path.name for path in backups_path.iterdir())),
+                before_names,
+            )
+            with closing(connect(candidate.path)) as connection:
+                with connection:
+                    _insert_eligibility_one_graph(connection, graph)
+            target.db_path.unlink()
+            self._assert_recovery_set_fatal(target)
 
     def test_source21_cycle_fault_rejects_before_backup_publication(self) -> None:
         with tempfile.TemporaryDirectory(

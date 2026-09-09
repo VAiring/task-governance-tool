@@ -569,6 +569,7 @@ class M244ARunnerAcceptanceTests(unittest.TestCase):
                     "failed_step_ordinal", "duration_ms", "cpu_time_ms",
                     "peak_job_memory_bytes", "total_process_count", "process_zero",
                     "handles_closed", "raw_output_discarded", "steps",
+                    "runner_policy_digest",
                 ),
             )
             forbidden_keys = {

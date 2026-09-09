@@ -14,7 +14,11 @@ import sqlite3
 from dataclasses import dataclass
 from typing import Any
 
-from task_governance_tool.verification_runner import RUNNER_PLAN_VERSIONS
+from task_governance_tool.verification_runner import (
+    RUNNER_PLAN_VERSIONS,
+    RUNNER_POLICY_DIGESTS,
+    runner_accounting_valid,
+)
 
 VERIFICATION_RUNNER_RESOLUTION_ID_PATTERN = re.compile(
     r"^tg_verification_runner_resolution_[0-9a-f]{16}$"
@@ -538,7 +542,11 @@ def _validated_verification_runner_graph(
                     value.runner_implementation_digest
                 )
                 is None
-                or value.runner_policy_digest != RUNNER_POLICY_DIGEST
+                or value.runner_policy_digest not in RUNNER_POLICY_DIGESTS
+                or (
+                    value.gate_eligibility_version == 0
+                    and value.runner_policy_digest != RUNNER_POLICY_DIGEST
+                )
                 or value.runtime_digest is not None
                 or value.gate_eligibility_version
                 not in allowed_eligibility_versions
@@ -682,11 +690,14 @@ def _validated_verification_runner_graph(
                 )
                 or type(value.duration_ms) is not int
                 or value.duration_ms < 0
-                or any(
-                    item is not None and (type(item) is not int or item < 0)
-                    for item in accounting
+                or not runner_accounting_valid(
+                    resolution.runner_policy_digest,
+                    outcome=value.outcome,
+                    launch_state=value.launch_state,
+                    cpu_time_ms=value.cpu_time_ms,
+                    peak_job_memory_bytes=value.peak_job_memory_bytes,
+                    total_process_count=value.total_process_count,
                 )
-                or sum(item is None for item in accounting) not in {0, 3}
                 or (
                     value.launch_state == "no_launch"
                     and (
@@ -697,10 +708,7 @@ def _validated_verification_runner_graph(
                 )
                 or (
                     value.outcome == "pass"
-                    and (
-                        value.failed_step_ordinal is not None
-                        or any(item is None for item in accounting)
-                    )
+                    and value.failed_step_ordinal is not None
                 )
                 or value.sanitized_result_digest
                 != verification_runner_observation_digest(

@@ -16,6 +16,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from task_governance_tool import _verification_runner_win32 as _win32
+from task_governance_tool.verification_runner import RUNNER_POLICY_DIGEST
 from task_governance_tool._verification_runner_win32 import (
     JobAccounting,
     JobLimits,
@@ -875,6 +876,11 @@ def run_process_request(
 ) -> RunnerProcessResultV1:
     """Execute one fully admitted request and return only its closed result."""
 
+    if (
+        type(request) is RunnerProcessRequestV1
+        and request.runner_policy_digest != RUNNER_POLICY_DIGEST
+    ):
+        _fail()
     if type(request) is RunnerProcessRequestV1 and any(
         step.memory_mib is None for step in request.steps
     ):

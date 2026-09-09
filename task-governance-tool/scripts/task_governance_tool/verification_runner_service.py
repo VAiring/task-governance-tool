@@ -110,6 +110,7 @@ from task_governance_tool.verification_runner_process import (
     RunnerProcessRequestV1,
     RunnerProcessResultV1,
     RunnerProcessStepV1,
+    _validate_result_for_request,
     build_clean_environment,
     run_process_request,
 )
@@ -117,6 +118,7 @@ from task_governance_tool.verification_runner_runtime import (
     RunnerImplementationIdentity,
     VerificationRunnerRuntimeError,
     capture_runner_implementation,
+    current_runner_policy_digest,
     observe_fixed_package_runtime,
 )
 from task_governance_tool.verification_runner_selection import _terminal_runner_mode
@@ -152,6 +154,7 @@ class _PreparedRunner:
     material: RunnerMaterialization
     plan: VerificationRunnerPlanResolution
     implementation: RunnerImplementationIdentity
+    runner_policy_digest: str = RUNNER_POLICY_DIGEST
 
 
 @dataclass(frozen=True)
@@ -311,6 +314,7 @@ def _prepare_runner(
         material=material,
         plan=plan,
         implementation=implementation,
+        runner_policy_digest=current_runner_policy_digest(),
     )
 
 
@@ -336,6 +340,7 @@ def _revalidate_prepared_runner(
     if (
         current.plan != prepared.plan
         or current.implementation != prepared.implementation
+        or current.runner_policy_digest != prepared.runner_policy_digest
     ):
         raise _state_invalid()
     return current
@@ -385,7 +390,7 @@ def _resolution_row(
         "runner_implementation_digest": (
             prepared.implementation.implementation_digest
         ),
-        "runner_policy_digest": RUNNER_POLICY_DIGEST,
+        "runner_policy_digest": prepared.runner_policy_digest,
         "sandbox_provider": None,
         "sandbox_policy_digest": None,
         "runtime_digest": None,
@@ -825,6 +830,7 @@ def _physical_basis_matches(
         return False
     return bool(
         plan == prepared.plan
+        and current_runner_policy_digest() == prepared.runner_policy_digest
         and implementation.implementation_digest
         == prepared.implementation.implementation_digest
         and observed == prepared.target
@@ -837,8 +843,10 @@ def _basis_is_current(
     prepared: _PreparedRunner,
     resolution: VerificationRunnerResolution,
 ) -> bool:
-    return _current_basis_matches(target, prepared, resolution) and (
-        _physical_basis_matches(target, prepared)
+    return (
+        resolution.runner_policy_digest == prepared.runner_policy_digest
+        and _current_basis_matches(target, prepared, resolution)
+        and _physical_basis_matches(target, prepared)
     )
 
 
@@ -896,6 +904,8 @@ def _terminal_from_process(
     started_at: str,
     finished_at: str,
 ) -> VerificationRunnerObservation:
+    if result.runner_policy_digest != resolution.runner_policy_digest:
+        raise _state_invalid()
     completed = len(result.steps)
     complete_plan = int(
         result.outcome == "pass"
@@ -939,18 +949,11 @@ def _process_result_matches_request(
 
     if type(result) is not RunnerProcessResultV1:
         return False
-    expected_prefix = request.steps[: len(result.steps)]
-    return bool(
-        result.version == request.version
-        and result.attempt_id == request.attempt_id
-        and tuple(step.ordinal for step in result.steps)
-        == tuple(step.ordinal for step in expected_prefix)
-        and (
-            result.failed_step_ordinal is None
-            or result.failed_step_ordinal
-            in {step.ordinal for step in request.steps}
-        )
-    )
+    try:
+        _validate_result_for_request(request, result)
+    except RunnerProcessError:
+        return False
+    return True
 
 
 def _deny_unresolved_attempt(
@@ -1094,6 +1097,7 @@ def _run_intent_under_lock(
             clean_environment=clean_environment,
             steps=steps,
             cancel_signal=cancel_signal,
+            runner_policy_digest=intent.resolution.runner_policy_digest,
         )
         process_entered = True
         result = run_process_request(request)

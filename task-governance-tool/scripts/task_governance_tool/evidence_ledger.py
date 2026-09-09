@@ -13,7 +13,11 @@ import re
 from dataclasses import InitVar, dataclass, field
 from typing import Any, Mapping
 
-from task_governance_tool.verification_runner import RUNNER_PLAN_VERSIONS
+from task_governance_tool.verification_runner import (
+    RUNNER_PLAN_VERSIONS,
+    RUNNER_POSIX_POLICY_DIGEST,
+    runner_accounting_valid,
+)
 
 AUTHORITY_SNAPSHOT_DOMAIN = b"taskgov-authority-snapshot-v1\0"
 CONTRACT_CRITERION_DOMAIN = b"taskgov-contract-criterion-v1\0"
@@ -868,6 +872,20 @@ class EvidenceSource:
                     type(projection[field]) is not str
                     or _DIGEST.fullmatch(projection[field]) is None
                     for field in digest_fields
+                )
+                or (
+                    projection["runner_policy_digest"] == RUNNER_POSIX_POLICY_DIGEST
+                    and (
+                        _validated_runner_eligibility_version != 1
+                        or not runner_accounting_valid(
+                            projection["runner_policy_digest"],
+                            outcome=projection["outcome"],
+                            launch_state=projection["launch_state"],
+                            cpu_time_ms=projection["cpu_time_ms"],
+                            peak_job_memory_bytes=projection["peak_job_memory_bytes"],
+                            total_process_count=projection["total_process_count"],
+                        )
+                    )
                 )
             ):
                 raise _inconsistent()

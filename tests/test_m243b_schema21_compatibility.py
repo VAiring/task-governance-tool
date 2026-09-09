@@ -55,6 +55,7 @@ from task_governance_tool.evidence_publication import (
 from task_governance_tool.relocation import RelocationContext, RelocationTokenError
 from task_governance_tool import storage as storage_module
 from task_governance_tool import verification_runner_repository as runner_repository
+from task_governance_tool import backup as backup_service
 from task_governance_tool.storage import (
     CompletionCycle,
     CompletionGateBasis,
@@ -64,6 +65,7 @@ from task_governance_tool.verification_runner import (
     RUNNER_CONTRACT_VERSION,
     RUNNER_IMPLEMENTATION_VERSION,
     RUNNER_POLICY_DIGEST,
+    RUNNER_POSIX_POLICY_DIGEST,
     RUNNER_TRIGGER,
     resolution_idempotency_digest,
     runner_observation_source_projection,
@@ -648,12 +650,16 @@ def _eligibility_one_graph(
     task_id: str,
     token: str,
     terminal_branch: str | None = None,
+    policy_digest: str = RUNNER_POLICY_DIGEST,
+    accounting: tuple[object, object, object] | None = None,
 ) -> dict[str, object]:
     if len(token) != 16 or any(
         character not in "0123456789abcdef" for character in token
     ):
         raise AssertionError("Runner fixture token must be 16 lowercase hex characters")
-    if terminal_branch not in {None, "fallback", "runner_pass", "other_terminal"}:
+    if terminal_branch not in {
+        None, "fallback", "runner_pass", "runner_fail", "other_terminal",
+    }:
         raise AssertionError("unsupported Runner fixture terminal branch")
 
     task = connection.execute(
@@ -718,7 +724,7 @@ def _eligibility_one_graph(
         "runner_contract_version": RUNNER_CONTRACT_VERSION,
         "runner_implementation_version": RUNNER_IMPLEMENTATION_VERSION,
         "runner_implementation_digest": implementation_digest,
-        "runner_policy_digest": RUNNER_POLICY_DIGEST,
+        "runner_policy_digest": policy_digest,
         "runtime_digest": None,
         "gate_eligibility_version": 1,
         "trigger": RUNNER_TRIGGER,
@@ -757,10 +763,16 @@ def _eligibility_one_graph(
     if terminal_branch is None:
         return graph
 
-    if terminal_branch == "runner_pass":
-        route, launch_state, outcome, reason = "runner", "launched", "pass", None
-        complete_plan, completed_step_count = 1, 1
+    failed_step_ordinal = None
+    if terminal_branch in {"runner_pass", "runner_fail"}:
+        passing = terminal_branch == "runner_pass"
+        route, launch_state = "runner", "launched"
+        outcome, reason = ("pass", None) if passing else ("fail", "step_nonzero")
+        complete_plan, completed_step_count = int(passing), 1
+        failed_step_ordinal = None if passing else 1
         duration_ms, cpu_time_ms, peak_memory, process_count = 25, 10, 4096, 1
+        if policy_digest == RUNNER_POSIX_POLICY_DIGEST:
+            peak_memory, process_count = None, None
     else:
         route = "m21_fallback"
         launch_state = "no_launch"
@@ -772,13 +784,15 @@ def _eligibility_one_graph(
         )
         complete_plan, completed_step_count = 0, 0
         duration_ms, cpu_time_ms, peak_memory, process_count = 0, None, None, None
+    if accounting is not None:
+        cpu_time_ms, peak_memory, process_count = accounting
     observation_values = {
         "attempt_id": attempt_id,
         "completed_step_count": completed_step_count,
         "complete_plan": complete_plan,
         "cpu_time_ms": cpu_time_ms,
         "duration_ms": duration_ms,
-        "failed_step_ordinal": None,
+        "failed_step_ordinal": failed_step_ordinal,
         "finished_at": observed_at,
         "gate_eligibility_version": 1,
         "launch_state": launch_state,
@@ -811,7 +825,7 @@ def _eligibility_one_graph(
         "complete_plan": complete_plan,
         "total_step_count": 1,
         "completed_step_count": completed_step_count,
-        "failed_step_ordinal": None,
+        "failed_step_ordinal": failed_step_ordinal,
         "started_at": observed_at,
         "finished_at": observed_at,
         "duration_ms": duration_ms,
@@ -1284,6 +1298,226 @@ class M243BSchema21CompatibilityTests(unittest.TestCase):
                     build_bundle_artifact(malformed)
                 with self.assertRaises(EvidenceConsumerError):
                     _consumer_source(malformed)
+
+    def test_posix_bundle_preserves_unmeasured_values_and_legacy_bytes(self):
+        legacy = build_bundle_artifact(_source21_runner_payload())
+        self.assertEqual(
+            legacy.bundle_digest,
+            "sha256:0fefcaaf8f7915a158dcc4eb95c02febf137eb5539567fdfa861ec71c7b14c4e",
+        )
+        self.assertEqual(
+            legacy.file_digest,
+            "sha256:583aa49df61c941707744b752e5fceb5ecb56292aee02b7c1997d79933168621",
+        )
+        self.assertEqual(_consumer_source(legacy.payload).source, legacy.envelope)
+        for cpu in (0, 10, 0x7FFFFFFFFFFFFFFF):
+            payload = _source21_runner_payload()
+            payload["runner_observation"].update(
+                runner_policy_digest=RUNNER_POSIX_POLICY_DIGEST,
+                cpu_time_ms=cpu,
+                peak_job_memory_bytes=None,
+                total_process_count=None,
+            )
+            _refresh_runner_reference_digest(payload)
+            with self.subTest(cpu=cpu):
+                bundle = build_bundle_artifact(payload)
+                self.assertEqual(_consumer_source(bundle.payload).source, bundle.envelope)
+                self.assertEqual(bundle.payload["runner_observation"], payload["runner_observation"])
+                self.assertNotEqual(bundle.bundle_digest, legacy.bundle_digest)
+                self.assertEqual(set(bundle.payload), set(legacy.payload))
+                self.assertEqual(
+                    set(bundle.payload["runner_observation"]),
+                    set(legacy.payload["runner_observation"]),
+                )
+
+        for policy, values in (
+            (RUNNER_POSIX_POLICY_DIGEST, (None, None, None)),
+            (RUNNER_POSIX_POLICY_DIGEST, (10, 0, None)),
+            (RUNNER_POSIX_POLICY_DIGEST, (10, None, 0)),
+            (RUNNER_POSIX_POLICY_DIGEST, (10, 4096, 1)),
+            (RUNNER_POSIX_POLICY_DIGEST, (True, None, None)),
+            (RUNNER_POSIX_POLICY_DIGEST, (-1, None, None)),
+            (RUNNER_POSIX_POLICY_DIGEST, ("10", None, None)),
+            (RUNNER_POSIX_POLICY_DIGEST, (0x8000000000000000, None, None)),
+            (RUNNER_POLICY_DIGEST, (10, None, None)),
+            ("sha256:" + "4" * 64, (10, None, None)),
+        ):
+            with self.subTest(policy=policy, accounting=values):
+                malformed = _source21_runner_payload()
+                malformed["runner_observation"].update(
+                    runner_policy_digest=policy,
+                    cpu_time_ms=values[0],
+                    peak_job_memory_bytes=values[1],
+                    total_process_count=values[2],
+                )
+                _refresh_runner_reference_digest(malformed)
+                with self.assertRaises(EvidenceProjectionError):
+                    build_bundle_artifact(malformed)
+                with self.assertRaises(EvidenceConsumerError):
+                    _consumer_source(malformed)
+
+    def test_posix_evidence_source_accounting_does_not_tighten_legacy(self):
+        def source(projection):
+            return EvidenceSource(
+                source_kind="runner_observation",
+                source_state="recorded",
+                source_id=projection["observation_id"],
+                source_projection=projection,
+                _validated_runner_eligibility_version=projection["gate_eligibility_version"],
+            )
+
+        for outcome, launch, cpu in (
+            ("pass", "launched", 0), ("pass", "launched", 10),
+            ("fail", "launched", 10), ("fail", "launched", None),
+            ("blocked_prelaunch", "no_launch", None),
+        ):
+            with self.subTest(outcome=outcome, launch=launch, cpu=cpu):
+                projection = dict(
+                    _runner_projection(), runner_policy_digest=RUNNER_POSIX_POLICY_DIGEST,
+                    outcome=outcome, launch_state=launch, cpu_time_ms=cpu,
+                    peak_job_memory_bytes=None, total_process_count=None,
+                )
+                self.assertEqual(source(projection).source_projection, projection)
+                for updates in (
+                    {"peak_job_memory_bytes": 0},
+                    {"total_process_count": 0},
+                    {"cpu_time_ms": -1},
+                    {"cpu_time_ms": False},
+                    {"cpu_time_ms": "0"},
+                    {"cpu_time_ms": 0x8000000000000000},
+                    {"gate_eligibility_version": 0},
+                ):
+                    with self.subTest(updates=updates), self.assertRaises(EvidenceLedgerError):
+                        source(dict(projection, **updates))
+        for outcome, launch, cpu in (
+            ("pass", "launched", None),
+            ("blocked_prelaunch", "no_launch", 0),
+        ):
+            with self.assertRaises(EvidenceLedgerError):
+                source(dict(
+                    _runner_projection(), runner_policy_digest=RUNNER_POSIX_POLICY_DIGEST,
+                    outcome=outcome, launch_state=launch, cpu_time_ms=cpu,
+                    peak_job_memory_bytes=None, total_process_count=None,
+                ))
+        # This legacy source boundary historically permits independently nullable
+        # accounting; the stricter complete Bundle/graph owners remain separate.
+        for policy in (RUNNER_POLICY_DIGEST, "sha256:" + "4" * 64):
+            projection = dict(
+                _runner_projection(), runner_policy_digest=policy,
+                cpu_time_ms=10, peak_job_memory_bytes=None, total_process_count=None,
+            )
+            self.assertEqual(source(projection).source_projection, projection)
+
+    def test_posix_graph_accounting_and_shared_viewer_backup_readers(self):
+        with tempfile.TemporaryDirectory(prefix=".tmp-posix-graph-", dir=ROOT) as temporary:
+            _install, target, task_id, _commit = _seed_targeted_m21_fixture(
+                self, Path(temporary), record_receipt=False,
+            )
+            with closing(storage_module.connect(target.db_path)) as connection:
+                for branch, accounting in (
+                    ("runner_pass", (0, None, None)),
+                    ("runner_fail", (10, None, None)),
+                    ("runner_fail", (None, None, None)),
+                    ("fallback", (None, None, None)),
+                ):
+                    with self.subTest(branch=branch, accounting=accounting):
+                        graph = _eligibility_one_graph(
+                            connection, task_id=task_id, token="a" * 16,
+                            terminal_branch=branch, policy_digest=RUNNER_POSIX_POLICY_DIGEST,
+                            accounting=accounting,
+                        )
+                        connection.execute("BEGIN IMMEDIATE")
+                        try:
+                            _insert_eligibility_one_graph(connection, graph)
+                            storage_module.validate_schema21_storage(connection)
+                            retained = storage_module.read_verification_runner_generation_locked(
+                                connection, project_id=target.project.project_id,
+                                task_id=task_id, target_generation=1,
+                            )
+                            observation = retained["observation"]
+                            self.assertEqual(retained["state"], "terminal")
+                            self.assertEqual(
+                                (observation.cpu_time_ms, observation.peak_job_memory_bytes,
+                                 observation.total_process_count), accounting,
+                            )
+                            self.assertEqual(observation.complete_plan, int(branch == "runner_pass"))
+                        finally:
+                            connection.rollback()
+
+                for policy, branch, accounting in (
+                    (RUNNER_POSIX_POLICY_DIGEST, "runner_pass", (None, None, None)),
+                    (RUNNER_POSIX_POLICY_DIGEST, "runner_pass", (10, 0, None)),
+                    (RUNNER_POSIX_POLICY_DIGEST, "runner_pass", (10, None, 0)),
+                    (RUNNER_POSIX_POLICY_DIGEST, "runner_fail", (10, 4096, 1)),
+                    (RUNNER_POSIX_POLICY_DIGEST, "fallback", (0, None, None)),
+                    (RUNNER_POLICY_DIGEST, "runner_pass", (10, None, None)),
+                    ("sha256:" + "4" * 64, "runner_pass", (10, 4096, 1)),
+                ):
+                    with self.subTest(policy=policy, branch=branch, accounting=accounting):
+                        # Build coherent seals/References for deliberately invalid
+                        # source values, then test the real unpatched graph reader.
+                        with mock.patch(
+                            "task_governance_tool.evidence_ledger.runner_accounting_valid",
+                            return_value=True,
+                        ):
+                            graph = _eligibility_one_graph(
+                                connection, task_id=task_id, token="b" * 16,
+                                terminal_branch=branch, policy_digest=policy,
+                                accounting=accounting,
+                            )
+                        connection.execute("BEGIN IMMEDIATE")
+                        try:
+                            _insert_eligibility_one_graph(connection, graph)
+                            with self.assertRaises(storage_module.StorageError):
+                                storage_module.validate_schema21_storage(connection)
+                            with self.assertRaises(storage_module.StorageError):
+                                build_viewer_snapshot(
+                                    connection, target,
+                                    generated_at="2099-09-09T00:00:00Z",
+                                )
+                        finally:
+                            connection.rollback()
+
+                graph = _eligibility_one_graph(
+                    connection, task_id=task_id, token="c" * 16,
+                    terminal_branch="runner_pass", policy_digest=RUNNER_POSIX_POLICY_DIGEST,
+                )
+                with connection:
+                    connection.execute("BEGIN IMMEDIATE")
+                    _insert_eligibility_one_graph(connection, graph)
+                    storage_module.validate_schema21_storage(connection)
+            with closing(storage_module.connect_snapshot_readonly(target.db_path)) as connection:
+                viewer = build_viewer_snapshot(
+                    connection, target, generated_at="2099-09-09T00:00:00Z",
+                ).snapshot
+            self.assertNotIn(RUNNER_POSIX_POLICY_DIGEST, json.dumps(viewer))
+            artifact = backup_service.publish_setup_backup(target, 3)
+            candidate = backup_service.select_managed_backup_for_recovery(target)
+            self.assertIsNotNone(candidate)
+            self.assertEqual(candidate.metadata.generation_id, artifact.generation_id)
+            with closing(storage_module.connect_readonly(candidate.path)) as connection:
+                storage_module.validate_schema21_storage(connection)
+                self.assertEqual(
+                    tuple(connection.execute(
+                        "SELECT cpu_time_ms, peak_job_memory_bytes, total_process_count "
+                        "FROM verification_runner_observations"
+                    ).fetchone()), (10, None, None),
+                )
+            with closing(storage_module.connect(target.db_path)) as connection:
+                self.assertTrue(storage_module._migrate_schema22_connection(connection))
+                self.assertEqual(storage_module.current_schema_version(connection), 22)
+                storage_module.validate_schema22_storage(connection)
+                retained = storage_module.read_verification_runner_generation_locked(
+                    connection, project_id=target.project.project_id,
+                    task_id=task_id, target_generation=1,
+                )
+                observation = retained["observation"]
+                self.assertEqual(retained["state"], "terminal")
+                self.assertEqual(
+                    (observation.cpu_time_ms, observation.peak_job_memory_bytes,
+                     observation.total_process_count), (10, None, None),
+                )
+                self.assertEqual(observation.complete_plan, 1)
 
     def test_private_runner_eligibility_seam_is_closed_and_digest_stable(
         self,

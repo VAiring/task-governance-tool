@@ -43,6 +43,9 @@ CRITERION_DOMAIN = b"taskgov-contract-criterion-v1\0"
 ARTIFACT_MANIFEST_DOMAIN = b"taskgov-artifact-manifest-v1\0"
 EVIDENCE_REFERENCE_DOMAIN = b"taskgov-evidence-reference-v1\0"
 INDEX_MAX_ENTRIES = 100_000
+_RUNNER_POSIX_POLICY_DIGEST = (
+    "sha256:37872a1957f5428b3b18014dbb447722731f91aec86e88c324354a72d7fbffa4"
+)
 
 _DIGEST = re.compile(r"^sha256:[0-9a-f]{64}$")
 _GIT_OBJECT_ID = re.compile(r"^(?:[0-9a-f]{40}|[0-9a-f]{64})$")
@@ -1634,7 +1637,19 @@ def _validate_runner_observation(value: object) -> dict[str, Any]:
         or runner["failed_step_ordinal"] is not None
         or finished_at < started_at
         or _integer(runner["duration_ms"]) < 0
-        or any(runner[field] is None for field in optional_nonnegative)
+        or (
+            runner["runner_policy_digest"] == _RUNNER_POSIX_POLICY_DIGEST
+            and (
+                runner["cpu_time_ms"] is None
+                or runner["cpu_time_ms"] > 0x7FFFFFFFFFFFFFFF
+                or runner["peak_job_memory_bytes"] is not None
+                or runner["total_process_count"] is not None
+            )
+        )
+        or (
+            runner["runner_policy_digest"] != _RUNNER_POSIX_POLICY_DIGEST
+            and any(runner[field] is None for field in optional_nonnegative)
+        )
         or runner["plan_blob_object_id"] is not None
         or _identifier(runner["plan_id"], _RUNNER_PLAN_IDENTIFIER)
         != runner["plan_id"]

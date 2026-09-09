@@ -18,6 +18,10 @@ RUNNER_PLAN_VERSIONS = frozenset({1, 2})
 RUNNER_POLICY_DIGEST = (
     "sha256:8910c1edfd525be0def6a2c3afb65adab11e5a32e9a60ebbf898c175ffd60fa8"
 )
+RUNNER_POSIX_POLICY_DIGEST = (
+    "sha256:37872a1957f5428b3b18014dbb447722731f91aec86e88c324354a72d7fbffa4"
+)
+RUNNER_POLICY_DIGESTS = frozenset({RUNNER_POLICY_DIGEST, RUNNER_POSIX_POLICY_DIGEST})
 
 RESOLUTION_DIGEST_DOMAIN = b"taskgov-verification-runner-resolution-v1\0"
 ATTEMPT_DIGEST_DOMAIN = b"taskgov-verification-runner-attempt-v1\0"
@@ -149,6 +153,42 @@ class VerificationRunnerModelError(ValueError):
 
     def __init__(self) -> None:
         super().__init__("verification runner state is inconsistent")
+
+
+def runner_accounting_valid(
+    policy_digest: str,
+    *,
+    outcome: str,
+    launch_state: str,
+    cpu_time_ms: object,
+    peak_job_memory_bytes: object,
+    total_process_count: object,
+) -> bool:
+    """Check measurement shape; each consumer retains its policy admission."""
+
+    accounting = (cpu_time_ms, peak_job_memory_bytes, total_process_count)
+    if any(
+        value is not None and (type(value) is not int or value < 0)
+        for value in accounting
+    ):
+        return False
+    if launch_state == "no_launch" and any(
+        value is not None for value in accounting
+    ):
+        return False
+    if policy_digest == RUNNER_POSIX_POLICY_DIGEST:
+        return (
+            peak_job_memory_bytes is None
+            and total_process_count is None
+            and (cpu_time_ms is None or cpu_time_ms <= 0x7FFFFFFFFFFFFFFF)
+            and (outcome != "pass" or cpu_time_ms is not None)
+        )
+    # Standalone legacy Evidence accepts any well-formed policy digest. Do not
+    # relabel that compatibility branch as verified Windows policy identity.
+    return (
+        sum(value is None for value in accounting) in {0, 3}
+        and (outcome != "pass" or cpu_time_ms is not None)
+    )
 
 
 @dataclass(frozen=True)

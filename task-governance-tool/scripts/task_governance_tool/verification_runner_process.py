@@ -20,6 +20,10 @@ from task_governance_tool.verification_runner import (
     RUNNER_EXECUTABLE_ID,
     RUNNER_IMPLEMENTATION_VERSION,
     RUNNER_MAX_OUTPUT_BYTES,
+    RUNNER_POLICY_DIGEST,
+    RUNNER_POLICY_DIGESTS,
+    RUNNER_POSIX_POLICY_DIGEST,
+    runner_accounting_valid,
 )
 
 
@@ -297,6 +301,7 @@ class RunnerProcessRequestV1:
     clean_environment: tuple[tuple[str, str], ...]
     steps: tuple[RunnerProcessStepV1, ...]
     cancel_signal: RunnerCancelSignal
+    runner_policy_digest: str = RUNNER_POLICY_DIGEST
 
     def __post_init__(self) -> None:
         if (
@@ -320,6 +325,8 @@ class RunnerProcessRequestV1:
             or len({step.step_id for step in self.steps}) != len(self.steps)
             or sum(step.timeout_seconds for step in self.steps) > 1800
             or type(self.cancel_signal) is not RunnerCancelSignal
+            or type(self.runner_policy_digest) is not str
+            or self.runner_policy_digest not in RUNNER_POLICY_DIGESTS
         ):
             _fail()
         _validate_clean_environment_shape(self.clean_environment)
@@ -334,6 +341,7 @@ class RunnerProcessStepResultV1:
     cpu_time_ms: int | None
     peak_job_memory_bytes: int | None
     total_process_count: int | None
+    runner_policy_digest: str = RUNNER_POLICY_DIGEST
 
     def __post_init__(self) -> None:
         accounting = (
@@ -349,14 +357,15 @@ class RunnerProcessStepResultV1:
                 not _valid_result_integer(value, nullable=True)
                 for value in accounting
             )
-            or sum(value is None for value in accounting) not in {0, 3}
-            or (
-                self.launch_state == "no_launch"
-                and any(value is not None for value in accounting)
-            )
-            or (
-                self.outcome == "pass"
-                and any(value is None for value in accounting)
+            or type(self.runner_policy_digest) is not str
+            or self.runner_policy_digest not in RUNNER_POLICY_DIGESTS
+            or not runner_accounting_valid(
+                self.runner_policy_digest,
+                outcome=self.outcome,
+                launch_state=self.launch_state,
+                cpu_time_ms=self.cpu_time_ms,
+                peak_job_memory_bytes=self.peak_job_memory_bytes,
+                total_process_count=self.total_process_count,
             )
         ):
             _fail()
@@ -378,6 +387,7 @@ class RunnerProcessResultV1:
     handles_closed: bool
     raw_output_discarded: bool
     steps: tuple[RunnerProcessStepResultV1, ...]
+    runner_policy_digest: str = RUNNER_POLICY_DIGEST
 
     def __post_init__(self) -> None:
         accounting = (
@@ -409,25 +419,27 @@ class RunnerProcessResultV1:
                 not _valid_result_integer(value, nullable=True)
                 for value in accounting
             )
-            or sum(value is None for value in accounting) not in {0, 3}
+            or type(self.runner_policy_digest) is not str
+            or self.runner_policy_digest not in RUNNER_POLICY_DIGESTS
+            or not runner_accounting_valid(
+                self.runner_policy_digest,
+                outcome=self.outcome,
+                launch_state=self.launch_state,
+                cpu_time_ms=self.cpu_time_ms,
+                peak_job_memory_bytes=self.peak_job_memory_bytes,
+                total_process_count=self.total_process_count,
+            )
             or any(type(value) is not bool for value in proof)
             or type(self.steps) is not tuple
             or len(self.steps) > 16
             or any(
                 type(step) is not RunnerProcessStepResultV1
+                or step.runner_policy_digest != self.runner_policy_digest
                 for step in self.steps
             )
             or tuple(step.ordinal for step in self.steps)
             != tuple(sorted({step.ordinal for step in self.steps}))
             or (self.launch_state == "no_launch" and self.steps)
-            or (
-                self.launch_state == "no_launch"
-                and any(value is not None for value in accounting)
-            )
-            or (
-                self.outcome == "pass"
-                and any(value is None for value in accounting)
-            )
             or (
                 self.outcome == "pass"
                 and self.failed_step_ordinal is not None
@@ -476,8 +488,13 @@ FIXED_BOOTSTRAP = (
 def _aggregate(
     results: tuple[RunnerProcessStepResultV1, ...],
 ) -> tuple[int | None, int | None, int | None]:
+    if len({result.runner_policy_digest for result in results}) > 1:
+        _fail()
     if not results or any(result.cpu_time_ms is None for result in results):
         return None, None, None
+    if results[0].runner_policy_digest == RUNNER_POSIX_POLICY_DIGEST:
+        total_cpu = sum(result.cpu_time_ms for result in results)
+        return (total_cpu if total_cpu <= MAX_RESULT_INTEGER else None), None, None
     total_cpu = 0
     total_processes = 0
     peak_memory = 0
@@ -535,6 +552,7 @@ def _result(
         handles_closed,
         raw_output_discarded,
         steps,
+        request.runner_policy_digest,
     )
     _validate_result_for_request(request, result)
     return result
@@ -548,6 +566,7 @@ def _validate_result_for_request(
     if (
         result.version != request.version
         or result.attempt_id != request.attempt_id
+        or result.runner_policy_digest != request.runner_policy_digest
         or tuple(item.ordinal for item in result.steps)
         != tuple(step.ordinal for step in expected_prefix)
         or (
@@ -562,12 +581,16 @@ def _validate_result_for_request(
         result.steps,
         strict=True,
     ):
-        if step_result.cpu_time_ms is not None and (
-            step_result.cpu_time_ms > step.cpu_seconds * 1000
-            or step_result.peak_job_memory_bytes is None
-            or (
-                step.memory_mib is not None
-                and step_result.peak_job_memory_bytes > step.memory_mib * 1_048_576
+        if (
+            request.runner_policy_digest == RUNNER_POLICY_DIGEST
+            and step_result.cpu_time_ms is not None
+            and (
+                step_result.cpu_time_ms > step.cpu_seconds * 1000
+                or step_result.peak_job_memory_bytes is None
+                or (
+                    step.memory_mib is not None
+                    and step_result.peak_job_memory_bytes > step.memory_mib * 1_048_576
+                )
             )
         ):
             _fail("process_tree_unproved")

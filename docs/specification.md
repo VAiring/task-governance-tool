@@ -427,7 +427,7 @@ Current detail is owned by the [Database persistence and migration specification
 ### Schema-v21 Persistence Compatibility And Shared Runner Protocol
 
 The following retains the exact schema-v21 migration/storage contract and the
-Runner protocol inherited unchanged by current schema v22. Source-21 Bundle
+structural Runner protocol inherited by current schema v22. Source-21 Bundle
 and migration statements describe that supported predecessor, not the current
 setup target or a relabelling of retained evidence. The
 [v22 delta](database-specification.md#current-schema-v22-persistence-contract) owns
@@ -517,6 +517,11 @@ cleanup event, observation, Runner Evidence Reference, and
 `runner_observation` verification-criterion link at the exact current target,
 with their complete ownership, Contract, criterion, target, plan, material,
 implementation, policy, digest, and parent bindings equal.
+Their accounting must satisfy the captured
+[Runner policy and measurement rules](runner-execution-specification.md#runner-policy-and-accounting).
+This uses the existing policy field and nullable measurement columns; no
+schema, tagged-union member, JSON member, or digest domain changes. The
+version-`0` audit branch retains its original Windows policy and meaning.
 Marker `2` is only a closed branch discriminator; it never proves success by
 itself. A pending or inconsistent graph blocks. Once the selected exact-current
 Runner branch launched, every timeout, cancellation, nonzero, incomplete-plan,
@@ -538,7 +543,8 @@ schema-v20 observation.
 
 Contract revision, verification criterion, review-target tuple or generation,
 artifact manifest, plan/selected-entry basis, target material, implementation
-identity, or qualifying observation drift makes the Runner basis non-current.
+identity, current-OS policy, or qualifying observation drift makes the Runner
+basis non-current.
 The existing invalidation and reopen paths clear the current target's Runner
 marker with the target and require a fresh target generation; they do not
 delete or mutate an immutable Runner graph, completion cycle, Bundle, Reference,
@@ -596,8 +602,9 @@ later Runner-completion history. Caller attestation keeps the qualifying manual 
 projection, not-required keeps the existing empty-expectation projection, and
 `runner_observation` revalidates its exact stored graph/Bundle identity and
 projects `required=true`, `satisfied=true`, and both nullable gate fields null.
-Historical replay never compares that captured implementation identity with the
-currently installed package and authorizes no new compatibility-mode Runner completion. A
+Historical replay never compares the captured implementation identity with the
+currently installed package or the captured policy with the current OS, and
+authorizes no new compatibility-mode Runner completion. A
 cycle/Bundle mismatch fails before gate projection.
 
 This selector does not reorder existing argument, Task lookup/status,

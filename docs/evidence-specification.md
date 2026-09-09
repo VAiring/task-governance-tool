@@ -370,6 +370,23 @@ the closed `verification_basis` and nullable `runner_observation` roots defined
 by the [shared schema-v21/v22 verification-basis contract](specification.md#schema-v21-persistence-compatibility-and-shared-runner-protocol). Existing v1/v2 bytes and
 digests are immutable.
 
+Runner References and Bundle v2 retain the captured `runner_policy_digest`
+and the existing measurement members under the
+[Runner policy and accounting contract](runner-execution-specification.md#runner-policy-and-accounting).
+No producer or reader substitutes zero for an unmeasured value or reinterprets
+captured measurements using the current OS. The exact POSIX policy identity
+selects its explicit unmeasured-auxiliary shape; this changes no envelope,
+member set, domain, assurance, or previously sealed bytes.
+
+Standalone Evidence validation preserves the earlier admission of any
+well-formed SHA-256 policy label with the legacy accounting shape. In
+particular, a legacy qualifying PASS still has all three measured values;
+accepting its opaque label does not identify it as the native Windows policy
+or admit that label to a canonical Runner graph. Only the exact POSIX label
+selects the new measurement shape. Native graph admission remains with the
+Runner owner, and standalone file consistency never establishes current
+execution or completion authority.
+
 Publication captures one coherent DB generation, validates all selected rows,
 writes and flushes immutable Bundle files first, and atomically replaces the
 index last. The index is the filesystem commit point. Consumers ignore

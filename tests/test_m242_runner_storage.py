@@ -33,6 +33,7 @@ from task_governance_tool.verification_runner import (  # noqa: E402
     RUNNER_CONTRACT_VERSION,
     RUNNER_IMPLEMENTATION_VERSION,
     RUNNER_POLICY_DIGEST,
+    RUNNER_POSIX_POLICY_DIGEST,
     RUNNER_TRIGGER,
     resolution_idempotency_digest,
     runner_observation_source_projection,
@@ -121,6 +122,7 @@ class RunnerStorageTests(unittest.TestCase):
         token: str,
         created_at: str,
         plan_id: str = "runner_plan",
+        policy_digest: str = RUNNER_POLICY_DIGEST,
     ) -> tuple[
         storage.VerificationRunnerResolution,
         storage.VerificationRunnerAttempt,
@@ -158,7 +160,7 @@ class RunnerStorageTests(unittest.TestCase):
             "runner_contract_version": RUNNER_CONTRACT_VERSION,
             "runner_implementation_version": RUNNER_IMPLEMENTATION_VERSION,
             "runner_implementation_digest": _digest("5"),
-            "runner_policy_digest": RUNNER_POLICY_DIGEST,
+            "runner_policy_digest": policy_digest,
             "sandbox_provider": None,
             "sandbox_policy_digest": None,
             "runtime_digest": None,
@@ -1053,6 +1055,34 @@ class RunnerStorageTests(unittest.TestCase):
                     source_state="recorded",
                     source_id=source.source_id,
                     source_projection=invalid_projection,
+                )
+
+    def test_audit_only_graph_rejects_posix_policy_before_persistence(self):
+        with tempfile.TemporaryDirectory(prefix=".tmp-audit-policy-", dir=ROOT) as tmp:
+            target, task_id = self._new_target_and_task(Path(tmp), "audit-policy")
+            basis = self._capture_target(
+                target, task_id, commit_character="9", now=FIXED_TIME,
+            )
+            basis = self._basis_with_owner(
+                basis, project_id=target.project.project_id, task_id=task_id,
+            )
+            resolution, attempt = self._resolution_attempt(
+                basis, token="9" * 16, created_at="2026-08-25T00:00:01Z",
+                policy_digest=RUNNER_POSIX_POLICY_DIGEST,
+            )
+            self.assertEqual(resolution.gate_eligibility_version, 0)
+            with closing(storage.connect_initialized(target)) as connection:
+                with self.assertRaises(storage.StorageError) as raised:
+                    with connection:
+                        connection.execute("BEGIN IMMEDIATE")
+                        storage.insert_verification_runner_resolution_locked(
+                            connection, resolution=resolution, attempt=attempt,
+                        )
+                self.assertEqual(raised.exception.code, "evidence_ledger_inconsistent")
+                self.assertEqual(
+                    connection.execute(
+                        "SELECT COUNT(*) FROM verification_runner_resolutions"
+                    ).fetchone()[0], 0,
                 )
 
     def test_shared_validator_rejects_digest_consistent_invalid_plan_id(self):

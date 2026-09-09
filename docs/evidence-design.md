@@ -188,6 +188,16 @@ source transaction. Its digest helper uses
 also excludes mutable resolution fields. Validators recompute dispatch,
 ownership, null matrices, and digest and reject every class upgrade.
 
+Runner source construction preserves the resolution's existing policy identity
+and observation measurement values. Core Reference and Bundle validators reuse
+the pure value-model accounting predicate, with each consumer retaining its
+own admission rules from the
+[Evidence format contract](evidence-specification.md#canonical-evidence-bundle-and-index-formats).
+The [Runner owner](runner-execution-specification.md#runner-policy-and-accounting)
+defines measurement meaning; projection adds neither a current-OS comparison
+nor a null-to-zero conversion. Existing JSON members and digest domains remain
+unchanged.
+
 `artifact_manifest.py` reads complete Git leaves, not Review Packet summaries.
 For snapshots it compares exact HEAD with stable stage-0 index; for commits it
 compares the exact commit with its first parent or empty tree. Leaves normalize
@@ -300,6 +310,13 @@ semantic validator. They may reuse the existing bounded physical-filesystem
 primitives in `state_paths.py`; independence does not require duplicate I/O or
 Windows infrastructure. They have no Analyzer descriptor, packet, report,
 outbox, process, model, or publication responsibility.
+
+The independent reader implements the same
+[captured-policy accounting rules](evidence-specification.md#canonical-evidence-bundle-and-index-formats)
+locally without importing the producing accounting predicate. Its regression
+cases distinguish preserved opaque-policy/full-metric Bundles from the exact
+POSIX policy's unmeasured auxiliary values, reject invalid combinations, and
+retain original source versions, bytes, and digests.
 
 The installable package contains no Analyzer or standalone Evidence-reader
 runtime. Analyzer-only path derivation is removed from `state_paths.py` and

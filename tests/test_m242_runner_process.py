@@ -31,6 +31,8 @@ from task_governance_tool.verification_runner import (  # noqa: E402
     RUNNER_EXECUTABLE_ID,
     RUNNER_IMPLEMENTATION_VERSION,
     RUNNER_MAX_OUTPUT_BYTES,
+    RUNNER_POLICY_DIGEST,
+    RUNNER_POSIX_POLICY_DIGEST,
 )
 
 
@@ -147,6 +149,8 @@ def _step_result(
     reason: str | None = None,
     launch_state: str = "launched",
     accounting: tuple[int | None, int | None, int | None] = (2, 128, 1),
+    *,
+    runner_policy_digest: str = RUNNER_POLICY_DIGEST,
 ) -> process.RunnerProcessStepResultV1:
     return process.RunnerProcessStepResultV1(
         ordinal,
@@ -154,7 +158,52 @@ def _step_result(
         reason,
         launch_state,
         *accounting,
+        runner_policy_digest=runner_policy_digest,
     )
+
+
+def _posix_request(
+    *, steps: tuple[process.RunnerProcessStepV1, ...] | None = None,
+) -> process.RunnerProcessRequestV1:
+    attempt = PurePosixPath("/private") / ATTEMPT_ID
+    return process.RunnerProcessRequestV1(
+        RUNNER_CONTRACT_VERSION,
+        ATTEMPT_ID,
+        PurePosixPath("/runtime/python3"),
+        attempt / "target",
+        attempt / "scratch",
+        (("HOME", "/private/home"),),
+        (_step(memory_mib=None, process_limit=None),) if steps is None else steps,
+        process.RunnerCancelSignal(),
+        runner_policy_digest=RUNNER_POSIX_POLICY_DIGEST,
+    )
+
+
+def _result_from_step(
+    step: process.RunnerProcessStepResultV1, **changes: object,
+) -> process.RunnerProcessResultV1:
+    values = {
+        "version": RUNNER_CONTRACT_VERSION,
+        "attempt_id": ATTEMPT_ID,
+        "outcome": step.outcome,
+        "reason": step.reason,
+        "launch_state": step.launch_state,
+        "failed_step_ordinal": (
+            step.ordinal if step.outcome != "pass" and step.launch_state == "launched"
+            else None
+        ),
+        "duration_ms": 1,
+        "cpu_time_ms": step.cpu_time_ms,
+        "peak_job_memory_bytes": step.peak_job_memory_bytes,
+        "total_process_count": step.total_process_count,
+        "process_zero": True,
+        "handles_closed": True,
+        "raw_output_discarded": True,
+        "steps": (step,) if step.launch_state == "launched" else (),
+        "runner_policy_digest": step.runner_policy_digest,
+    }
+    values.update(changes)
+    return process.RunnerProcessResultV1(**values)
 
 
 def _execution(
@@ -185,6 +234,7 @@ class RunnerProcessPureTests(unittest.TestCase):
                 "clean_environment",
                 "steps",
                 "cancel_signal",
+                "runner_policy_digest",
             ),
             process.RunnerProcessStepV1: (
                 "ordinal",
@@ -216,6 +266,7 @@ class RunnerProcessPureTests(unittest.TestCase):
                 "handles_closed",
                 "raw_output_discarded",
                 "steps",
+                "runner_policy_digest",
             ),
             process.RunnerProcessStepResultV1: (
                 "ordinal",
@@ -225,6 +276,7 @@ class RunnerProcessPureTests(unittest.TestCase):
                 "cpu_time_ms",
                 "peak_job_memory_bytes",
                 "total_process_count",
+                "runner_policy_digest",
             ),
         }
         for record, fields in expected.items():
@@ -351,6 +403,175 @@ class RunnerProcessPureTests(unittest.TestCase):
                 self.assertIsNone(result.cpu_time_ms)
                 self.assertIsNone(result.peak_job_memory_bytes)
                 self.assertIsNone(result.total_process_count)
+
+    def test_posix_accounting_is_explicitly_unmeasured_without_blocking_pass(self):
+        for cpu in (0, 1, process.MAX_RESULT_INTEGER):
+            with self.subTest(cpu=cpu):
+                step = _step_result(
+                    1, accounting=(cpu, None, None),
+                    runner_policy_digest=RUNNER_POSIX_POLICY_DIGEST,
+                )
+                result = _result_from_step(step)
+                self.assertEqual(result.cpu_time_ms, cpu)
+                self.assertIsNone(result.peak_job_memory_bytes)
+                self.assertIsNone(result.total_process_count)
+                self.assertEqual(result.runner_policy_digest, RUNNER_POSIX_POLICY_DIGEST)
+                self.assertTrue(result.process_zero)
+                self.assertTrue(result.handles_closed)
+                self.assertTrue(result.raw_output_discarded)
+
+        for outcome, reason in (
+            ("fail", "step_nonzero"), ("timeout", "timeout"),
+            ("resource_exceeded", "cpu_limit"), ("cancelled", "cancelled"),
+        ):
+            for cpu in (None, 0, 30_001):
+                with self.subTest(outcome=outcome, cpu=cpu):
+                    step = _step_result(
+                        1, outcome, reason, accounting=(cpu, None, None),
+                        runner_policy_digest=RUNNER_POSIX_POLICY_DIGEST,
+                    )
+                    self.assertEqual(_result_from_step(step).cpu_time_ms, cpu)
+
+        no_launch = _step_result(
+            1, "blocked_prelaunch", "runtime_unavailable", "no_launch",
+            (None, None, None), runner_policy_digest=RUNNER_POSIX_POLICY_DIGEST,
+        )
+        self.assertEqual(_result_from_step(no_launch).steps, ())
+        with self.assertRaises(process.RunnerProcessError):
+            replace(no_launch, cpu_time_ms=0)
+        with self.assertRaises(process.RunnerProcessError):
+            replace(_result_from_step(no_launch), cpu_time_ms=0)
+
+    def test_posix_accounting_rejects_missing_cpu_and_fabricated_auxiliary_values(self):
+        passed = _step_result(
+            1, accounting=(5, None, None),
+            runner_policy_digest=RUNNER_POSIX_POLICY_DIGEST,
+        )
+        result = _result_from_step(passed)
+        invalid = (
+            {"cpu_time_ms": None}, {"cpu_time_ms": -1},
+            {"cpu_time_ms": True}, {"cpu_time_ms": 1.0},
+            {"cpu_time_ms": process.MAX_RESULT_INTEGER + 1},
+            {"peak_job_memory_bytes": 0}, {"total_process_count": 0},
+            {"peak_job_memory_bytes": 1, "total_process_count": 1},
+            {"runner_policy_digest": "sha256:" + "f" * 64},
+        )
+        for changes in invalid:
+            for value in (passed, result):
+                with self.subTest(record=type(value).__name__, changes=changes):
+                    with self.assertRaises(process.RunnerProcessError):
+                        replace(value, **changes)
+        for field in ("process_zero", "handles_closed", "raw_output_discarded"):
+            with self.subTest(proof=field), self.assertRaises(process.RunnerProcessError):
+                replace(result, **{field: False})
+        with self.assertRaises(process.RunnerProcessError):
+            replace(_posix_request(), runner_policy_digest="sha256:" + "f" * 64)
+
+    def test_posix_cpu_observation_is_not_a_windows_aggregate_limit(self):
+        request = _posix_request(steps=(
+            _step(cpu_seconds=1, memory_mib=None, process_limit=None),
+        ))
+        step = _step_result(
+            1, accounting=(2_001, None, None),
+            runner_policy_digest=RUNNER_POSIX_POLICY_DIGEST,
+        )
+        result = _result_from_step(step)
+        process._validate_result_for_request(request, result)
+        with self.assertRaises(process.RunnerProcessError):
+            process._validate_result_for_request(
+                replace(request, runner_policy_digest=RUNNER_POLICY_DIGEST), result,
+            )
+
+        windows_step = _step_result(1, accounting=(2_001, 128, 2))
+        windows_result = _result_from_step(windows_step)
+        self.assertEqual(windows_result.runner_policy_digest, RUNNER_POLICY_DIGEST)
+        with self.assertRaises(process.RunnerProcessError):
+            process._validate_result_for_request(
+                replace(request, runner_policy_digest=RUNNER_POLICY_DIGEST),
+                windows_result,
+            )
+
+    def test_policy_aggregation_preserves_partial_absence_and_checked_sums(self):
+        first = _step_result(
+            1, accounting=(2, None, None),
+            runner_policy_digest=RUNNER_POSIX_POLICY_DIGEST,
+        )
+        second = _step_result(
+            2, accounting=(3, None, None),
+            runner_policy_digest=RUNNER_POSIX_POLICY_DIGEST,
+        )
+        self.assertEqual(process._aggregate((first, second)), (5, None, None))
+        self.assertEqual(process._aggregate(()), (None, None, None))
+        missing = replace(second, outcome="fail", reason="step_nonzero", cpu_time_ms=None)
+        self.assertEqual(process._aggregate((first, missing)), (None, None, None))
+        maximum = replace(first, cpu_time_ms=process.MAX_RESULT_INTEGER)
+        self.assertEqual(
+            process._aggregate((maximum, replace(second, cpu_time_ms=0))),
+            (process.MAX_RESULT_INTEGER, None, None),
+        )
+        self.assertEqual(process._aggregate((maximum, second)), (None, None, None))
+        self.assertEqual(
+            process._aggregate((
+                _step_result(1, accounting=(2, 100, 2)),
+                _step_result(2, accounting=(3, 90, 3)),
+            )),
+            (5, 100, 5),
+        )
+        for values in (
+            (first, _step_result(2)),
+            (missing, _step_result(1)),
+            (_step_result(1), missing),
+        ):
+            with self.subTest(policies=[item.runner_policy_digest for item in values]):
+                with self.assertRaises(process.RunnerProcessError):
+                    process._aggregate(values)
+        with self.assertRaises(process.RunnerProcessError):
+            _result_from_step(first, steps=(_step_result(1),))
+
+    def test_posix_result_builder_copies_policy_and_never_substitutes_zero(self):
+        request = _posix_request(steps=(
+            _step(1, "one", memory_mib=None, process_limit=None),
+            _step(2, "two", memory_mib=None, process_limit=None),
+        ))
+        steps = tuple(
+            _step_result(
+                ordinal, accounting=(ordinal, None, None),
+                runner_policy_digest=RUNNER_POSIX_POLICY_DIGEST,
+            )
+            for ordinal in (1, 2)
+        )
+        arguments = dict(
+            outcome="pass", reason=None, launch_state="launched",
+            failed_step_ordinal=None, duration_ms=7, steps=steps,
+            process_zero=True, handles_closed=True, raw_output_discarded=True,
+        )
+        result = process._result(request, **arguments)
+        self.assertEqual(result.runner_policy_digest, RUNNER_POSIX_POLICY_DIGEST)
+        self.assertEqual(
+            (result.cpu_time_ms, result.peak_job_memory_bytes, result.total_process_count),
+            (3, None, None),
+        )
+        failed = process._result(
+            request, **dict(arguments, outcome="fail", reason="step_nonzero",
+                            failed_step_ordinal=2), accounting_complete=False,
+        )
+        self.assertEqual(
+            (failed.cpu_time_ms, failed.peak_job_memory_bytes, failed.total_process_count),
+            (None, None, None),
+        )
+        with self.assertRaises(process.RunnerProcessError):
+            process._result(request, **arguments, accounting_complete=False)
+
+    def test_windows_rejects_foreign_policy_before_native_admission(self):
+        request = _posix_request(steps=(_step(),))
+        with patch.object(process_windows, "_admit_request") as admit, patch.object(
+            process_windows._win32, "create_job",
+        ) as create_job:
+            with self.assertRaises(process.RunnerProcessError) as raised:
+                process_windows.run_process_request(request)
+        self.assertEqual(raised.exception.code, "process_setup_failed")
+        admit.assert_not_called()
+        create_job.assert_not_called()
 
     def test_central_identity_and_fixed_bootstrap(self):
         self.assertEqual(

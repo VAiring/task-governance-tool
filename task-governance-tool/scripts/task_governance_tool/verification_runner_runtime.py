@@ -13,7 +13,11 @@ from task_governance_tool.self_status import (
     ReleaseManifestVerificationError,
     verify_release_manifest_core,
 )
-from task_governance_tool.verification_runner import RUNNER_IMPLEMENTATION_VERSION
+from task_governance_tool.verification_runner import (
+    RUNNER_IMPLEMENTATION_VERSION,
+    RUNNER_POLICY_DIGEST,
+    RUNNER_POSIX_POLICY_DIGEST,
+)
 
 
 RUNNER_IMPLEMENTATION_DIGEST_DOMAIN = (
@@ -85,6 +89,16 @@ def capture_runner_implementation(
     )
 
 
+def current_runner_policy_digest() -> str:
+    """Identify native accounting semantics without admitting a runtime launch."""
+
+    return (
+        RUNNER_POSIX_POLICY_DIGEST
+        if sys.platform in {"linux", "darwin"}
+        else RUNNER_POLICY_DIGEST
+    )
+
+
 def observe_fixed_package_runtime(
     materialized_root: Path, scratch_root: Path
 ) -> Path:
@@ -106,5 +120,6 @@ __all__ = [
     "RunnerImplementationIdentity",
     "VerificationRunnerRuntimeError",
     "capture_runner_implementation",
+    "current_runner_policy_digest",
     "observe_fixed_package_runtime",
 ]

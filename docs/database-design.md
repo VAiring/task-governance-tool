@@ -632,6 +632,14 @@ target and `2` for a target selected under the version-1 Runner protocol.
 Historical graphs retain their stored tags after a later target generation;
 only the graph at the Task's exact current target can be a completion basis.
 
+The repository validates native policy identities and measurement combinations
+using the [Runner accounting contract](runner-execution-specification.md#runner-policy-and-accounting).
+Eligibility-zero graphs retain only the Windows policy; eligibility-one graphs
+admit the two closed native identities. The existing policy field and nullable
+measurement columns carry this distinction without a schema, migration, DDL,
+or gate-eligibility discriminator change. Shared graph validation supplies the same admission
+to selected reads, Viewer, backup, and recovery.
+
 The recreated parent guards make these literal changes and no others:
 
 - `trg_verification_runner_resolutions_parent_insert` keeps its complete
@@ -681,9 +689,9 @@ target, capture, manifest, target-material, plan, implementation, and policy
 identities; parent IDs; idempotency/source digests; event-to-observation link;
 and the existing closed process-result matrix must all validate. For a live,
 non-done Task, the qualifying pass additionally requires the exact currently
-installed manifest-bound Runner implementation identity. That current-package
-comparison belongs to service preflight, not a SQLite trigger or historical
-replay. A pending intent, cleanup-only predecessor, missing
+installed manifest-bound Runner implementation identity and current-OS policy.
+Those live comparisons belong to service preflight, not a SQLite trigger or
+historical replay. A pending intent, cleanup-only predecessor, missing
 or duplicate member, eligibility mixture, stale generation, target or Contract
 drift, malformed graph, or any structurally valid terminal other than the exact
 closed no-launch fallback or qualifying pass is not a manual fallback and blocks
@@ -714,9 +722,9 @@ The two cycle guards validate only SQLite-stored tags, parents, pointers,
 captured identities, and graph relations. They never inspect the filesystem or
 current package manifest. Before inserting a new Runner-backed completion, the
 service selector owns current package inspection and equality with the captured
-Runner implementation identity. A valid done cycle, including one restored by
-recovery, instead revalidates identity equality wholly inside its stored graph
-and Bundle and is not rebound to the currently installed implementation.
+Runner implementation identity and policy. A valid done cycle, including one
+restored by recovery, instead revalidates identity equality wholly inside its stored graph
+and Bundle and is not rebound to the currently installed implementation or OS.
 
 The manual writer creates only Task marker `0` and source-21 Bundle-v2
 `caller_attestation|not_required` rows. The Runner target-set service alone may
@@ -747,8 +755,8 @@ A valid done version-one cycle takes precedence over the live matrix. The
 adapter revalidates the stored cycle/Bundle arm and replays its manual or Runner gate
 projection; a Runner arm is satisfied with both nullable gate fields null only
 when its captured stored graph/Bundle identity matches. It never compares a
-done arm with the currently installed implementation, and this historical read
-does not authorize a new live Runner completion. Existing argument,
+done arm with the currently installed implementation or current-OS policy, and
+this historical read does not authorize a new live Runner completion. Existing argument,
 Task/status, expectation, target, generation, and capture checks retain their
 order before the applicable selector. Active service preflight returns the
 existing `package_core_modified` or `package_status_unknown` result when it
@@ -863,6 +871,14 @@ Reference and verification-criterion link become the Runner Bundle's bound
 evidence members; they are reused, not duplicated or caller-authored. Manual arms
 keep `runner_observation=null` and their existing members. Preserved Bundles are
 never resealed.
+
+The same projection retains the policy and measurement shape defined by the
+[Runner accounting owner](runner-execution-specification.md#runner-policy-and-accounting),
+including explicit unmeasured values. Stored graph validation keeps its closed
+native policy set; the separate
+[standalone Evidence compatibility rule](evidence-specification.md#canonical-evidence-bundle-and-index-formats)
+does not widen database admission. Backup, recovery, and historical Viewer
+reads validate captured meaning without using the current OS as a new basis.
 
 Evidence Index remains v2 with domain `taskgov-evidence-index-v2\0`; a native
 schema-v21 Bundle still has `bundle_format_version=2`. Publication remains

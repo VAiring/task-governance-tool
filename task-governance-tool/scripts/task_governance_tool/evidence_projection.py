@@ -14,7 +14,10 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
 
-from task_governance_tool.verification_runner import RUNNER_PLAN_VERSIONS
+from task_governance_tool.verification_runner import (
+    RUNNER_PLAN_VERSIONS,
+    runner_accounting_valid,
+)
 from task_governance_tool.evidence_ledger import (
     EvidenceLedgerError,
     EvidenceSource,
@@ -507,11 +510,6 @@ def _runner_observation(value: object) -> dict[str, Any]:
         raise _inconsistent() from exc
     if set(source.source_projection) != set(observation):
         raise _inconsistent()
-    accounting = (
-        observation["cpu_time_ms"],
-        observation["peak_job_memory_bytes"],
-        observation["total_process_count"],
-    )
     total_steps = observation["total_step_count"]
     if (
         observation["route"] != "runner"
@@ -527,7 +525,14 @@ def _runner_observation(value: object) -> dict[str, Any]:
         or finished_at < started_at
         or type(observation["duration_ms"]) is not int
         or observation["duration_ms"] < 0
-        or any(type(item) is not int or item < 0 for item in accounting)
+        or not runner_accounting_valid(
+            observation["runner_policy_digest"],
+            outcome=observation["outcome"],
+            launch_state=observation["launch_state"],
+            cpu_time_ms=observation["cpu_time_ms"],
+            peak_job_memory_bytes=observation["peak_job_memory_bytes"],
+            total_process_count=observation["total_process_count"],
+        )
         or observation["plan_blob_object_id"] is not None
         or type(observation["plan_id"]) is not str
         or _DECLARED_IDENTIFIER.fullmatch(observation["plan_id"]) is None

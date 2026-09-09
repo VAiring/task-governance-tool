@@ -32,15 +32,11 @@ no roadmap, new execution unit, or further approval gate.
 | Windows | Retain aggregate user CPU control through the existing Job. | Retain the existing Job memory and active-process limits. | Retain existing Job-based descendant management and cleanup. |
 | Linux/macOS | Enforce CPU per process; bound the whole execution with wall timeout. Do not claim a tree-wide aggregate CPU limit. | Initially unsupported; their absence alone does not prevent PASS or require later implementation. | Stop and clean up the ordinary managed process group. Intentional daemon escape is outside the guarantee. |
 
-For Linux/macOS, unavailable memory or cumulative-process observations are
-unmeasured, not fabricated zeroes or proof of a limit. CPU observations must
-describe the actually measured scope separately from the per-process CPU
-limit. Unavailable auxiliary measurements alone do not prevent PASS; an
-execution failure or uncertain managed-process cleanup still prevents
-completion. This approval does not preselect a new Plan/result version or a
-null/zero encoding: the affected Plan, result, and Evidence owners are
-synchronized with those implementations while preserved evidence retains its
-original meaning.
+The current [policy and accounting contract](#runner-policy-and-accounting)
+defines the distinct measurement scopes and unmeasured values consumed by
+process records, storage, and Evidence. It does not activate Linux/macOS launch.
+Unavailable auxiliary measurements alone do not prevent PASS; an execution
+failure or uncertain managed-process cleanup still prevents completion.
 
 Explicit trusted-local opt-in, current Task/Contract/criterion/Plan/target
 binding, private materialization, output limits and non-retention, and the
@@ -206,6 +202,66 @@ verification or review evidence. Only the existing closed outcome and bounded
 structural evidence may be retained. Cleanup or privacy uncertainty is a
 blocking failure.
 
+### Runner Policy And Accounting
+
+The existing `runner_policy_digest` identifies the accounting and CPU-control
+meaning without changing SQL columns, Runner contract version `1`,
+implementation version `taskgov-verification-runner/1`, closed durable JSON
+members, or digest domains. The two native policy identities are:
+
+- Windows retains `verification Runner orchestration policy v1` and
+  `sha256:8910c1edfd525be0def6a2c3afb65adab11e5a32e9a60ebbf898c175ffd60fa8`.
+  Its existing bytes and meaning are unchanged.
+- POSIX uses `verification Runner POSIX per-process CPU policy v1` and
+  `sha256:37872a1957f5428b3b18014dbb447722731f91aec86e88c324354a72d7fbffa4`.
+
+These are fixed structural labels, not security claims or digests recomputed
+from a Plan, target, executable, or release manifest. Native stored Runner
+graphs admit only these identities; gate-eligibility version `0` remains
+Windows-only audit history. Version `1` can represent either policy under the
+unchanged current-basis and completion protocol.
+
+Windows `cpu_time_ms` retains aggregate Job user CPU time,
+`peak_job_memory_bytes` retains peak Job memory, and `total_process_count`
+retains the cumulative count of processes created in the per-step Jobs. The
+configured process limit bounds simultaneously active processes, not that
+cumulative count. Windows keeps its existing CPU, memory, and active-process
+enforcement.
+
+POSIX `cpu_time_ms` means user CPU from the root process's `wait4` resource
+usage. That usage may include descendants already waited for by the root; it
+is not a claim to measure every descendant or the whole process group. CPU
+control is separately per-process user-plus-system `RLIMIT_CPU`, with wall
+timeout bounding the whole execution. Neither a root observation nor a sum
+of step observations is compared with that per-process CPU limit. POSIX
+`peak_job_memory_bytes` and `total_process_count` are unmeasured and must both
+be null, even when a Plan supplies Windows limits. Zero is not an encoding of
+either unmeasured value and the policy does not claim those limits were applied.
+
+The native process-result and stored-observation accounting rules are exact:
+
+| Policy and result | `cpu_time_ms` | Memory and cumulative-process fields |
+|---|---|---|
+| Either policy, no launch | null | both null |
+| Windows, launched PASS | nonnegative signed-64-bit integer | both nonnegative signed-64-bit integers |
+| Windows, other launched result | all three accounting fields present as nonnegative signed-64-bit integers, or all three null | the same group-wide presence rule |
+| POSIX, launched PASS | nonnegative signed-64-bit integer | both null |
+| POSIX, other launched result | nonnegative signed-64-bit integer or null | both null |
+
+PASS still requires complete ordered execution and all process, handle,
+output-discard, and private-tree cleanup proofs. Missing POSIX auxiliary
+measurements do not weaken these gates. The
+[typed process design](runner-execution-design.md#typed-process-value-boundary)
+owns checked aggregation and request/result policy matching.
+
+The parent selects the POSIX policy on Linux/macOS and the legacy Windows
+policy otherwise, captures it before intent, and binds it through the request
+and live freshness checks. Selection of a label never activates an unsupported
+OS adapter; only Windows launch is currently active. Historical reads validate
+the captured policy and graph without comparing them with the current OS or
+rewriting old evidence. Standalone Evidence compatibility remains governed by
+the [Evidence format owner](evidence-specification.md#canonical-evidence-bundle-and-index-formats).
+
 ### Parent Service And Audit Graph
 
 The parent service consumes the existing `review target set` dispatch without
@@ -312,15 +368,12 @@ The fixed private root is
 `<physical-package>/state/current/verification-runner`, with only the fixed
 one-byte lock, `attempts`, and `quarantine` children. It is resolved by the
 shared canonical state resolver and is created only for an admitted Runner
-route; feature code never reconstructs it. The schema-v20
-`runner_policy_digest` is the fixed
-`verification Runner orchestration policy v1` identity
-`sha256:8910c1edfd525be0def6a2c3afb65adab11e5a32e9a60ebbf898c175ffd60fa8`.
-It is a structural policy label, not a security claim, and is not rederived
-from the separately manifest-bound Runner implementation digest. Because the
+route; feature code never reconstructs it. The
+[policy identity](#runner-policy-and-accounting) is separate from the
+manifest-bound Runner implementation digest. Because the
 process layer exposes no durable canonical runtime digest,
 `runtime_digest` is always null in the resolution and sanitized Runner source
-projection. The manifest-bound implementation digest and fixed policy label
+projection. The manifest-bound implementation digest and captured policy label
 are the only durable execution-identity fields in this slice.
 
 If storage, lifecycle, or terminal atomicity becomes uncertain after T1, the

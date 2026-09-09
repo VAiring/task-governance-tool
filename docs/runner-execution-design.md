@@ -219,37 +219,45 @@ dispatch consumption.
 
 ### Typed Process Value Boundary
 
-The [approved OS-specific guarantees](runner-execution-specification.md#approved-os-specific-runner-guarantees)
-are conditional implementation boundaries. The process/OS adapters own
+The process/OS adapters own
 native environment, limits, launch, accounting,
-and managed-group termination. Plan and typed-result validation, parent result
-mapping, and Evidence consumers must express the supported OS limits and
-actual measurement scope together in their owning changes. They do not move
+and managed-group termination. The current
+[policy and accounting contract](runner-execution-specification.md#runner-policy-and-accounting)
+defines the OS-specific value meanings shared by typed-result validation,
+parent result mapping, and Evidence consumers. These boundaries do not move
 Task policy, SQLite, or Evidence assembly into native adapters.
 The service remains the sole [cleanup-acceptance owner](#cleanup-acceptance-and-privacy).
 Common values and dispatch no longer impose Windows path flavor, environment
 membership, or UTF-16 bounds. Windows admission and execution retain those
-native requirements in `_verification_runner_process_win32.py`. The resource
-and accounting rules remain unchanged until their corresponding approved
-changes land; no POSIX launch is active.
+native requirements in `_verification_runner_process_win32.py`. POSIX policy
+values and accounting are admitted by the common records and readers; no
+POSIX launch is active.
 
 The following are logical immutable in-process records, not a public schema or
 implemented transport. Their member sets are closed:
 
 ```text
 RunnerProcessRequestV1 = version, attempt_id, executable,
-  materialized_root, scratch_root, clean_environment, steps, cancel_signal
+  materialized_root, scratch_root, clean_environment, steps, cancel_signal,
+  runner_policy_digest
 RunnerProcessStepV1 = ordinal, step_id, mode, entrypoint, argv, cwd,
   shell, path_lookup, timeout_seconds, cpu_seconds, memory_mib,
   process_limit, output_byte_limit
 RunnerProcessResultV1 = version, attempt_id, outcome, reason, launch_state,
   failed_step_ordinal, duration_ms, cpu_time_ms, peak_job_memory_bytes,
   total_process_count, process_zero, handles_closed, raw_output_discarded,
-  steps
+  steps, runner_policy_digest
 RunnerProcessStepResultV1 = ordinal, outcome, reason, launch_state,
-  cpu_time_ms, peak_job_memory_bytes, total_process_count
+  cpu_time_ms, peak_job_memory_bytes, total_process_count, runner_policy_digest
 RunnerPrivateTreeResultV1 = attempt_id, state
 ```
+
+The three policy-bearing records default `runner_policy_digest` to the
+unchanged Windows identity for existing in-process callers. They admit only
+the two [native policy identities](runner-execution-specification.md#runner-policy-and-accounting).
+A request's policy governs its input steps; every returned step and the
+request-level result must carry that same policy. These private member additions
+create no durable column, JSON member, transport, or version change.
 
 The closed scalar, path, and collection bounds are exactly:
 
@@ -274,6 +282,8 @@ RunnerProcessBoundsV1:
   clean_environment_entry_count = 0..11; clean_environment_key_and_value_utf8_bytes = 1..4096
   clean_environment_keys = unique nonempty strings with no "=" or Unicode Cc; values have no Unicode Cc
   result_version = 1; result_attempt_id = request.attempt_id
+  result_runner_policy_digest = request.runner_policy_digest
+  step_result_runner_policy_digest = request.runner_policy_digest
   result_outcome = result_code; result_reason = null or result_code
   step_result_outcome = result_code; step_result_reason = null or result_code
   launch_state = no_launch|launched; private_tree_state = absent|uncertain
@@ -304,7 +314,9 @@ The Windows implementation owns physical native `Path` admission, the
 operations, and the execution loop. Windows paths and literal arguments retain
 their 4096 UTF-16-unit bound; the exact quoted command line including fixed
 bootstrap stays within 24576 UTF-16 units. It enforces these and the following
-environment requirements before acquiring process resources.
+environment requirements before acquiring process resources. Native Windows
+admission also requires the Windows policy before any resource acquisition;
+a POSIX-tagged request cannot enter Windows Job execution.
 At the Windows process entry, a missing limit pair in any step returns the
 closed `blocked_prelaunch/process_setup_failed/no_launch` result before native
 admission or acquisition for any step: zero duration, no step results, and all
@@ -312,8 +324,8 @@ three cleanup proofs true. This known-input case does not catch or reclassify
 other admission errors. The service copies normalized limit pairs unchanged;
 after proving private-tree cleanup it uses the existing manual-fallback rule.
 Configured Windows limits continue into the same Job setup. Common result
-validation compares memory use against the bound only when it is configured;
-this does not change result accounting fields or their current nullability.
+validation applies CPU and configured memory comparisons only under the
+Windows policy. The POSIX policy uses its own accounting rules below.
 
 On Windows, `clean_environment` is an ordered tuple containing exactly the 11
 case-insensitively unique keys `APPDATA`, `HOME`, `LOCALAPPDATA`,
@@ -383,8 +395,9 @@ pairing, while the parent service owns the closed
 durable/public mapping and projection. The parent service accepts no arbitrary
 adapter text, remains the sole business-interpretation and persistence owner,
 and persists only the mapped existing durable outcome. This freeze does not
-alter the [Runner specification's existing closed durable outcome](runner-execution-specification.md#parent-service-and-audit-graph). Optional accounting
-is nonnegative and bounded by the request. Result `steps` satisfies the exact
+alter the [Runner specification's existing closed durable outcome](runner-execution-specification.md#parent-service-and-audit-graph). Accounting follows the
+[policy-specific presence and measurement rules](runner-execution-specification.md#runner-policy-and-accounting).
+Result `steps` satisfies the exact
 [count, uniqueness, range, and order relation](#typed-process-value-boundary), so it has at most one
 sanitized result per request step. A result contains no exit code, output byte,
 argv, environment value, credential, path, exception body, or arbitrary text.
@@ -419,16 +432,30 @@ The adapter-local pairings are exactly as follows; a slash joins
   controller_interrupted / controller_interrupted / no_launch|launched
   cleanup_failed / process_cleanup_failed / no_launch|launched
 
-`cpu_time_ms` is total user CPU time, `peak_job_memory_bytes` is the peak Job
-memory observation, and `total_process_count` is the cumulative number of
-processes created in the applicable per-step Jobs. Each is absent as one group
-or is a nonnegative signed-64-bit integer. CPU and memory observations on a
-successful or ordinary nonzero step do not exceed that step's request limit.
-`process_limit` bounds simultaneously active processes in each Job; it is not
-an invalid upper bound on the cumulative `total_process_count`. Request-level
-CPU and process counts are checked sums and request-level memory is the checked
-maximum. A limit or cleanup failure may omit accounting, but it never changes
-the three mandatory Boolean cleanup proofs. Windows rejects creation beyond the
+The pure value model owns the two policy constants and shared accounting-shape
+predicate. Each consumer retains its own policy-admission boundary: process
+records and native graph validation use the closed native set, while standalone
+Evidence preserves its [legacy policy-label compatibility](evidence-specification.md#canonical-evidence-bundle-and-index-formats).
+The process record validators additionally bound every measured integer to
+signed 64-bit range and retain the complete result-code and cleanup-proof rules.
+
+Windows request-level CPU and cumulative process counts remain checked sums;
+memory remains the maximum per-step Job observation. Missing step accounting
+or overflow leaves all three aggregate values null, preserving the existing
+group-wide aggregation. Windows request/result validation retains the step CPU
+and configured memory comparisons and does not compare cumulative process count
+with the active-process limit.
+
+POSIX aggregation separately sums measured per-step user CPU values with a
+signed-64-bit overflow check; missing CPU or overflow produces null CPU. Both
+auxiliary fields stay null. A PASS cannot be constructed from unmeasured CPU.
+Request/result validation checks policy equality for the result and every step,
+attempt identity, the ordered ordinal prefix, and failed-ordinal membership;
+it never compares POSIX observed CPU with the per-process request limit. The
+service reuses that closed request/result check before terminal mapping.
+No missing value becomes zero or weakens the three mandatory cleanup proofs.
+
+Windows rejects creation beyond the
 active-process limit, while the child may surface that rejection only as the
 ordinary sanitized `step_nonzero`; the adapter adds no completion-port or notification
 infrastructure solely to reclassify it as a resource result.
@@ -551,13 +578,17 @@ that lock performs no T1 and cannot launch a process.
 
 The parent supplies one fresh 16-lowercase-hex token to each pure
 `generate_runner_id` call. A resolution uses the target-plan seal and the
-manifest-bound `RunnerImplementationIdentity`. Its
-`runner_policy_digest` is the fixed
-`verification Runner orchestration policy v1` label
-`sha256:8910c1edfd525be0def6a2c3afb65adab11e5a32e9a60ebbf898c175ffd60fa8`.
-The label is not recomputed from the manifest, target, plan, or runtime and
-adds no sandbox or security claim; `runner_implementation_digest` separately
-binds the strict current release-manifest identity. The process layer has
+manifest-bound `RunnerImplementationIdentity`. At preparation, the service
+captures `current_runner_policy_digest()` from `verification_runner_runtime.py`:
+`sys.platform` values `linux|darwin` select POSIX and all other values select
+the legacy Windows label. This observation admits no runtime launch.
+The captured [policy identity](runner-execution-specification.md#runner-policy-and-accounting)
+is persisted in the existing resolution field and passed unchanged from intent
+to the process request. Prepared-basis revalidation, pre/post-process freshness,
+terminal mapping, and live current-basis selection require policy equality.
+Stored-history reads validate the captured graph without current-OS selection.
+`runner_implementation_digest` separately binds the strict current
+release-manifest identity. The process layer has
 no durable canonical runtime digest, so `runtime_digest` is always null in the
 resolution and Runner source projection; the implementation digest and fixed
 policy label are the only durable execution identities.

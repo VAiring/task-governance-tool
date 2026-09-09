@@ -42,6 +42,7 @@ from task_governance_tool.verification_runner_plan import (
 from task_governance_tool.verification_runner_runtime import (
     VerificationRunnerRuntimeError,
     capture_runner_implementation,
+    current_runner_policy_digest,
 )
 
 
@@ -174,6 +175,7 @@ def _stored_runner_physical_basis_matches(
         == resolution.runner_implementation_version
         and implementation.implementation_digest
         == resolution.runner_implementation_digest
+        and current_runner_policy_digest() == resolution.runner_policy_digest
         and target_matches
     )
 

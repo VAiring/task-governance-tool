@@ -34,7 +34,8 @@ no roadmap, new execution unit, or further approval gate.
 
 The current [policy and accounting contract](#runner-policy-and-accounting)
 defines the distinct measurement scopes and unmeasured values consumed by
-process records, storage, and Evidence. It does not activate Linux/macOS launch.
+process records, storage, and Evidence. It does not activate public Linux/macOS
+launch.
 Unavailable auxiliary measurements alone do not prevent PASS; an execution
 failure or uncertain managed-process cleanup still prevents completion.
 
@@ -56,11 +57,15 @@ environment construction, quoting, native size checks, and Job/stdio
 execution stay in Windows implementations behind adapter dispatch. Linux/macOS
 preparation uses native fixed-runtime observation and a closed clean environment,
 with the existing private target/scratch, exact Git materialization, and lifecycle
-cleanup. Only Windows execution is active. The Linux/macOS process entry returns
+cleanup. A private POSIX adapter implements bounded execution, but only Windows
+execution is active through the public route. The common Linux/macOS process
+entry returns
 the proved `blocked_prelaunch/runtime_unavailable/no_launch` result before
 resource acquisition; the parent still requires private-tree absence before
-the existing manual fallback. Preparation does not activate POSIX execution or
-completion qualification, change a Python environment, or authorize installation.
+the existing manual fallback. Private adapter checks do not activate public
+POSIX execution or completion qualification, change a Python environment, or
+authorize installation. The [private execution design](runner-execution-design.md#private-posix-process-execution)
+owns the mechanism; macOS-specific execution acceptance remains separate.
 
 The Runner is explicit opt-in for repositories
 the user already trusts. Untrusted, external, unsupported, or visually verified
@@ -197,10 +202,13 @@ is copied back. Existing shell-free, no-lazy-fetch Git plumbing may be used only
 for read-only target/object observation; no plan entrypoint, verification
 command, hook, or target code is launched during target planning or materialization.
 
-Each accepted execution must establish its Job and process limits before user
-code runs, bound wall time, process count, resources, and stdout/stderr, retire
-the complete process tree, close handles, and remove its privately owned
-temporary tree. Raw output, command arguments, environment, credentials,
+Each accepted execution must establish the applicable
+[OS-specific process boundary and limits](#approved-os-specific-runner-guarantees)
+before user code runs, bound wall time and stdout/stderr, retire its managed
+processes, close handles, and remove its privately owned temporary tree.
+On POSIX, a zero root exit waits for ordinary group absence within the step
+deadline; stopping unfinished children does not manufacture a successful
+verification. Raw output, command arguments, environment, credentials,
 private paths, and exception bodies remain transient and are never durable
 verification or review evidence. Only the existing closed outcome and bounded
 structural evidence may be retained. Cleanup or privacy uncertainty is a
@@ -236,9 +244,12 @@ POSIX `cpu_time_ms` means user CPU from the root process's `wait4` resource
 usage. That usage may include descendants already waited for by the root; it
 is not a claim to measure every descendant or the whole process group. CPU
 control is separately per-process user-plus-system `RLIMIT_CPU`, with wall
-timeout bounding the whole execution. Neither a root observation nor a sum
-of step observations is compared with that per-process CPU limit. POSIX
-`peak_job_memory_bytes` and `total_process_count` are unmeasured and must both
+timeout bounding the whole execution. The private adapter sets the soft limit
+to the step's `cpu_seconds` and the hard limit to one second more; root
+termination by `SIGXCPU` maps to the existing `resource_exceeded/cpu_limit` result. An
+unattributed `SIGKILL` is not inferred to be CPU exhaustion. Neither a root
+observation nor a sum of step observations is compared with that per-process
+CPU limit. POSIX `peak_job_memory_bytes` and `total_process_count` are unmeasured and must both
 be null, even when a Plan supplies Windows limits. Zero is not an encoding of
 either unmeasured value and the policy does not claim those limits were applied.
 
@@ -261,9 +272,9 @@ owns checked aggregation and request/result policy matching.
 The parent selects the POSIX policy on Linux/macOS and the legacy Windows
 policy otherwise, captures it before intent, and binds it through the request
 and live freshness checks. Selection of a label never activates an unsupported
-OS adapter; only Windows launch is currently active. Historical reads validate
-the captured policy and graph without comparing them with the current OS or
-rewriting old evidence. Standalone Evidence compatibility remains governed by
+OS adapter; only Windows launch through public dispatch is active. Historical
+reads validate the captured policy and graph without comparing them with the
+current OS or rewriting old evidence. Standalone Evidence compatibility remains governed by
 the [Evidence format owner](evidence-specification.md#canonical-evidence-bundle-and-index-formats).
 
 ### Parent Service And Audit Graph

@@ -53,7 +53,7 @@ Runner route; its Runner dispatch has only the `cli -> service` edge.
 | `value_model` | `verification_runner.py` | Pure closed Runner identifiers, bounded codes, value validation, and domain encoding used across the boundary. | none | No I/O and no import of CLI, service, repository, persistence, target, runtime, lifecycle, process, native, or business-gate modules. | The module is dependency-pure and has no compatibility shim consumer. |
 | `runtime_identity` | `verification_runner_runtime.py`, `_verification_runner_executable_win32.py`, `_verification_runner_executable_posix.py`, `self_status.py` | Parent-invoked fixed executable and package-integrity observation. | `repository`, `value_model` | No process launch, canonical database ownership, business gate, terminal publication, or cleanup acceptance. | Windows and POSIX observation are stateless; Candidate-only runtime material is physically absent. |
 | `lifecycle` | `verification_runner_lifecycle.py` | Parent-requested creation, inventory, quarantine, removal, and absence proof for the one owned private attempt tree. | none | No process start, Job/stdio/handle ownership, SQLite, Evidence, business gate, terminal publication, or final cleanup acceptance. | Profile/recovery alternatives are physically absent. |
-| `process_adapter` | `verification_runner_process.py`, `_verification_runner_process_win32.py`, `_verification_runner_process_posix.py` | Own the closed common request/result and OS dispatch; the Windows implementation establishes the Job before trusted code, enforces native process/resource/output/time bounds, discards output, proves process-tree zero, closes handles, and returns the closed result. | `value_model`, `os_adapter` | No canonical state or target-tree cleanup; no import of CLI, service, repository, storage, Task, Contract, review, Evidence, completion, setup, backup, maintenance, or another business gate. | POSIX owns environment preparation only; the common entry returns proved no-launch. Windows execution remains private in this layer. |
+| `process_adapter` | `verification_runner_process.py`, `_verification_runner_process_win32.py`, `_verification_runner_process_posix.py` | Own the closed common request/result and OS dispatch, native admission and applicable limits, process-group management, output discard, process-zero and handle-closure proofs. | `value_model`, `os_adapter` | No canonical state or target-tree cleanup; no import of CLI, service, repository, storage, Task, Contract, review, Evidence, completion, setup, backup, maintenance, or another business gate. | Windows Job execution and private POSIX execution remain in this layer. The common POSIX entry still returns proved no-launch. |
 | `os_adapter` | `_verification_runner_win32.py` | Thin Windows Job, process, stdio, accounting, termination, wait, and handle primitives. | `value_model` | No parent policy, repository, persistence, gate, cleanup acceptance, LPAC/AppContainer/profile/ACL/ETW/registry-recovery module, or reverse import. | Only thin native primitives remain. |
 
 The complete inter-layer edge set is therefore exactly:
@@ -230,8 +230,9 @@ The service remains the sole [cleanup-acceptance owner](#cleanup-acceptance-and-
 Common values and dispatch no longer impose Windows path flavor, environment
 membership, or UTF-16 bounds. Windows admission and execution retain those
 native requirements in `_verification_runner_process_win32.py`. POSIX policy
-values and accounting are admitted by the common records and readers; no
-POSIX launch is active.
+values and accounting are admitted by the common records and readers. The
+[private POSIX adapter](#private-posix-process-execution) implements execution;
+the common entry does not activate its public use.
 
 The following are logical immutable in-process records, not a public schema or
 implemented transport. Their member sets are closed:
@@ -348,8 +349,9 @@ The environment block stays within 24576 UTF-16 units including the terminal
 double NUL. The Windows builder reads `SystemRoot` and corroborates it against
 the native Windows directory; the service does not read OS environment keys.
 
-On Linux/macOS, `_verification_runner_process_posix.py` owns only the clean
-environment builder. Its exact ordered keys are `HOME`,
+On Linux/macOS, `_verification_runner_process_posix.py` owns the clean
+environment builder and [private execution](#private-posix-process-execution).
+Its exact ordered keys are `HOME`,
 `PYTHONDONTWRITEBYTECODE`, `PYTHONNOUSERSITE`, `PYTHONUTF8`, `TEMP`, `TMP`, and
 `TMPDIR`. `HOME` is `scratch_root/home`; all three temporary-directory values
 are `scratch_root/tmp`; the three `PYTHON*` values are exactly `"1"`. The
@@ -502,6 +504,49 @@ or deletion failure returns `state=uncertain`; it never authorizes an
 out-of-root deletion, copy-back, alternate cleanup root, or diagnostic detail.
 An invalid attempt identifier is rejected before cleanup rather than converted
 to either result state.
+
+<a id="private-posix-process-execution"></a>
+
+### Private POSIX Process Execution
+
+The private POSIX `run_process_request()` consumes the same closed request and
+returns the same closed result. Native admission requires the POSIX policy,
+physical no-follow executable/target/scratch paths, contained entrypoint/cwd,
+and the exact clean environment before resources are acquired. It does not
+change common public dispatch, parent-service policy, or lifecycle ownership.
+
+Each step uses `subprocess.Popen` with the fixed executable and literal argv,
+admitted cwd, closed environment, `shell=False`, `start_new_session=True`,
+`close_fds=True`, null stdin, and unbuffered stdout/stderr pipes. No
+`preexec_fn` callback is used. The fixed `-I -S -B -X utf8` Python
+bootstrap establishes the [per-process CPU limits](runner-execution-specification.md#runner-policy-and-accounting)
+before importing or running target code. Its child-local `RLIMIT_CORE=(0,0)`
+suppresses ordinary core files; it does not claim to control host crash
+collectors or change host configuration.
+
+The adapter exclusively reaps the root with `wait4`, retains its user CPU
+under the existing policy, and updates the held `Popen.returncode` after that
+observation. It does not call the competing `Popen` wait/poll/communicate or
+signal methods. Nonblocking pipe reads count combined output bytes and discard
+each chunk without retained output, reader workers, or another transport.
+
+A zero root exit waits for ordinary group absence within the step wall
+deadline; it does not authorize killing still-working children and returning
+PASS. Nonzero root exit, root `SIGXCPU`, cancel, output overflow, or wall timeout
+selects the existing failure outcome and stops the group with `SIGTERM`, a
+0.25-second grace, then `SIGKILL` if needed with up to five seconds to prove
+group absence. The final pipe drain has a separate five-second bound.
+Root exit or pipe EOF alone is not process-zero proof. Root reaping and a fresh
+group-absence observation are required; an unproved group, FD closure, or
+output discard leaves its corresponding proof false. Cleanup success never
+turns the selected failure into PASS. No daemon inventory, subreaper, or
+supervisor is introduced.
+
+`test_os_runner_process` exercises this private boundary with applicable real
+Linux/macOS processes; `test_os_runner_process_failures` covers cross-host
+mocked failures. These checks do not activate public
+POSIX Runner dispatch or replace macOS-specific execution acceptance and
+public completion qualification.
 
 ### Cleanup Acceptance And Privacy
 

@@ -11,7 +11,7 @@
     "scripts/task_governance_tool/_artifact_lock_windows.py": "sha256:427bf81dd1c0e7510f99fc95dd41886473371e94910379a2a9ddc96b8363772a",
     "scripts/task_governance_tool/_verification_runner_executable_posix.py": "sha256:16daf2d6f606963e252a0b7d64d62c1c88b1ca15c4e1b4be45875ac3d455f1e1",
     "scripts/task_governance_tool/_verification_runner_executable_win32.py": "sha256:98ef1b4ad4917e422cdce6ddfc8bac7dd238860dba7b25dfd4e2230cdfc9686f",
-    "scripts/task_governance_tool/_verification_runner_process_posix.py": "sha256:1f6c7c2f1181fd697cb066e8e42e0cd0085814f103c41e105f458bbae14b52a3",
+    "scripts/task_governance_tool/_verification_runner_process_posix.py": "sha256:000ff747887fa70c82671065876311572272aa4577032c7dbcb0c9057f3b9bb7",
     "scripts/task_governance_tool/_verification_runner_process_win32.py": "sha256:964afc9a3d7d51280cd5d12b9d1b16ff70a3f4375339616bdda1a6030dea703e",
     "scripts/task_governance_tool/_verification_runner_win32.py": "sha256:3971a9ca5264f0e7a892b769c2c1703c335543316f344e32b11a7a5a52426ff3",
     "scripts/task_governance_tool/artifact_lock.py": "sha256:a781018852d3248a601f1a8926a73d05e82d010e211a3c318bfd1460de1d227f",

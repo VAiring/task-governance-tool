@@ -90,7 +90,7 @@ it is not a second state mode or install recommendation.
 The supported runtime is Python 3.12 or newer for ordinary functionality on
 Windows, Linux, and macOS. Windows retains the Python 3.12/3.14 full-suite
 policy; representative Ubuntu 24.04 x86-64 and macOS 15 Apple Silicon checks
-use Python 3.12. Runner execution remains Windows-only. Exact support and
+use Python 3.12. Public Runner execution remains Windows-only. Exact support and
 publication boundaries belong to [the release/install record](release-install.md).
 
 The package is self-contained. `scripts/taskgov.py` disables bytecode creation
@@ -333,12 +333,13 @@ Existing replace-based publication is not converted to no-replace publication.
 The existing same-process double-acquisition rejection and subsequent lock
 reuse remain part of the lock behavior, not just cross-process exclusion.
 
-Real-OS checks cover file operations, ordinary Task/storage flows, and
-[Runner preparation](runner-execution-design.md#typed-process-value-boundary)
+Real-OS checks cover file operations, ordinary Task/storage flows,
+[Runner preparation](runner-execution-design.md#typed-process-value-boundary),
+and [private POSIX execution](runner-execution-design.md#private-posix-process-execution)
 through the repository platform entry. POSIX environment and fixed-image
-observation are connected, but POSIX process launch remains inactive under the
+observation are connected, but public POSIX process launch remains inactive under
 [approved OS-specific Runner guarantees](runner-execution-specification.md#approved-os-specific-runner-guarantees).
-Preparation does not establish execution or completion qualification. No
+Private checks do not establish public execution or completion qualification. No
 all-function relocation, file-count target, or Windows-equivalent native
 implementation is an acceptance condition.
 
@@ -897,10 +898,12 @@ selection remove only the two manual-timing identities; full manual dispatch
 removes nothing. The separate platform selection is an ordered filter of
 complete validated discovery in `tools/test_lanes.py`. `PLATFORM_SMOKE_MODULES`
 selects CLI startup/help, pure Task validation, implemented artifact
-operations, and `test_os_runner_preparation`; OS-specific native cases run only
-on their applicable host. Runner preparation covers native fixed-image and
-clean-environment observation plus exact private materialization and cleanup,
-without launching a POSIX Runner or qualifying its completion path.
+operations, Runner preparation, and private POSIX process tests. OS-specific
+native cases run only on their applicable host. Runner preparation covers
+native fixed-image and clean-environment observation plus exact private materialization and cleanup,
+without launching a POSIX Runner. The private process tests follow their
+[execution owner](runner-execution-design.md#private-posix-process-execution);
+neither selection qualifies public POSIX completion.
 `PLATFORM_ORDINARY_TEST_IDS` adds selected existing physical-install, Task
 completion, Evidence, Viewer, Backup, and recovery cases on Linux and macOS. The host
 selection is repository CI policy, not a product command or LLM choice. Missing
@@ -928,7 +931,8 @@ dependency job.
 The additional platform job uses Ubuntu 24.04 x86-64 and macOS 15
 Apple Silicon with Python 3.12 and the same repository runner's
 `--platform-smoke` entry. Both hosts include the ordinary-flow selection
-alongside the common, artifact-operation, and Runner-preparation selection.
+alongside the common, artifact-operation, Runner-preparation, and private
+Runner-process selection.
 Manual `platform_only=true` selects policy and platform
 checks alone; the Windows matrix and candidate gate are explicitly skipped and
 no release qualification is claimed. The default full route retains both

@@ -39,6 +39,8 @@ PLATFORM_SMOKE_MODULES = (
     "test_cli_help",
     "test_os_artifact_operations",
     "test_os_runner_preparation",
+    "test_os_runner_process",
+    "test_os_runner_process_failures",
     "test_state_transition_primitives",
     "test_task_validation",
 )
@@ -176,6 +178,8 @@ LANE_MODULES: dict[str, tuple[str, ...]] = {
         "test_m244b_legacy_fresh_acceptance",
         "test_os_artifact_operations",
         "test_os_runner_preparation",
+        "test_os_runner_process",
+        "test_os_runner_process_failures",
         "test_post_commit_maintenance",
         "test_project_identity_bindings",
         "test_routine_backup",

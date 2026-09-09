@@ -510,6 +510,7 @@ class TestLanePolicyTests(unittest.TestCase):
             (
                 "test_cli_help", "test_os_artifact_operations",
                 "test_os_runner_preparation",
+                "test_os_runner_process", "test_os_runner_process_failures",
                 "test_state_transition_primitives", "test_task_validation",
             ),
         )

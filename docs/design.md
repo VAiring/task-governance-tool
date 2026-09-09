@@ -907,6 +907,11 @@ The separate `test_os_runner_gate` module exercises public Runner dispatch
 through completion and independent Evidence reading on Linux/macOS. Platform
 selection includes it on both hosts; its native guard skips it on other hosts in the
 exhaustive base suite, where it belongs to `integration`.
+The same platform selection includes existing exact service/gate cases for
+uncertain process proofs, cleanup-only restart, and pending/cleanup-only/stale
+completion refusal. These selected Linux/macOS tests are applicable and any
+SKIP makes that platform run unsuccessful. Base-lane and `all` execution retain
+legitimate OS-inapplicable skips, including POSIX-only tests on Windows.
 `PLATFORM_ORDINARY_TEST_IDS` adds selected existing physical-install, Task
 completion, Evidence, Viewer, Backup, and recovery cases on Linux and macOS. The host
 selection is repository CI policy, not a product command or LLM choice. Missing
@@ -926,8 +931,8 @@ retains deterministic performance-fixture behavior/capacity but defers the two
 wall-clock qualifiers. Pushes to `main` run all three base lanes independently
 on both versions with the same exact deferral. Default manual `workflow_dispatch` runs
 monolithic `all` on both versions without that deferral, and an
-`always()` aggregate job fails unless policy validation and the full matrix
-succeed. The workflow trigger remains limited to pull requests, pushes to
+`always()` aggregate job fails unless policy validation, the full Windows matrix,
+and both existing platform checks succeed. The workflow trigger remains limited to pull requests, pushes to
 `main`, and manual dispatch; a candidate gate cannot be replaced by a skipped
 dependency job.
 

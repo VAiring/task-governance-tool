@@ -133,7 +133,7 @@ class ReleaseContractCheckerTests(unittest.TestCase):
         self.assertEqual(result.runtime, runtime)
         self.assertEqual(len(runtime.public_commands), 21)
         self.assertEqual(result.ci_python_versions, ("3.12", "3.14"))
-        self.assertEqual(result.manifest_core_count, 89)
+        self.assertEqual(result.manifest_core_count, 91)
         manifest = json.loads(
             (SKILL_ROOT / "release-manifest.json").read_text(encoding="utf-8")
         )
@@ -692,6 +692,37 @@ class ReleaseContractCheckerTests(unittest.TestCase):
                 "initial_mode_claims_candidate",
                 " && inputs.platform_only != true",
                 "",
+                "ci_candidate_gate_invalid",
+            ),
+            (
+                "candidate_platform_dependency_missing",
+                "      - platform-smoke\n",
+                "",
+                "ci_candidate_gate_invalid",
+            ),
+            (
+                "candidate_platform_result_missing",
+                "          PLATFORM_RESULT: ${{ needs.platform-smoke.result }}\n",
+                "",
+                "ci_candidate_gate_invalid",
+            ),
+            (
+                "candidate_platform_check_missing",
+                "            $env:TEST_RESULT -ne 'success' -or\n"
+                "            $env:PLATFORM_RESULT -ne 'success'\n",
+                "            $env:TEST_RESULT -ne 'success'\n",
+                "ci_candidate_gate_invalid",
+            ),
+            (
+                "candidate_platform_failure_accepted",
+                "$env:PLATFORM_RESULT -ne 'success'",
+                "$env:PLATFORM_RESULT -notin @('success', 'failure')",
+                "ci_candidate_gate_invalid",
+            ),
+            (
+                "candidate_platform_skip_accepted",
+                "$env:PLATFORM_RESULT -ne 'success'",
+                "$env:PLATFORM_RESULT -notin @('success', 'skipped')",
                 "ci_candidate_gate_invalid",
             ),
         )

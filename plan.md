@@ -137,15 +137,21 @@ gates. It is not the product contract, execution ledger, or evidence store:
   release/install contract; Runner preparation follows its current
   [design](docs/runner-execution-design.md#typed-process-value-boundary), and
   private process tests follow their [execution owner](docs/runner-execution-design.md#private-posix-process-execution).
-  Both hosts additionally select the public Runner-to-completion/Evidence module. Test
-  selection does not itself activate an unsupported public Runner route.
+  Both hosts additionally select the public Runner-to-completion/Evidence module
+  and existing exact Runner cases for uncertain process cleanup, restart cleanup,
+  and pending/cleanup-only/stale completion refusal. Selected applicable tests
+  must execute without SKIP; this does not prohibit legitimate OS-inapplicable
+  skips in the exhaustive Windows suite. Test selection does not itself activate
+  an unsupported public Runner route.
 - Manual `platform_only=true` runs policy validation and these platform checks
   without the Windows full matrix or release-candidate gate. It is an explicit
   platform-check route, never a substitute for full candidate qualification.
   Omission or `false` preserves the existing Windows event matrix and full
   manual gate; pull-request and push coverage are unchanged.
 - A future release candidate requires the explicit aggregate manual gate after
-  policy validation and both full-version jobs. This repository CI policy
+  policy validation, both full-version Windows jobs, and both platform checks.
+  Every dependency must succeed; a failure or skipped dependency cannot qualify.
+  This repository CI policy
   grants no push, dispatch, tag, Release, or other external mutation
   authority.
 - The accepted trusted-local Runner decision removes Candidate C, B-to-C,

@@ -22,6 +22,7 @@ from tools.test_lanes import (
     PLATFORM_ORDINARY_TEST_IDS,
     PLATFORM_RUNNER_GATE_HOSTS,
     PLATFORM_RUNNER_GATE_MODULE,
+    PLATFORM_RUNNER_GATE_TEST_IDS,
     PLATFORM_SMOKE_MODULES,
     RELEASE_CANDIDATE_EVENT,
     TestLaneError,
@@ -536,11 +537,20 @@ class TestLanePolicyTests(unittest.TestCase):
                 self, "platform_smoke_invalid", lambda: platform_smoke_suite(inventory)
             )
 
-    def test_ordinary_platform_selection_reuses_exact_existing_cases(self):
+    def test_platform_selection_reuses_exact_existing_cases(self):
         inventory = discover_tests(ROOT)
         self.assertEqual(PLATFORM_ORDINARY_HOSTS, ("linux", "darwin"))
         self.assertEqual(PLATFORM_RUNNER_GATE_HOSTS, ("linux", "darwin"))
         self.assertEqual(PLATFORM_RUNNER_GATE_MODULE, "test_os_runner_gate")
+        self.assertEqual(
+            PLATFORM_RUNNER_GATE_TEST_IDS,
+            (
+                "test_m242_runner_service.VerificationRunnerServiceTests."
+                "test_false_process_proof_is_pending_then_restart_cleanup_allows_next_generation",
+                "test_m243c_runner_gate.M243CRunnerGateTests."
+                "test_posix_pending_cleanup_only_and_stale_target_refuse_completion",
+            ),
+        )
         self.assertTrue(PLATFORM_ORDINARY_TEST_IDS)
         for platform in ("win32", "linux", "darwin"):
             with self.subTest(platform=platform):
@@ -554,7 +564,10 @@ class TestLanePolicyTests(unittest.TestCase):
                         and test_id in PLATFORM_ORDINARY_TEST_IDS
                     ) or (
                         platform in PLATFORM_RUNNER_GATE_HOSTS
-                        and module == PLATFORM_RUNNER_GATE_MODULE
+                        and (
+                            module == PLATFORM_RUNNER_GATE_MODULE
+                            or test_id in PLATFORM_RUNNER_GATE_TEST_IDS
+                        )
                     )
                 )
                 self.assertEqual(
@@ -571,32 +584,76 @@ class TestLanePolicyTests(unittest.TestCase):
             assert_lane_error(
                 self, "platform_smoke_invalid", lambda: platform_smoke_suite(inventory)
             )
+        with mock.patch("tools.test_lanes.PLATFORM_RUNNER_GATE_TEST_IDS", ("missing.test",)):
+            assert_lane_error(
+                self, "platform_smoke_invalid", lambda: platform_smoke_suite(inventory)
+            )
         self.assertEqual(inventory.plan.ids_for(ALL_LANE), standard_discovery_ids())
 
-    def test_initial_platform_cli_runs_only_the_selected_suite(self):
+    def test_platform_cli_runs_selected_suite_and_rejects_applicable_skips(self):
         inventory = discover_tests(ROOT)
-        expected = tuple(
-            case.id() for case in flatten_suite(platform_smoke_suite(inventory))
-        )
-        observed = []
+        for platform in ("win32", "linux", "darwin"):
+            selected = flatten_suite(
+                platform_smoke_suite(inventory, runtime_platform=platform)
+            )
+            expected = tuple(case.id() for case in selected)
+            for skipped in (False, True):
+                with self.subTest(platform=platform, skipped=skipped):
+                    result = unittest.TestResult()
+                    result.testsRun = len(expected)
+                    if skipped:
+                        result.addSkip(selected[0], "injected native requirement")
+                    self.assertTrue(result.wasSuccessful())
+                    stderr = io.StringIO()
+                    with (
+                        mock.patch("tools.test_lanes.discover_tests", return_value=inventory),
+                        mock.patch("tools.test_lanes.unittest.TextTestRunner") as runner,
+                        mock.patch("sys.platform", platform),
+                        mock.patch("sys.stderr", stderr),
+                    ):
+                        runner.return_value.run.return_value = result
+                        exit_code = lane_main(["--platform-smoke"])
+                    runner.return_value.run.assert_called_once()
+                    self.assertEqual(
+                        tuple(case.id() for case in flatten_suite(
+                            runner.return_value.run.call_args.args[0]
+                        )),
+                        expected,
+                    )
+                    rejected = skipped and platform in ("linux", "darwin")
+                    self.assertEqual(exit_code, 2 if rejected else 0)
+                    self.assertEqual(
+                        stderr.getvalue(),
+                        f"platform checks ({len(expected)} tests; not release qualification)\n"
+                        + ("test lanes: ERROR (platform_smoke_skipped)\n" if rejected else ""),
+                    )
 
-        def record_suite(suite):
-            observed.append(tuple(case.id() for case in flatten_suite(suite)))
-            return mock.Mock(testsRun=len(expected), wasSuccessful=lambda: True)
-
-        stderr = io.StringIO()
-        with (
-            mock.patch("tools.test_lanes.discover_tests", return_value=inventory),
-            mock.patch("tools.test_lanes.unittest.TextTestRunner") as runner,
-            mock.patch("sys.stderr", stderr),
-        ):
-            runner.return_value.run.side_effect = record_suite
-            self.assertEqual(lane_main(["--platform-smoke"]), 0)
-        self.assertEqual(observed, [expected])
-        self.assertEqual(
-            stderr.getvalue(),
-            f"platform checks ({len(expected)} tests; not release qualification)\n",
+    def test_windows_base_and_all_lanes_allow_os_inapplicable_skips(self):
+        inventory = discover_tests(ROOT)
+        posix_case = next(
+            case for case in inventory.cases
+            if case.__class__.__module__ == PLATFORM_RUNNER_GATE_MODULE
         )
+        for lane in ("integration", ALL_LANE):
+            with self.subTest(lane=lane):
+                selected_ids = inventory.ids_for(lane)
+                self.assertIn(posix_case.id(), selected_ids)
+                result = unittest.TestResult()
+                result.testsRun = len(selected_ids)
+                result.addSkip(posix_case, "requires the actual public POSIX Runner")
+                self.assertTrue(result.wasSuccessful())
+                stderr = io.StringIO()
+                with (
+                    mock.patch("tools.test_lanes.discover_tests", return_value=inventory),
+                    mock.patch("tools.test_lanes.unittest.TextTestRunner") as runner,
+                    mock.patch("sys.platform", "win32"),
+                    mock.patch("sys.stderr", stderr),
+                ):
+                    runner.return_value.run.return_value = result
+                    self.assertEqual(lane_main(["--lane", lane]), 0)
+                self.assertEqual(
+                    stderr.getvalue(), f"test lane: {lane} ({len(selected_ids)} tests)\n",
+                )
 
     def test_initial_platform_mode_rejects_mixed_event_options_before_discovery(self):
         with (

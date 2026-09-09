@@ -47,6 +47,12 @@ PLATFORM_SMOKE_MODULES = (
 PLATFORM_ORDINARY_HOSTS = ("linux", "darwin")
 PLATFORM_RUNNER_GATE_HOSTS = ("linux", "darwin")
 PLATFORM_RUNNER_GATE_MODULE = "test_os_runner_gate"
+PLATFORM_RUNNER_GATE_TEST_IDS = (
+    "test_m242_runner_service.VerificationRunnerServiceTests."
+    "test_false_process_proof_is_pending_then_restart_cleanup_allows_next_generation",
+    "test_m243c_runner_gate.M243CRunnerGateTests."
+    "test_posix_pending_cleanup_only_and_stale_target_refuse_completion",
+)
 PLATFORM_ORDINARY_TEST_IDS = (
     "test_m14_integrated_acceptance.M14IntegratedAcceptanceTests."
     "test_setup_doctor_and_default_flow_are_integrated_and_target_safe",
@@ -497,9 +503,11 @@ def platform_smoke_suite(
 
     modules = frozenset(PLATFORM_SMOKE_MODULES)
     ordinary_ids = frozenset(PLATFORM_ORDINARY_TEST_IDS)
+    runner_ids = frozenset(PLATFORM_RUNNER_GATE_TEST_IDS)
     if (
         not modules or not modules.issubset(inventory.plan.test_modules)
         or not ordinary_ids.issubset(inventory.plan.test_ids)
+        or not runner_ids.issubset(inventory.plan.test_ids)
         or PLATFORM_RUNNER_GATE_MODULE not in inventory.plan.test_modules
     ):
         raise TestLaneError("platform_smoke_invalid")
@@ -508,10 +516,13 @@ def platform_smoke_suite(
         ordinary_ids = frozenset()
     if platform in PLATFORM_RUNNER_GATE_HOSTS:
         modules = modules | {PLATFORM_RUNNER_GATE_MODULE}
+    else:
+        runner_ids = frozenset()
+    selected_ids = ordinary_ids | runner_ids
     return unittest.TestSuite(
         case
         for case, module in zip(inventory.cases, inventory.plan.test_modules, strict=True)
-        if module in modules or case.id() in ordinary_ids
+        if module in modules or case.id() in selected_ids
     )
 
 
@@ -670,6 +681,12 @@ def main(argv: Sequence[str] | None = None) -> int:
             return 1
         if result.testsRun != expected_count:
             raise TestLaneError("test_execution_count_mismatch")
+        if (
+            args.platform_smoke
+            and sys.platform in PLATFORM_RUNNER_GATE_HOSTS
+            and result.skipped
+        ):
+            raise TestLaneError("platform_smoke_skipped")
         return 0
     except TestLaneError as exc:
         print(f"test lanes: ERROR ({exc.code})", file=sys.stderr)

@@ -626,8 +626,9 @@ the two closed wall-clock qualifier identities while retaining their separate
 deterministic functional and capacity tests. Default manual `workflow_dispatch`
 defers nothing.
 
-The manual matrix is the complete release-candidate gate; its aggregate
-job fails unless policy validation and both full-version jobs succeed.
+The manual release-candidate aggregate requires policy validation, both
+full-version Windows jobs, and both existing platform checks to succeed.
+Failed or skipped dependencies cannot qualify the gate.
 An `operation_sequence` value may correlate separately authorized candidate
 work, but neither that value nor a successful gate authorizes workflow
 dispatch, push, tag, or publication.
@@ -636,7 +637,10 @@ An additional platform job runs CLI startup, common processing, and
 applicable artifact-operation checks on Ubuntu 24.04 x86-64 and macOS 15
 Apple Silicon with Python 3.12. Both hosts also run selected existing physical-install,
 ordinary Task completion, Evidence, Viewer, Backup, and recovery integration tests.
-Both hosts additionally run the public Runner-to-completion/Evidence tests.
+Both hosts additionally run the public Runner-to-completion/Evidence tests and
+existing cleanup/pending/stale gate cases. These selected platform tests must
+execute without SKIP; the exhaustive Windows suite still permits tests that are
+inapplicable to Windows to skip.
 Manual `platform_only=true` runs policy and these platform checks alone,
 skipping the Windows full matrix and candidate gate. This mode is not release
 qualification or a change to the published platform or Runner support boundary;

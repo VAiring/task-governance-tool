@@ -163,6 +163,7 @@ jobs:
     needs:
       - policy
       - test
+      - platform-smoke
     runs-on: windows-latest
 
     steps:
@@ -171,10 +172,12 @@ jobs:
         env:
           POLICY_RESULT: ${{ needs.policy.result }}
           TEST_RESULT: ${{ needs.test.result }}
+          PLATFORM_RESULT: ${{ needs.platform-smoke.result }}
         run: |
           if (
             $env:POLICY_RESULT -ne 'success' -or
-            $env:TEST_RESULT -ne 'success'
+            $env:TEST_RESULT -ne 'success' -or
+            $env:PLATFORM_RESULT -ne 'success'
           ) {
             throw 'Full release-candidate gate failed'
           }

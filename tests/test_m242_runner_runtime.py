@@ -103,20 +103,36 @@ class RunnerRuntimeManifestTests(unittest.TestCase):
 
 
 class RunnerFixedExecutableObservationTests(unittest.TestCase):
-    def test_common_observation_dispatches_only_to_the_supported_os(self):
+    def test_common_observation_dispatches_native_preparation_and_rejects_unknown_os(self):
+        from task_governance_tool import _verification_runner_executable_posix
+
         target = Path("target").absolute()
         scratch = Path("scratch").absolute()
         executable = Path("python.exe").absolute()
         with mock.patch.object(
             runtime_executable, "observe_fixed_package_runtime", return_value=executable
-        ) as observe:
+        ) as observe, mock.patch.object(
+            _verification_runner_executable_posix,
+            "observe_fixed_package_runtime",
+            return_value=executable,
+        ) as observe_posix:
             with mock.patch.object(runtime.sys, "platform", "win32"):
                 self.assertIs(
                     runtime.observe_fixed_package_runtime(target, scratch), executable
                 )
             observe.assert_called_once_with(target, scratch)
+            observe_posix.assert_not_called()
             observe.reset_mock()
             for platform in ("linux", "darwin"):
+                with self.subTest(platform=platform), mock.patch.object(
+                    runtime.sys, "platform", platform
+                ):
+                    self.assertIs(
+                        runtime.observe_fixed_package_runtime(target, scratch), executable
+                    )
+                observe_posix.assert_called_once_with(target, scratch)
+                observe_posix.reset_mock()
+            for platform in ("freebsd", "unsupported"):
                 with self.subTest(platform=platform), mock.patch.object(
                     runtime.sys, "platform", platform
                 ):
@@ -124,6 +140,7 @@ class RunnerFixedExecutableObservationTests(unittest.TestCase):
                         runtime.observe_fixed_package_runtime(target, scratch)
                     self.assertEqual(caught.exception.code, "runtime_unavailable")
             observe.assert_not_called()
+            observe_posix.assert_not_called()
 
     def test_parent_observation_returns_only_the_verified_absolute_path(self):
         with tempfile.TemporaryDirectory() as temporary:

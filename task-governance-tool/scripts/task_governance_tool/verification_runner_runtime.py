@@ -110,6 +110,12 @@ def observe_fixed_package_runtime(
         return _verification_runner_executable_win32.observe_fixed_package_runtime(
             materialized_root, scratch_root
         )
+    if sys.platform in {"linux", "darwin"}:
+        from task_governance_tool import _verification_runner_executable_posix
+
+        return _verification_runner_executable_posix.observe_fixed_package_runtime(
+            materialized_root, scratch_root
+        )
     raise VerificationRunnerRuntimeError(
         "runtime_unavailable", "the fixed Runner runtime is unavailable"
     )

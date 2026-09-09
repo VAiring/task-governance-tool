@@ -599,6 +599,12 @@ def _validate_result_for_request(
 def build_clean_environment(scratch_root: Path) -> tuple[tuple[str, str], ...]:
     """Build the supported platform's credential-excluding environment."""
 
+    if sys.platform in {"linux", "darwin"}:
+        from task_governance_tool._verification_runner_process_posix import (
+            prepare_clean_environment,
+        )
+
+        return prepare_clean_environment(scratch_root)
     if sys.platform != "win32":
         _fail("runtime_unavailable")
     from task_governance_tool._verification_runner_process_win32 import (
@@ -613,6 +619,17 @@ def run_process_request(
 ) -> RunnerProcessResultV1:
     """Dispatch one closed request; no POSIX launch is currently supported."""
 
+    if sys.platform in {"linux", "darwin"}:
+        if type(request) is not RunnerProcessRequestV1:
+            _fail()
+        # Preparation is connected, but no POSIX process resource is acquired.
+        # The service still owns private-tree cleanup and manual fallback.
+        return _result(
+            request, outcome="blocked_prelaunch", reason="runtime_unavailable",
+            launch_state="no_launch", failed_step_ordinal=None, duration_ms=0,
+            steps=(), process_zero=True, handles_closed=True,
+            raw_output_discarded=True,
+        )
     if sys.platform != "win32":
         _fail("runtime_unavailable")
     from task_governance_tool._verification_runner_process_win32 import (

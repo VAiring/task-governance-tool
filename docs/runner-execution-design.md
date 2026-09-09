@@ -51,9 +51,9 @@ Runner route; its Runner dispatch has only the `cli -> service` edge.
 | `repository` | `storage.py`, `sqlite_connection.py`, `project_binding_repository.py`, `backup_metadata_repository.py`, `viewer_metadata_repository.py`, `evidence_projection_metadata_repository.py`, `evidence_repository.py`, `evidence_validation_repository.py`, `completion_bundle_repository.py`, `verification_runner_repository.py`, `review_repository.py`, `verification_receipt_repository.py`, `schema_verification_runner.py`, `tasks.py`, `stored_task_validation.py`, `task_values.py`, `contracts.py`, `contract_content.py`, `reviews.py`, `verification_receipts.py`, `completion.py`, `evidence_ledger.py`, `evidence_projection.py`, `evidence_publication.py`, `maintenance.py` | Canonical SQLite, Task/Contract/review/completion state, Evidence, and maintenance repositories and business gates invoked only by the parent service. | `value_model` | No process launch; no import of `process_adapter` or `os_adapter`; no filesystem cleanup ownership. | Schema/Evidence compatibility stays repository-owned with no reverse edge. |
 | `target_plan` | `artifact_manifest.py`, `verification_runner_git.py`, `verification_runner_plan.py` | Parent-invoked exact target observation/materialization and fixed-plan decode/validation. | `repository`, `value_model` | No CLI policy, canonical database ownership, completion decision, trusted-code or verification-command launch, terminal publication, or cleanup acceptance. | Target/plan code is read-only until parent-owned materialization. |
 | `value_model` | `verification_runner.py` | Pure closed Runner identifiers, bounded codes, value validation, and domain encoding used across the boundary. | none | No I/O and no import of CLI, service, repository, persistence, target, runtime, lifecycle, process, native, or business-gate modules. | The module is dependency-pure and has no compatibility shim consumer. |
-| `runtime_identity` | `verification_runner_runtime.py`, `_verification_runner_executable_win32.py`, `self_status.py` | Parent-invoked fixed executable and package-integrity observation. | `repository`, `value_model` | No process launch, canonical database ownership, business gate, terminal publication, or cleanup acceptance. | Candidate-only runtime material is physically absent. |
+| `runtime_identity` | `verification_runner_runtime.py`, `_verification_runner_executable_win32.py`, `_verification_runner_executable_posix.py`, `self_status.py` | Parent-invoked fixed executable and package-integrity observation. | `repository`, `value_model` | No process launch, canonical database ownership, business gate, terminal publication, or cleanup acceptance. | Windows and POSIX observation are stateless; Candidate-only runtime material is physically absent. |
 | `lifecycle` | `verification_runner_lifecycle.py` | Parent-requested creation, inventory, quarantine, removal, and absence proof for the one owned private attempt tree. | none | No process start, Job/stdio/handle ownership, SQLite, Evidence, business gate, terminal publication, or final cleanup acceptance. | Profile/recovery alternatives are physically absent. |
-| `process_adapter` | `verification_runner_process.py`, `_verification_runner_process_win32.py` | Own the closed common request/result and OS dispatch; the Windows implementation establishes the Job before trusted code, enforces native process/resource/output/time bounds, discards output, proves process-tree zero, closes handles, and returns the closed result. | `value_model`, `os_adapter` | No canonical state or target-tree cleanup; no import of CLI, service, repository, storage, Task, Contract, review, Evidence, completion, setup, backup, maintenance, or another business gate. | Common values and entry are OS-neutral; Windows mechanics remain private in the same layer. No POSIX launch is active. |
+| `process_adapter` | `verification_runner_process.py`, `_verification_runner_process_win32.py`, `_verification_runner_process_posix.py` | Own the closed common request/result and OS dispatch; the Windows implementation establishes the Job before trusted code, enforces native process/resource/output/time bounds, discards output, proves process-tree zero, closes handles, and returns the closed result. | `value_model`, `os_adapter` | No canonical state or target-tree cleanup; no import of CLI, service, repository, storage, Task, Contract, review, Evidence, completion, setup, backup, maintenance, or another business gate. | POSIX owns environment preparation only; the common entry returns proved no-launch. Windows execution remains private in this layer. |
 | `os_adapter` | `_verification_runner_win32.py` | Thin Windows Job, process, stdio, accounting, termination, wait, and handle primitives. | `value_model` | No parent policy, repository, persistence, gate, cleanup acceptance, LPAC/AppContainer/profile/ACL/ETW/registry-recovery module, or reverse import. | Only thin native primitives remain. |
 
 The complete inter-layer edge set is therefore exactly:
@@ -305,9 +305,17 @@ resolved `entrypoint` and `cwd` remains under `materialized_root`.
 `verification_runner_process.py` owns the immutable records, cancellation
 signal, OS-neutral bounded value checks, pure result relations, and the common
 `build_clean_environment(scratch_root)` and `run_process_request(request)`
-dispatchers. They select only the Windows implementation at present; another
-OS reports `runtime_unavailable` without launch. Common values accept POSIX
-path flavor without admitting a foreign path to a native process operation.
+dispatchers. Environment preparation selects the Windows implementation or
+the Linux/macOS builder. Only Windows dispatch executes a request. For
+Linux/macOS, the common process entry returns
+`blocked_prelaunch/runtime_unavailable/no_launch` before resource acquisition:
+zero duration, empty step results, null failed ordinal and accounting, and all
+three process cleanup proofs true. It preserves the request's policy identity.
+The service consumes this closed result, proves private-tree absence, and
+persists the existing manual fallback. No native launch or uncertain process
+failure is represented by this known no-launch result. Other OS values retain
+the `runtime_unavailable` admission error. Common values accept POSIX path flavor
+without admitting a foreign path to a native process operation.
 
 The Windows implementation owns physical native `Path` admission, the
 `python.exe` name requirement, quoting, environment construction, Job/stdio
@@ -340,31 +348,49 @@ The environment block stays within 24576 UTF-16 units including the terminal
 double NUL. The Windows builder reads `SystemRoot` and corroborates it against
 the native Windows directory; the service does not read OS environment keys.
 
+On Linux/macOS, `_verification_runner_process_posix.py` owns only the clean
+environment builder. Its exact ordered keys are `HOME`,
+`PYTHONDONTWRITEBYTECODE`, `PYTHONNOUSERSITE`, `PYTHONUTF8`, `TEMP`, `TMP`, and
+`TMPDIR`. `HOME` is `scratch_root/home`; all three temporary-directory values
+are `scratch_root/tmp`; the three `PYTHON*` values are exactly `"1"`. The
+builder validates the physical scratch directories and common bounded values,
+reads no ambient environment, and adds no other key. The lifecycle layer keeps
+the same four physical scratch children `tmp`, `home`, `local`, and `roaming`;
+POSIX preparation needs no alternate tree, cleanup operation, or copy-back.
+
 Within `runtime_identity`, `verification_runner_runtime.py` owns manifest
 validation, `RunnerImplementationIdentity`, implementation digest, and the
-shared runtime error and native-observation dispatch. The Windows-specific
-`_verification_runner_executable_win32.py` owns the stateless
-`observe_fixed_package_runtime()` path and identity observation. It consumes
-the existing materialized/scratch roots and returns only the verified absolute
-executable path. It owns no execution-lifetime handle, lease, or cleanup state.
+shared runtime error and `observe_fixed_package_runtime()` dispatch to
+`_verification_runner_executable_win32.py` or
+`_verification_runner_executable_posix.py`. Each native observer consumes the
+existing materialized/scratch roots and returns only the verified absolute
+executable path, with no execution-lifetime handle, lease, or cleanup state.
 The service observes that path once per invocation and passes it into the
 closed process request; no process-adapter edge changes.
 
-The process boundary fixes the package-runtime executable source to the operating-system
-image path of the current parent process. `sys.executable` is used only to
-corroborate the same physical file; neither value is resolved through `PATH`,
-configuration, a plan, or target material. The runtime-identity layer observes
-every path component without following a symlink or reparse point, requires a
-normalized absolute regular `python.exe` on Windows outside the owned target and scratch
-trees, and corroborates the physical identity of the observed paths. A definite
-observation failure is a sanitized admission failure with no alternate
-executable. No file-sharing restriction is retained across execution. This
-neither guarantees successful or safe executable replacement during a run nor
-adds Plan-driven Python or virtual-environment switching. The process adapter
-consumes only the fixed absolute path in the closed request and does not import
-the runtime-identity layer.
-Every process-adapter path observation separately rejects a symlink or reparse
-point and a resolved-path or file-type mismatch. Repeated-observation equality
+The sole executable selector is the operating-system image path of the current
+parent process. Windows uses its native image observation and corroborates
+`sys.executable` as the same physical file. Linux reads the fixed
+`/proc/self/exe` link; macOS calls `proc_pidpath` for the current process through
+the fixed `/usr/lib/libproc.dylib`. This OS observation is not a target-path
+alias allowance. POSIX does not select or corroborate through `sys.executable`:
+ordinary macOS Framework Python can expose a distinct launcher there.
+Neither OS implementation selects an executable from `PATH`, environment,
+configuration, a Plan, or target material.
+
+The returned image is a bounded normalized absolute physical regular executable
+outside the owned target and scratch trees. Windows additionally requires the
+`python.exe` name. The observers validate every component of the returned path
+and both physical roots without symlink or reparse traversal; POSIX's fixed OS
+image query does not relax these checks. A definite observation failure is a
+sanitized admission failure with no alternate executable or installation.
+No file-sharing restriction is retained across execution. This neither
+guarantees successful or safe executable replacement during a run nor adds
+Plan-driven Python or virtual-environment switching. The process adapter
+consumes only the fixed absolute path in the closed request and does not
+import the runtime-identity layer.
+Every Windows process-adapter path observation separately rejects a symlink or
+reparse point and a resolved-path or file-type mismatch. Repeated-observation equality
 then compares only normalized path spelling, device ID, file ID, and full mode
 (including file type); non-reparse `st_file_attributes` bits are mutable
 metadata rather than physical identity and do not by themselves invalidate an

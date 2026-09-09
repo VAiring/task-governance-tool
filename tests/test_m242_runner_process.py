@@ -298,7 +298,9 @@ class RunnerProcessPureTests(unittest.TestCase):
         self.assertFalse(hasattr(process, "StepProcessResult"))
         self.assertFalse(hasattr(process, "run_process_steps"))
 
-    def test_common_posix_values_and_windows_only_dispatch(self):
+    def test_common_posix_preparation_retains_proved_no_launch(self):
+        from task_governance_tool import _verification_runner_process_posix
+
         attempt = PurePosixPath("/private") / ATTEMPT_ID
         request = process.RunnerProcessRequestV1(
             RUNNER_CONTRACT_VERSION,
@@ -309,6 +311,7 @@ class RunnerProcessPureTests(unittest.TestCase):
             (("HOME", "/private/home"), ("TMPDIR", "/private/tmp")),
             (_step(argv=("日本語", "")),),
             process.RunnerCancelSignal(),
+            runner_policy_digest=RUNNER_POSIX_POLICY_DIGEST,
         )
         self.assertEqual(request.executable.name, "python3")
         self.assertEqual(len(request.clean_environment), 2)
@@ -358,7 +361,47 @@ class RunnerProcessPureTests(unittest.TestCase):
                 process_windows, "run_process_request"
             ) as run_windows, patch.object(
                 process_windows, "prepare_clean_environment"
-            ) as prepare_windows:
+            ) as prepare_windows, patch.object(
+                _verification_runner_process_posix,
+                "prepare_clean_environment",
+                return_value=expected_environment,
+            ) as prepare_posix:
+                result = process.run_process_request(request)
+                self.assertIs(type(result), process.RunnerProcessResultV1)
+                self.assertEqual(result.version, request.version)
+                self.assertEqual(result.attempt_id, request.attempt_id)
+                self.assertEqual(result.runner_policy_digest, RUNNER_POSIX_POLICY_DIGEST)
+                self.assertEqual(
+                    (result.outcome, result.reason, result.launch_state),
+                    ("blocked_prelaunch", "runtime_unavailable", "no_launch"),
+                )
+                self.assertEqual(result.duration_ms, 0)
+                self.assertEqual(result.steps, ())
+                self.assertIsNone(result.failed_step_ordinal)
+                self.assertIsNone(result.cpu_time_ms)
+                self.assertIsNone(result.peak_job_memory_bytes)
+                self.assertIsNone(result.total_process_count)
+                self.assertTrue(result.process_zero)
+                self.assertTrue(result.handles_closed)
+                self.assertTrue(result.raw_output_discarded)
+                self.assertEqual(
+                    process.build_clean_environment(request.scratch_root),
+                    expected_environment,
+                )
+                prepare_posix.assert_called_once_with(request.scratch_root)
+                run_windows.assert_not_called()
+                prepare_windows.assert_not_called()
+
+        for platform in ("freebsd", "unsupported"):
+            with self.subTest(platform=platform), patch.object(
+                process.sys, "platform", platform
+            ), patch.object(
+                process_windows, "run_process_request"
+            ) as run_windows, patch.object(
+                process_windows, "prepare_clean_environment"
+            ) as prepare_windows, patch.object(
+                _verification_runner_process_posix, "prepare_clean_environment"
+            ) as prepare_posix:
                 with self.assertRaises(process.RunnerProcessError) as launched:
                     process.run_process_request(request)
                 self.assertEqual(launched.exception.code, "runtime_unavailable")
@@ -367,6 +410,7 @@ class RunnerProcessPureTests(unittest.TestCase):
                 self.assertEqual(prepared.exception.code, "runtime_unavailable")
                 run_windows.assert_not_called()
                 prepare_windows.assert_not_called()
+                prepare_posix.assert_not_called()
 
     def test_windows_limits_are_optional_values_but_required_before_any_launch(self):
         without_limits = _step(memory_mib=None, process_limit=None)

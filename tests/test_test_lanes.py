@@ -509,6 +509,7 @@ class TestLanePolicyTests(unittest.TestCase):
             PLATFORM_SMOKE_MODULES,
             (
                 "test_cli_help", "test_os_artifact_operations",
+                "test_os_runner_preparation",
                 "test_state_transition_primitives", "test_task_validation",
             ),
         )

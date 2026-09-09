@@ -53,10 +53,14 @@ Common process values and entry points use bounded Unicode/UTF-8 values and
 absolute paths without requiring a Windows path flavor, `python.exe`, Windows
 environment keys, or UTF-16 units. Windows-specific runtime observation,
 environment construction, quoting, native size checks, and Job/stdio
-execution stay in Windows implementations behind adapter dispatch. Only the
-Windows Runner is currently active; accepting POSIX-shaped common values does
-not enable POSIX launch. No Python environment change or installation is
-authorized by this separation.
+execution stay in Windows implementations behind adapter dispatch. Linux/macOS
+preparation uses native fixed-runtime observation and a closed clean environment,
+with the existing private target/scratch, exact Git materialization, and lifecycle
+cleanup. Only Windows execution is active. The Linux/macOS process entry returns
+the proved `blocked_prelaunch/runtime_unavailable/no_launch` result before
+resource acquisition; the parent still requires private-tree absence before
+the existing manual fallback. Preparation does not activate POSIX execution or
+completion qualification, change a Python environment, or authorize installation.
 
 The Runner is explicit opt-in for repositories
 the user already trusts. Untrusted, external, unsupported, or visually verified

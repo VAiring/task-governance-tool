@@ -80,67 +80,6 @@ DIGEST_D = "sha256:" + "d" * 64
 DIGEST_E = "sha256:" + "e" * 64
 
 
-class FakeFixedExecutableLease:
-    """A narrow service-boundary fake for the pre-bound runtime owner."""
-
-    def __init__(
-        self,
-        *,
-        enter_error: BaseException | None = None,
-        cleanup_states: tuple[str, ...] = ("closed",),
-        events: list[str] | None = None,
-    ) -> None:
-        self.enter_error = enter_error
-        self.cleanup_states = cleanup_states
-        self.events = [] if events is None else events
-        self.executable = Path(sys.executable).resolve()
-        self.materialized_root: Path | None = None
-        self.scratch_root: Path | None = None
-        self.enter_calls = 0
-        self.exit_calls = 0
-        self.finalize_calls = 0
-
-    def factory(self, materialized_root: Path, scratch_root: Path):
-        if self.materialized_root is not None:
-            raise AssertionError("fake owner was constructed more than once")
-        self.materialized_root = Path(materialized_root)
-        self.scratch_root = Path(scratch_root)
-        self.events.append("owner_constructed")
-        return self
-
-    def finalize_owner(self) -> str:
-        index = min(self.finalize_calls, len(self.cleanup_states) - 1)
-        state = self.cleanup_states[index]
-        self.finalize_calls += 1
-        self.events.append(f"finalize:{state}")
-        return state
-
-    def __enter__(self) -> Path:
-        self.enter_calls += 1
-        self.events.append("owner_enter")
-        if self.enter_error is not None:
-            cleanup_state = self.finalize_owner()
-            if cleanup_state != "closed":
-                raise VerificationRunnerRuntimeError(
-                    "runtime_unavailable",
-                    "the fixed package runtime could not be verified",
-                    cleanup_state,
-                ) from self.enter_error
-            raise self.enter_error
-        return self.executable
-
-    def __exit__(self, exc_type, _exc, _traceback) -> None:
-        self.exit_calls += 1
-        self.events.append("owner_exit")
-        cleanup_state = self.finalize_owner()
-        if cleanup_state != "closed" and exc_type is None:
-            raise VerificationRunnerRuntimeError(
-                "runtime_unavailable",
-                "the fixed package runtime could not be verified",
-                cleanup_state,
-            )
-
-
 def passing_process_result(request) -> RunnerProcessResultV1:
     step = RunnerProcessStepResultV1(
         ordinal=1,
@@ -812,97 +751,43 @@ class VerificationRunnerServiceTests(unittest.TestCase):
                     1,
                 )
 
-    def test_runtime_entry_terminal_requires_closed_runtime_and_owner(self):
-        cases = (
-            ("closed", ("open", "closed"), True),
-            ("uncertain", ("closed", "closed"), False),
-            ("closed", ("open", "open"), False),
-            ("closed", ("uncertain", "uncertain"), False),
-        )
-        for runtime_state, cleanup_states, terminal in cases:
-            with self.subTest(
-                runtime_state=runtime_state,
-                cleanup_states=cleanup_states,
-            ), tempfile.TemporaryDirectory() as temporary:
-                fixture = RunnerServiceFixture(Path(temporary))
-                prepared = fixture.prepared()
-                paths = service._runner_paths(fixture.target)
-                failure = VerificationRunnerRuntimeError(
-                    "runtime_unavailable",
-                    "the fixed package runtime could not be verified",
-                    runtime_state,
-                )
-                events: list[str] = []
-                owner = FakeFixedExecutableLease(
-                    enter_error=failure,
-                    cleanup_states=cleanup_states,
-                    events=events,
-                )
-                with service.zero_wait_runner_lock(paths):
-                    intent = service._persist_launch_intent(fixture.target, prepared)
-                    with mock.patch.object(
-                        service,
-                        "materialize_runner_target",
-                        return_value=None,
-                    ), mock.patch.object(
-                        service,
-                        "_basis_is_current",
-                        return_value=True,
-                    ), mock.patch.object(
-                        service,
-                        "_physical_basis_matches",
-                        return_value=True,
-                    ), mock.patch.object(
-                        service,
-                        "RunnerFixedExecutableLease",
-                        side_effect=owner.factory,
-                    ) as owner_factory:
-                        if terminal:
-                            service._run_intent_under_lock(
-                                fixture.target,
-                                paths,
-                                prepared,
-                                intent,
-                                cancel_requested=lambda: False,
-                            )
-                        else:
-                            with self.assertRaises(
-                                service.VerificationRunnerServiceError
-                            ) as raised:
-                                service._run_intent_under_lock(
-                                    fixture.target,
-                                    paths,
-                                    prepared,
-                                    intent,
-                                    cancel_requested=lambda: False,
-                                )
-                            self.assertEqual(
-                                raised.exception.code,
-                                "runner_state_invalid",
-                            )
-                owner_factory.assert_called_once()
-                self.assertEqual(owner.materialized_root.name, "target")
-                self.assertEqual(owner.scratch_root.name, "scratch")
-                self.assertEqual(owner.enter_calls, 1)
-                self.assertEqual(owner.exit_calls, 0)
-                self.assertEqual(owner.finalize_calls, 2)
-                self.assertEqual(
-                    events[:2],
-                    ["owner_constructed", "owner_enter"],
-                )
-                generation = fixture.generation(1)
-                if terminal:
-                    self.assertEqual(generation["state"], "terminal")
-                    self.assertEqual(
-                        generation["observation"].reason,
-                        "runtime_unavailable",
+    def test_runtime_observation_failure_terminalizes_without_a_lease(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            fixture = RunnerServiceFixture(Path(temporary))
+            prepared = fixture.prepared()
+            paths = service._runner_paths(fixture.target)
+            failure = VerificationRunnerRuntimeError(
+                "runtime_unavailable",
+                "the fixed package runtime could not be verified",
+            )
+            with service.zero_wait_runner_lock(paths):
+                intent = service._persist_launch_intent(fixture.target, prepared)
+                with mock.patch.object(
+                    service, "materialize_runner_target", return_value=None,
+                ), mock.patch.object(
+                    service, "_basis_is_current", return_value=True,
+                ), mock.patch.object(
+                    service, "_physical_basis_matches", return_value=True,
+                ), mock.patch.object(
+                    service, "observe_fixed_package_runtime", side_effect=failure,
+                ) as observe, mock.patch.object(
+                    service, "run_process_request",
+                ) as process:
+                    result = service._run_intent_under_lock(
+                        fixture.target, paths, prepared, intent,
+                        cancel_requested=lambda: False,
                     )
-                else:
-                    self.assertEqual(generation["state"], "pending")
-                    self.assertIsNone(generation["observation"])
-                    self.assertIsNone(generation["cleanup_event"])
+            observe.assert_called_once()
+            self.assertEqual(observe.call_args.args[0].name, "target")
+            self.assertEqual(observe.call_args.args[1].name, "scratch")
+            process.assert_not_called()
+            self.assertEqual(result.verification_route, "receipt_required")
+            generation = fixture.generation(1)
+            self.assertEqual(generation["state"], "terminal")
+            self.assertEqual(generation["observation"].reason, "runtime_unavailable")
+            self.assertEqual(generation["observation"].launch_state, "no_launch")
 
-    def test_resource_free_owner_constructor_failure_remains_pending(self):
+    def test_interrupted_runtime_observation_remains_pending(self):
         with tempfile.TemporaryDirectory() as temporary:
             fixture = RunnerServiceFixture(Path(temporary))
             prepared = fixture.prepared()
@@ -919,8 +804,8 @@ class VerificationRunnerServiceTests(unittest.TestCase):
                     return_value=True,
                 ), mock.patch.object(
                     service,
-                    "RunnerFixedExecutableLease",
-                    side_effect=KeyboardInterrupt("constructor interrupted"),
+                    "observe_fixed_package_runtime",
+                    side_effect=KeyboardInterrupt("runtime observation interrupted"),
                 ):
                     with self.assertRaises(
                         service.VerificationRunnerServiceError
@@ -943,7 +828,6 @@ class VerificationRunnerServiceTests(unittest.TestCase):
             VerificationRunnerRuntimeError(
                 "runtime_unavailable",
                 "the fixed package runtime could not be verified",
-                "closed",
             ),
             RuntimeError("unknown request setup failure"),
             KeyboardInterrupt("request setup interrupted"),
@@ -953,9 +837,6 @@ class VerificationRunnerServiceTests(unittest.TestCase):
                 fixture = RunnerServiceFixture(Path(temporary))
                 prepared = fixture.prepared()
                 paths = service._runner_paths(fixture.target)
-                owner = FakeFixedExecutableLease(
-                    cleanup_states=("closed", "closed"),
-                )
                 with service.zero_wait_runner_lock(paths):
                     intent = service._persist_launch_intent(fixture.target, prepared)
                     with mock.patch.object(
@@ -968,8 +849,8 @@ class VerificationRunnerServiceTests(unittest.TestCase):
                         return_value=True,
                     ), mock.patch.object(
                         service,
-                        "RunnerFixedExecutableLease",
-                        side_effect=owner.factory,
+                        "observe_fixed_package_runtime",
+                        return_value=Path(sys.executable).resolve(),
                     ), mock.patch.object(
                         service,
                         "build_clean_environment",
@@ -989,16 +870,13 @@ class VerificationRunnerServiceTests(unittest.TestCase):
                                 cancel_requested=lambda: False,
                             )
                 self.assertEqual(raised.exception.code, "runner_state_invalid")
-                self.assertEqual(owner.enter_calls, 1)
-                self.assertEqual(owner.exit_calls, 1)
-                self.assertEqual(owner.finalize_calls, 2)
                 process.assert_not_called()
                 generation = fixture.generation(1)
                 self.assertEqual(generation["state"], "pending")
                 self.assertIsNone(generation["observation"])
                 self.assertIsNone(generation["cleanup_event"])
 
-    def test_process_step_setup_failure_terminalizes_before_owner_creation(self):
+    def test_process_step_setup_failure_terminalizes_before_runtime_observation(self):
         with tempfile.TemporaryDirectory() as temporary:
             fixture = RunnerServiceFixture(Path(temporary))
             prepared = fixture.prepared()
@@ -1023,8 +901,8 @@ class VerificationRunnerServiceTests(unittest.TestCase):
                     side_effect=RunnerProcessError("process_setup_failed"),
                 ), mock.patch.object(
                     service,
-                    "RunnerFixedExecutableLease",
-                ) as owner_factory:
+                    "observe_fixed_package_runtime",
+                ) as observe:
                     service._run_intent_under_lock(
                         fixture.target,
                         paths,
@@ -1032,7 +910,7 @@ class VerificationRunnerServiceTests(unittest.TestCase):
                         intent,
                         cancel_requested=lambda: False,
                     )
-            owner_factory.assert_not_called()
+            observe.assert_not_called()
             generation = fixture.generation(1)
             self.assertEqual(generation["state"], "terminal")
             self.assertEqual(
@@ -1040,98 +918,37 @@ class VerificationRunnerServiceTests(unittest.TestCase):
                 "process_setup_failed",
             )
 
-    def test_bound_process_setup_terminal_requires_closed_owner(self):
-        cases = (
-            (("open", "closed"), True),
-            (("open", "open"), False),
-            (("uncertain", "uncertain"), False),
-        )
-        for cleanup_states, terminal in cases:
-            with self.subTest(
-                cleanup_states=cleanup_states,
-            ), tempfile.TemporaryDirectory() as temporary:
-                fixture = RunnerServiceFixture(Path(temporary))
-                prepared = fixture.prepared()
-                paths = service._runner_paths(fixture.target)
-                events: list[str] = []
-                owner = FakeFixedExecutableLease(
-                    cleanup_states=cleanup_states,
-                    events=events,
-                )
-                with service.zero_wait_runner_lock(paths):
-                    intent = service._persist_launch_intent(fixture.target, prepared)
-                    with mock.patch.object(
-                        service,
-                        "materialize_runner_target",
-                        return_value=None,
-                    ), mock.patch.object(
-                        service,
-                        "_basis_is_current",
-                        return_value=True,
-                    ), mock.patch.object(
-                        service,
-                        "_physical_basis_matches",
-                        return_value=True,
-                    ), mock.patch.object(
-                        service,
-                        "RunnerFixedExecutableLease",
-                        side_effect=owner.factory,
-                    ), mock.patch.object(
-                        service,
-                        "build_clean_environment",
-                        side_effect=RunnerProcessError("process_setup_failed"),
-                    ), mock.patch.object(
-                        service,
-                        "run_process_request",
-                    ) as process:
-                        if terminal:
-                            service._run_intent_under_lock(
-                                fixture.target,
-                                paths,
-                                prepared,
-                                intent,
-                                cancel_requested=lambda: False,
-                            )
-                        else:
-                            with self.assertRaises(
-                                service.VerificationRunnerServiceError
-                            ) as raised:
-                                service._run_intent_under_lock(
-                                    fixture.target,
-                                    paths,
-                                    prepared,
-                                    intent,
-                                    cancel_requested=lambda: False,
-                                )
-                            self.assertEqual(
-                                raised.exception.code,
-                                "runner_state_invalid",
-                            )
-                process.assert_not_called()
-                self.assertEqual(owner.enter_calls, 1)
-                self.assertEqual(owner.exit_calls, 1)
-                self.assertEqual(owner.finalize_calls, 2)
-                self.assertEqual(
-                    events,
-                    [
-                        "owner_constructed",
-                        "owner_enter",
-                        "owner_exit",
-                        f"finalize:{cleanup_states[0]}",
-                        f"finalize:{cleanup_states[1]}",
-                    ],
-                )
-                generation = fixture.generation(1)
-                if terminal:
-                    self.assertEqual(generation["state"], "terminal")
-                    self.assertEqual(
-                        generation["observation"].reason,
-                        "process_setup_failed",
+    def test_bound_process_setup_failure_terminalizes_without_a_lease(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            fixture = RunnerServiceFixture(Path(temporary))
+            prepared = fixture.prepared()
+            paths = service._runner_paths(fixture.target)
+            with service.zero_wait_runner_lock(paths):
+                intent = service._persist_launch_intent(fixture.target, prepared)
+                with mock.patch.object(
+                    service, "materialize_runner_target", return_value=None,
+                ), mock.patch.object(
+                    service, "_basis_is_current", return_value=True,
+                ), mock.patch.object(
+                    service, "_physical_basis_matches", return_value=True,
+                ), mock.patch.object(
+                    service, "observe_fixed_package_runtime",
+                    return_value=Path(sys.executable).resolve(),
+                ) as observe, mock.patch.object(
+                    service, "build_clean_environment",
+                    side_effect=RunnerProcessError("process_setup_failed"),
+                ), mock.patch.object(
+                    service, "run_process_request",
+                ) as process:
+                    service._run_intent_under_lock(
+                        fixture.target, paths, prepared, intent,
+                        cancel_requested=lambda: False,
                     )
-                else:
-                    self.assertEqual(generation["state"], "pending")
-                    self.assertIsNone(generation["observation"])
-                    self.assertIsNone(generation["cleanup_event"])
+            observe.assert_called_once()
+            process.assert_not_called()
+            generation = fixture.generation(1)
+            self.assertEqual(generation["state"], "terminal")
+            self.assertEqual(generation["observation"].reason, "process_setup_failed")
 
     def test_unknown_pre_adapter_exceptions_remain_pending(self):
         for failure_type in (KeyboardInterrupt, SystemExit, RuntimeError):
@@ -1155,8 +972,8 @@ class VerificationRunnerServiceTests(unittest.TestCase):
                         return_value=True,
                     ), mock.patch.object(
                         service,
-                        "RunnerFixedExecutableLease",
-                    ) as owner_factory:
+                        "observe_fixed_package_runtime",
+                    ) as observe:
                         with self.assertRaises(
                             service.VerificationRunnerServiceError
                         ) as raised:
@@ -1168,7 +985,7 @@ class VerificationRunnerServiceTests(unittest.TestCase):
                                 cancel_requested=fail_callback,
                             )
                 self.assertEqual(raised.exception.code, "runner_state_invalid")
-                owner_factory.assert_not_called()
+                observe.assert_not_called()
                 generation = fixture.generation(1)
                 self.assertEqual(generation["state"], "pending")
                 self.assertIsNone(generation["observation"])
@@ -1198,8 +1015,8 @@ class VerificationRunnerServiceTests(unittest.TestCase):
                     "_physical_basis_matches",
                 ) as physical_basis, mock.patch.object(
                     service,
-                    "RunnerFixedExecutableLease",
-                ) as owner_factory:
+                    "observe_fixed_package_runtime",
+                ) as observe:
                     with self.assertRaises(StorageError) as raised:
                         service._run_intent_under_lock(
                             fixture.target,
@@ -1214,7 +1031,7 @@ class VerificationRunnerServiceTests(unittest.TestCase):
                 "evidence_ledger_inconsistent",
             )
             physical_basis.assert_not_called()
-            owner_factory.assert_not_called()
+            observe.assert_not_called()
             generation = fixture.generation(1)
             self.assertEqual(generation["state"], "pending")
             self.assertIsNone(generation["observation"])
@@ -1236,9 +1053,6 @@ class VerificationRunnerServiceTests(unittest.TestCase):
                 ), tempfile.TemporaryDirectory() as temporary:
                     fixture = RunnerServiceFixture(Path(temporary))
                     prepared = fixture.prepared()
-                    owner = FakeFixedExecutableLease(
-                        cleanup_states=("closed", "closed"),
-                    )
                     failure = failure_type(
                         r"private failure at C:\sensitive\runner-state"
                     )
@@ -1265,8 +1079,8 @@ class VerificationRunnerServiceTests(unittest.TestCase):
                         ),
                         mock.patch.object(
                             service,
-                            "RunnerFixedExecutableLease",
-                            side_effect=owner.factory,
+                            "observe_fixed_package_runtime",
+                            return_value=Path(sys.executable).resolve(),
                         ),
                         mock.patch.object(
                             service,
@@ -1336,7 +1150,6 @@ class VerificationRunnerServiceTests(unittest.TestCase):
                         service.RUNNER_FAILURE_MESSAGE,
                     )
                     self.assertNotIn("sensitive", str(raised.exception))
-                    self.assertEqual(owner.finalize_calls, 2)
                     generation = fixture.generation(1)
                     self.assertEqual(generation["state"], "pending")
                     self.assertIsNone(generation["observation"])
@@ -1550,11 +1363,6 @@ class VerificationRunnerServiceTests(unittest.TestCase):
             fixture = RunnerServiceFixture(Path(temporary))
             prepared = fixture.prepared()
             paths = service._runner_paths(fixture.target)
-            events: list[str] = []
-            owner = FakeFixedExecutableLease(
-                cleanup_states=("closed", "closed"),
-                events=events,
-            )
 
             with service.zero_wait_runner_lock(paths):
                 intent = service._persist_launch_intent(fixture.target, prepared)
@@ -1572,13 +1380,13 @@ class VerificationRunnerServiceTests(unittest.TestCase):
                     return_value=True,
                 ) as physical_basis, mock.patch.object(
                     service,
-                    "RunnerFixedExecutableLease",
-                    side_effect=owner.factory,
-                ), mock.patch.object(
+                    "observe_fixed_package_runtime",
+                    return_value=Path(sys.executable).resolve(),
+                ) as observe, mock.patch.object(
                     service,
                     "run_process_request",
                     side_effect=passing_process_result,
-                ):
+                ) as process:
                     result = service._run_intent_under_lock(
                         fixture.target,
                         paths,
@@ -1590,18 +1398,10 @@ class VerificationRunnerServiceTests(unittest.TestCase):
                 self.assertEqual(result.verification_route, "runner_pass")
                 self.assertIsNone(result.blocking_code)
                 physical_basis.assert_called_once_with(fixture.target, prepared)
-                self.assertEqual(owner.enter_calls, 1)
-                self.assertEqual(owner.exit_calls, 1)
-                self.assertEqual(owner.finalize_calls, 2)
+                observe.assert_called_once()
+                process.assert_called_once()
                 self.assertEqual(
-                    events,
-                    [
-                        "owner_constructed",
-                        "owner_enter",
-                        "owner_exit",
-                        "finalize:closed",
-                        "finalize:closed",
-                    ],
+                    process.call_args.args[0].executable, observe.return_value,
                 )
 
             generation = fixture.generation(1)
@@ -1848,62 +1648,11 @@ class VerificationRunnerServiceTests(unittest.TestCase):
                 self.assertNotIn(raw_output_secret.encode("utf-8"), retained)
                 self.assertNotIn(credential_value.encode("utf-8"), retained)
 
-    def test_owner_cleanup_failure_overrides_passing_result_and_remains_pending(self):
-        for cleanup_state in ("open", "uncertain"):
-            with self.subTest(cleanup_state=cleanup_state), tempfile.TemporaryDirectory() as temporary:
-                fixture = RunnerServiceFixture(Path(temporary))
-                prepared = fixture.prepared()
-                paths = service._runner_paths(fixture.target)
-                owner = FakeFixedExecutableLease(
-                    cleanup_states=(cleanup_state, cleanup_state),
-                )
-                with service.zero_wait_runner_lock(paths):
-                    intent = service._persist_launch_intent(fixture.target, prepared)
-                    with mock.patch.object(
-                        service,
-                        "materialize_runner_target",
-                        return_value=None,
-                    ), mock.patch.object(
-                        service,
-                        "_basis_is_current",
-                        return_value=True,
-                    ), mock.patch.object(
-                        service,
-                        "RunnerFixedExecutableLease",
-                        side_effect=owner.factory,
-                    ), mock.patch.object(
-                        service,
-                        "run_process_request",
-                        side_effect=passing_process_result,
-                    ) as process:
-                        with self.assertRaises(
-                            service.VerificationRunnerServiceError
-                        ) as raised:
-                            service._run_intent_under_lock(
-                                fixture.target,
-                                paths,
-                                prepared,
-                                intent,
-                                cancel_requested=lambda: False,
-                            )
-                self.assertEqual(raised.exception.code, "runner_state_invalid")
-                process.assert_called_once()
-                self.assertEqual(owner.enter_calls, 1)
-                self.assertEqual(owner.exit_calls, 1)
-                self.assertEqual(owner.finalize_calls, 2)
-                generation = fixture.generation(1)
-                self.assertEqual(generation["state"], "pending")
-                self.assertIsNone(generation["observation"])
-                self.assertIsNone(generation["cleanup_event"])
-
     def test_false_process_proof_is_pending_then_restart_cleanup_allows_next_generation(self):
         with tempfile.TemporaryDirectory() as temporary:
             fixture = RunnerServiceFixture(Path(temporary))
             prepared = fixture.prepared()
             paths = service._runner_paths(fixture.target)
-            owner = FakeFixedExecutableLease(
-                cleanup_states=("closed", "closed"),
-            )
 
             def unproved_result(request):
                 return RunnerProcessResultV1(
@@ -1935,8 +1684,8 @@ class VerificationRunnerServiceTests(unittest.TestCase):
                     return_value=True,
                 ), mock.patch.object(
                     service,
-                    "RunnerFixedExecutableLease",
-                    side_effect=owner.factory,
+                    "observe_fixed_package_runtime",
+                    return_value=Path(sys.executable).resolve(),
                 ), mock.patch.object(
                     service,
                     "run_process_request",

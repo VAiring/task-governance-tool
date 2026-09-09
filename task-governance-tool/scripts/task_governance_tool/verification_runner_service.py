@@ -115,7 +115,7 @@ from task_governance_tool.verification_runner_process import (
     run_process_request,
 )
 from task_governance_tool._verification_runner_executable_win32 import (
-    RunnerFixedExecutableLease,
+    observe_fixed_package_runtime,
 )
 from task_governance_tool.verification_runner_runtime import (
     RunnerImplementationIdentity,
@@ -1077,41 +1077,35 @@ def _run_intent_under_lock(
 
     runtime_bound = False
     process_entered = False
-    try:
-        lease = RunnerFixedExecutableLease(
-            attempt_paths.target,
-            attempt_paths.scratch,
-        )
-    except BaseException as exc:
-        # Construction is resource-free. An interruption here therefore has
-        # nothing to clean up, but it is still an unknown post-intent failure.
-        raise _state_invalid() from exc
     prelaunch_reason: str | None = None
     pending_failure: BaseException | None = None
     request: RunnerProcessRequestV1 | None = None
     result: RunnerProcessResultV1 | None = None
     started_at = utc_now()
     try:
-        with lease as executable:
-            runtime_bound = True
-            clean_environment = build_clean_environment(
-                Path(system_root_value),
-                attempt_paths.scratch,
-            )
-            request = RunnerProcessRequestV1(
-                version=RUNNER_CONTRACT_VERSION,
-                attempt_id=intent.attempt.verification_runner_attempt_id,
-                executable=executable,
-                materialized_root=attempt_paths.target,
-                scratch_root=attempt_paths.scratch,
-                clean_environment=clean_environment,
-                steps=steps,
-                cancel_signal=cancel_signal,
-            )
-            process_entered = True
-            result = run_process_request(request)
+        executable = observe_fixed_package_runtime(
+            attempt_paths.target,
+            attempt_paths.scratch,
+        )
+        runtime_bound = True
+        clean_environment = build_clean_environment(
+            Path(system_root_value),
+            attempt_paths.scratch,
+        )
+        request = RunnerProcessRequestV1(
+            version=RUNNER_CONTRACT_VERSION,
+            attempt_id=intent.attempt.verification_runner_attempt_id,
+            executable=executable,
+            materialized_root=attempt_paths.target,
+            scratch_root=attempt_paths.scratch,
+            clean_environment=clean_environment,
+            steps=steps,
+            cancel_signal=cancel_signal,
+        )
+        process_entered = True
+        result = run_process_request(request)
     except VerificationRunnerRuntimeError as exc:
-        if not runtime_bound and exc.handle_cleanup_state != "uncertain":
+        if not runtime_bound:
             prelaunch_reason = "runtime_unavailable"
         else:
             pending_failure = exc
@@ -1124,13 +1118,6 @@ def _run_intent_under_lock(
         # Unknown errors and interruptions are never promoted to a definite
         # no-launch observation, even when they happened before adapter entry.
         pending_failure = exc
-    finally:
-        try:
-            cleanup_state = lease.finalize_owner()
-        except BaseException as exc:
-            raise _state_invalid() from exc
-        if cleanup_state != "closed":
-            raise _state_invalid()
 
     if pending_failure is not None:
         raise _state_invalid() from pending_failure

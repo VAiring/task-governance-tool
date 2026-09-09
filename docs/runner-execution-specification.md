@@ -42,9 +42,6 @@ null/zero encoding: the affected Plan, result, and Evidence owners are
 synchronized with those implementations while preserved evidence retains its
 original meaning.
 
-Remove the execution-lifetime lease that prevents executable writes or
-replacement, together with lease-only ownership and release machinery. Retain
-the parent-verified fixed absolute executable and no shell or PATH lookup.
 `python.exe`, Windows-specific environment entries, Windows quoting, and
 UTF-16 limits cease to be common cross-OS requirements; native Windows
 environment, quoting, and size requirements remain on Windows. This does not
@@ -69,6 +66,14 @@ must bind the current Task, Contract, verification criterion, and exact target;
 use fixed argv with no shell or PATH lookup; exclude credentials from the child
 environment; execute only an exact private materialization; and copy no working
 tree or result bytes back to the target.
+
+The parent observes and fixes its absolute Python executable once for the
+process request without holding an execution-lifetime write/delete-denying
+lease. There is no alternate selection from the Plan, environment, or PATH.
+This does not guarantee successful or safe executable replacement during a run
+or add Plan-driven Python or virtual-environment switching. Runtime observation
+failure retains the existing no-launch classification; actual process and
+cleanup uncertainty retain the existing blocking behavior.
 
 The target-plan boundary adds no public command or normal-loop call. It performs
 no durable Runner write and launches no target process.

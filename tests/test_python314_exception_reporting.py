@@ -266,7 +266,6 @@ class Python314ExceptionReportingTests(unittest.TestCase):
                 {
                     "code": "runtime_unavailable",
                     "message": "runner runtime is unavailable",
-                    "handle_cleanup_state": "uncertain",
                 },
                 "runner runtime is unavailable",
             ),
@@ -320,21 +319,6 @@ class Python314ExceptionReportingTests(unittest.TestCase):
                 self.assertIn(type(chained_error).__name__, report)
                 self.assertIn(expected_string, report)
                 self.assertNotIn("FrozenInstanceError", report)
-
-        uncertain = VerificationRunnerRuntimeError("runtime_unavailable", "failure")
-        closed = VerificationRunnerRuntimeError(
-            "runtime_unavailable",
-            "failure",
-            handle_cleanup_state="closed",
-        )
-        open_error = VerificationRunnerRuntimeError(
-            "runtime_unavailable",
-            "failure",
-            handle_cleanup_state="open",
-        )
-        self.assertFalse(uncertain.handles_closed)
-        self.assertTrue(closed.handles_closed)
-        self.assertFalse(open_error.handles_closed)
 
     def test_storage_privacy_failure_is_reported_and_unittest_continues(self):
         continued: list[bool] = []

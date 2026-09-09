@@ -22,7 +22,6 @@ from tests.test_m242_r3b_schema20_activation import (
 )
 from tests.test_m242_runner_model import PROJECTION_KEYS
 from tests.test_m242_runner_service import (
-    FakeFixedExecutableLease,
     RunnerServiceFixture,
     git,
     row_counts,
@@ -445,7 +444,6 @@ class M244ARunnerAcceptanceTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             fixture = RunnerServiceFixture(Path(temporary))
             prepared = fixture.prepared()
-            owner = FakeFixedExecutableLease()
 
             def process_create_failed(request):
                 return RunnerProcessResultV1(
@@ -457,8 +455,8 @@ class M244ARunnerAcceptanceTests(unittest.TestCase):
             with mock.patch.object(service, "_prepare_runner", return_value=prepared), \
                  mock.patch.object(service, "_basis_is_current", return_value=True), \
                  mock.patch.object(service, "_physical_basis_matches", return_value=True), \
-                 mock.patch.object(service, "RunnerFixedExecutableLease",
-                                   side_effect=owner.factory), \
+                 mock.patch.object(service, "observe_fixed_package_runtime",
+                                   return_value=Path(sys.executable).resolve()), \
                  mock.patch.object(service, "run_process_request",
                                    side_effect=process_create_failed):
                 routed = service.set_review_target_with_optional_runner(

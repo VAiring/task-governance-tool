@@ -212,16 +212,15 @@ dispatch consumption.
 ### Typed Process Value Boundary
 
 The [approved OS-specific guarantees](runner-execution-specification.md#approved-os-specific-runner-guarantees)
-are conditional implementation boundaries. Runtime identity retains fixed
-absolute executable observation while removing its execution-lifetime lease;
-the process/OS adapters own native environment, limits, launch, accounting,
+are conditional implementation boundaries. The process/OS adapters own
+native environment, limits, launch, accounting,
 and managed-group termination. Plan and typed-result validation, parent result
 mapping, and Evidence consumers must express the supported OS limits and
 actual measurement scope together in their owning changes. They do not move
 Task policy, SQLite, or Evidence assembly into native adapters.
 The service remains the sole [cleanup-acceptance owner](#cleanup-acceptance-and-privacy).
 Until those changes land, the current record shapes, Windows bounds,
-environment, executable lease, and accounting rules below remain unchanged;
+environment, and accounting rules below remain unchanged;
 this document update alone introduces no native module, format, or runtime
 behavior.
 
@@ -300,14 +299,13 @@ additional or ambient key, and all path values satisfy `absolute_path`.
 
 Within `runtime_identity`, `verification_runner_runtime.py` owns manifest
 validation, `RunnerImplementationIdentity`, implementation digest, and the
-shared runtime error and handle-cleanup state. The Windows-specific
-`_verification_runner_executable_win32.py` owns `RunnerFixedExecutableLease`,
-its primary/probe slots and serialized state, native declarations, path and
-identity observations, rechecks, and handle release. It consumes the existing
-materialized/scratch roots, yields only the verified absolute executable path,
-and returns the existing cleanup state from `finalize_owner()`. The service
-still constructs the owner, holds its context through the process request, and
-performs final release and cleanup acceptance; no process-adapter edge changes.
+shared runtime error. The Windows-specific
+`_verification_runner_executable_win32.py` owns the stateless
+`observe_fixed_package_runtime()` path and identity observation. It consumes
+the existing materialized/scratch roots and returns only the verified absolute
+executable path. It owns no execution-lifetime handle, lease, or cleanup state.
+The service observes that path once per invocation and passes it into the
+closed process request; no process-adapter edge changes.
 
 The process boundary fixes the package-runtime executable source to the operating-system
 image path of the current parent process. `sys.executable` is used only to
@@ -315,12 +313,13 @@ corroborate the same physical file; neither value is resolved through `PATH`,
 configuration, a plan, or target material. The runtime-identity layer observes
 every path component without following a symlink or reparse point, requires a
 normalized absolute regular `python.exe` outside the owned target and scratch
-trees, and holds a non-inheritable read handle that denies write and delete
-sharing. The parent keeps that lease open from the final identity observation
-through the complete process-adapter call and closes it on every exit. Failure
-to establish or retain the lease is a sanitized admission failure with no
-alternate executable. The process adapter consumes only the leased absolute
-path in the closed request and does not import the runtime-identity layer.
+trees, and corroborates the physical identity of the observed paths. A definite
+observation failure is a sanitized admission failure with no alternate
+executable. No file-sharing restriction is retained across execution. This
+neither guarantees successful or safe executable replacement during a run nor
+adds Plan-driven Python or virtual-environment switching. The process adapter
+consumes only the fixed absolute path in the closed request and does not import
+the runtime-identity layer.
 Every process-adapter path observation separately rejects a symlink or reparse
 point and a resolved-path or file-type mismatch. Repeated-observation equality
 then compares only normalized path spelling, device ID, file ID, and full mode
@@ -328,13 +327,6 @@ then compares only normalized path spelling, device ID, file ID, and full mode
 metadata rather than physical identity and do not by themselves invalidate an
 otherwise unchanged path. This exclusion never masks the separately repeated
 reparse check.
-Each lease serializes executable access, context state, and native close with a
-private non-reentrant lock, so no two native close attempts overlap and access
-cannot observe an in-progress close. Context entry is single-depth; nested
-entry and direct close while a context is active fail closed, while the
-matching context exit performs the one release transition. A definitive native
-close failure retains ownership for a later serialized retry, whereas an
-interrupted native close becomes uncertain and is never retried.
 
 `steps` is a tuple whose ordinal is its one-based position. `step_id` satisfies
 `identifier`; `mode` is exactly `script|module`; `entrypoint` satisfies the
@@ -508,7 +500,7 @@ Runner row is inserted for the fallback T1. A T1 failure rolls back every
 member. The service retains the same Runner lock from pending reconciliation
 through T1, materialization, process/lifecycle work, and terminal T2, but
 closes each SQLite transaction before creating attempt directories,
-materializing Git objects, leasing the executable, or calling the process
+materializing Git objects, observing the executable, or calling the process
 adapter. No SQLite writer spans filesystem or process work.
 
 `verification_runner_repository.py` owns stored Runner types, graph validation,
@@ -546,7 +538,7 @@ reconcile pending DB state and the fixed filesystem inventory
 commit atomic T1 and close its SQLite writer
 create the exact attempt target/scratch tree
 materialize the admitted target and build the closed process request
-hold the fixed-executable lease across the process call
+call the process adapter with the once-observed fixed executable
 consume one accepted RunnerProcessResultV1
 prove process_zero + handles_closed + raw_output_discarded
 prove exact attempt/quarantine absence through lifecycle cleanup

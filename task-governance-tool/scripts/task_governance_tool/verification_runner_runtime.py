@@ -1,10 +1,10 @@
-"""Release-bound Runner identity and shared runtime failure/cleanup types."""
+"""Release-bound Runner identity and shared runtime failure type."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any
 
 from task_governance_tool import __version__
 from task_governance_tool.evidence_ledger import domain_digest
@@ -18,28 +18,21 @@ from task_governance_tool.verification_runner import RUNNER_IMPLEMENTATION_VERSI
 RUNNER_IMPLEMENTATION_DIGEST_DOMAIN = (
     b"taskgov-verification-runner-implementation-v1\0"
 )
-RuntimeHandleCleanupState = Literal["closed", "open", "uncertain"]
 
 
 @dataclass
 class VerificationRunnerRuntimeError(Exception):
     code: str
     message: str
-    handle_cleanup_state: RuntimeHandleCleanupState = "uncertain"
 
     def __str__(self) -> str:
         return self.message
-
-    @property
-    def handles_closed(self) -> bool:
-        return self.handle_cleanup_state == "closed"
 
 
 def _policy_mismatch() -> VerificationRunnerRuntimeError:
     return VerificationRunnerRuntimeError(
         "policy_mismatch",
         "the installed Runner implementation does not match its release manifest",
-        "closed",
     )
 
 

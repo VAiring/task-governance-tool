@@ -337,7 +337,7 @@ Real-OS checks begin with the added file operations and ordinary Task/storage
 flows, using the early CI entry where needed. Runner environment/process
 changes follow normal-function acceptance under the
 [approved OS-specific Runner guarantees](runner-execution-specification.md#approved-os-specific-runner-guarantees).
-That conditional boundary does not itself change the current executable-hold,
+That conditional boundary does not itself change the current runtime-identity,
 resource, result, or cleanup contract. No all-function relocation, file-count
 target, or Windows-equivalent native implementation is an acceptance condition.
 

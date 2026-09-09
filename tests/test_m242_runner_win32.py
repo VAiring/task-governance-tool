@@ -854,7 +854,7 @@ class RunnerWin32NativeTests(unittest.TestCase):
         if result.launch_state == "launched":
             self.assertEqual(len(result.steps), 1)
 
-    def test_fixed_runtime_lease_is_held_through_real_request_and_fixture_rename_after_close(self):
+    def test_fixed_runtime_observation_drives_real_request(self):
         self.assertEqual(Path(sys.executable).name.casefold(), "python.exe")
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary).resolve()
@@ -862,58 +862,16 @@ class RunnerWin32NativeTests(unittest.TestCase):
                 root,
                 "raise SystemExit(0)\n",
             )
-            lease = runtime.RunnerFixedExecutableLease(target, scratch)
-            with lease as executable:
-                self.assertFalse(lease.closed)
-                self.assertEqual(lease.executable, executable)
-                result = process.run_process_request(
-                    self._request(
-                        executable=executable,
-                        target=target,
-                        scratch=scratch,
-                    )
+            executable = runtime.observe_fixed_package_runtime(target, scratch)
+            result = process.run_process_request(
+                self._request(
+                    executable=executable,
+                    target=target,
+                    scratch=scratch,
                 )
-                self.assertEqual((result.outcome, result.reason), ("pass", None))
-                self.assert_process_zero(result)
-                self.assertFalse(lease.closed)
-
-            self.assertTrue(lease.closed)
-            runtime_root = root / "runtime-fixture"
-            runtime_root.mkdir()
-            fixture_executable = runtime_root / "python.exe"
-            renamed_executable = runtime_root / "python-renamed.exe"
-            fixture_executable.write_bytes(b"fixture")
-
-            real_kernel = runtime._kernel32()
-
-            class FixtureKernel:
-                def GetModuleFileNameW(self, _module, buffer, capacity):
-                    observed = str(fixture_executable)
-                    if len(observed) >= int(capacity):
-                        return int(capacity)
-                    buffer.value = observed
-                    return len(observed)
-
-                def __getattr__(self, name):
-                    return getattr(real_kernel, name)
-
-            fixture_lease = runtime.RunnerFixedExecutableLease(target, scratch)
-            with patch.object(
-                runtime,
-                "_kernel32",
-                return_value=FixtureKernel(),
-            ), patch.object(runtime.sys, "executable", str(fixture_executable)):
-                with fixture_lease as executable:
-                    self.assertEqual(executable, fixture_executable)
-                    self.assertFalse(fixture_lease.closed)
-                    with self.assertRaises(OSError):
-                        os.replace(fixture_executable, renamed_executable)
-
-            self.assertTrue(fixture_lease.closed)
-            self.assertTrue(fixture_executable.is_file())
-            self.assertFalse(renamed_executable.exists())
-            os.replace(fixture_executable, renamed_executable)
-            self.assertTrue(renamed_executable.is_file())
+            )
+            self.assertEqual((result.outcome, result.reason), ("pass", None))
+            self.assert_process_zero(result)
 
     def test_exact_amd64_abi_job_and_stdio_handles(self):
         self.assertEqual(

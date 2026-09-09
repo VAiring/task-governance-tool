@@ -836,6 +836,70 @@ The existing done transition remains accepted through `task edit` and enforces
 the same validator as thin `task complete`. Prefer the thin command for normal
 completion.
 
+#### Runner Plan Example And OS Limits
+
+After ordinary physical installation, setup, and ignore protection, this
+optional v2 draft works on Windows, Linux, and macOS for a nonterminal Task
+with a current Contract and verification criterion. Adapt the entrypoint and
+limits to the approved verification; the script and its required files must
+exist in the exact Git target. Save this JSON as `runner-plan-draft.json`:
+
+```json
+{
+  "version": 2,
+  "steps": [
+    {
+      "step_id": "focused",
+      "mode": "script",
+      "entrypoint": "tests/test_focused.py",
+      "argv": [],
+      "cwd": ".",
+      "timeout_seconds": 60,
+      "cpu_seconds": 60,
+      "windows_limits": {"memory_mib": 256, "process_limit": 4},
+      "output_byte_limit": 1048576
+    }
+  ]
+}
+```
+
+From the target-project root, explicitly publish the addressed Task's entry:
+
+```powershell
+Get-Content -Raw -Encoding utf8 .\runner-plan-draft.json |
+  python .agents/skills/task-governance-tool/scripts/taskgov.py task edit --repo . <task-id> --runner-plan-action replace --json
+```
+
+On Linux/macOS, submit the same file:
+
+```sh
+python3 .agents/skills/task-governance-tool/scripts/taskgov.py task edit --repo . <task-id> --runner-plan-action replace --json < runner-plan-draft.json
+```
+
+The first absent-file `replace` is the explicit trusted-local opt-in and creates
+the canonical ignored Plan with `trusted_local=true`. It neither launches the
+Runner nor sets a target. Execution remains part of the existing
+`review target set` operation; this optional authoring step adds nothing to the
+normal Task loop and does not discover commands or infer verification coverage.
+
+Windows retains Job-based aggregate user CPU, memory, and simultaneous-process
+limits. Linux/macOS instead enforce per-process CPU and wall timeout for the
+whole execution, then stop and clean up the ordinary managed process group;
+intentional daemon escape is outside the guarantee. Memory and simultaneous-
+process limits are unsupported there and do not require future implementation.
+The Windows pair above is ignored on Linux/macOS; `windows_limits=null` is also
+valid there but prevents launch on Windows. Null is not an applied or unlimited
+limit. POSIX memory and cumulative-process measurements are unmeasured (null,
+not zero). Unavailable auxiliary measurements alone do not prevent PASS, while
+execution failure or uncertain managed-process cleanup still blocks completion.
+
+The parent fixes one absolute Python runtime without an execution-lifetime
+write/delete-denying lease; the Plan cannot select another interpreter or use
+PATH lookup. Arguments remain literal, no shell is used for Runner execution,
+and verification runs only in private exact Git material with no copy-back or
+raw-output retention. These are trusted-code reliability guarantees, not
+hostile-code or network isolation.
+
 ### `task complete`
 
 Optionally check the proposed completion without writing:

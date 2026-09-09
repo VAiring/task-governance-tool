@@ -466,12 +466,14 @@ review target. The first explicit `replace` against an absent Plan creates the
 fixed local Plan with `trusted_local=true`; this is the repository's
 trusted-local Runner opt-in. For that initial entry or a deliberate step
 replacement, prepare a strict draft containing only `version` and one through
-16 version-matched Step objects, then explicitly choose `replace`. This v1
-example remains valid for Windows:
+16 version-matched Step objects, then explicitly choose `replace`. This v2
+example can be used on Windows, Linux, and macOS. Adapt the entrypoint and
+limits to the approved verification; the script and its required files must
+exist in the exact Git target being verified.
 
 ```json
 {
-  "version": 1,
+  "version": 2,
   "steps": [
     {
       "step_id": "focused",
@@ -481,23 +483,34 @@ example remains valid for Windows:
       "cwd": ".",
       "timeout_seconds": 60,
       "cpu_seconds": 60,
-      "memory_mib": 256,
-      "process_limit": 4,
+      "windows_limits": {"memory_mib": 256, "process_limit": 4},
       "output_byte_limit": 1048576
     }
   ]
 }
 ```
 
+Save the JSON as `runner-plan-draft.json` and submit it from the target-project
+root:
+
 ```powershell
 Get-Content -Raw -Encoding utf8 .\runner-plan-draft.json |
   python .agents/skills/task-governance-tool/scripts/taskgov.py task edit --repo . <task-id> --runner-plan-action replace --json
 ```
 
-For a v2 draft, set `version` to `2` and replace the two flat limit fields with
-`"windows_limits": {"memory_mib": 256, "process_limit": 4}` or null. The pair
-is Windows-only: Windows requires it before launch; null does not mean an
-applied or unlimited limit. Linux/macOS do not apply the Windows pair.
+On Linux/macOS, submit that same file with standard input redirection:
+
+```sh
+python3 .agents/skills/task-governance-tool/scripts/taskgov.py task edit --repo . <task-id> --runner-plan-action replace --json < runner-plan-draft.json
+```
+
+`windows_limits` is Windows-only: Windows requires the pair before launch;
+null does not mean an applied or unlimited limit. Linux/macOS do not apply the
+pair, so no host-specific draft conversion is needed. They enforce per-process
+CPU and wall timeout, not Windows Job memory or simultaneous-process limits.
+See the [OS-specific guarantees](docs/runner-execution-specification.md#approved-os-specific-runner-guarantees)
+and the self-contained example in the [package CLI reference](task-governance-tool/references/cli_contracts.md).
+Existing v1 drafts with flat `memory_mib` and `process_limit` remain valid.
 Explicit v2 replace upgrades an existing v1
 Plan while preserving unrelated entry values and bases; other actions preserve
 its version. No automatic migration or additional normal-loop call is introduced.

@@ -16,7 +16,8 @@ Use one physical copy at
 from a user-wide copy, symbolic link, or Windows junction is unsupported.
 Require Python 3.12 or later. Ordinary Task use supports Windows, Linux, and
 macOS. The explicit trusted-local Runner supports the same three platforms
-under their OS-specific limits; verification without Runner opt-in remains manual.
+under the [OS limits and optional Plan example](references/cli_contracts.md#runner-plan-example-and-os-limits);
+verification without Runner opt-in remains manual.
 
 From the target-project root, invoke:
 

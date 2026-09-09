@@ -30,7 +30,9 @@ from task_governance_tool.verification_runner_plan import (
     PLAN_BLOB_UTF8_BYTE_LIMIT,
     VerificationRunnerPlanError,
     decode_verification_runner_plan,
+    encode_verification_runner_plan,
 )
+from task_governance_tool.verification_runner_plan_authoring import decode_runner_plan_draft
 from task_governance_tool import tasks as task_service
 
 
@@ -87,8 +89,31 @@ def invoke(
 
 class RunnerPlanCliTests(unittest.TestCase):
     def test_physical_public_cli_resolves_and_publishes_one_plan(self):
+        def documented_draft(path: Path):
+            examples = []
+            for block in path.read_bytes().split(b"```")[1::2]:
+                language, _, raw_example = block.partition(b"\n")
+                if language.strip() != b"json":
+                    continue
+                try:
+                    value = json.loads(raw_example)
+                except json.JSONDecodeError:
+                    continue
+                if type(value) is dict and set(value) == {"version", "steps"}:
+                    examples.append((raw_example, value))
+            self.assertEqual(len(examples), 1, path)
+            raw_example, value = examples[0]
+            self.assertEqual(value["version"], 2)
+            return raw_example, value, decode_runner_plan_draft(raw_example)
+
         with tempfile.TemporaryDirectory() as temporary:
-            install = make_physical_install(Path(temporary), git_managed=True)
+            install = make_physical_install(Path(temporary).resolve(), git_managed=True)
+            raw_draft, example, draft = documented_draft(
+                install.skill_root / "references" / "cli_contracts.md"
+            )
+            _, readme_example, readme_draft = documented_draft(ROOT / "README.md")
+            self.assertEqual(example, readme_example)
+            self.assertEqual(draft, readme_draft)
             ignore = install.project_root / ".gitignore"
             ignore.write_text(
                 ignore.read_text(encoding="utf-8")
@@ -131,7 +156,7 @@ class RunnerPlanCliTests(unittest.TestCase):
                     "--json",
                 ],
                 cwd=install.project_root,
-                input=draft_blob(),
+                input=raw_draft,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 check=False,
@@ -143,13 +168,17 @@ class RunnerPlanCliTests(unittest.TestCase):
                 payload["data"]["runner_plan_update"],
                 {"action": "replace", "status": "updated"},
             )
-            self.assertTrue(
-                (
-                    install.skill_root
-                    / "config"
-                    / "verification-runner.json"
-                ).is_file()
-            )
+            plan_path = install.skill_root / "config" / "verification-runner.json"
+            self.assertTrue(plan_path.is_file())
+            plan_bytes = plan_path.read_bytes()
+            plan = decode_verification_runner_plan(plan_bytes)
+            self.assertEqual(plan_bytes, encode_verification_runner_plan(plan))
+            self.assertEqual(plan.version, 2)
+            self.assertIs(plan.trusted_local, True)
+            self.assertEqual(len(plan.entries), 1)
+            self.assertEqual(plan.entries[0].task_id, task_id)
+            self.assertEqual(plan.entries[0].coverage, "full")
+            self.assertEqual(plan.entries[0].steps, draft.steps)
 
     def test_replace_reads_one_bounded_stdin_document_and_is_plan_only(self):
         with runner_plan_edit_fixture() as fixture:

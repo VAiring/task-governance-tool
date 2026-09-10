@@ -564,8 +564,9 @@ python .agents/skills/task-governance-tool/scripts/taskgov.py task context --rep
 
 Only common options are accepted; there is no Task ID, filter, display-mode,
 or automatic start option. The tool resumes active/review-pending work first,
-otherwise selects ready work using its existing order. Use the returned
-selection; do not reconstruct or re-rank it.
+otherwise selects ready work using its existing order. Selection precedes
+display omission, so a Task absent from the compact lists may still be selected.
+Use the returned selection; do not reconstruct or re-rank it.
 
 Success data is exactly `selection`, `current`, `next`, and `selected`.
 `selection` is `current`, `next`, or `none`. `current` is compact-current data;

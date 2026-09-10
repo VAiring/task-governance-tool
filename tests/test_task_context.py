@@ -54,22 +54,24 @@ class TaskContextTests(unittest.TestCase):
     def add(self, title, *arguments):
         return self.success("task", "add", "--title", title, *arguments)["data"]["task"]
 
-    def assert_matches_existing_pipeline(self):
+    def assert_matches_selection_and_display(self):
         before = file_snapshot(self.root)
+        current_batch = self.success("task", "current")
         current = self.success("task", "current", "--compact")
         warnings = list(current["warnings"])
         chosen = next(
-            (row for row in current["data"]["tasks"]
+            (row for row in current_batch["data"]["tasks"]
              if row["status"] in {"in_progress", "review_pending"}),
             None,
         )
         next_payload = None
         selection = "current" if chosen else "none"
         if chosen is None:
+            next_batch = self.success("task", "next")
             next_payload = self.success("task", "next", "--compact")
             warnings.extend(next_payload["warnings"])
-            if next_payload["data"]["tasks"]:
-                chosen = next_payload["data"]["tasks"][0]
+            if next_batch["data"]["tasks"]:
+                chosen = next_batch["data"]["tasks"][0]
                 selection = "next"
         shown = None
         if chosen is not None:
@@ -97,7 +99,7 @@ class TaskContextTests(unittest.TestCase):
             self.add(f"Ready {index}", "--priority", "low")
         urgent = self.add("Urgent ready", "--priority", "urgent")
 
-        payload = self.assert_matches_existing_pipeline()
+        payload = self.assert_matches_selection_and_display()
 
         self.assertEqual(payload["data"]["selection"], "next")
         self.assertEqual(payload["data"]["next"]["limit"], 5)
@@ -116,9 +118,9 @@ class TaskContextTests(unittest.TestCase):
                 selected = review if status == "review_pending" else self.add(
                     "Active work", "--status", "in_progress", "--priority", "low"
                 )
-                expected = self.assert_matches_existing_pipeline()
+                expected = self.assert_matches_selection_and_display()
                 with mock.patch.object(
-                    cli_service, "handle_task_next", side_effect=AssertionError("next must be skipped")
+                    cli_service, "_read_task_next", side_effect=AssertionError("next must be skipped")
                 ), mock.patch.object(
                     cli_service, "handle_task_show", wraps=cli_service.handle_task_show
                 ) as show:
@@ -136,7 +138,7 @@ class TaskContextTests(unittest.TestCase):
         self.add("Ineligible successor", "--kind", "sequential", "--lane", "blocked", "--order", "2", "--priority", "urgent")
         ready = self.add("Another ready lane", "--kind", "sequential", "--lane", "ready", "--order", "1")
 
-        payload = self.assert_matches_existing_pipeline()
+        payload = self.assert_matches_selection_and_display()
 
         self.assertEqual(payload["data"]["selection"], "next")
         self.assertEqual(payload["data"]["selected"]["task"]["task_id"], ready["task_id"])
@@ -149,7 +151,7 @@ class TaskContextTests(unittest.TestCase):
                 if held:
                     self.add("Blocked work", "--status", "blocked", "--blocked-reason", "External dependency")
                 with mock.patch.object(cli_service, "handle_task_show", side_effect=AssertionError("no Task to show")):
-                    payload = self.assert_matches_existing_pipeline()
+                    payload = self.assert_matches_selection_and_display()
                 self.assertEqual(payload["data"]["selection"], "none")
                 self.assertIsNone(payload["data"]["selected"])
                 self.assertEqual(payload["data"]["next"]["tasks"], [])
@@ -180,7 +182,7 @@ class TaskContextTests(unittest.TestCase):
             "--expected-target-generation", str(target["data"]["task"]["review_target_generation"]),
         )
 
-        selected = self.assert_matches_existing_pipeline()["data"]["selected"]
+        selected = self.assert_matches_selection_and_display()["data"]["selected"]
 
         self.assertEqual(selected["contract"]["scope"], scope.strip())
         self.assertEqual(selected["contract"]["acceptance"], acceptance.strip())
@@ -195,7 +197,7 @@ class TaskContextTests(unittest.TestCase):
             cli_service, "load_effort_profile",
             return_value=disabled_profile(present=True, diagnostic="profile_invalid"),
         ):
-            payload = self.assert_matches_existing_pipeline()
+            payload = self.assert_matches_selection_and_display()
         self.assertFalse(payload["data"]["selected"]["effort_advisory_enabled"])
         self.assertEqual(payload["warnings"], [{
             "code": "effort_advisory_profile_invalid",
@@ -214,8 +216,8 @@ class TaskContextTests(unittest.TestCase):
                     warnings=[{"code": "must_not_leak", "message": "partial warning"}],
                     errors=[{"code": code, "message": "fixed safe failure"}], exit_code=status,
                 )
-                with mock.patch.object(cli_service, "handle_task_current", wraps=cli_service.handle_task_current) as current, mock.patch.object(
-                    cli_service, "handle_task_next", wraps=cli_service.handle_task_next
+                with mock.patch.object(cli_service, "_read_task_current", wraps=cli_service._read_task_current) as current, mock.patch.object(
+                    cli_service, "_read_task_next", wraps=cli_service._read_task_next
                 ) as next_read, mock.patch.object(cli_service, "handle_task_show", wraps=cli_service.handle_task_show) as show:
                     mocked = {"current": current, "next": next_read, "show": show}[phase]
                     mocked.return_value = failure
@@ -249,6 +251,31 @@ class TaskContextTests(unittest.TestCase):
         self.assertEqual(payload["errors"], [{"code": "project_state_unreadable", "message": "project state could not be read safely"}])
         self.assertEqual(payload["warnings"], [])
         self.assertEqual(file_snapshot(self.root), before)
+
+    def test_omitted_later_row_does_not_change_first_current_selection(self):
+        first = self.add("First active", "--status", "in_progress")
+        self.add("Omitted review", "--status", "review_pending", "--blocked-reason", "r" * 30000)
+
+        data = self.assert_matches_selection_and_display()["data"]
+
+        self.assertEqual(data["selection"], "current")
+        self.assertEqual(data["selected"]["task"]["task_id"], first["task_id"])
+        self.assertEqual([row["task_id"] for row in data["current"]["tasks"]], [first["task_id"]])
+        self.assertEqual(data["current"]["total_matching"], 2)
+        self.assertTrue(data["current"]["truncated"])
+        self.assertIsNone(data["next"])
+
+    def test_omitted_later_row_does_not_change_first_next_selection(self):
+        first = self.add("First ready", "--priority", "urgent")
+        self.add("Omitted ready", "--lane", "l" * 20000)
+
+        data = self.assert_matches_selection_and_display()["data"]
+
+        self.assertEqual(data["selection"], "next")
+        self.assertEqual(data["selected"]["task"]["task_id"], first["task_id"])
+        self.assertEqual([row["task_id"] for row in data["next"]["tasks"]], [first["task_id"]])
+        self.assertEqual(data["next"]["total_matching"], 2)
+        self.assertTrue(data["next"]["truncated"])
 
     def test_context_rejects_all_leaf_options_before_state_access(self):
         with mock.patch.object(cli_service, "handle_command", side_effect=AssertionError("parse must fail first")):
@@ -288,6 +315,75 @@ class TaskContextTests(unittest.TestCase):
         self.assertIn(task_id, text.stdout)
         self.assertIn("Physical selection", text.stdout)
         self.assertEqual(file_snapshot(install.project_root), before)
+
+
+class TaskContextCompactSelectionTests(unittest.TestCase):
+    def setUp(self):
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        self.install = make_physical_install(Path(temporary.name))
+        self.success("setup")
+
+    def success(self, *arguments):
+        result = self.install.run(*arguments, "--json")
+        self.assertEqual(result.returncode, 0, result.stdout or result.stderr)
+        self.assertEqual(result.stderr, "")
+        payload = json.loads(result.stdout)
+        self.assertTrue(payload["ok"])
+        return payload
+
+    def add(self, title, *arguments):
+        return self.success("task", "add", "--title", title, *arguments)["data"]["task"]
+
+    def assert_empty_compact_preserves_selection(self, component, selected, selection):
+        before = file_snapshot(self.install.project_root)
+        compact = self.success("task", component, "--compact")["data"]
+        self.assertEqual(compact["tasks"], [])
+        self.assertGreater(compact["total_matching"], 0)
+        self.assertEqual(compact["returned_count"], 0)
+        self.assertTrue(compact["truncated"])
+        shown = self.success("task", "show", selected["task_id"])["data"]
+
+        payload = self.success("task", "context", "--read-only")
+
+        self.assertEqual(payload["data"][component], compact)
+        self.assertEqual(payload["data"]["selection"], selection)
+        self.assertEqual(payload["data"]["selected"], shown)
+        self.assertEqual(payload["data"]["selected"]["task"]["task_id"], selected["task_id"])
+        self.assertEqual(payload["data"]["selected"]["task"]["status"], selected["status"])
+        self.assertEqual(file_snapshot(self.install.project_root), before)
+        return payload["data"]
+
+    def assert_omitted_current_resumes(self, status):
+        active = self.add("Omitted current", "--status", status, "--blocked-reason", "r" * 30000)
+        self.add("Other ready work", "--priority", "urgent")
+
+        data = self.assert_empty_compact_preserves_selection("current", active, "current")
+
+        self.assertIsNone(data["next"])
+
+    def test_public_cli_resumes_active_when_compact_current_is_empty(self):
+        self.assert_omitted_current_resumes("in_progress")
+
+    def test_public_cli_resumes_review_pending_when_compact_current_is_empty(self):
+        self.assert_omitted_current_resumes("review_pending")
+
+    def test_public_cli_selects_ready_when_compact_next_is_empty(self):
+        ready = self.add("Omitted ready", "--lane", "l" * 20000, "--priority", "urgent")
+        self.add("Later ready")
+
+        self.assert_empty_compact_preserves_selection("next", ready, "next")
+
+    def test_public_cli_omitted_held_work_allows_a_separate_ready_lane(self):
+        self.add("Omitted blocker", "--kind", "sequential", "--lane", "held", "--order", "1",
+                 "--status", "blocked", "--blocked-reason", "r" * 30000)
+        self.add("Ineligible successor", "--kind", "sequential", "--lane", "held", "--order", "2",
+                 "--priority", "urgent")
+        ready = self.add("Separate ready lane", "--kind", "sequential", "--lane", "ready", "--order", "1")
+
+        data = self.assert_empty_compact_preserves_selection("current", ready, "next")
+
+        self.assertEqual([row["task_id"] for row in data["next"]["tasks"]], [ready["task_id"]])
 
 
 class TaskContextRunnerTests(unittest.TestCase):

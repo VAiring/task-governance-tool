@@ -123,11 +123,12 @@ the existing continuation warning. Human text remains concise and does not
 replace the complete JSON Contract or gate information.
 
 `task context` is the fixed read-only start/resume operation; it accepts only
-the common CLI options. It applies default compact current selection (limit
-20), resumes the first `in_progress` or `review_pending` row in returned
-order, or otherwise applies default compact next selection (limit 5) and picks
-its first candidate. Held rows remain recalled and do not suppress unrelated
-ready work. It returns the selected Task's complete normal `task show` data, including
+the common CLI options. It uses the existing validated current batch (limit
+20), resumes its first `in_progress` or `review_pending` row in existing
+order, or otherwise uses the existing validated next batch (limit 5) and picks
+its first candidate. Selection uses these bounded batches before display
+omission, not the compact prefixes. Held rows remain recalled and do not
+suppress unrelated ready work. It returns the selected Task's complete normal `task show` data, including
 Contract, latest checkpoint, current constraints/blockers, gates, and routing.
 It never starts a Task or changes state, evidence, or gate requirements.
 
@@ -135,7 +136,9 @@ Success data is exactly `selection`, `current`, `next`, and `selected`.
 `selection` is `current`, `next`, or `none`; `current` is the existing compact
 current data; `next` is the existing compact next data only when fallback ran,
 otherwise null; `selected` is the complete normal show data or null when no candidate
-exists. Component selection and omission budgets remain unchanged. Successful
+exists. Each compact component is projected from the same batch used for
+selection; an omitted display row may still be the selected Task. Component
+ordering, row limits, and omission budgets remain unchanged. Successful
 component warnings are retained once. Any read failure stops without another
 candidate and preserves its sanitized code/exit status, with no warnings and
 exact empty data `{selection: "none", current: null, next: null, selected: null}`.

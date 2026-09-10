@@ -96,7 +96,7 @@ from task_governance_tool.state_resolver import (
     consumer_error_code,
     resolve_project_state,
 )
-from task_governance_tool.selection import select_next_tasks
+from task_governance_tool.selection import TaskNextResult, select_next_tasks
 from task_governance_tool.reviews import (
     ReviewEvidenceError,
     add_review_finding,
@@ -124,6 +124,7 @@ from task_governance_tool.setup import run_setup
 from task_governance_tool.task_show_projection import build_task_show_data, show_task
 from task_governance_tool.tasks import (
     CURRENT_STATUSES,
+    CurrentTaskResult,
     TaskRepositoryError,
     add_task,
     add_tasks,
@@ -746,6 +747,16 @@ def task_next_failure_result(
 
 
 def handle_task_next(context: CommandContext) -> CommandResult:
+    read = _read_task_next(context)
+    if isinstance(read, CommandResult):
+        return read
+    return _task_next_result(context, *read)
+
+
+def _read_task_next(
+    context: CommandContext,
+) -> tuple[TaskNextResult, int] | CommandResult:
+    """Read the validated bounded batch before any display omission."""
     target = resolve_context_target(context)
     try:
         with context_read_connection(context, target) as connection:
@@ -784,6 +795,15 @@ def handle_task_next(context: CommandContext) -> CommandResult:
             exit_code=EXIT_TOOL_ERROR,
         )
 
+    return result, int(paused_count)
+
+
+def _task_next_result(
+    context: CommandContext,
+    result: TaskNextResult,
+    paused_count: int,
+) -> CommandResult:
+    target = resolve_context_target(context)
     data = {
         "tasks": result.tasks,
         "count": result.count,
@@ -791,7 +811,6 @@ def handle_task_next(context: CommandContext) -> CommandResult:
         "selection_rules": result.selection_rules,
     }
     warnings = []
-    paused_count = int(paused_count)
     if paused_count > 0:
         paused_summary = (
             "1 paused task exists"
@@ -869,6 +888,16 @@ def task_current_result_data(
 
 
 def handle_task_current(context: CommandContext) -> CommandResult:
+    read = _read_task_current(context)
+    if isinstance(read, CommandResult):
+        return read
+    return _task_current_result(context, read)
+
+
+def _read_task_current(
+    context: CommandContext,
+) -> CurrentTaskResult | CommandResult:
+    """Read the validated bounded batch before any display omission."""
     target = resolve_context_target(context)
     try:
         status_filter = validate_current_status_filter(
@@ -942,6 +971,14 @@ def handle_task_current(context: CommandContext) -> CommandResult:
             ],
             exit_code=EXIT_TOOL_ERROR,
         )
+    return result
+
+
+def _task_current_result(
+    context: CommandContext,
+    result: CurrentTaskResult,
+) -> CommandResult:
+    target = resolve_context_target(context)
     data = {
         "tasks": result.tasks,
         "count": result.count,
@@ -983,7 +1020,7 @@ def handle_task_current(context: CommandContext) -> CommandResult:
                 ok=False,
                 command=context.command,
                 project_id=target.project.project_id,
-                data=compact_current_empty_data(effective_statuses),
+                data=compact_current_empty_data(result.statuses),
                 errors=[
                     {
                         "code": "internal_error",
@@ -1310,21 +1347,23 @@ def task_context_failure_result(
 
 
 def handle_task_context(context: CommandContext) -> CommandResult:
-    """Aggregate the fixed current, conditional next, and selected-show reads."""
-    current = handle_task_current(
-        replace(
-            context,
-            command="task.current",
-            args=argparse.Namespace(compact=True),
-        )
+    """Select from bounded read batches, not their compact display prefixes."""
+    current_context = replace(
+        context,
+        command="task.current",
+        args=argparse.Namespace(compact=True),
     )
+    current_read = _read_task_current(current_context)
+    if isinstance(current_read, CommandResult):
+        return task_context_failure_result(context, current_read)
+    current = _task_current_result(current_context, current_read)
     if not current.ok:
         return task_context_failure_result(context, current)
 
     selected_task = next(
         (
             task
-            for task in current.data["tasks"]
+            for task in current_read.tasks
             if task["status"] in {"in_progress", "review_pending"}
         ),
         None,
@@ -1332,17 +1371,19 @@ def handle_task_context(context: CommandContext) -> CommandResult:
     selection = "current" if selected_task is not None else "none"
     next_result = None
     if selected_task is None:
-        next_result = handle_task_next(
-            replace(
-                context,
-                command="task.next",
-                args=argparse.Namespace(compact=True),
-            )
+        next_context = replace(
+            context,
+            command="task.next",
+            args=argparse.Namespace(compact=True),
         )
+        next_read = _read_task_next(next_context)
+        if isinstance(next_read, CommandResult):
+            return task_context_failure_result(context, next_read)
+        next_result = _task_next_result(next_context, *next_read)
         if not next_result.ok:
             return task_context_failure_result(context, next_result)
-        if next_result.data["tasks"]:
-            selected_task = next_result.data["tasks"][0]
+        if next_read[0].tasks:
+            selected_task = next_read[0].tasks[0]
             selection = "next"
 
     selected = None

@@ -192,11 +192,14 @@ the latest event/checkpoint and deterministic fixed next-action mapping. It
 does not calculate staleness or write a checkpoint. List/current/next remain
 bounded and have no pagination cursor.
 
-`cli.py::handle_task_context` composes the existing current/next/show handlers
-with fixed arguments, preserving their selection defaults and compact budgets
-under their original command labels. It owns only the fixed aggregate envelope,
-first-candidate routing, warning combination, and no-partial-result failure
-projection. It never owns a second selection predicate, Task validator, or
+`cli.py` shares current/next batch-read and result-projection helpers between
+the individual command handlers and `handle_task_context`. The aggregate uses
+fixed arguments and selects from the existing validated bounded batch, then
+uses the same batch for compact presentation under its original command label.
+It does not select from a display prefix or reread omitted candidates. Selection
+defaults and compact budgets stay unchanged. It owns only the fixed aggregate
+envelope, first-candidate routing, warning combination, and no-partial-result
+failure projection, never a second selection predicate, Task validator, or
 state writer. `cli_text.py` combines the selected show text with held-work
 recall. Public state resolution retains one admitted read for the composition;
 the existing live marker-2 show path still closes it before physical selection

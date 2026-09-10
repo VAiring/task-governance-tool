@@ -203,6 +203,9 @@ The implementation keeps these narrow ownership boundaries:
   the repository neither opens a connection nor commits the operation.
 - `verification_results.py` decodes the fixed external-verifier stdin declaration
   into existing Receipt inputs without executing verification or inferring coverage.
+- `finding_resolutions.py` expands explicit selected ID/reason groups; `reviews.py`
+  retains same-Task ownership, existing resolution writes, and atomic batch
+  coordination without changing review gates.
 - `verification_receipts.py` owns caller Receipt validation, exact-current
   classification, completion-gate evaluation, and the bounded Task-show read
   model.

@@ -1451,6 +1451,39 @@ Severity is `high`, `medium`, or `low`. Open high/medium findings block
 completion. After resolving a blocking finding and changing material, set a
 new target and obtain fresh qualifying receipts.
 
+For several confirmed resolutions, send one UTF-8 JSON document to
+`review finding resolve --from-stdin --json`:
+
+```json
+{"version":1,"task_id":"tg_task_0123456789abcdef","resolutions":[{"finding_ids":["tg_review_finding_0123456789abcdef"],"resolution":"Individual correction verified"},{"finding_ids":["tg_review_finding_123456789abcdef0","tg_review_finding_23456789abcdef01"],"resolution":"Shared correction verified for these two findings"}]}
+```
+
+Every shown key is required, with no extras or duplicate JSON keys. UTF-8 must
+have no BOM and fit 262,144 bytes. Version is exactly integer 1. Each group has
+at least one ID; the total is 1 through 64, with no normalized duplicates.
+IDs and reasons are strings using existing normalization/privacy and
+128/1,000-character limits respectively. No target or Contract echo is needed:
+existing older-generation and capture-v0 Findings remain resolvable.
+Task and project ownership, done prohibition, and existing-resolution
+immutability still apply. The LLM selects only fixes it has actually confirmed;
+identical reasons are shared only by explicitly listing those IDs together.
+
+Do not combine stdin mode with a positional ID or `--resolution`; it returns
+`invalid_option_combination` before state access. Read-only never consumes
+stdin. Success data is `{"findings":[{"finding":{},"event":{}}]}` with the
+existing projections in flattened input order; each Finding ID identifies its
+input. Batch failure returns `findings=[]`, except ordinary parse rejection.
+All selected resolutions commit together or all roll back, with one maintenance
+pass. No extra per-ID confirmation is needed after a successful response.
+After confirmed rollback, correct and resubmit the explicit selection. For a
+lost response, inspect existing state and preserve completed resolutions;
+resubmit only IDs proven still open, never blindly replay or overwrite.
+Malformed shape uses `invalid_review_evidence`; missing/foreign-project IDs use
+`not_found`, different-Task IDs use `invalid_review_evidence`, and other existing
+privacy/value/storage errors keep their codes. Unselected Findings and original
+content are unchanged. A blocking resolution still needs a newer target and
+fresh qualifying review; this mode never infers resolution from PASS.
+
 ### Structured Review Results
 
 Register the reviewers' concise structured results together, using UTF-8 JSON

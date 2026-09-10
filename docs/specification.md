@@ -180,6 +180,8 @@ The public CLI has exactly 23 command leaves:
 `task complete --check` is a mode of the same leaf.
 `task add --from-stdin` is an input mode governed by
 [structured Task registration](task-operation-specification.md#structured-task-registration).
+`review finding resolve --from-stdin` is the existing leaf's
+[structured resolution input](review-completion-specification.md#structured-finding-resolutions).
 `verification receipt add --from-stdin` is likewise an input mode, defined by
 the [structured result contract](review-completion-specification.md#structured-verification-result).
 Applicable commands retain
@@ -253,7 +255,8 @@ Current success-data projections are:
 
 | Command | Data keys |
 |---|---|
-| `task.add` | `task`, `event`, plus `contract_write` only when Contract input was supplied |
+| single `task.add` | `task`, `event`, plus `contract_write` only when Contract input was supplied |
+| `task.add --from-stdin` | `tasks`; input-indexed Task/event results with optional `contract_write` |
 | `task.list` | `tasks`, `count`, `limit` |
 | default `task.next` | `tasks`, `count`, `limit`, `selection_rules` |
 | default `task.current` | `tasks`, `count`, `limit`, `statuses` |
@@ -270,7 +273,8 @@ Current success-data projections are:
 | `review.receipt.add` | `receipt`, `event` |
 | `review.result.add` | `receipts`; each item holds `receipt`, `event`, and nested `findings` |
 | `review.finding.add` | `finding`, `event` |
-| `review.finding.resolve` | `finding`, `event` |
+| single `review.finding.resolve` | `finding`, `event` |
+| `review.finding.resolve --from-stdin` | `findings`; input-order Finding/event results |
 | `verification.receipt.add` | `receipt` |
 
 `task.show` uses a fixed normal working projection; `--audit` selects the

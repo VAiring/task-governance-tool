@@ -181,6 +181,29 @@ queries. Existing readers and gate consumers retain their default bounded
 projection; the final normal show projection removes duplicated target/tier
 fields and emits each operational Finding once. Audit retains the prior shape.
 
+### Structured Finding Resolution
+
+`finding_resolutions.py` validates the closed grouped stdin shape and expands
+only explicit ID/reason groups into existing normalized scalar inputs. It owns
+no SQL, selection, judgment, target capture, or automatic retry.
+`cli.py` rejects incompatible input modes before state resolution, consumes
+bounded binary stdin only after read-only rejection, and retains its initialized
+connection, outer transaction, sanitized failure, and post-commit maintenance.
+`cli_text.py` formats the flattened results using existing single-Finding text.
+
+`reviews.py::resolve_review_findings` validates the flat inputs, locks and
+rereads the declared Task using the existing writer boundary, and checks each
+Finding's same-project/same-Task ownership on that writer. It delegates each
+resolution to unchanged `resolve_review_finding`, retaining stored-ledger checks,
+done/replay rejection, original content, timestamps, events, and revalidation.
+An outer batch savepoint rolls back a successful prefix on any failure, even
+when a repository caller catches it. No per-item commit or partial-success
+result is emitted. Existing single resolution callers and global admission
+remain unchanged. The service deliberately does not use current-capture or
+Receipt-creation freshness checks: historical Finding resolution remains valid.
+No schema, new durable batch record, alternative gate, or new normal-loop step
+is introduced.
+
 ### Structured Result Registration
 
 `review_results.py` owns the closed version-1 JSON decoder, exact type and

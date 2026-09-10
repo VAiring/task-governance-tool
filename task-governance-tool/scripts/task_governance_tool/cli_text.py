@@ -317,6 +317,8 @@ def handoff_text(command: str, data: dict[str, Any]) -> str:
 
 
 def review_text(command: str, data: dict[str, Any]) -> str:
+    if command == "review.finding.resolve" and "findings" in data:
+        return "\n".join(review_text(command, item) for item in data["findings"])
     if command == "review.result.add":
         receipts = data["receipts"]
         findings = sum(len(item["findings"]) for item in receipts)

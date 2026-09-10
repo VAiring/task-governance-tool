@@ -102,6 +102,11 @@ from task_governance_tool.reviews import (
     add_review_finding,
     add_review_receipt,
     resolve_review_finding,
+    resolve_review_findings,
+)
+from task_governance_tool.finding_resolutions import (
+    FINDING_RESOLUTIONS_INPUT_LIMIT,
+    decode_finding_resolutions,
 )
 from task_governance_tool.review_packet import (
     OVERSIZED_PACKET_MESSAGE,
@@ -289,7 +294,7 @@ def state_resolution_failure_result(
     elif command.startswith("handoff."):
         data = handoff_empty_data(command)
     elif command.startswith("review."):
-        data = review_empty_data(command)
+        data = review_empty_data(command, from_stdin=bool(getattr(context.args, "from_stdin", False)))
     elif command == "verification.receipt.add":
         data = verification_receipt_empty_data()
     else:
@@ -2103,7 +2108,9 @@ def handle_review_prepare(context: CommandContext) -> CommandResult:
         )
 
 
-def review_empty_data(command: str) -> dict[str, Any]:
+def review_empty_data(command: str, *, from_stdin: bool = False) -> dict[str, Any]:
+    if command == "review.finding.resolve" and from_stdin:
+        return {"findings": []}
     if command == "review.prepare":
         return {}
     if command == "review.target.set":
@@ -2127,7 +2134,7 @@ def review_failure_result(
         ok=False,
         command=context.command,
         project_id=project_id,
-        data=review_empty_data(context.command),
+        data=review_empty_data(context.command, from_stdin=bool(getattr(context.args, "from_stdin", False))),
         errors=[{"code": code, "message": message}],
         exit_code=exit_code,
     )
@@ -2165,6 +2172,13 @@ def handle_review_command(context: CommandContext) -> CommandResult:
             if context.command == "review.result.add"
             else None
         )
+        finding_batch = context.command == "review.finding.resolve" and bool(getattr(context.args, "from_stdin", False))
+        if finding_batch:
+            try:
+                raw = sys.stdin.buffer.read(FINDING_RESOLUTIONS_INPUT_LIMIT + 1)
+            except (AttributeError, OSError, ValueError) as exc:
+                raise ReviewEvidenceError("invalid_review_evidence", "could not read structured Finding resolutions") from exc
+            payload = decode_finding_resolutions(raw)
         if context.command == "review.target.set":
             result = set_review_target_with_optional_runner(
                 target,
@@ -2259,6 +2273,12 @@ def handle_review_command(context: CommandContext) -> CommandResult:
                             database_target=target,
                         )
                         data = {"finding": result.finding, "event": result.event}
+                    elif finding_batch:
+                        results = resolve_review_findings(
+                            connection, target.project, payload["task_id"],
+                            resolutions=payload["resolutions"], database_target=target,
+                        )
+                        data = {"findings": [{"finding": item.finding, "event": item.event} for item in results]}
                     else:
                         result = resolve_review_finding(
                             connection,
@@ -2614,6 +2634,12 @@ def main(
                 "invalid_argument",
                 "verification requires receipt add",
             )
+        if command_name(args) == "review.finding.resolve":
+            supplied = (args.finding_id is not None, args.resolution is not None)
+            if args.from_stdin and any(supplied):
+                raise CommandLineError("invalid_option_combination", "--from-stdin cannot be combined with individual Finding options")
+            if not args.from_stdin and not all(supplied):
+                raise CommandLineError("invalid_argument", "arguments are invalid")
         if command_name(args) == "task.add" and args.from_stdin:
             if any(hasattr(args, key) for key in TASK_REGISTRATION_FIELDS | {
                 "contract_scope", "contract_acceptance", "contract_constraints",

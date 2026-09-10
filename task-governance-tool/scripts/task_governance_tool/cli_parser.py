@@ -473,8 +473,12 @@ def build_parser() -> argparse.ArgumentParser:
         "resolve", help="resolve a review finding while preserving its history"
     )
     add_common_options(review_finding_resolve_parser)
-    review_finding_resolve_parser.add_argument("finding_id")
-    review_finding_resolve_parser.add_argument("--resolution", required=True)
+    review_finding_resolve_parser.add_argument("finding_id", nargs="?")
+    review_finding_resolve_parser.add_argument("--resolution")
+    review_finding_resolve_parser.add_argument(
+        "--from-stdin", action="store_true", default=False,
+        help="resolve explicit selected Finding groups atomically from UTF-8 JSON stdin",
+    )
 
     verification_parser = subparsers.add_parser(
         "verification",

@@ -80,6 +80,55 @@ bounded recent provenance and lifetime Receipt counts. Audit collection bounds
 do not alter the complete validated inventory or the current gate. Neither mode
 emits raw review content or changes Receipt/Finding storage and gate evaluation.
 
+## Structured Finding Resolutions
+
+`review finding resolve --from-stdin` applies caller-confirmed resolutions to
+explicitly selected existing Findings of one Task. It neither discovers which
+Findings are fixed nor derives resolution from PASS. Existing single-ID input
+is unchanged. Combining stdin mode with the positional Finding ID or
+`--resolution` returns `invalid_option_combination` before state access;
+read-only rejects the write before consuming stdin.
+
+The exact UTF-8 JSON input (no BOM; at most 262,144 bytes) is:
+
+```text
+{version: 1, task_id: string,
+ resolutions: [{finding_ids: [string, ...], resolution: string}, ...]}
+```
+
+Every key shown is required; no other keys, duplicate JSON keys, noninteger
+version, invalid Unicode, or non-finite numbers are accepted. Groups and their
+ID lists are nonempty, with 1 through 64 selected IDs in total. Version is
+exactly integer 1, not a boolean. IDs retain the existing 128-character bound
+and resolution the existing required 1,000-character bound, normalization and
+privacy checks. Normalized duplicate IDs across or within groups are invalid.
+Each group's reason applies only to its listed IDs; use one ID for an individual
+reason. No target tuple, Contract revision, status, timestamp, reviewer verdict,
+or caller-created ID is accepted. Malformed shape uses `invalid_review_evidence`;
+existing value/privacy errors retain their codes without input echo.
+
+All selected Findings must belong to the declared Task and current project.
+Missing/foreign-project IDs return `not_found`; a same-project different-Task
+selection returns `invalid_review_evidence`. The existing owner, stored-ledger,
+done-immutability, and already-resolved rejection remain in force. Old-generation
+and capture-version-zero Findings remain resolvable: this is not new evidence
+creation and requires no recapture merely to resolve a Finding.
+
+One writer transaction applies all resolutions and their existing events, or
+rolls back the entire batch. Success `data.findings` is an input-order flattened
+array of existing `{finding,event}` results, mapping by Finding ID. Batch
+failures expose `data.findings=[]`; parse rejection retains the ordinary parse
+envelope. Unselected Findings, original Finding content and prior resolutions
+remain unchanged. Maintenance runs once only after the successful commit.
+
+Confirmed rollback permits correcting and resubmitting the explicit selection.
+There is no automatic replay, overwrite, or idempotent success for resolved IDs.
+A lost response requires inspecting the stored state before another write;
+preserve completed resolutions and submit only IDs proven still open under
+current authority. If that cannot be established, do not guess or blindly retry.
+Resolving high/medium Findings still requires a newer target and fresh qualifying
+Receipts; current changes-requested and unselected blockers retain their gates.
+
 <a id="structured-review-results"></a>
 
 ## Structured Review Results

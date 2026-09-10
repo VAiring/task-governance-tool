@@ -180,6 +180,10 @@ not measured total LLM tokens.
   Change a wrong test only when current authority establishes the expected
   behavior; changing a Task Contract or acceptance requires later explicit
   authority.
+- Register several confirmed Finding resolutions with one
+  `review finding resolve --from-stdin`, sharing reasons only for explicitly
+  grouped IDs as defined in [references/cli_contracts.md](references/cli_contracts.md).
+  This never replaces the newer target and fresh review required after a fix.
 - Copy a Task Contract only when scope and acceptance already exist in current
   authority. Leave revision zero otherwise without asking. Revise a Contract
   only from later explicit authority and record the reason.

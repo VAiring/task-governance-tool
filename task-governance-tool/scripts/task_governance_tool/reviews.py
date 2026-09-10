@@ -1478,6 +1478,52 @@ def _read_owned_review_finding(
     return row if row["project_id"] == project_id else None
 
 
+FINDING_RESOLUTION_BATCH_LIMIT = 64
+
+
+def resolve_review_findings(
+    connection: sqlite3.Connection,
+    project: ProjectIdentity,
+    task_id: Any,
+    *,
+    resolutions: list[dict[str, Any]],
+    database_target: DatabaseTarget | None = None,
+) -> list[ReviewFindingResult]:
+    normalized_task_id = validate_task_id(task_id)
+    if not 1 <= len(resolutions) <= FINDING_RESOLUTION_BATCH_LIMIT:
+        raise review_error("invalid_review_evidence", "Finding batch requires 1 through 64 inputs")
+    items = []
+    seen = set()
+    for item in resolutions:
+        finding_id = validate_text("review_finding_id", item["finding_id"], required=True, limit=128)
+        resolution = validate_text("review_finding_resolution", item["resolution"], required=True, limit=1000)
+        if finding_id in seen:
+            raise review_error("invalid_review_evidence", "Finding batch contains duplicate selections")
+        seen.add(finding_id)
+        items.append((finding_id, resolution))
+
+    lock_and_reread_target_owner(connection, project, normalized_task_id, database_target=database_target)
+    savepoint = f"taskgov_finding_batch_{secrets.token_hex(4)}"
+    connection.execute(f"SAVEPOINT {savepoint}")
+    results = []
+    try:
+        for finding_id, resolution in items:
+            row = _read_owned_review_finding(connection, finding_id=finding_id, project_id=project.project_id)
+            if row is None:
+                raise TaskRepositoryError("not_found", "review finding was not found")
+            if row["task_id"] != normalized_task_id:
+                raise review_error("invalid_review_evidence", "review finding belongs to a different Task")
+            results.append(resolve_review_finding(
+                connection, project, finding_id, resolution=resolution, database_target=database_target,
+            ))
+    except Exception:
+        connection.execute(f"ROLLBACK TO SAVEPOINT {savepoint}")
+        connection.execute(f"RELEASE SAVEPOINT {savepoint}")
+        raise
+    connection.execute(f"RELEASE SAVEPOINT {savepoint}")
+    return results
+
+
 def resolve_review_finding(
     connection: sqlite3.Connection,
     project: ProjectIdentity,

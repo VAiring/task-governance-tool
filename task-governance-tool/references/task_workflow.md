@@ -555,7 +555,14 @@ actual model/Skill execution, competence, independence, diversity, quality, or
 truth.
 
 Record findings with `review finding add` and resolve them with
-`review finding resolve`. A current-generation `changes_requested` receipt or
+`review finding resolve`. For several already-confirmed resolutions of one
+Task, send the selected IDs and reasons once through `--from-stdin` using the
+explicit groups in [CLI contracts](cli_contracts.md#review-evidence). Share a
+reason only for IDs explicitly listed together; never derive resolution from
+PASS. The response maps every selected ID; no per-ID confirmation call is added.
+All resolutions commit or roll back together. If a response is lost, inspect
+state and submit only selections proven still open, preserving prior resolutions.
+A current-generation `changes_requested` receipt or
 an unresolved high/medium finding blocks completion. After a meaningful fix,
 set a newer target and obtain a fresh current-generation review result. A
 result that remains blocking counts as an unsuccessful remediation cycle;

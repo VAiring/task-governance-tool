@@ -420,6 +420,15 @@ stable codes and sanitized fixed messages. Text output is concise and
 operational and likewise exposes no database, backup, Viewer, staging, or
 package path.
 
+Only final CLI JSON emission uses compact separators and unescaped Unicode.
+It writes UTF-8 plus LF to the binary stdout stream (or Unicode to an in-memory
+text stream), independent of the Windows console encoding. Keys retain their
+existing recursive sort, except insertion-ordered Review Packets.
+`serialized_json_size` deliberately retains the prior pretty/ASCII/CRLF
+compatibility budget for row selection, diagnostic omission, and rejection.
+It is not the wire serializer or the saved Evidence canonical serializer;
+compaction changes neither the selected content nor Evidence/Viewer/text.
+
 Exit status is 0 for success, 1 for parser/input validation, and 2 for
 database, migration, project-state, or service failure unless a command's
 fixed contract narrows it.

@@ -67,13 +67,16 @@ def emit_result(
                 result,
                 max_bytes=max_json_bytes,
             )
-        print(
-            json.dumps(
-                result.to_json_object(),
-                indent=2,
-                sort_keys=result.command != "review.prepare",
-            )
+        rendered = json.dumps(
+            result.to_json_object(),
+            ensure_ascii=False,
+            separators=(",", ":"),
+            sort_keys=result.command != "review.prepare",
         )
+        if hasattr(sys.stdout, "buffer"):
+            sys.stdout.buffer.write((rendered + "\n").encode("utf-8"))
+        else:
+            print(rendered)
     elif result.text:
         if result.command == "review.prepare" and hasattr(sys.stdout, "buffer"):
             sys.stdout.buffer.write((result.text + "\n").encode("utf-8"))
@@ -85,7 +88,11 @@ def emit_result(
 
 
 def serialized_json_size(result: CommandResult, data: dict[str, Any]) -> int:
-    """Measure pretty JSON using the portable CRLF worst-case stdout size."""
+    """Keep the legacy pretty/ASCII/CRLF budget for selection and omission.
+
+    Wire compaction must not silently admit more rows or diagnostic content.
+    This compatibility budget also bounds the shorter UTF-8 wire encoding.
+    """
     payload = replace(result, data=data).to_json_object()
     rendered = json.dumps(payload, indent=2, sort_keys=True) + "\n"
     return len(rendered.replace("\n", "\r\n").encode("utf-8"))

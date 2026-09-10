@@ -857,7 +857,12 @@ class CompactTaskCliTests(unittest.TestCase):
             self.assertLessEqual(payload["data"]["returned_count"], 15)
             normalized = result.stdout.replace(b"\r\n", b"\n")
             portable = normalized.replace(b"\n", b"\r\n")
-            self.assertGreater(len(portable), 15_000)
+            legacy_budget = (
+                json.dumps(payload, indent=2, sort_keys=True) + "\n"
+            ).replace("\n", "\r\n").encode("utf-8")
+            self.assertGreater(len(legacy_budget), 15_000)
+            self.assertLessEqual(len(legacy_budget), COMPACT_NEXT_MAX_BYTES)
+            self.assertLess(len(portable), len(legacy_budget))
             self.assertLessEqual(
                 len(portable),
                 COMPACT_NEXT_MAX_BYTES,

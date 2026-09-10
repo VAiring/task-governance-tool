@@ -206,6 +206,15 @@ Every JSON result is one compact object with exactly:
 ok, command, project_id, data, warnings, errors
 ```
 
+CLI `--json` emits one UTF-8 object followed by LF, without indentation or
+separator spaces and without ASCII-escaping non-ASCII characters. Values,
+types, array order, and key ordering are unchanged: keys sort recursively
+except `review.prepare`, which preserves packet insertion order. Existing
+byte-based selection, omission, and rejection decisions retain the prior
+pretty-printed, ASCII-escaped, CRLF sizing basis; shorter output does not admit
+additional rows or diagnostics. This is CLI presentation only, not a change to
+stored Evidence canonical bytes/digests, Viewer output, or ordinary text.
+
 `project_id` is the safely resolved stored identity or null. Public output
 never contains `db_path`, `backup_path`, `viewer_path`, another raw storage
 path, a rejected token/value, raw remote URL, or credential. UTC timestamps

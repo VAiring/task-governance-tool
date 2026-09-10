@@ -138,6 +138,12 @@ Every JSON result has exactly these top-level keys:
 
 Public output contains no local storage, backup, projection, or rejected-input
 path. Error rows contain only `code` and a sanitized `message`.
+CLI `--json` is UTF-8 plus LF, without indentation/separator spaces or
+non-ASCII escapes. Keys sort recursively except insertion-ordered
+`review.prepare`; values, types, and array order are unchanged. Existing
+selection, omission, and rejection bounds still use the prior
+pretty/ASCII/CRLF size, so compaction does not change selected content. This
+does not change saved Evidence bytes/digests, Viewer output, or ordinary text.
 Fresh setup uses a `uuid_v1` identity in the shown format. Migrated
 `legacy_path_v1` IDs are preserved byte-for-byte; top-level `project_id`
 always comes from stored identity and is never recomputed from the current

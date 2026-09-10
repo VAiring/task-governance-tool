@@ -232,7 +232,7 @@ def build_compact_current_data(
     statuses: Sequence[str],
     serialized_size: SerializedSize,
 ) -> dict[str, Any]:
-    """Build capped current data using the caller's actual envelope serializer."""
+    """Build capped current data using the caller's compatibility byte budget."""
     exact_total = _validate_non_negative_integer(
         total_matching,
         name="total_matching",
@@ -272,7 +272,7 @@ def build_compact_next_data(
     limit: int,
     serialized_size: SerializedSize,
 ) -> dict[str, Any]:
-    """Build capped next data using the caller's actual envelope serializer."""
+    """Build capped next data using the caller's compatibility byte budget."""
     exact_total = _validate_non_negative_integer(
         total_matching,
         name="total_matching",

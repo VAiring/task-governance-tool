@@ -108,48 +108,40 @@ pause, blocker, or routine stop.
 
 Use this deterministic graph for a normal no-finding Tier 2 task:
 
-1. Rediscover current work:
+1. Read the selected Task and its complete working context:
 
    ```powershell
-   python .agents/skills/task-governance-tool/scripts/taskgov.py task current --compact --json
+   python .agents/skills/task-governance-tool/scripts/taskgov.py task context --json
    ```
 
-2. If `task current` contains an `in_progress` or `review_pending` row, resume
-   the first such row in returned order. Otherwise select ready work; returned
-   `paused` and `blocked` rows stay rediscovered but do not suppress unrelated
-   candidates:
-
-   ```powershell
-   python .agents/skills/task-governance-tool/scripts/taskgov.py task next --compact --json
-   ```
-
-3. Always inspect the resumed or selected task:
-
-   ```powershell
-   python .agents/skills/task-governance-tool/scripts/taskgov.py task show <task-id> --json
-   ```
-
+   The tool resumes the first current `in_progress` or `review_pending` Task;
+   otherwise it selects the first ready candidate under the same ordering.
+   `data.current` preserves held-work recall; `data.selected` supplies the full
+   current Contract, checkpoint, gates, and routing information. Use it directly,
+   without another current/next/show call or read-history bookkeeping.
+   `selection=none` is successful absence, while `ok=false` stops selection
+   with the existing error and never skips to another candidate.
    The same read returns bounded completion history. Treat saved cycles only
    as audit context; they never satisfy the current verification, review, or
    completion gate.
 
-4. When a ready task was selected, start it:
+2. When a ready task was selected, start it:
 
    ```powershell
    python .agents/skills/task-governance-tool/scripts/taskgov.py task edit <task-id> --status in_progress --json
    ```
 
-5. Finish the exact governed material. Record real progress with bounded notes
+3. Finish the exact governed material. Record real progress with bounded notes
    only when useful. Record out-of-scope discoveries immediately with
    `handoff record`.
-6. If and only if the mandatory `task show` result has
-   `data.effort_advisory_enabled=true`, make one `task effort` observation at
+4. If and only if the context result has
+   `data.selected.effort_advisory_enabled=true`, make one `task effort` observation at
    the verification/review boundary.
-7. Set the exact review target and retain its returned generation,
+5. Set the exact review target and retain its returned generation,
    `verification_route`, and `blocking_code`. The existing target-set operation
    may take the explicitly opted-in trusted-local Runner route without another
    public command.
-8. Route only on those two fields from the same success response:
+6. Route only on those two fields from the same success response:
 
    - `not_required` with null `blocking_code`: proceed;
    - `runner_pass` with null `blocking_code`: proceed without a Receipt;
@@ -158,7 +150,7 @@ Use this deterministic graph for a normal no-finding Tier 2 task:
    - `blocked` with a non-null existing gate code: stop closed;
    - every other pair: stop closed.
 
-9. Only the Receipt-required branch records the aggregate result:
+7. Only the Receipt-required branch records the aggregate result:
 
    ```powershell
    python .agents/skills/task-governance-tool/scripts/taskgov.py verification receipt add --repo <target-project> <task-id> --result pass --duration-ms <milliseconds> --scope-coverage full --expected-target-generation <generation> --json
@@ -171,16 +163,16 @@ Use this deterministic graph for a normal no-finding Tier 2 task:
    target generation before a new run can become current. A pending, stale, or
    cleanup-only Runner basis remains stale; every other exact-current terminal
    Runner result blocks and cannot be overridden by a Receipt.
-10. Prepare one bounded review packet, record the required review
+8. Prepare one bounded review packet, record the required review
    receipts/findings, and complete the task.
 
-When step 2 is needed, the manual/fallback path is at most ten governance
-subprocess calls with the Effort Advisory disabled and eleven when an existing valid profile enables
-it. The Effort branch is a boolean route from `task show`, not an LLM
+When ready work is selected, the manual/fallback path is at most eight governance
+subprocess calls with the Effort Advisory disabled and nine when an existing valid profile enables
+it. The Effort branch is a boolean route from `task context`, not an LLM
 choice. For a Task with specified verification, the count includes one
 Verification Receipt on a manual verification branch and two actual Tier 2 review-receipt
 writes; the qualifying Runner-pass branch omits that Verification Receipt call
-and remains bounded to nine or ten calls respectively. The count excludes the two independent review
+and remains bounded to seven or eight calls respectively. The count excludes the two independent review
 model decisions, the external verification process, and real progress notes.
 
 `doctor`, `task complete --check`, and `task checkpoint` are optional and
@@ -197,7 +189,9 @@ task.
 - Preserve deterministic priority/lane/order selection from the CLI; do not
   re-rank candidates semantically inside the Skill.
 - Treat `paused_tasks_present` from `task next` as an advisory recall hint.
-  Inspect the bounded paused subset without changing returned candidates:
+  In the normal context flow, use its returned recall without an additional
+  read. For explicit held-work inspection, the bounded paused subset remains
+  available without changing returned candidates:
 
   ```powershell
   python .agents/skills/task-governance-tool/scripts/taskgov.py task current --repo <target-project> --status paused --json
@@ -325,8 +319,9 @@ their rules applicable without duplicating them or broadening permission.
 
 ## Optional Effort Advisory
 
-The default JSON `task show` result always supplies
-`effort_advisory_enabled=true|false`. Only `true` mechanically adds:
+The selected detail from `task context` (also available through explicit
+`task show`) supplies `effort_advisory_enabled=true|false`. Only `true`
+mechanically adds:
 
 ```powershell
 python .agents/skills/task-governance-tool/scripts/taskgov.py task effort --repo <target-project> <task-id> --read-only --json
@@ -361,7 +356,8 @@ latest checkpoint for the same Contract revision writes nothing.
 
 A checkpoint is optional. Never require it for pause, resume, review, or
 completion. It does not change task status, selection, gates, or
-`tasks.updated_at`. Default `task current` and `task show` expose only the
+`tasks.updated_at`. Default `task current`, `task show`, and the selected
+detail from `task context` expose only the
 latest checkpoint; compact selection intentionally omits its content.
 New checkpoint content uses strict normal privacy validation. The bounded
 legacy reader exists only to return an already-stored checkpoint summary with
@@ -388,7 +384,8 @@ Record a blocking condition on its owning task:
 python .agents/skills/task-governance-tool/scripts/taskgov.py task edit --repo <target-project> <task-id> --status blocked --blocked-reason "Waiting for user decision on the accepted boundary" --json
 ```
 
-After blocking one lane, return to `task next` for unrelated ready work.
+After blocking one lane, return to `task context` to resume another active Task
+or select unrelated ready work with its complete context.
 
 ## Scope Control And Local Handoff
 

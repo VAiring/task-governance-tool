@@ -3,7 +3,7 @@
 Decision baseline: v0.10.0 is the immutable published release; its exact
 identity lives in `docs/release-install.md`. The current unpublished local
 candidate is v0.13.0/schema v22/Viewer snapshot v4 with source compatibility
-v5-v22 and 21 public command leaves. This plan retains current decisions,
+v5-v22 and 22 public command leaves. This plan retains current decisions,
 unfinished static contracts, and open issues only. Completed execution
 narrative is indexed as non-authoritative history, while the Task database,
 queried through the public CLI, solely owns live execution status and evidence.

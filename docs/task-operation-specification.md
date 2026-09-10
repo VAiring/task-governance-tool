@@ -92,6 +92,31 @@ one query-only transaction. It also returns exactly one routing Boolean
 `effort_advisory_enabled`; invalid advisory configuration returns false plus
 the existing continuation warning. Text show does not add that flag.
 
+`task context` is the fixed read-only start/resume operation; it accepts only
+the common CLI options. It applies default compact current selection (limit
+20), resumes the first `in_progress` or `review_pending` row in returned
+order, or otherwise applies default compact next selection (limit 5) and picks
+its first candidate. Held rows remain recalled and do not suppress unrelated
+ready work. It returns the selected Task's complete `task show` data, including
+Contract, latest checkpoint, current constraints/blockers, gates, and routing.
+It never starts a Task or changes state, evidence, or gate requirements.
+
+Success data is exactly `selection`, `current`, `next`, and `selected`.
+`selection` is `current`, `next`, or `none`; `current` is the existing compact
+current data; `next` is the existing compact next data only when fallback ran,
+otherwise null; `selected` is the full show data or null when no candidate
+exists. Component selection and omission budgets remain unchanged. Successful
+component warnings are retained once. Any read failure stops without another
+candidate and preserves its sanitized code/exit status, with no warnings and
+exact empty data `{selection: "none", current: null, next: null, selected: null}`.
+Thus successful absence is distinct from failure through `ok`.
+
+The public operation reuses the resolver's retained read for selection and
+detail. Live marker-2 show retains its existing release, physical Runner-basis
+selection, and Task comparison before final projection; there is no claim of a
+single SQLite snapshot across that physical phase or a second global scan.
+Individual current/next/show commands remain available for explicit inspection.
+
 Every Task-loading operation applies the current stored-row and
 Contract-relationship contracts
 before an allow-list projection, compact omission, derived-state use, or
@@ -103,14 +128,9 @@ the [stored-Task validation contract](#stored-task-read-and-privacy-contract).
 
 The deterministic Skill call graph is:
 
-- one compact `task current` call to rediscover work;
-- when it returns an `in_progress` or `review_pending` row, resume the first
-  such row in returned order; otherwise make one compact `task next` call.
-  Returned `paused` and `blocked` rows remain rediscovered but do not suppress
-  unrelated ready selection;
-- one `task show` call for the resumed or selected task so its complete current
-  Contract, latest checkpoint, and Effort Advisory routing flag are always
-  read;
+- one `task context` call to select or resume and read the complete current
+  Contract, latest checkpoint, and Effort Advisory routing flag, without
+  intermediate LLM branching or follow-up current/next/show calls;
 - one task edit to start the selected task;
 - only for a deterministically enabled Effort Advisory profile, one existing
   `task effort` observation at the verification/review boundary;
@@ -127,9 +147,9 @@ The deterministic Skill call graph is:
 - one thin complete call.
 
 A default-off no-finding Tier 2 manual/fallback path therefore has at most
-ten governance subprocess calls; a profile-enabled path has at most eleven.
-The qualifying Runner-pass path omits Receipt add and remains bounded to nine or
-ten calls respectively. All counts exclude real progress updates and the two
+eight governance subprocess calls; a profile-enabled path has at most nine.
+The qualifying Runner-pass path omits Receipt add and remains bounded to seven or
+eight calls respectively. All counts exclude real progress updates and the two
 independent review model decisions.
 `task complete --check`, `doctor`, and `task checkpoint` are absent from the
 default success path.
@@ -246,7 +266,7 @@ clears target and advances generation, moves review-pending to in-progress,
 updates time, and appends `contract_revised` atomically. Fresh gates are
 required. Done must reopen; cancelled rejects.
 
-Only `task show` exposes the full additive `contract` object: revision, scope,
+`task show` and `task context.selected` expose the full `contract` object: revision, scope,
 acceptance, constraints, authority reference, change reason, and creation time.
 Revision 0 uses empty strings and null time. Compact/list/current/next/Viewer
 omit Contract text.
@@ -395,7 +415,7 @@ does not update `tasks.updated_at`.
 Exact replay against the latest same-Contract checkpoint is write-free with
 `replayed=true`. Done is immutable. Checkpoints are optional, never automatic,
 and change no status, scope, acceptance, selection, review, evidence, or gate.
-`task show`/default current expose only the latest object.
+`task show`, `task context.selected`, and default current expose only the latest object.
 
 The stored-summary read path alone retains bounded compatibility for the
 already-recorded numeric `dispatch_authorization` JSON counter and returns the

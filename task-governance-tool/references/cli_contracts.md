@@ -40,6 +40,7 @@ format-2 index reports its actual source schema 22.
   - [`task list`](#task-list)
   - [`task next`](#task-next)
   - [`task current`](#task-current)
+  - [`task context`](#task-context)
   - [`task effort`](#task-effort)
   - [`task show`](#task-show)
   - [`task checkpoint`](#task-checkpoint)
@@ -83,7 +84,7 @@ Ordinary Task use supports Windows, Linux, and macOS. The explicit trusted-local
 Runner supports the same three platforms under their OS-specific limits;
 verification without Runner opt-in remains manual. There is no OS-selection command.
 
-The complete public command inventory is exactly these 21 leaves:
+The complete public command inventory is exactly these 22 leaves:
 
 1. `setup`
 2. `doctor`
@@ -106,6 +107,7 @@ The complete public command inventory is exactly these 21 leaves:
 19. `review finding add`
 20. `review finding resolve`
 21. `verification receipt add`
+22. `task context`
 
 There are no public aliases, alternate state locations, storage-management
 commands, projection-management commands, repair commands, or admin commands.
@@ -149,7 +151,7 @@ Fresh setup uses a `uuid_v1` identity in the shown format. Migrated
 always comes from stored identity and is never recomputed from the current
 path.
 
-Inherently read-only commands are `doctor`, task `list`, `next`, `current`,
+Inherently read-only commands are `doctor`, task `list`, `next`, `current`, `context`,
 `effort`, and `show`, `task complete --check`, handoff `list` and `show`, and
 `review prepare`. `setup --read-only` is a no-write preview.
 
@@ -167,9 +169,9 @@ is the sole exception to a one-store description: a real Task basis edit commits
 first, closes SQLite, and only then confirms or publishes one separately
 committed canonical Plan file as described under `task edit`.
 
-The normal no-finding Tier 2 manual/fallback Skill graph is bounded to ten
-governance subprocess calls when the Effort Advisory is off and eleven when the
-mandatory pre-work `task show` boolean enables it. The Receiptless Runner-pass
+The normal no-finding Tier 2 manual/fallback Skill graph is bounded to eight
+governance subprocess calls when the Effort Advisory is off and nine when the
+pre-work `task context.selected` boolean enables it. The Receiptless Runner-pass
 branch is one call lower. The target-set response itself supplies the closed
 route; no second read or LLM choice is required.
 
@@ -564,6 +566,43 @@ A compact latest event contains only `event_type`, `summary`, `created_at`,
 and `summary_truncated`, with summary capped at 256 UTF-8 bytes. Complete
 compact JSON stdout is capped at 24,576 bytes and omits Contract/checkpoint
 content. `--compact` requires `--json`. Follow selection with `task show`.
+
+### `task context`
+
+Use one fixed read for ordinary Task start or resume:
+
+```powershell
+python scripts/taskgov.py task context --repo <target-project> --json
+```
+
+Only common options are accepted; there is no Task ID, filter, display-mode,
+or automatic start option. The tool uses the existing default compact current
+batch (limit 20), resumes its first `in_progress` or `review_pending` row, or
+otherwise selects the first default compact next candidate (limit 5). Each
+batch retains its existing validation, ordering, and omission boundaries.
+
+Success data is exactly `selection`, `current`, `next`, and `selected`.
+`selection` is `current`, `next`, or `none`. `current` is compact-current data;
+`next` is compact-next data only when fallback ran, otherwise null. `selected`
+is the full existing `task show` data, or null when no candidate exists. It
+includes complete Contract, latest checkpoint, current blockers/gates, and
+`effort_advisory_enabled`. Use that detail directly without another
+current/next/show call. Held work remains recalled; successful component
+warnings are retained once.
+
+Any component failure returns its existing sanitized error and exit status,
+no warnings or partial result, and exactly:
+
+```json
+{"selection":"none","current":null,"next":null,"selected":null}
+```
+
+It never skips a failed read to select another Task. `ok=true` with
+`selection=none` is successful absence, distinct from `ok=false`. Text gives
+the selection, existing selected-Task detail, held-work recall, and warnings.
+No state, evidence, or gate is changed. The public operation reuses the
+retained read, while live marker-2 detail keeps the existing Task-show physical
+Runner observation and Task revalidation outside that read.
 
 ### `task effort`
 

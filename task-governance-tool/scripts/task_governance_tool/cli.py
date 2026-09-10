@@ -30,6 +30,7 @@ from task_governance_tool.cli_text import (
     task_list_text,
     task_next_text,
     task_current_text,
+    task_context_text,
     task_effort_text,
     task_show_text,
     task_edit_text,
@@ -250,6 +251,8 @@ def state_resolution_failure_result(
         )
     elif command == "task.current":
         data = task_current_result_data(context)
+    elif command == "task.context":
+        data = task_context_empty_data()
     elif command == "task.effort":
         data = task_effort_empty_data()
     elif command == "task.show":
@@ -316,6 +319,7 @@ def handle_command(context: CommandContext) -> CommandResult:
                     "task.list",
                     "task.next",
                     "task.current",
+                    "task.context",
                     "task.effort",
                     "task.show",
                     "handoff.list",
@@ -369,6 +373,8 @@ def dispatch_stateful_command(context: CommandContext) -> CommandResult:
         return handle_task_next(context)
     elif context.command == "task.current":
         return handle_task_current(context)
+    elif context.command == "task.context":
+        return handle_task_context(context)
     elif context.command == "task.effort":
         return handle_task_effort(context)
     elif context.command == "task.show":
@@ -1232,6 +1238,106 @@ def handle_task_show(context: CommandContext) -> CommandResult:
             result.contract,
             result.completion_history,
             result.completion_history_latest_summary,
+        ),
+        exit_code=EXIT_SUCCESS,
+    )
+
+
+def task_context_empty_data() -> dict[str, Any]:
+    return {
+        "selection": "none",
+        "current": None,
+        "next": None,
+        "selected": None,
+    }
+
+
+def task_context_failure_result(
+    context: CommandContext,
+    failure: CommandResult,
+) -> CommandResult:
+    return CommandResult(
+        ok=False,
+        command=context.command,
+        project_id=failure.project_id,
+        data=task_context_empty_data(),
+        errors=failure.errors,
+        exit_code=failure.exit_code,
+    )
+
+
+def handle_task_context(context: CommandContext) -> CommandResult:
+    """Aggregate the fixed current, conditional next, and selected-show reads."""
+    current = handle_task_current(
+        replace(
+            context,
+            command="task.current",
+            args=argparse.Namespace(compact=True),
+        )
+    )
+    if not current.ok:
+        return task_context_failure_result(context, current)
+
+    selected_task = next(
+        (
+            task
+            for task in current.data["tasks"]
+            if task["status"] in {"in_progress", "review_pending"}
+        ),
+        None,
+    )
+    selection = "current" if selected_task is not None else "none"
+    next_result = None
+    if selected_task is None:
+        next_result = handle_task_next(
+            replace(
+                context,
+                command="task.next",
+                args=argparse.Namespace(compact=True),
+            )
+        )
+        if not next_result.ok:
+            return task_context_failure_result(context, next_result)
+        if next_result.data["tasks"]:
+            selected_task = next_result.data["tasks"][0]
+            selection = "next"
+
+    selected = None
+    if selected_task is not None:
+        # The existing handler owns Runner physical selection and the fresh
+        # Task comparison after it releases the retained SQLite read.
+        selected = handle_task_show(
+            replace(
+                context,
+                command="task.show",
+                args=argparse.Namespace(task_id=selected_task["task_id"]),
+            )
+        )
+        if not selected.ok:
+            return task_context_failure_result(context, selected)
+
+    warnings = []
+    for result in (current, next_result, selected):
+        if result is not None:
+            for warning in result.warnings:
+                if warning not in warnings:
+                    warnings.append(warning)
+    return CommandResult(
+        ok=True,
+        command=context.command,
+        project_id=resolve_context_target(context).project.project_id,
+        data={
+            "selection": selection,
+            "current": current.data,
+            "next": next_result.data if next_result is not None else None,
+            "selected": selected.data if selected is not None else None,
+        },
+        warnings=warnings,
+        text=task_context_text(
+            selection,
+            current.data,
+            selected.text if selected is not None else "",
+            warnings,
         ),
         exit_code=EXIT_SUCCESS,
     )
@@ -2392,7 +2498,7 @@ def main(
         if args.command == "task" and args.task_command is None:
             raise CommandLineError(
                 "invalid_argument",
-                "task requires a subcommand: add, list, next, current, effort, show, checkpoint, edit, or complete",
+                "task requires a subcommand: add, list, next, current, context, effort, show, checkpoint, edit, or complete",
             )
         if (
             args.command == "task"

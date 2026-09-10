@@ -132,6 +132,7 @@ LANE_MODULES: dict[str, tuple[str, ...]] = {
         "test_task_add",
         "test_task_compact",
         "test_task_complete",
+        "test_task_context",
         "test_task_contracts",
         "test_task_current",
         "test_task_edit",

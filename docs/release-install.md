@@ -33,7 +33,7 @@ manual verification path.
 | Package version | `0.13.0` |
 | SQLite schema | v22 |
 | Viewer snapshot | v4, accepting source schemas v5-v22 (v5 through v22) |
-| Public command leaves | 21 |
+| Public command leaves | 22 |
 | Supported runtime | Python 3.12 or newer on Windows, Linux, and macOS (ordinary functions) |
 | Verified platform | Windows x86-64; Ubuntu 24.04 x86-64; macOS 15 Apple Silicon |
 | Candidate commit / `main` | not fixed; unpublished local candidate |
@@ -447,7 +447,7 @@ unchanged.
 
 ## Public CLI Surface
 
-The current 0.13.0 candidate exposes exactly these 21 command leaves:
+The current 0.13.0 candidate exposes exactly these 22 command leaves:
 
 1. `taskgov setup`
 2. `taskgov doctor`
@@ -470,6 +470,7 @@ The current 0.13.0 candidate exposes exactly these 21 command leaves:
 19. `taskgov review finding add`
 20. `taskgov review finding resolve`
 21. `taskgov verification receipt add`
+22. `taskgov task context`
 
 The schema-v18+ Receipt writes remain those existing leaves. Verification has
 no caller label or replacement subject input; Taskgov derives the subject from
@@ -495,11 +496,12 @@ Applicable leaves retain `--repo`, `--json`, and `--read-only`; the root retains
 `--version`. Storage and generated-artifact paths are internal implementation
 details, not public CLI choices. Unknown or removed commands/options fail at
 the parser boundary before package, project, Git, or SQLite resolution.
-There is no history command or option; the mandatory `task show` read and
+There is no history command or option; selected detail from `task context`,
+explicit `task show`, and the
 automatically maintained Viewer supply the bounded audit projection.
 
-The normal no-finding Tier 2 manual/fallback Task flow uses at most ten governance subprocess
-calls with the default-off Effort Advisory, or eleven when
+The normal no-finding Tier 2 manual/fallback Task flow uses at most eight governance subprocess
+calls with the default-off Effort Advisory, or nine when
 an enabled valid profile mechanically adds `task effort`. Doctor, checkpoint,
 and completion check are optional and absent from the standard success path. A
 qualifying Runner pass omits the Verification Receipt call and is one call lower
@@ -667,13 +669,15 @@ no-launch result falls back to the manual Receipt branch, while all other
 selected Runner states block. Current schema v22 removes only the retired
 Analyzer reservations, preserves source-19/20/21 Bundle bytes/digests, and writes
 source-22/v2 Bundles under the same protocol. Viewer snapshot v4 accepts source schemas v5-v22 while exposing no
-Evidence UI. No Analyzer, network/model invocation, new command leaf, or new
-Skill trigger is activated. Action-bearing `task edit` adds only the closed
+Evidence UI. That schema activation adds no Analyzer, network/model invocation,
+command leaf, or Skill trigger. The separate read-only `task context` leaf now
+combines ordinary selection and full detail without changing those gates.
+Action-bearing `task edit` adds only the closed
 `runner_plan_update` (`action` and status); `review target set` remains the sole
 Runner dispatch and retains its two closed route fields. With no post-target `task show`, the
-manual/fallback no-finding Tier 2 flow is bounded to ten calls, or eleven with
+manual/fallback no-finding Tier 2 flow is bounded to eight calls, or nine with
 the enabled Effort Advisory; the Receiptless Runner-pass path is one call
-lower. The public inventory remains exactly 21 leaves. No exact final candidate
+lower. The public inventory is exactly 22 leaves. No exact final candidate
 commit, tag, archive, checksum, or GitHub Release identity is fixed. An ordinary
 push to `main` is CI input, not release publication; nothing here dispatches CI
 or publishes a Release.

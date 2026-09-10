@@ -22,13 +22,14 @@ from task_governance_tool.storage import StorageError, connect
 TASK_ID = "tg_task_aaaaaaaaaaaaaaaa"
 RAW_TASK_MARKER = "SENSITIVE_MARKER_123"
 
-# setup and doctor have their own service entry paths. These are the 18
+# setup and doctor have their own service entry paths. These are the 19
 # stateful public leaves that must share the normal command resolver.
 STATEFUL_LEAVES: tuple[tuple[str, str], ...] = (
     ("task.add", "task add --title Task"),
     ("task.list", "task list"),
     ("task.next", "task next"),
     ("task.current", "task current"),
+    ("task.context", "task context"),
     ("task.effort", f"task effort {TASK_ID}"),
     ("task.show", f"task show {TASK_ID}"),
     (
@@ -183,7 +184,7 @@ class M17CliConsumerHardeningTests(unittest.TestCase):
         self.assertNotIn("target.db_path.parent.parent", source)
 
     def test_all_stateful_leaves_resolve_once_and_fail_closed_before_setup(self):
-        self.assertEqual(len(STATEFUL_LEAVES), 18)
+        self.assertEqual(len(STATEFUL_LEAVES), 19)
         with tempfile.TemporaryDirectory() as tmp:
             install = make_physical_install(Path(tmp))
             real_resolve = cli_service.resolve_project_state

@@ -186,6 +186,11 @@ def build_parser() -> argparse.ArgumentParser:
         default=False,
         help="emit the bounded compact JSON projection",
     )
+    task_context_parser = task_subparsers.add_parser(
+        "context",
+        help="select current or next work and read its full context without writing",
+    )
+    add_common_options(task_context_parser)
     task_effort_parser = task_subparsers.add_parser(
         "effort",
         help="show an optional informational effort observation",

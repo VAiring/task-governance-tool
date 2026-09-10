@@ -3,7 +3,7 @@
 Status: The immutable published product remains v0.10.0/schema v16/Viewer v4
 sources v5-v16/20 leaves; its identity is fixed in `docs/release-install.md`.
 The current unpublished candidate is v0.13.0 with SQLite schema v22, Viewer
-snapshot v4 accepting source schemas v5-v22, and 21 public command leaves.
+snapshot v4 accepting source schemas v5-v22, and 22 public command leaves.
 Its supported behavior includes tool-owned Verification Receipt subjects,
 versioned Review provenance, immutable Evidence References and completion
 Bundles, deterministic Evidence JSON, and the explicitly opted-in trusted-local
@@ -151,7 +151,7 @@ internal test/service seam only.
 
 ### Command Inventory
 
-The public CLI has exactly 21 command leaves:
+The public CLI has exactly 22 command leaves:
 
 1. `taskgov setup`
 2. `taskgov doctor`
@@ -174,6 +174,7 @@ The public CLI has exactly 21 command leaves:
 19. `taskgov review finding add`
 20. `taskgov review finding resolve`
 21. `taskgov verification receipt add`
+22. `taskgov task context`
 
 `task complete --check` is a mode of the same leaf. Applicable commands retain
 `--repo`, `--json`, and `--read-only`; root `--version` is project-free.
@@ -252,6 +253,7 @@ Current success-data projections are:
 | default `task.current` | `tasks`, `count`, `limit`, `statuses` |
 | `task.effort` enabled | `task_id`, `enabled`, `profile`, `measurements`, `thresholds`, `exceeded`, `basis`, `observation`, `coverage`, `attribution`, `unknown_reasons`, `warning_key`, `suggested_action` |
 | `task.show` | exactly `task`, `events`, `suggested_next_action`, `review_evidence`, `handoff_summary`, `contract`, `latest_checkpoint`, `effort_advisory_enabled`, `completion_history`, `verification_evidence` |
+| `task.context` | `selection`, `current`, `next`, `selected`; fixed composition of compact recall/selection and complete show data |
 | `task.edit` | `task`, `changed_fields`, `event`, plus `contract_write` only for Contract input and `runner_plan_update` only when a Runner Plan action was supplied |
 | `task.complete` | `task`, `changed_fields`, `event` |
 | `handoff.record` | `handoff`, `local_record` |
@@ -266,6 +268,9 @@ Current success-data projections are:
 
 `task.show` failure keeps both `completion_history=null` and
 `verification_evidence=null` in its bounded empty data.
+`task.context` failure returns `selection="none"` and null `current`, `next`,
+and `selected`, with no partial data or warning. Its success/absence selection
+rules belong to the [Task read owner](task-operation-specification.md#task-selection-and-read-commands).
 `review.target.set` adds its two routing keys only on success. Its failure data
 remains exactly `task=null`, `changed_fields=[]`, and `event=null`.
 Revision-zero Contract output is exactly revision 0; empty scope, acceptance,
@@ -646,6 +651,9 @@ structured concurrency error.
 uses a second validated generation read only when a stored basis exists. The
 generation comparison bridges phases. Post-Git busy or newly observed WAL
 fails; other bounded observation uncertainty may remain an advisory.
+`task context` composes its default selection and selected detail using the
+retained read. Live marker-2 detail preserves the existing Task-show physical
+observation/revalidation boundary rather than claiming cross-phase atomicity.
 
 Git resolution, snapshot capture/comparison, completion validation, and Effort
 observation finish before `BEGIN IMMEDIATE`. Under the short writer, services

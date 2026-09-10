@@ -424,7 +424,7 @@ route. Only `verification_route=receipt_required` runs the governed verification
 against that material and records the Receipt with that generation as the
 expected basis. `not_required` and `runner_pass` proceed without that run or
 Receipt; `blocked` and unexpected route/code pairs stop closed. The default
-Tier-2 no-finding manual/fallback bound is ten governance calls, or eleven when
+Tier-2 no-finding manual/fallback bound is eight governance calls, or nine when
 Effort Advisory is mechanically enabled; a Receiptless Runner pass is one call
 lower.
 

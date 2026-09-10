@@ -182,6 +182,17 @@ the latest event/checkpoint and deterministic fixed next-action mapping. It
 does not calculate staleness or write a checkpoint. List/current/next remain
 bounded and have no pagination cursor.
 
+`cli.py::handle_task_context` composes the existing current/next/show handlers
+with fixed arguments, preserving their selection defaults and compact budgets
+under their original command labels. It owns only the fixed aggregate envelope,
+first-candidate routing, warning combination, and no-partial-result failure
+projection. It never owns a second selection predicate, Task validator, or
+state writer. `cli_text.py` combines the selected show text with held-work
+recall. Public state resolution retains one admitted read for the composition;
+the existing live marker-2 show path still closes it before physical selection
+and checks the observed Task on its final Task-local read. The aggregate does
+not add global Runner validation or infer cross-phase snapshot atomicity.
+
 ### Done Immutability And Reopen
 
 Every task/review mutation loads the owner and applies the shared done guard.
@@ -381,7 +392,8 @@ Strict-off databases do no advisory bookkeeping.
 
 The advisory never writes acknowledgement, asks a question, chooses a
 handoff, changes status, expands scope/acceptance, or blocks completion.
-`task show` mechanically exposes enablement. The Skill calls `task effort`
+`task show` and its `task context.selected` projection mechanically expose
+enablement. The Skill calls `task effort`
 once at the existing verification/review boundary only when enabled.
 
 ## Reduced Loop Discipline Design

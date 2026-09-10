@@ -40,11 +40,16 @@ from task_governance_tool.viewer import (  # noqa: E402
     VIEWER_HISTORY_SCHEMA_VERSION,
 )
 try:  # noqa: E402
-    from m14_test_support import canonical_test_path, make_physical_install
+    from m14_test_support import (
+        canonical_test_path,
+        make_physical_install,
+        tree_snapshot,
+    )
 except ModuleNotFoundError:  # noqa: E402
     from tests.m14_test_support import (
         canonical_test_path,
         make_physical_install,
+        tree_snapshot,
     )
 
 
@@ -306,6 +311,7 @@ class SkillSelfContainmentTests(unittest.TestCase):
         )
 
         for text in (skill_md, workflow, contracts, readme):
+            self.assertIn("task context", text)
             self.assertIn("task current", text)
             self.assertIn("Tier 2", text)
         for text in (workflow, contracts, readme):
@@ -748,9 +754,10 @@ class SkillSelfContainmentTests(unittest.TestCase):
             ):
                 self.assertIn(phrase, normalized)
         self.assertIn("three one-level Skill references", release_note)
-        self.assertIn("21 command leaves", release_note)
-        self.assertIn("ten governance subprocess", release_note)
-        self.assertIn("or eleven when", release_note)
+        release_contract = check_release_contract(ROOT)
+        self.assertTrue(release_contract.ok, release_contract.issues)
+        self.assertIn("task context", release_contract.runtime.public_commands)
+        self.assertEqual(len(release_contract.runtime.public_commands), 22)
 
         self.assertIn("references/reconciliation.md", manifest["core_files"])
 
@@ -1115,56 +1122,102 @@ class SkillSelfContainmentTests(unittest.TestCase):
                 "ready",
             )
 
-    def test_m14_spec_routing_contract_has_fixed_ten_or_eleven_calls(self):
-        specification = (ROOT / "docs" / "task-operation-specification.md").read_text(
-            encoding="utf-8"
-        )
-        graph_start = "The deterministic Skill call graph is:"
-        graph_end = "## Task State, Scope, Review, And Completion"
-        self.assertIn(graph_start, specification)
-        self.assertIn(graph_end, specification)
-        graph = specification.split(graph_start, 1)[1].split(graph_end, 1)[0]
-        normalized_graph = " ".join(graph.split()).lower()
-        route_counts = (
-            ("one compact `task current` call", 1, 1),
-            ("one compact `task next` call", 1, 1),
-            ("one `task show` call", 1, 1),
-            ("one task edit", 1, 1),
-            ("one existing `task effort` observation", 0, 1),
-            ("one review target set call", 1, 1),
-            ("verification receipt add", 1, 1),
-            ("one `review prepare` call", 1, 1),
-            ("one receipt write per actual receipt", 2, 2),
-            ("one thin complete call", 1, 1),
-        )
+    def test_installed_context_supplies_complete_start_and_resume_information(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            install = make_physical_install(Path(tmp))
 
-        positions = []
-        for phrase, _, _ in route_counts:
-            self.assertEqual(normalized_graph.count(phrase), 1)
-            positions.append(normalized_graph.index(phrase))
-        self.assertEqual(positions, sorted(positions))
-        self.assertEqual(sum(item[1] for item in route_counts), 10)
-        self.assertEqual(sum(item[2] for item in route_counts), 11)
-        self.assertRegex(
-            normalized_graph,
-            r"(?:at most|bound(?:ed)? to) (?:ten|10) "
-            r"(?:governance subprocess )?calls?",
-        )
-        self.assertRegex(
-            normalized_graph,
-            r"(?:profile|effort advisory)[^.]{0,100}(?:eleven|11)",
-        )
-        self.assertIn(
-            "instead of separate task, Contract, target, and Git",
-            graph,
-        )
-        for excluded in (
-            "`task complete --check`",
-            "`doctor`",
-            "`task checkpoint`",
-        ):
-            self.assertIn(excluded, graph)
-        self.assertIn("are absent from the\ndefault success path", graph)
+            def run(*args):
+                result = install.run(*args, "--json")
+                self.assertEqual(result.returncode, 0, result.stderr or result.stdout)
+                self.assertEqual(result.stderr, "")
+                payload = json.loads(result.stdout)
+                self.assertTrue(payload["ok"], payload)
+                return payload
+
+            run("setup")
+            added = run(
+                "task", "add", "--title", "Bounded context fixture",
+                "--review-tier", "2",
+                "--verification", "Verify the isolated fixture.",
+                "--contract-scope", "Read the complete isolated Task.",
+                "--contract-acceptance", "Selection preserves all Task detail.",
+                "--contract-constraints", "Do not start the Task during a read.",
+                "--contract-authority-ref", "conversation:isolated-context-fixture",
+            )
+            task_id = added["data"]["task"]["task_id"]
+            checkpoint = None
+
+            for status, enabled in (
+                ("ready", False),
+                ("in_progress", True),
+                ("review_pending", False),
+            ):
+                with self.subTest(status=status, effort_advisory_enabled=enabled):
+                    if status != "ready":
+                        run("task", "edit", task_id, "--status", status)
+                        if status == "in_progress":
+                            checkpoint = run(
+                                "task", "checkpoint", task_id,
+                                "--summary", "The bounded fixture is prepared.",
+                                "--next-action", "Review the fixture.",
+                            )["data"]["checkpoint"]
+                            run(
+                                "task", "add", "--title", "Other ready work",
+                                "--priority", "urgent",
+                            )
+                        config = install.skill_root / "config" / "effort-advisory.json"
+                        config.parent.mkdir(exist_ok=True)
+                        config.write_text(
+                            json.dumps({
+                                "schema_version": 1,
+                                "profile": "informational-v1",
+                                "enabled": enabled,
+                                "thresholds": {},
+                            }),
+                            encoding="utf-8",
+                        )
+
+                    before_context = tree_snapshot(install.project_root)
+                    expected = run("task", "show", task_id)
+                    context = run("task", "context")
+                    self.assertEqual(tree_snapshot(install.project_root), before_context)
+                    self.assertEqual(context["command"], "task.context")
+                    self.assertEqual(
+                        set(context["data"]),
+                        {"selection", "current", "next", "selected"},
+                    )
+                    selected = context["data"]["selected"]
+                    self.assertEqual(selected, expected["data"])
+                    self.assertEqual(selected["task"]["task_id"], task_id)
+                    self.assertEqual(selected["task"]["status"], status)
+                    self.assertEqual(selected["contract"]["revision"], 1)
+                    self.assertEqual(
+                        selected["contract"]["constraints"],
+                        "Do not start the Task during a read.",
+                    )
+                    self.assertEqual(selected["latest_checkpoint"], checkpoint)
+                    self.assertIs(selected["effort_advisory_enabled"], enabled)
+                    if status == "ready":
+                        self.assertEqual(context["data"]["selection"], "next")
+                        self.assertEqual(context["data"]["current"]["tasks"], [])
+                        self.assertEqual(
+                            context["data"]["next"]["tasks"][0]["task_id"], task_id
+                        )
+                    else:
+                        self.assertEqual(context["data"]["selection"], "current")
+                        self.assertIsNone(context["data"]["next"])
+                        self.assertEqual(
+                            context["data"]["current"]["tasks"][0]["task_id"], task_id
+                        )
+
+                    routed_commands = [context["command"]]
+                    if selected["effort_advisory_enabled"]:
+                        effort = run("task", "effort", task_id, "--read-only")
+                        routed_commands.append(effort["command"])
+                    self.assertEqual(
+                        routed_commands,
+                        ["task.context", "task.effort"] if enabled else ["task.context"],
+                    )
 
     def test_copied_skill_folder_help_runs_without_repo_python_path(self):
         with tempfile.TemporaryDirectory() as tmp:

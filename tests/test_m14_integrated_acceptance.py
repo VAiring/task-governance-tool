@@ -44,6 +44,7 @@ HELP_CHOICES = {
         "list",
         "next",
         "current",
+        "context",
         "effort",
         "show",
         "checkpoint",
@@ -128,9 +129,7 @@ def python_taskgov_examples(text: str) -> list[str]:
 
 def routed_governance_graph(*, effort_advisory_enabled: bool) -> list[str]:
     graph = [
-        "task.current",
-        "task.next",
-        "task.show",
+        "task.context",
         "task.edit",
     ]
     if effort_advisory_enabled:
@@ -299,8 +298,10 @@ class M14IntegratedAcceptanceTests(unittest.TestCase):
         )
         self.assertIn("effort_advisory_enabled", skill)
         self.assertIn("task effort", skill)
-        self.assertRegex(skill, r"(?i)\bten\b")
-        self.assertRegex(skill, r"(?i)\beleven\b")
+        self.assertIn("task context --json", skill)
+        self.assertTrue(any(" task context --json" in line for line in examples))
+        self.assertIn("task context", release_contract.runtime.public_commands)
+        self.assertEqual(len(release_contract.runtime.public_commands), 22)
         self.assertIn(
             "[references/task_workflow.md](references/task_workflow.md)", skill
         )
@@ -590,39 +591,30 @@ class M14IntegratedAcceptanceTests(unittest.TestCase):
             task_id = added["data"]["task"]["task_id"]
 
             graph_payloads: list[dict[str, Any]] = []
-            current, _ = self.run_json(
+            before_context = tree_snapshot(install.project_root)
+            context, _ = self.run_json(
                 install,
                 "task",
-                "current",
-                "--compact",
+                "context",
                 "--read-only",
             )
-            graph_payloads.append(current)
+            graph_payloads.append(context)
+            self.assertEqual(tree_snapshot(install.project_root), before_context)
+            self.assertEqual(context["data"]["selection"], "next")
             self.assertEqual(
-                [task["task_id"] for task in current["data"]["tasks"]],
+                [task["task_id"] for task in context["data"]["current"]["tasks"]],
                 [held["data"]["task"]["task_id"]],
             )
-            self.assertEqual(current["data"]["tasks"][0]["status"], "blocked")
-
-            next_task, _ = self.run_json(
-                install,
-                "task",
-                "next",
-                "--compact",
-                "--read-only",
+            self.assertEqual(
+                context["data"]["current"]["tasks"][0]["status"], "blocked"
             )
-            graph_payloads.append(next_task)
-            self.assertEqual(next_task["data"]["tasks"][0]["task_id"], task_id)
-
-            shown, _ = self.run_json(
-                install,
-                "task",
-                "show",
-                task_id,
-                "--read-only",
+            self.assertEqual(
+                context["data"]["next"]["tasks"][0]["task_id"], task_id
             )
-            graph_payloads.append(shown)
-            self.assertFalse(shown["data"]["effort_advisory_enabled"])
+            selected = context["data"]["selected"]
+            self.assertEqual(selected["task"]["task_id"], task_id)
+            self.assertEqual(selected["task"]["status"], "ready")
+            self.assertFalse(selected["effort_advisory_enabled"])
 
             started, _ = self.run_json(
                 install,
@@ -752,11 +744,11 @@ class M14IntegratedAcceptanceTests(unittest.TestCase):
                 [payload["command"] for payload in graph_payloads],
                 routed_governance_graph(effort_advisory_enabled=False),
             )
-            self.assertEqual(len(graph_payloads), 10)
+            self.assertEqual(len(graph_payloads), 8)
             enabled_graph = routed_governance_graph(
                 effort_advisory_enabled=True,
             )
-            self.assertEqual(len(enabled_graph), 11)
+            self.assertEqual(len(enabled_graph), 9)
             self.assertEqual(
                 [command for command in enabled_graph if command == "task.effort"],
                 ["task.effort"],

@@ -79,6 +79,38 @@ def task_current_text(tasks: list[dict[str, Any]], count: int, limit: int) -> st
     return "\n".join(lines)
 
 
+def task_context_text(
+    selection: str,
+    current: dict[str, Any],
+    selected_text: str,
+    warnings: Sequence[dict[str, str]] = (),
+) -> str:
+    lines = [f"Task selection: {selection}"]
+    if selected_text:
+        lines.append(selected_text)
+    else:
+        lines.append("No resumable or ready task.")
+    held = [
+        task for task in current["tasks"]
+        if task["status"] in {"paused", "blocked"}
+    ]
+    if held:
+        lines.append("Held work recalled:")
+        for task in held:
+            lines.append(
+                f"{task['task_id']} [{task['status']}] {task['title']} | "
+                f"{task['suggested_next_action']}"
+            )
+    if current["truncated"] or current["total_matching"] > current["returned_count"]:
+        lines.append(
+            "Current recall: "
+            f"{current['returned_count']}/{current['total_matching']} returned "
+            f"(limit {current['limit']})"
+        )
+    lines.extend(f"Warning: {warning['message']}" for warning in warnings)
+    return "\n".join(lines)
+
+
 def task_effort_text(data: dict[str, Any]) -> str:
     enabled = "enabled" if data["enabled"] else "disabled"
     exceeded = ", ".join(data["exceeded"]) or "none"

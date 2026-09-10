@@ -36,10 +36,10 @@ When launching from inside the Skill directory, add
 directory is the governed project; taskgov never re-roots it to an enclosing
 Git worktree, and a non-Git directory is valid.
 
-Use only these 21 public command leaves:
+Use only these 22 public command leaves:
 
 - `setup`, `doctor`
-- task `add`, `list`, `next`, `current`, `effort`, `show`, `edit`, `complete`,
+- task `add`, `list`, `next`, `current`, `context`, `effort`, `show`, `edit`, `complete`,
   `checkpoint`
 - handoff `record`, `list`, `show`, `withdraw`
 - review `prepare`, target `set`, receipt `add`, finding `add`, finding
@@ -98,26 +98,26 @@ recognized advisory and maintenance results on their fixed
 
 Use this normal flow:
 
-1. Rediscover with `task current --compact --json`.
-2. If it returns an `in_progress` or `review_pending` row, resume the first
-   such row in returned order. Otherwise select with
-   `task next --compact --json`; returned `paused` and `blocked` rows remain
-   recalled but do not suppress unrelated ready work.
-3. Always read the resumed or selected task with
-   `task show <task-id> --json`. Its bounded completion history is audit
-   context only and never satisfies a current gate.
-4. If selecting ready work, start it with
+1. Read `task context --json`. It deterministically resumes the first
+   `in_progress` or `review_pending` Task, otherwise selects the first ready
+   candidate, and returns its complete detail in `data.selected`. Use that
+   Contract, latest checkpoint, and gate information directly; no separate
+   current/next/show call or remembered read state is needed. Held work remains
+   recalled in `data.current`. `selection=none` means no actionable Task;
+   `ok=false` is a read failure and stops this selection, not a fallback.
+   Bounded completion history is audit context only, never a current gate.
+2. If selecting ready work, start it with
    `task edit <task-id> --status in_progress --json`.
-5. Finish the exact material against current authority. Record out-of-scope
+3. Finish the exact material against current authority. Record out-of-scope
    discoveries with `handoff record`; use `task checkpoint` only at a genuine
    continuation boundary.
-6. Only when `task show.data.effort_advisory_enabled` is `true`, run one
+4. Only when `data.selected.effort_advisory_enabled` is `true`, run one
    `task effort <task-id> --read-only --json` at the verification/review
    boundary. This is a mechanical route, not an LLM choice.
-7. Set the exact review target and retain its returned generation,
+5. Set the exact review target and retain its returned generation,
    `verification_route`, and `blocking_code`; this existing operation may take
    the explicitly opted-in trusted-local Runner route.
-8. Route only on that same response. `not_required` and `runner_pass` proceed
+6. Route only on that same response. `not_required` and `runner_pass` proceed
    without a Receipt. Only `receipt_required` runs the Task's verification
    outside taskgov and attests the aggregate result with
    `verification receipt add
@@ -125,9 +125,9 @@ Use this normal flow:
    --scope-coverage <full|partial> --expected-target-generation <generation>
    --json`. `blocked` requires a non-null returned code and stops closed; any
    missing, mismatched, or unknown route/code pair also stops.
-9. Run `review prepare` once, obtain the required reviews, and record their
+7. Run `review prepare` once, obtain the required reviews, and record their
    receipts and findings.
-10. Complete through `task complete` after verification and review gates pass.
+8. Complete through `task complete` after verification and review gates pass.
 
 Read [references/reconciliation.md](references/reconciliation.md) only when
 the Effort result returns `data.suggested_action=reconcile_scope`, or when a
@@ -136,12 +136,12 @@ result as one non-blocking episode, not one episode per exceeded metric.
 Neither trigger adds a green-path command, question, or stop.
 
 For a no-finding Tier 2 task that must select new work, the manual/fallback graph
-uses at most ten governance subprocess calls with the advisory disabled and
-eleven when an existing valid profile enables it. `doctor`, completion `--check`, and
+uses at most eight governance subprocess calls with the advisory disabled and
+nine when an existing valid profile enables it. `doctor`, completion `--check`, and
 `task checkpoint` are absent from the default success path. This flow adds no
 mandatory question, judgment, or user-return stop. The qualifying Runner-pass
-branch omits the Verification Receipt call and therefore remains bounded to nine
-or ten calls respectively.
+branch omits the Verification Receipt call and therefore remains bounded to seven
+or eight calls respectively.
 
 ## Operating Rules
 
@@ -154,9 +154,11 @@ or ten calls respectively.
 - Register only explicit tasks. `task add --status done` and initial `paused`
   are prohibited.
 - Rediscover `in_progress`, `review_pending`, `paused`, and `blocked` work with
-  `task current`. Treat `paused_tasks_present` from `task next` as an advisory
-  recall hint; inspect with `task current --status paused` without changing
-  ready candidates.
+  `task context`; individual `task current` reads remain available for explicit
+  held-work inspection. Treat `paused_tasks_present` from `task next` as an advisory
+  recall hint, not a requirement for another read. Use the context's returned
+  recall during normal work; focused `task current --status paused` inspection
+  remains available without changing ready candidates.
 - Enforce sequential predecessors for both selection and direct transitions.
   A blocked lane does not stop unrelated ready work.
 - A failed verification or current blocking review result prevents completion

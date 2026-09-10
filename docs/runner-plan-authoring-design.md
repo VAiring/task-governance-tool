@@ -12,7 +12,7 @@ existing owners.
 ## Current Runner Plan Authoring And Control Design
 
 This is the current implementation design for bounded Runner Plan authoring.
-The CLI retains 21 leaves and exposes the one explicit Plan action option on
+Plan authoring adds no CLI leaf and exposes the one explicit action option on
 `task edit`; reading this section alone authorizes no config write, Task edit,
 process launch, target mutation, or external operation. Setup never creates the
 config, and the existing `review target set` parent service remains the sole

@@ -12,7 +12,7 @@ their existing owners.
 ## Current Runner Plan Authoring And Control Contract
 
 This section is the current implementation contract for bounded Runner Plan
-authoring. The product retains exactly 21 public command leaves and adds only an
+authoring. Plan authoring adds no command leaf and uses only an
 explicit action option to the existing `task edit` leaf. This contract grants no
 config write, Task side effect, process launch, target mutation, or external
 operation without that invocation. `review target set` remains the sole Runner

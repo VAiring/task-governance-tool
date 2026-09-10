@@ -187,26 +187,19 @@ or execution-unit set:
 python .agents/skills/task-governance-tool/scripts/taskgov.py task add --title "Example task" --json
 ```
 
-At a later session boundary, first rediscover current work:
+At a start or resume boundary, read the selected Task and its context once:
 
 ```powershell
-python .agents/skills/task-governance-tool/scripts/taskgov.py task current --compact --json
+python .agents/skills/task-governance-tool/scripts/taskgov.py task context --json
 ```
 
-If `task current` returns an `in_progress` or `review_pending` row, resume the
-first such row in returned order. Otherwise select ready work; returned
-`paused` and `blocked` rows remain visible but do not suppress unrelated ready
-selection:
-
-```powershell
-python .agents/skills/task-governance-tool/scripts/taskgov.py task next --compact --json
-```
-
-Always inspect the resumed or selected task:
-
-```powershell
-python .agents/skills/task-governance-tool/scripts/taskgov.py task show <task-id> --json
-```
+The tool resumes the first `in_progress` or `review_pending` Task, otherwise
+selects the first ready candidate under the existing ordering. `data.selected`
+contains complete Task detail, Contract, latest checkpoint, and current gates;
+use it directly without a follow-up read. `data.current` keeps held-work recall.
+`selection=none` means no actionable Task; `ok=false` is a read failure, not
+permission to skip to another candidate. Individual current/next/show commands
+remain available for explicit inspection.
 
 Only when a ready task was selected, start it:
 
@@ -214,15 +207,15 @@ Only when a ready task was selected, start it:
 python .agents/skills/task-governance-tool/scripts/taskgov.py task edit <task-id> --status in_progress --json
 ```
 
-`task show` is the mandatory detailed read before work. The same JSON call
+`task context` is the normal detailed read before work. The same JSON call
 supplies bounded completion-cycle audit history, current Verification Receipt
 readiness, and whether the optional Effort Advisory is enabled. Historical
 cycles never satisfy a current gate. `review target set` returns the closed
 `verification_route` and nullable `blocking_code` for the target it just stored,
 so no second `task show` or LLM guess selects the manual or Runner branch. The
-normal no-finding Tier 2 manual/fallback graph is bounded to ten governance
-subprocess calls, or eleven when the existing boolean enables `task effort`;
-the Receiptless Runner-pass branch is one call lower. `task current`
+normal no-finding Tier 2 manual/fallback graph is bounded to eight governance
+subprocess calls, or nine when the existing boolean enables `task effort`;
+the Receiptless Runner-pass branch is one call lower. `task context`
 rediscovers paused, blocked, review-pending, and in-progress work.
 
 When that deterministic flag is enabled, run `task effort` once at the existing
@@ -393,7 +386,7 @@ plus the existing sanitized Viewer warning.
 
 ## Public Commands
 
-The 0.13.0 local candidate exposes exactly these 21 command leaves:
+The 0.13.0 local candidate exposes exactly these 22 command leaves:
 
 1. `taskgov setup`
 2. `taskgov doctor`
@@ -416,6 +409,7 @@ The 0.13.0 local candidate exposes exactly these 21 command leaves:
 19. `taskgov review finding add`
 20. `taskgov review finding resolve`
 21. `taskgov verification receipt add`
+22. `taskgov task context`
 
 Applicable commands accept `--repo`, `--json`, and `--read-only`; the root also
 accepts `--version`. Storage paths and maintenance internals are not public CLI

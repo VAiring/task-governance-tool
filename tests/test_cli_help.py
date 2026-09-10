@@ -28,6 +28,7 @@ PUBLIC_COMMAND_LEAVES = {
     "task list",
     "task next",
     "task current",
+    "task context",
     "task effort",
     "task show",
     "task checkpoint",
@@ -47,8 +48,23 @@ PUBLIC_COMMAND_LEAVES = {
 
 
 class CliHelpTests(unittest.TestCase):
-    def test_parser_has_only_the_twenty_one_public_leaves(self):
+    def test_parser_has_only_the_twenty_two_public_leaves(self):
         self.assertEqual(parser_leaf_commands(build_parser()), PUBLIC_COMMAND_LEAVES)
+
+    def test_task_context_help_exposes_only_common_options(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            install = make_physical_install(Path(tmp))
+            before = sorted(path.relative_to(install.project_root) for path in install.project_root.rglob("*"))
+            result = install.run("task", "context", "--help")
+            self.assertEqual(result.returncode, 0, result.stderr)
+            for option in ("--repo", "--json", "--read-only"):
+                self.assertIn(option, result.stdout)
+            for option in ("--compact", "--limit", "--status", "--kind", "--lane", "--priority", "task_id"):
+                self.assertNotIn(option, result.stdout)
+            self.assertEqual(
+                sorted(path.relative_to(install.project_root) for path in install.project_root.rglob("*")),
+                before,
+            )
 
     def test_root_help_is_read_only_and_hides_removed_storage_surface(self):
         with tempfile.TemporaryDirectory() as tmp:

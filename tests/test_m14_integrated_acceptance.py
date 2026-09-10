@@ -301,7 +301,7 @@ class M14IntegratedAcceptanceTests(unittest.TestCase):
         self.assertIn("task context --json", skill)
         self.assertTrue(any(" task context --json" in line for line in examples))
         self.assertIn("task context", release_contract.runtime.public_commands)
-        self.assertEqual(len(release_contract.runtime.public_commands), 22)
+        self.assertEqual(len(release_contract.runtime.public_commands), 23)
         self.assertIn(
             "[references/task_workflow.md](references/task_workflow.md)", skill
         )

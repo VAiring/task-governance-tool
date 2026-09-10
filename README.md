@@ -217,9 +217,12 @@ It is not another normal-loop call, and historical cycles never satisfy a
 current gate. `review target set` returns the closed
 `verification_route` and nullable `blocking_code` for the target it just stored,
 so no second `task show` or LLM guess selects the manual or Runner branch. The
-normal no-finding Tier 2 manual/fallback graph is bounded to eight governance
-subprocess calls, or nine when the existing boolean enables `task effort`;
-the Receiptless Runner-pass branch is one call lower. `task context`
+normal no-finding Tier 2 manual/fallback graph uses one `review result add`
+and is bounded to seven governance subprocess calls, or eight when the existing
+boolean enables `task effort`; the Receiptless Runner-pass branch uses six or
+seven respectively. Explicit individual Receipt registration remains available
+and uses eight/nine manual calls or seven/eight Runner-pass calls. These are
+operation counts, not measured total LLM token reductions. `task context`
 rediscovers paused, blocked, review-pending, and in-progress work.
 
 When that deterministic flag is enabled, run `task effort` once at the existing
@@ -271,8 +274,10 @@ python .agents/skills/task-governance-tool/scripts/taskgov.py review target set 
 # Taskgov never executes it.
 python .agents/skills/task-governance-tool/scripts/taskgov.py verification receipt add <task-id> --result pass --duration-ms <milliseconds> --scope-coverage full --expected-target-generation <generation-from-target-set> --json
 python .agents/skills/task-governance-tool/scripts/taskgov.py review prepare <task-id> --json
-python .agents/skills/task-governance-tool/scripts/taskgov.py review receipt add <task-id> --reviewer <reviewer-a> --kind independent --verdict pass --summary "No blocking findings" --reviewer-class llm --model-state declared --declared-model-id <model-id> --skill-state not_used --context-relation fresh_context --review-profile general --review-lens correctness --review-method review_packet_inspection --json
-python .agents/skills/task-governance-tool/scripts/taskgov.py review receipt add <task-id> --reviewer <reviewer-b> --kind independent --verdict pass --summary "No blocking findings" --reviewer-class human --model-state not_applicable --skill-state not_applicable --context-relation external_context --review-profile general --review-lens correctness --review-method review_packet_inspection --json
+# Obtain the structured reviewer results for this exact Task and target.
+$OutputEncoding = [System.Text.UTF8Encoding]::new($false)
+Get-Content -Raw -Encoding utf8 .\review-results.json |
+  python .agents/skills/task-governance-tool/scripts/taskgov.py review result add <task-id> --json
 git commit -m "<project-approved message>"
 python .agents/skills/task-governance-tool/scripts/taskgov.py task complete <task-id> --completion-evidence-kind git_commit --completion-revision <hash> --verification-complete --review-complete --json
 ```
@@ -286,7 +291,7 @@ only the caller's bounded verification facts; it never executes the command or
 stores its body, arguments, exit code, output, logs, or environment. The
 verification subject is derived from the locked capture-version-1 target; no
 caller label or replacement subject input exists. Native Review Receipts carry
-the declared v1 provenance fields shown above, migrated receipts project v0
+the declared v1 provenance fields, migrated receipts project v0
 absence, and `not_required` projects null. Provenance never upgrades the
 Receipt assurance or proves reviewer identity, model/Skill execution,
 competence, independence, diversity, quality, or truth. The completion commit
@@ -297,9 +302,22 @@ commits, branches, pushes, opens a PR, or creates an Issue.
 
 The packet tells each reviewer how to inspect the exact target rather than
 ambient `HEAD` or worktree content. The independent reviewer returns the
-verdict and findings; the trusted parent/orchestrator records their sanitized
-result with the shown receipt command and existing finding commands. Taskgov
-deterministically evaluates qualifying PASS receipts and changes-requested
+versioned structured result; the trusted parent/orchestrator submits the bounded
+results with the shown batch command. The
+[package CLI reference](task-governance-tool/references/cli_contracts.md),
+under Structured Review Results,
+defines the fixed JSON input for one Task, Contract revision, and complete
+review target. Missing bindings or provenance are never inferred. Invalid,
+stale, or duplicate results are rejected, and all submitted Receipts and Findings
+are saved together or none are saved. Raw review transcripts are not accepted
+as stored evidence. The existing `review receipt add` and `review finding add`
+operations remain available for explicit individual registration, for example:
+
+```powershell
+python .agents/skills/task-governance-tool/scripts/taskgov.py review receipt add <task-id> --reviewer <reviewer-key> --kind independent --verdict pass --summary "No blocking findings" --reviewer-class llm --model-state declared --declared-model-id <model-id> --skill-state not_used --context-relation fresh_context --review-profile general --review-lens correctness --review-method review_packet_inspection --json
+```
+
+Taskgov deterministically evaluates qualifying PASS receipts and changes-requested
 receipts only for the current review target and generation. Any unresolved high
 or medium finding from any recorded generation of that Task continues to block
 the gate. Distinct reviewer keys prove distinct stored strings only; they do
@@ -390,7 +408,7 @@ plus the existing sanitized Viewer warning.
 
 ## Public Commands
 
-The 0.13.0 local candidate exposes exactly these 22 command leaves:
+The 0.13.0 local candidate exposes exactly these 23 command leaves:
 
 1. `taskgov setup`
 2. `taskgov doctor`
@@ -414,6 +432,7 @@ The 0.13.0 local candidate exposes exactly these 22 command leaves:
 20. `taskgov review finding resolve`
 21. `taskgov verification receipt add`
 22. `taskgov task context`
+23. `taskgov review result add`
 
 Applicable commands accept `--repo`, `--json`, and `--read-only`; the root also
 accepts `--version`. Storage paths and maintenance internals are not public CLI

@@ -33,7 +33,7 @@ manual verification path.
 | Package version | `0.13.0` |
 | SQLite schema | v22 |
 | Viewer snapshot | v4, accepting source schemas v5-v22 (v5 through v22) |
-| Public command leaves | 22 |
+| Public command leaves | 23 |
 | Supported runtime | Python 3.12 or newer on Windows, Linux, and macOS (ordinary functions) |
 | Verified platform | Windows x86-64; Ubuntu 24.04 x86-64; macOS 15 Apple Silicon |
 | Candidate commit / `main` | not fixed; unpublished local candidate |
@@ -447,7 +447,7 @@ unchanged.
 
 ## Public CLI Surface
 
-The current 0.13.0 candidate exposes exactly these 22 command leaves:
+The current 0.13.0 candidate exposes exactly these 23 command leaves:
 
 1. `taskgov setup`
 2. `taskgov doctor`
@@ -471,8 +471,9 @@ The current 0.13.0 candidate exposes exactly these 22 command leaves:
 20. `taskgov review finding resolve`
 21. `taskgov verification receipt add`
 22. `taskgov task context`
+23. `taskgov review result add`
 
-The schema-v18+ Receipt writes remain those existing leaves. Verification has
+The schema-v18+ individual Receipt writes remain available. Verification has
 no caller label or replacement subject input; Taskgov derives the subject from
 the locked capture-version-1 target. The following Verification Receipt call is
 used only when target set returns `verification_route=receipt_required`, which
@@ -492,6 +493,17 @@ migrated pre-v18 Receipts project v0 absence, and `not_required` projects null.
 These attestations never authenticate reviewer identity or prove actual
 model/Skill execution, competence, independence, diversity, quality, or truth.
 
+The normal review flow submits versioned structured results with
+`review result add <task-id>`, reading UTF-8 JSON from stdin. It validates one
+Task, Contract revision, and complete review target and atomically records the
+new Receipts and their Findings under the existing evidence constraints.
+Invalid, stale, duplicate, or incompletely bound results save nothing; missing
+provenance and user approval are never inferred from the input. See the
+[package CLI reference](../task-governance-tool/references/cli_contracts.md),
+under Structured Review Results,
+for the exact input and submission example. Individual registration remains an
+explicit option; batching does not change schema v22 or the review gate.
+
 Applicable leaves retain `--repo`, `--json`, and `--read-only`; the root retains
 `--version`. Storage and generated-artifact paths are internal implementation
 details, not public CLI choices. Unknown or removed commands/options fail at
@@ -500,12 +512,15 @@ There is no separate history command or pagination. `task context` and default
 `task show` supply the complete fixed working projection; explicit `task show
 --audit` and the automatically maintained Viewer supply bounded history detail.
 
-The normal no-finding Tier 2 manual/fallback Task flow uses at most eight governance subprocess
-calls with the default-off Effort Advisory, or nine when
+The normal no-finding Tier 2 manual/fallback Task flow uses one batch result
+registration and at most seven governance subprocess calls with the default-off
+Effort Advisory, or eight when
 an enabled valid profile mechanically adds `task effort`. Doctor, checkpoint,
 and completion check are optional and absent from the standard success path. A
 qualifying Runner pass omits the Verification Receipt call and is one call lower
-than either maximum.
+than either maximum. Explicit individual Receipt registration retains the
+eight/nine manual and seven/eight Runner-pass bounds. These operation counts do
+not establish a measured reduction in total LLM tokens.
 
 An enabled `task effort` result returns `suggested_action=continue` or the
 single `suggested_action=reconcile_scope` route. The latter loads
@@ -534,8 +549,9 @@ outside that target. Taskgov never stores the verification command or its
 arguments. The packet adds one deterministic target-kind instruction so
 reviewers inspect the exact stored index, commit, fingerprint-bound material,
 or external revision rather than ambient content. The independent reviewer
-returns the result; the trusted parent/orchestrator records its sanitized
-receipt/findings. Taskgov deterministically evaluates
+returns the versioned structured result; the trusted parent/orchestrator submits
+the bounded results through `review result add` for one atomic registration.
+Taskgov deterministically evaluates
 qualifying PASS receipts and changes-requested receipts only for the current
 review target and generation. Any unresolved high or medium finding from any
 recorded generation of that Task continues to block the gate. Distinct
@@ -675,9 +691,10 @@ combines ordinary selection and full detail without changing those gates.
 Action-bearing `task edit` adds only the closed
 `runner_plan_update` (`action` and status); `review target set` remains the sole
 Runner dispatch and retains its two closed route fields. With no post-target `task show`, the
-manual/fallback no-finding Tier 2 flow is bounded to eight calls, or nine with
+manual/fallback no-finding Tier 2 flow with batch review-result registration is
+bounded to seven calls, or eight with
 the enabled Effort Advisory; the Receiptless Runner-pass path is one call
-lower. The public inventory is exactly 22 leaves. No exact final candidate
+lower. The public inventory is exactly 23 leaves. No exact final candidate
 commit, tag, archive, checksum, or GitHub Release identity is fixed. An ordinary
 push to `main` is CI input, not release publication; nothing here dispatches CI
 or publishes a Release.

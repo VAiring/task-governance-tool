@@ -173,14 +173,18 @@ The deterministic Skill call graph is:
   the not-required and qualifying Runner-pass branches need no Receipt call;
 - one `review prepare` call instead of separate task, Contract, target, and Git
   context reads;
-- one receipt write per actual receipt; and
+- one `review result add` to record the actual structured Receipts and Findings
+  together for the packet's exact Task/Contract/target; and
 - one thin complete call.
 
 A default-off no-finding Tier 2 manual/fallback path therefore has at most
-eight governance subprocess calls; a profile-enabled path has at most nine.
-The qualifying Runner-pass path omits Receipt add and remains bounded to seven or
-eight calls respectively. All counts exclude real progress updates and the two
-independent review model decisions.
+seven governance subprocess calls; a profile-enabled path has at most eight.
+The qualifying Runner-pass path omits Verification Receipt add and remains
+bounded to six or seven calls respectively. The existing individual Receipt
+path remains available and takes one additional call for two Receipts without
+Findings. All counts exclude real progress updates, the external verification
+process and the two independent review model decisions; fewer registration
+calls are not a measurement of total LLM tokens.
 `task complete --check`, `doctor`, and `task checkpoint` are absent from the
 default success path.
 

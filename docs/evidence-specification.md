@@ -20,8 +20,9 @@ with their existing owners, routed by the [authority index](authority.md).
 
 ## Versioned Review Provenance And Bundle Boundary
 
-New `independent` and `self_review_fallback` Receipts use the existing
-`review receipt add` leaf. Every public Review Receipt has exactly one
+New `independent` and `self_review_fallback` Receipts use `review receipt add`
+or [structured result registration](review-completion-specification.md#structured-review-results).
+Both retain the same individual evidence and provenance. Every public Review Receipt has exactly one
 `review_provenance` union. A native independent/fallback Receipt exposes one v1
 object with exactly these keys:
 

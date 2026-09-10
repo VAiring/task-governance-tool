@@ -36,13 +36,13 @@ When launching from inside the Skill directory, add
 directory is the governed project; taskgov never re-roots it to an enclosing
 Git worktree, and a non-Git directory is valid.
 
-Use only these 22 public command leaves:
+Use only these 23 public command leaves:
 
 - `setup`, `doctor`
 - task `add`, `list`, `next`, `current`, `context`, `effort`, `show`, `edit`, `complete`,
   `checkpoint`
 - handoff `record`, `list`, `show`, `withdraw`
-- review `prepare`, target `set`, receipt `add`, finding `add`, finding
+- review `prepare`, target `set`, receipt `add`, result `add`, finding `add`, finding
   `resolve`
 - verification receipt `add`
 
@@ -128,8 +128,9 @@ Use this normal flow:
    --scope-coverage <full|partial> --expected-target-generation <generation>
    --json`. `blocked` requires a non-null returned code and stops closed; any
    missing, mismatched, or unknown route/code pair also stops.
-7. Run `review prepare` once, obtain the required reviews, and record their
-   receipts and findings.
+7. Run `review prepare` once, obtain the required structured reviews, and submit
+   their Receipts and Findings together with `review result add` using the
+   [version-1 stdin format](references/cli_contracts.md#structured-review-results).
 8. Complete through `task complete` after verification and review gates pass.
 
 Read [references/reconciliation.md](references/reconciliation.md) only when
@@ -139,12 +140,14 @@ result as one non-blocking episode, not one episode per exceeded metric.
 Neither trigger adds a green-path command, question, or stop.
 
 For a no-finding Tier 2 task that must select new work, the manual/fallback graph
-uses at most eight governance subprocess calls with the advisory disabled and
-nine when an existing valid profile enables it. `doctor`, completion `--check`, and
+uses at most seven governance subprocess calls with the advisory disabled and
+eight when an existing valid profile enables it. `doctor`, completion `--check`, and
 `task checkpoint` are absent from the default success path. This flow adds no
 mandatory question, judgment, or user-return stop. The qualifying Runner-pass
-branch omits the Verification Receipt call and therefore remains bounded to seven
-or eight calls respectively.
+branch omits the Verification Receipt call and therefore remains bounded to six
+or seven calls respectively. Individual Receipt commands remain available; the
+two-Receipt path takes one additional call. These counts are registration steps,
+not measured total LLM tokens.
 
 ## Operating Rules
 
@@ -229,13 +232,14 @@ completion commit, stage exactly the intended files and set
 `--kind git_snapshot` without a revision. Unstaged and untracked files are
 excluded. Use the single bounded `review prepare` packet for the independent
 reviewers; follow its exact-target instruction rather than ambient Git or
-worktree state. Have reviewers return verdicts and findings. Record those
-sanitized results from the trusted parent or orchestrator. For
-`independent` or `self_review_fallback`, `review receipt add` requires
-`--reviewer-class`, `--model-state`, `--skill-state`, and
-`--context-relation`; declared model/Skill identifiers are conditional, and
-`--review-profile`, `--review-lens`, and `--review-method` are repeatable.
-These provenance options are forbidden for `not_required`. Taskgov
+worktree state. Request the version-1 result format from each reviewer. The
+trusted parent combines only `receipts` arrays with identical Task, Contract
+revision and full target fields, preserving the returned values, and submits
+one `review result add`. Do not reinterpret verdicts or fill missing provenance.
+The format and existing single-item alternative are in
+[CLI contracts](references/cli_contracts.md#structured-review-results).
+JSON grants no approval; the optional named-reviewer flag requires actual
+current user approval under the existing fallback rule. Taskgov
 deterministically evaluates qualifying PASS receipts and changes-requested
 receipts only for the current review target and generation. Any unresolved high
 or medium finding from any recorded generation of that Task continues to block

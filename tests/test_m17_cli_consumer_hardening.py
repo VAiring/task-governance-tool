@@ -22,8 +22,8 @@ from task_governance_tool.storage import StorageError, connect
 TASK_ID = "tg_task_aaaaaaaaaaaaaaaa"
 RAW_TASK_MARKER = "SENSITIVE_MARKER_123"
 
-# setup and doctor have their own service entry paths. These are the 19
-# stateful public leaves that must share the normal command resolver.
+# setup and doctor have their own service entry paths, and Verification Receipt
+# has separate coverage. These 20 leaves must share the normal command resolver.
 STATEFUL_LEAVES: tuple[tuple[str, str], ...] = (
     ("task.add", "task add --title Task"),
     ("task.list", "task list"),
@@ -58,6 +58,7 @@ STATEFUL_LEAVES: tuple[tuple[str, str], ...] = (
         f"review receipt add {TASK_ID} --reviewer reviewer "
         "--kind independent --verdict pass",
     ),
+    ("review.result.add", f"review result add {TASK_ID}"),
     (
         "review.finding.add",
         f"review finding add {TASK_ID} --receipt-id tg_review_receipt_missing "
@@ -184,7 +185,7 @@ class M17CliConsumerHardeningTests(unittest.TestCase):
         self.assertNotIn("target.db_path.parent.parent", source)
 
     def test_all_stateful_leaves_resolve_once_and_fail_closed_before_setup(self):
-        self.assertEqual(len(STATEFUL_LEAVES), 19)
+        self.assertEqual(len(STATEFUL_LEAVES), 20)
         with tempfile.TemporaryDirectory() as tmp:
             install = make_physical_install(Path(tmp))
             real_resolve = cli_service.resolve_project_state

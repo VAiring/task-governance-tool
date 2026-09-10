@@ -3,7 +3,7 @@
 Status: the immutable published product remains v0.10.0/schema v16/Viewer v4
 sources v5-v16/20 leaves; its identity is fixed in `docs/release-install.md`.
 The current unpublished candidate is v0.13.0 with SQLite schema v22, Viewer
-snapshot v4 accepting source schemas v5-v22, and 22 public command leaves. Its
+snapshot v4 accepting source schemas v5-v22, and 23 public command leaves. Its
 active implementation includes tool-owned Verification Receipt subjects,
 versioned Review provenance, immutable Evidence References and completion
 Bundles, deterministic Evidence JSON, and the explicitly opted-in trusted-local
@@ -349,7 +349,7 @@ implementation is an acceptance condition.
 
 ### Command Surface
 
-The parser exposes exactly 22 command leaves:
+The parser exposes exactly 23 command leaves:
 
 ```text
 setup
@@ -374,6 +374,7 @@ review finding add
 review finding resolve
 verification receipt add
 task context
+review result add
 ```
 
 There are no public `db`, `self`, `web`, export, repair, maintenance, backup,
@@ -841,7 +842,7 @@ Current detail is owned by the [Runner execution design](runner-execution-design
 The suite is standard-library-first, offline, and isolated. It must not mutate
 a real consuming project or Git state. Tests cover:
 
-- all 22 parser leaves, removed commands/options, help, text/JSON/error/compact
+- all 23 parser leaves, removed commands/options, help, text/JSON/error/compact
   envelopes, and byte limits;
 - missing/old/too-new/invalid state with no creation or sidecars;
 - every v1-v22 migration, rollback, idempotency, required-object marker,
@@ -875,7 +876,7 @@ a real consuming project or Git state. Tests cover:
 - package self-containment, manifest integrity, project-scoped/self-host
   layouts, ignore rules, Windows Python 3.12/3.14, and junction rejection;
 - Reduced-loop fresh-session behavioral fixtures plus the current manual/fallback
-  eight-call default flow and mechanically enabled nine-call flow, with the
+  seven-call batch default flow and mechanically enabled eight-call flow, with the
   Receiptless Runner-pass branch one call lower; and
 - release archive reproducibility, license/manifest/archive inclusion,
   legacy upgrade/paired rollback, exact workflow identity, and sanitized

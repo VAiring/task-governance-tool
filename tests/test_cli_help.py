@@ -41,6 +41,7 @@ PUBLIC_COMMAND_LEAVES = {
     "review prepare",
     "review target set",
     "review receipt add",
+    "review result add",
     "review finding add",
     "review finding resolve",
     "verification receipt add",
@@ -48,7 +49,7 @@ PUBLIC_COMMAND_LEAVES = {
 
 
 class CliHelpTests(unittest.TestCase):
-    def test_parser_has_only_the_twenty_two_public_leaves(self):
+    def test_parser_has_only_the_twenty_three_public_leaves(self):
         self.assertEqual(parser_leaf_commands(build_parser()), PUBLIC_COMMAND_LEAVES)
 
     def test_task_context_help_exposes_only_common_options(self):
@@ -270,7 +271,7 @@ class CliHelpTests(unittest.TestCase):
                 self.assertIn(command, handoff.stdout)
             self.assertNotIn("sync", handoff.stdout)
             self.assertEqual(review.returncode, 0, review.stderr)
-            for command in ("prepare", "target", "receipt", "finding"):
+            for command in ("prepare", "target", "receipt", "result", "finding"):
                 self.assertIn(command, review.stdout)
 
             prepare = install.run("review", "prepare", "--help")

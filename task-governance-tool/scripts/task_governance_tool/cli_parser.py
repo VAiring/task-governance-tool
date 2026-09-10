@@ -436,6 +436,27 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
     )
 
+    review_result_parser = review_subparsers.add_parser("result", help="structured review result commands")
+    review_result_subparsers = review_result_parser.add_subparsers(dest="review_action")
+    review_result_add_parser = review_result_subparsers.add_parser(
+        "add",
+        help="atomically record review receipts and findings from UTF-8 JSON stdin",
+        description=(
+            "Record version-1 structured results for one Task, Contract revision, "
+            "and exact review target. Read at most 256 KiB from stdin; "
+            "record all receipts and findings or none."
+        ),
+    )
+    add_common_options(review_result_add_parser)
+    review_result_add_parser.add_argument("task_id")
+    review_result_add_parser.add_argument(
+        "--user-approved-reviewer",
+        dest="user_approved_reviewers",
+        action="append",
+        default=[],
+        help="explicit current user approval for this Tier-2 self-review PASS reviewer only",
+    )
+
     review_finding_parser = review_subparsers.add_parser("finding", help="review finding commands")
     review_finding_subparsers = review_finding_parser.add_subparsers(dest="review_action")
     review_finding_add_parser = review_finding_subparsers.add_parser(

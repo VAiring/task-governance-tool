@@ -126,6 +126,7 @@ LANE_MODULES: dict[str, tuple[str, ...]] = {
         "test_relocation",
         "test_review_evidence",
         "test_review_packet",
+        "test_review_results",
         "test_selection",
         "test_sequential_transitions",
         "test_storage_paths",

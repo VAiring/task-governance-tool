@@ -235,21 +235,7 @@ class ReviewPacketTests(unittest.TestCase):
             self.assertEqual(diff_data["required_output"], list(REQUIRED_OUTPUT))
             self.assertEqual(
                 diff_data["receipt_command"],
-                (
-                    f"taskgov review receipt add {task_id} "
-                    "--reviewer <reviewer-key> --kind independent "
-                    "--verdict <pass|changes_requested> "
-                    "--summary <sanitized-summary> "
-                    "--reviewer-class <human|llm|deterministic_tool|hybrid|unknown> "
-                    "--model-state <declared|not_applicable|unknown> "
-                    "--skill-state <declared|not_applicable|not_used|unknown> "
-                    "--context-relation <same_context|forked_context|fresh_context|"
-                    "external_context|not_applicable|unknown> "
-                    "[--declared-model-id <id>] [--declared-skill-id <id> "
-                    "--declared-skill-version <version>] "
-                    "[--review-profile <profile>] [--review-lens <lens>] "
-                    "[--review-method <method>] --json"
-                ),
+                f"taskgov review result add {task_id} --json",
             )
 
             text_result = prepare(
@@ -279,12 +265,8 @@ class ReviewPacketTests(unittest.TestCase):
                 "to review_target.value; the fingerprint alone cannot "
                 "retrieve content\n"
                 "Required output:\n"
-                "- verdict PASS or CHANGES_REQUESTED\n"
-                "- severity-ordered findings with exact file/line\n"
-                "- remaining risks\n"
-                "- recommended changes\n"
-                "- review provenance: reviewer class, model and Skill declaration "
-                "states, context relation, profiles, lenses, and methods\n"
+                + "".join(f"- {item}\n" for item in REQUIRED_OUTPUT)
+                +
                 f"Receipt command: {diff_data['receipt_command']}\n"
             )
             self.assertEqual(text_result.stdout, expected_text)

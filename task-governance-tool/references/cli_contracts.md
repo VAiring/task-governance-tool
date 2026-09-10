@@ -84,7 +84,7 @@ Ordinary Task use supports Windows, Linux, and macOS. The explicit trusted-local
 Runner supports the same three platforms under their OS-specific limits;
 verification without Runner opt-in remains manual. There is no OS-selection command.
 
-The complete public command inventory is exactly these 22 leaves:
+The complete public command inventory is exactly these 23 leaves:
 
 1. `setup`
 2. `doctor`
@@ -108,6 +108,7 @@ The complete public command inventory is exactly these 22 leaves:
 20. `review finding resolve`
 21. `verification receipt add`
 22. `task context`
+23. `review result add`
 
 There are no public aliases, alternate state locations, storage-management
 commands, projection-management commands, repair commands, or admin commands.
@@ -169,8 +170,8 @@ is the sole exception to a one-store description: a real Task basis edit commits
 first, closes SQLite, and only then confirms or publishes one separately
 committed canonical Plan file as described under `task edit`.
 
-The normal no-finding Tier 2 manual/fallback Skill graph is bounded to eight
-governance subprocess calls when the Effort Advisory is off and nine when the
+The normal no-finding Tier 2 manual/fallback Skill graph is bounded to seven
+governance subprocess calls when the Effort Advisory is off and eight when the
 pre-work `task context.selected` boolean enables it. The Receiptless Runner-pass
 branch is one call lower. The target-set response itself supplies the closed
 route; no second read or LLM choice is required.
@@ -1212,11 +1213,11 @@ bounded to 100 rows, 240 UTF-8 bytes per row, and 16,384 aggregate path bytes.
 The complete text or JSON stdout is capped at 32,768 bytes. Git observation is
 capped at ten subprocesses.
 
-The fixed `required_output` requests the verdict, severity-ordered findings,
-exact file references, remaining risks, recommended changes, and the scalar and
-collection provenance values required for the Receipt kind. `receipt_command`
-uses the existing `review receipt add` leaf and includes provenance option
-placeholders; it adds no command, import, reviewer launch, or model call.
+The fixed `required_output` requests a version-1 structured result with one
+reviewer's Receipt, severity-ordered Findings, and actual provenance. Bounded
+summaries include exact file/line references, remaining risks and recommended
+changes without raw review reasoning. `receipt_command` names `review result add`;
+preparation itself neither records results nor launches a reviewer or model.
 
 `review_focus` contains the four common fixed rows plus exactly one fixed
 target-kind inspection row. `git_snapshot` binds inspection to the stage-0
@@ -1376,6 +1377,89 @@ python scripts/taskgov.py review finding resolve --repo <target-project> <findin
 Severity is `high`, `medium`, or `low`. Open high/medium findings block
 completion. After resolving a blocking finding and changing material, set a
 new target and obtain fresh qualifying receipts.
+
+### Structured Review Results
+
+Register the reviewers' concise structured results together, using UTF-8 JSON
+stdin with `review result add <task-id> --json`. There is no input-file argument
+or output destination. For example, an already assembled JSON string can be
+piped in PowerShell with UTF-8 encoding:
+
+```powershell
+$OutputEncoding = [System.Text.UTF8Encoding]::new($false)
+$resultJson | python .agents/skills/task-governance-tool/scripts/taskgov.py review result add <task-id> --json
+```
+
+The document has this exact shape (replace the illustrative identity and
+target with those returned in the actual Review Packet):
+
+```json
+{
+  "version": 1,
+  "task_id": "tg_task_0123456789abcdef",
+  "contract_revision": 1,
+  "review_target": {
+    "kind": "external_revision", "value": "approved-revision-1",
+    "base_revision": "", "generation": 1
+  },
+  "receipts": [{
+    "reviewer": "reviewer-a", "kind": "independent", "verdict": "pass",
+    "summary": "No blocking findings",
+    "provenance": {
+      "reviewer_class": "human", "model_state": "not_applicable",
+      "declared_model_id": null, "skill_state": "not_applicable",
+      "declared_skill_id": null, "declared_skill_version": null,
+      "review_profiles": ["general"], "review_lenses": ["correctness"],
+      "context_relation": "external_context",
+      "method_codes": ["review_packet_inspection"]
+    },
+    "findings": []
+  }]
+}
+```
+
+All displayed keys are required and no other keys are accepted. Each Finding
+contains exactly `severity` and `summary`. Put exact project-relative file/line
+references and recommended changes in its bounded summary, not extra fields.
+Use the existing Receipt/Finding enums and text limits from Review Evidence
+above. `provenance` contains exactly those ten caller declaration fields, with
+explicit nullable identifiers and arrays; use null only for `not_required`.
+Do not invent model/Skill identity, context, methods, or independence.
+
+The whole input is limited to 262,144 UTF-8 bytes, 1–8 Receipts, and 64 Findings
+total. Version must be integer 1; Contract revision is a nonnegative signed-64-bit
+integer and generation a positive one. Exact JSON types are enforced (booleans
+are not integers). Duplicate/unknown/missing keys, non-finite numbers, invalid
+Unicode and exceeded limits fail `invalid_review_evidence`. Existing privacy
+checks inspect every typed declaration before enum, text-limit, duplicate-reviewer
+or provenance-matrix checks and never echo rejected content.
+
+Task ID, Contract revision and the complete target tuple must match the current
+Task under the writer lock; stale or mismatched input fails `review_target_mismatch`
+without rebinding. Existing missing-target, done-Task and capture-version-0
+errors remain. Duplicate normalized reviewer keys within the batch, previously
+registered reviewers and committed replay fail `review_receipt_already_recorded`.
+Duplicate normalized `(severity, summary)` pairs within one Receipt fail
+`invalid_review_evidence`; separate reviewers may report the same Finding.
+
+JSON cannot supply user approval. Only when the existing Tier-2 self-review PASS
+fallback has explicit current user approval, add repeatable
+`--user-approved-reviewer <key>` for the matching reviewer. Duplicate, unmatched,
+ineligible or missing required approval fails `invalid_review_evidence`.
+
+All entries are new and save atomically with their existing individual
+provenance, References and events. Success data is exactly
+`{receipts: [{receipt, event, findings: [{finding, event}]}]}` in input order.
+Each nested object uses the existing public single-item projection. Failure
+data is `{receipts: []}` with no saved prefix, including after a late failure.
+Text success reports only Receipt/Finding counts. `--read-only` rejects before
+stdin is consumed. Successful registration runs existing post-commit maintenance
+once; maintenance warnings do not undo the committed evidence.
+
+The tool stores no result document or batch ledger, launches no reviewer,
+merges no judgment, resolves no Finding, and does not complete the Task.
+Distinct reviewer keys remain caller-attested strings, not proof of identity
+or independence. The existing single-item commands remain available.
 
 ## Internal Continuity Boundary
 

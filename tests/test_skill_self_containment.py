@@ -762,7 +762,7 @@ class SkillSelfContainmentTests(unittest.TestCase):
         release_contract = check_release_contract(ROOT)
         self.assertTrue(release_contract.ok, release_contract.issues)
         self.assertIn("task context", release_contract.runtime.public_commands)
-        self.assertEqual(len(release_contract.runtime.public_commands), 22)
+        self.assertEqual(len(release_contract.runtime.public_commands), 23)
 
         self.assertIn("references/reconciliation.md", manifest["core_files"])
 

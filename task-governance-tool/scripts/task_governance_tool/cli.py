@@ -110,6 +110,11 @@ from task_governance_tool.review_packet import (
     format_review_packet_text,
     prepare_review_packet,
 )
+from task_governance_tool.review_results import (
+    REVIEW_RESULTS_INPUT_LIMIT,
+    add_review_results,
+    decode_review_results,
+)
 from task_governance_tool.setup import run_setup
 from task_governance_tool.task_show_projection import build_task_show_data, show_task
 from task_governance_tool.tasks import (
@@ -2066,6 +2071,8 @@ def review_empty_data(command: str) -> dict[str, Any]:
         return {"task": None, "changed_fields": [], "event": None}
     if command == "review.receipt.add":
         return {"receipt": None, "event": None}
+    if command == "review.result.add":
+        return {"receipts": []}
     return {"finding": None, "event": None}
 
 
@@ -2087,6 +2094,20 @@ def review_failure_result(
     )
 
 
+def read_review_results_stdin() -> dict[str, Any]:
+    stream = getattr(sys.stdin, "buffer", None)
+    try:
+        if stream is None:
+            raise ValueError
+        raw = stream.read(REVIEW_RESULTS_INPUT_LIMIT + 1)
+    except (OSError, TypeError, ValueError) as exc:
+        raise ReviewEvidenceError(
+            code="invalid_review_evidence",
+            message="structured review results are invalid",
+        ) from exc
+    return decode_review_results(raw)
+
+
 def handle_review_command(context: CommandContext) -> CommandResult:
     target = resolve_context_target(context)
     project_id = target.project.project_id
@@ -2100,6 +2121,11 @@ def handle_review_command(context: CommandContext) -> CommandResult:
         )
 
     try:
+        payload = (
+            read_review_results_stdin()
+            if context.command == "review.result.add"
+            else None
+        )
         if context.command == "review.target.set":
             result = set_review_target_with_optional_runner(
                 target,
@@ -2117,7 +2143,16 @@ def handle_review_command(context: CommandContext) -> CommandResult:
         else:
             with closing(connect_initialized(target)) as connection:
                 with connection:
-                    if context.command == "review.receipt.add":
+                    if context.command == "review.result.add":
+                        data = add_review_results(
+                            connection,
+                            target.project,
+                            context.args.task_id,
+                            payload,
+                            user_approved_reviewers=context.args.user_approved_reviewers,
+                            database_target=target,
+                        )
+                    elif context.command == "review.receipt.add":
                         result = add_review_receipt(
                             connection,
                             target.project,
@@ -2519,7 +2554,7 @@ def main(
         ):
             raise CommandLineError(
                 "invalid_argument",
-                "review requires prepare, target set, receipt add, finding add, or finding resolve",
+                "review requires prepare, target set, receipt add, result add, finding add, or finding resolve",
             )
         if args.command == "verification" and (
             getattr(args, "verification_entity", None) is None

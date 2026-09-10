@@ -317,6 +317,10 @@ def handoff_text(command: str, data: dict[str, Any]) -> str:
 
 
 def review_text(command: str, data: dict[str, Any]) -> str:
+    if command == "review.result.add":
+        receipts = data["receipts"]
+        findings = sum(len(item["findings"]) for item in receipts)
+        return f"Review results recorded: {len(receipts)} receipts, {findings} findings"
     event = data["event"]
     if command == "review.target.set":
         task = data["task"]

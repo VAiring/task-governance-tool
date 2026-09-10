@@ -80,6 +80,76 @@ bounded recent provenance and lifetime Receipt counts. Audit collection bounds
 do not alter the complete validated inventory or the current gate. Neither mode
 emits raw review content or changes Receipt/Finding storage and gate evaluation.
 
+<a id="structured-review-results"></a>
+
+## Structured Review Results
+
+`review result add <task-id>` accepts one version-1 UTF-8 JSON document on
+stdin and atomically records new Receipts and their nested new Findings for
+one Task, Contract revision, and exact review target. The caller attests the
+submitted results; JSON content is neither user approval nor authenticated
+review evidence. Existing single-item operations and all gates remain available
+and unchanged. The operation launches no review and does not merge judgments,
+resolve Findings, or complete a Task.
+
+The closed input shape is:
+
+```text
+{version: 1, task_id: string, contract_revision: integer,
+ review_target: {kind: string, value: string, base_revision: string,
+                 generation: integer},
+ receipts: [{reviewer: string, kind: string, verdict: string, summary: string,
+             provenance: object|null,
+             findings: [{severity: string, summary: string}]}]}
+```
+
+Every shown field is required. `provenance` is null only for `not_required`;
+otherwise it has exactly the existing caller declaration fields
+`reviewer_class`, `model_state`, `declared_model_id`, `skill_state`,
+`declared_skill_id`, `declared_skill_version`, `review_profiles`, `review_lenses`,
+`context_relation`, and `method_codes`. Unused declared identifiers are explicit
+null; the three code arrays are explicit, including when empty. The existing
+[provenance vocabulary, bounds and matrix](evidence-specification.md#versioned-review-provenance-and-bundle-boundary)
+apply without inferred values. Receipt/Finding enums and text normalization,
+limits and privacy checks are identical to single-item registration.
+
+Input is at most 262,144 UTF-8 bytes, with 1–8 Receipts and at most 64 Findings
+in total. Version is exactly integer 1, Contract revision is a nonnegative
+signed-64-bit integer, and target generation is a positive signed-64-bit
+integer. Booleans are not integers. Unknown/missing keys, duplicate JSON keys,
+wrong exact JSON types, non-finite numbers, invalid Unicode, or an exceeded
+bound fail `invalid_review_evidence` without echoing input. After closed-shape
+validation, privacy checks inspect every typed declaration before enum,
+text-limit, duplicate-reviewer and provenance-matrix validation.
+Caller IDs, timestamps, assurance, approval and resolution fields are not accepted.
+
+The command Task ID must match the document. Under one writer, its Contract
+revision and complete target tuple must match the selected current Task;
+mismatch fails `review_target_mismatch`. Missing target, done Task and
+capture-version-0 rejection retain their existing single-item errors. No old
+result is rebound to the current target. A normalized reviewer key must be
+unique within the batch and among existing Receipts for that Task/generation;
+duplicates and committed replay fail `review_receipt_already_recorded`.
+Identical normalized `(severity, summary)` pairs within one Receipt fail
+`invalid_review_evidence`; matching Findings from distinct reviewers remain
+separate. No semantic deduplication or partial replay is performed.
+
+Only repeatable `--user-approved-reviewer <key>` outside JSON can attest current
+explicit user approval for a named Tier-2 self-review PASS. Its normalized keys
+must be distinct, match submitted Receipts, and be eligible under the existing
+fallback rule. Missing required approval, unmatched or ineligible flags fail
+`invalid_review_evidence`. Independent reviews never use this option.
+
+Any validation, conflict or persistence failure rolls back all Receipts,
+provenance, Findings, Evidence References, events and timestamps from the batch.
+Failure data is exactly `{receipts: []}`; success data is exactly
+`{receipts: [{receipt, event, findings: [{finding, event}]}]}` in input order,
+using the existing individual public projections. Text reports only Receipt
+and Finding counts. No input document or new batch ledger is stored.
+`--read-only` rejects the write before consuming stdin. Successful commit and
+connection close precede one existing post-commit maintenance invocation;
+maintenance failure remains a warning and does not undo committed evidence.
+
 <a id="git-snapshot-and-target-binding"></a>
 
 ## Git Snapshot And Target Binding
@@ -162,9 +232,12 @@ Git observation uses at most 10 subprocesses.
 Four common focus rows are Contract compliance; state/completion integrity;
 privacy/target safety; and verification/regression. The fifth mechanically
 states the exact snapshot, commit, supplied diff-fingerprint material, or
-supplied external material boundary. Required output is verdict PASS or
-CHANGES_REQUESTED, severity-ordered exact file/line findings, remaining risks,
-and recommended changes. Receipt command is a non-executed attestation shape.
+supplied external material boundary. Required output requests the version-1
+structured result for the packet's exact Task/Contract/target, containing one
+reviewer's Receipt and severity-ordered Findings. Bounded summaries carry exact
+file/line references, remaining risks and recommended changes, not raw review
+reasoning. Receipt command is the non-executed `review result add` shape; the
+packet itself never imports or records results.
 
 Text order is `Task`, `Status`, `Verification`, `Contract revision`, `Scope`,
 `Acceptance`, `Constraints`, `Review target`, `Changed paths`, `Review focus`,
@@ -447,7 +520,7 @@ route. Only `verification_route=receipt_required` runs the governed verification
 against that material and records the Receipt with that generation as the
 expected basis. `not_required` and `runner_pass` proceed without that run or
 Receipt; `blocked` and unexpected route/code pairs stop closed. The default
-Tier-2 no-finding manual/fallback bound is eight governance calls, or nine when
+Tier-2 no-finding manual/fallback batch path is seven governance calls, or eight when
 Effort Advisory is mechanically enabled; a Receiptless Runner pass is one call
 lower.
 

@@ -89,13 +89,24 @@ TARGET_INSPECTION_FOCUS = {
     ),
 }
 REQUIRED_OUTPUT = (
-    "verdict PASS or CHANGES_REQUESTED",
-    "severity-ordered findings with exact file/line",
-    "remaining risks",
-    "recommended changes",
     (
-        "review provenance: reviewer class, model and Skill declaration "
-        "states, context relation, profiles, lenses, and methods"
+        "Return one version-1 JSON result using the structured-review-results "
+        "format in the Skill's references/cli_contracts.md: version, task_id, "
+        "contract_revision, review_target, receipts"
+    ),
+    "Copy this packet's exact Task ID, Contract revision, and complete review_target",
+    (
+        "Include one Receipt with reviewer, kind, verdict, summary, provenance, "
+        "and findings; return the actual pass or changes_requested verdict"
+    ),
+    (
+        "Use concise sanitized summaries for remaining risks and recommended "
+        "changes; each severity-ordered Finding has severity and summary "
+        "including exact project-relative file/line; no raw review reasoning"
+    ),
+    (
+        "Declare actual provenance using the closed existing fields and codes; "
+        "do not infer identity, context, methods, or user approval"
     ),
 )
 
@@ -514,19 +525,7 @@ def prepare_review_packet(
         else ([], 0, False)
     )
     receipt_command = (
-        f"taskgov review receipt add {normalized_task_id} "
-        "--reviewer <reviewer-key> --kind independent "
-        "--verdict <pass|changes_requested> "
-        "--summary <sanitized-summary> "
-        "--reviewer-class <human|llm|deterministic_tool|hybrid|unknown> "
-        "--model-state <declared|not_applicable|unknown> "
-        "--skill-state <declared|not_applicable|not_used|unknown> "
-        "--context-relation <same_context|forked_context|fresh_context|"
-        "external_context|not_applicable|unknown> "
-        "[--declared-model-id <id>] [--declared-skill-id <id> "
-        "--declared-skill-version <version>] "
-        "[--review-profile <profile>] [--review-lens <lens>] "
-        "[--review-method <method>] --json"
+        f"taskgov review result add {normalized_task_id} --json"
     )
     return {
         "task": basis.task,

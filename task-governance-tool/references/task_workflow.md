@@ -166,17 +166,20 @@ Use this deterministic graph for a normal no-finding Tier 2 task:
    target generation before a new run can become current. A pending, stale, or
    cleanup-only Runner basis remains stale; every other exact-current terminal
    Runner result blocks and cannot be overridden by a Receipt.
-8. Prepare one bounded review packet, record the required review
-   receipts/findings, and complete the task.
+8. Prepare one bounded review packet, obtain the required structured reviews,
+   register their Receipts/Findings with one `review result add`, and complete
+   the task after its unchanged gates pass.
 
-When ready work is selected, the manual/fallback path is at most eight governance
-subprocess calls with the Effort Advisory disabled and nine when an existing valid profile enables
+When ready work is selected, the manual/fallback path is at most seven governance
+subprocess calls with the Effort Advisory disabled and eight when an existing valid profile enables
 it. The Effort branch is a boolean route from `task context`, not an LLM
 choice. For a Task with specified verification, the count includes one
-Verification Receipt on a manual verification branch and two actual Tier 2 review-receipt
-writes; the qualifying Runner-pass branch omits that Verification Receipt call
-and remains bounded to seven or eight calls respectively. The count excludes the two independent review
+Verification Receipt on a manual verification branch and one batch registration
+of two actual Tier 2 Reviews; the qualifying Runner-pass branch omits that Verification Receipt call
+and remains bounded to six or seven calls respectively. The count excludes the two independent review
 model decisions, the external verification process, and real progress notes.
+The individual Receipt path remains available and takes one additional call for
+two no-finding Reviews. Fewer calls do not establish total LLM token savings.
 
 `doctor`, `task complete --check`, and `task checkpoint` are optional and
 absent from the default success path. Do not add them mechanically to every
@@ -493,7 +496,7 @@ python .agents/skills/task-governance-tool/scripts/taskgov.py review prepare --r
 Use that one bounded packet for the reviewers. Do not reconstruct separate
 task, Contract, target, and changed-path prompts. The command launches no
 reviewer and imports or stores no result. Its required-output and receipt-command
-instructions request the provenance fields needed by the existing receipt leaf.
+instructions request the [structured result format](cli_contracts.md#structured-review-results).
 
 Follow the packet's target-kind instruction exactly:
 
@@ -507,9 +510,15 @@ Follow the packet's target-kind instruction exactly:
 - for `external_revision`, return no PASS until exact externally supplied
   material is bound to that revision.
 
-The independent reviewer returns the actual verdict and findings. The trusted
-parent/orchestrator that requested the review records concise sanitized
-receipts and findings as attestations of those results. Taskgov
+The independent reviewer returns a version-1 result containing its actual
+verdict, concise sanitized summary, Findings and provenance, bound to the
+packet's Task, Contract revision and complete target. The trusted parent
+combines only `receipts` arrays whose other envelope fields match exactly,
+preserves the returned values, and pipes the resulting UTF-8 JSON into
+`review result add <task-id> --json`. This is structural assembly, not rewriting
+verdicts or inferring provenance. Invalid input is rejected atomically; obtain
+missing or corrected facts from their source rather than inventing them.
+There is no raw review or result-document retention. Taskgov
 deterministically evaluates qualifying PASS receipts and changes-requested
 receipts only for the current review target and generation. Any unresolved high
 or medium finding from any recorded generation of that Task continues to block
@@ -518,7 +527,7 @@ not prove distinct people, LLMs, machines, independent processes,
 independence, or authenticated provenance.
 
 Tier 2 normally requires two distinct independent PASS receipts for one target
-generation:
+generation, registered together above. The existing single-item alternative is:
 
 ```powershell
 python .agents/skills/task-governance-tool/scripts/taskgov.py review receipt add --repo <target-project> <task-id> --reviewer <reviewer-a> --kind independent --verdict pass --summary "No blocking findings" --reviewer-class llm --model-state declared --declared-model-id <model-id> --skill-state not_used --context-relation fresh_context --review-profile general --review-lens correctness --review-method review_packet_inspection --json

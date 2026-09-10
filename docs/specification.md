@@ -3,7 +3,7 @@
 Status: The immutable published product remains v0.10.0/schema v16/Viewer v4
 sources v5-v16/20 leaves; its identity is fixed in `docs/release-install.md`.
 The current unpublished candidate is v0.13.0 with SQLite schema v22, Viewer
-snapshot v4 accepting source schemas v5-v22, and 22 public command leaves.
+snapshot v4 accepting source schemas v5-v22, and 23 public command leaves.
 Its supported behavior includes tool-owned Verification Receipt subjects,
 versioned Review provenance, immutable Evidence References and completion
 Bundles, deterministic Evidence JSON, and the explicitly opted-in trusted-local
@@ -151,7 +151,7 @@ internal test/service seam only.
 
 ### Command Inventory
 
-The public CLI has exactly 22 command leaves:
+The public CLI has exactly 23 command leaves:
 
 1. `taskgov setup`
 2. `taskgov doctor`
@@ -175,6 +175,7 @@ The public CLI has exactly 22 command leaves:
 20. `taskgov review finding resolve`
 21. `taskgov verification receipt add`
 22. `taskgov task context`
+23. `taskgov review result add`
 
 `task complete --check` is a mode of the same leaf. Applicable commands retain
 `--repo`, `--json`, and `--read-only`; root `--version` is project-free.
@@ -262,6 +263,7 @@ Current success-data projections are:
 | `handoff.withdraw` | `handoff`, `changed_fields` |
 | `review.target.set` | `task`, `changed_fields`, `event`, `verification_route`, `blocking_code` |
 | `review.receipt.add` | `receipt`, `event` |
+| `review.result.add` | `receipts`; each item holds `receipt`, `event`, and nested `findings` |
 | `review.finding.add` | `finding`, `event` |
 | `review.finding.resolve` | `finding`, `event` |
 | `verification.receipt.add` | `receipt` |

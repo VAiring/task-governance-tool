@@ -181,6 +181,28 @@ queries. Existing readers and gate consumers retain their default bounded
 projection; the final normal show projection removes duplicated target/tier
 fields and emits each operational Finding once. Audit retains the prior shape.
 
+### Structured Result Registration
+
+`review_results.py` owns the closed version-1 JSON decoder, exact type and
+capacity checks, input-only approval-key matching, and batch orchestration.
+It reuses Receipt/provenance/Finding normalization and the existing individual
+writers; it owns no SQL, schema, batch ledger, or replacement gate.
+
+The CLI reads bounded binary stdin and decodes before opening the initialized
+connection. All entries are normalized before acquiring the writer. The
+service then uses the existing writer-lock/revalidation boundary and compares
+the submitted Task, Contract revision and complete target against the locked
+Task before any insert. A concurrent tier or authority change cannot reuse
+pre-lock normalization. Each Receipt and its Findings use the same connection,
+including their individual References, provenance and events.
+
+The CLI owns the one outer transaction: every exception escapes it before
+conversion to sanitized failure output. There are no per-entry commits or
+successful-prefix returns. Commit and connection close precede formatting and
+one changed/Viewer-relevant maintenance result. Legacy single-item callers and
+global state admission retain their existing contracts. Replay detection uses
+the existing Task/generation/reviewer uniqueness, without a new durable ID.
+
 <a id="review-packet"></a>
 
 ## Review Packet
@@ -199,7 +221,7 @@ processes, 100 bytewise-sorted relative paths, 240 UTF-8 bytes per path, and
 an unsafe path or a packet above 32,768 bytes fails with no partial packet.
 
 Task, Contract, target, changed paths, five fixed review-focus rows, required
-output, and the existing receipt argv shape are allow-listed. The builder
+output, and the batch-registration argv shape are allow-listed. The builder
 does not launch a reviewer, execute/import a receipt, store a packet, or
 include a diff, transcript, prompt, stdout/stderr, secret, or absolute path.
 

@@ -544,9 +544,11 @@ credential, or free-form coverage prose. A gate-ineligible version-0 graph
 created by the audit-only schema-v20 Runner remains separate: it neither
 creates nor qualifies a Receipt and cannot satisfy the manual verification or
 completion gate. Current gate-eligible version-1 Runner selection is governed
-only by the [shared schema-v21/v22 Runner protocol](specification.md#schema-v21-persistence-compatibility-and-shared-runner-protocol). Approved exceptions, result-file import,
-configured runners that create, import, or qualify Receipts, signatures, and
-debug retention are outside this initial Receipt contract.
+only by the [shared schema-v21/v22 Runner protocol](specification.md#schema-v21-persistence-compatibility-and-shared-runner-protocol).
+The bounded [structured stdin mode](#structured-verification-result) below
+accepts the same caller attestation, not a stronger observation. Arbitrary
+result-file parsing, configured runners that create or qualify Receipts,
+signatures, and debug retention remain outside this contract.
 
 <a id="verification-receipt-eligibility-and-manual-completion"></a>
 
@@ -649,7 +651,7 @@ The sole Verification Receipt write leaf is public leaf number 21:
 taskgov verification receipt add
 ```
 
-It accepts Task ID plus exactly `--result`, `--duration-ms`, `--scope-coverage`, and
+Its individual-argument mode accepts Task ID plus exactly `--result`, `--duration-ms`, `--scope-coverage`, and
 `--expected-target-generation`, together with applicable common `--repo`,
 `--json`, and `--read-only`. Expected generation is a positive integer copied
 from the target-set result and is only an optimistic concurrency guard; it is
@@ -658,7 +660,8 @@ Contract, verification expectation, and target capture. Mismatch fails with
 `verification_basis_stale` and message
 `verification target changed after the reported run`, with no row or
 maintenance. The command accepts no caller source revision, Contract revision,
-timestamp, command body, result body, or arbitrary file. Successful data is
+timestamp, command body, or arbitrary file. Its alternative `--from-stdin`
+mode accepts only the fixed declaration below. Successful data is
 exactly `receipt`; read-only rejects before any database or maintenance write.
 
 After applicable common CLI, project, and state preflight, Receipt-add
@@ -762,7 +765,7 @@ Successful JSON `task.show` includes this one top-level key in both display
 modes. Failure data also contains `verification_evidence=null`. Text does not
 summarize Receipt state; agents use the normal JSON projection for the gate.
 
-There is no Receipt list/show/import/export command and no Viewer Receipt
+There is no Receipt list/show/import/export command or arbitrary file reader and no Viewer Receipt
 panel or snapshot field. The Viewer accepts source schemas through v22 while
 retaining snapshot v4 content. Its existing
 bounded batch completion-history read internally joins only the Receipt fields needed
@@ -772,3 +775,51 @@ dataset or fact enters the snapshot. Receipt writes are not
 Viewer-relevant and perform no Viewer refresh; a successful write remains
 backup-eligible through the existing post-commit coordinator. Failed or read-
 only calls invoke neither artifact path.
+
+<a id="structured-verification-result"></a>
+
+### Structured Verification Result
+
+`verification receipt add <task-id> --from-stdin` consumes a fixed external
+verifier's aggregate output directly, without requiring the caller to rewrite
+its result fields as individual arguments. It accepts exactly one UTF-8 JSON
+document of at most 4,096 bytes on stdin:
+
+```json
+{"version":1,"task_id":"tg_task_0123456789abcdef","result":"pass","duration_ms":1250,"scope_coverage":"full","expected_target_generation":1}
+```
+
+Every shown key is required; no others are accepted. Version is exactly integer
+1, duration and generation are exact JSON integers with the existing signed-64-bit
+bounds, and the remaining values are strings using the existing field validation
+and privacy rules. Boolean integers, floating/non-finite numbers, duplicate keys,
+invalid Unicode, BOM, malformed JSON, missing/extra keys, and exceeded bounds
+fail `invalid_verification_evidence` without echoing input. The normalized document
+Task ID must match the command Task ID or fail `verification_basis_stale` with
+`verification result belongs to a different task`.
+
+The mode replaces all four result options, not any subset. Mixing them fails
+`invalid_option_combination` with
+`--from-stdin cannot be combined with verification result options`; without the
+mode all four options remain required. These argument errors precede project/state
+resolution. After common preflight, `--read-only` rejects before consuming stdin;
+decoding and document validation precede the existing Receipt service. Its
+status, expectation, target, generation, capture, Runner and uniqueness checks
+then run unchanged, including locked revalidation. No supplied field replaces
+the locked Contract, subject, target tuple, digest, Receipt ID or timestamp.
+Task ID and generation identify the run context already selected before execution;
+Contract or verification changes invalidate that generation under existing rules.
+
+The producer must already emit this format and report the aggregate run against
+that context. `full` remains the caller's explicit claim covering the entire
+Task verification expectation; neither a zero exit nor `pass` implies it. Taskgov
+does not execute/adapt/configure the producer, combine partial results, inspect
+raw output, authenticate the run, or upgrade its assurance. Unsupported output
+uses the existing manual attestation path, not an LLM format-repair step.
+
+Success and failure data, text, exit codes, persistence and maintenance are the
+same as individual-argument registration. The decoder retains no input document.
+Any rejected call writes no Receipt or Reference and invokes no maintenance.
+Successful replay is rejected by the existing one-Receipt-per-generation rule;
+a failed, timeout or partial run needs a fresh target before another run. This
+mode adds no command leaf, setup, schema, normal-loop call or completion branch.

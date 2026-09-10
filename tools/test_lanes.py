@@ -201,6 +201,7 @@ LANE_MODULES: dict[str, tuple[str, ...]] = {
         "test_state_resolver",
         "test_state_transition_primitives",
         "test_verification_receipts",
+        "test_verification_results",
         "test_viewer_config",
         "test_viewer_maintenance",
         "test_viewer_renderer",

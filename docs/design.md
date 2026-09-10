@@ -198,6 +198,8 @@ The implementation keeps these narrow ownership boundaries:
   the Evidence validation repository's stored Bundle reader; native Bundle/cycle
   coordination remains in `storage.py`;
   the repository neither opens a connection nor commits the operation.
+- `verification_results.py` decodes the fixed external-verifier stdin declaration
+  into existing Receipt inputs without executing verification or inferring coverage.
 - `verification_receipts.py` owns caller Receipt validation, exact-current
   classification, completion-gate evaluation, and the bounded Task-show read
   model.

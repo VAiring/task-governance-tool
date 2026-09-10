@@ -143,6 +143,10 @@ from task_governance_tool.verification_receipts import (
     VerificationReceiptError,
     add_verification_receipt,
 )
+from task_governance_tool.verification_results import (
+    VERIFICATION_RESULT_INPUT_LIMIT,
+    decode_verification_result,
+)
 from task_governance_tool.verification_runner_selection import (
     select_current_verification_runner_basis,
 )
@@ -2326,20 +2330,31 @@ def handle_verification_receipt_add(context: CommandContext) -> CommandResult:
         )
 
     try:
+        if getattr(context.args, "from_stdin", False):
+            try:
+                raw = sys.stdin.buffer.read(VERIFICATION_RESULT_INPUT_LIMIT + 1)
+            except (AttributeError, OSError, TypeError, ValueError) as exc:
+                raise VerificationReceiptError(
+                    "invalid_verification_evidence",
+                    "structured verification result is invalid",
+                    "verification_result",
+                ) from exc
+            values = decode_verification_result(raw, task_id=context.args.task_id)
+        else:
+            values = {
+                key: getattr(context.args, key, "")
+                for key in (
+                    "result", "duration_ms", "scope_coverage",
+                    "expected_target_generation",
+                )
+            }
         with closing(connect_initialized(target)) as connection:
             with connection:
                 result = add_verification_receipt(
                     connection,
                     target.project,
                     getattr(context.args, "task_id", ""),
-                    result=getattr(context.args, "result", ""),
-                    duration_ms=getattr(context.args, "duration_ms", ""),
-                    scope_coverage=getattr(context.args, "scope_coverage", ""),
-                    expected_target_generation=getattr(
-                        context.args,
-                        "expected_target_generation",
-                        "",
-                    ),
+                    **values,
                     database_target=target,
                     runner_selector=lambda task: (
                         select_current_verification_runner_basis(
@@ -2564,6 +2579,21 @@ def main(
                 "invalid_argument",
                 "verification requires receipt add",
             )
+        if command_name(args) == "verification.receipt.add":
+            supplied = [
+                getattr(args, key, None) is not None
+                for key in (
+                    "result", "duration_ms", "scope_coverage",
+                    "expected_target_generation",
+                )
+            ]
+            if args.from_stdin and any(supplied):
+                raise CommandLineError(
+                    "invalid_option_combination",
+                    "--from-stdin cannot be combined with verification result options",
+                )
+            if not args.from_stdin and not all(supplied):
+                raise CommandLineError("invalid_argument", "arguments are invalid")
         if (
             args.command == "review"
             and getattr(args, "review_entity", None) == "target"

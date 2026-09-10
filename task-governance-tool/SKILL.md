@@ -128,6 +128,10 @@ Use this normal flow:
    --scope-coverage <full|partial> --expected-target-generation <generation>
    --json`. `blocked` requires a non-null returned code and stops closed; any
    missing, mismatched, or unknown route/code pair also stops.
+   When the verifier already emits the fixed structured result, pass its bytes
+   directly to that same command with `--from-stdin` instead of the four result
+   options; do not reinterpret or reformat them. See the
+   [fixed input contract](references/cli_contracts.md#structured-verification-result).
 7. Run `review prepare` once, obtain the required structured reviews, and submit
    their Receipts and Findings together with `review result add` using the
    [version-1 stdin format](references/cli_contracts.md#structured-review-results).

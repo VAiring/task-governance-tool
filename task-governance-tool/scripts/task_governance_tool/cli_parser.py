@@ -494,12 +494,15 @@ def build_parser() -> argparse.ArgumentParser:
     )
     add_common_options(verification_receipt_add_parser)
     verification_receipt_add_parser.add_argument("task_id")
-    verification_receipt_add_parser.add_argument("--result", required=True)
-    verification_receipt_add_parser.add_argument("--duration-ms", required=True)
-    verification_receipt_add_parser.add_argument("--scope-coverage", required=True)
+    verification_receipt_add_parser.add_argument(
+        "--from-stdin", action="store_true",
+        help="record one fixed version-1 UTF-8 JSON result from stdin instead of the four result options",
+    )
+    verification_receipt_add_parser.add_argument("--result")
+    verification_receipt_add_parser.add_argument("--duration-ms")
+    verification_receipt_add_parser.add_argument("--scope-coverage")
     verification_receipt_add_parser.add_argument(
         "--expected-target-generation",
-        required=True,
     )
 
     return parser

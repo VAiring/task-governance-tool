@@ -1048,7 +1048,8 @@ trimming only after running the governed verification outside taskgov on marker
 python scripts/taskgov.py verification receipt add --repo <target-project> <task-id> --result pass --duration-ms <milliseconds> --scope-coverage full --expected-target-generation <generation> --json
 ```
 
-The four options are required. `result` is `pass`, `fail`, or `timeout`;
+The four options are required unless `--from-stdin` supplies the fixed
+[structured result](#structured-verification-result). `result` is `pass`, `fail`, or `timeout`;
 `scope-coverage` is `full` or `partial`; duration is a nonnegative signed-
 64-bit millisecond value; and expected generation is the positive generation
 returned by target set. `--command-label` is not accepted and no caller subject
@@ -1117,6 +1118,45 @@ maintenance, a due Evidence projection may still publish before the due
 backup. `--read-only` and every failed call perform no business or maintenance
 write. There is no Receipt list, show, import, export, Runner command, or Viewer
 panel.
+
+<a id="structured-verification-result"></a>
+
+### Structured Verification Result
+
+When an external verifier already emits this fixed format, send its stdout
+unchanged to `verification receipt add <task-id> --from-stdin --json`. The
+registration replaces the four individual result options; it does not add a
+normal-loop call, launch verification, or require the LLM to read/convert the
+result. Keep other verification tools on the existing manual attestation path.
+
+```json
+{"version":1,"task_id":"tg_task_0123456789abcdef","result":"pass","duration_ms":1250,"scope_coverage":"full","expected_target_generation":1}
+```
+
+All six fields are required, with no additional keys. Input is one UTF-8 JSON
+object, at most 4,096 bytes, without BOM or duplicate keys. Version is integer
+1; duration and generation are exact JSON integers (not strings, floats or
+Booleans) with the existing bounds. Other fields use existing string, enum
+and privacy checks. Invalid shape/encoding is `invalid_verification_evidence`;
+a different Task ID is `verification_basis_stale`. Mixed individual options
+and `--from-stdin` are `invalid_option_combination`; read-only rejects before
+consuming stdin. Nothing is recorded on rejection.
+
+Supply Task ID and generation to the external verifier as the already-selected
+run context before execution. `full` must be explicitly justified against the
+entire Task verification expectation, never inferred from success. Subject,
+Contract, criterion, source tuple, Receipt ID and recording time are still
+derived by the existing writer, not repeated in the document. This remains a
+caller attestation, not authenticated process evidence. Normal Receipt output,
+one-per-generation, Runner eligibility, completion gates and maintenance are
+unchanged; no raw document or stream is stored. A fresh run after failure,
+timeout or partial coverage requires a fresh target first.
+
+For shell-independent byte transport, a caller can connect an already approved
+producer's binary stdout directly to the consumer's stdin, or pass those same
+bytes using `subprocess.run(..., input=producer.stdout)`. Do not turn arbitrary
+test output into this format by asking the LLM to transcribe it. No producer
+installation, configuration or command execution is authorized by this input mode.
 
 ## Local Handoff Commands
 

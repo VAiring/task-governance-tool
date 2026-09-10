@@ -428,7 +428,10 @@ connection. `storage.py` retains schema, migration, full database admission,
 and the schema-enforced Receipt uniqueness boundary. `tasks.py` and
 `completion_workflow.py` consume the selected gate result; neither opens raw
 SQLite or interprets verification prose.
-`cli.py` owns only parser/dispatch/formatting for the one Receipt write leaf.
+`cli.py` owns stdin transport/dispatch/formatting for the one Receipt write leaf;
+`cli_parser.py` owns its two mutually exclusive input modes.
+`verification_results.py` decodes the bounded fixed JSON declaration into the
+existing four Receipt inputs and verifies its Task ID against the command.
 
 Schema v17 added an immutable `verification_receipts` table with:
 
@@ -499,9 +502,9 @@ completion. Only `verification_route=receipt_required` makes a marker-`0` or
 exact closed no-launch fallback branch additionally run external verification
 and add a Receipt with that expected generation. `not_required` and
 `runner_pass` do not; `blocked` stops with its returned existing blocking code.
-Target setting remains before either verification branch. The manual/fallback
-path is bounded by 10 calls, or 11 with Effort Advisory; the Runner-pass path is
-bounded by 9 or 10 respectively.
+Target setting remains before either verification branch. The current
+[normal-loop call budget](review-completion-specification.md#receipt-meaning-and-record)
+is unchanged by the Receipt input mode.
 
 ### Receipt Write And Freshness
 
@@ -520,8 +523,20 @@ post-commit maintenance.
 
 The caller's add invocation attests that the external run exercised the copied
 target; taskgov does not prove that claim. The caller supplies no command body,
-source revision, Contract revision, timestamp, ID, exit code, output,
-exception, or arbitrary result document. A failed or timeout row records
+source revision, Contract revision, timestamp, Receipt ID, exit code, raw output,
+exception, or arbitrary result document. The optional fixed stdin declaration
+is defined by the [structured result owner](review-completion-specification.md#structured-verification-result).
+The CLI rejects mixed/incomplete modes before state resolution, then rejects
+read-only before reading at most the byte limit plus one from binary stdin.
+The decoder rejects duplicate keys, non-integer numbers and non-UTF-8 input,
+validates the closed shape and all typed strings' privacy, and reuses existing
+Task-ID and Receipt-field normalizers. A document Task mismatch is stale evidence.
+No writer is opened until decoding succeeds; the returned four values enter
+the unchanged `add_verification_receipt` service. This keeps generation/Contract
+invalidation, global admission, physical Runner selection outside the writer,
+locked revalidation, persistence, rollback and post-commit policy identical.
+No producer adapter, result ledger or coverage inference is introduced.
+A failed or timeout row records
 evidence only and performs no Task/status/Contract/target/review/completion/
 Handoff mutation. A second call in the same generation returns
 `verification_receipt_already_recorded`; the caller can inspect `task show`,

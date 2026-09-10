@@ -159,6 +159,10 @@ Use this deterministic graph for a normal no-finding Tier 2 task:
    python .agents/skills/task-governance-tool/scripts/taskgov.py verification receipt add --repo <target-project> <task-id> --result pass --duration-ms <milliseconds> --scope-coverage full --expected-target-generation <generation> --json
    ```
 
+   If the verifier already emits the [fixed structured result](cli_contracts.md#structured-verification-result),
+   pass that output unchanged to the same command with `--from-stdin` instead
+   of the four result options. Do not add a result-reading or format-conversion
+   step; other verifiers retain the individual-argument attestation above.
    Taskgov derives the Verification Receipt subject from the locked
    capture-version-1 target; there is no label or replacement subject input.
    It executes no command for the manual verification branch and stores no command body or

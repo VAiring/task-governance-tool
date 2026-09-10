@@ -177,7 +177,10 @@ The public CLI has exactly 23 command leaves:
 22. `taskgov task context`
 23. `taskgov review result add`
 
-`task complete --check` is a mode of the same leaf. Applicable commands retain
+`task complete --check` is a mode of the same leaf.
+`verification receipt add --from-stdin` is likewise an input mode, defined by
+the [structured result contract](review-completion-specification.md#structured-verification-result).
+Applicable commands retain
 `--repo`, `--json`, and `--read-only`; root `--version` is project-free.
 Omitted `--repo` means the current directory, including a physical non-Git
 directory. Invocation from either supported package root requires explicit

@@ -33,6 +33,7 @@ detail are not prerequisites for normal Task work.
     - [Finding creation and resolution](#finding-resolution)
     - [Structured Finding Resolutions](#structured-finding-resolutions)
   - [Structured Review Results](#structured-review-results)
+- [Receipt Output For Integration Or Audit](#receipt-output-for-integration-or-audit)
 - [Internal Continuity Boundary](#internal-continuity-boundary)
 - [Errors And Privacy](#errors-and-privacy)
 
@@ -753,6 +754,8 @@ Receipt fields and never expose the internal expectation digest. The same gate
 and subject types/null rules apply in normal mode. Text does not summarize
 Receipt state. Invalid stored Receipt evidence returns the
 sanitized `invalid_verification_evidence` failure.
+For the returned subject or provenance compatibility fields, use
+[Receipt output detail](#receipt-output-for-integration-or-audit).
 
 <a id="task-checkpoint"></a>
 
@@ -1048,10 +1051,9 @@ The four options are required unless `--from-stdin` supplies the fixed
 `scope-coverage` is `full` or `partial`; duration is a nonnegative signed-
 64-bit millisecond value; and expected generation is the positive generation
 returned by target set. `--command-label` is not accepted and no caller subject
-option replaces it. Taskgov derives the verification subject from the locked
-capture-version-1 target's authority snapshot and whole-field verification
-criterion, and copies the locked Contract, expectation digest, and complete
-target tuple. It owns ID and timestamp.
+option replaces it. Taskgov binds the Receipt to the current Contract and exact
+target and generates the subject, Receipt ID, and recording time; do not supply
+or reconstruct them.
 
 Receipt recording is allowed only for `in_progress` or `review_pending`,
 requires verification that is nonempty after trimming and a current marker-`0`
@@ -1078,34 +1080,10 @@ is rejected until a fresh target exists. Do not combine that semantic edit
 with completion-evidence options; the command fails
 `completion_evidence_conflict` rather than discarding them.
 
-Success data is exactly `receipt`, whose fields are exactly:
-
-```text
-verification_receipt_id, project_id, task_id, contract_revision,
-verification_subject, result, duration_ms, scope_coverage, source_revision,
-created_at
-```
-
-`verification_subject` has exactly:
-
-```text
-basis_version, kind, authority_snapshot_id, verification_criterion_id,
-legacy_caller_label
-```
-
-A native v1 Receipt uses `basis_version=1`, kind
-`task_verification_criterion`, both non-null IDs, and a null legacy label. A
-migrated pre-v18 Receipt uses `basis_version=0`, kind `legacy_caller_label`,
-both IDs null, and the preserved label. Neither form authenticates caller
-identity. `task show` recent rows use the same versioned union.
-
-Success text is exactly:
-
-```text
-Verification receipt recorded: <verification_receipt_id>
-Result: <result>  Coverage: <scope_coverage>
-Source: <kind>/generation <generation>
-```
+On success, `data.receipt` is the recorded result;
+`data.receipt.verification_receipt_id` is its generated ID. No additional read
+is needed to obtain it. Only for output integration or historical subject
+inspection, read [Receipt output detail](#receipt-output-for-integration-or-audit).
 
 `--read-only` and every failed call perform no business or maintenance write.
 There is no Receipt list, show, import, export, Runner command, or Viewer panel.
@@ -1410,25 +1388,12 @@ model/Skill IDs are 1-128 ASCII bytes matching
 `[A-Za-z0-9][A-Za-z0-9._:/+-]{0,127}`; declared Skill version is 1-64 ASCII
 bytes matching `[A-Za-z0-9][A-Za-z0-9._+-]{0,63}`.
 
-Every public Review Receipt adds exactly one `review_provenance` value. A new
-independent/self-review Receipt projects v1 with exactly:
-
-```text
-review_provenance_id, provenance_version, reviewer_class, model_state,
-declared_model_id, skill_state, declared_skill_id, declared_skill_version,
-review_profiles, review_lenses, context_relation, method_codes,
-assurance_class, producer_class, producer_version, digest
-```
-
-Native v1 assurance/producer/version is exactly
-`bound_attestation/trusted_caller/1`. A migrated pre-v18 independent/self-review
-Receipt projects the same keys as v0 with null ID/digest and null semantic
-fields/collections, plus `legacy_unknown/legacy_migration/1`; v0 records
-absence and does not infer explicit `unknown`. A `not_required` Receipt projects
-null and owns no provenance row. Provenance does not change the parent
-Receipt's existing `bound_attestation/trusted_caller/1` assertion and never
-proves identity, actual model/Skill execution, competence, independence,
-diversity, quality, or truth.
+Single-Receipt success returns its ID at `data.receipt.review_receipt_id`.
+Taskgov generates the output provenance metadata; supply only the caller
+declarations above. For interpreting returned metadata or legacy absence, use
+[Receipt output detail](#receipt-output-for-integration-or-audit) only when that
+integration or audit is needed. Provenance never proves identity, actual
+model/Skill execution, competence, independence, diversity, quality, or truth.
 
 The independent reviewer returns the verdict and findings. The trusted
 parent/orchestrator records their concise sanitized receipt/finding rows as an
@@ -1578,6 +1543,9 @@ ineligible or missing required approval fails `invalid_review_evidence`.
 All entries are new and save atomically with their existing individual
 provenance, References and events. Success data is exactly
 `{receipts: [{receipt, event, findings: [{finding, event}]}]}` in input order.
+Use `data.receipts[].receipt.review_receipt_id` for the returned Receipt IDs
+and `data.receipts[].findings[].finding.review_finding_id` for Finding IDs;
+no follow-up read is needed to obtain them.
 Each nested object uses the existing public single-item projection. Failure
 data is `{receipts: []}` with no saved prefix, including after a late failure.
 Text success reports only Receipt/Finding counts. `--read-only` rejects before
@@ -1588,6 +1556,62 @@ The tool stores no result document or batch ledger, launches no reviewer,
 merges no judgment, resolves no Finding, and does not complete the Task.
 Distinct reviewer keys remain caller-attested strings, not proof of identity
 or independence. The existing single-item commands remain available.
+
+## Receipt Output For Integration Or Audit
+
+Read this section only to consume generated Receipt fields in an integration
+or interpret explicit [audit detail](#task-audit-detail). It is not an input
+template or a prerequisite for registering verification/reviews. Normal
+registration uses the input and result-handling sections above; the tool owns
+the output IDs, timestamps, subject binding, and provenance metadata.
+
+### Verification Receipt Output
+
+Successful registration returns `data.receipt` with exactly:
+
+```text
+verification_receipt_id, project_id, task_id, contract_revision,
+verification_subject, result, duration_ms, scope_coverage, source_revision,
+created_at
+```
+
+`source_revision` is the bound target's `kind`, `value`, nullable `base_revision`,
+and `generation`. `verification_subject` has exactly `basis_version`, `kind`,
+`authority_snapshot_id`, `verification_criterion_id`, and `legacy_caller_label`.
+A native v1 Receipt has basis 1, kind `task_verification_criterion`, both
+non-null IDs, and a null legacy label. A migrated pre-v18 Receipt has basis 0,
+kind `legacy_caller_label`, both IDs null, and the preserved label. The audit
+Receipt rows use the same union. These are tool-owned bindings, not caller
+identity authentication or permission to reuse historical evidence.
+
+Successful text remains exactly:
+
+```text
+Verification receipt recorded: <verification_receipt_id>
+Result: <result>  Coverage: <scope_coverage>
+Source: <kind>/generation <generation>
+```
+
+### Review Provenance Output
+
+Each public Review Receipt contains `review_provenance`. Native independent
+or self-review Receipts have a v1 object with exactly:
+
+```text
+review_provenance_id, provenance_version, reviewer_class, model_state,
+declared_model_id, skill_state, declared_skill_id, declared_skill_version,
+review_profiles, review_lenses, context_relation, method_codes,
+assurance_class, producer_class, producer_version, digest
+```
+
+Native assurance/producer/version is `bound_attestation/trusted_caller/1`.
+Migrated pre-v18 independent/self-review Receipts use the same keys as v0:
+null ID/digest and semantic fields/collections, with
+`legacy_unknown/legacy_migration/1`. This records missing historical provenance,
+not explicit v1 `unknown` or empty code sets. `not_required` instead has null
+provenance and no provenance row. These cases do not change the parent
+Receipt's caller-attested meaning or prove identity, actual model/Skill use,
+independence, or review truth. Only current evidence can satisfy current gates.
 
 ## Internal Continuity Boundary
 

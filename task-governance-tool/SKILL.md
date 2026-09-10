@@ -161,7 +161,10 @@ not measured total LLM tokens.
   one-pass guidance in [references/task_workflow.md](references/task_workflow.md).
   Discovery, a test failure, an Effort result, task size, or model preference
   does not invoke that guidance or add a normal-loop call.
-- Register only explicit tasks. `task add --status done` and initial `paused`
+- Register only explicit tasks; send a finalized multiple-Task set once through
+  `task add --from-stdin` using the explicit common-value form in
+  [references/cli_contracts.md](references/cli_contracts.md).
+  `task add --status done` and initial `paused`
   are prohibited.
 - Rediscover `in_progress`, `review_pending`, `paused`, and `blocked` work with
   `task context`; individual `task current` reads remain available for explicit

@@ -661,8 +661,10 @@ behavior may remain a later responsibility when its own checker is attributable.
 
 ### Registration, Contract, And Ordering
 
-Register only explicit user-approved work. Each final group uses one existing
-`task add`; registration grants no implementation, target-project, Git,
+Register only explicit user-approved work. Register a finalized multiple-Task
+set once with `task add --from-stdin`, using explicit common values as described
+in [CLI contracts](cli_contracts.md#task-add); single-Task flags remain available.
+Registration grants no implementation, target-project, Git,
 network, or external-operation permission. A non-zero Contract copies only
 explicit scope, acceptance, constraints, and authority reference.
 For initial reference examples and the reserved Task-ID form, see
@@ -738,6 +740,13 @@ invalidation effects; `keep-current` preserves them only under ordinary
 exact-target rules.
 
 ### Partial-Add Recovery
+
+A structured batch either registers every input or rolls back its entire set;
+after a confirmed rollback, correct the invalid input and resubmit that explicit
+set. A missing response is not a confirmed rollback: inspect the registered
+Tasks first, preserve successes, and add only a proven missing remainder under
+current authority. Never blindly replay the batch or delete successful Tasks.
+No extra confirmation is needed after a successful mapped response.
 
 If a strict subset of a multi-Task `task add` sequence succeeds, stop and read
 the exact registered set. During the same uninterrupted event, compare it with

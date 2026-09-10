@@ -132,24 +132,26 @@ def build_parser() -> argparse.ArgumentParser:
     task_subparsers = task_parser.add_subparsers(dest="task_command")
     task_add_parser = task_subparsers.add_parser("add", help="register an explicit task")
     add_common_options(task_add_parser)
-    task_add_parser.add_argument("--title", default="")
-    task_add_parser.add_argument("--description", default="")
-    task_add_parser.add_argument("--kind", default="optional")
-    task_add_parser.add_argument("--lane", default="")
-    task_add_parser.add_argument("--order", dest="lane_order", default=None)
-    task_add_parser.add_argument("--priority", default="normal")
-    task_add_parser.add_argument("--status", default="ready")
-    task_add_parser.add_argument("--blocked-reason", default="")
-    task_add_parser.add_argument("--review-tier", default=1)
+    task_add_parser.add_argument("--from-stdin", action="store_true", default=False,
+                                 help="register one atomic explicit Task set from UTF-8 JSON stdin")
+    task_add_parser.add_argument("--title", default=argparse.SUPPRESS)
+    task_add_parser.add_argument("--description", default=argparse.SUPPRESS)
+    task_add_parser.add_argument("--kind", default=argparse.SUPPRESS)
+    task_add_parser.add_argument("--lane", default=argparse.SUPPRESS)
+    task_add_parser.add_argument("--order", dest="lane_order", default=argparse.SUPPRESS)
+    task_add_parser.add_argument("--priority", default=argparse.SUPPRESS)
+    task_add_parser.add_argument("--status", default=argparse.SUPPRESS)
+    task_add_parser.add_argument("--blocked-reason", default=argparse.SUPPRESS)
+    task_add_parser.add_argument("--review-tier", default=argparse.SUPPRESS)
     task_add_parser.add_argument(
         "--verification",
-        default="",
+        default=argparse.SUPPRESS,
         help=(
             "verification expectation "
             f"({TASK_VERIFICATION_INPUT_LIMIT:,} characters or fewer)"
         ),
     )
-    task_add_parser.add_argument("--tags", default="")
+    task_add_parser.add_argument("--tags", default=argparse.SUPPRESS)
     task_add_parser.add_argument("--contract-scope", default=argparse.SUPPRESS)
     task_add_parser.add_argument("--contract-acceptance", default=argparse.SUPPRESS)
     task_add_parser.add_argument("--contract-constraints", default=argparse.SUPPRESS)

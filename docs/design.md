@@ -176,6 +176,9 @@ The implementation keeps these narrow ownership boundaries:
 - `tasks.py`, `ordering.py`, and `selection.py` own Task operation validation,
   lifecycle, current/list projections, the shared sequential predecessor
   predicate, and next-task selection.
+- `task_registration.py` decodes explicit Task batches and expands only supplied
+  common values into existing Task inputs; `tasks.py` retains the shared row
+  writer and atomic registration boundary.
 - `task_show_projection.py` assembles Task detail on the caller's snapshot,
   including its result type, fixed normal/audit presentation, and internal
   latest-history text fallback. Normal presentation retains operational

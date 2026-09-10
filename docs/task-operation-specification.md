@@ -242,6 +242,55 @@ review-pending/done. Once review begins, including after reopen, tier may only
 stay or rise. Invalid downgrade is `review_tier_downgrade_forbidden`.
 Successful change appends `review_tier_changed` with old/new tier and reason.
 
+### Structured Task Registration
+
+`task add --from-stdin` registers one already-approved, caller-finalized Task
+set. It is an input mode of the existing leaf, not a splitter, authority
+resolver, implementation-start permission, or new normal-loop step. Individual
+Task/Contract options cannot accompany this mode; the combination is rejected
+before state access. Single-Task flags, defaults, and result shape remain valid.
+
+Stdin is one UTF-8 JSON object, at most 262,144 bytes, with exactly required
+`version=1`, `common` (object), and `tasks` (array of 1 through 64 objects).
+Unknown/duplicate keys, BOM, invalid UTF-8, non-finite/fractional numbers,
+surrogates, and wrong JSON types are rejected without retaining input bytes.
+
+Each item requires its own `title` and `contract`. `contract` is either `null`
+(revision zero), or an object with required `scope` and `acceptance` and optional
+`constraints` and `authority_ref`. Common Contract values are limited to those
+last two optional fields and never activate a null Contract or supply scope or
+acceptance. `contract_change_reason`, IDs, timestamps, and target/evidence fields
+are not inputs. Initial Contract status/content/authority rules remain unchanged.
+
+Common and per-item Task fields are `description`, `kind`, `lane`, `lane_order`,
+`priority`, `status`, `blocked_reason`, `review_tier`, `verification`, and `tags`.
+Only per-item input permits `title`. The optional `common.contract` is an
+object containing only `constraints` and/or `authority_ref`. Per-item explicit
+values override common values, including empty text; missing values otherwise
+use existing single-add defaults. The LLM must explicitly select each effective
+`review_tier`, individually or in `common`; the batch does not infer it.
+Integers are JSON integers, not booleans or strings; `lane_order` also permits
+null for the existing automatic-order behavior. Other scalar inputs are
+strings and use existing privacy, bounds, normalization, and enum checks.
+Common values are checked even when overridden or unused. Effective Task and
+Contract combinations undergo the existing validators and sequential guards.
+
+Registration is all-or-nothing in input order under one writer transaction,
+including Task, Contract, authority snapshot, event, and Effort bookkeeping.
+Success `data.tasks` contains one entry per input with zero-based `input_index`,
+the existing `task` and `event`, and `contract_write` only when recorded.
+Handled batch input/storage failures return `data.tasks=[]`; pre-dispatch parse
+and read-only rejection retain the ordinary error envelope. No successful
+subset from this invocation survives a rollback; previously registered Tasks
+are never removed. Post-commit maintenance runs once for the whole mutation.
+
+A confirmed rollback permits resubmitting the corrected explicit set. There is
+no idempotency ledger or automatic retry: a lost response does not prove
+rollback. Inspect the exact registered set through existing reads before any
+further write and add only a remainder proven missing under current authority.
+Never blindly replay, delete successful Tasks, or rerun splitting. Existing
+partial-add recovery still applies to a sequence of separate single-add calls.
+
 ### Task Contract
 
 The optional Task Contract copies already-explicit authority and adds no
@@ -530,8 +579,10 @@ permission starts a new event.
 
 ### Explicit Registration And Contract Population
 
-An explicit request to register or taskize work authorizes one existing
-`task add` write for each final group. It authorizes no implementation,
+An explicit request to register or taskize work authorizes registration of
+each final group through `task add`; multiple finalized groups use its
+[structured input](#structured-task-registration) in one atomic registration.
+It authorizes no implementation,
 target-project mutation, Git or network operation, external delivery, or
 permission expansion. Each non-zero Contract copies only scope, acceptance,
 constraints, and authority reference that the governing sources or user
@@ -626,8 +677,10 @@ global Merge.
 
 ### Active Instruction-Layer Boundary
 
-Select-Split-Merge-Register is active only in current `SKILL.md` and
-`references/task_workflow.md`. It changes no public command, normal Task-loop
+Select-Split-Merge decisions remain instruction-layer guidance in current
+`SKILL.md` and `references/task_workflow.md`. The separately defined structured
+registration mode only transports those explicit decisions. The guidance itself
+changes no public command, normal Task-loop
 call count, SQLite schema, JSON contract, Viewer field, automatic Task creation,
 runtime Task splitting, parent/child or dependency model, background LLM work,
 network behavior, or target-project mutation. Its grouping and tier-basis

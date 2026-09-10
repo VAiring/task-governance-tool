@@ -178,6 +178,8 @@ The public CLI has exactly 23 command leaves:
 23. `taskgov review result add`
 
 `task complete --check` is a mode of the same leaf.
+`task add --from-stdin` is an input mode governed by
+[structured Task registration](task-operation-specification.md#structured-task-registration).
 `verification receipt add --from-stdin` is likewise an input mode, defined by
 the [structured result contract](review-completion-specification.md#structured-verification-result).
 Applicable commands retain

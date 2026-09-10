@@ -503,6 +503,39 @@ stored validator rather than caller-input validation; a stored value over its
 source-schema limit fails closed. Explicit 1,001-character caller input is
 rejected without a write.
 
+For a finalized multiple-Task set, use `task add --from-stdin --json` once with
+this UTF-8 JSON shape (no BOM; at most 262,144 bytes and 1 through 64 items):
+
+```json
+{"version":1,"common":{"review_tier":1,"verification":"Focused document checks","contract":{"constraints":"Docs only","authority_ref":"docs/decision.md#approved"}},"tasks":[{"title":"Clarify setup","contract":{"scope":"Setup examples","acceptance":"Examples match setup help"}},{"title":"Clarify diagnosis","contract":{"scope":"Diagnosis examples","acceptance":"Examples are read-only"}}]}
+```
+
+Top-level keys are exactly `version`, `common`, and `tasks`. Each item requires
+its own `title` and `contract` (null for revision zero, or required `scope` and
+`acceptance`, optional `constraints` and `authority_ref`). Common Contract values
+may contain only `constraints` and `authority_ref`; they never activate null.
+Common/per-item Task fields are `description`, `kind`, `lane`, `lane_order`,
+`priority`, `status`, `blocked_reason`, `review_tier`, `verification`, and `tags`.
+Each effective review tier must be explicitly supplied; other omitted fields
+use single-add defaults. Individual values override common ones, including empty
+text. Integer fields are JSON integers (lane_order may be null); other scalars
+are strings. All supplied values, even unused common values, retain existing
+privacy/bounds checks. No unknown/duplicate keys or automatic scope inference.
+Do not combine this mode with individual Task/Contract flags; read-only rejects
+it without consuming stdin.
+
+Success data is `{"tasks":[{"input_index":0,"task":{},"event":{},"contract_write":{"recorded":true,"revision":1}}]}`,
+where Task/event are the existing projections and `contract_write` is absent
+for null Contracts. The response maps every input in order; no per-Task follow-up
+confirmation is required. All entries commit together or all roll back;
+handled batch input/storage errors return `tasks=[]`. Parse/read-only errors
+retain their ordinary envelope. Correct and resubmit only after confirmed
+rollback. A lost response requires inspecting existing Tasks before any retry;
+never blindly replay or remove successes. This is not an idempotent importer.
+Windows PowerShell producers must send UTF-8 without BOM, not locale-encoded
+text. This option creates no input file, adapter, extra normal-loop call, or
+authority beyond explicit registration.
+
 ### `task list`
 
 Return compact filtered rows:

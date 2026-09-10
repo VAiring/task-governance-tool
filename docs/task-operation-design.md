@@ -516,11 +516,33 @@ Contract, routed authority, and declared predecessor outputs.
 
 ### Registration Adapter And Partial-Add Recovery
 
-For explicit taskization, each final group uses one existing `task add`. The
+For explicit taskization, final groups use the existing `task add`, with its
+structured stdin mode for a finalized multiple-Task set. The
 group's non-zero Contract copies only explicit scope, acceptance, constraints,
 and authority reference. Inputs and outputs remain prose in those existing
 fields, while order remains existing lane/order; no dependency or worksheet
 field is introduced.
+
+`task_registration.py` owns the fixed version-one JSON decoder, strict member
+types, explicit common-value expansion, and caller-value validation. It emits
+only existing `add_task` keyword inputs; it neither assigns IDs nor reads/writes
+state. `cli.py` rejects mixed individual options before state access, rejects
+read-only before stdin consumption, reads the bounded binary input, then owns
+the existing initialized connection and outer commit/rollback. It returns the
+input-order index-to-Task mapping and one mutation outcome for maintenance.
+
+`tasks.py` factors single-add preparation from its existing row writer. Both
+single and batch registration use that same row writer, Contract activation,
+authority snapshot, events, stored validation, and sequential checks. Batch
+prepares every normalized input, generated ID, initial Contract check, and
+optional Effort Git observation before acquiring the writer; it does not skip
+later Tasks' observations by preparing them inside a transaction. Under the
+existing initialized writer, an outer batch savepoint encloses all row writes;
+automatic lane orders see earlier batch additions, and locked Effort generation
+and overlap checks remain unchanged. Failure rolls back the entire batch even
+if a repository caller catches the error. The batch entry requires a connection
+outside a transaction for preflight; the single-add calling contract is retained.
+No schema, retry ledger, new state-admission rule, or Task lifecycle is added.
 
 If outcome and registration permission are clear but split or Contract detail
 is missing, the adapter adds one whole-outcome Task with Contract revision zero.

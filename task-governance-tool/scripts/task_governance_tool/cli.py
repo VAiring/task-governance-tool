@@ -121,6 +121,7 @@ from task_governance_tool.tasks import (
     CURRENT_STATUSES,
     TaskRepositoryError,
     add_task,
+    add_tasks,
     build_completion_request,
     edit_task,
     list_current_tasks,
@@ -131,6 +132,11 @@ from task_governance_tool.tasks import (
 from task_governance_tool.task_values import (
     TaskValidationError,
     validate_task_id,
+)
+from task_governance_tool.task_registration import (
+    TASK_REGISTRATION_FIELDS,
+    TASK_REGISTRATION_INPUT_LIMIT,
+    decode_task_registration,
 )
 from task_governance_tool.verification_runner_plan_edit import (
     PLAN_BLOB_UTF8_BYTE_LIMIT,
@@ -250,7 +256,9 @@ def state_resolution_failure_result(
     project_id: str | None,
 ) -> CommandResult:
     command = context.command
-    if command == "task.list":
+    if command == "task.add" and getattr(context.args, "from_stdin", False):
+        data: dict[str, Any] = {"tasks": []}
+    elif command == "task.list":
         data: dict[str, Any] = {"tasks": [], "count": 0, "limit": 0}
     elif command == "task.next":
         data = (
@@ -527,6 +535,7 @@ def validation_failure_result(
         ok=False,
         command=context.command,
         project_id=project_id,
+        data={"tasks": []} if context.command == "task.add" and getattr(context.args, "from_stdin", False) else {},
         errors=[{"code": exc.code, "message": exc.message}],
         exit_code=exit_code,
     )
@@ -548,18 +557,30 @@ def handle_task_add(context: CommandContext) -> CommandResult:
             exit_code=EXIT_USAGE,
         )
 
-    task_input = task_add_input(context.args)
+    batch = bool(getattr(context.args, "from_stdin", False))
     effort_profile = load_effort_profile(skill_root_from_script(cli_script_path()))
     try:
+        if batch:
+            try:
+                raw = sys.stdin.buffer.read(TASK_REGISTRATION_INPUT_LIMIT + 1)
+            except (AttributeError, OSError, ValueError) as exc:
+                raise TaskValidationError("invalid_argument", "could not read structured Task registration") from exc
+            task_inputs = decode_task_registration(raw)
+        else:
+            task_input = task_add_input(context.args)
         with closing(connect_initialized(target)) as connection:
             with connection:
-                result = add_task(
-                    connection,
-                    target.project,
-                    effort_profile=effort_profile,
-                    database_target=target,
-                    **task_input,
-                )
+                if batch:
+                    results = add_tasks(connection, target.project, task_inputs=task_inputs,
+                                        effort_profile=effort_profile, database_target=target)
+                else:
+                    result = add_task(
+                        connection,
+                        target.project,
+                        effort_profile=effort_profile,
+                        database_target=target,
+                        **task_input,
+                    )
     except TaskValidationError as exc:
         return validation_failure_result(
             context,
@@ -577,6 +598,7 @@ def handle_task_add(context: CommandContext) -> CommandResult:
             ok=False,
             command=context.command,
             project_id=target.project.project_id,
+            data={"tasks": []} if batch else {},
             errors=[{"code": exc.code, "message": exc.message}],
             exit_code=EXIT_TOOL_ERROR,
         )
@@ -589,19 +611,32 @@ def handle_task_add(context: CommandContext) -> CommandResult:
             ok=False,
             command=context.command,
             project_id=target.project.project_id,
+            data={"tasks": []} if batch else {},
             errors=[{"code": mapped.code, "message": mapped.message}],
             exit_code=EXIT_TOOL_ERROR,
         )
 
-    data = {"task": result.task, "event": result.event}
-    if result.contract_write is not None:
-        data["contract_write"] = result.contract_write
+    if batch:
+        entries = []
+        for index, item in enumerate(results):
+            entry = {"input_index": index, "task": item.task, "event": item.event}
+            if item.contract_write is not None:
+                entry["contract_write"] = item.contract_write
+            entries.append(entry)
+        data = {"tasks": entries}
+        text = "\n".join(f"Input {entry['input_index']}:\n" + task_add_text(
+            entry["task"], entry["event"], entry.get("contract_write")) for entry in entries)
+    else:
+        data = {"task": result.task, "event": result.event}
+        if result.contract_write is not None:
+            data["contract_write"] = result.contract_write
+        text = task_add_text(result.task, result.event, result.contract_write)
     return CommandResult(
         ok=True,
         command=context.command,
         project_id=target.project.project_id,
         data=data,
-        text=task_add_text(result.task, result.event, result.contract_write),
+        text=text,
         exit_code=EXIT_SUCCESS,
         mutation_outcome=MutationOutcome(
             state_changed=True,
@@ -2579,6 +2614,12 @@ def main(
                 "invalid_argument",
                 "verification requires receipt add",
             )
+        if command_name(args) == "task.add" and args.from_stdin:
+            if any(hasattr(args, key) for key in TASK_REGISTRATION_FIELDS | {
+                "contract_scope", "contract_acceptance", "contract_constraints",
+                "contract_authority_ref", "contract_change_reason",
+            }):
+                raise CommandLineError("invalid_option_combination", "--from-stdin cannot be combined with individual Task options")
         if command_name(args) == "verification.receipt.add":
             supplied = [
                 getattr(args, key, None) is not None

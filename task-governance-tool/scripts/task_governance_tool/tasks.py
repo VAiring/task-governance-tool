@@ -509,19 +509,26 @@ def ensure_git_preflight_outside_transaction(
         )
 
 
-def add_task(
+TASK_BATCH_LIMIT = 64
+
+
+@dataclass(frozen=True)
+class _PreparedTaskAdd:
+    task_id: str
+    normalized: dict[str, Any]
+    contract_input: dict[str, Any]
+    effort_preflight: Any
+
+
+def _prepare_task_add(
     connection: sqlite3.Connection,
     project: ProjectIdentity,
     *,
     effort_profile: Any | None = None,
-    database_target: DatabaseTarget | None = None,
     **task_input: Any,
-) -> AddTaskResult:
-    from task_governance_tool.contracts import (
-        CONTRACT_ADD_STATUSES,
-        add_initial_contract,
-    )
-    from task_governance_tool.contract_content import split_contract_input
+) -> _PreparedTaskAdd:
+    from task_governance_tool.contracts import CONTRACT_ADD_STATUSES
+    from task_governance_tool.contract_content import normalize_contract_input, split_contract_input
 
     task_input, contract_input = split_contract_input(task_input)
     raw_status = task_input.get("status", "ready")
@@ -538,10 +545,9 @@ def add_task(
         )
     normalized = validate_task_input(**task_input)
     task_id = generate_id("tg_task")
-    from task_governance_tool.effort import (
-        prepare_task_transition,
-        record_task_transition,
-    )
+    if contract_input:
+        normalize_contract_input(contract_input, task_id=task_id, revision=1, initial=True)
+    from task_governance_tool.effort import prepare_task_transition
 
     effort_preflight = prepare_task_transition(
         connection,
@@ -551,6 +557,69 @@ def add_task(
         current_status=str(normalized["status"]),
         profile=effort_profile,
     )
+    return _PreparedTaskAdd(task_id, normalized, contract_input, effort_preflight)
+
+
+def add_task(
+    connection: sqlite3.Connection,
+    project: ProjectIdentity,
+    *,
+    effort_profile: Any | None = None,
+    database_target: DatabaseTarget | None = None,
+    **task_input: Any,
+) -> AddTaskResult:
+    prepared = _prepare_task_add(connection, project, effort_profile=effort_profile, **task_input)
+    return _add_prepared_task(connection, project, prepared, effort_profile=effort_profile,
+                              database_target=database_target)
+
+
+def add_tasks(
+    connection: sqlite3.Connection,
+    project: ProjectIdentity,
+    *,
+    task_inputs: list[dict[str, Any]],
+    effort_profile: Any | None = None,
+    database_target: DatabaseTarget | None = None,
+) -> list[AddTaskResult]:
+    if not 1 <= len(task_inputs) <= TASK_BATCH_LIMIT:
+        raise validation_error("invalid_argument", "Task batch requires 1 through 64 inputs")
+    ensure_git_preflight_outside_transaction(connection)
+    prepared = [
+        _prepare_task_add(connection, project, effort_profile=effort_profile, **values)
+        for values in task_inputs
+    ]
+    begin_task_write(connection, database_target)
+    savepoint = f"taskgov_batch_{secrets.token_hex(4)}"
+    connection.execute(f"SAVEPOINT {savepoint}")
+    try:
+        results = [
+            _add_prepared_task(connection, project, item, effort_profile=effort_profile,
+                               database_target=database_target)
+            for item in prepared
+        ]
+    except Exception:
+        connection.execute(f"ROLLBACK TO SAVEPOINT {savepoint}")
+        connection.execute(f"RELEASE SAVEPOINT {savepoint}")
+        raise
+    connection.execute(f"RELEASE SAVEPOINT {savepoint}")
+    return results
+
+
+def _add_prepared_task(
+    connection: sqlite3.Connection,
+    project: ProjectIdentity,
+    prepared: _PreparedTaskAdd,
+    *,
+    effort_profile: Any | None,
+    database_target: DatabaseTarget | None,
+) -> AddTaskResult:
+    from task_governance_tool.contracts import add_initial_contract
+    from task_governance_tool.effort import record_task_transition
+
+    task_id = prepared.task_id
+    normalized = prepared.normalized
+    contract_input = prepared.contract_input
+    effort_preflight = prepared.effort_preflight
     begin_task_write(connection, database_target)
 
     lane = normalized["lane"]

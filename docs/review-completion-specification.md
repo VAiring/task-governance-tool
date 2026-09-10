@@ -58,10 +58,27 @@ Detailed rows remain in `review_receipts` and `review_findings`. Completion
 cycle basis selection is independent of the existing diagnostic
 `fallback_kind` projection.
 
-`task show.review_evidence` exposes the current target/generation, tier
-requirement, qualifying current-generation counts, fallback state, bounded
-recent receipts/findings, and blocking counts including
-`changes_requested_current_generation`. It never emits raw review content.
+Normal `task show.review_evidence` contains exactly `gate`, `counts`,
+`current_receipts`, and `current_findings`. The Task already supplies the current
+target/generation and review tier, so these are not repeated here. Gate retains
+`required_independent_passes`, `qualifying_independent_passes`, `fallback_kind`,
+and `satisfied`. Counts retains `receipts_current_generation`,
+`changes_requested_current_generation`, and `open_high`, `open_medium`, `open_low`.
+
+Current Receipts match the complete current target and generation and expose
+only `review_receipt_id`, `reviewer_key`, `receipt_kind`, `verdict`, `summary`,
+`user_approved`, and `created_at`, newest first under the existing timestamp/
+rowid order. Current Findings retain every open Finding, including low severity
+and older generations, plus resolved high/medium Findings that still require
+fresh review. Each appears once with its existing structured fields and nullable
+`blocking_reason`: `unresolved` or `fresh_review_required` only when it blocks,
+otherwise null. Neither collection is derived from a recent-ten window.
+
+`task show --audit` retains the previous `target`, full `gate` and `counts`,
+`blocking_findings`, `recent_receipts`, and `recent_findings` projection, including
+bounded recent provenance and lifetime Receipt counts. Audit collection bounds
+do not alter the complete validated inventory or the current gate. Neither mode
+emits raw review content or changes Receipt/Finding storage and gate evaluation.
 
 <a id="git-snapshot-and-target-binding"></a>
 
@@ -302,7 +319,12 @@ atomically. The sole compatibility bridge may create an ordinal-1 partial
 verification-basis-v0/null/null cycle for an unknown-coverage done Task with
 no cycle. Other mismatch is `completion_history_inconsistent` and no write.
 
-Default `task show` adds exactly one `completion_history` object with
+Normal `task show.completion_history` contains only `total` and
+`legacy_history_incomplete`. Saved-cycle details are audit context, not required
+for normal continuation. The same complete history validation still runs before
+this presentation choice, including validation of details omitted from output.
+
+`task show --audit` returns the previous `completion_history` object with
 `total`, `returned_count`, `truncated`, `legacy_history_incomplete`, and
 `cycles`. It returns the newest complete-row prefix, maximum 10. Each cycle is
 at most 8,192 bytes and the complete component at most 32,768, measured with
@@ -335,10 +357,11 @@ Private or corrupt stored text fails with the existing sanitized
 `completion_history_inconsistent` result rather than being redacted or
 returned.
 
-Text show prints history returned/total/truncation/incompleteness and only the
+Audit text show prints history returned/total/truncation/incompleteness and only the
 latest cycle's ordinal, origin/completeness, time, evidence kind, target
 kind/generation, and review-basis kind. Other list/current/next/effort/packet
-outputs remain unchanged and history has no option or pagination.
+outputs remain unchanged. Normal text omits saved-cycle detail. The audit switch
+adds no history pagination or exhaustive export.
 
 The only new error is exit-2 `completion_history_inconsistent` with exact
 message `stored completion history is inconsistent`. It covers required-cycle
@@ -602,7 +625,18 @@ Result: <result>  Coverage: <scope_coverage>
 Source: <kind>/generation <generation>
 ```
 
-`task show` alone adds `verification_evidence` with exactly `expectation`,
+Normal `task show.verification_evidence` contains exactly
+`current_verification_subject`, `gate`, `counts`, and `current_receipt`.
+The Task's verification text and target and the Contract's revision are not
+repeated. Gate retains its four fields below; counts contains only
+`receipts_exact_current`, `qualifying_exact_current`, and `blocking_exact_current`.
+`current_receipt` is null or the unique fully validated exact-current Receipt's
+`verification_receipt_id`, `result`, `duration_ms`, `scope_coverage`, and
+`created_at`. It is selected from exact-current rows, never inferred from a
+recent-ten window. The subject's existing union and all gate/null rules below
+apply unchanged. `task context.selected` uses this same normal projection.
+
+`task show --audit` retains `verification_evidence` with exactly `expectation`,
 `contract_revision`, `source_revision`, `current_verification_subject`,
 `gate`, `counts`, and
 `recent_receipts`. Gate contains `required`, `satisfied`, `blocking_code`, and
@@ -651,10 +685,9 @@ compatibility bridge, is an explicit legacy exemption:
 expectation/link rule and any mismatch fails closed instead of projecting a
 gate.
 
-Successful JSON `task.show` includes this one top-level key in its exact data
-contract. Failure data also contains
-`verification_evidence=null`. Text `task show` remains byte-for-byte unchanged
-and does not summarize Receipt state; agents use JSON for the new gate.
+Successful JSON `task.show` includes this one top-level key in both display
+modes. Failure data also contains `verification_evidence=null`. Text does not
+summarize Receipt state; agents use the normal JSON projection for the gate.
 
 There is no Receipt list/show/import/export command and no Viewer Receipt
 panel or snapshot field. The Viewer accepts source schemas through v22 while

@@ -121,9 +121,12 @@ Use this deterministic graph for a normal no-finding Tier 2 task:
    without another current/next/show call or read-history bookkeeping.
    `selection=none` is successful absence, while `ok=false` stops selection
    with the existing error and never skips to another candidate.
-   The same read returns bounded completion history. Treat saved cycles only
-   as audit context; they never satisfy the current verification, review, or
-   completion gate.
+   Normal detail includes every unresolved Finding and the continuation notes
+   needed for resume, without an age cutoff or read-history bookkeeping.
+   It summarizes saved history without its detailed rows. For an explicit
+   history investigation only, use `task show <task-id> --audit --json` to obtain
+   bounded Receipt/provenance and completion-cycle detail. Audit material never
+   satisfies the current verification, review, or completion gate.
 
 2. When a ready task was selected, start it:
 

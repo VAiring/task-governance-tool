@@ -105,7 +105,10 @@ Use this normal flow:
    current/next/show call or remembered read state is needed. Held work remains
    recalled in `data.current`. `selection=none` means no actionable Task;
    `ok=false` is a read failure and stops this selection, not a fallback.
-   Bounded completion history is audit context only, never a current gate.
+   Normal detail keeps unresolved Findings and continuation notes regardless of
+   age. Use `task show <task-id> --audit --json` only for explicit investigation
+   of Receipt/provenance or saved completion history, never as another normal
+   read or a replacement for a current gate.
 2. If selecting ready work, start it with
    `task edit <task-id> --status in_progress --json`.
 3. Finish the exact material against current authority. Record out-of-scope

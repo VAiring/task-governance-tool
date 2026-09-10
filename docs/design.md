@@ -177,7 +177,9 @@ The implementation keeps these narrow ownership boundaries:
   lifecycle, current/list projections, the shared sequential predecessor
   predicate, and next-task selection.
 - `task_show_projection.py` assembles Task detail on the caller's snapshot,
-  including its result type and internal latest-history text fallback.
+  including its result type, fixed normal/audit presentation, and internal
+  latest-history text fallback. Normal presentation retains operational
+  evidence from the existing validated readers before omitting audit details.
   CLI Runner selection and connection orchestration remain in `cli.py`.
 - `stored_task_validation.py` owns source-schema-aware stored Task row/batch
   validation, raw fetches, Contract relationships, and same-snapshot Task reads.

@@ -1773,9 +1773,9 @@ class VerificationRunnerServiceTests(unittest.TestCase):
                     "blocking_exact_current": 0,
                     "qualifying_exact_current": 0,
                     "receipts_exact_current": 0,
-                    "receipts_total": 0,
                 },
             )
+            self.assertIsNone(shown["verification_evidence"]["current_receipt"])
 
             for state_file in fixture.db.parent.rglob("*"):
                 if not state_file.is_file():

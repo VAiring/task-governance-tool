@@ -553,7 +553,7 @@ class M224EvidenceAcceptanceTests(unittest.TestCase):
                 _,
                 expected_provenance,
             ) in case_task_receipts.items():
-                shown = require_cli_json(install, "task", "show", case_task_id)
+                shown = require_cli_json(install, "task", "show", case_task_id, "--audit")
                 shown_receipts = shown["data"]["review_evidence"][
                     "recent_receipts"
                 ]
@@ -571,6 +571,7 @@ class M224EvidenceAcceptanceTests(unittest.TestCase):
                 "task",
                 "show",
                 repeated_task_id,
+                "--audit",
             )
             self.assertEqual(
                 repeated_shown["data"]["review_evidence"]["recent_receipts"]
@@ -582,6 +583,7 @@ class M224EvidenceAcceptanceTests(unittest.TestCase):
                 "task",
                 "show",
                 not_required_task_id,
+                "--audit",
             )
             self.assertIsNone(
                 not_required_shown["data"]["review_evidence"]["recent_receipts"]

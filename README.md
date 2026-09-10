@@ -208,9 +208,13 @@ python .agents/skills/task-governance-tool/scripts/taskgov.py task edit <task-id
 ```
 
 `task context` is the normal detailed read before work. The same JSON call
-supplies bounded completion-cycle audit history, current Verification Receipt
-readiness, and whether the optional Effort Advisory is enabled. Historical
-cycles never satisfy a current gate. `review target set` returns the closed
+supplies current Verification Receipt readiness, all unresolved Findings,
+continuation notes, and whether the optional Effort Advisory is enabled.
+The fixed normal detail removes repeated fields and summarizes history;
+`task show <task-id> --audit --json` explicitly retrieves bounded historical
+Receipt/provenance and completion-cycle details when investigating history.
+It is not another normal-loop call, and historical cycles never satisfy a
+current gate. `review target set` returns the closed
 `verification_route` and nullable `blocking_code` for the target it just stored,
 so no second `task show` or LLM guess selects the manual or Runner branch. The
 normal no-finding Tier 2 manual/fallback graph is bounded to eight governance
@@ -342,7 +346,7 @@ or maintenance command. Generated Evidence JSON, Viewer, and managed backups
 remain runtime artifacts under the ignored Skill `state/` directory. Evidence
 projection failure keeps the mutation successful and the last-good index,
 leaves work due, and emits only its fixed warning. Viewer snapshot v4 reads source schemas 5 through 22 and includes the same
-bounded newest-first completion history as `task show`. Sources 5-14 are shown
+bounded newest-first completion history as `task show --audit`. Sources 5-14 are shown
 honestly as empty legacy-incomplete history. The Viewer contains only sanitized
 task/review/audit projections and has no write controls or network dependency.
 It validates schema-v18+ subject/provenance/capture bindings, the schema-v19
@@ -413,8 +417,8 @@ The 0.13.0 local candidate exposes exactly these 22 command leaves:
 
 Applicable commands accept `--repo`, `--json`, and `--read-only`; the root also
 accepts `--version`. Storage paths and maintenance internals are not public CLI
-choices. There is no history command or option; the existing `task show` and
-automatically maintained Viewer supply the bounded projection.
+choices. There is no separate history command or pagination; `task show --audit`
+and the automatically maintained Viewer supply the bounded history projection.
 
 ## Privacy And Scope
 

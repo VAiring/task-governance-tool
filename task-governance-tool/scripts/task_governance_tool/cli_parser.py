@@ -203,6 +203,12 @@ def build_parser() -> argparse.ArgumentParser:
     )
     add_common_options(task_show_parser)
     task_show_parser.add_argument("task_id")
+    task_show_parser.add_argument(
+        "--audit",
+        action="store_true",
+        default=False,
+        help="include bounded historical events, receipts, and completion details",
+    )
     task_checkpoint_parser = task_subparsers.add_parser(
         "checkpoint",
         help="record an optional typed continuation checkpoint",

@@ -60,6 +60,16 @@ module. Task operations, shared row converters, and Viewer proof consumption sta
 in `tasks.py`; `task_show_projection.py` assembles the Task detail result from
 the caller's snapshot and existing validation/readers. Its latest-history
 summary is only a text fallback, not an additional public JSON field.
+That module also owns the fixed normal/audit presentation boundary. The audit
+form preserves the previous bounded detail; normal presentation removes
+redundant parent values and historical detail only after the same validation.
+Show-only collectors reuse the validated Review and Verification streams for
+operational Findings and exact-current Receipts, not their recent-ten windows.
+The normal event query retains the newest event and all four note-capable
+operation types defined by the Task read contract, with the existing timestamp/
+rowid ordering. It does not infer supersession from age, checkpoints, or prose.
+No storage writer, schema, global admission, gate evaluator, or Viewer reader
+changes its contract because of this presentation choice.
 Connection creation and proof issuance remain in `storage.py`.
 Its capability object is constructed once per top-level read from the
 already-observed source schema and describes the verification limit (500

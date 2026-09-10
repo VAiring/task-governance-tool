@@ -1252,9 +1252,9 @@ class M243CRunnerGateTests(unittest.TestCase):
                     "blocking_exact_current": 0,
                     "qualifying_exact_current": 0,
                     "receipts_exact_current": 0,
-                    "receipts_total": 0,
                 },
             )
+            self.assertIsNone(shown_data["verification_evidence"]["current_receipt"])
             self.assertNotEqual(rejected_receipt.returncode, 0)
             self.assertEqual(
                 json.loads(rejected_receipt.stdout)["errors"][0]["code"],

@@ -109,6 +109,13 @@ class VerificationReceiptResult:
     receipt: dict[str, Any]
 
 
+@dataclass
+class TaskShowVerificationDetails:
+    """Show-only exact-current Receipt context after existing validation."""
+
+    receipt: dict[str, Any] | None = None
+
+
 @dataclass(frozen=True)
 class VerificationGate:
     required: bool
@@ -766,6 +773,7 @@ def read_verification_evidence(
     task: Mapping[str, Any],
     completion_cycle: CompletionCycle | None = None,
     runner_selection: VerificationRunnerGateSelection | None = None,
+    task_show_details: TaskShowVerificationDetails | None = None,
 ) -> dict[str, Any]:
     """Return the bounded JSON-only Task-show projection."""
 
@@ -839,6 +847,17 @@ def read_verification_evidence(
         for row in exact_rows
     )
     blocking = len(exact_rows) - qualifying
+    if task_show_details is not None:
+        task_show_details.receipt = (
+            {
+                key: exact_rows[0][key]
+                for key in (
+                    "verification_receipt_id", "result", "duration_ms",
+                    "scope_coverage", "created_at",
+                )
+            }
+            if exact_rows else None
+        )
     return {
         "expectation": expectation,
         "contract_revision": contract_revision,

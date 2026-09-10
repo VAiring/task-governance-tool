@@ -406,7 +406,7 @@ preserves the committed mutation and last-good index with one fixed warning.
 
 The Viewer is a self-contained, read-only `file://` projection under the
 ignored package state. Snapshot v4 accepts source schemas v5-v22 and includes
-the same bounded newest-first completion history as `task show`; sources v5-v14
+the same bounded newest-first completion history as `task show --audit`; sources v5-v14
 receive an empty, legacy-incomplete history and sources v15-v22 use stored
 cycles. It omits internal event links,
 storage paths, maintenance internals, checkpoint content, handoffs,
@@ -496,9 +496,9 @@ Applicable leaves retain `--repo`, `--json`, and `--read-only`; the root retains
 `--version`. Storage and generated-artifact paths are internal implementation
 details, not public CLI choices. Unknown or removed commands/options fail at
 the parser boundary before package, project, Git, or SQLite resolution.
-There is no history command or option; selected detail from `task context`,
-explicit `task show`, and the
-automatically maintained Viewer supply the bounded audit projection.
+There is no separate history command or pagination. `task context` and default
+`task show` supply the complete fixed working projection; explicit `task show
+--audit` and the automatically maintained Viewer supply bounded history detail.
 
 The normal no-finding Tier 2 manual/fallback Task flow uses at most eight governance subprocess
 calls with the default-off Effort Advisory, or nine when

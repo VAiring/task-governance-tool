@@ -299,7 +299,7 @@ class M224PackageForwardTests(unittest.TestCase):
                 legacy_cycle,
             )
 
-            shown = require_cli_json(install, "task", "show", task_id)
+            shown = require_cli_json(install, "task", "show", task_id, "--audit")
             evidence = shown["data"]["review_evidence"]
             shown_receipt = next(
                 receipt

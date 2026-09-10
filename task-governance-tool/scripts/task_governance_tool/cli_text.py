@@ -147,6 +147,8 @@ def task_show_text(
     contract: dict[str, Any],
     completion_history: dict[str, Any],
     completion_history_latest_summary: dict[str, Any] | None,
+    *,
+    audit: bool = True,
 ) -> str:
     lines = [
         f"Task: {task['task_id']}",
@@ -192,14 +194,22 @@ def task_show_text(
             f"handed_off={handoff_summary['handed_off']} "
             f"withdrawn={handoff_summary['handoff_withdrawn_by_user']}"
         )
-    lines.append(
-        "Completion history: "
-        f"{completion_history['returned_count']}/{completion_history['total']} returned, "
-        f"truncated={str(completion_history['truncated']).lower()}, "
-        "legacy_history_incomplete="
-        f"{str(completion_history['legacy_history_incomplete']).lower()}"
-    )
-    if completion_history_latest_summary is not None:
+    if audit:
+        lines.append(
+            "Completion history: "
+            f"{completion_history['returned_count']}/{completion_history['total']} returned, "
+            f"truncated={str(completion_history['truncated']).lower()}, "
+            "legacy_history_incomplete="
+            f"{str(completion_history['legacy_history_incomplete']).lower()}"
+        )
+    else:
+        lines.append(
+            "Completion history: "
+            f"{completion_history['total']} saved, "
+            "legacy_history_incomplete="
+            f"{str(completion_history['legacy_history_incomplete']).lower()}"
+        )
+    if audit and completion_history_latest_summary is not None:
         latest_cycle = completion_history_latest_summary
         completed_at = latest_cycle["completed_at"] or "unknown"
         lines.append(

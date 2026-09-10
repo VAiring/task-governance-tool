@@ -216,6 +216,7 @@ def show_task(
     task_id: str,
     *,
     json_output: bool,
+    audit: bool = False,
 ):
     args = [
         "task",
@@ -227,6 +228,8 @@ def show_task(
         task_id,
         "--read-only",
     ]
+    if audit:
+        args.append("--audit")
     if json_output:
         args.append("--json")
     return run_taskgov(*args)

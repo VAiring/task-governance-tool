@@ -86,25 +86,55 @@ Compact next data is exactly `tasks`, `total_matching`, `returned_count`,
 `lane`, `lane_order`, `priority`, `review_tier`, `tags`, and
 `suggested_next_action`.
 
-`task show` reads one Task, bounded events, current review evidence, Contract,
-handoff counts, latest checkpoint, completion history, and suggested action in
-one query-only transaction. It also returns exactly one routing Boolean
+`task show` defaults to one fixed working-context projection. It retains the
+complete Task and current Contract, latest checkpoint, handoff counts, current
+review/verification gates and operational evidence, completion-history counts,
+and suggested action. Repeated target, tier, and verification text are emitted
+once at their Task/Contract owner, rather than again in evidence summaries.
+The [Review/completion owner](review-completion-specification.md) defines the
+working evidence and explicit audit projections.
+
+`task show --audit` explicitly obtains the previous bounded detail projection,
+including recent Receipt/provenance and Finding rows and saved completion
+cycles. It is for history investigation, not another normal-loop read, a
+free-form field selector, an exhaustive export, or a current completion basis.
+Normal use requires no mode choice, remembered reads, or follow-up detail query.
+Both modes perform all existing selected-Task, evidence, history, privacy, and
+Runner validation before presentation; hiding a detail never bypasses a check
+or changes a gate, stored row, Evidence artifact, or Viewer projection.
+
+Normal events retain the newest event and every `note_added`, `task_updated`,
+`review_tier_changed`, and `task_reopened` event, without duplication, ordered by
+`created_at DESC, rowid DESC`. These types can carry caller notes, transition
+reasons, or reopen context. They have no age/generation cutoff: neither a newer
+mechanical event nor a checkpoint is proof that an older note is superseded.
+No event prose is parsed to infer relevance. The retained subset can therefore
+grow with genuine operation history. Audit events keep the previous newest-ten
+window; normal events are not derived by filtering that window.
+Additional event summaries exposed beyond that former window must satisfy the
+existing event-summary text/privacy limits before output. Their original bytes
+are returned unchanged; rejection uses the existing sanitized
+`project_state_unreadable` failure without a partial result or write. This local
+output check does not change audit reads or global state admission.
+
+The read is query-only. Both modes return exactly one routing Boolean
 `effort_advisory_enabled`; invalid advisory configuration returns false plus
-the existing continuation warning. Text show does not add that flag.
+the existing continuation warning. Human text remains concise and does not
+replace the complete JSON Contract or gate information.
 
 `task context` is the fixed read-only start/resume operation; it accepts only
 the common CLI options. It applies default compact current selection (limit
 20), resumes the first `in_progress` or `review_pending` row in returned
 order, or otherwise applies default compact next selection (limit 5) and picks
 its first candidate. Held rows remain recalled and do not suppress unrelated
-ready work. It returns the selected Task's complete `task show` data, including
+ready work. It returns the selected Task's complete normal `task show` data, including
 Contract, latest checkpoint, current constraints/blockers, gates, and routing.
 It never starts a Task or changes state, evidence, or gate requirements.
 
 Success data is exactly `selection`, `current`, `next`, and `selected`.
 `selection` is `current`, `next`, or `none`; `current` is the existing compact
 current data; `next` is the existing compact next data only when fallback ran,
-otherwise null; `selected` is the full show data or null when no candidate
+otherwise null; `selected` is the complete normal show data or null when no candidate
 exists. Component selection and omission budgets remain unchanged. Successful
 component warnings are retained once. Any read failure stops without another
 candidate and preserves its sanitized code/exit status, with no warnings and

@@ -584,7 +584,7 @@ batch retains its existing validation, ordering, and omission boundaries.
 Success data is exactly `selection`, `current`, `next`, and `selected`.
 `selection` is `current`, `next`, or `none`. `current` is compact-current data;
 `next` is compact-next data only when fallback ran, otherwise null. `selected`
-is the full existing `task show` data, or null when no candidate exists. It
+is the complete normal `task show` data, or null when no candidate exists. It
 includes complete Contract, latest checkpoint, current blockers/gates, and
 `effort_advisory_enabled`. Use that detail directly without another
 current/next/show call. Held work remains recalled; successful component
@@ -630,11 +630,16 @@ The command emits no paths, stderr, diffs, raw logs, or Git writes.
 
 ### `task show`
 
-Read one task and its bounded current context:
+Read one task's fixed normal working context:
 
 ```powershell
 python scripts/taskgov.py task show --repo <target-project> <task-id> --json
 ```
+
+For explicit historical investigation, use the same leaf with `--audit`.
+It returns the previous bounded detail, not an exhaustive export or another
+normal-loop read. `task context.selected` always uses normal detail. Neither
+mode changes saved Evidence, validation, or any verification/review gate.
 
 Data keys are exactly `task`, `events`, `suggested_next_action`,
 `review_evidence`, `handoff_summary`, `contract`, `latest_checkpoint`,
@@ -646,11 +651,34 @@ A task-show failure uses both `completion_history=null` and
 profile content returns `false` plus
 `effort_advisory_profile_invalid`; the field performs no Git work.
 
-The task contains typed completion evidence and current review-target fields.
-`review_evidence` is bounded to the current target/generation, tier gate,
-counts, blocking findings, and recent structured receipts/findings; it omits
-raw reviews and private reasoning. `handoff_summary` contains exact
+The Task contains typed completion evidence and current review-target fields;
+the complete current Contract and latest checkpoint remain in both modes.
+Normal `review_evidence` has exactly `gate`, `counts`, `current_receipts`, and
+`current_findings`. Gate has `required_independent_passes`,
+`qualifying_independent_passes`, `fallback_kind`, and `satisfied`; counts has
+`receipts_current_generation`, `changes_requested_current_generation`,
+`open_high`, `open_medium`, and `open_low`. The Task's target and tier are not
+repeated. Current Receipts match the complete current target/generation and
+contain `review_receipt_id`, `reviewer_key`, `receipt_kind`, `verdict`, `summary`,
+`user_approved`, and `created_at`, in existing newest-first order. Current
+Findings contain every open Finding, including low severity and old generations,
+plus resolved high/medium Findings still requiring fresh review. Each appears
+once with its existing structured fields and `blocking_reason` equal to
+`unresolved`, `fresh_review_required`, or null when nonblocking. These are not
+filtered recent-ten windows. Audit retains the prior target, full gate/counts,
+blocking Findings, and bounded recent Receipt/provenance and Finding rows.
+Neither form includes raw reviews or private reasoning. `handoff_summary` contains exact
 `pending_handoff`, `handed_off`, and `handoff_withdrawn_by_user` counts.
+
+Normal events retain the newest event and all `note_added`, `task_updated`,
+`review_tier_changed`, and `task_reopened` events, without duplicate rows, in
+`created_at DESC, rowid DESC` order. These types can carry notes or continuation
+reasons and are not removed by age, generation, or a newer checkpoint. Event
+prose is not interpreted to infer supersession; this subset can grow with
+operation history. Audit keeps the previous newest ten events. Additional
+older summaries newly exposed in normal mode pass the existing event-summary
+text/privacy checks without changing their bytes; a rejection fails sanitized
+as `project_state_unreadable`, with no partial result or write.
 
 `verification_evidence` includes `current_verification_subject`. It is null
 without a capture-version-1 nonempty verification criterion; otherwise it is
@@ -671,7 +699,9 @@ An exact-current qualifying complete-plan
 Runner pass is satisfied with no Receipt, so `qualifying_receipt_id` is null
 and the Receipt-only counts may all be zero.
 
-`completion_history` has exactly:
+Normal `completion_history` has only `total` and `legacy_history_incomplete`.
+All existing history validation still runs, including for hidden detail.
+Audit `completion_history` retains exactly:
 
 ```text
 total, returned_count, truncated, legacy_history_incomplete, cycles
@@ -703,16 +733,25 @@ Version 1 emits integer counts and one or two slot-ordered receipt-ID strings.
 `verification_attestation` is only `true` or `null`. Internal event links,
 review bodies, and raw verification content never appear. Saved cycles are
 audit-only and never satisfy the current verification, review, or completion
-gate. Text output reports only bounded counts and the latest cycle's
-non-content fields.
+gate. Audit text reports bounded counts and the latest cycle's non-content
+fields; normal text omits saved-cycle detail.
 
 Stored public completion-evidence and review-target text is strictly
 privacy-revalidated before projection. Completion history has no
 [legacy counter compatibility exception](#errors-and-privacy); rejected or corrupt stored text returns
-`completion_history_inconsistent` without exposing the value. `task show` and
-Viewer use the same bounded projection.
+`completion_history_inconsistent` without exposing the value. Audit `task show`
+and Viewer use the same bounded history projection; normal show validates it
+before omitting its detail.
 
-`verification_evidence` has exactly `expectation`, `contract_revision`,
+Normal `verification_evidence` has exactly `current_verification_subject`,
+`gate`, `counts`, and `current_receipt`. Counts contains `receipts_exact_current`,
+`qualifying_exact_current`, and `blocking_exact_current`. Current Receipt is null
+or the validated exact-current row's `verification_receipt_id`, `result`,
+`duration_ms`, `scope_coverage`, and `created_at`; it is selected independently of
+the recent-ten window. The complete verification text and target remain in
+Task and the revision in Contract, without repeating them here.
+
+Audit `verification_evidence` has exactly `expectation`, `contract_revision`,
 `source_revision`, `current_verification_subject`, `gate`, `counts`, and
 `recent_receipts`. `source_revision`
 is null without a target; otherwise it contains exactly `kind`, `value`,
@@ -721,8 +760,9 @@ nullable `base_revision`, and positive `generation`. Gate has exactly
 `qualifying_receipt_id`. Counts has exactly `receipts_total`,
 `receipts_exact_current`, `qualifying_exact_current`, and
 `blocking_exact_current`. At most ten newest-first rows use the fixed public
-Receipt fields and never expose the internal expectation digest. Text
-`task show` is unchanged. Invalid stored Receipt evidence returns the
+Receipt fields and never expose the internal expectation digest. The same gate
+and subject types/null rules apply in normal mode. Text does not summarize
+Receipt state. Invalid stored Receipt evidence returns the
 sanitized `invalid_verification_evidence` failure.
 
 Revision-zero Contract data is:

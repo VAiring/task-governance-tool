@@ -204,8 +204,9 @@ class PosixRunnerPublicGateTests(unittest.TestCase):
         })
         self.assertEqual(evidence["counts"], {
             "blocking_exact_current": 0, "qualifying_exact_current": 0,
-            "receipts_exact_current": 0, "receipts_total": 0,
+            "receipts_exact_current": 0,
         })
+        self.assertIsNone(evidence["current_receipt"])
 
     def _review(self):
         # Explicit test-only human provenance, not a claimed independent agent review.

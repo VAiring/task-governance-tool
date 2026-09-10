@@ -266,6 +266,14 @@ Current success-data projections are:
 | `review.finding.resolve` | `finding`, `event` |
 | `verification.receipt.add` | `receipt` |
 
+`task.show` uses a fixed normal working projection; `--audit` selects the
+previous bounded historical detail. The top-level keys above are shared, while
+the nested evidence/history forms belong to the
+[Task read](task-operation-specification.md#task-selection-and-read-commands)
+and [Review/completion](review-completion-specification.md#public-and-read-projection)
+owners. `task.context.selected` always uses normal working detail. These are
+display choices only; stored Evidence, validation and current gates are unchanged.
+
 `task.show` failure keeps both `completion_history=null` and
 `verification_evidence=null` in its bounded empty data.
 `task.context` failure returns `selection="none"` and null `current`, `next`,
@@ -585,9 +593,10 @@ Evidence JSON member, Viewer UI, or Skill trigger. Gate integration adds only
 the two closed [target-set JSON success fields](review-completion-specification.md#git-snapshot-and-target-binding); Bundle/Evidence serialization
 and projection add no normal-loop call, and no post-target `task show` is added.
 
-The existing `task show.verification_evidence` object keeps its exact keys and
-types. `current_verification_subject`, all four counts, and `recent_receipts`
-remain Receipt-only projections; no Runner ID or count is exposed. For a
+The normal and audit `task show.verification_evidence` projections follow the
+[Review/completion read contract](review-completion-specification.md#public-and-read-projection).
+Their subject, counts, and Receipt detail remain Receipt-only; no Runner ID or
+count is exposed. Display selection does not change the shared gate types. For a
 nonempty schema-v21 verification expectation on a live, non-done Task, the
 existing gate fields and completion failures use this closed matrix after the
 existing missing-target and capture-version checks and before review-receipt

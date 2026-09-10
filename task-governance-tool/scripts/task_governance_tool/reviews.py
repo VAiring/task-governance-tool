@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 import secrets
 import sqlite3
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 from task_governance_tool.artifact_manifest import (
@@ -142,6 +142,14 @@ class ReviewReceiptResult:
 class ReviewFindingResult:
     finding: dict[str, Any]
     event: dict[str, Any]
+
+
+@dataclass
+class TaskShowReviewDetails:
+    """Show-only current context gathered from the existing validated stream."""
+
+    receipts: list[dict[str, Any]] = field(default_factory=list)
+    findings: list[dict[str, Any]] = field(default_factory=list)
 
 
 def review_error(code: str, message: str, field: str | None = None) -> ReviewEvidenceError:
@@ -1728,6 +1736,7 @@ def read_review_evidence(
     recent_limit: int = 10,
     validated_task: dict[str, Any] | sqlite3.Row | None = None,
     source_schema_version: int = SCHEMA_VERSION,
+    task_show_details: TaskShowReviewDetails | None = None,
 ) -> dict[str, Any]:
     if not 1 <= recent_limit <= 10:
         raise review_error("invalid_review_evidence", "recent review evidence limit must be 1 to 10")
@@ -1792,6 +1801,8 @@ def read_review_evidence(
     finding_recent_candidates: list[tuple[str, int, dict[str, Any]]] = []
     blocking_recent_candidates: list[tuple[str, int, dict[str, Any]]] = []
     recent_receipts: list[dict[str, Any]] = []
+    current_receipt_candidates: list[tuple[str, int, dict[str, Any]]] = []
+    current_finding_candidates: list[tuple[str, int, dict[str, Any]]] = []
     receipt_inventory_cursor: sqlite3.Cursor | None = None
     receipt_reference_cursor: sqlite3.Cursor | None = None
     finding_inventory_cursor: sqlite3.Cursor | None = None
@@ -1970,6 +1981,21 @@ def read_review_evidence(
                 )
                 if not is_current:
                     continue
+                if task_show_details is not None:
+                    current_receipt_candidates.append(
+                        (
+                            row["created_at"],
+                            row["inventory_rowid"],
+                            {
+                                key: row[key]
+                                for key in (
+                                    "review_receipt_id", "reviewer_key",
+                                    "receipt_kind", "verdict", "summary",
+                                    "user_approved", "created_at",
+                                )
+                            },
+                        )
+                    )
                 current_receipts += 1
                 if (
                     row["receipt_kind"] == "independent"
@@ -2094,6 +2120,31 @@ def read_review_evidence(
                         value=finding,
                         limit=recent_limit,
                     )
+                if task_show_details is not None and (
+                    status == "open"
+                    or (
+                        severity in {"high", "medium"}
+                        and status == "resolved"
+                        and finding["target_generation"] >= generation
+                    )
+                ):
+                    current_finding = dict(finding)
+                    current_finding["blocking_reason"] = (
+                        None
+                        if severity == "low"
+                        else (
+                            "unresolved"
+                            if status == "open"
+                            else "fresh_review_required"
+                        )
+                    )
+                    current_finding_candidates.append(
+                        (
+                            finding["created_at"],
+                            row["inventory_rowid"],
+                            current_finding,
+                        )
+                    )
 
         if finding_reference_cursor is not None:
             while True:
@@ -2137,6 +2188,22 @@ def read_review_evidence(
         ):
             if cursor is not None:
                 cursor.close()
+
+    if task_show_details is not None:
+        task_show_details.receipts = [
+            item[2] for item in sorted(
+                current_receipt_candidates,
+                key=lambda item: (item[0], item[1]),
+                reverse=True,
+            )
+        ]
+        task_show_details.findings = [
+            item[2] for item in sorted(
+                current_finding_candidates,
+                key=lambda item: (item[0], item[1]),
+                reverse=True,
+            )
+        ]
 
     if total_receipts == 0:
         return empty_evidence

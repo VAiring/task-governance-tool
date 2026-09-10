@@ -105,6 +105,8 @@ class TaskContextTests(unittest.TestCase):
         self.assertEqual(payload["data"]["selected"]["task"]["task_id"], urgent["task_id"])
         self.assertEqual(payload["data"]["selected"]["task"]["status"], "ready")
         self.assertIsNone(payload["data"]["selected"]["latest_checkpoint"])
+        self.assertEqual(set(payload["data"]["selected"]["completion_history"]), {"total", "legacy_history_incomplete"})
+        self.assertEqual(set(payload["data"]["selected"]["review_evidence"]), {"gate", "counts", "current_receipts", "current_findings"})
 
     def test_current_resumption_uses_first_active_status_and_skips_next(self):
         review = self.add("Review pending", "--status", "review_pending", "--priority", "urgent")
@@ -250,7 +252,7 @@ class TaskContextTests(unittest.TestCase):
 
     def test_context_rejects_all_leaf_options_before_state_access(self):
         with mock.patch.object(cli_service, "handle_command", side_effect=AssertionError("parse must fail first")):
-            for arguments in (("--compact",), ("--limit", "1"), ("--status", "paused"), ("--kind", "optional"), ("--lane", "lane"), ("--priority", "urgent"), ("tg_task_missing",)):
+            for arguments in (("--compact",), ("--audit",), ("--limit", "1"), ("--status", "paused"), ("--kind", "optional"), ("--lane", "lane"), ("--priority", "urgent"), ("tg_task_missing",)):
                 with self.subTest(arguments=arguments):
                     result = run(self.db, self.repo, "task", "context", *arguments)
                     payload = json.loads(result.stdout)

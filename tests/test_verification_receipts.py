@@ -177,12 +177,12 @@ class VerificationReceiptIntegrationTests(unittest.TestCase):
                     self.assertEqual(
                         shown["counts"],
                         {
-                            "receipts_total": index,
                             "receipts_exact_current": 1,
                             "qualifying_exact_current": int(qualifies),
                             "blocking_exact_current": int(not qualifies),
                         },
                     )
+                    self.assertEqual(table_count(db, "verification_receipts"), index)
 
 
     def test_status_expectation_and_target_errors_use_fixed_precedence(self):
@@ -407,6 +407,7 @@ class VerificationReceiptIntegrationTests(unittest.TestCase):
                     repo,
                     task_id,
                     json_output=True,
+                    audit=True,
                 )
             )
             public_cycle = shown["data"]["completion_history"]["cycles"][0]
@@ -480,9 +481,10 @@ class VerificationReceiptIntegrationTests(unittest.TestCase):
                 0,
                 changes_requested.stdout,
             )
-            review_evidence = payload(
+            shown = payload(
                 show_task(db, repo, task_id, json_output=True)
-            )["data"]["review_evidence"]
+            )["data"]
+            review_evidence = shown["review_evidence"]
             self.assertEqual(
                 review_evidence["counts"][
                     "changes_requested_current_generation"
@@ -490,7 +492,7 @@ class VerificationReceiptIntegrationTests(unittest.TestCase):
                 1,
             )
             self.assertEqual(
-                review_evidence["target"]["generation"],
+                shown["task"]["review_target_generation"],
                 generation,
             )
 

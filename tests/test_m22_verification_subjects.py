@@ -256,7 +256,7 @@ class M22VerificationSubjectTests(unittest.TestCase):
                     ),
                 )
 
-    def test_task_show_adds_exact_json_projection_and_keeps_text_unchanged(self):
+    def test_task_show_audit_adds_exact_json_projection_and_keeps_text_unchanged(self):
         with tempfile.TemporaryDirectory() as temp:
             repo, db = initialize(Path(temp))
             task = add_task(db, repo)
@@ -267,6 +267,7 @@ class M22VerificationSubjectTests(unittest.TestCase):
                 repo,
                 task_id,
                 json_output=False,
+                audit=True,
             ).stdout
 
             recorded = add_receipt(db, repo, task_id, generation)
@@ -279,6 +280,7 @@ class M22VerificationSubjectTests(unittest.TestCase):
                 repo,
                 task_id,
                 json_output=False,
+                audit=True,
             ).stdout
             self.assertEqual(after_text, before_text)
 
@@ -288,6 +290,7 @@ class M22VerificationSubjectTests(unittest.TestCase):
                     repo,
                     task_id,
                     json_output=True,
+                    audit=True,
                 )
             )
             evidence = shown["data"]["verification_evidence"]
@@ -700,7 +703,7 @@ class M22VerificationSubjectTests(unittest.TestCase):
                 storage_service.apply_migrations(connection)
                 self.assertEqual(current_schema_version(connection), 22)
 
-            shown = show_task(db, repo, task_id, json_output=True)
+            shown = show_task(db, repo, task_id, json_output=True, audit=True)
             self.assertEqual(shown.returncode, 0, shown.stdout)
             evidence = payload(shown)["data"]["verification_evidence"]
             self.assertEqual(
@@ -1263,10 +1266,11 @@ class M22VerificationSubjectTests(unittest.TestCase):
                     None,
                 ),
             )
-            evidence = payload(
+            shown = payload(
                 show_task(db, repo, task_id, json_output=True)
-            )["data"]["verification_evidence"]
-            self.assertEqual(evidence["expectation"], exact_verification)
+            )["data"]
+            evidence = shown["verification_evidence"]
+            self.assertEqual(shown["task"]["verification"], exact_verification)
             self.assertEqual(
                 evidence["gate"],
                 {
@@ -1480,7 +1484,7 @@ class M22VerificationSubjectTests(unittest.TestCase):
             self.assertEqual(current_basis, (2, "", "", "", 2))
 
             evidence = payload(
-                show_task(db, repo, task_id, json_output=True)
+                show_task(db, repo, task_id, json_output=True, audit=True)
             )["data"]["verification_evidence"]
             self.assertEqual(evidence["contract_revision"], 2)
             self.assertIsNone(evidence["source_revision"])
@@ -1619,6 +1623,7 @@ class M22VerificationSubjectTests(unittest.TestCase):
                     repo,
                     task_id,
                     json_output=True,
+                    audit=True,
                 )
             )["data"]["verification_evidence"]
             self.assertEqual(shown["counts"]["receipts_total"], 1)

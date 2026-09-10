@@ -111,7 +111,7 @@ from task_governance_tool.review_packet import (
     prepare_review_packet,
 )
 from task_governance_tool.setup import run_setup
-from task_governance_tool.task_show_projection import show_task
+from task_governance_tool.task_show_projection import build_task_show_data, show_task
 from task_governance_tool.tasks import (
     CURRENT_STATUSES,
     TaskRepositoryError,
@@ -1078,6 +1078,7 @@ def task_show_failure_result(
 
 def handle_task_show(context: CommandContext) -> CommandResult:
     target = resolve_context_target(context)
+    audit = bool(getattr(context.args, "audit", False))
     try:
         task_id = validate_task_id(getattr(context.args, "task_id", ""))
         runner_selection_required = False
@@ -1107,6 +1108,7 @@ def handle_task_show(context: CommandContext) -> CommandResult:
                         connection,
                         target.project,
                         task_id,
+                        include_current_context=not audit,
                     )
         finally:
             if context.read_connection_override is not None:
@@ -1130,6 +1132,7 @@ def handle_task_show(context: CommandContext) -> CommandResult:
                     runner_selection=(
                         runner_selection if current_task == observed_task else None
                     ),
+                    include_current_context=not audit,
                 )
     except TaskValidationError as exc:
         return task_show_failure_result(
@@ -1199,17 +1202,7 @@ def handle_task_show(context: CommandContext) -> CommandResult:
             exit_code=EXIT_TOOL_ERROR,
         )
 
-    data = {
-        "task": result.task,
-        "events": result.events,
-        "suggested_next_action": result.suggested_next_action,
-        "review_evidence": result.review_evidence,
-        "verification_evidence": result.verification_evidence,
-        "handoff_summary": result.handoff_summary,
-        "contract": result.contract,
-        "latest_checkpoint": result.latest_checkpoint,
-        "completion_history": result.completion_history,
-    }
+    data = build_task_show_data(result, audit=audit)
     effort_profile = load_effort_profile(skill_root_from_script(cli_script_path()))
     data["effort_advisory_enabled"] = bool(
         effort_profile.valid and effort_profile.enabled
@@ -1238,6 +1231,7 @@ def handle_task_show(context: CommandContext) -> CommandResult:
             result.contract,
             result.completion_history,
             result.completion_history_latest_summary,
+            audit=audit,
         ),
         exit_code=EXIT_SUCCESS,
     )

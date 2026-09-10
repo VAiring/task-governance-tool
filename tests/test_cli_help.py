@@ -59,12 +59,29 @@ class CliHelpTests(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stderr)
             for option in ("--repo", "--json", "--read-only"):
                 self.assertIn(option, result.stdout)
-            for option in ("--compact", "--limit", "--status", "--kind", "--lane", "--priority", "task_id"):
+            for option in ("--compact", "--audit", "--limit", "--status", "--kind", "--lane", "--priority", "task_id"):
                 self.assertNotIn(option, result.stdout)
             self.assertEqual(
                 sorted(path.relative_to(install.project_root) for path in install.project_root.rglob("*")),
                 before,
             )
+
+    def test_audit_option_is_available_only_on_task_show(self):
+        parser = build_parser()
+        args = parser.parse_args(["task", "show", "tg_task_example", "--audit", "--json"])
+        self.assertTrue(args.audit)
+        ordinary = parser.parse_args(["task", "show", "tg_task_example", "--json"])
+        self.assertFalse(ordinary.audit)
+        with tempfile.TemporaryDirectory() as tmp:
+            install = make_physical_install(Path(tmp))
+            shown = install.run("task", "show", "--help")
+            self.assertEqual(shown.returncode, 0, shown.stderr)
+            self.assertIn("--audit", shown.stdout)
+            for command in (("task", "context"), ("task", "current"), ("task", "next")):
+                rejected = install.run(*command, "--audit", "--json")
+                self.assertEqual(rejected.returncode, 1)
+                self.assertEqual(json.loads(rejected.stdout)["errors"][0]["code"], "invalid_argument")
+            self.assertFalse((install.skill_root / "state").exists())
 
     def test_root_help_is_read_only_and_hides_removed_storage_surface(self):
         with tempfile.TemporaryDirectory() as tmp:

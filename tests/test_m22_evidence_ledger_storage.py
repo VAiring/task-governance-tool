@@ -3455,6 +3455,7 @@ class EvidenceLedgerStorageTests(unittest.TestCase):
                         str(db),
                         task_id,
                         "--read-only",
+                        "--audit",
                         "--json",
                     )
                     self.assertEqual(

@@ -174,6 +174,13 @@ key distinctness proves only different stored strings, not identity,
 independence, provenance, expertise, target inspection, or authentication. The
 trusted caller/orchestrator is responsible for truthful attestation.
 
+Normal Task detail obtains current Receipt summaries and every operational
+Finding through a show-only collector in the existing fully validated inventory
+stream. It neither filters the recent-ten projection nor repeats validation
+queries. Existing readers and gate consumers retain their default bounded
+projection; the final normal show projection removes duplicated target/tier
+fields and emits each operational Finding once. Audit retains the prior shape.
+
 <a id="review-packet"></a>
 
 ## Review Packet
@@ -326,7 +333,9 @@ the Viewer batch reader retains its upstream global-snapshot validation
 assumption. These paths do not acquire a connection or start a transaction.
 
 `task show` reads total, incomplete-legacy aggregate, and newest-first rows in
-the same snapshot as all other Task data. The exact wrapper is:
+the same snapshot as all other Task data, regardless of display mode. Normal
+presentation keeps only total and legacy incompleteness after validation;
+`--audit` exposes the previous exact wrapper:
 
 ```json
 {
@@ -580,9 +589,13 @@ linked Receipt nor its valid qualifying Runner observation is
 The one Receipt command is `verification receipt add`. Its success data is
 exactly `receipt`. `task show` obtains Receipt totals, exact-current
 counts, gate, and newest 10 rows in the same query-only transaction as the
-Task and adds the fixed `verification_evidence` object. The formatter exposes
-only the specification's public allow-lists; no separate list/show/import/
-export command or pagination is added.
+Task. A show-only collector retains the validated exact-current row for normal
+presentation; filtering recent rows cannot establish that exact-current row.
+The pure normal projection removes repeated expectation, Contract revision and
+target, retaining the subject, gate, current counts, and concise current result.
+`--audit` preserves the previous detailed `verification_evidence` object. Both
+use the same validation and public allow-lists; no separate Receipt command,
+pagination, storage mutation, or gate branch is added.
 
 Canonical state resolution retains its existing global admitted-row validation.
 After that boundary, the `task show` handler reads only the selected Task for
@@ -606,11 +619,11 @@ backed by a matching version-0 cycle reports the
 explicit legacy exemption even when its target is absent, including the sole
 bridge-created cycle. A version-1 done cycle is validated against its stored
 manual or Runner branch before projection. Task-show failure data includes a null
-`verification_evidence`; text Task show remains unchanged. The Receipt write
+`verification_evidence`; audit text Task show remains unchanged. The Receipt write
 alone has the fixed three-line text projection.
 
-The initial completion-history JSON remains unchanged. The current done Task
-retains its target and Receipt, so `task show.verification_evidence` exposes
+The audit completion-history JSON remains unchanged. The current done Task
+retains its target and Receipt, so normal `task show.verification_evidence` exposes
 the current qualifying basis; the cycle target tuple also identifies it.
 Reopen advances the target and makes it historical. A later history projection
 would require separate evidence and approval rather than silently changing

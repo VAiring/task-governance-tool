@@ -2380,7 +2380,7 @@ class ReviewEvidenceTests(unittest.TestCase):
             self.assertEqual(payload(blocked)["errors"][0]["code"], "review_receipts_insufficient")
             shown = run_taskgov(
                 "task", "show", "--repo", str(repo), "--db", str(db),
-                task["task_id"], "--json",
+                task["task_id"], "--audit", "--json",
             )
             evidence = payload(shown)["data"]["review_evidence"]
             self.assertEqual(evidence["target"]["generation"], 3)
@@ -2613,7 +2613,7 @@ class ReviewEvidenceTests(unittest.TestCase):
             self.assertEqual(read_only.returncode, 1)
             self.assertEqual(db.read_bytes(), before)
 
-    def test_task_show_bounds_receipts_and_findings_and_does_not_write(self):
+    def test_task_show_audit_bounds_receipts_and_findings_and_does_not_write(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
             repo, db = root / "repo", root / "tasks.sqlite"
@@ -2632,7 +2632,7 @@ class ReviewEvidenceTests(unittest.TestCase):
             before = db.read_bytes()
             shown = run_taskgov(
                 "task", "show", "--repo", str(repo), "--db", str(db),
-                task["task_id"], "--json",
+                task["task_id"], "--audit", "--json",
             )
             self.assertEqual(shown.returncode, 0)
             evidence = payload(shown)["data"]["review_evidence"]
@@ -3039,7 +3039,7 @@ class ReviewEvidenceTests(unittest.TestCase):
             shown = payload(
                 run_taskgov(
                     "task", "show",
-                    "--repo", str(repo), "--db", str(db), task_id, "--json",
+                    "--repo", str(repo), "--db", str(db), task_id, "--audit", "--json",
                 )
             )
             self.assertEqual(evidence["counts"]["receipts_current_generation"], 1)
@@ -3520,7 +3520,7 @@ class ReviewEvidenceTests(unittest.TestCase):
             shown = payload(
                 run_taskgov(
                     "task", "show", "--repo", str(repo), "--db", str(db),
-                    task_id, "--json",
+                    task_id, "--audit", "--json",
                 )
             )["data"]
             self.assertEqual(shown["task"]["status"], "done")
@@ -3658,7 +3658,7 @@ class ReviewEvidenceTests(unittest.TestCase):
                     run_taskgov(
                         "task", "show",
                         "--repo", str(repo), "--db", str(db), task_id,
-                        "--json",
+                        "--audit", "--json",
                     )
                 )["data"]
                 self.assertEqual(shown["task"]["status"], "done")

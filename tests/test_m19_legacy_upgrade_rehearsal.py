@@ -679,7 +679,7 @@ class LegacyUpgradeAndRollbackRehearsalTests(unittest.TestCase):
             )
             fresh_shown = self.invoke(
                 legacy_skill, project, "task", "show", fresh_task_id,
-                "--repo", str(project), "--read-only", "--json",
+                "--repo", str(project), "--read-only", "--audit", "--json",
             )
             self.assertEqual(fresh_shown["data"]["task"]["status"], "done")
             self.assertEqual(

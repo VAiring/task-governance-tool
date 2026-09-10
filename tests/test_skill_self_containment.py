@@ -407,31 +407,36 @@ class SkillSelfContainmentTests(unittest.TestCase):
             "sha256:088f6070969a6ff72d09a7d1bfc059c1ab7c0e490c54931d8dae354cad925402",
         )
 
-    def test_task_show_verification_evidence_exact_keys_are_packaged(self):
-        contracts = (SKILL_ROOT / "references" / "cli_contracts.md").read_text(
-            encoding="utf-8"
-        )
-        task_show = contracts.split("### `task show`", 1)[1].split(
-            "### `task checkpoint`", 1
-        )[0]
-        exact_keys = re.search(
-            r"`verification_evidence` has exactly (.*?)\. `source_revision`",
-            " ".join(task_show.split()),
-        )
+    def test_installed_task_show_has_fixed_normal_and_audit_evidence(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            install = make_physical_install(Path(tmp))
 
-        self.assertIsNotNone(exact_keys)
-        self.assertEqual(
-            re.findall(r"`([^`]+)`", exact_keys.group(1)),
-            [
-                "expectation",
-                "contract_revision",
-                "source_revision",
-                "current_verification_subject",
-                "gate",
-                "counts",
-                "recent_receipts",
-            ],
-        )
+            def run(*args):
+                result = install.run(*args, "--json")
+                self.assertEqual(result.returncode, 0, result.stderr or result.stdout)
+                self.assertEqual(result.stderr, "")
+                payload = json.loads(result.stdout)
+                self.assertTrue(payload["ok"], payload)
+                return payload["data"]
+
+            run("setup")
+            task = run("task", "add", "--title", "Installed detail fixture")["task"]
+            before = tree_snapshot(install.project_root)
+            normal = run("task", "show", task["task_id"], "--read-only")
+            audit = run("task", "show", task["task_id"], "--audit", "--read-only")
+            self.assertEqual(tree_snapshot(install.project_root), before)
+            self.assertEqual(normal["task"], audit["task"])
+            self.assertEqual(normal["contract"], audit["contract"])
+            self.assertEqual(normal["latest_checkpoint"], audit["latest_checkpoint"])
+            self.assertEqual(normal["verification_evidence"]["gate"], audit["verification_evidence"]["gate"])
+            self.assertEqual(set(normal["verification_evidence"]), {
+                "current_verification_subject", "gate", "counts", "current_receipt",
+            })
+            self.assertIsNone(normal["verification_evidence"]["current_receipt"])
+            self.assertEqual(set(audit["verification_evidence"]), {
+                "expectation", "contract_revision", "source_revision",
+                "current_verification_subject", "gate", "counts", "recent_receipts",
+            })
 
     def test_m17_release_and_relocation_guidance_is_synchronized(self):
         skill_md = (SKILL_ROOT / "SKILL.md").read_text(encoding="utf-8")

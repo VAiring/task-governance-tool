@@ -2175,6 +2175,7 @@ class M243BSchema21CompatibilityTests(unittest.TestCase):
                 "--repo",
                 str(install.project_root),
                 task_id,
+                "--audit",
             )
             self.assertEqual(
                 shown["data"]["verification_evidence"]["gate"],

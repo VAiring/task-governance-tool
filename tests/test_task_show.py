@@ -126,10 +126,7 @@ class TaskShowTests(unittest.TestCase):
                 data["completion_history"],
                 {
                     "total": 0,
-                    "returned_count": 0,
-                    "truncated": False,
                     "legacy_history_incomplete": False,
-                    "cycles": [],
                 },
             )
             self.assertIn("created_at", data["task"])
@@ -170,7 +167,7 @@ class TaskShowTests(unittest.TestCase):
             )
             self.assertEqual(completed.returncode, 0, completed.stdout)
 
-            payload = show_task(db, repo, task["task_id"], "--read-only")
+            payload = show_task(db, repo, task["task_id"], "--read-only", "--audit")
 
             history = payload["data"]["completion_history"]
             self.assertEqual(history["total"], 1)
@@ -247,6 +244,7 @@ class TaskShowTests(unittest.TestCase):
                 repo,
                 task["task_id"],
                 "--read-only",
+                "--audit",
             )
             history = json_payload["data"]["completion_history"]
             self.assertEqual(history["total"], 1)
@@ -281,6 +279,7 @@ class TaskShowTests(unittest.TestCase):
                 str(db),
                 task["task_id"],
                 "--read-only",
+                "--audit",
             )
             self.assertEqual(text_result.returncode, 0, text_result.stderr)
             self.assertIn(
@@ -494,7 +493,7 @@ class TaskShowTests(unittest.TestCase):
             repo = Path(tmp) / "repo"
             task = add_task(db, repo, "Ready optional")
 
-            result = run_taskgov("task", "show", "--repo", str(repo), "--db", str(db), task["task_id"])
+            result = run_taskgov("task", "show", "--repo", str(repo), "--db", str(db), task["task_id"], "--audit")
 
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertEqual(result.stderr, "")

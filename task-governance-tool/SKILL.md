@@ -5,300 +5,113 @@ description: Project-scoped local-first task execution for Codex using the bundl
 
 # Task Governance Tool
 
-Use this skill to continue governed work from compact local state. Treat the
-target project's `AGENTS.md`, specifications, design, tests, and current user
-decisions as authority. Treat taskgov state only as an execution aid.
+Use taskgov state as an execution aid, not authority. The target project's
+`AGENTS.md`, specifications, design, tests, and current user decisions govern
+the work. Registration or inspection grants no implementation, Git, network,
+or external-operation permission.
 
 ## Scope And Invocation
 
-Use one physical copy at
-`.agents/skills/task-governance-tool` inside the governed project. Stateful use
-from a user-wide copy, symbolic link, or Windows junction is unsupported.
-Require Python 3.12 or later. Ordinary Task use supports Windows, Linux, and
-macOS. The explicit trusted-local Runner supports the same three platforms
-under the [OS limits and optional Plan example](references/cli_contracts.md#runner-plan-example-and-os-limits);
-verification without Runner opt-in remains manual.
-
-From the target-project root, invoke:
+Use one physical project-scoped copy at
+`.agents/skills/task-governance-tool`. User-wide, symbolic-link, and Windows
+junction stateful use is unsupported. Require Python 3.12 or later on Windows,
+Linux, or macOS. From the **target-project root**, examples use:
 
 ```powershell
 python .agents/skills/task-governance-tool/scripts/taskgov.py <command> --json
 ```
 
-On Linux/macOS, use `python3` with the same physical path and arguments:
+On Linux/macOS use `python3` with the same path and arguments. If running from
+inside the installed Skill directory instead, use `python scripts/taskgov.py`
+and explicitly pass `--repo <target-project>` to every call. Otherwise the
+current directory is the governed project; an enclosing Git worktree does not
+change it, and a non-Git project is valid.
 
-```sh
-python3 .agents/skills/task-governance-tool/scripts/taskgov.py <command> --json
-```
+Use only the [public commands and common options](references/cli_contracts.md#invocation-and-public-inventory).
+Do not invent aliases, alternate state paths, or administrative commands.
 
-When launching from inside the Skill directory, add
-`--repo <target-project>` explicitly to every command. Otherwise the current
-directory is the governed project; taskgov never re-roots it to an enclosing
-Git worktree, and a non-Git directory is valid.
+## Start Or Resume
 
-Use only these 23 public command leaves:
+Read the [bounded operating loop](references/task_workflow.md#bounded-operating-loop)
+for ordinary work. It owns the normal sequence from `task context` through
+verification and review gates to completion. `task context` takes **no Task ID**;
+use `data.selected.task.task_id` from its successful response for later
+`task edit`, `task show`, and other Task-addressed calls. Successful
+`selection=none` means no actionable work; `ok=false` is a failed read, not
+permission to guess another Task.
 
-- `setup`, `doctor`
-- task `add`, `list`, `next`, `current`, `context`, `effort`, `show`, `edit`, `complete`,
-  `checkpoint`
-- handoff `record`, `list`, `show`, `withdraw`
-- review `prepare`, target `set`, receipt `add`, result `add`, finding `add`, finding
-  `resolve`
-- verification receipt `add`
+The context already contains the full Task Contract, checkpoint, and current
+gates. Do not add current/next/show reads to reconstruct it. `task current`
+remains available for explicit held-work inspection. `paused_tasks_present`
+is an advisory, not another normal read.
 
-Do not invent aliases, alternate state locations, maintenance commands, or
-admin operations.
+Read only the linked responsibility needed for the operation or returned
+condition, including its applicable exceptions and input rules. References
+are not whole-file prerequisites. No read log, limit, new question, or extra
+confirmation is required.
 
-## First Use And Diagnosis
+| Existing operation or condition | Read when applicable |
+|---|---|
+| First use, upgrade, or setup/migration required | [Setup and diagnosis](references/task_workflow.md#first-use-and-optional-diagnosis) |
+| `project_relocation_required` | [Relocation preview and approval](references/cli_contracts.md#setup) |
+| Explicit diagnosis or state/package error | [Doctor](references/cli_contracts.md#doctor) |
+| Explicit taskization or active-Task scope addition | [One-pass taskization](references/task_workflow.md#taskize-or-add-scope) |
+| Copy or revise an authorized Contract | [Task Contract](references/task_workflow.md#task-contract) |
+| `effort_advisory_enabled=true` | [Optional Effort Advisory](references/task_workflow.md#optional-effort-advisory) |
+| A useful continuation boundary | [Optional checkpoint](references/task_workflow.md#optional-continuation-checkpoint) |
+| Pause, block, or resume held work | [State transitions](references/task_workflow.md#pause-resume-and-block) |
+| A discovery outside accepted scope | [Local handoff](references/task_workflow.md#scope-control-and-local-handoff) |
+| Exact review material ready, including `git_snapshot` before commit | [Review and completion](references/task_workflow.md#review-and-completion) |
+| Explicit Receipt/provenance or saved-history investigation | [Task audit](references/cli_contracts.md#task-audit-detail) |
+| Explicit trusted-local Runner Plan authoring | [Plan actions](references/cli_contracts.md#runner-plan-actions) and [OS limits/example](references/cli_contracts.md#runner-plan-example-and-os-limits) |
+| Maintenance warning after a successful write | [Continuity warnings](references/cli_contracts.md#internal-continuity-boundary) |
 
-After physical project-scoped installation and ignore protection are in place,
-run `setup` once when the user intends to use taskgov:
+For exact options, fields, bounds, and errors, use the matching command in the
+[CLI contents](references/cli_contracts.md#contents), not unrelated commands.
+Verification without explicit Runner opt-in remains manual.
 
-```powershell
-python .agents/skills/task-governance-tool/scripts/taskgov.py setup --json
-```
-
-`setup` is explicit, noninteractive, and idempotent. It is the only command
-that initializes or migrates project-local state, opts into local continuity
-maintenance, and repairs the canonical offline projections. If the canonical
-DB is missing but a valid managed generation remains, the same explicit call
-recovers the newest valid generation before continuing normal migration and
-repair. Do not invent a separate recovery command or path choice. The normal
-Skill flow supplies no maintenance-policy options.
-
-For a package upgrade, preserve project-local state and run explicit `setup`.
-There is no downgrade or restore command. A release rollback is valid only
-when one matched pre-migration package, database, and managed-artifact set is
-restored together; never run an older runtime against a newer schema or treat
-a Git checkout alone as state rollback.
-
-Project identity is immutable and its filesystem binding is mutable. Normal
-commands and `doctor` never rebind state. If a command reports
-`project_relocation_required`, run `setup --read-only --json` once and present
-the returned bounded `relocation_preview` and planned writes to the user.
-Wait for explicit approval in the current conversation; only then submit the
-exact unexpired token with
-`setup --confirm-relocation <exact-token> --json`. Never infer move/copy/fork
-semantics or auto-confirm a preview. An expired or stale token requires a fresh
-preview and fresh user approval. This exceptional flow adds nothing to the
-normal Task loop.
-
-Run `doctor` only for an explicit diagnosis or install/release validation:
-
-```powershell
-python .agents/skills/task-governance-tool/scripts/taskgov.py doctor --json
-```
-
-`doctor` is the sole diagnostic. It is inherently read-only, performs no setup
-or repair, and is never a prerequisite for setup or normal task work. Keep
-recognized advisory and maintenance results on their fixed
-`suggested_action=continue`; do not turn them into a question or routine stop.
-
-## Deterministic Task Loop
-
-Use this normal flow:
-
-1. Read `task context --json`. It deterministically resumes the first
-   `in_progress` or `review_pending` Task, otherwise selects the first ready
-   candidate, and returns its complete detail in `data.selected`. Use that
-   Contract, latest checkpoint, and gate information directly; no separate
-   current/next/show call or remembered read state is needed. Held work remains
-   recalled in `data.current`. `selection=none` means no actionable Task;
-   `ok=false` is a read failure and stops this selection, not a fallback.
-   Normal detail keeps unresolved Findings and continuation notes regardless of
-   age. Use `task show <task-id> --audit --json` only for explicit investigation
-   of Receipt/provenance or saved completion history, never as another normal
-   read or a replacement for a current gate.
-2. If selecting ready work, start it with
-   `task edit <task-id> --status in_progress --json`.
-3. Finish the exact material against current authority. Record out-of-scope
-   discoveries with `handoff record`; use `task checkpoint` only at a genuine
-   continuation boundary.
-4. Only when `data.selected.effort_advisory_enabled` is `true`, run one
-   `task effort <task-id> --read-only --json` at the verification/review
-   boundary. This is a mechanical route, not an LLM choice.
-5. Set the exact review target and retain its returned generation,
-   `verification_route`, and `blocking_code`; this existing operation may take
-   the explicitly opted-in trusted-local Runner route.
-6. Route only on that same response. `not_required` and `runner_pass` proceed
-   without a Receipt. Only `receipt_required` runs the Task's verification
-   outside taskgov and attests the aggregate result with
-   `verification receipt add
-   <task-id> --result <pass|fail|timeout> --duration-ms <milliseconds>
-   --scope-coverage <full|partial> --expected-target-generation <generation>
-   --json`. `blocked` requires a non-null returned code and stops closed; any
-   missing, mismatched, or unknown route/code pair also stops.
-   When the verifier already emits the fixed structured result, pass its bytes
-   directly to that same command with `--from-stdin` instead of the four result
-   options; do not reinterpret or reformat them. See the
-   [fixed input contract](references/cli_contracts.md#structured-verification-result).
-7. Run `review prepare` once, obtain the required structured reviews, and submit
-   their Receipts and Findings together with `review result add` using the
-   [version-1 stdin format](references/cli_contracts.md#structured-review-results).
-8. Complete through `task complete` after verification and review gates pass.
-
-Read [references/reconciliation.md](references/reconciliation.md) only when
-the Effort result returns `data.suggested_action=reconcile_scope`, or when a
-test or review failure recurs after an attempted repair. Treat one Effort
-result as one non-blocking episode, not one episode per exceeded metric.
-Neither trigger adds a green-path command, question, or stop.
-
-For a no-finding Tier 2 task that must select new work, the manual/fallback graph
-uses at most seven governance subprocess calls with the advisory disabled and
-eight when an existing valid profile enables it. `doctor`, completion `--check`, and
-`task checkpoint` are absent from the default success path. This flow adds no
-mandatory question, judgment, or user-return stop. The qualifying Runner-pass
-branch omits the Verification Receipt call and therefore remains bounded to six
-or seven calls respectively. Individual Receipt commands remain available; the
-two-Receipt path takes one additional call. These counts are registration steps,
-not measured total LLM tokens.
-
-## Operating Rules
+## Keep Scope And Evidence Honest
 
 - Invoke task decomposition only for an explicit request to register or taskize
-  already-authorized work, or for an explicit scope addition to an
-  `in_progress` or `review_pending` Task. Route either event through the
-  one-pass guidance in [references/task_workflow.md](references/task_workflow.md).
-  Discovery, a test failure, an Effort result, task size, or model preference
-  does not invoke that guidance or add a normal-loop call.
-- Register only explicit tasks; send a finalized multiple-Task set once through
-  `task add --from-stdin` using the explicit common-value form in
-  [references/cli_contracts.md](references/cli_contracts.md).
-  `task add --status done` and initial `paused`
-  are prohibited.
-- Rediscover `in_progress`, `review_pending`, `paused`, and `blocked` work with
-  `task context`; individual `task current` reads remain available for explicit
-  held-work inspection. Treat `paused_tasks_present` from `task next` as an advisory
-  recall hint, not a requirement for another read. Use the context's returned
-  recall during normal work; focused `task current --status paused` inspection
-  remains available without changing ready candidates.
-- Enforce sequential predecessors for both selection and direct transitions.
-  A blocked lane does not stop unrelated ready work.
-- A failed verification or current blocking review result prevents completion
-  of the affected Task; it does not by itself stop safe authorized diagnosis,
-  repair, or unrelated ready work. Never weaken a test merely to obtain PASS.
-  Change a wrong test only when current authority establishes the expected
-  behavior; changing a Task Contract or acceptance requires later explicit
-  authority.
-- Register several confirmed Finding resolutions with one
-  `review finding resolve --from-stdin`, sharing reasons only for explicitly
-  grouped IDs as defined in [references/cli_contracts.md](references/cli_contracts.md).
-  This never replaces the newer target and fresh review required after a fix.
-- Copy a Task Contract only when scope and acceptance already exist in current
-  authority. Leave revision zero otherwise without asking. Revise a Contract
-  only from later explicit authority and record the reason.
-- Explicit public `task add` and `task edit --verification` input is limited to
-  1,000 characters. Schema-v18-through-v22 stored/read paths preserve an
-  existing valid value through 1,000 characters; metadata and lifecycle edits
-  continue to treat untouched verification bytes as stored state rather than
-  caller input.
-- Schema v19 sealed Bundle v1; current schema v22 automatically seals Bundle v2
-  with the closed verification-basis union: `caller_attestation` or
-  `not_required` with null `runner_observation`, or `runner_observation` with
-  the qualifying exact observation. Evidence index v2 can reference preserved
-  v1 Bundles without rewriting their bytes or digests. Pre-v19 cycles remain
-  `legacy_unknown`; this adds no public command or JSON field, Skill trigger,
-  normal-loop call, Analyzer or Viewer Evidence surface, or network/model call.
-- Pause only active/review-pending work with `--pause-reason`; block with
-  `--blocked-reason`; resume explicitly to `in_progress`.
-- Classify a new finding once. Keep it in the current Task only when it is
-  within accepted scope and current authority permits the repair, including
-  acceptance-required work and regressions introduced by that Task; a failing
-  test alone establishes neither condition. Record an unmet acceptance
-  condition as its blocker only after safe authorized work is exhausted, and
-  immediately `handoff record` everything else before continuing.
-- Use the same handoff command regardless of Issue tooling. A durable
-  `pending_handoff` neither expands acceptance nor blocks otherwise accepted
-  work. Use `handoff withdraw` only on explicit user direction.
-- If privacy validation rejects handoff input, never repeat, quote, log, store,
-  or forward the rejected raw content. Make at most one fresh attempt using a
-  concise sanitized abstraction.
-- If a local handoff cannot be persisted, stop only that execution unit until
-  the same record is durable or the user explicitly accepts forgetting risk.
-- Treat `done` as write-locked. Reopen only with an isolated transition to
-  `in_progress` and `--reopen-reason`; saved completion cycles remain
-  audit-only, while a fresh current verification basis, target, and review
-  evidence are required.
+  already-authorized work, or an explicit scope addition to an active Task.
+  Discovery, test failure, Effort, size, or model preference does not trigger it.
+  Register only explicit work; `task add --status done` and initial paused are
+  prohibited. Missing Contract detail alone creates no question.
+- A failed verification or blocking review prevents completion of its Task;
+  it does not by itself stop safe authorized diagnosis, repair, or unrelated
+  ready work. Never weaken a test merely to obtain PASS. Change a wrong test
+  only when current authority establishes the expected behavior; changing a
+  Task Contract or acceptance requires later explicit authority.
+- Classify discoveries once using the linked handoff rule. A durable
+  `pending_handoff` does not expand acceptance or block otherwise accepted work.
+  Use `handoff record` regardless of Issue tooling; withdraw only on explicit
+  user direction.
+- Tier 2 normally needs two distinct independent PASS reviews for the exact
+  current target. Older evidence is audit-only; unresolved high/medium Findings
+  still block. Record actual results and provenance, never inferred review work
+  or resolutions derived from PASS. `done` is write-locked; use the
+  [isolated reopen procedure](references/task_workflow.md#reopen) for approved
+  follow-up work.
 
-## Review And Completion
-
-Set a review target only after the exact material is ready, retain its returned
-generation and closed route, and apply that response directly. Only
-`verification_route=receipt_required`—which can occur for a nonempty marker-`0`
-expectation or the exact-current closed no-launch `m21_fallback`—runs the governed verification
-outside taskgov and records one aggregate attestation with `verification receipt
-add` before preparing review. `not_required` and `runner_pass` proceed without
-verification or a Receipt. `blocked` reports the existing gate code and cannot
-be overridden by a Receipt. For this manual verification branch,
-taskgov does not run the external command or retain its body or output. It
-derives the version-1 verification subject from the locked target's authority
-snapshot and verification criterion; there is no caller label or replacement
-subject input. A `fail`, `timeout`, or `partial` Receipt requires a fresh target
-generation before another run can become current. A migrated capture-version-0
-target is read-only lineage: set a fresh
-target before adding a Verification Receipt, Review Receipt, Review Finding, or
-completion evidence. `review prepare` and resolving an existing Finding remain
-allowed; the old target is never upgraded in place. For review before a Git
-completion commit, stage exactly the intended files and set
-`--kind git_snapshot` without a revision. Unstaged and untracked files are
-excluded. Use the single bounded `review prepare` packet for the independent
-reviewers; follow its exact-target instruction rather than ambient Git or
-worktree state. Request the version-1 result format from each reviewer. The
-trusted parent combines only `receipts` arrays with identical Task, Contract
-revision and full target fields, preserving the returned values, and submits
-one `review result add`. Do not reinterpret verdicts or fill missing provenance.
-The format and existing single-item alternative are in
-[CLI contracts](references/cli_contracts.md#structured-review-results).
-JSON grants no approval; the optional named-reviewer flag requires actual
-current user approval under the existing fallback rule. Taskgov
-deterministically evaluates qualifying PASS receipts and changes-requested
-receipts only for the current review target and generation. Any unresolved high
-or medium finding from any recorded generation of that Task continues to block
-the gate. Distinct reviewer keys prove distinct stored strings only; they do
-not prove distinct people, LLMs, machines, independent processes,
-independence, or authenticated provenance.
-
-Public Review Receipts distinguish native v1 provenance, migrated v0 absence,
-and `not_required` null. The v1 record is a bounded caller attestation; v0 does
-not infer unknown values, and neither form upgrades the Receipt's existing
-assurance or proves reviewer identity, model/Skill execution, competence,
-independence, diversity, quality, or truth.
-
-Tier 2 normally requires two distinct independent PASS receipts for the same
-target generation. A changed target requires fresh receipts. A
-current-generation `changes_requested` receipt or unresolved high/medium
-finding blocks completion.
-
-Complete with exactly one evidence form: `git_commit`, `external_revision`, or
-`commit_not_required`. Git resolution, snapshot binding, receipt counting,
-finding state, sequential ordering, and done-time revalidation are
-deterministic. taskgov records evidence but does not stage, commit, branch,
-push, open PRs, create Issues, or mutate target files.
+Read [references/reconciliation.md](references/reconciliation.md) only when
+Effort returns `data.suggested_action=reconcile_scope`, or when a test or review
+failure recurs after an attempted repair. One Effort result is one non-blocking
+episode, not one per exceeded metric. Neither trigger adds a green-path command,
+question, or stop.
 
 ## Safety And Privacy
 
-- Keep secrets, tokens, authorization data, raw output, stack traces,
-  environment dumps, private prompts/reasoning, full chat or review
-  transcripts, and large diffs out of taskgov inputs.
-- Do not modify target source, Git state, Issues, PRs, or external services
-  merely because this skill inspected or updated local task state.
-- Do not add network use, project-specific test strategy, Issue lifecycle,
-  generic workflow automation, or hidden acceptance conditions.
-- Leave local continuity artifacts to `setup` and bounded same-process
-  post-commit maintenance, ordered Evidence projection, Viewer, then backup.
-  They add no LLM command choice or background process.
+Keep secrets, tokens, authorization data, raw output, stack traces, environment
+dumps, private prompts/reasoning, full chat/review transcripts, and large diffs
+out of taskgov inputs. If handoff input is privacy-rejected, never repeat,
+quote, log, store, or forward the rejected raw content; make at most one fresh
+attempt with a concise sanitized abstraction. See [input errors and privacy](references/cli_contracts.md#errors-and-privacy).
 
-## References
-
-Read [references/task_workflow.md](references/task_workflow.md) when taskizing
-explicit work, handling an explicit active-Task scope addition, selecting,
-pausing, resuming, handing off, reviewing, checkpointing, or completing work.
-
-Read [references/cli_contracts.md](references/cli_contracts.md) when exact
-arguments, JSON fields, bounds, or errors matter.
-
-Read [references/reconciliation.md](references/reconciliation.md) only for the
-conditional reconciliation or repeated-failure triggers defined above.
+Taskgov does not stage files, create commits or branches, push, open PRs,
+create Issues, or authorize target/external mutation. Leave canonical offline
+projections and backup to explicit setup and bounded same-process maintenance;
+they add no LLM command choice or background process. No network use, hidden
+acceptance conditions, or project-specific test strategy is added by this Skill.
 
 ## License
 

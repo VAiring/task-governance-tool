@@ -1,33 +1,8 @@
 # CLI Contracts
 
-Use this reference when exact public commands, arguments, JSON fields, bounds,
-or error behavior matter.
-
-The current v0.13.0 package uses task schema v22 and offline snapshot v4 with
-source schemas v5 through v22. The published v0.10.0 release remains the
-immutable schema-v16 predecessor.
-
-Schema v19 sealed native Bundle v1. Schema v20 preserves existing v1 bytes and
-digests, seals native Bundle v2 with a derived verification basis and null
-Runner observation, and maintains fixed Evidence index v2 automatically. It
-adds no export/projection command, Runner, Analyzer, Viewer Evidence surface,
-network/model invocation, public leaf, or normal-loop call.
-
-Schema v21 keeps those public surfaces unchanged and uses the existing Bundle
-v2 tagged union. When `verification_basis.kind` is `caller_attestation` or
-`not_required`, the root `runner_observation` is null; when the kind is
-`runner_observation`, that root field contains the qualifying exact Runner
-observation. It adds no public command, argument, Skill trigger, or Viewer
-surface. Gate integration adds only `verification_route` and `blocking_code` to
-the existing target-set JSON success data. Bundle/Evidence serialization adds no
-normal-loop call, and no post-target `task show` is added.
-
-Current schema v22 retains that protocol and removes only retired Analyzer
-reservations from the shared Evidence schema and current enums. Explicit
-setup migrates supported sources through 22; exact-v22 reentry validates
-without migration. New native Bundles use source 22/format 2. Retained
-source-19/20/21 Bundle bytes and digests are unchanged, while the refreshed
-format-2 index reports its actual source schema 22.
+Use the contents to read the section for the current command, input, or error,
+including its directly linked requirements. Unrelated operations and audit-only
+detail are not prerequisites for normal Task work.
 
 ## Contents
 
@@ -43,28 +18,37 @@ format-2 index reports its actual source schema 22.
   - [`task context`](#task-context)
   - [`task effort`](#task-effort)
   - [`task show`](#task-show)
+    - [Historical investigation (`--audit`)](#task-audit-detail)
   - [`task checkpoint`](#task-checkpoint)
   - [`task edit`](#task-edit)
+    - [Runner Plan actions](#runner-plan-actions)
   - [`task complete`](#task-complete)
 - [Verification Receipt](#verification-receipt)
 - [Local Handoff Commands](#local-handoff-commands)
 - [Review Commands](#review-commands)
   - [`review prepare`](#review-prepare)
   - [Review Evidence](#review-evidence)
+    - [Set the exact target](#review-target)
+    - [Receipt input and provenance](#review-provenance)
+    - [Finding creation and resolution](#finding-resolution)
+    - [Structured Finding Resolutions](#structured-finding-resolutions)
+  - [Structured Review Results](#structured-review-results)
 - [Internal Continuity Boundary](#internal-continuity-boundary)
 - [Errors And Privacy](#errors-and-privacy)
 
 ## Invocation And Public Inventory
 
-For normal governed-project use, install one physical project-scoped copy and
-run from the project root:
+For normal governed-project use, install one physical project-scoped copy.
+Unless a section states otherwise, every example below runs from the governed
+project root; `<target-project>` is that same root, not the Skill directory.
+Replace angle-bracket placeholders before execution:
 
 ```powershell
 python .agents/skills/task-governance-tool/scripts/taskgov.py <command> [options]
 ```
 
-When launching from inside the installed Skill directory, pass the target
-project explicitly:
+Only when the working directory is the installed Skill directory instead, use
+the shorter script path and pass the governed project explicitly:
 
 ```powershell
 python scripts/taskgov.py <command> --repo <target-project> [options]
@@ -124,6 +108,11 @@ Common options are:
 Applicable common options may appear before or after command groups as shown by
 `--help`.
 
+`task context` takes no Task ID. Task-specific commands such as `task show` and
+`task edit` take the selected ID, normally
+`data.selected.task.task_id` from `task context`. Use returned values, not the
+illustrative IDs in JSON examples.
+
 ## Envelope And Read/Write Boundary
 
 Every JSON result has exactly these top-level keys:
@@ -142,15 +131,8 @@ Every JSON result has exactly these top-level keys:
 Public output contains no local storage, backup, projection, or rejected-input
 path. Error rows contain only `code` and a sanitized `message`.
 CLI `--json` is UTF-8 plus LF, without indentation/separator spaces or
-non-ASCII escapes. Keys sort recursively except insertion-ordered
-`review.prepare`; values, types, and array order are unchanged. Existing
-selection, omission, and rejection bounds still use the prior
-pretty/ASCII/CRLF size, so compaction does not change selected content. This
-does not change saved Evidence bytes/digests, Viewer output, or ordinary text.
-Fresh setup uses a `uuid_v1` identity in the shown format. Migrated
-`legacy_path_v1` IDs are preserved byte-for-byte; top-level `project_id`
-always comes from stored identity and is never recomputed from the current
-path.
+non-ASCII escapes. Use returned IDs as opaque identities; do not reconstruct
+them from a project path.
 
 Inherently read-only commands are `doctor`, task `list`, `next`, `current`, `context`,
 `effort`, and `show`, `task complete --check`, handoff `list` and `show`, and
@@ -160,21 +142,14 @@ Write commands other than `setup` require current initialized state. They
 never initialize or migrate implicitly. `setup` is the only initializer and
 migrator. `--read-only` rejects a write form before a business write.
 
-Each related read response uses one lock-respecting coherent transaction.
-Rollback-journal contention maps to `database_busy`; unsupported WAL state
-maps to `unsupported_journal_mode`. Raw SQLite or operating-system details are
-never emitted. Git observation occurs outside SQLite transactions. Write
-commands revalidate their task/Contract/review basis under a short write
-transaction before one atomic business update. The explicit Runner Plan action
-is the sole exception to a one-store description: a real Task basis edit commits
-first, closes SQLite, and only then confirms or publishes one separately
-committed canonical Plan file as described under `task edit`.
+Contention returns `database_busy`; unsupported WAL state returns
+`unsupported_journal_mode`, without raw database or operating-system detail.
+Business writes revalidate their current basis and save atomically. Exceptions
+with a durable completed prefix are documented under [setup](#setup) and
+[Runner Plan actions](#runner-plan-actions). Maintenance warnings never undo a successful
+business write; see [Internal Continuity Boundary](#internal-continuity-boundary).
 
-The normal no-finding Tier 2 manual/fallback Skill graph is bounded to seven
-governance subprocess calls when the Effort Advisory is off and eight when the
-pre-work `task context.selected` boolean enables it. The Receiptless Runner-pass
-branch is one call lower. The target-set response itself supplies the closed
-route; no second read or LLM choice is required.
+<a id="setup"></a>
 
 ## `setup`
 
@@ -200,36 +175,22 @@ successful managed copy and three retained generations. Once configured,
 omitted options preserve stored values; values equal to stored policy are a
 write-free replay.
 
-When the fixed canonical database is absent, the shared resolver first
-validates fixed-layout managed generations. If no fixed source exists, it may
-select exactly one eligible legacy-layout source under the compatibility
-rules below. A same-binding legacy primary or legacy backup-only source is
-staged and published into the fixed layout; backup-only recovery performs
-`database_restore` inside that private fixed-layout stage before
-`legacy_state_publish` and never recreates the old legacy primary. Setup then
-performs any required normal
-migration/configuration/Viewer publication. It never overwrites an existing
-database or accepts a caller path. Invalid, foreign, linked, unrecognized, and
-ambiguous artifacts are unchanged and fail closed. After the complete recovery
-set passes structural validation, a set with no eligible current-binding
-generation solely because every such candidate is locally rejected for stored
-Task-verification privacy/capacity fails with `setup_restore_failed` and
-message `managed backup could not be restored`; setup does not initialize
-empty state. Candidate corruption, foreign identity, binding/lineage
-divergence, metadata/repository/retention/sidecar inconsistency, and other
-discovery-time structural failures retain their specific resolver result where
-applicable and otherwise fail no-write as `project_state_unreadable`. A
-rollback-journal entry beside a missing fixed primary is such structural
-residue; setup neither applies nor changes it. Drift, copy, normalization, or
-no-clobber publication failure after a candidate plan is established remains
-`setup_restore_failed`. A moved legacy backup-only source is not a relocation
-candidate and fails no-write as `project_state_unreadable`.
+When the canonical database is absent, setup automatically prefers eligible
+fixed-layout managed recovery, then at most one eligible legacy source. It
+does not ask the LLM to choose a backup or path. Same-binding legacy primary or
+legacy backup-only state can be recovered; a moved legacy backup-only source
+is not a relocation candidate and fails no-write as `project_state_unreadable`.
+An existing database is never overwritten, even when unreadable. Invalid,
+foreign, linked, unrecognized, or ambiguous artifacts remain unchanged.
 
-The current package stores the database in the fixed package-local
-`state/current/` layout. Fresh write-mode setup creates one UUID-backed
-immutable project identity; same-binding schema-v1-through-v13 legacy state is
-published into the fixed layout by explicit setup without an LLM choice.
-Project identity is separate from the mutable governed-directory binding.
+Only stored Task-verification privacy/capacity rejection may select an older
+eligible same-binding backup. If none remains, setup returns
+`setup_restore_failed` with `managed backup could not be restored`, never empty
+initialization. Structural recovery faults retain their specific error where
+applicable, otherwise `project_state_unreadable`; this includes a journal
+beside a missing primary. Changed recovery material or a restore/publication
+failure after planning returns `setup_restore_failed`. Do not remove failed
+sources or attempt manual database repair as part of this flow.
 
 Package replacement preserves project-local state and requires explicit setup.
 There is no public downgrade or restore command. Release rollback means
@@ -244,7 +205,8 @@ without a token returns `project_relocation_required`. Only
 future ordered write plan, an exact confirmation token, and its expiry. Token
 issuance is not approval: the Skill presents the plan, waits for explicit
 current user approval, and only then calls write-mode setup with that exact
-unexpired token. It never infers move/copy/fork semantics or auto-confirms.
+unexpired `data.relocation.confirmation_token` from the preview; its expiry is
+`data.relocation.expires_at`. It never infers move/copy/fork semantics or auto-confirms.
 Expired or stale context requires a fresh preview and fresh user approval.
 
 `data` always has exactly:
@@ -305,12 +267,16 @@ Preview reports current durable state, not planned state:
 `maintenance_enabled=false`. A healthy replay has empty write lists. Every
 error has `status=null`; preflight/policy failures use empty write lists and
 null observed values except `schema_to=22`. A later-stage failure reports only
-the durable ordered prefix.
+the durable ordered prefix. Inspect `data.completed_writes` before retrying;
+`setup_incomplete` calls for rerunning setup, which recomputes from durable
+state rather than repeating an assumed failed stage.
 
 Setup is noninteractive and idempotent. It does not create a second
 configuration file, disable continuity after opt-in, contact a network, mutate
 Git, or modify target source. For a Git-candidate target, only its single
 bounded effective-ignore preflight may inspect Git.
+
+<a id="doctor"></a>
 
 ## `doctor`
 
@@ -424,9 +390,7 @@ The Evidence object has exactly `code`, `due`, `source_generation`,
 `published_generation`, `last_success_at`, and `last_outcome`; doctor never
 opens or repairs its JSON files.
 
-Doctor validates the complete stored Task batch before returning Task-derived
-counts. A malformed, wrong-storage-class, privacy-rejected, over-capacity, or
-cross-field-invalid Task, or invalid current Contract relationship makes
+Invalid stored Task data or its current Contract relationship makes
 `project_state.code="unreadable"`, all other
 project-backed components `{"code":"unavailable"}`,
 `setup_eligible=false`, and returns exit 2 with the fixed
@@ -442,37 +406,20 @@ content, exception, or raw state.
 
 ## Task Commands
 
-Every command that loads a Task validates its complete stored row through one
-source-schema-aware boundary before allow-list projection, compact omission,
-dependent-state use, or use as a write basis. Exact SQLite storage classes,
-privacy/capacity, enums, and Task cross-field matrices are checked without
-coercion or repair. Bounded list/current/next commands validate only their
-selected complete-row batch and add no unrelated whole-table rescan.
-For source schemas v8-v22, the same boundary performs one bulk relationship
-read for only those selected Task IDs. Revision zero requires no Contract row;
-a positive `current_contract_revision` must exist as the latest exact INTEGER
-revision owned by the same project and Task. Dangling, foreign, nonlatest,
-revision-zero-with-row, wrong-storage-class, or ownership-mismatched state uses
-the fixed stored-state error. Source schemas v1-v7 perform no Contract read,
-and no command queries Contract rows once per Task or audits unselected Task
-history.
-Malformed or undecodable SQLite TEXT and other non-busy Task fetch/decode
-faults use the same fixed error; genuine busy/locked state remains
-`database_busy`. Doctor, Viewer, setup, and recovery validate every Task row,
-including stored project ownership, as one whole batch.
-
-Any current schema-v22 stored Task fault returns exit 2, code
+Invalid stored Task or current Contract data returns exit 2, code
 `project_state_unreadable`, and message
 `project state could not be read safely`. The command keeps its existing empty
 data shape and emits no warning, partial Task projection, rejected content, or
-write. Valid rows and outputs are unchanged.
+write. Do not treat this as an empty selection or repair stored values manually.
+
+<a id="task-add"></a>
 
 ### `task add`
 
 Register one explicit task:
 
 ```powershell
-python scripts/taskgov.py task add --repo <target-project> --title "Update docs" --kind optional --priority normal --json
+python .agents/skills/task-governance-tool/scripts/taskgov.py task add --repo <target-project> --title "Update docs" --kind optional --priority normal --json
 ```
 
 Options are `--title`, `--description`, `--kind`, `--lane`, `--order`,
@@ -486,6 +433,7 @@ Kinds are `sequential|optional`; priorities are
 requires both scope and acceptance and never gets inferred from missing input.
 Success data contains `task` and `event`, plus
 `contract_write={"recorded":true,"revision":1}` when a Contract was recorded.
+Use `data.task.task_id` for subsequent Task-specific commands.
 
 Initial `done` returns `initial_done_forbidden`; specifically,
 `task add --status done` never stores a task or event. Initial `paused` returns
@@ -493,15 +441,10 @@ Initial `done` returns `initial_done_forbidden`; specifically,
 Sequential adds preserve the same predecessor rule used for selection and
 transitions.
 
-At schema v18 or later, explicit public `task add --verification` and
-`task edit --verification` values are each capped at 1,000 characters, with the
-existing privacy check before length. Durable/read and internal-derived paths
-accept and preserve exact valid verification text through 1,000 characters.
-Metadata, Contract, target, review, lifecycle, completion, reopen, setup,
-backup, recovery, and projection paths continue to use the source-schema-aware
-stored validator rather than caller-input validation; a stored value over its
-source-schema limit fails closed. Explicit 1,001-character caller input is
-rejected without a write.
+Explicit `task add --verification` and `task edit --verification` are capped
+at 1,000 characters, with privacy checked before length. A 1,001-character
+value is rejected without a write. Omitting `--verification` from `task edit`
+preserves the existing value; other edits do not require copying it.
 
 For a finalized multiple-Task set, use `task add --from-stdin --json` once with
 this UTF-8 JSON shape (no BOM; at most 262,144 bytes and 1 through 64 items):
@@ -527,7 +470,8 @@ it without consuming stdin.
 Success data is `{"tasks":[{"input_index":0,"task":{},"event":{},"contract_write":{"recorded":true,"revision":1}}]}`,
 where Task/event are the existing projections and `contract_write` is absent
 for null Contracts. The response maps every input in order; no per-Task follow-up
-confirmation is required. All entries commit together or all roll back;
+confirmation is required. Match `data.tasks[].input_index` to the input and use
+that item's `task.task_id` for later operations. All entries commit together or all roll back;
 handled batch input/storage errors return `tasks=[]`. Parse/read-only errors
 retain their ordinary envelope. Correct and resubmit only after confirmed
 rollback. A lost response requires inspecting existing Tasks before any retry;
@@ -536,23 +480,27 @@ Windows PowerShell producers must send UTF-8 without BOM, not locale-encoded
 text. This option creates no input file, adapter, extra normal-loop call, or
 authority beyond explicit registration.
 
+<a id="task-list"></a>
+
 ### `task list`
 
 Return compact filtered rows:
 
 ```powershell
-python scripts/taskgov.py task list --repo <target-project> --status ready --limit 20 --json
+python .agents/skills/task-governance-tool/scripts/taskgov.py task list --repo <target-project> --status ready --limit 20 --json
 ```
 
 Filters are `--status`, `--kind`, `--lane`, `--priority`, `--tag`,
 `--limit`, and `--include-done`. Data keys are `tasks`, `count`, and `limit`.
+
+<a id="task-next"></a>
 
 ### `task next`
 
 Return ready candidates:
 
 ```powershell
-python scripts/taskgov.py task next --repo <target-project> --limit 5 --compact --json
+python .agents/skills/task-governance-tool/scripts/taskgov.py task next --repo <target-project> --limit 5 --compact --json
 ```
 
 Filters are `--kind`, `--lane`, `--priority`, and `--limit` (default 5).
@@ -572,13 +520,15 @@ otherwise the command returns `invalid_option_combination`.
 Existing paused work adds warning `paused_tasks_present` without changing
 candidates, exit status, or data. It is an advisory recall hint only.
 
+<a id="task-current"></a>
+
 ### `task current`
 
 Rediscover started or held work:
 
 ```powershell
-python scripts/taskgov.py task current --repo <target-project> --compact --json
-python scripts/taskgov.py task current --repo <target-project> --status paused --json
+python .agents/skills/task-governance-tool/scripts/taskgov.py task current --repo <target-project> --compact --json
+python .agents/skills/task-governance-tool/scripts/taskgov.py task current --repo <target-project> --status paused --json
 ```
 
 Default statuses are `in_progress`, `review_pending`, `paused`, and `blocked`.
@@ -601,12 +551,14 @@ and `summary_truncated`, with summary capped at 256 UTF-8 bytes. Complete
 compact JSON stdout is capped at 24,576 bytes and omits Contract/checkpoint
 content. `--compact` requires `--json`. Follow selection with `task show`.
 
+<a id="task-context"></a>
+
 ### `task context`
 
 Use one fixed read for ordinary Task start or resume:
 
 ```powershell
-python scripts/taskgov.py task context --repo <target-project> --json
+python .agents/skills/task-governance-tool/scripts/taskgov.py task context --repo <target-project> --json
 ```
 
 Only common options are accepted; there is no Task ID, filter, display-mode,
@@ -624,6 +576,11 @@ includes complete Contract, latest checkpoint, current blockers/gates, and
 current/next/show call. Held work remains recalled; successful component
 warnings are retained once.
 
+For `selection=current|next`, use `data.selected.task.task_id` as `<task-id>` in
+the next Task-specific command. `selection=next` does not start the Task; start
+it with `task edit <task-id> --status in_progress --json`. No ID is appended to
+the `task context` call itself.
+
 Any component failure returns its existing sanitized error and exit status,
 no warnings or partial result, and exactly:
 
@@ -635,15 +592,19 @@ It never skips a failed read to select another Task. `ok=true` with
 `selection=none` is successful absence, distinct from `ok=false`. Text gives
 the selection, existing selected-Task detail, held-work recall, and warnings.
 No state, evidence, or gate is changed. The public operation reuses the
-retained read, while live marker-2 detail keeps the existing Task-show physical
-Runner observation and Task revalidation outside that read.
+existing selection and gate rules.
+
+<a id="task-effort"></a>
 
 ### `task effort`
 
-Read one optional informational observation:
+Read one optional informational observation. At the verification/review boundary,
+the normal flow calls this only when
+`task context` returned `data.selected.effort_advisory_enabled=true`; take
+`<task-id>` from that response's `data.selected.task.task_id`:
 
 ```powershell
-python scripts/taskgov.py task effort --repo <target-project> <task-id> --read-only --json
+python .agents/skills/task-governance-tool/scripts/taskgov.py task effort --repo <target-project> <task-id> --read-only --json
 ```
 
 The package-local versioned profile is never created or changed by taskgov.
@@ -662,18 +623,20 @@ one observation emits at most one such warning. Threshold or attribution
 results never change status, acceptance, review, completion, or target state.
 The command emits no paths, stderr, diffs, raw logs, or Git writes.
 
+<a id="task-show"></a>
+
 ### `task show`
 
-Read one task's fixed normal working context:
+Read one specified Task's fixed normal working context. Use `<task-id>` from
+`data.selected.task.task_id` in `task context`, or a Task row returned by an
+explicit `task list/current/next` inspection:
 
 ```powershell
-python scripts/taskgov.py task show --repo <target-project> <task-id> --json
+python .agents/skills/task-governance-tool/scripts/taskgov.py task show --repo <target-project> <task-id> --json
 ```
 
-For explicit historical investigation, use the same leaf with `--audit`.
-It returns the previous bounded detail, not an exhaustive export or another
-normal-loop read. `task context.selected` always uses normal detail. Neither
-mode changes saved Evidence, validation, or any verification/review gate.
+For explicit historical investigation only, use [the audit mode](#task-audit-detail).
+`task context.selected` always uses normal detail.
 
 Data keys are exactly `task`, `events`, `suggested_next_action`,
 `review_evidence`, `handoff_summary`, `contract`, `latest_checkpoint`,
@@ -735,6 +698,47 @@ and the Receipt-only counts may all be zero.
 
 Normal `completion_history` has only `total` and `legacy_history_incomplete`.
 All existing history validation still runs, including for hidden detail.
+
+Normal `verification_evidence` has exactly `current_verification_subject`,
+`gate`, `counts`, and `current_receipt`. Gate contains `required`, `satisfied`,
+nullable `blocking_code`, and nullable `qualifying_receipt_id`. Counts contains
+`receipts_exact_current`, `qualifying_exact_current`, and `blocking_exact_current`.
+Current Receipt is null or the validated exact-current row's
+`verification_receipt_id`, `result`, `duration_ms`, `scope_coverage`, and
+`created_at`; it is selected independently of the recent-ten window. The complete
+verification text and target remain in Task and the revision in Contract.
+
+Revision-zero Contract data is:
+
+```json
+{
+  "revision": 0,
+  "scope": "",
+  "acceptance": "",
+  "constraints": "",
+  "authority_ref": "",
+  "change_reason": "",
+  "created_at": null
+}
+```
+
+`latest_checkpoint` is `null` or the public [checkpoint object](#task-checkpoint).
+
+<a id="task-audit-detail"></a>
+
+#### Historical Investigation (`--audit`)
+
+Use this mode only for explicit Receipt/provenance or completion-history
+investigation. It is bounded detail, not an exhaustive export or an additional
+normal-loop read. Use the same `<task-id>` as the normal show operation:
+
+```powershell
+python .agents/skills/task-governance-tool/scripts/taskgov.py task show --repo <target-project> <task-id> --audit --json
+```
+
+Audit does not change saved Evidence, validation, or current gates. Its
+`review_evidence` retains the target, full gate/counts, blocking Findings, and
+bounded recent Receipt/provenance and Finding rows; events retain the newest ten.
 Audit `completion_history` retains exactly:
 
 ```text
@@ -777,14 +781,6 @@ privacy-revalidated before projection. Completion history has no
 and Viewer use the same bounded history projection; normal show validates it
 before omitting its detail.
 
-Normal `verification_evidence` has exactly `current_verification_subject`,
-`gate`, `counts`, and `current_receipt`. Counts contains `receipts_exact_current`,
-`qualifying_exact_current`, and `blocking_exact_current`. Current Receipt is null
-or the validated exact-current row's `verification_receipt_id`, `result`,
-`duration_ms`, `scope_coverage`, and `created_at`; it is selected independently of
-the recent-ten window. The complete verification text and target remain in
-Task and the revision in Contract, without repeating them here.
-
 Audit `verification_evidence` has exactly `expectation`, `contract_revision`,
 `source_revision`, `current_verification_subject`, `gate`, `counts`, and
 `recent_receipts`. `source_revision`
@@ -799,28 +795,15 @@ and subject types/null rules apply in normal mode. Text does not summarize
 Receipt state. Invalid stored Receipt evidence returns the
 sanitized `invalid_verification_evidence` failure.
 
-Revision-zero Contract data is:
-
-```json
-{
-  "revision": 0,
-  "scope": "",
-  "acceptance": "",
-  "constraints": "",
-  "authority_ref": "",
-  "change_reason": "",
-  "created_at": null
-}
-```
-
-`latest_checkpoint` is `null` or the public checkpoint object below.
+<a id="task-checkpoint"></a>
 
 ### `task checkpoint`
 
-Record one optional typed continuation boundary:
+Record one optional typed continuation boundary for
+`data.selected.task.task_id` from `task context`:
 
 ```powershell
-python scripts/taskgov.py task checkpoint --repo <target-project> <task-id> --summary "Completed slice" --next-action "Run verification" --unresolved-risk "Review remains" --json
+python .agents/skills/task-governance-tool/scripts/taskgov.py task checkpoint --repo <target-project> <task-id> --summary "Completed slice" --next-action "Run verification" --unresolved-risk "Review remains" --json
 ```
 
 `--summary` and `--next-action` are required. `--unresolved-risk` may repeat at
@@ -852,10 +835,11 @@ and every other checkpoint field use strict normal validation.
 
 ### `task edit`
 
-Update task state or metadata:
+Update task state or metadata for `data.selected.task.task_id` from
+`task context` (unlike `task context`, this command requires the ID):
 
 ```powershell
-python scripts/taskgov.py task edit --repo <target-project> <task-id> --status blocked --blocked-reason "Waiting for user decision" --json
+python .agents/skills/task-governance-tool/scripts/taskgov.py task edit --repo <target-project> <task-id> --status blocked --blocked-reason "Waiting for user decision" --json
 ```
 
 Editable arguments are:
@@ -873,7 +857,39 @@ Editable arguments are:
 ```
 
 Success data contains `task`, `changed_fields`, and `event`, plus
-`contract_write` for Contract operations. An action-bearing success also adds
+`contract_write` for Contract operations.
+
+Task Contract activation is allowed only on an exact revision-zero
+`ready|blocked -> in_progress` transition. Later semantic revisions are
+Contract-only, require explicit later authority and a reason, invalidate
+current completion/review eligibility, and use immutable successive revisions.
+Canonically unchanged input is a write-free replay.
+Omitted later constraints retain the byte-identical, already-validated prior
+value, including [bounded legacy counter forms](#errors-and-privacy); explicit constraints use strict
+normal validation. Carry-forward does not accept caller-supplied legacy
+vocabulary or grant authority.
+
+Only `in_progress|review_pending -> paused` is valid and requires
+`--pause-reason`. Resume explicitly to `in_progress`. Sequential transitions
+to active, review-pending, or done use the same predecessor rule as
+`task next`.
+
+Lower a review tier only before any target has been set and provide
+`--review-tier-change-reason`. A done task rejects every write except an
+isolated `--status in_progress --reopen-reason <summary>` transition. Reopen
+preserves saved completion cycles as audit history, clears current
+completion/review eligibility, and requires fresh gates.
+
+The existing done transition remains accepted through `task edit` and enforces
+the same validator as thin `task complete`. Prefer the thin command for normal
+completion. Read the next section only for an explicit Runner Plan action or
+`runner_plan_action_required`, not for ordinary metadata/state edits.
+
+<a id="runner-plan-actions"></a>
+
+#### Runner Plan Actions
+
+An action-bearing success adds
 exactly `runner_plan_update={"action":<action>,"status":<status>}`, where status
 is `updated|unchanged|unconfirmed`. Without an action, JSON, text, warnings, and
 errors retain the existing shape.
@@ -929,31 +945,6 @@ The additional fixed errors are `runner_plan_action_required` and
 errors and config-only `runner_plan_changed|runner_plan_update_failed` use exit
 2. Draft privacy rejection remains `privacy_rejected` at exit 1. Error output
 never contains draft bytes, Plan bytes, argv, paths, or publisher detail.
-
-Task Contract activation is allowed only on an exact revision-zero
-`ready|blocked -> in_progress` transition. Later semantic revisions are
-Contract-only, require explicit later authority and a reason, invalidate
-current completion/review eligibility, and use immutable successive revisions.
-Canonically unchanged input is a write-free replay.
-Omitted later constraints retain the byte-identical, already-validated prior
-value, including [bounded legacy counter forms](#errors-and-privacy); explicit constraints use strict
-normal validation. Carry-forward does not accept caller-supplied legacy
-vocabulary or grant authority.
-
-Only `in_progress|review_pending -> paused` is valid and requires
-`--pause-reason`. Resume explicitly to `in_progress`. Sequential transitions
-to active, review-pending, or done use the same predecessor rule as
-`task next`.
-
-Lower a review tier only before any target has been set and provide
-`--review-tier-change-reason`. A done task rejects every write except an
-isolated `--status in_progress --reopen-reason <summary>` transition. Reopen
-preserves saved completion cycles as audit history, clears current
-completion/review eligibility, and requires fresh gates.
-
-The existing done transition remains accepted through `task edit` and enforces
-the same validator as thin `task complete`. Prefer the thin command for normal
-completion.
 
 #### Runner Plan Example And OS Limits
 
@@ -1012,25 +1003,30 @@ limit. POSIX memory and cumulative-process measurements are unmeasured (null,
 not zero). Unavailable auxiliary measurements alone do not prevent PASS, while
 execution failure or uncertain managed-process cleanup still blocks completion.
 
-The parent fixes one absolute Python runtime without an execution-lifetime
-write/delete-denying lease; the Plan cannot select another interpreter or use
-PATH lookup. Arguments remain literal, no shell is used for Runner execution,
+The Plan cannot select another interpreter or use PATH lookup. Arguments
+remain literal, no shell is used for Runner execution,
 and verification runs only in private exact Git material with no copy-back or
 raw-output retention. These are trusted-code reliability guarantees, not
 hostile-code or network isolation.
 
+<a id="task-complete"></a>
+
 ### `task complete`
 
-Optionally check the proposed completion without writing:
+Complete the selected Task after its current gates pass. `<task-id>` is
+`data.selected.task.task_id` from `task context`; `<hash>` is the exact
+completion commit created under the project's separately authorized Git
+workflow, not an ID or fingerprint from a Task response:
 
 ```powershell
-python scripts/taskgov.py task complete --repo <target-project> <task-id> --verification-complete --review-complete --completion-evidence-kind git_commit --completion-revision <hash> --check --read-only --json
+python .agents/skills/task-governance-tool/scripts/taskgov.py task complete --repo <target-project> <task-id> --verification-complete --review-complete --completion-evidence-kind git_commit --completion-revision <hash> --json
 ```
 
-Perform completion:
+Only when an explicit no-write readiness preview is useful, run the same
+proposal with `--check --read-only`; it is not a normal-loop prerequisite:
 
 ```powershell
-python scripts/taskgov.py task complete --repo <target-project> <task-id> --verification-complete --review-complete --completion-evidence-kind git_commit --completion-revision <hash> --json
+python .agents/skills/task-governance-tool/scripts/taskgov.py task complete --repo <target-project> <task-id> --verification-complete --review-complete --completion-evidence-kind git_commit --completion-revision <hash> --check --read-only --json
 ```
 
 The thin command accepts only task ID, `--verification-complete`,
@@ -1078,8 +1074,15 @@ trimming only after running the governed verification outside taskgov on marker
 `0` or the exact-current closed no-launch `m21_fallback`:
 
 ```powershell
-python scripts/taskgov.py verification receipt add --repo <target-project> <task-id> --result pass --duration-ms <milliseconds> --scope-coverage full --expected-target-generation <generation> --json
+python .agents/skills/task-governance-tool/scripts/taskgov.py verification receipt add --repo <target-project> <task-id> --result pass --duration-ms <milliseconds> --scope-coverage full --expected-target-generation <generation> --json
 ```
+
+The normal trigger is `data.verification_route=receipt_required` in the
+successful `review target set` response. Take `<task-id>` from its
+`data.task.task_id` and `<generation>` from `data.task.review_target_generation`.
+Use the actual run's result, measured duration and confirmed coverage; a PASS
+alone never establishes full coverage. Other routes are handled in
+[target selection](#review-target), without another `task show`.
 
 The four options are required unless `--from-stdin` supplies the fixed
 [structured result](#structured-verification-result). `result` is `pass`, `fail`, or `timeout`;
@@ -1145,12 +1148,9 @@ Result: <result>  Coverage: <scope_coverage>
 Source: <kind>/generation <generation>
 ```
 
-The write is backup-eligible but does not advance the Evidence or Viewer
-source generation. Because every changed mutation may retry already-due
-maintenance, a due Evidence projection may still publish before the due
-backup. `--read-only` and every failed call perform no business or maintenance
-write. There is no Receipt list, show, import, export, Runner command, or Viewer
-panel.
+`--read-only` and every failed call perform no business or maintenance write.
+There is no Receipt list, show, import, export, Runner command, or Viewer panel.
+For explicit Receipt inspection use [task show](#task-show), not a new command.
 
 <a id="structured-verification-result"></a>
 
@@ -1193,12 +1193,15 @@ installation, configuration or command execution is authorized by this input mod
 
 ## Local Handoff Commands
 
+<a id="handoff-record"></a>
+
 ### `handoff record`
 
-Record one sanitized out-of-scope discovery:
+Record one sanitized out-of-scope discovery. `<source-task-id>` is
+`data.selected.task.task_id` from `task context`, the Task where it was found:
 
 ```powershell
-python scripts/taskgov.py handoff record --repo <target-project> <source-task-id> --summary "Concise discovery" --rationale "Outside acceptance" --json
+python .agents/skills/task-governance-tool/scripts/taskgov.py handoff record --repo <target-project> <source-task-id> --summary "Concise discovery" --rationale "Outside acceptance" --json
 ```
 
 `--summary` is required and capped at 1,000 characters. `--rationale` is
@@ -1208,6 +1211,7 @@ must already come from a stable user/deterministic source.
 Data keys are `handoff` and `local_record`. `local_record` contains exactly
 `durable`, `created`, `replayed`, and `handoff_id`. Exact canonical replay
 returns the same row with `created=false`, `replayed=true`, and no update.
+Use `data.local_record.handoff_id` for a later explicit show or withdrawal.
 
 The row is local `pending_handoff` only. It captures the source task and
 current Contract revision but does not change task state, acceptance,
@@ -1218,13 +1222,15 @@ Local busy persistence receives at most one fresh-transaction retry. Final
 failure returns `handoff_not_persisted` with `handoff=null` and a
 non-durable `local_record`.
 
+<a id="handoff-list"></a>
+
 ### `handoff list`
 
 List bounded records:
 
 ```powershell
-python scripts/taskgov.py handoff list --repo <target-project> --json
-python scripts/taskgov.py handoff list --repo <target-project> --state handed_off --state handoff_withdrawn_by_user --json
+python .agents/skills/task-governance-tool/scripts/taskgov.py handoff list --repo <target-project> --json
+python .agents/skills/task-governance-tool/scripts/taskgov.py handoff list --repo <target-project> --state handed_off --state handoff_withdrawn_by_user --json
 ```
 
 Options are repeatable `--state`, `--source-task-id`, and `--limit` (default
@@ -1232,23 +1238,29 @@ Options are repeatable `--state`, `--source-task-id`, and `--limit` (default
 Data keys are `handoffs`, `count`, exact `total_matching`, `limit`, and
 `states`. Paging is not implemented.
 
+<a id="handoff-show"></a>
+
 ### `handoff show`
 
-Show one sanitized full record:
+Show one sanitized full record, using `data.local_record.handoff_id` from
+recording or the selected `data.handoffs[].handoff_id` from listing:
 
 ```powershell
-python scripts/taskgov.py handoff show --repo <target-project> <handoff-id> --json
+python .agents/skills/task-governance-tool/scripts/taskgov.py handoff show --repo <target-project> <handoff-id> --json
 ```
 
 Data contains only `handoff`. Stored content is privacy-revalidated before
 emission.
 
+<a id="handoff-withdraw"></a>
+
 ### `handoff withdraw`
 
-Withdraw an undelivered pending row only on explicit user direction:
+Withdraw an undelivered pending row only on explicit user direction. Use its
+`handoff_id` from the record/list/show response, not the source Task ID:
 
 ```powershell
-python scripts/taskgov.py handoff withdraw --repo <target-project> <handoff-id> --reason "Handled outside Task Skill" --json
+python .agents/skills/task-governance-tool/scripts/taskgov.py handoff withdraw --repo <target-project> <handoff-id> --reason "Handled outside Task Skill" --json
 ```
 
 Reason is required and capped at 1,000 characters. A terminal, claimed, or
@@ -1257,12 +1269,16 @@ task or task event.
 
 ## Review Commands
 
+<a id="review-prepare"></a>
+
 ### `review prepare`
 
-Prepare one bounded read-only reviewer packet for the current target:
+Prepare one bounded read-only reviewer packet. Use `<task-id>` from the
+successful target-set response's `data.task.task_id`, after handling its
+verification route:
 
 ```powershell
-python scripts/taskgov.py review prepare --repo <target-project> <task-id> --read-only --json
+python .agents/skills/task-governance-tool/scripts/taskgov.py review prepare --repo <target-project> <task-id> --read-only --json
 ```
 
 Supported target kinds are `git_snapshot`, `git_commit`, `diff_fingerprint`,
@@ -1279,12 +1295,11 @@ changed_paths_total, changed_paths_truncated, review_focus, required_output,
 receipt_command
 ```
 
-The packet reads one coherent governance basis, closes SQLite for bounded
-shell-free Git observation, then performs one short basis revalidation.
 Changed paths are strict relative UTF-8 project paths, sorted bytewise, and
 bounded to 100 rows, 240 UTF-8 bytes per row, and 16,384 aggregate path bytes.
-The complete text or JSON stdout is capped at 32,768 bytes. Git observation is
-capped at ten subprocesses.
+The complete text or JSON stdout is capped at 32,768 bytes. A truncated path
+list is not the complete review scope; inspect the exact material bound to the
+returned target.
 
 The fixed `required_output` requests a version-1 structured result with one
 reviewer's Receipt, severity-ordered Findings, and actual provenance. Bounded
@@ -1309,11 +1324,21 @@ Missing, changed, unsafe-path, and oversized cases return no partial packet:
 
 ### Review Evidence
 
-Set or replace the current target:
+<a id="review-target"></a>
+
+#### Target Selection And Binding
+
+Set or replace the target for `data.selected.task.task_id` from `task context`.
+For pre-commit review, stage the intended files and use the snapshot form:
 
 ```powershell
-python scripts/taskgov.py review target set --repo <target-project> <task-id> --kind git_commit --revision <revision> --json
-python scripts/taskgov.py review target set --repo <target-project> <task-id> --kind git_snapshot --json
+python .agents/skills/task-governance-tool/scripts/taskgov.py review target set --repo <target-project> <task-id> --kind git_snapshot --json
+```
+
+For review of an existing commit, use its exact revision instead:
+
+```powershell
+python .agents/skills/task-governance-tool/scripts/taskgov.py review target set --repo <target-project> <task-id> --kind git_commit --revision <revision> --json
 ```
 
 `git_commit`, `diff_fingerprint`, and `external_revision` require
@@ -1330,7 +1355,12 @@ exactly `not_required`, `receipt_required`, `runner_pass`, or `blocked`.
 `blocking_code` is null for the first three and is
 `verification_receipt_blocking` for a stored nonqualifying Runner terminal.
 The route describes the target and Runner result committed by this invocation;
-the CLI performs no post-commit gate reread or Runner reselection.
+use it directly, without another `task show`. Retain `data.task.task_id` and
+`data.task.review_target_generation` for Receipt registration. `receipt_required`
+means run the governed verification and record its aggregate result;
+`not_required` and `runner_pass` proceed to review without a Verification
+Receipt. `blocked` requires its non-null code and stops this completion path;
+a missing or inconsistent route/code pair also stops closed.
 
 A target retained by schema-v18 migration with `capture_version=0` is read-only
 lineage. Verification Receipt add, Review Receipt add, Review Finding add, and
@@ -1346,10 +1376,16 @@ excluded. Completion requires a single-parent commit whose parent equals the
 captured base and whose tree matches the fingerprint. A changed candidate
 needs a new target and fresh receipts.
 
-Add one sanitized current-generation receipt:
+<a id="review-provenance"></a>
+
+#### Receipt Input And Provenance
+
+The normal multi-reviewer path is [Structured Review Results](#structured-review-results).
+The existing single-Receipt form remains available. Use the Task ID in the
+actual Review Packet's `data.task.task_id`, and the reviewer's actual declaration:
 
 ```powershell
-python scripts/taskgov.py review receipt add --repo <target-project> <task-id> --reviewer <stable-reviewer-key> --kind independent --verdict pass --summary "No blocking findings" --reviewer-class human --model-state not_applicable --skill-state not_applicable --context-relation external_context --review-profile general --review-lens correctness --review-method review_packet_inspection --json
+python .agents/skills/task-governance-tool/scripts/taskgov.py review receipt add --repo <target-project> <task-id> --reviewer <stable-reviewer-key> --kind independent --verdict pass --summary "No blocking findings" --reviewer-class human --model-state not_applicable --skill-state not_applicable --context-relation external_context --review-profile general --review-lens correctness --review-method review_packet_inspection --json
 ```
 
 Kinds are `independent`, `self_review_fallback`, and `not_required`; verdicts
@@ -1440,16 +1476,28 @@ Task continues to block the gate. Distinct reviewer keys prove distinct stored
 strings only; they do not prove distinct people, LLMs, machines, independent
 processes, independence, authenticated provenance, or summary truth.
 
-Record and resolve structured findings:
+<a id="finding-resolution"></a>
+
+#### Finding Creation And Resolution
+
+Use the Task ID from the actual Review Packet's `data.task.task_id`.
+`<receipt-id>` is `data.receipt.review_receipt_id` from single Receipt creation,
+or the corresponding `data.receipts[].receipt.review_receipt_id` from grouped
+results. `<finding-id>` is the selected `review_finding_id` returned by Finding
+creation, grouped results, or `task show`'s `data.review_evidence.current_findings`:
 
 ```powershell
-python scripts/taskgov.py review finding add --repo <target-project> <task-id> --receipt-id <receipt-id> --severity high --summary "Concise finding" --json
-python scripts/taskgov.py review finding resolve --repo <target-project> <finding-id> --resolution "Concise resolution" --json
+python .agents/skills/task-governance-tool/scripts/taskgov.py review finding add --repo <target-project> <task-id> --receipt-id <receipt-id> --severity high --summary "Concise finding" --json
+python .agents/skills/task-governance-tool/scripts/taskgov.py review finding resolve --repo <target-project> <finding-id> --resolution "Concise resolution" --json
 ```
 
 Severity is `high`, `medium`, or `low`. Open high/medium findings block
 completion. After resolving a blocking finding and changing material, set a
 new target and obtain fresh qualifying receipts.
+
+<a id="structured-finding-resolutions"></a>
+
+#### Structured Finding Resolutions
 
 For several confirmed resolutions, send one UTF-8 JSON document to
 `review finding resolve --from-stdin --json`:
@@ -1457,6 +1505,11 @@ For several confirmed resolutions, send one UTF-8 JSON document to
 ```json
 {"version":1,"task_id":"tg_task_0123456789abcdef","resolutions":[{"finding_ids":["tg_review_finding_0123456789abcdef"],"resolution":"Individual correction verified"},{"finding_ids":["tg_review_finding_123456789abcdef0","tg_review_finding_23456789abcdef01"],"resolution":"Shared correction verified for these two findings"}]}
 ```
+
+Use `data.task.task_id` from `task show` and the selected
+`data.review_evidence.current_findings[].review_finding_id` values, or the same
+fields under `data.selected` in `task context`. Previously returned Finding
+creation/result IDs may also be used; no extra confirmation read is required.
 
 Every shown key is required, with no extras or duplicate JSON keys. UTF-8 must
 have no BOM and fit 262,144 bytes. Version is exactly integer 1. Each group has
@@ -1524,11 +1577,17 @@ target with those returned in the actual Review Packet):
 }
 ```
 
+From that successful Packet, copy `data.task.task_id` into both the command's
+`<task-id>` and document `task_id`, `data.contract.revision` into
+`contract_revision`, and the complete `data.review_target` into `review_target`.
+Combine only reviewers' `receipts` arrays with identical envelope values;
+preserve returned verdicts and provenance rather than filling or retyping them.
+
 All displayed keys are required and no other keys are accepted. Each Finding
 contains exactly `severity` and `summary`. Put exact project-relative file/line
 references and recommended changes in its bounded summary, not extra fields.
-Use the existing Receipt/Finding enums and text limits from Review Evidence
-above. `provenance` contains exactly those ten caller declaration fields, with
+Use the [Receipt/provenance enums, bounds and matrix](#review-provenance) and
+[Finding rules](#finding-resolution). `provenance` contains exactly those ten caller declaration fields, with
 explicit nullable identifiers and arrays; use null only for `not_required`.
 Do not invent model/Skill identity, context, methods, or independence.
 
@@ -1569,68 +1628,12 @@ or independence. The existing single-item commands remain available.
 
 ## Internal Continuity Boundary
 
-Successful `setup` enables bounded local continuity once. There is no disable
-surface. After eligible successful business writes, the business transaction
-commits and closes before same-process Evidence projection, Viewer refresh,
-and any due managed copy, in that order. Every changed mutation may retry due
-Evidence work, while only completion-cycle insertion advances its source
-generation. Each projection has at most one follow-up and backup one attempt; taskgov never uses a
-daemon, thread, timer, detached process, queue, scheduler, service, or network.
-
-Evidence JSON paths are fixed at `state/current/evidence/index.json` and
-`state/current/evidence/bundles/<completion-evidence-bundle-id>.json`, with the lock at
-`state/current/evidence/taskgov-evidence.lock`; callers cannot select them.
-A schema-v20-through-v22 index uses `format_version=2` and adds
-`bundle_format_version`: null for `legacy_unknown`, 1 for a preserved Bundle
-v1, and 2 for a native Bundle v2. New v22 Bundles use `format_version=2`, a
-closed verification-basis union of `caller_attestation`, `not_required`, or
-`runner_observation`, and a matching nullable `runner_observation` field. The
-`caller_attestation` and `not_required` arms keep that field null; the Runner arm contains only the qualifying
-sanitized observation. Retained source-19/20/21 Bundle bytes and digests are unchanged. The index
-is published last, SQLite remains canonical, and JSON is never imported or
-displayed by the Viewer.
-
-The optional physical `config/viewer.json` is browser-presentation policy, not
-a CLI or normal-loop choice. Taskgov never creates it; absence means the
-generated page owns no refresh timer. A valid exact schema-1
-`visibility-refresh-v1` profile may embed a 5-3,600 second interval on the next
-Viewer publication. Invalid policy keeps routine task success and the last-good
-Viewer and uses the existing `viewer_refresh_failed` warning; actual setup uses
-`setup_incomplete`. `setup --read-only` remains successful and no-write,
-reports `viewer_status="repair_required"`, and includes `viewer_publish` in
-`planned_writes`. Doctor does not inspect this policy.
-
-Only the resulting visible `file://` page uses the browser timer. Immediately
-before its automatic reload, it may replace the current History state with one
-fixed, at-most-4,096-byte, five-minute envelope containing non-search filters,
-selected Task, fixed-control focus, and document scroll. Owned state is
-cleared before restoration; an unrelated `history.state` payload, URL, and
-history length are unchanged. Five minutes is the restore acceptance limit,
-not a physical-erasure guarantee; browser-managed state may survive session
-restore but an owned envelope is consumed before validation. No cookie, Web
-Storage, network, snapshot field, database field,
-command, or normal-loop decision is added.
-
-These operations add no Skill command or LLM judgment. Their artifacts and
-paths are absent from public command output. Snapshot v4 reads source schemas
-5 through 22. Sources 5-14 receive an empty, legacy-incomplete completion
-history; sources 15-22 use stored cycles. Every Task receives the same bounded
-five-key projection as `task show` without exposing internal event links,
-maintenance data, or checkpoint content.
-
-For sources v18+, Viewer capture validates Review Receipt provenance and
-verification-subject/capture bindings; v19-v22 also validate the Bundle
-discriminator, and v20-v22 additionally validate the source-appropriate
-Bundle-v2 verification basis and Runner graph. It discards those fields from snapshot v4. It
-adds no provenance UI, filter, panel, snapshot key, or normal-loop behavior.
-
-Viewer capture validates the complete source-aware Task batch before rendering
-or replacement, including the source-v8+ Contract-pointer relationship. A
-stored Task fault therefore publishes no partial snapshot
-and preserves the last-good Viewer; routine post-commit maintenance returns the
-successful business result with only `viewer_refresh_failed`. Setup preflight
-instead fails no-write with `project_state_unreadable`; a failure confined to
-setup's later Viewer stage remains `setup_incomplete`.
+Read this section for a continuity warning or an explicit setup/Viewer
+diagnosis, not as a normal-loop action. Successful `setup` enables bounded
+same-process maintenance; there is no disable, export, custom-output, or repair
+command. Taskgov starts no background worker, scheduler, browser, or network
+operation. SQLite stays canonical; generated Evidence JSON and Viewer files
+are projections, never inputs or current completion evidence.
 
 If post-commit maintenance cannot complete, the primary business mutation
 remains successful and only a bounded warning is appended:
@@ -1644,6 +1647,21 @@ remains successful and only a bounded warning is appended:
 
 The operation remains due for a later eligible successful mutation. The Skill
 does not ask the LLM to retry, schedule, or stop for these warnings.
+
+Use [doctor](#doctor) only for explicit read-only diagnosis and [setup](#setup)
+for authorized repair. A stored Task fault preserves the last-good Viewer;
+setup preflight fails no-write with `project_state_unreadable`, whereas a
+failure confined to its later Viewer stage is `setup_incomplete` and reports
+the durable completed prefix.
+
+The optional physical `config/viewer.json` is browser-presentation policy, not
+a CLI or normal-loop choice. Taskgov never creates it; absence means no refresh
+timer. A valid schema-1 `visibility-refresh-v1` profile applies its 5-3,600 second
+interval on the next Viewer publication. Invalid policy preserves routine Task
+success and the last-good Viewer with `viewer_refresh_failed`; actual setup uses
+`setup_incomplete`. Preview remains successful and no-write, reporting
+`viewer_status="repair_required"` and planned `viewer_publish`. Doctor does not
+inspect this policy; it cannot confirm its validity.
 
 ## Errors And Privacy
 
@@ -1661,6 +1679,12 @@ Specifically, `setup --read-only --confirm-relocation <token>` fails before
 project/state resolution with exit 1,
 `invalid_option_combination`, and message
 `--confirm-relocation cannot be used with --read-only`.
+
+Correct an observed command/argument mismatch against its command section.
+`internal_error` alone does not establish a syntax error or an instruction
+defect: the cause may be in the environment or internal processing. Report the
+sanitized failure and keep the cause unconfirmed until relevant read-only
+diagnosis establishes it; do not guess new options or blindly retry writes.
 
 Relocation setup failures use exit 2 and these fixed sanitized messages:
 

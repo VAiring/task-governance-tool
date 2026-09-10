@@ -10,6 +10,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from tools.document_contract import _heading_slugs, _resolve, _scan
+
 from tools.release_contract import (
     CHECKER_INVOCATION,
     OFFICIAL_APACHE_2_LICENSE_SHA256,
@@ -209,9 +211,7 @@ class SkillSelfContainmentTests(unittest.TestCase):
             readme,
             release_guide,
             release_body,
-            skill_md,
             workflow_guide,
-            contracts,
         )
         for text in trust_documents:
             normalized = " ".join(text.lower().split())
@@ -294,6 +294,28 @@ class SkillSelfContainmentTests(unittest.TestCase):
         self.assertIn("docs/releases/v0.12.0.md", readme)
         self.assertIn("docs/releases/v0.11.0.md", readme)
 
+    def test_package_guidance_links_resolve_without_repository_documents(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            package = copy_skill_to(Path(tmp))
+            relatives = ("SKILL.md", "references/task_workflow.md",
+                         "references/cli_contracts.md", "references/reconciliation.md")
+            issues = []
+            scans = {
+                relative: _scan(relative, (package / relative).read_text(encoding="utf-8"), issues)
+                for relative in relatives
+            }
+            self.assertEqual(issues, [])
+            for relative, scan in scans.items():
+                for link in scan.links:
+                    with self.subTest(source=relative, target=link.target):
+                        resolved = _resolve(package, relative, link.target)
+                        self.assertIsNotNone(resolved)
+                        target, fragment = resolved
+                        if fragment:
+                            self.assertIn(target, scans)
+                            anchors = set(scans[target].anchors) | _heading_slugs(scans[target])
+                            self.assertIn(fragment, anchors)
+
     def test_core_task_and_review_guidance_is_synchronized(self):
         skill_md = (SKILL_ROOT / "SKILL.md").read_text(encoding="utf-8")
         workflow = (SKILL_ROOT / "references" / "task_workflow.md").read_text(
@@ -310,20 +332,18 @@ class SkillSelfContainmentTests(unittest.TestCase):
             encoding="utf-8"
         )
 
-        for text in (skill_md, workflow, contracts, readme):
+        for text in (skill_md + workflow + contracts, readme):
             self.assertIn("task context", text)
             self.assertIn("task current", text)
             self.assertIn("Tier 2", text)
-        for text in (workflow, contracts, readme):
+        for text in (workflow + contracts, readme):
             self.assertIn("review target set", text)
             self.assertIn("review receipt add", text)
-        self.assertIn("review target", skill_md)
         self.assertIn("task add --status done", skill_md)
         self.assertIn(
             "only command that initializes or migrates",
-            " ".join(skill_md.lower().split()),
+            " ".join(workflow.lower().split()),
         )
-        self.assertIn("snapshot v4", contracts.lower())
         self.assertIn("schema v18", release_note.lower())
         self.assertIn("0.13.0", release_note)
         self.assertIn("verification and review gates", skill_md.lower())
@@ -340,7 +360,7 @@ class SkillSelfContainmentTests(unittest.TestCase):
         self.assertIn("explicit request to register or taskize", skill_md)
         self.assertIn("explicit scope addition", skill_md)
         self.assertIn(
-            "[references/task_workflow.md](references/task_workflow.md)",
+            "references/task_workflow.md#taskize-or-add-scope",
             skill_md,
         )
 
@@ -454,7 +474,7 @@ class SkillSelfContainmentTests(unittest.TestCase):
             (SKILL_ROOT / "release-manifest.json").read_text(encoding="utf-8")
         )
 
-        for text in (skill_md, workflow, contracts, readme, release_note):
+        for text in (contracts, readme, release_note):
             normalized = " ".join(text.lower().split())
             for phrase in (
                 "relocation_preview",
@@ -469,7 +489,6 @@ class SkillSelfContainmentTests(unittest.TestCase):
                 "fresh user approval",
             ):
                 self.assertIn(phrase, normalized)
-        self.assertIn("schema v18", contracts.lower())
         self.assertIn(
             f"source schemas {VIEWER_MIN_SOURCE_SCHEMA_VERSION} through {SCHEMA_VERSION}",
             readme.lower(),
@@ -491,22 +510,6 @@ class SkillSelfContainmentTests(unittest.TestCase):
             ),
             documented_uuid.group(1),
         )
-        for text in (contracts, workflow, readme, release_note):
-            normalized = " ".join(text.lower().split())
-            self.assertIn("fixed-layout managed", normalized)
-            self.assertIn("legacy backup-only", normalized)
-            self.assertIn("never recreates the old legacy primary", normalized)
-            self.assertIn("moved legacy backup-only", normalized)
-            self.assertIn("project_state_unreadable", normalized)
-        self.assertIn(
-            "`database_restore` inside that private stage before "
-            "`legacy_state_publish`",
-            workflow,
-        )
-        for text in (contracts, workflow, release_note):
-            self.assertIn("`database_restore`", text)
-            self.assertIn("`legacy_state_publish`", text)
-
         setup_section = contracts.split("## `setup`", 1)[1].split(
             "## `doctor`",
             1,
@@ -569,45 +572,6 @@ class SkillSelfContainmentTests(unittest.TestCase):
         self.assertEqual(project_state["schema_version"], SCHEMA_VERSION)
         self.assertEqual(
             project_state["required_schema_version"],
-            SCHEMA_VERSION,
-        )
-
-        snapshot_contract = re.search(
-            r"Snapshot v(?P<snapshot>\d+) reads source schemas\s+"
-            r"(?P<first>\d+) through (?P<last>\d+)\.\s+"
-            r"Sources (?P<legacy_first>\d+)-(?P<legacy_last>\d+) "
-            r"receive .*?; sources "
-            r"(?P<history_first>\d+)-(?P<history_last>\d+) use stored cycles\.",
-            contracts,
-            re.DOTALL,
-        )
-        self.assertIsNotNone(snapshot_contract)
-        self.assertEqual(
-            int(snapshot_contract.group("snapshot")),
-            SNAPSHOT_VERSION,
-        )
-        self.assertEqual(
-            int(snapshot_contract.group("first")),
-            VIEWER_MIN_SOURCE_SCHEMA_VERSION,
-        )
-        self.assertEqual(
-            int(snapshot_contract.group("last")),
-            SCHEMA_VERSION,
-        )
-        self.assertEqual(
-            int(snapshot_contract.group("legacy_first")),
-            int(snapshot_contract.group("first")),
-        )
-        self.assertEqual(
-            int(snapshot_contract.group("legacy_last")),
-            VIEWER_HISTORY_SCHEMA_VERSION - 1,
-        )
-        self.assertEqual(
-            int(snapshot_contract.group("history_first")),
-            VIEWER_HISTORY_SCHEMA_VERSION,
-        )
-        self.assertEqual(
-            int(snapshot_contract.group("history_last")),
             SCHEMA_VERSION,
         )
 
@@ -835,12 +799,12 @@ class SkillSelfContainmentTests(unittest.TestCase):
             self.assertIn("handoff_not_persisted", text)
         self.assertIn("schema v18", release_note.lower())
         self.assertIn("0.13.0", release_note)
-        for text in (workflow, contracts, readme, release_note):
+        for text in (workflow + contracts, readme, release_note):
             self.assertIn("Effort Advisory", text)
         self.assertIn("effort_advisory_enabled", skill_md)
         for text in (skill_md, workflow, contracts, readme, release_note):
             self.assertNotIn("taskgov.py self status", text)
-        self.assertIn("task effort", skill_md)
+        self.assertIn("task effort", skill_md + workflow)
         self.assertIn("task effort", workflow)
         self.assertIn("task effort", contracts)
         with tempfile.TemporaryDirectory() as tmp:
@@ -937,7 +901,7 @@ class SkillSelfContainmentTests(unittest.TestCase):
             encoding="utf-8"
         )
         readme = (ROOT / "README.md").read_text(encoding="utf-8")
-        for text in (skill_md, workflow, contracts):
+        for text in (skill_md + workflow, contracts):
             self.assertIn("task current", text)
             self.assertIn("--status paused", text)
             self.assertIn("paused_tasks_present", text)
@@ -986,9 +950,10 @@ class SkillSelfContainmentTests(unittest.TestCase):
         readme = (ROOT / "README.md").read_text(encoding="utf-8")
         release_note = (ROOT / "docs" / "release-install.md").read_text(encoding="utf-8")
         openai_yaml = (SKILL_ROOT / "agents" / "openai.yaml").read_text(encoding="utf-8")
-        self.assertIn("canonical offline projection", skill_md)
-        self.assertIn("bounded same-process", skill_md)
-        self.assertIn("no LLM command choice or background", skill_md)
+        normalized_skill = " ".join(skill_md.split())
+        self.assertIn("canonical offline projection", normalized_skill)
+        self.assertIn("bounded same-process", normalized_skill)
+        self.assertIn("no LLM command choice or background", normalized_skill)
         for text in (skill_md, workflow, contracts, readme):
             self.assertNotIn("taskgov.py web export", text)
             self.assertNotIn("taskgov web export", text)
@@ -1035,7 +1000,7 @@ class SkillSelfContainmentTests(unittest.TestCase):
             self.assertNotIn("codex_home", lowered)
             self.assertNotIn(".codex\\skills", lowered)
             self.assertNotIn(".codex/skills", lowered)
-        for text in (skill_md, workflow, contracts):
+        for text in (skill_md + workflow, contracts):
             lowered = text.lower()
             self.assertIn("user-wide", lowered)
             self.assertIn("unsupported", lowered)

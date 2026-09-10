@@ -283,7 +283,6 @@ class M14IntegratedAcceptanceTests(unittest.TestCase):
         for path in (
             ROOT / "README.md",
             ROOT / "docs" / "release-install.md",
-            SKILL_ROOT / "references" / "cli_contracts.md",
         ):
             text = path.read_text(encoding="utf-8")
             self.assertIn(__version__, text, path)
@@ -298,13 +297,13 @@ class M14IntegratedAcceptanceTests(unittest.TestCase):
             encoding="utf-8"
         )
         self.assertIn("effort_advisory_enabled", skill)
-        self.assertIn("task effort", skill)
-        self.assertIn("task context --json", skill)
+        self.assertIn("task effort", workflow)
+        self.assertIn("task context --json", workflow)
         self.assertTrue(any(" task context --json" in line for line in examples))
         self.assertIn("task context", release_contract.runtime.public_commands)
         self.assertEqual(len(release_contract.runtime.public_commands), 23)
         self.assertIn(
-            "[references/task_workflow.md](references/task_workflow.md)", skill
+            "references/task_workflow.md#taskize-or-add-scope", skill
         )
         self.assertEqual(workflow.count("## Taskize Or Add Scope"), 1)
         self.assertNotIn("## Register Tasks", workflow)

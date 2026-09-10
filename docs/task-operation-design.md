@@ -641,6 +641,23 @@ repositories, CLI parsing/output, or Viewer code/template, and introduces no
 public command leaf. Each authorized change uses its applicable scope and
 existing verification and review gates.
 
+Consumer guidance uses the Skill as the concise invocation and conditional
+entry point, the workflow reference as the single normal operation sequence,
+and the CLI reference for exact input/output and failure contracts. Direct
+section links select existing operations, states, or errors; they do not add
+commands, user choices, confirmation, reading records, or limits. Examples use
+the governed-project root unless an exception is stated locally and identify
+the public response fields supplying Task IDs and target generations. Optional
+checks follow, rather than precede, the ordinary operation.
+
+Package-only users receive all actionable input, permission, gate, failure,
+partial-success, retry, and audit guidance in those references. Internal schema
+lineage, serialization, recovery stage mechanics, and browser state remain in
+their existing formal owners, not duplicated as ordinary consumer reading or
+replaced by a requirement to read development-repository documents. Related
+checks validate package links, examples, and retained behavior without requiring
+each rule or internal detail to be repeated in every consumer document.
+
 ### Neutral Forward-Test Boundary
 
 Neutral forward tests for this instruction layer give fresh, minimal-context

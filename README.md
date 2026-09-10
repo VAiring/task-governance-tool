@@ -275,7 +275,7 @@ python .agents/skills/task-governance-tool/scripts/taskgov.py review target set 
 python .agents/skills/task-governance-tool/scripts/taskgov.py verification receipt add <task-id> --result pass --duration-ms <milliseconds> --scope-coverage full --expected-target-generation <generation-from-target-set> --json
 python .agents/skills/task-governance-tool/scripts/taskgov.py review prepare <task-id> --json
 # Obtain the structured reviewer results for this exact Task and target.
-$OutputEncoding = [System.Text.UTF8Encoding]::new($false)
+$OutputEncoding = [Console]::InputEncoding = [System.Text.UTF8Encoding]::new($false)
 Get-Content -Raw -Encoding utf8 .\review-results.json |
   python .agents/skills/task-governance-tool/scripts/taskgov.py review result add <task-id> --json
 git commit -m "<project-approved message>"

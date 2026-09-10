@@ -258,6 +258,37 @@ class CliEnvelopeTests(unittest.TestCase):
                     })
             self.assertEqual(file_snapshot(install.project_root), before)
 
+    def test_physical_install_decodes_json_as_utf8_and_text_with_default_encoding(self):
+        title = "Café"
+        verification = "界 😀"
+        with tempfile.TemporaryDirectory() as tmp:
+            install = make_physical_install(Path(tmp))
+            # Simulate a legacy parent decoder even on UTF-8-default hosts.
+            # The helper still launches and captures the real installed CLI.
+            with mock.patch.object(subprocess, "_text_encoding", return_value="cp1252"):
+                setup = install.run("setup", "--json")
+                self.assertEqual(setup.returncode, 0, setup.stdout or setup.stderr)
+                added = install.run(
+                    "--json", "task", "add", "--title", title,
+                    "--verification", verification,
+                )
+                self.assertEqual(added.returncode, 0, added.stdout or added.stderr)
+                self.assertEqual(added.stderr, "")
+                task = json.loads(added.stdout)["data"]["task"]
+                self.assertEqual(task["verification"], verification)
+                self.assertEqual(task["title"], title)
+
+                # Ordinary text retains the child/parent locale convention.
+                # Disable isolation so the child honors this stdout encoding.
+                with mock.patch.dict(os.environ, {"PYTHONIOENCODING": "cp1252:strict"}):
+                    listed = install.run("task", "list", "--limit", "1", isolated=False)
+                self.assertEqual(listed.returncode, 0, listed.stdout or listed.stderr)
+                self.assertEqual(listed.stderr, "")
+                self.assertEqual(listed.stdout, (
+                    "Tasks: 1 (limit 1)\n"
+                    f"{task['task_id']} [ready] normal optional - {title}\n"
+                ))
+
     def test_success_result_json_object_contains_only_m14_envelope_keys(self):
         payload = success_result("doctor", "ok", {"example": True}).to_json_object()
 

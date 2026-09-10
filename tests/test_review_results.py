@@ -140,15 +140,31 @@ class ReviewResultsInputTests(unittest.TestCase):
         raw = encode(payload)
         with tempfile.TemporaryDirectory() as temporary:
             (Path(temporary) / "review-results.json").write_bytes(raw)
-            transported = subprocess.run(
-                [powershell, "-NoProfile", "-NonInteractive", "-Command", pipeline],
-                cwd=temporary, stdin=subprocess.DEVNULL, capture_output=True, check=False, timeout=30,
-            )
-        self.assertEqual(transported.returncode, 0, transported.stderr)
-        self.assertEqual(transported.stderr, b"")
-        received = bytes.fromhex(transported.stdout.decode("ascii").strip())
-        self.assertEqual(received.rstrip(b"\r\n"), raw)
-        self.assertEqual(json.loads(received.decode("utf-8")), payload)
+            # PowerShell 5.1 can reuse Console.InputEncoding for native stdin
+            # when its code page matches OutputEncoding, including its BOM.
+            for encoding_name, input_encoding in (
+                ("cp437", "[System.Text.Encoding]::GetEncoding(437)"),
+                ("utf8_with_bom", "[System.Text.Encoding]::UTF8"),
+            ):
+                with self.subTest(input_encoding=encoding_name):
+                    controlled_pipeline = "\n".join([
+                        "$originalInputEncoding = [Console]::InputEncoding",
+                        "try {",
+                        f"[Console]::InputEncoding = {input_encoding}",
+                        pipeline,
+                        "} finally {",
+                        "[Console]::InputEncoding = $originalInputEncoding",
+                        "}",
+                    ])
+                    transported = subprocess.run(
+                        [powershell, "-NoProfile", "-NonInteractive", "-Command", controlled_pipeline],
+                        cwd=temporary, stdin=subprocess.DEVNULL, capture_output=True, check=False, timeout=30,
+                    )
+                    self.assertEqual(transported.returncode, 0, transported.stderr)
+                    self.assertEqual(transported.stderr, b"")
+                    received = bytes.fromhex(transported.stdout.decode("ascii").strip())
+                    self.assertEqual(received.rstrip(b"\r\n"), raw)
+                    self.assertEqual(json.loads(received.decode("utf-8")), payload)
 
     def test_decoder_rejects_duplicate_keys_nonfinite_numbers_invalid_unicode_and_non_documents(self):
         raw = encode(document())

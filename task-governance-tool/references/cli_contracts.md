@@ -1386,7 +1386,7 @@ or output destination. For example, an already assembled JSON string can be
 piped in PowerShell with UTF-8 encoding:
 
 ```powershell
-$OutputEncoding = [System.Text.UTF8Encoding]::new($false)
+$OutputEncoding = [Console]::InputEncoding = [System.Text.UTF8Encoding]::new($false)
 $resultJson | python .agents/skills/task-governance-tool/scripts/taskgov.py review result add <task-id> --json
 ```
 

@@ -349,6 +349,9 @@ class PhysicalInstall:
             cwd=cwd or self.project_root,
             env=env,
             text=True,
+            # JSON has a fixed UTF-8 wire contract; ordinary text keeps the
+            # existing locale decoder. Legacy ASCII-escaped JSON also fits.
+            encoding="utf-8" if "--json" in args else None,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             check=False,

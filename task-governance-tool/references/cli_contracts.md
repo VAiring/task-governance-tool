@@ -562,16 +562,15 @@ python .agents/skills/task-governance-tool/scripts/taskgov.py task context --rep
 ```
 
 Only common options are accepted; there is no Task ID, filter, display-mode,
-or automatic start option. The tool uses the existing default compact current
-batch (limit 20), resumes its first `in_progress` or `review_pending` row, or
-otherwise selects the first default compact next candidate (limit 5). Each
-batch retains its existing validation, ordering, and omission boundaries.
+or automatic start option. The tool resumes active/review-pending work first,
+otherwise selects ready work using its existing order. Use the returned
+selection; do not reconstruct or re-rank it.
 
 Success data is exactly `selection`, `current`, `next`, and `selected`.
 `selection` is `current`, `next`, or `none`. `current` is compact-current data;
 `next` is compact-next data only when fallback ran, otherwise null. `selected`
-is the complete normal `task show` data, or null when no candidate exists. It
-includes complete Contract, latest checkpoint, current blockers/gates, and
+is the complete [normal Task detail](#task-show), or null when no candidate exists.
+It includes complete Contract, latest checkpoint, current blockers/gates, and
 `effort_advisory_enabled`. Use that detail directly without another
 current/next/show call. Held work remains recalled; successful component
 warnings are retained once.
@@ -581,14 +580,8 @@ the next Task-specific command. `selection=next` does not start the Task; start
 it with `task edit <task-id> --status in_progress --json`. No ID is appended to
 the `task context` call itself.
 
-Any component failure returns its existing sanitized error and exit status,
-no warnings or partial result, and exactly:
-
-```json
-{"selection":"none","current":null,"next":null,"selected":null}
-```
-
-It never skips a failed read to select another Task. `ok=true` with
+Any read failure returns its sanitized error with no partial working context;
+it never skips the failure to select another Task. `ok=true` with
 `selection=none` is successful absence, distinct from `ok=false`. Text gives
 the selection, existing selected-Task detail, held-work recall, and warnings.
 No state, evidence, or gate is changed. The public operation reuses the
@@ -638,91 +631,57 @@ python .agents/skills/task-governance-tool/scripts/taskgov.py task show --repo <
 For explicit historical investigation only, use [the audit mode](#task-audit-detail).
 `task context.selected` always uses normal detail.
 
-Data keys are exactly `task`, `events`, `suggested_next_action`,
-`review_evidence`, `handoff_summary`, `contract`, `latest_checkpoint`,
-`effort_advisory_enabled`, `completion_history`, and `verification_evidence`.
-A task-show failure uses both `completion_history=null` and
-`verification_evidence=null` in its bounded empty data.
+Use the returned working context directly. These fields have the same meaning
+under `task context`'s `data.selected`; no follow-up read is needed:
 
-`effort_advisory_enabled` is a deterministic boolean routing field. Invalid
-profile content returns `false` plus
-`effort_advisory_profile_invalid`; the field performs no Git work.
+| Field under `data` | Use |
+|---|---|
+| `task` | Task ID, status, verification expectation, review tier, current target/generation, and typed completion evidence. |
+| `contract` | Complete current scope, acceptance, constraints, authority reference, and revision. Revision `0` means no activated Contract, not a failed read; use the existing [Contract procedure](task_workflow.md#task-contract) when applicable. |
+| `latest_checkpoint` | The latest [continuation checkpoint](#task-checkpoint), or null when none exists. |
+| `events` | Latest activity and retained notes/transition reasons. Do not discard continuation information merely because it is old, from an earlier generation, or followed by a newer checkpoint. |
+| `review_evidence` | Current gate/counts, `current_receipts`, and `current_findings`. |
+| `verification_evidence` | Current gate/counts, `current_receipt`, and tool-generated `current_verification_subject`. |
+| `handoff_summary` | Counts for `pending_handoff`, `handed_off`, and `handoff_withdrawn_by_user`; these do not expand Task scope. |
+| `completion_history` | `total` and `legacy_history_incomplete`, not current completion evidence. |
+| `effort_advisory_enabled` | Whether the normal loop uses the optional Effort observation. Invalid configuration returns false with a continuation warning. |
+| `suggested_next_action` | The tool's state-based next-action hint, not new authority. |
 
-The Task contains typed completion evidence and current review-target fields;
-the complete current Contract and latest checkpoint remain in both modes.
-Normal `review_evidence` has exactly `gate`, `counts`, `current_receipts`, and
-`current_findings`. Gate has `required_independent_passes`,
-`qualifying_independent_passes`, `fallback_kind`, and `satisfied`; counts has
-`receipts_current_generation`, `changes_requested_current_generation`,
-`open_high`, `open_medium`, and `open_low`. The Task's target and tier are not
-repeated. Current Receipts match the complete current target/generation and
-contain `review_receipt_id`, `reviewer_key`, `receipt_kind`, `verdict`, `summary`,
-`user_approved`, and `created_at`, in existing newest-first order. Current
-Findings contain every open Finding, including low severity and old generations,
-plus resolved high/medium Findings still requiring fresh review. Each appears
-once with its existing structured fields and `blocking_reason` equal to
-`unresolved`, `fresh_review_required`, or null when nonblocking. These are not
-filtered recent-ten windows. Audit retains the prior target, full gate/counts,
-blocking Findings, and bounded recent Receipt/provenance and Finding rows.
-Neither form includes raw reviews or private reasoning. `handoff_summary` contains exact
-`pending_handoff`, `handed_off`, and `handoff_withdrawn_by_user` counts.
+Use `review_evidence.gate.satisfied` and its required/qualifying independent
+pass counts, not the number of recent reviews, to read review readiness.
+`current_receipts` match the complete current target and generation.
+`current_findings` includes all open Findings, including older generations and
+low severity, plus resolved high/medium Findings awaiting fresh review.
+Their `blocking_reason` is `unresolved`, `fresh_review_required`, or null when
+nonblocking. Keep these distinctions; see [Finding repair](task_workflow.md#repair-findings)
+when blocked. A newer generation never clears an unresolved Finding by itself.
 
-Normal events retain the newest event and all `note_added`, `task_updated`,
-`review_tier_changed`, and `task_reopened` events, without duplicate rows, in
-`created_at DESC, rowid DESC` order. These types can carry notes or continuation
-reasons and are not removed by age, generation, or a newer checkpoint. Event
-prose is not interpreted to infer supersession; this subset can grow with
-operation history. Audit keeps the previous newest ten events. Additional
-older summaries newly exposed in normal mode pass the existing event-summary
-text/privacy checks without changing their bytes; a rejection fails sanitized
-as `project_state_unreadable`, with no partial result or write.
+Use `verification_evidence.gate.required`, `satisfied`, and `blocking_code`
+for verification readiness. `current_receipt` is null or the exact-current
+Receipt's ID, result, duration, coverage, and recording time. Its absence or
+zero Receipt counts do not imply failure: a qualifying Runner pass needs no
+Receipt. Do not reconstruct the gate from internal markers or historical rows.
+For a returned blocking code or read failure, use the conditions below.
 
-`verification_evidence` includes `current_verification_subject`. It is null
-without a capture-version-1 nonempty verification criterion; otherwise it is
-the same five-key subject-v1 object used by recent Verification Receipts. For
-active/review-pending nonempty verification on a retained capture-version-0
-target, its blocking code is `evidence_basis_stale` before receipt-required or
-receipt-blocking evaluation. Trimmed-empty verification remains
-`required=false,satisfied=true,blocking_code=null` with a null subject.
+#### Task Read Conditions
 
-For a schema-v21 or schema-v22 live target, the existing gate shape has a closed basis matrix.
-Marker `0` uses the [manual Verification Receipt rules](#verification-receipt).
-Marker `2` with a non-current,
-pending, or cleanup-only graph is stale and uses `evidence_basis_stale`; any
-other exact-current terminal Runner result except the two admitted results uses
-`verification_receipt_blocking`. The exact-current closed no-launch
-`m21_fallback` delegates to those same manual Verification Receipt rules.
-An exact-current qualifying complete-plan
-Runner pass is satisfied with no Receipt, so `qualifying_receipt_id` is null
-and the Receipt-only counts may all be zero.
+For `review_target_required`, prepare the exact material and
+[set its target](task_workflow.md#set-the-review-target). `evidence_basis_stale`
+means the retained basis cannot authorize new evidence or completion; use a
+fresh target, never attach an earlier run to it. For
+`verification_receipt_required` or `verification_receipt_blocking`, follow the
+[Verification Receipt conditions](#verification-receipt), including fresh-target
+requirements after failed, timed-out, or partial verification. A blocked Runner
+cannot be overridden by a manual Receipt. For new target operations, use their
+returned route as specified by the [normal loop](task_workflow.md#bounded-operating-loop).
 
-Normal `completion_history` has only `total` and `legacy_history_incomplete`.
-All existing history validation still runs, including for hidden detail.
-
-Normal `verification_evidence` has exactly `current_verification_subject`,
-`gate`, `counts`, and `current_receipt`. Gate contains `required`, `satisfied`,
-nullable `blocking_code`, and nullable `qualifying_receipt_id`. Counts contains
-`receipts_exact_current`, `qualifying_exact_current`, and `blocking_exact_current`.
-Current Receipt is null or the validated exact-current row's
-`verification_receipt_id`, `result`, `duration_ms`, `scope_coverage`, and
-`created_at`; it is selected independently of the recent-ten window. The complete
-verification text and target remain in Task and the revision in Contract.
-
-Revision-zero Contract data is:
-
-```json
-{
-  "revision": 0,
-  "scope": "",
-  "acceptance": "",
-  "constraints": "",
-  "authority_ref": "",
-  "change_reason": "",
-  "created_at": null
-}
-```
-
-`latest_checkpoint` is `null` or the public [checkpoint object](#task-checkpoint).
+No read changes evidence or gates. Both normal and audit reads validate hidden
+history too; omitting its display is not permission to ignore invalid state.
+On `ok=false`, use the sanitized error rather than empty/null data as a Task or
+gate result. `project_state_unreadable`, `invalid_verification_evidence`, or
+`completion_history_inconsistent` can indicate invalid retained content;
+follow [read-failure diagnosis](#errors-and-privacy), not an audit bypass or
+another candidate. Neither mode exposes raw reviews or private reasoning.
 
 <a id="task-audit-detail"></a>
 

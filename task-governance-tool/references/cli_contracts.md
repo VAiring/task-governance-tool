@@ -1423,6 +1423,10 @@ context_relation same_context forked_context fresh_context external_context
                  not_applicable unknown
 ```
 
+`context_relation` is a provenance declaration, not an independence verdict.
+Do not infer reviewer independence or a `fresh_context` requirement from its
+value alone; apply the project's actual review requirements.
+
 The repeatable enum orders are exactly:
 
 ```text

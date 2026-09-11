@@ -110,6 +110,77 @@ class TaskContextTests(unittest.TestCase):
         self.assertEqual(set(payload["data"]["selected"]["completion_history"]), {"total", "legacy_history_incomplete"})
         self.assertEqual(set(payload["data"]["selected"]["review_evidence"]), {"gate", "counts", "current_receipts", "current_findings"})
 
+    def test_authorized_initial_start_omits_only_the_separate_start_write(self):
+        outcomes = []
+        call_counts = []
+        for initial_status in ("ready", "in_progress"):
+            with self.subTest(initial_status=initial_status), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                repo = root / "repo"
+                repo.mkdir()
+                db = root / "taskgov.sqlite"
+                initialize_taskgov_internal(repo=repo, db=db)
+                calls = []
+
+                def invoke(*args):
+                    calls.append(args[:2])
+                    result = run(db, repo, *args)
+                    self.assertEqual(result.returncode, 0, result.stdout or result.stderr)
+                    return json.loads(result.stdout)["data"]
+
+                # Both flows have the same explicit registration/start authority.
+                added = invoke(
+                    "task", "add", "--title", "Authorized guide update",
+                    "--status", initial_status, "--review-tier", "2",
+                    "--verification", "Check the complete guide",
+                    "--contract-scope", "Update the guide only",
+                    "--contract-acceptance", "The example matches the current CLI",
+                    "--contract-constraints", "No runtime changes",
+                    "--contract-authority-ref", "conversation:approved-guide-work",
+                )
+                before = file_snapshot(root)
+                context = invoke("task", "context")
+                self.assertEqual(file_snapshot(root), before)
+                task_id = added["task"]["task_id"]
+                self.assertEqual(context["selected"]["task"]["task_id"], task_id)
+                self.assertEqual(context["selected"]["contract"]["revision"], 1)
+                if context["selected"]["task"]["status"] == "ready":
+                    invoke("task", "edit", task_id, "--status", "in_progress")
+                call_counts.append(len(calls))
+                self.assertEqual(calls[:2], [("task", "add"), ("task", "context")])
+                # Inspection is test evidence, not an extra normal-flow call.
+                final = invoke("task", "show", task_id)
+                outcomes.append((
+                    {key: final["task"][key] for key in (
+                        "title", "status", "kind", "lane", "lane_order", "review_tier",
+                        "verification", "review_target_generation", "review_target_kind",
+                        "completion_evidence_kind",
+                    )},
+                    {key: value for key, value in final["contract"].items() if key != "created_at"},
+                    final["verification_evidence"]["gate"],
+                    final["review_evidence"]["gate"],
+                ))
+        self.assertEqual(call_counts, [3, 2])
+        self.assertEqual(outcomes[0], outcomes[1])
+
+    def test_initial_start_remains_available_with_unrelated_held_work(self):
+        paused = self.add("Held work", "--status", "in_progress")
+        self.success("task", "edit", paused["task_id"], "--status", "paused",
+                     "--pause-reason", "Waiting for an external decision")
+        self.add("Blocked work", "--status", "blocked", "--blocked-reason", "Waiting")
+        active = self.add("Authorized unrelated work", "--status", "in_progress")
+        context = self.assert_matches_selection_and_display()
+        self.assertEqual(context["data"]["selected"]["task"]["task_id"], active["task_id"])
+        self.assertEqual(context["data"]["selection"], "current")
+
+    def test_registration_only_does_not_displace_an_earlier_candidate(self):
+        earlier = self.add("Earlier authorized work", "--priority", "urgent")
+        registered = self.add("Register only, do not implement")
+        context = self.assert_matches_selection_and_display()
+        self.assertEqual(context["data"]["selected"]["task"]["task_id"], earlier["task_id"])
+        shown = self.success("task", "show", registered["task_id"])
+        self.assertEqual(shown["data"]["task"]["status"], "ready")
+
     def test_current_resumption_uses_first_active_status_and_skips_next(self):
         review = self.add("Review pending", "--status", "review_pending", "--priority", "urgent")
         self.add("Urgent ready", "--priority", "urgent")

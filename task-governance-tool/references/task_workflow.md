@@ -87,13 +87,17 @@ target-project root; optional branches are read only when their condition occurs
    For explicit inspection of a known Task only, `task show <task-id>` requires
    that returned ID; [audit](cli_contracts.md#task-audit-detail) is historical
    investigation, never another normal read or current completion evidence.
-2. If `data.selected.task.status=ready`, start that Task:
+2. If `data.selected.task.status=ready` and its implementation is authorized,
+   start that Task:
 
    ```powershell
    python .agents/skills/task-governance-tool/scripts/taskgov.py task edit <task-id> --status in_progress --json
    ```
 
-   A resumed active/review-pending Task needs no redundant start write.
+   An already active/review-pending Task, including one registered for authorized
+   immediate work as described in [registration](#registration-contract-and-ordering),
+   needs no redundant start write. Selection and stored status do not grant
+   implementation permission.
    State the intended outcome, write scope, verification gate, and review tier
    from current authority before implementation. Respect
    [selection and lane boundaries](#selection-and-execution-boundary).
@@ -578,6 +582,18 @@ explicit scope, acceptance, constraints, and authority reference.
 For initial reference examples and the reserved Task-ID form, see
 [Task Contract](#task-contract).
 
+When registration **and immediate implementation** are already authorized and
+the Task can start without bypassing existing selection or predecessor order,
+record that decision with `task add --status in_progress` (or the item's
+`status` in structured input). Otherwise retain the appropriate initial state,
+normally `ready`. Do not mark new work active to displace an existing active
+Task or an earlier selected ready candidate. Registration-only authority,
+`selection=none`, and omitted candidate rows do not establish start permission
+or absence of competing work; paused/blocked rows alone do not prevent unrelated
+ready work. Then use the normal `task context` to obtain the selected Task's full
+Contract and current gates, without a separate start edit for an already active
+Task. Neither the initial status nor that read's selection authorizes the work.
+
 When the outcome and registration permission are clear but the authority lacks
 truthful split or complete Contract detail, register one whole-outcome
 revision-zero Task. Ask one grouped question containing all and only the missing
@@ -593,11 +609,12 @@ later explicit event based on the produced design authority. Every final Task
 retains its own locally attributable verification and review; a later
 integration review never excuses a deficient slice.
 
-After selecting Tier 1 for a bounded non-mechanical contributor-guide update
-with no protected delta, an explicit registration may be:
+For a bounded non-mechanical contributor-guide update with no protected delta,
+Tier 1, explicit registration and immediate-work permission, and all earlier
+Tasks in its lane complete, an eligible registration may be:
 
 ```powershell
-python .agents/skills/task-governance-tool/scripts/taskgov.py task add --repo <target-project> --title "Clarify localized contributor guide" --kind sequential --lane TG-EXAMPLE --order 20 --priority normal --review-tier 1 --json
+python .agents/skills/task-governance-tool/scripts/taskgov.py task add --repo <target-project> --title "Clarify localized contributor guide" --kind sequential --lane TG-EXAMPLE --order 20 --priority normal --status in_progress --review-tier 1 --json
 ```
 
 Do not invent dependency graphs or import a project plan. Initial `done` and

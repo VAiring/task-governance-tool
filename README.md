@@ -201,11 +201,16 @@ use it directly without a follow-up read. `data.current` keeps held-work recall.
 permission to skip to another candidate. Individual current/next/show commands
 remain available for explicit inspection.
 
-Only when a ready task was selected, start it:
+Only when a ready task was selected and implementation is authorized, start it:
 
 ```powershell
 python .agents/skills/task-governance-tool/scripts/taskgov.py task edit <task-id> --status in_progress --json
 ```
+
+For new work already authorized for immediate implementation, use the existing
+initial `--status in_progress` under the [registration and ordering rules](docs/task-operation-specification.md#explicit-registration-and-contract-population).
+Keep the following context read; an already active Task needs no start edit.
+Registration, initial status, and context selection do not grant permission.
 
 `task context` is the normal detailed read before work. The same JSON call
 supplies current Verification Receipt readiness, all unresolved Findings,

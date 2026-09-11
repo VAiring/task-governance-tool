@@ -164,7 +164,8 @@ The deterministic Skill call graph is:
 - one `task context` call to select or resume and read the complete current
   Contract, latest checkpoint, and Effort Advisory routing flag, without
   intermediate LLM branching or follow-up current/next/show calls;
-- one task edit to start the selected task;
+- one task edit only when the selected Task is ready and implementation is
+  authorized; an already active Task needs no redundant start write;
 - only for a deterministically enabled Effort Advisory profile, one existing
   `task effort` observation at the verification/review boundary;
 - one review target set call after the exact material is ready; its returned
@@ -188,6 +189,14 @@ path remains available and takes one additional call for two Receipts without
 Findings. All counts exclude real progress updates, the external verification
 process and the two independent review model decisions; fewer registration
 calls are not a measurement of total LLM tokens.
+For a new Task whose registration and immediate start are already authorized,
+the [registration rule](#explicit-registration-and-contract-population) records
+initial `in_progress` and retains the following context read. Only the separate
+start edit disappears. With individual Review Receipts, the same new-registration
+manual flow goes from nine calls to eight (including add); with grouped Review
+Results it goes from eight to seven. Already registered/active flows gain no
+registration saving. Verification and Packet preparation remain separate calls;
+these counts do not combine a different optimization or measure token savings.
 `task complete --check`, `doctor`, and `task checkpoint` are absent from the
 default success path.
 
@@ -601,6 +610,19 @@ constraints, and authority reference that the governing sources or user
 instruction state explicitly. It never infers acceptance or permissions merely
 to make a split look complete.
 
+When registration and immediate implementation are both already authorized,
+the instruction layer uses the existing initial `in_progress` value for work
+that can start under existing selection and predecessor order. It must not use
+that value to bypass an existing active Task or an earlier ready candidate.
+Otherwise it retains the appropriate initial state, normally ready. Registration
+alone, successful `selection=none`, or candidate display omission supplies no
+start permission or proof that no competing work exists. Paused/blocked work
+alone does not prevent unrelated ready work. The subsequent read-only
+`task context` remains necessary for selection, complete Contract, and current
+gates; neither its selection nor initial status itself authorizes implementation.
+This reuses the existing start decision at registration, without a new mode,
+confirmation command, selection algorithm, or storage/Contract/evidence behavior.
+
 When the authorized outcome is clear but the authority lacks the detail needed
 for a truthful multi-Task Split or complete non-zero Contracts, register one
 whole-outcome revision-zero Task. Revision zero records that Contract detail is
@@ -693,8 +715,8 @@ global Merge.
 Select-Split-Merge decisions remain instruction-layer guidance in current
 `SKILL.md` and `references/task_workflow.md`. The separately defined structured
 registration mode only transports those explicit decisions. The guidance itself
-changes no public command, normal Task-loop
-call count, SQLite schema, JSON contract, Viewer field, automatic Task creation,
+adds no public command or normal Task-loop call and changes no
+SQLite schema, JSON contract, Viewer field, automatic Task creation,
 runtime Task splitting, parent/child or dependency model, background LLM work,
 network behavior, or target-project mutation. Its grouping and tier-basis
 reasoning remain session-local and are not persisted as a basis or worksheet.

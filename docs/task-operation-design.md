@@ -535,6 +535,18 @@ and authority reference. Inputs and outputs remain prose in those existing
 fields, while order remains existing lane/order; no dependency or worksheet
 field is introduced.
 
+For a new Task already authorized for immediate implementation, the instruction
+layer carries its existing start decision into the existing initial `status`
+input, using `in_progress` only when existing selection and predecessor order
+permit that work. It does not infer permission from registration, a status value,
+context selection/absence, or omitted display rows, and does not promote new
+work around active or earlier ready work. Held work alone does not stop unrelated
+ready work. The ordinary post-registration context read still selects and
+supplies complete Contract/gates; only a redundant start edit is omitted.
+Single/batch writers, initial Contract activation, sequential guards, and
+read-only context composition remain unchanged. This is instruction guidance,
+not a new eligibility helper, automatic start, or additional user decision mode.
+
 `task_registration.py` owns the fixed version-one JSON decoder, strict member
 types, explicit common-value expansion, and caller-value validation. It emits
 only existing `add_task` keyword inputs; it neither assigns IDs nor reads/writes
@@ -695,7 +707,7 @@ resulting Task DB. The reusable coverage matrix includes:
   higher Tier, and no ordinary lowering of a binding floor;
 - mid-Task keep, revise, successor, and merge-into-current Tier effects,
   including separate Contract/Tier writes and no auto-lowering; and
-- unchanged current command leaves, schema, Runner, normal-loop call count,
+- unchanged current command leaves, schema, Runner, no additional normal-loop calls,
   target/evidence freshness, Handoff bounds, and no invocation from discovery,
   test failure, Effort, or cross-module failure alone. Each Task's review gate
   must pass independently of later integration review.

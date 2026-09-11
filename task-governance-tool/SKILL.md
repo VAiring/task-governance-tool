@@ -55,7 +55,7 @@ confirmation is required.
 | First use, upgrade, or setup/migration required | [Setup and diagnosis](references/task_workflow.md#first-use-and-optional-diagnosis) |
 | `project_relocation_required` | [Relocation preview and approval](references/cli_contracts.md#setup) |
 | Explicit diagnosis or state/package error | [Doctor](references/cli_contracts.md#doctor) |
-| Explicit taskization or active-Task scope addition | [One-pass taskization](references/task_workflow.md#taskize-or-add-scope) |
+| Explicit taskization or active-Task scope addition | [Completion-based Task boundaries and registration](references/task_workflow.md#taskize-or-add-scope) |
 | Copy or revise an authorized Contract | [Task Contract](references/task_workflow.md#task-contract) |
 | `effort_advisory_enabled=true` | [Optional Effort Advisory](references/task_workflow.md#optional-effort-advisory) |
 | A useful continuation boundary | [Optional checkpoint](references/task_workflow.md#optional-continuation-checkpoint) |

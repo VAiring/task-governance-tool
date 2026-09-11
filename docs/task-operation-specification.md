@@ -533,11 +533,13 @@ preference does not create either event.
 The Skill instruction layer first fixes one authority envelope containing the
 complete authorized outcome, its permission boundary, any binding order, and
 any explicit Contract or Review Tier mapping. It then performs one flat
-candidate-first Split at stable responsibility boundaries. A provisional
-candidate states one bounded responsibility, its authorized consumed inputs and
-produced outputs, and any concrete fragment-to-owner coupling. It may expose
-that it cannot yet stand as a Task; that fact is input to the one global Merge,
-not a reason to reject the candidate before Merge.
+candidate-first Split at responsibility boundaries with a concrete need or
+benefit for separate completion. Such completion changes an actual approval,
+use, or handoff decision, allows one outcome to finish while another is held,
+or releases a foundation needed by already-authorized downstream work. A
+provisional candidate states its bounded responsibility, authorized inputs and
+outputs, and concrete coupling to other work. A candidate that cannot stand
+alone is input to the one global Merge, not rejected before Merge.
 
 After that Merge, each final slice must:
 
@@ -552,28 +554,35 @@ After that Merge, each final slice must:
   declared predecessor outputs without relying on prior chat or a hidden
   worksheet.
 
-A slice need not deliver standalone user value. Shared files, tests, commands,
-or fixtures do not alone prevent separate slices. File count, line count,
-estimated effort, duration, risk wording, or implementation steps do not create
-a responsibility boundary.
+A foundation need not deliver standalone user value, but an imagined future
+consumer does not justify its separate completion. Independent implementation
+or inspection, different files, modules, feature names, tests, or work phases
+do not alone justify separate Tasks. Nor do file/line counts, estimated effort,
+duration, or risk wording. Shared files, tests, commands, or fixtures alone
+neither require nor prevent separate slices.
 
 The flat candidates must conserve the authority envelope exactly: their scope
 union is complete and non-overlapping, their permission union preserves the
 complete explicitly authorized permission envelope without omission, no group
 exceeds that original boundary, and their ordering adds no unapproved outcome.
 The instruction layer then performs one global Merge pass over the complete
-flat set. Every fragment-only candidate is merged with the responsibility that
-consumes its output or owns its acceptance. A candidate is fragment-only when it
-cannot leave a correct repository state, cannot carry attributable local
-verification and review, or expresses only part of an inseparable
-responsibility. Concretely coupled fragments form their transitive groups in
-that same pass, which may merge several disjoint groups at once. Ambiguous
-ownership uses the [registration fallback](#explicit-registration-and-contract-population) rather than an arbitrary Merge. The pass does
-not merge candidates merely because they share files, tests, commands, or
-fixtures.
+flat set. Merge fragments into their concrete consumer or acceptance owner,
+and combine internal work on the same outcome when separate completion changes
+no decision or use and mainly repeats verification, review, and completion
+gates. A fragment cannot leave a correct repository state, carry attributable
+local gates, or own the complete inseparable responsibility. Concretely coupled
+work forms transitive groups in that same pass, which may merge several disjoint
+groups at once. Do not cross explicit approval, order, or acceptance boundaries.
+Keep separate responsibilities when combining them would make acceptance
+conditions hard to map to the relevant changes and checks. Every resulting
+group retains the gates required for its entire scope. Ambiguous ownership uses
+the [registration fallback](#explicit-registration-and-contract-population)
+rather than an arbitrary Merge.
 
 The merged set is final for that explicit event. It is never Split again,
-recursively decomposed, or optimized through a second Merge pass. If a valid
+recursively decomposed, or optimized through a second Merge pass. Neither one
+Task nor the fewest Tasks is a target. The criteria add no scorecard, token
+estimate, split-reason output or record, or new confirmation step. If a valid
 flat set cannot be formed, the registration and grouped-question fallbacks
 in [registration](#explicit-registration-and-contract-population) apply instead of inventing another boundary. A reply, clarification,
 paraphrase, or answer about the same taskization or scope-addition outcome stays
@@ -651,8 +660,9 @@ keeps them together.
 ### Explicit Mid-Task Scope Addition
 
 For one explicit addition to an `in_progress` or `review_pending` Task, first
-preserve the scope and permission envelope, then apply Select-Split-Merge once
-to the addition and its relationship to the current responsibility:
+preserve the scope and permission envelope, then apply the same completion-benefit
+and Merge criteria once to the addition and its relationship to the current
+responsibility:
 
 - an addition already wholly covered by the current Contract is `keep-current`;
   it makes no Contract write and preserves the current Review Tier;

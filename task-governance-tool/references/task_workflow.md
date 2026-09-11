@@ -531,16 +531,21 @@ Apply this fixed sequence once:
 1. **Select** one authority envelope containing the complete authorized
    outcome, its permission boundary, binding order, explicit Contract facts,
    and binding Review Tier mappings.
-2. **Split** once into a flat candidate set at stable responsibility
-   boundaries. Conserve a complete, non-overlapping scope union and the complete
-   explicit permission union without omission or expansion, and use only order
-   representable by existing lane/order.
-3. **Merge** every concretely coupled fragment-only transitive group in one
-   global pass. Several disjoint groups may merge in that pass. Sharing files,
-   tests, commands, or fixtures alone does not force a Merge; ambiguous
+2. **Split** once into flat candidate responsibilities where separate completion
+   has a concrete purpose: separate approval, usable early handoff, or finishing
+   one outcome while another is held. Being separately implementable or testable,
+   or having different files, modules, or feature names, is not enough. Conserve
+   the complete, non-overlapping scope and explicit permission unions without
+   omission or expansion; use only order representable by existing lane/order.
+3. **Merge** coupled fragments and internal work on the same outcome when separate
+   completion would change no decision or use and mainly repeat gates. Form all
+   concrete transitive groups in one global pass. Preserve explicit approval,
+   order, and acceptance boundaries, and keep responsibilities separate when
+   combining them would obscure which changes and checks satisfy each acceptance
+   condition. Shared files or tests alone do not force a Merge; ambiguous
    ownership uses the fallback below instead of a guessed owner.
 4. Treat the result as final. Do not recursively classify, run a second Merge,
-   re-Split, create a parent/child graph, or optimize by size.
+   re-Split, create a parent/child graph, or optimize by size or Task count.
 
 A provisional candidate states one bounded responsibility, its authorized
 consumed inputs and produced outputs, and any concrete fragment-to-owner
@@ -549,14 +554,18 @@ judged only after Merge. Each final group must own its bounded responsibility,
 leave a correct repository state after represented predecessors, carry locally
 attributable verification and review, use existing lane/order, and be resumable
 by a fresh agent from its Contract, routed authority, and predecessor outputs.
-A group need not provide standalone user value.
+A foundation need not provide standalone user value: its separate completion
+must enable already-authorized downstream work to proceed, not merely anticipate
+a possible future consumer. Every group keeps verification and review sufficient
+for its entire combined scope. Use these criteria in the existing pass, without
+scores, token estimates, recorded split reasons, or extra confirmation steps.
 
-For example, an independently valid JSON contract and a consuming CLI change
-may remain ordered final responsibilities when each leaves a correct state and
-owns its gate; the later group declares the earlier output as an input. A
-fixture-only candidate with no independent repository state or acceptance
-Merges into its concrete consumer. A tutorial that consumes stable implemented
-behavior may remain a later responsibility when its own checker is attributable.
+For example, a JSON contract needed for an approved consumer team's early start
+may remain separate from its later CLI consumer. If both only complete one
+feature with no separate decision or use, their different tests do not justify
+separate Tasks. A fixture-only fragment Merges into its concrete consumer. A
+tutorial with a separately scheduled handoff can remain independent even when
+it shares files or checks with the feature.
 
 ### Registration, Contract, And Ordering
 
@@ -616,8 +625,8 @@ own gate rather than relying on later integration review.
 
 ### Explicit Mid-Task Scope Addition
 
-Apply the same one-pass classifier to the addition and its relationship to the
-current responsibility, then choose exactly one disposition:
+Apply the same completion-purpose and Merge criteria once to the addition and
+its relationship to the current responsibility, then choose one disposition:
 
 - `keep-current`: already-covered scope makes no Contract write and preserves
   the current Tier;

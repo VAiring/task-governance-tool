@@ -109,6 +109,46 @@ def git_is_ignored(path: str) -> bool:
 
 
 class SkillSelfContainmentTests(unittest.TestCase):
+    def test_task_decomposition_case_fixture_has_stable_requirement_coverage(self):
+        def unique_object(pairs):
+            keys = [key for key, _value in pairs]
+            self.assertEqual(len(keys), len(set(keys)), "Duplicate JSON key")
+            return dict(pairs)
+
+        fixture = json.loads(
+            (ROOT / "tests" / "task_decomposition_cases.json").read_text(
+                encoding="utf-8"
+            ),
+            object_pairs_hook=unique_object,
+        )
+        self.assertEqual(set(fixture), {"common_instruction", "cases"})
+        self.assertTrue(fixture["common_instruction"].strip())
+        cases = fixture["cases"]
+        self.assertIsInstance(cases, list)
+        self.assertTrue(cases)
+        case_ids = [case["id"] for case in cases]
+        self.assertEqual(len(case_ids), len(set(case_ids)))
+        requirement_ids = set()
+        for case in cases:
+            with self.subTest(case_id=case["id"]):
+                self.assertTrue(case["id"].strip())
+                requirements = case["requirements"]
+                self.assertIsInstance(requirements, dict)
+                self.assertTrue(requirements)
+                for requirement_id, requirement in requirements.items():
+                    self.assertRegex(
+                        requirement_id, rf"^{re.escape(case['id'])}-R[0-9]+$"
+                    )
+                    self.assertNotIn(requirement_id, requirement_ids)
+                    requirement_ids.add(requirement_id)
+                    self.assertTrue(requirement.strip())
+                for field in ("permission", "ordering", "review"):
+                    self.assertTrue(case[field].strip(), field)
+        current = next(case for case in cases if case["id"] == "C08")
+        self.assertIn("C08-R0", current["requirements"])
+        self.assertIn("C08-R0", current["existing_task"]["scope"])
+        self.assertIn("C08-R0", current["existing_task"]["acceptance"])
+
     def test_apache_2_license_boundary_is_official_and_manifest_covered(self):
         expected_digest = OFFICIAL_APACHE_2_LICENSE_SHA256
         root_bytes = (ROOT / "LICENSE").read_bytes()

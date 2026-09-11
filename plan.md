@@ -196,7 +196,8 @@ the concise operating rule and complete procedure remain in
 [Task workflow](task-governance-tool/references/task_workflow.md).
 
 The retained decision is one authority envelope, one flat Split, and one global
-Merge at stable responsibility boundaries. Final groups conserve exact scope
+Merge at boundaries where separate completion serves a concrete decision or
+use, as defined in the active owners. Final groups conserve exact scope
 and permissions, use existing lane/order, leave a correct ordered repository
 state, own attributable verification and review, and remain resumable without
 prior chat. Shared files, tests, commands, or fixtures alone do not force a

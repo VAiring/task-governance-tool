@@ -488,7 +488,8 @@ For the event, session-local reasoning holds only:
 - flat candidate responsibilities with their consumed inputs, produced outputs,
   repository-state boundary, local verification/review attribution, and
   existing lane/order representation; and
-- concrete fragment-to-owner coupling used by the one global Merge.
+- concrete coupling and the decision or use affected by separate completion,
+  used by the one global Merge.
 
 These values are not a database record, JSON contract, Task field, dependency
 model, parser input, helper-owned worksheet, or prompt-log artifact. A fresh
@@ -498,24 +499,32 @@ numeric token, file, line, or duration threshold.
 
 The classifier runs this fixed sequence once:
 
-1. `Select` the one explicit authority envelope and stable responsibility
-   boundaries within it.
+1. `Select` the one explicit authority envelope.
 2. `Split` once into a flat candidate set whose exact unions conserve the whole
    outcome and explicit permission envelope without omission or expansion, and
-   whose sequence uses representable order. A provisional candidate may expose
-   missing repository-state or attributable-gate independence so that the Merge
-   can attach that fragment to its concrete owner.
-3. `Merge` all concretely coupled, fragment-only transitive groups in one global
-   pass. Multiple disjoint groups may merge simultaneously; sharing files,
-   tests, commands, or fixtures alone creates no coupling. Ambiguous ownership
-   invokes the fallback rather than an arbitrary group.
+   whose sequence uses representable order. Choose boundaries for concrete
+   separate-completion purposes, not just implementable or testable units:
+   separate approval, early use or handoff, independent completion while other
+   work is held, or a foundation that releases already-authorized downstream
+   work. A foundation need not offer standalone user value. A provisional
+   fragment may expose its missing state or gate independence for Merge.
+3. `Merge` all concretely coupled fragments and same-outcome work whose separate
+   completion changes no decision or use and mainly repeats gates. Form their
+   transitive groups in one global pass, preserving explicit approval, order,
+   and acceptance boundaries. Keep responsibilities separate when combining
+   them obscures the mapping from acceptance to changes and checks. Multiple
+   disjoint groups may merge at once; shared files or tests alone create no
+   coupling. Ambiguous ownership invokes the fallback, not an arbitrary group.
 4. Treat the resulting groups as final. There is no recursive classification,
-   second Merge, re-Split, parent/child graph, or size-based optimization.
+   second Merge, re-Split, parent/child graph, or size/Task-count optimization.
 
 Only final groups must each own one bounded responsibility and its authorized
 inputs/outputs, leave a correct repository state after represented predecessors,
 carry locally attributable verification and review, and be resumable from
 Contract, routed authority, and declared predecessor outputs.
+The combined scope retains all applicable gates. These criteria use the existing
+session-local decision, not a scorecard, token estimate, split-reason output or
+record, or extra confirmation step.
 
 ### Registration Adapter And Partial-Add Recovery
 
@@ -598,8 +607,8 @@ review gate; later integration review is not a substitute.
 ### Mid-Task Adapter And State Effects
 
 For an explicit addition to an `in_progress` or `review_pending` Task, the
-Skill applies the same one-pass classifier to the addition and its
-relationship to the current responsibility:
+Skill applies the same completion-benefit and Merge criteria once to the addition
+and its relationship to the current responsibility:
 
 1. already-covered scope selects `keep-current`, performs no Contract write,
    and preserves the current Tier;
@@ -668,9 +677,12 @@ agents the candidate Skill and neutral workloads without revealing the expected
 branch or prior study result. A separate evaluator checks both the response and
 resulting Task DB. The reusable coverage matrix includes:
 
-- responsibility slices that share files, tests, commands, or fixtures yet
-  remain separate; an internal enabling slice without standalone user value;
-  and fragment ownership whose transitive groups merge once with no re-Split;
+- separately testable internal work on one outcome, multiple work phases, and
+  small complex changes that do not need separate completion; distinct approval,
+  independent outcomes, early handoff, and mixed acceptance responsibilities
+  that do, including shared files/tests and an enabling slice for an already
+  authorized consumer without standalone user value; concrete transitive Merge
+  groups with no re-Split;
 - exact scope/permission conservation, representable ordering, fresh-agent
   reconstruction from Contract/authority/predecessor output, and ambiguous
   ownership falling back instead of being guessed;

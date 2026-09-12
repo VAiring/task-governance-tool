@@ -239,7 +239,9 @@ qualifying complete-plan Runner pass, or `blocked` for every other stored Runner
 terminal. `blocking_code` is null for the first three routes and is exactly the
 existing `verification_receipt_blocking` code for `blocked`. These fields expose
 no Runner ID, observation, gate tuple, Receipt ID, command body, or raw result.
-The text success output is unchanged.
+The text success output is unchanged. Target-set and completion success Task
+objects follow the [write acknowledgement projection](specification.md#json-text-limits-and-exit-status),
+without changing the saved target, completion evidence, or Packet inputs.
 Pre-v18 targets keep their tuple as capture version 0 with null snapshot,
 criterion, and manifest bindings. They are audit-only: Verification Receipt,
 Review Receipt, Review Finding, and completion source creation fails

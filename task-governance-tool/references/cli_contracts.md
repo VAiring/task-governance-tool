@@ -136,6 +136,14 @@ CLI `--json` is UTF-8 plus LF, without indentation/separator spaces or
 non-ASCII escapes. Use returned IDs as opaque identities; do not reconstruct
 them from a project path.
 
+Successful `task edit`, `task complete`, and `review target set` acknowledge
+the write without repeating unchanged `description` or `verification` in
+`data.task`. A changed field, including a cleared empty string, is returned
+when named in `changed_fields`. Keep unchanged prose from the working context;
+do not replace it with this acknowledgement or add a routine read. Other
+operation-specific fields, errors, warnings, and human text are unchanged.
+Registration/context, show/audit, and Review Packet retain their full forms.
+
 Inherently read-only commands are `doctor`, task `list`, `next`, `current`, `context`,
 `effort`, and `show`, `task complete --check`, handoff `list` and `show`, and
 `review prepare`. `setup --read-only` is a no-write preview.

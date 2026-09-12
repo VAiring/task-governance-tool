@@ -89,6 +89,29 @@ def table_count(db, table):
 
 
 class TaskEditTests(unittest.TestCase):
+    def test_write_acknowledgement_retains_changed_and_cleared_prose(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            db, repo = Path(tmp) / "taskgov.sqlite", Path(tmp) / "repo"
+            task = add_task(db, repo, "Acknowledgement", "--description", "説明文",
+                            "--verification", "Focused checks")
+            started = edit_task(db, repo, task["task_id"], "--status", "in_progress")
+            self.assertNotIn("description", started["data"]["task"])
+            self.assertNotIn("verification", started["data"]["task"])
+            self.assertEqual(fetch_task(db, task["task_id"])["description"], "説明文")
+            updated = edit_task(db, repo, task["task_id"], "--description", "新しい説明",
+                                "--verification", "Updated checks")
+            self.assertEqual(updated["data"]["task"]["description"], "新しい説明")
+            self.assertEqual(updated["data"]["task"]["verification"], "Updated checks")
+            cleared = edit_task(db, repo, task["task_id"], "--description", "",
+                                "--verification", "")
+            self.assertEqual(cleared["data"]["task"]["description"], "")
+            self.assertEqual(cleared["data"]["task"]["verification"], "")
+            replay = run_taskgov("task", "edit", task["task_id"], "--repo", str(repo),
+                                 "--db", str(db), "--description", "", "--json")
+            self.assertEqual(replay.returncode, 1)
+            self.assertEqual(json.loads(replay.stdout)["data"],
+                             {"task": None, "changed_fields": [], "event": None})
+
     def test_task_edit_updates_metadata_and_records_event(self):
         with tempfile.TemporaryDirectory() as tmp:
             db = Path(tmp) / "taskgov.sqlite"

@@ -1656,6 +1656,14 @@ def task_edit_failure_result(
     )
 
 
+def write_task_projection(task: dict[str, Any], changed_fields: list[str]) -> dict[str, Any]:
+    """Omit unchanged prose only from already validated write results."""
+    return {
+        key: value for key, value in task.items()
+        if key not in {"description", "verification"} or key in changed_fields
+    }
+
+
 def handle_task_edit(context: CommandContext) -> CommandResult:
     target = resolve_context_target(context)
     if context.read_only:
@@ -1790,7 +1798,7 @@ def handle_task_edit(context: CommandContext) -> CommandResult:
             exit_code=EXIT_TOOL_ERROR,
         )
 
-    data = {"task": result.task, "changed_fields": result.changed_fields, "event": result.event}
+    data = {"task": write_task_projection(result.task, result.changed_fields), "changed_fields": result.changed_fields, "event": result.event}
     if result.contract_write is not None:
         data["contract_write"] = result.contract_write
     warnings: list[dict[str, str]] = []
@@ -2091,7 +2099,7 @@ def handle_task_complete(context: CommandContext) -> CommandResult:
         )
 
     data = {
-        "task": result.task,
+        "task": write_task_projection(result.task, result.changed_fields),
         "changed_fields": result.changed_fields,
         "event": result.event,
     }
@@ -2266,7 +2274,7 @@ def handle_review_command(context: CommandContext) -> CommandResult:
                 revision=getattr(context.args, "revision", None),
             )
             data = {
-                "task": result.task,
+                "task": write_task_projection(result.task, result.changed_fields),
                 "changed_fields": result.changed_fields,
                 "event": result.event,
                 "verification_route": result.verification_route,

@@ -28,6 +28,13 @@ manual verification path.
 
 ## Current Candidate Identity
 
+The candidate's edit, completion, and target-set JSON acknowledgements no
+longer repeat unchanged description/verification prose. Changed values remain
+present; full read and registration forms, storage, and gates are unchanged.
+Consumers must retain their working context rather than replace it with a
+write acknowledgement. This reduces returned bytes, not a measured claim of
+total LLM token or elapsed-time savings.
+
 | Item | Value |
 |---|---|
 | Package version | `0.13.0` |

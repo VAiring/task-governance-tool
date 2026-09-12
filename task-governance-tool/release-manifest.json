@@ -1,10 +1,10 @@
 {
   "core_files": {
     "LICENSE": "sha256:cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
-    "SKILL.md": "sha256:47bc82af33a0fccf32b2fb83d1ca0d4febb62b12c78c0626d64c27a1073c119e",
+    "SKILL.md": "sha256:852daa66c170c1fe02fe5421986e380bd5508da8c07da7dc42ddd9a2e78d2456",
     "agents/openai.yaml": "sha256:088f6070969a6ff72d09a7d1bfc059c1ab7c0e490c54931d8dae354cad925402",
     "assets/task-viewer.template.html": "sha256:7f0868c39120f51016955df3d72d413ae0ccbd03ef52f67158b140c51ea9b563",
-    "references/cli_contracts.md": "sha256:c41037a39ce4cb987bb985c6fd11d9b36cd07535eb2115a017b55b4b3fd5af3d",
+    "references/cli_contracts.md": "sha256:be4f058607d34a89e11f6603bb07bbc73e5642f5ca9211ca92511b7a1a1f6460",
     "references/reconciliation.md": "sha256:8ab7b5e734034a8dc186b274de5c1ce65eb17496e7a5690011585292670688aa",
     "references/task_workflow.md": "sha256:d407206ed720b9aff18b4020833f5f14461aa4690c43425a1b70c0d01ba2e534",
     "scripts/read_reference.py": "sha256:b919c0939d4d3c7d4fc653b32ff7a31d463cc3268c4637263399141dac4ade55",
@@ -20,7 +20,7 @@
     "scripts/task_governance_tool/backup.py": "sha256:47d10233c97d1edcc287442c80d481d4e001149edf586d605b7e28b5c3ef642f",
     "scripts/task_governance_tool/backup_metadata_repository.py": "sha256:14a738c938d7486780b2784847ecf28a98e2924b943d4260b583b373dd03ef10",
     "scripts/task_governance_tool/checkpoints.py": "sha256:e329410e95a724fbc7e04ac8acaebdf8a6906d3fad1cfb5ff7c7eea46350ee64",
-    "scripts/task_governance_tool/cli.py": "sha256:9292e74a20266ba49e05d1010f8500171b3dd1a066ac2e9245891e10de0be78f",
+    "scripts/task_governance_tool/cli.py": "sha256:9291004c99027337bcba55b097be274861b107cd94eb1a3f057bb5794e88fe38",
     "scripts/task_governance_tool/cli_handoff.py": "sha256:62d7925c3450b92fc79c866b7b5226a99dd3d5049b79f00a6e147a83f77be3fa",
     "scripts/task_governance_tool/cli_output.py": "sha256:ac9fd41cabbbde4eadf31036c149be62641001ce969902830238ce3261d9f49b",
     "scripts/task_governance_tool/cli_parser.py": "sha256:a6c00c782c94fd7f39a982ef8b460fae64c035ef0d22b238e8ae7981458d3703",

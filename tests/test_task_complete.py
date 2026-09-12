@@ -135,6 +135,59 @@ def database_counts(db):
 
 
 class TaskCompleteCliTests(unittest.TestCase):
+    def test_write_sequence_reduces_utf8_without_losing_operation_results(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            db, repo = Path(tmp) / "taskgov.sqlite", Path(tmp) / "repo"
+            init_db(db, repo)
+            task = add_task(db, repo, "Write sequence", "--description", "説明" * 100)
+            original_projection = cli_module.write_task_projection
+            observed = []
+
+            def capture(full_task, changed_fields):
+                observed.append(dict(full_task))
+                return original_projection(full_task, changed_fields)
+
+            commands = [
+                ("task", "edit", task["task_id"], "--status", "in_progress"),
+                ("review", "target", "set", task["task_id"], "--kind",
+                 "diff_fingerprint", "--revision", "sha256:" + "c" * 64),
+                ("task", "complete", task["task_id"], "--verification-complete",
+                 "--review-complete", "--commit-not-required"),
+            ]
+            before_bytes = after_bytes = 0
+            for index, command in enumerate(commands):
+                if index == 2:
+                    seed_review_evidence(db, task["task_id"])
+                with mock.patch.object(cli_module, "write_task_projection", side_effect=capture):
+                    result = run_taskgov(*command, "--repo", str(repo), "--db", str(db), "--json")
+                self.assertEqual(result.returncode, 0, result.stdout)
+                payload = json.loads(result.stdout)
+                full = observed[-1]
+                projected = payload["data"]["task"]
+                self.assertEqual(projected, {k: v for k, v in full.items()
+                                             if k not in {"description", "verification"}})
+                self.assertEqual(projected["task_id"], task["task_id"])
+                if index == 1:
+                    self.assertEqual(payload["data"]["verification_route"], "not_required")
+                    self.assertIsNone(payload["data"]["blocking_code"])
+                    self.assertEqual(projected["review_target_generation"], 1)
+                if index == 2:
+                    self.assertEqual(projected["status"], "done")
+                    with closing(sqlite3.connect(db)) as connection:
+                        evidence = connection.execute(
+                            "SELECT completion_evidence_kind FROM tasks WHERE task_id = ?",
+                            (task["task_id"],),
+                        ).fetchone()[0]
+                    self.assertEqual(evidence, "commit_not_required")
+                after_bytes += len(result.stdout.encode("utf-8"))
+                # Reconstruct the former response from the same validated service
+                # result, avoiding timestamp/ID or fixture differences.
+                payload["data"]["task"] = full
+                before_bytes += len((json.dumps(payload, ensure_ascii=False,
+                                                sort_keys=True, separators=(",", ":")) + "\n").encode("utf-8"))
+            self.assertEqual(len(observed), 3)
+            self.assertGreater(before_bytes, after_bytes)
+
     def test_check_ready_is_bounded_exact_and_writes_nothing(self):
         with tempfile.TemporaryDirectory() as tmp:
             db = Path(tmp) / "taskgov.sqlite"

@@ -65,6 +65,9 @@ gates. Do not add current/next/show reads to reconstruct it. `task current`
 remains available for explicit held-work inspection. `paused_tasks_present`
 is an advisory, not another normal read.
 
+Edit, completion, and target-set acknowledgements omit unchanged description
+and verification prose. Retain it from this context; no extra read is needed.
+
 Immediately after registration, a ready `data.context_preparation.context`
 provides that same context instead of another call. Follow its selected Task,
 not a newly registered ID by assumption. Failed preparation does not undo

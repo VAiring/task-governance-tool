@@ -307,7 +307,7 @@ class CompletionCycleLifecycleTests(unittest.TestCase):
                 edit_payload["data"]["task"]["title"],
                 "Combined final title",
             )
-            self.assertEqual(edit_payload["data"]["task"]["verification"], "")
+            self.assertNotIn("verification", edit_payload["data"]["task"])
 
             with closing(sqlite3.connect(db)) as connection:
                 connection.row_factory = sqlite3.Row

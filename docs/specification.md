@@ -282,6 +282,17 @@ Current success-data projections are:
 | `review.finding.resolve --from-stdin` | `findings`; input-order Finding/event results |
 | `verification.receipt.add` | `receipt`, `review_preparation` |
 
+For `task.edit`, `task.complete`, and `review.target.set`, the successful
+`task` object omits `description` and `verification` unless that field appears
+in `changed_fields`. All other existing operation-specific fields and outer
+data remain unchanged. Changed prose, including an explicitly cleared value,
+is returned exactly as saved. This is a JSON compatibility change: consumers
+must retain unchanged prose from their working context, not replace that
+context with the write acknowledgement or add a routine read. Full registration,
+context, show/audit, and Packet projections are unchanged. Text output and
+failure/partial-success handling retain their existing contracts. Complete
+stored-row validation still precedes this presentation-only omission.
+
 `task.show` uses a fixed normal working projection; `--audit` selects the
 previous bounded historical detail. The top-level keys above are shared, while
 the nested evidence/history forms belong to the

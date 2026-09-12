@@ -1384,8 +1384,18 @@ needs a new target and fresh receipts.
 
 #### Receipt Input And Provenance
 
-The normal multi-reviewer path is [Structured Review Results](#structured-review-results).
-The existing single-Receipt form remains available. Use the Task ID in the
+Use [Structured Review Results](#structured-review-results) when the actual
+received results have its version-1 shape and matching Task/Contract/target;
+combine their Receipt arrays without rewriting declarations. A single result
+in that shape can use the same command; reviewer count is not the selector.
+Use the existing single-Receipt form for a review received outside that format
+when its actual verdict, required provenance and exact reviewed basis are
+available. Record any actual Findings with [Finding creation](#finding-resolution).
+Do not infer absent declarations, rebind an old result, drop Findings, or split
+a rejected batch to evade validation. Obtain missing/corrected information
+from the review source. An uncertain registration response requires inspecting
+saved evidence before any retry; neither form makes committed replay idempotent.
+Use the Task ID in the
 actual Review Packet's `task.task_id`, and the reviewer's actual declaration
 (Packet is `data.review_preparation.packet` after registration or `data` after
 standalone preparation):

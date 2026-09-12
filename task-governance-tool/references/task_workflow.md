@@ -454,8 +454,13 @@ Invalid input saves no prefix. Obtain corrections from their actual source.
 If a response is lost, inspect recorded state before retrying; committed replay
 is not idempotent. JSON grants no approval. Use a named-reviewer approval flag
 only with actual current user approval under the existing fallback rule.
-The [single Receipt alternative and provenance rules](cli_contracts.md#review-provenance)
-remain available when needed.
+If the received review is not in that structured format but supplies the actual
+Receipt declarations, use the [single Receipt path](cli_contracts.md#review-provenance)
+and record its actual Findings through the existing Finding command. Do not
+invent missing verdicts, provenance, or target binding to manufacture either
+input. Correct invalid/incomplete results at their source; splitting a rejected
+batch into single calls must not bypass its rejection. This is a choice from
+the received result, not another routine comparison, probe, or reference read.
 
 Tier 2 normally requires two distinct independent PASS receipts for the exact
 current target/generation. Taskgov deterministically evaluates qualifying PASS

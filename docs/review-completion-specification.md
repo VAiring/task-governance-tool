@@ -141,6 +141,17 @@ review evidence. Existing single-item operations and all gates remain available
 and unchanged. The operation launches no review and does not merge judgments,
 resolve Findings, or complete a Task.
 
+Instruction guidance chooses this path from actual received version-1 results
+with matching Task/Contract/target, preserving their Receipt declarations;
+one result may also use it. The existing single-Receipt path applies to reviews
+received outside that format when actual required declarations and the exact
+reviewed basis are available, with actual Findings recorded separately through
+the existing command. Missing declarations require correction at their source,
+not fabrication. Neither route may rebind old results, omit Findings, or split
+rejected batches to bypass validation. Unknown registration outcomes require
+saved-evidence inspection before retry. These conditions add no recurring
+comparison, probe, reread, producer adapter, or review-method requirement.
+
 The closed input shape is:
 
 ```text

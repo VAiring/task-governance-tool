@@ -694,6 +694,15 @@ state connection, subprocess, network, write, or recursive dependency loading.
 The Markdown remains the only instruction source; no duplicate prose registry
 or natural-language operation classifier is introduced.
 
+Host-access guidance is maintained once in the package CLI reference's
+`Execution Access` section, with a short conditional entry in `SKILL.md`.
+It describes effective host access and approval, not a taskgov permission
+resolver, ACL editor, state relocation mechanism, preflight, or new error
+mapping. Existing public inspection recovers uncertain write outcomes; existing
+transaction and post-commit owners retain their behavior. Scenario review covers
+read-only use, valid grants, required/unavailable/denied approval, unknown causes,
+and uncertain outcomes without introducing prose-matching runtime checks.
+
 ### Neutral Forward-Test Boundary
 
 Neutral forward tests for this instruction layer give fresh, minimal-context

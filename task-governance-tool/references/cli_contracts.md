@@ -8,6 +8,7 @@ detail are not prerequisites for normal Task work.
 
 - [Invocation And Public Inventory](#invocation-and-public-inventory)
 - [Envelope And Read/Write Boundary](#envelope-and-readwrite-boundary)
+- [Execution Access](#execution-access)
 - [`setup`](#setup)
 - [`doctor`](#doctor)
 - [Task Commands](#task-commands)
@@ -149,6 +150,43 @@ Business writes revalidate their current basis and save atomically. Exceptions
 with a durable completed prefix are documented under [setup](#setup) and
 [Runner Plan actions](#runner-plan-actions). Maintenance warnings never undo a successful
 business write; see [Internal Continuity Boundary](#internal-continuity-boundary).
+
+## Execution Access
+
+Use this section for a known host restriction or access failure, not a normal
+preflight. Reading Skill explanations needs read access to the package files;
+read-only taskgov inspection also reads its governed project and canonical
+state. Ordinary authorized Task/evidence updates need write access under the
+physical package's canonical `state/`, including SQLite transaction files and
+bounded post-commit artifacts. Read access alone does not authorize those writes.
+
+Codex's default workspace-write policy protects an existing `.agents` directory
+recursively as read-only, even inside a writable workspace. Thus an installed
+package's `state/` can require host approval although the project is writable.
+This is a host condition, not taskgov's permission policy or evidence that
+every installation is blocked. Use the current host's effective restrictions
+and valid existing grants; the Skill itself grants no execution permission.
+
+When a known restriction affects the intended authorized write, use the host's
+formal scoped approval mechanism for that operation without first provoking a
+known-denied write. Reuse an existing grant only while it covers the same access
+and remains valid. Do not request administrator or unrestricted access by
+default, add a per-call permission check/question, or change ACLs, sandbox
+settings, or state location. If required approval is unavailable or denied,
+report the affected operation and required access; do not bypass the restriction.
+Continue unrelated authorized work where possible.
+
+An `internal_error` alone does not identify a permission failure. Follow
+[the existing error guidance](#errors-and-privacy); do not diagnose its cause
+from that code alone. If a write response is lost or its committed outcome is
+unknown, inspect actual saved state through the relevant public read before
+deciding whether any retry is needed; never blindly resubmit. A successful
+write with a [maintenance warning](#internal-continuity-boundary) stays successful.
+
+This guidance adds no write probe, normal-loop doctor, new approval gate, or
+new error classification. Setup, installation, Git, external operations and
+[Runner Plan publication](#runner-plan-actions) retain their separate explicit
+permission boundaries; ordinary Task-write approval does not authorize them.
 
 <a id="setup"></a>
 

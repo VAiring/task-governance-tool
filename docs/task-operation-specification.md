@@ -740,6 +740,28 @@ other existing fields. In-scope discovery, test-driven cross-module failure,
 and unrequested work remain governed by current rules and cannot invoke this
 policy.
 
+### Host Execution Access Guidance
+
+Instruction-layer guidance distinguishes package/document read access from
+the canonical `state/` write access required for ordinary authorized Task and
+evidence updates, including their transaction and bounded maintenance files.
+Codex's default workspace-write policy recursively protects existing `.agents`
+directories even beneath writable roots; this is a host restriction, not a
+taskgov gate. See the [official protected-path documentation](https://learn.chatgpt.com/docs/agent-approvals-security#protected-paths-in-writable-roots).
+
+Known restrictions use the current host's formal scoped approval path only
+when needed, reusing applicable valid grants without a deliberate failed
+probe. Neither Skill instructions nor Task approval expand host permissions.
+Normal accessible operations gain no preflight, doctor, repeated question, or
+reapproval. Unavailable/denied approval prevents only the affected operation;
+report required access without bypassing protection, moving state, changing
+ACL/sandbox settings, or demanding administrator/full access by default.
+An `internal_error` does not establish a permission cause. Unknown write
+outcomes require public-state inspection before retry decisions, not blind
+replay; post-commit warnings preserve primary success. Setup, installation,
+Runner Plan publication, Git and external writes retain their separate
+contracts. Runtime behavior, stored errors, and completion gates are unchanged.
+
 ## Stored Task Read And Privacy Contract
 
 <a id="stored-task-read-and-privacy-contract"></a>

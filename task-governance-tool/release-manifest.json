@@ -1,10 +1,10 @@
 {
   "core_files": {
     "LICENSE": "sha256:cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
-    "SKILL.md": "sha256:426c2bfd25e6b2a6a963f69e53137358e3168441c93de40e91f0ab56ba4600e0",
+    "SKILL.md": "sha256:3e8e526575c5c0447e8ec39e884d6bae4274de861dc24897c919c9e4c3c527c4",
     "agents/openai.yaml": "sha256:088f6070969a6ff72d09a7d1bfc059c1ab7c0e490c54931d8dae354cad925402",
     "assets/task-viewer.template.html": "sha256:7f0868c39120f51016955df3d72d413ae0ccbd03ef52f67158b140c51ea9b563",
-    "references/cli_contracts.md": "sha256:64ab677209d382e525ca21b8202d33e028ae6861c75736cb80d2d8ce8af9a8d8",
+    "references/cli_contracts.md": "sha256:ff5788e59f32d03881fef3f890e8e6b02a96037898146f1898fe45880e109f3f",
     "references/reconciliation.md": "sha256:8ab7b5e734034a8dc186b274de5c1ce65eb17496e7a5690011585292670688aa",
     "references/task_workflow.md": "sha256:2d47add869da8575e7f4cfe8d071a64284dc2056301f6eb2ff0e551df2c094a1",
     "scripts/read_reference.py": "sha256:b919c0939d4d3c7d4fc653b32ff7a31d463cc3268c4637263399141dac4ade55",

@@ -682,6 +682,18 @@ replaced by a requirement to read development-repository documents. Related
 checks validate package links, examples, and retained behavior without requiring
 each rule or internal detail to be repeated in every consumer document.
 
+`scripts/read_reference.py` is a standalone standard-library document reader,
+not a taskgov command or runtime dependency. It resolves an existing
+package-relative reference filename and heading/explicit-anchor fragment in
+the three shipped references. It returns the selected heading subtree plus
+ancestor introductions verbatim (line endings normalized to LF), retaining
+links and their source-relative interpretation. Fenced examples are not
+headings. Unknown or ambiguous fragments, invalid filenames, and unreadable
+resources fail without returning unrelated text. It has no project discovery,
+state connection, subprocess, network, write, or recursive dependency loading.
+The Markdown remains the only instruction source; no duplicate prose registry
+or natural-language operation classifier is introduced.
+
 ### Neutral Forward-Test Boundary
 
 Neutral forward tests for this instruction layer give fresh, minimal-context

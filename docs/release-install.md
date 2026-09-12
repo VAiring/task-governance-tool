@@ -107,6 +107,8 @@ The archive must exclude:
 - caches, logs, temporary files, environment files, secrets, and editor files.
 
 For the current v0.13.0 candidate, archive-inventory acceptance means proving
+that the standalone `scripts/read_reference.py` document reader is included
+alongside the runtime and references, and proving
 that this packaged-core inventory, manifest coverage, and exclusion boundary
 are exact without producing or publishing an archive. The accepted retired
 Candidate/LPAC/native assets remain physically absent from tracked repository

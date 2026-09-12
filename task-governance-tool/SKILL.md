@@ -32,6 +32,21 @@ Do not invent aliases, alternate state paths, or administrative commands.
 
 ## Start Or Resume
 
+Read a linked section directly instead of searching line numbers or loading a
+whole reference. From the target-project root:
+
+```powershell
+python .agents/skills/task-governance-tool/scripts/read_reference.py "references/task_workflow.md#bounded-operating-loop"
+```
+
+Use the existing link's package-relative `file#section` for other operations;
+links inside the returned text resolve relative to its printed source file.
+The reader returns the complete section, its subsections and ancestor
+introductions. Follow applicable linked requirements; it does not infer which
+conditional operations apply or recursively load them. Missing/invalid links
+fail without a whole-file fallback. This replaces a document read, not a
+taskgov call or additional prerequisite. Direct file reading remains valid.
+
 Read the [bounded operating loop](references/task_workflow.md#bounded-operating-loop)
 for ordinary work. It owns the normal sequence from `task context` through
 verification and review gates to completion. `task context` takes **no Task ID**;

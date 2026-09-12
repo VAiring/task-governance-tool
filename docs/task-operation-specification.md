@@ -714,6 +714,18 @@ global Merge.
 
 ### Active Instruction-Layer Boundary
 
+Package explanation retrieval may replace whole-reference reads or line-range
+searches with `scripts/read_reference.py "references/<file>.md#<section>"`.
+The supported files are the shipped workflow, CLI contracts, and conditional
+reconciliation references. The complete selected section and ancestor
+introductions are returned as UTF-8 text without truncation; applicable linked
+requirements still need reading. The caller chooses the existing link, not a
+new operation taxonomy. Invalid/unavailable sections return failure with no
+document body, never an unrelated whole reference. This is an optional document
+read replacement, not a normal-loop addition, prerequisite, state operation,
+permission grant, or change to the public taskgov command inventory. Local
+retrieval measurements do not establish total LLM token or elapsed-time savings.
+
 Select-Split-Merge decisions remain instruction-layer guidance in current
 `SKILL.md` and `references/task_workflow.md`. The separately defined structured
 registration mode only transports those explicit decisions. The guidance itself

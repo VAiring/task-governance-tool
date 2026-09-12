@@ -1528,5 +1528,104 @@ class SkillSelfContainmentTests(unittest.TestCase):
         self.assertFalse(git_is_ignored(".agents/skills/task-governance-tool/SKILL.md"))
 
 
+class ReferenceRetrievalTests(unittest.TestCase):
+    def reader(self):
+        import read_reference
+        return read_reference
+
+    def test_subtree_preserves_examples_conditions_and_ancestor_introductions(self):
+        text = ('# Guide\n\nShared rule.\n\n## Other\nUnrelated.\n'
+                '## Operation\nConditional entry.\n\n<a id="input"></a>\n\n'
+                '### Input\nRequired unless exempt.\n```text\n## Not a heading\n```\n'
+                '#### Exception\nKeep this too.\n### Sibling\nDo not load.\n')
+        output = self.reader().section(text, "input")
+        self.assertIn('Shared rule.', output)
+        self.assertIn('Conditional entry.', output)
+        self.assertIn('Required unless exempt.', output)
+        self.assertIn('## Not a heading', output)
+        self.assertIn('Keep this too.', output)
+        self.assertNotIn('Unrelated.', output)
+        self.assertNotIn('Do not load.', output)
+
+    def test_every_shipped_heading_returns_its_complete_source_subtree(self):
+        for name in sorted(self.reader().REFERENCES):
+            source = (SKILL_ROOT / 'references' / name).read_text(encoding='utf-8')
+            lines = source.splitlines(keepends=True)
+            # The link checker masks inline code (including command headings).
+            # Inspect actual ATX boundaries here so such sections are not skipped.
+            headings = [(len(match[1]), match[2], index)
+                        for index, line in enumerate(lines)
+                        if (match := re.match(r'^(#{1,6}) (.+)', line))]
+            counts = {}
+            for index, (level, heading, position) in enumerate(headings):
+                base = re.sub(r'[^\w\s-]', '', heading.lstrip('#').strip().lower())
+                base = re.sub(r'\s+', '-', base).strip('-')
+                ordinal = counts.get(base, 0)
+                counts[base] = ordinal + 1
+                slug = base if not ordinal else f'{base}-{ordinal}'
+                end = next((pos for depth, _, pos in headings[index + 1:]
+                            if depth <= level), len(lines))
+                with self.subTest(file=name, section=slug):
+                    output = self.reader().section(source, slug)
+                    self.assertIn(''.join(lines[position:end]).rstrip(), output)
+
+    def test_package_links_can_be_passed_without_line_number_search(self):
+        for name in ('SKILL.md', 'references/task_workflow.md', 'references/cli_contracts.md'):
+            source = (SKILL_ROOT / name).read_text(encoding='utf-8')
+            scan = _scan(name, source, [])
+            for link in scan.links:
+                resolved = _resolve(SKILL_ROOT, name, link.target)
+                if not resolved:
+                    continue
+                path, fragment = resolved
+                if fragment and path.startswith('references/'):
+                    with self.subTest(source=name, link=link.target):
+                        self.assertTrue(self.reader().read_reference(f'{path}#{fragment}', SKILL_ROOT))
+
+    def test_invalid_or_unavailable_targets_do_not_fall_back(self):
+        for target in ('references/cli_contracts.md', '../SKILL.md#x',
+                       'references/cli_contracts.md#missing', 'https://example.test/#x',
+                       'references/cli_contracts.md#task-add#extra'):
+            with self.subTest(target=target), self.assertRaises(ValueError):
+                self.reader().read_reference(target, SKILL_ROOT)
+        with self.assertRaises(ValueError):
+            self.reader().section('# A\n<a id="same"></a>\n## B\n'
+                                  '<a id="same"></a>\n## C\n', 'same')
+
+    def test_standalone_copy_is_read_only_from_an_unrelated_directory(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            package = copy_skill_to(root)
+            before = tree_snapshot(root)
+            for target, expected in (('references/task_workflow.md#bounded-operating-loop', 0),
+                                     ('references/cli_contracts.md#missing', 2)):
+                result = subprocess.run([sys.executable, str(package / 'scripts/read_reference.py'), target],
+                                        cwd=root, capture_output=True, check=False)
+                self.assertEqual(result.returncode, expected, result.stderr)
+                if expected:
+                    self.assertEqual(result.stdout, b'')
+                    self.assertNotIn(b'missing', result.stderr)
+                else:
+                    self.assertIn(b'Bounded Operating Loop', result.stdout)
+                    result.stdout.decode('utf-8', errors='strict')
+            self.assertEqual(tree_snapshot(root), before)
+
+    def test_run10_representative_retrieval_comparison(self):
+        # Controlled document-only cases, not a replay or total-token estimate.
+        cases = (('initial', 'task_workflow.md', 'bounded-operating-loop'),
+                 ('resume', 'task_workflow.md', 'task-contract'),
+                 ('review', 'cli_contracts.md', 'review-provenance'))
+        for phase, name, fragment in cases:
+            source = (SKILL_ROOT / 'references' / name).read_text(encoding='utf-8')
+            result = self.reader().read_reference(f'references/{name}#{fragment}', SKILL_ROOT)
+            # The equality/content tests above establish retained information.
+            before = len(source.encode('utf-8'))
+            after = len(result.encode('utf-8'))
+            self.assertLess(after, before)
+            print(f'RETRIEVAL {phase}: full_read_bytes={before}; direct_bytes={after}; '
+                  'full_read_calls=1; heading_search_plus_range_calls=2; direct_calls=1; '
+                  'helper_truncations=0; direct_duplicate_sections=0; total_tokens=unmeasured')
+
+
 if __name__ == "__main__":
     unittest.main()

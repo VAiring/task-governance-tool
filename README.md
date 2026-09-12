@@ -225,10 +225,10 @@ current gate. `review target set` returns the closed
 `verification_route` and nullable `blocking_code` for the target it just stored,
 so no second `task show` or LLM guess selects the manual or Runner branch. The
 normal no-finding Tier 2 manual/fallback graph uses one `review result add`
-and is bounded to seven governance subprocess calls, or eight when the existing
-boolean enables `task effort`; the Receiptless Runner-pass branch uses six or
-seven respectively. Explicit individual Receipt registration remains available
-and uses eight/nine manual calls or seven/eight Runner-pass calls. These are
+and is bounded to six governance subprocess calls, or seven when the existing
+boolean enables `task effort`; the Receiptless Runner-pass branch uses five or
+six respectively. Explicit individual Receipt registration remains available
+and uses seven/eight manual calls or six/seven Runner-pass calls. These are
 operation counts, not measured total LLM token reductions. `task context`
 rediscovers paused, blocked, review-pending, and in-progress work.
 
@@ -281,8 +281,7 @@ python .agents/skills/task-governance-tool/scripts/taskgov.py review target set 
 # Taskgov never executes it.
 python .agents/skills/task-governance-tool/scripts/taskgov.py verification receipt add <task-id> --result pass --duration-ms <milliseconds> --scope-coverage full --expected-target-generation <generation-from-target-set> --json
 # Use data.review_preparation.packet only when its status is ready.
-# Only for not_required or runner_pass instead of the Receipt call:
-python .agents/skills/task-governance-tool/scripts/taskgov.py review prepare <task-id> --json
+# For not_required or runner_pass, use the ready Packet from target setting instead.
 # Obtain the structured reviewer results for this exact Task and target.
 $OutputEncoding = [Console]::InputEncoding = [System.Text.UTF8Encoding]::new($false)
 Get-Content -Raw -Encoding utf8 .\review-results.json |
@@ -292,7 +291,10 @@ python .agents/skills/task-governance-tool/scripts/taskgov.py task complete <tas
 ```
 
 The `not_required` and `runner_pass` routes skip the verification and
-Verification Receipt lines above and use standalone preparation. For Receipt
+Verification Receipt lines above and use the ready Packet from target setting.
+For target preparation failure, retry read-only `review prepare` with the returned
+`--expected-binding`; after an uncertain response, inspect saved state first.
+Do not repeat target setting to recover a Packet. For Receipt
 registration, `ok=true` means the result was saved, not that verification passed.
 Preparation failure preserves that result; retry only preparation with
 `--verification-receipt-id <recorded-id>`, not the registration. An uncertain

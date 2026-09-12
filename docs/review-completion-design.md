@@ -230,6 +230,24 @@ the existing Task/generation/reviewer uniqueness, without a new durable ID.
 
 ## Review Packet
 
+`review_packet_binding.py` owns only a pure, transient SHA-256 binding of
+validated public Task values plus immutable Contract revision. It uses sorted,
+compact ASCII JSON with the `taskgov-review-packet-binding-v1` NUL-terminated
+domain prefix. `reviews.py` computes it from the existing locked post-write
+row; the Runner service carries it unchanged to the CLI. No new DB read,
+schema, persisted token, or admission rule is added to capture it.
+
+After target/Runner processing, the CLI invokes the existing Packet handler
+only for `not_required`/`runner_pass`, with a fresh connection and that binding.
+`review_packet.py` compares it against the full validated Task and Contract
+revision in both existing reads, including before initial Git observation.
+The optional `--expected-binding` retry uses precisely the same checks.
+`task_show_projection.py` derives the same value only in the explicit audit
+projection for lost-response investigation. It is not gate evidence.
+Post-save preparation failures remain nested partial success, with the
+original mutation outcome and one outer maintenance pass. Normal context,
+manual Receipt binding, Packet limits, and final gates remain unchanged.
+
 `review prepare` reads Task, Contract, target, and review counts in one
 transaction, closes it for bounded Git observation, then reopens a short read
 transaction to compare project/task identity, Contract revision, and the whole

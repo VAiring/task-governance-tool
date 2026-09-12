@@ -274,7 +274,7 @@ Current success-data projections are:
 | `handoff.list` | `handoffs`, `count`, `total_matching`, `limit`, `states` |
 | `handoff.show` | `handoff` |
 | `handoff.withdraw` | `handoff`, `changed_fields` |
-| `review.target.set` | `task`, `changed_fields`, `event`, `verification_route`, `blocking_code` |
+| `review.target.set` | `task`, `changed_fields`, `event`, `verification_route`, `blocking_code`, `review_preparation` |
 | `review.receipt.add` | `receipt`, `event` |
 | `review.result.add` | `receipts`; each item holds `receipt`, `event`, and nested `findings` |
 | `review.finding.add` | `finding`, `event` |
@@ -284,13 +284,13 @@ Current success-data projections are:
 
 For `task.edit`, `task.complete`, and `review.target.set`, the successful
 `task` object omits `description` and `verification` unless that field appears
-in `changed_fields`. All other existing operation-specific fields and outer
-data remain unchanged. Changed prose, including an explicitly cleared value,
+in `changed_fields`. Other existing Task fields remain unchanged; target-set
+preparation has the separately defined result above. Changed prose, including an explicitly cleared value,
 is returned exactly as saved. This is a JSON compatibility change: consumers
 must retain unchanged prose from their working context, not replace that
 context with the write acknowledgement or add a routine read. Full registration,
-context, show/audit, and Packet projections are unchanged. Text output and
-failure/partial-success handling retain their existing contracts. Complete
+context and Packet projections retain their full content. Audit recovery and
+target-set partial success follow the [Review/completion owner](review-completion-specification.md#git-snapshot-and-target-binding). Complete
 stored-row validation still precedes this presentation-only omission.
 
 `task.show` uses a fixed normal working projection; `--audit` selects the
@@ -306,7 +306,7 @@ display choices only; stored Evidence, validation and current gates are unchange
 `task.context` failure returns `selection="none"` and null `current`, `next`,
 and `selected`, with no partial data or warning. Its success/absence selection
 rules belong to the [Task read owner](task-operation-specification.md#task-selection-and-read-commands).
-`review.target.set` adds its two routing keys only on success. Its failure data
+`review.target.set` adds its routing and preparation keys only on success. Its failure data
 remains exactly `task=null`, `changed_fields=[]`, and `event=null`.
 Revision-zero Contract output is exactly revision 0; empty scope, acceptance,
 constraints, `authority_ref`, and `change_reason`; and null `created_at`.

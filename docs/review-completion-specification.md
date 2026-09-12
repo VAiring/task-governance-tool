@@ -76,7 +76,9 @@ otherwise null. Neither collection is derived from a recent-ten window.
 
 `task show --audit` retains the previous `target`, full `gate` and `counts`,
 `blocking_findings`, `recent_receipts`, and `recent_findings` projection, including
-bounded recent provenance and lifetime Receipt counts. Audit collection bounds
+bounded recent provenance and lifetime Receipt counts. It also includes the
+current `preparation_binding` for [Packet-only recovery](#git-snapshot-and-target-binding).
+Audit collection bounds
 do not alter the complete validated inventory or the current gate. Neither mode
 emits raw review content or changes Receipt/Finding storage and gate evaluation.
 
@@ -239,9 +241,52 @@ qualifying complete-plan Runner pass, or `blocked` for every other stored Runner
 terminal. `blocking_code` is null for the first three routes and is exactly the
 existing `verification_receipt_blocking` code for `blocked`. These fields expose
 no Runner ID, observation, gate tuple, Receipt ID, command body, or raw result.
-The text success output is unchanged. Target-set and completion success Task
+Target-set and completion success Task
 objects follow the [write acknowledgement projection](specification.md#json-text-limits-and-exit-status),
 without changing the saved target, completion evidence, or Packet inputs.
+
+After target persistence and existing Runner processing finish, target-set
+success adds `review_preparation` with exactly `status`, `binding`, `packet`,
+and `errors`. Only `not_required` and `runner_pass` attempt the existing
+read-only Packet preparation. `ready` contains the Packet and no errors;
+`failed` contains null Packet and sanitized preparation errors. Both retain
+the saved context binding. `receipt_required` and `blocked` do not prepare and
+return `not_applicable`, null binding/Packet, and no preparation errors. Their
+existing routing code and Receipt path remain controlling. Not-required
+verification never means not-required review.
+
+The binding is a transient SHA-256 comparison value over the complete
+validated public Task projection (including full target kind/value/base/
+generation) and immutable current Contract revision, captured inside the
+target writer before commit. It is neither saved evidence nor permission.
+Before the first Packet observation and at its final read, the exact saved
+binding must match; drift fails `review_packet_stale` without following a
+new Task/Contract/target. No schema or ledger change is made.
+
+Preparation failure is partial success: outer `ok=true`, exit zero, saved
+target/event and original mutation outcome remain intact. It neither undoes
+the save nor runs a second maintenance pass. Text appends preparation status,
+then the Packet or sanitized errors and retry binding. The Packet retains its
+existing text/JSON component cap; the combined response is not a new Packet
+size limit. No verification, review, result registration, or completion is
+performed by preparation.
+
+Retry only `review prepare <task-id> --expected-binding <binding>`. This
+read-only option accepts exactly `sha256:` plus 64 lowercase hex digits and
+cannot combine with `--verification-receipt-id`; invalid input is
+`invalid_review_evidence`. It checks the same binding before and after
+observation, never resets a target, advances generation, dispatches Runner,
+stores evidence, or runs maintenance. Existing standalone and Receipt-bound
+preparation retain their behavior.
+
+After an unknown/lost target response, inspect saved state with `task show
+<task-id> --audit --json` before any retry. Its `review_evidence.preparation_binding`
+is the current validated Task/Contract binding, or null without a target.
+Confirm the saved Task, Contract, and full target match the intended operation before using it
+for preparation-only recovery; absence, ambiguity, or drift is not permission
+to blindly replay target setting or to adopt a newer target. This audit
+comparison value does not satisfy any current gate. It adds nothing to normal
+show/context output and creates no routine mode choice or read.
 Pre-v18 targets keep their tuple as capture version 0 with null snapshot,
 criterion, and manifest bindings. They are audit-only: Verification Receipt,
 Review Receipt, Review Finding, and completion source creation fails
@@ -584,8 +629,8 @@ expected basis. `not_required` and `runner_pass` proceed without that run or
 Receipt; `blocked` and unexpected route/code pairs stop closed. The default
 Tier-2 no-finding manual/fallback batch path is six governance calls, or seven when
 Effort Advisory is mechanically enabled. Receipt registration includes Packet
-preparation; a Receiptless Runner pass instead uses standalone preparation and
-has the same call count.
+preparation; a Receiptless Runner pass instead uses target-set preparation and
+needs five calls, or six with Effort.
 
 Receipt recording is allowed only for an in-progress or review-pending Task
 with verification text that is nonempty after trimming and a nonempty current
@@ -753,8 +798,8 @@ same binding check, never registers evidence or substitutes a newer Receipt.
 The optional ID has the existing Receipt ID syntax; invalid input uses
 `invalid_verification_evidence`. Without the option, standalone preparation
 keeps its existing behavior and is not proof of verification eligibility.
-Receiptless and qualifying Runner routes keep standalone preparation and do
-not acquire a Receipt. If a response is lost or times out, first inspect saved
+Receiptless and qualifying Runner routes instead use the target-set preparation
+defined above and do not acquire a Receipt. If a response is lost or times out, first inspect saved
 state; do not infer success, rollback, or blindly replay registration. An
 existing same-generation Receipt is immutable. Retry preparation with its ID
 only when its actual result and basis allow it; stale evidence needs a fresh

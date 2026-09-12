@@ -113,8 +113,10 @@ target-project root; optional branches are read only when their condition occurs
    `data.blocking_code` from that same successful response; no post-target
    show call or inferred route is needed.
 6. Apply that response:
-   - `not_required` or `runner_pass`, with null `blocking_code`: proceed
-     without external verification or a Verification Receipt;
+   - `not_required` or `runner_pass`, with null `blocking_code`: use the returned
+     `review_preparation.packet` only when status is `ready`, without another
+     prepare, external verification, or Verification Receipt. On failure use
+     [bound preparation recovery](cli_contracts.md#review-prepare);
    - `receipt_required`, with null code: run the governed verification against
      that exact material, then record one aggregate result as below;
    - `blocked` with a non-null returned gate code: stop closed;
@@ -143,7 +145,7 @@ target-project root; optional branches are read only when their condition occurs
    follow [same-Receipt retry](cli_contracts.md#verification-receipt); never
    blindly register the result again.
 7. [Record the actual reviews](#prepare-and-record-reviews) using the returned
-   Packet. Only the Receiptless routes need standalone Packet preparation.
+   Packet; neither successful route needs standalone Packet preparation.
 8. After the current gates pass, [complete with the appropriate evidence](#complete-work).
 
 `doctor`, completion `--check`, and `task checkpoint` are optional and absent
@@ -419,13 +421,10 @@ the old target is never upgraded in place.
 
 ### Prepare And Record Reviews
 
-For a Receipt-required route, use the actual `data.review_preparation.packet`
-returned with status `ready` by registration. For `not_required` or `runner_pass`
-only, after handling the exact-target requirement, prepare one packet:
-
-```powershell
-python .agents/skills/task-governance-tool/scripts/taskgov.py review prepare <task-id> --read-only --json
-```
+Use the actual `data.review_preparation.packet` returned with status `ready`
+by Receipt registration, or directly by target setting for `not_required` or
+`runner_pass`. Do not prepare it again. Preparation-only failures and uncertain
+responses use the [bound recovery procedure](cli_contracts.md#review-prepare).
 
 Give that actual packet to the required independent reviewers; do not rebuild
 Task/Contract/target prompts from separate reads. The command launches no

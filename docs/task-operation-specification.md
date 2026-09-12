@@ -96,7 +96,8 @@ working evidence and explicit audit projections.
 
 `task show --audit` explicitly obtains the previous bounded detail projection,
 including recent Receipt/provenance and Finding rows and saved completion
-cycles. It is for history investigation, not another normal-loop read, a
+cycles, plus the [current Packet recovery binding](review-completion-specification.md#git-snapshot-and-target-binding).
+It is for explicit investigation/recovery, not another normal-loop read, a
 free-form field selector, an exhaustive export, or a current completion basis.
 Normal use requires no mode choice, remembered reads, or follow-up detail query.
 Both modes perform all existing selected-Task, evidence, history, privacy, and
@@ -175,8 +176,8 @@ The deterministic Skill call graph is:
   or exact closed no-launch fallback, one `verification receipt add` call after
   the caller runs the complete governed verification against that exact target;
   the not-required and qualifying Runner-pass branches need no Receipt call;
-- the Packet returned by qualifying Receipt registration, or one standalone
-  `review prepare` on a Receiptless route, instead of separate Task, Contract,
+- the Packet returned by qualifying Receipt registration or Receiptless target
+  setting, instead of separate Task, Contract,
   target, and Git context reads;
 - one `review result add` to record the actual structured Receipts and Findings
   together for the packet's exact Task/Contract/target; and
@@ -184,8 +185,9 @@ The deterministic Skill call graph is:
 
 A default-off no-finding Tier 2 manual/fallback path therefore has at most
 six governance subprocess calls; a profile-enabled path has at most seven.
-The qualifying Runner-pass path uses standalone preparation instead of
-Verification Receipt add and has the same bounds. The existing individual Receipt
+The qualifying Runner-pass and not-required paths obtain the Packet directly
+from target setting and use five/six calls respectively without/with Effort.
+The existing individual Receipt
 path remains available and takes one additional call for two Receipts without
 Findings. All counts exclude real progress updates, the external verification
 process and the two independent review model decisions; fewer registration

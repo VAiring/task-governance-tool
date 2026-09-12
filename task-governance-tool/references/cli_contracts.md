@@ -1295,9 +1295,9 @@ task or task event.
 
 ### `review prepare`
 
-Prepare one bounded read-only reviewer packet. A successful qualifying Receipt
-registration already returns this Packet, so use this command for Receiptless
-routes or explicit preparation/retry. Use `<task-id>` from the
+Prepare one bounded read-only reviewer packet. Qualifying Receipt registration
+and Receiptless target setting already return this Packet, so this command is
+for explicit preparation/retry, not the normal success loop. Use `<task-id>` from the
 successful target-set response's `data.task.task_id`, after handling its
 verification route:
 
@@ -1306,7 +1306,24 @@ python .agents/skills/task-governance-tool/scripts/taskgov.py review prepare --r
 ```
 
 Supported target kinds are `git_snapshot`, `git_commit`, `diff_fingerprint`,
-and `external_revision`. Optional `--verification-receipt-id <id>` binds a
+and `external_revision`. After target-set preparation failure, copy its
+`data.review_preparation.binding` into `--expected-binding <binding>`. This
+checks the same saved Task/Contract/full-target context before and after
+preparation. It accepts `sha256:` plus 64 lowercase hex digits and rejects
+combination with `--verification-receipt-id` as `invalid_review_evidence`.
+Drift is `review_packet_stale`, not permission to follow a newer target.
+The retry is read-only: no target setting, generation advance, Runner launch,
+Receipt registration, or maintenance. Never repeat target setting to recover
+only a Packet.
+
+If the target response was lost, inspect `task show <task-id> --audit --json`
+first. Confirm its saved Task, Contract, and full target match the intended operation, then use
+`data.review_evidence.preparation_binding` for a preparation-only retry. A null
+binding means no target; uncertain or changed state requires resolution, not
+blind replay or rebinding. This current comparison value is not gate evidence;
+normal show/context has no added field or call.
+
+Optional `--verification-receipt-id <id>` binds a
 Packet-only retry to that exact-current pass/full Receipt in both reads;
 mismatch uses `verification_basis_stale`, and non-pass/full uses
 `verification_receipt_blocking`. The Receipt ID uses its existing fixed syntax.
@@ -1377,8 +1394,8 @@ fingerprint is `sha256:` plus 64 lowercase hexadecimal characters.
 
 At schema v21 or v22, this same target-set operation may use the explicitly opted-in
 trusted-local Runner route. It adds no argument or public Runner command. JSON
-success data is exactly the prior `task`, `changed_fields`, and `event` plus
-`verification_route` and `blocking_code`; text output is unchanged, and failure
+success data is `task`, `changed_fields`, `event`, `verification_route`,
+`blocking_code`, and `review_preparation`; failure
 data remains exactly the prior three-key empty shape. `verification_route` is
 exactly `not_required`, `receipt_required`, `runner_pass`, or `blocked`.
 `blocking_code` is null for the first three and is
@@ -1387,8 +1404,16 @@ The route describes the target and Runner result committed by this invocation;
 use it directly, without another `task show`. Retain `data.task.task_id` and
 `data.task.review_target_generation` for Receipt registration. `receipt_required`
 means run the governed verification and record its aggregate result;
-`not_required` and `runner_pass` proceed to review without a Verification
-Receipt. `blocked` requires its non-null code and stops this completion path;
+`not_required` and `runner_pass` automatically prepare a Packet after the save
+and existing Runner work, without a Verification Receipt. `review_preparation`
+has `status`, `binding`, `packet`, and `errors`: `ready` carries the Packet;
+`failed` carries sanitized errors and retains the binding for read-only retry.
+Preparation failure keeps outer `ok=true`, exit zero, and the saved target.
+For `receipt_required`/`blocked`, status is `not_applicable`, binding and Packet
+are null, errors empty, and no preparation is attempted. Text appends the
+status and Packet or failure/retry detail. Warnings and one existing maintenance
+pass remain outer-operation concerns. Use the Packet only when `ready`; the
+Packet component retains its existing bounds. `blocked` requires its non-null code and stops this completion path;
 a missing or inconsistent route/code pair also stops closed.
 
 A target retained by schema-v18 migration with `capture_version=0` is read-only
@@ -1422,7 +1447,7 @@ from the review source. An uncertain registration response requires inspecting
 saved evidence before any retry; neither form makes committed replay idempotent.
 Use the Task ID in the
 actual Review Packet's `task.task_id`, and the reviewer's actual declaration
-(Packet is `data.review_preparation.packet` after registration or `data` after
+(Packet is `data.review_preparation.packet` after registration/target setting or `data` after
 standalone preparation):
 
 ```powershell
@@ -1512,7 +1537,7 @@ processes, independence, authenticated provenance, or summary truth.
 
 #### Finding Creation And Resolution
 
-Use `task.task_id` from the actual Packet object returned by registration or
+Use `task.task_id` from the actual Packet object returned by registration/target setting or
 standalone preparation.
 `<receipt-id>` is `data.receipt.review_receipt_id` from single Receipt creation,
 or the corresponding `data.receipts[].receipt.review_receipt_id` from grouped
@@ -1611,7 +1636,7 @@ target with those returned in the actual Review Packet):
 ```
 
 Use the actual Packet object: `data.review_preparation.packet` after qualifying
-registration or `data` after standalone preparation. Copy its `task.task_id`
+registration/target setting or `data` after standalone preparation. Copy its `task.task_id`
 into both the command's `<task-id>` and document `task_id`, `contract.revision`
 into `contract_revision`, and complete `review_target` into `review_target`.
 Combine only reviewers' `receipts` arrays with identical envelope values;

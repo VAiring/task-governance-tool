@@ -2135,6 +2135,7 @@ def handle_review_prepare(context: CommandContext) -> CommandResult:
             getattr(context.args, "task_id", ""),
             initial_connection=context.read_connection_override,
             verification_receipt_id=getattr(context.args, "verification_receipt_id", None),
+            expected_binding=getattr(context.args, "expected_binding", None),
         )
         text = format_review_packet_text(data)
         result = CommandResult(
@@ -2420,12 +2421,49 @@ def handle_review_command(context: CommandContext) -> CommandResult:
             exit_code=EXIT_TOOL_ERROR,
         )
 
+    text = review_text(context.command, data)
+    warnings = []
+    if context.command == "review.target.set":
+        preparation = {"status": "not_applicable", "binding": None, "packet": None, "errors": []}
+        if result.verification_route in {"not_required", "runner_pass"}:
+            preparation["binding"] = result.preparation_binding
+            try:
+                if result.preparation_binding is None:
+                    raise ValueError("missing saved Packet binding")
+                packet_result = handle_review_prepare(replace(
+                    context, command="review.prepare", read_connection_override=None,
+                    args=argparse.Namespace(
+                        task_id=result.task["task_id"],
+                        expected_binding=result.preparation_binding,
+                    ),
+                ))
+                preparation.update(
+                    status="ready" if packet_result.ok else "failed",
+                    packet=packet_result.data if packet_result.ok else None,
+                    errors=packet_result.errors,
+                )
+                warnings = packet_result.warnings
+            except Exception:
+                preparation.update(status="failed", errors=[{
+                    "code": "internal_error", "message": "could not prepare review context",
+                }])
+        data["review_preparation"] = preparation
+        text += f"\nReview preparation: {preparation['status']}"
+        if preparation["packet"] is not None:
+            text += "\n" + format_review_packet_text(preparation["packet"])
+        elif preparation["status"] == "failed":
+            text += "\n" + "\n".join(
+                f"{error['code']}: {error['message']}" for error in preparation["errors"]
+            )
+            if preparation["binding"] is not None:
+                text += f"\nPreparation binding: {preparation['binding']}"
     return CommandResult(
         ok=True,
         command=context.command,
         project_id=project_id,
         data=data,
-        text=review_text(context.command, data),
+        text=text,
+        warnings=warnings,
         exit_code=EXIT_SUCCESS,
         mutation_outcome=MutationOutcome(
             state_changed=True,

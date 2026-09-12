@@ -39,7 +39,9 @@ from task_governance_tool.storage import (
 from task_governance_tool.tasks import (
     TaskRepositoryError,
     read_internal_task,
+    row_to_show_task,
 )
+from task_governance_tool.review_packet_binding import review_packet_binding
 from task_governance_tool.task_values import (
     STATUSES,
     TEXT_LIMITS,
@@ -138,6 +140,7 @@ class ReviewPacketBasis:
     contract: dict[str, Any] = field(repr=False)
     review_target: dict[str, Any] = field(repr=False)
     stability_token: tuple[Any, ...] = field(repr=False)
+    preparation_binding: str = field(repr=False, default="")
 
 
 def packet_error(code: str, message: str) -> ReviewPacketError:
@@ -293,6 +296,9 @@ def _read_basis(
                 contract=contract,
                 review_target=review_target,
                 stability_token=stability_token,
+                preparation_binding=review_packet_binding(
+                    row_to_show_task(stored), current_contract["revision"],
+                ),
             )
     except ReviewPacketError:
         raise
@@ -494,8 +500,15 @@ def prepare_review_packet(
     *,
     initial_connection: sqlite3.Connection | None = None,
     verification_receipt_id: Any = None,
+    expected_binding: Any = None,
 ) -> dict[str, Any]:
     normalized_task_id = validate_task_id(task_id)
+    if expected_binding is not None and (
+        not isinstance(expected_binding, str)
+        or DIFF_FINGERPRINT.fullmatch(expected_binding) is None
+        or verification_receipt_id is not None
+    ):
+        raise packet_error("invalid_review_evidence", "invalid review preparation binding")
     receipt_id = (
         validate_verification_receipt_id(verification_receipt_id)
         if verification_receipt_id is not None else None
@@ -503,12 +516,14 @@ def prepare_review_packet(
     basis = _read_basis(
         target,
         normalized_task_id,
-        revalidation=False,
+        revalidation=expected_binding is not None,
         connection=initial_connection,
         verification_receipt_id=receipt_id,
     )
     if initial_connection is not None:
         initial_connection.close()
+    if expected_binding is not None and basis.preparation_binding != expected_binding:
+        raise packet_error("review_packet_stale", STALE_PACKET_MESSAGE)
 
     observation_error: ReviewPacketError | None = None
     changed_paths_available = False
@@ -527,7 +542,9 @@ def prepare_review_packet(
         revalidation=True,
         verification_receipt_id=receipt_id,
     )
-    if current.stability_token != basis.stability_token:
+    if current.stability_token != basis.stability_token or (
+        expected_binding is not None and current.preparation_binding != expected_binding
+    ):
         raise packet_error(
             "review_packet_stale",
             STALE_PACKET_MESSAGE,

@@ -183,6 +183,7 @@ def _routed_review_target(
         task=review.task,
         changed_fields=review.changed_fields,
         event=review.event,
+        preparation_binding=review.preparation_binding,
         verification_route=verification_route,
         blocking_code=blocking_code,
     )

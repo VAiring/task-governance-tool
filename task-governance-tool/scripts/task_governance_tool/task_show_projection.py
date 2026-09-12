@@ -6,6 +6,8 @@ import sqlite3
 from dataclasses import dataclass, field
 from typing import Any
 
+from task_governance_tool.review_packet_binding import review_packet_binding
+
 from task_governance_tool.completion_history_projection import (
     format_completion_history,
 )
@@ -70,6 +72,11 @@ def build_task_show_data(
     """Select a fixed presentation after all shared Task/evidence validation."""
     review = result.review_evidence
     verification = result.verification_evidence
+    if audit:
+        review = {**review, "preparation_binding": (
+            review_packet_binding(result.task, result.contract["revision"])
+            if result.task.get("review_target_kind") else None
+        )}
     return {
         "task": result.task,
         "events": result.events if audit else result.current_events,

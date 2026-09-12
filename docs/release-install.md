@@ -28,6 +28,12 @@ manual verification path.
 
 ## Current Candidate Identity
 
+Receiptless target-set routes (`not_required`/`runner_pass`) now return a
+bound Review Packet directly, removing their separate prepare call. Preparation
+failure preserves the successful target save and supports read-only recovery;
+manual Receipt and blocked routes are unchanged. Audit-only binding output is
+for uncertain-response recovery, not new evidence or a normal-loop read.
+
 The candidate's edit, completion, and target-set JSON acknowledgements no
 longer repeat unchanged description/verification prose. Changed values remain
 present; full read and registration forms, storage, and gates are unchanged.

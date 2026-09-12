@@ -8,6 +8,8 @@ import sqlite3
 from dataclasses import dataclass, field
 from typing import Any
 
+from task_governance_tool.review_packet_binding import review_packet_binding
+
 from task_governance_tool.artifact_manifest import (
     ArtifactManifestError,
     ArtifactObservation,
@@ -118,6 +120,7 @@ class ReviewTargetResult:
     task: dict[str, Any]
     changed_fields: list[str]
     event: dict[str, Any]
+    preparation_binding: str | None = field(default=None, kw_only=True)
 
 
 @dataclass(frozen=True)
@@ -633,6 +636,9 @@ def _persist_review_target_capture(
         )
     return ReviewTargetResult(
         task=row_to_show_task(updated_row),
+        preparation_binding=review_packet_binding(
+            row_to_show_task(updated_row), updated_row["current_contract_revision"],
+        ),
         changed_fields=[
             "review_target_kind",
             "review_target_value",

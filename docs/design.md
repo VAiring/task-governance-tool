@@ -251,6 +251,8 @@ The implementation keeps these narrow ownership boundaries:
   observation is separate from the short DB binding transaction.
 - `reviews.py` owns review target, receipt, finding operations and deterministic
   gate evaluation; `review_packet.py` owns bounded read-only review context.
+  `review_packet_binding.py` owns its pure transient Task/Contract comparison
+  value shared by target capture, Packet reads, and explicit audit recovery.
 - `contract_content.py` owns Contract field selection, normalization, authority
   value validation, and supplied stored-row content validation/projection.
 - `contracts.py` owns Contract reads, immutable revisions, and invalidation.
@@ -885,8 +887,8 @@ a real consuming project or Git state. Tests cover:
   layouts, ignore rules, Windows Python 3.12/3.14, and junction rejection;
 - Reduced-loop fresh-session behavioral fixtures plus the current manual/fallback
   six-call batch default flow and mechanically enabled seven-call flow. Receipt
-  registration includes Packet preparation; Receiptless Runner-pass uses its
-  standalone preparation without an additional Receipt; and
+  registration includes Packet preparation; Receiptless Runner-pass obtains
+  it from target setting, with five/six calls and no additional Receipt; and
 - release archive reproducibility, license/manifest/archive inclusion,
   legacy upgrade/paired rollback, exact workflow identity, and sanitized
   release evidence.

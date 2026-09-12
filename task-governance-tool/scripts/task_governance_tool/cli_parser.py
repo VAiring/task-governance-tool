@@ -378,6 +378,10 @@ def build_parser() -> argparse.ArgumentParser:
     add_common_options(review_prepare_parser)
     review_prepare_parser.add_argument("task_id")
     review_prepare_parser.add_argument(
+        "--expected-binding",
+        help="retry read-only Packet preparation against the recorded context binding",
+    )
+    review_prepare_parser.add_argument(
         "--verification-receipt-id",
         help="retry Packet preparation bound to the same recorded verification Receipt",
     )

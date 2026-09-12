@@ -400,8 +400,11 @@ class TaskAddTests(unittest.TestCase):
 
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertEqual(result.stderr, "")
-            lines = result.stdout.strip().splitlines()
-            self.assertLessEqual(len(lines), 6)
+            registration, prepared = result.stdout.split("\nContext preparation: ready\n", 1)
+            self.assertLessEqual(len(registration.strip().splitlines()), 6)
+            context = run_taskgov("task", "context", "--repo", str(repo), "--db", str(db))
+            self.assertEqual(context.returncode, 0, context.stderr)
+            self.assertEqual(prepared.strip(), context.stdout.strip())
             self.assertIn("Task added: tg_task_", result.stdout)
             self.assertIn("Lane: default  Order: 1", result.stdout)
 

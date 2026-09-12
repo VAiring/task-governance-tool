@@ -260,8 +260,8 @@ Current success-data projections are:
 
 | Command | Data keys |
 |---|---|
-| single `task.add` | `task`, `event`, plus `contract_write` only when Contract input was supplied |
-| `task.add --from-stdin` | `tasks`; input-indexed Task/event results with optional `contract_write` |
+| single `task.add` | `task`, `event`, `context_preparation`, plus `contract_write` only when Contract input was supplied |
+| `task.add --from-stdin` | `tasks`, one `context_preparation`; input-indexed Task/event results with optional `contract_write` |
 | `task.list` | `tasks`, `count`, `limit` |
 | default `task.next` | `tasks`, `count`, `limit`, `selection_rules` |
 | default `task.current` | `tasks`, `count`, `limit`, `statuses` |

@@ -637,17 +637,53 @@ def handle_task_add(context: CommandContext) -> CommandResult:
         if result.contract_write is not None:
             data["contract_write"] = result.contract_write
         text = task_add_text(result.task, result.event, result.contract_write)
+    # Registration is committed and its writer is closed. Preparation failure
+    # must not turn a durable registration into an apparent failed write.
+    prepared = prepare_registered_task_context(context, target)
+    data["context_preparation"] = {
+        "status": "ready" if prepared.ok else "failed",
+        "context": prepared.data if prepared.ok else None,
+        "errors": prepared.errors,
+    }
+    text += "\nContext preparation: " + ("ready\n" + prepared.text if prepared.ok else
+        "failed; registration committed. Retry task context, not task add.\n" +
+        "\n".join(f"{error['code']}: {error['message']}" for error in prepared.errors))
     return CommandResult(
         ok=True,
         command=context.command,
         project_id=target.project.project_id,
         data=data,
         text=text,
+        warnings=prepared.warnings if prepared.ok else [],
         exit_code=EXIT_SUCCESS,
         mutation_outcome=MutationOutcome(
             state_changed=True,
             viewer_relevant=True,
         ),
+    )
+
+
+def prepare_registered_task_context(
+    context: CommandContext, target: DatabaseTarget,
+) -> CommandResult:
+    try:
+        # Preserve ordinary global admission before reusing the fixed context
+        # composition, including its existing live Runner read-release path.
+        with closing(connect_initialized_readonly(target)) as connection:
+            return handle_task_context(replace(
+                context, command="task.context", args=argparse.Namespace(),
+                read_only=True, read_connection_override=connection,
+            ))
+    except StorageError as exc:
+        errors = [{"code": exc.code, "message": exc.message}]
+    except sqlite3.Error as exc:
+        mapped = operational_sqlite_error(exc, fallback_message="could not prepare task context")
+        errors = [{"code": mapped.code, "message": mapped.message}]
+    except Exception:
+        errors = [{"code": "internal_error", "message": "could not prepare task context"}]
+    return CommandResult(
+        ok=False, command="task.context", project_id=target.project.project_id,
+        data=task_context_empty_data(), errors=errors, exit_code=EXIT_TOOL_ERROR,
     )
 
 

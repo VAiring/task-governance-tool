@@ -142,7 +142,7 @@ class TaskContractCliTests(unittest.TestCase):
             result, added = add_task(db, repo, "Ordinary task")
 
             self.assertEqual(result.returncode, 0, result.stderr)
-            self.assertEqual(set(added["data"]), {"task", "event"})
+            self.assertEqual(set(added["data"]), {"task", "event", "context_preparation"})
             task = added["data"]["task"]
             self.assertNotIn("current_contract_revision", task)
             shown_result, shown = json_command(

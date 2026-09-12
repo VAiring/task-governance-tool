@@ -72,7 +72,9 @@ do not turn them into a question, handoff, pause, blocker, or routine stop.
 Use this normal no-finding Tier 2 task sequence. Examples run from the
 target-project root; optional branches are read only when their condition occurs.
 
-1. Select or resume with **no Task ID argument**:
+1. Immediately after registration, use its ready `context_preparation.context`
+   as the context below, without another read. Otherwise select or resume with
+   **no Task ID argument**:
 
    ```powershell
    python .agents/skills/task-governance-tool/scripts/taskgov.py task context --json
@@ -605,9 +607,13 @@ normally `ready`. Do not mark new work active to displace an existing active
 Task or an earlier selected ready candidate. Registration-only authority,
 `selection=none`, and omitted candidate rows do not establish start permission
 or absence of competing work; paused/blocked rows alone do not prevent unrelated
-ready work. Then use the normal `task context` to obtain the selected Task's full
-Contract and current gates, without a separate start edit for an already active
-Task. Neither the initial status nor that read's selection authorizes the work.
+ready work. Use the registration response's ready `data.context_preparation.context`
+for the selected Task's full Contract and current gates, without another context
+read or a separate start edit for an already active Task. Use its selected ID,
+which need not be a newly registered Task. If preparation failed, registration
+still committed: recover with `task context`, not another add. See the exact
+[registration result](cli_contracts.md#task-add). Neither initial status nor
+context selection authorizes the work.
 
 When the outcome and registration permission are clear but the authority lacks
 truthful split or complete Contract detail, register one whole-outcome

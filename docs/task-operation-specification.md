@@ -192,13 +192,14 @@ process and the two independent review model decisions; fewer registration
 calls are not a measurement of total LLM tokens.
 For a new Task whose registration and immediate start are already authorized,
 the [registration rule](#explicit-registration-and-contract-population) records
-initial `in_progress` and retains the following context read. Only the separate
-start edit disappears. With individual Review Receipts, the same new-registration
-manual flow goes from eight calls to seven (including add); with grouped Review
-Results it goes from seven to six. Already registered/active flows gain no
-registration saving. These comparisons hold automatic Packet preparation fixed
-on both sides; they isolate only the initial-start saving and do not measure
-token savings.
+initial `in_progress`. A ready `context_preparation` in the registration response
+replaces the following context call, and an already active selection needs no
+start edit. With individual Review Receipts, this new-registration manual flow
+uses six calls including add; with grouped Review Results it uses five. Against
+the same initial-start flow with a separate context read, each saves one call.
+Already registered/active flows gain no registration saving. Counts hold automatic
+Packet preparation fixed and exclude failed preparation recovery; they do not
+measure token savings.
 `task complete --check`, `doctor`, and `task checkpoint` are absent from the
 default success path.
 
@@ -262,7 +263,7 @@ Successful change appends `review_tier_changed` with old/new tier and reason.
 set. It is an input mode of the existing leaf, not a splitter, authority
 resolver, implementation-start permission, or new normal-loop step. Individual
 Task/Contract options cannot accompany this mode; the combination is rejected
-before state access. Single-Task flags, defaults, and result shape remain valid.
+before state access. Single-Task flags, defaults, and existing result fields remain valid.
 
 Stdin is one UTF-8 JSON object, at most 262,144 bytes, with exactly required
 `version=1`, `common` (object), and `tasks` (array of 1 through 64 objects).
@@ -297,6 +298,30 @@ Handled batch input/storage failures return `data.tasks=[]`; pre-dispatch parse
 and read-only rejection retain the ordinary error envelope. No successful
 subset from this invocation survives a rollback; previously registered Tasks
 are never removed. Post-commit maintenance runs once for the whole mutation.
+
+After either single or batch registration commits and closes its writer, one
+read-only context preparation uses the ordinary global state admission and the
+existing fixed `task context` composition. Success adds exactly one
+`data.context_preparation={status:"ready",context:<task.context data>,errors:[]}`,
+not one copy per batch item. Component warnings appear once in the outer warnings.
+Selection, held-work recall, complete Contract/checkpoint/gates, validation,
+privacy and live Runner read-release behavior are unchanged. The new Task is
+not necessarily selected. Use this actual context without a separate context
+call for the same information. Registration inputs and returned IDs never grant
+start permission. This is a post-registration read, not a snapshot atomic with
+the write or subsequent bounded maintenance; concurrent changes remain possible.
+
+If preparation fails, registration still returns `ok=true`, exit zero, its
+complete committed registration results, and
+`context_preparation={status:"failed",context:null,errors:[<sanitized errors>]}`.
+There is no partial context or component warning. This is not successful absence
+of work: retry only the ordinary read-only `task context` after addressing the
+read failure, never registration. Text output states this distinction too.
+Registration failure does not attempt preparation or add this success field.
+Unknown post-commit exceptions use a fixed sanitized `internal_error` message.
+No automatic retry, new option, permission, gate, or persistence is introduced.
+Output comparisons include the replaced add-plus-context envelopes and normal
+flow, not add alone; the complete working context is not truncated to save bytes.
 
 A confirmed rollback permits resubmitting the corrected explicit set. There is
 no idempotency ledger or automatic retry: a lost response does not prove
@@ -619,9 +644,10 @@ that value to bypass an existing active Task or an earlier ready candidate.
 Otherwise it retains the appropriate initial state, normally ready. Registration
 alone, successful `selection=none`, or candidate display omission supplies no
 start permission or proof that no competing work exists. Paused/blocked work
-alone does not prevent unrelated ready work. The subsequent read-only
-`task context` remains necessary for selection, complete Contract, and current
-gates; neither its selection nor initial status itself authorizes implementation.
+alone does not prevent unrelated ready work. Use the registration response's
+ready `context_preparation.context` for selection, complete Contract and current
+gates; only failed preparation needs a separate `task context` recovery read.
+Neither context selection nor initial status itself authorizes implementation.
 This reuses the existing start decision at registration, without a new mode,
 confirmation command, selection algorithm, or storage/Contract/evidence behavior.
 

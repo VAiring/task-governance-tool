@@ -541,8 +541,9 @@ input, using `in_progress` only when existing selection and predecessor order
 permit that work. It does not infer permission from registration, a status value,
 context selection/absence, or omitted display rows, and does not promote new
 work around active or earlier ready work. Held work alone does not stop unrelated
-ready work. The ordinary post-registration context read still selects and
-supplies complete Contract/gates; only a redundant start edit is omitted.
+ready work. The registration response's prepared context selects and supplies
+complete Contract/gates; a ready preparation replaces a separate context call,
+and an already active selection needs no redundant start edit.
 Single/batch writers, initial Contract activation, sequential guards, and
 read-only context composition remain unchanged. This is instruction guidance,
 not a new eligibility helper, automatic start, or additional user decision mode.
@@ -554,6 +555,18 @@ state. `cli.py` rejects mixed individual options before state access, rejects
 read-only before stdin consumption, reads the bounded binary input, then owns
 the existing initialized connection and outer commit/rollback. It returns the
 input-order index-to-Task mapping and one mutation outcome for maintenance.
+
+After the writer commits and closes, `cli.py` prepares one context for the
+whole successful registration through `connect_initialized_readonly`, retaining
+ordinary global admission, then calls the existing `handle_task_context` with
+fixed read-only arguments and that read connection. Its existing marker-2 show
+path releases the read before physical selection and compares the Task on the
+final bounded read. No resolver/storage admission rule or selection algorithm
+is replaced. One closed `context_preparation` result separates successful
+registration from a failed post-commit read; unexpected exceptions are sanitized.
+It returns no partial context and triggers no retry or writer. Existing common
+post-commit maintenance remains once, after command preparation; the embedded
+context claims neither write/read atomicity nor a post-maintenance snapshot.
 
 `tasks.py` factors single-add preparation from its existing row writer. Both
 single and batch registration use that same row writer, Contract activation,

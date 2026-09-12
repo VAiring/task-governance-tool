@@ -470,9 +470,9 @@ Options are `--title`, `--description`, `--kind`, `--lane`, `--order`,
 Kinds are `sequential|optional`; priorities are
 `low|normal|high|urgent`; review tiers are `0|1|2`. An initial Contract
 requires both scope and acceptance and never gets inferred from missing input.
-Success data contains `task` and `event`, plus
+Success data contains `task`, `event`, and `context_preparation`, plus
 `contract_write={"recorded":true,"revision":1}` when a Contract was recorded.
-Use `data.task.task_id` for subsequent Task-specific commands.
+`data.task.task_id` identifies the registered Task; it need not be the selected work.
 
 Initial `done` returns `initial_done_forbidden`; specifically,
 `task add --status done` never stores a task or event. Initial `paused` returns
@@ -506,7 +506,8 @@ privacy/bounds checks. No unknown/duplicate keys or automatic scope inference.
 Do not combine this mode with individual Task/Contract flags; read-only rejects
 it without consuming stdin.
 
-Success data is `{"tasks":[{"input_index":0,"task":{},"event":{},"contract_write":{"recorded":true,"revision":1}}]}`,
+Success data contains `tasks=[{"input_index":0,"task":{},"event":{},"contract_write":{"recorded":true,"revision":1}}]`
+and one `context_preparation`,
 where Task/event are the existing projections and `contract_write` is absent
 for null Contracts. The response maps every input in order; no per-Task follow-up
 confirmation is required. Match `data.tasks[].input_index` to the input and use
@@ -518,6 +519,22 @@ never blindly replay or remove successes. This is not an idempotent importer.
 Windows PowerShell producers must send UTF-8 without BOM, not locale-encoded
 text. This option creates no input file, adapter, extra normal-loop call, or
 authority beyond explicit registration.
+
+For single and batch success, `context_preparation` has exactly `status`,
+`context`, and `errors`. `status=ready` carries the complete ordinary
+[`task context`](#task-context) data with `errors=[]`; its component warnings
+appear once in the outer warnings. Use `context.selected.task.task_id` for
+selected work, not the registered ID by assumption. This replaces the immediate
+separate context read, not any implementation permission or gate. Batch items
+do not duplicate context. The read follows commit with ordinary validation and
+selection; it is not atomic with registration or later maintenance.
+
+`status=failed` has `context=null` and sanitized `errors`, with no partial read
+or component warnings. Outer `ok=true` and exit zero still mean all registration
+results committed. Address the read failure and retry only `task context`; do
+not add the Tasks again. Registration failures do not prepare context. A lost
+outer response remains uncertain: inspect actual state before any registration
+retry, as above. No additional normal-path command or user choice is introduced.
 
 <a id="task-list"></a>
 

@@ -209,7 +209,9 @@ python .agents/skills/task-governance-tool/scripts/taskgov.py task edit <task-id
 
 For new work already authorized for immediate implementation, use the existing
 initial `--status in_progress` under the [registration and ordering rules](docs/task-operation-specification.md#explicit-registration-and-contract-population).
-Keep the following context read; an already active Task needs no start edit.
+Use the add response's ready `data.context_preparation.context` instead of the
+following context read; an already active selection needs no start edit. If
+preparation failed, registration still committed: retry context, not add.
 Registration, initial status, and context selection do not grant permission.
 
 `task context` is the normal detailed read before work. The same JSON call

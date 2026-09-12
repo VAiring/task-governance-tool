@@ -110,7 +110,7 @@ class TaskContextTests(unittest.TestCase):
         self.assertEqual(set(payload["data"]["selected"]["completion_history"]), {"total", "legacy_history_incomplete"})
         self.assertEqual(set(payload["data"]["selected"]["review_evidence"]), {"gate", "counts", "current_receipts", "current_findings"})
 
-    def test_authorized_initial_start_omits_only_the_separate_start_write(self):
+    def test_authorized_registration_uses_prepared_context_and_existing_start_decision(self):
         outcomes = []
         call_counts = []
         for initial_status in ("ready", "in_progress"):
@@ -138,16 +138,16 @@ class TaskContextTests(unittest.TestCase):
                     "--contract-constraints", "No runtime changes",
                     "--contract-authority-ref", "conversation:approved-guide-work",
                 )
-                before = file_snapshot(root)
-                context = invoke("task", "context")
-                self.assertEqual(file_snapshot(root), before)
+                self.assertEqual(added["context_preparation"]["status"], "ready")
+                context = added["context_preparation"]["context"]
                 task_id = added["task"]["task_id"]
                 self.assertEqual(context["selected"]["task"]["task_id"], task_id)
                 self.assertEqual(context["selected"]["contract"]["revision"], 1)
                 if context["selected"]["task"]["status"] == "ready":
                     invoke("task", "edit", task_id, "--status", "in_progress")
                 call_counts.append(len(calls))
-                self.assertEqual(calls[:2], [("task", "add"), ("task", "context")])
+                self.assertEqual(calls[0], ("task", "add"))
+                self.assertNotIn(("task", "context"), calls)
                 # Inspection is test evidence, not an extra normal-flow call.
                 final = invoke("task", "show", task_id)
                 outcomes.append((
@@ -160,7 +160,7 @@ class TaskContextTests(unittest.TestCase):
                     final["verification_evidence"]["gate"],
                     final["review_evidence"]["gate"],
                 ))
-        self.assertEqual(call_counts, [3, 2])
+        self.assertEqual(call_counts, [2, 1])
         self.assertEqual(outcomes[0], outcomes[1])
 
     def test_initial_start_remains_available_with_unrelated_held_work(self):

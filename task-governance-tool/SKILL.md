@@ -65,6 +65,11 @@ gates. Do not add current/next/show reads to reconstruct it. `task current`
 remains available for explicit held-work inspection. `paused_tasks_present`
 is an advisory, not another normal read.
 
+Immediately after registration, a ready `data.context_preparation.context`
+provides that same context instead of another call. Follow its selected Task,
+not a newly registered ID by assumption. Failed preparation does not undo
+registration; recover with `task context`, never another add.
+
 Read only the linked responsibility needed for the operation or returned
 condition, including its applicable exceptions and input rules. References
 are not whole-file prerequisites. No read log, limit, new question, or extra

@@ -569,9 +569,10 @@ route. Only `verification_route=receipt_required` runs the governed verification
 against that material and records the Receipt with that generation as the
 expected basis. `not_required` and `runner_pass` proceed without that run or
 Receipt; `blocked` and unexpected route/code pairs stop closed. The default
-Tier-2 no-finding manual/fallback batch path is seven governance calls, or eight when
-Effort Advisory is mechanically enabled; a Receiptless Runner pass is one call
-lower.
+Tier-2 no-finding manual/fallback batch path is six governance calls, or seven when
+Effort Advisory is mechanically enabled. Receipt registration includes Packet
+preparation; a Receiptless Runner pass instead uses standalone preparation and
+has the same call count.
 
 Receipt recording is allowed only for an in-progress or review-pending Task
 with verification text that is nonempty after trimming and a nonempty current
@@ -710,8 +711,50 @@ Contract, verification expectation, and target capture. Mismatch fails with
 `verification target changed after the reported run`, with no row or
 maintenance. The command accepts no caller source revision, Contract revision,
 timestamp, command body, or arbitrary file. Its alternative `--from-stdin`
-mode accepts only the fixed declaration below. Successful data is
-exactly `receipt`; read-only rejects before any database or maintenance write.
+mode accepts only the fixed declaration below. Registration failure data is
+`{receipt: null}`; read-only rejects before any database or maintenance write.
+Successful registration data contains exactly `receipt` and `review_preparation`.
+`ok=true` and exit zero attest registration, not a verification PASS or completed
+review. The Receipt's existing fields and transaction remain unchanged.
+
+After committing and closing the writer, `pass/full` automatically prepares
+the existing bounded Packet. `review_preparation` contains exactly `status`,
+`packet`, and `errors`: `ready` has the Packet and no errors; `blocked` has null
+Packet and `verification_receipt_blocking` for fail/timeout/partial, without
+attempting preparation; `failed` has null Packet and the sanitized preparation
+errors. Warnings remain in the outer envelope. A preparation failure never
+undoes or duplicates the committed Receipt. No reviewer, verification process,
+review registration, completion, or extra persistence is launched by this step.
+
+Preparation is bound to that immutable Receipt ID. Both existing Packet reads
+validate the selected Task's exact-current Receipt snapshot, including Task and
+project identity, Contract revision, expectation/subject, and target kind,
+value, base, and generation. A changed basis fails `verification_basis_stale`;
+non-pass/full evidence fails `verification_receipt_blocking`. Existing Packet
+Git observation, second-read revalidation and bounds remain in force. These
+checks neither replace nor expand the final completion/Runner selector.
+
+After partial success, retry only `review prepare <task-id>
+--verification-receipt-id <recorded-id>`. This read-only option repeats that
+same binding check, never registers evidence or substitutes a newer Receipt.
+The optional ID has the existing Receipt ID syntax; invalid input uses
+`invalid_verification_evidence`. Without the option, standalone preparation
+keeps its existing behavior and is not proof of verification eligibility.
+Receiptless and qualifying Runner routes keep standalone preparation and do
+not acquire a Receipt. If a response is lost or times out, first inspect saved
+state; do not infer success, rollback, or blindly replay registration. An
+existing same-generation Receipt is immutable. Retry preparation with its ID
+only when its actual result and basis allow it; stale evidence needs a fresh
+target and verification, not rebinding.
+
+The Packet component retains its existing complete-envelope 32,768-byte check;
+the combined response additionally contains the bounded Receipt and connection
+status. This is not a new 32,768-byte cap on the combined response. Combining
+the two operations reduces this success-path segment from two public CLI calls
+and two responses to one call/response, but retains registration and preparation
+internally. It removes the intervening LLM relay, not verification or review
+judgment. Output bytes and total LLM tokens are separate quantities; no total
+token or elapsed-time reduction is claimed without measurement.
 
 After applicable common CLI, project, and state preflight, Receipt-add
 validation is fail-fast in this exact order: `--read-only`; Task ID, result,
@@ -742,7 +785,9 @@ stored target or Receipt uses
 rechecked under the writer lock in the same semantic order; no failed call
 publishes backup or Viewer maintenance.
 
-Successful text is exactly three LF-separated lines with no event line:
+Successful text starts with the unchanged three LF-separated Receipt lines,
+then `Review preparation: <status>` and either the existing Packet text or
+sanitized code/message lines. There is no event line:
 
 ```text
 Verification receipt recorded: <verification_receipt_id>

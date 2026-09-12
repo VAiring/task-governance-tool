@@ -244,6 +244,8 @@ class M22VerificationSubjectTests(unittest.TestCase):
                         f"Verification receipt recorded: {receipt_id}\n"
                         "Result: timeout  Coverage: partial\n"
                         f"Source: diff_fingerprint/generation {generation}\n"
+                        "Review preparation: blocked\n"
+                        "verification_receipt_blocking: current verification evidence does not satisfy the required result and coverage\n"
                     ),
                 )
                 maintenance.assert_called_once()
@@ -273,7 +275,7 @@ class M22VerificationSubjectTests(unittest.TestCase):
             recorded = add_receipt(db, repo, task_id, generation)
             self.assertEqual(recorded.returncode, 0, recorded.stdout)
             recorded_payload = payload(recorded)
-            self.assertEqual(set(recorded_payload["data"]), {"receipt"})
+            self.assertEqual(set(recorded_payload["data"]), {"receipt", "review_preparation"})
             receipt = recorded_payload["data"]["receipt"]
             after_text = show_task(
                 db,

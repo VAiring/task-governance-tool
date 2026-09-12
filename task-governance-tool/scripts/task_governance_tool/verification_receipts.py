@@ -650,6 +650,60 @@ def _gate_from_exact(
     return VerificationGate(True, False, "verification_receipt_blocking", None)
 
 
+def validate_verification_receipt_id(value: Any) -> str:
+    if not isinstance(value, str) or VERIFICATION_RECEIPT_ID_PATTERN.fullmatch(value) is None:
+        raise _error("invalid_verification_evidence", "verification Receipt ID is invalid")
+    return value
+
+
+def require_packet_verification_receipt(
+    connection: sqlite3.Connection,
+    *,
+    task: Mapping[str, Any],
+    receipt_id: str,
+) -> dict[str, Any]:
+    """Bind Packet preparation to one immutable exact-current pass/full Receipt.
+
+    This checks the Receipt arm, not the final completion/Runner selector.
+    Both Packet reads call it on their own coherent current Task basis.
+    """
+    snapshot, expectation, revision, digest, source, subject = _snapshot_for_task(
+        connection,
+        task=task,
+        project_id=str(task["project_id"]),
+        task_id=str(task["task_id"]),
+    )
+    exact, _recent = _validate_snapshot_rows(
+        raw_same_generation=tuple(snapshot.same_generation),
+        raw_exact=tuple(snapshot.exact_current),
+        raw_recent=tuple(snapshot.recent),
+        project_id=str(task["project_id"]),
+        task_id=str(task["task_id"]),
+        expectation=expectation,
+        contract_revision=revision,
+        digest=digest,
+        source_revision=source,
+        current_subject=subject,
+    )
+    if (
+        task["status"] not in VERIFICATION_ACTIVE_STATUSES
+        or subject is None
+        or len(exact) != 1
+        or exact[0]["verification_receipt_id"] != receipt_id
+    ):
+        raise _error(
+            "verification_basis_stale",
+            "verification Receipt no longer matches the review context",
+        )
+    receipt = exact[0]
+    if receipt["result"] != "pass" or receipt["scope_coverage"] != "full":
+        raise _error(
+            "verification_receipt_blocking",
+            "current verification evidence does not satisfy the required result and coverage",
+        )
+    return receipt
+
+
 def _task_runner_basis_version(task: Mapping[str, Any]) -> int:
     """Read the closed schema-v21 Task discriminator without activating it."""
 

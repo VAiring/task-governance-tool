@@ -1081,9 +1081,30 @@ is rejected until a fresh target exists. Do not combine that semantic edit
 with completion-evidence options; the command fails
 `completion_evidence_conflict` rather than discarding them.
 
-On success, `data.receipt` is the recorded result;
-`data.receipt.verification_receipt_id` is its generated ID. No additional read
-is needed to obtain it. Only for output integration or historical subject
+On registration success, `data.receipt` is the recorded result and its
+`verification_receipt_id` is the generated ID. `ok=true` means registration,
+not verification PASS. `data.review_preparation` has `status`, `packet`, and
+`errors`. Pass/full automatically returns `ready` with the existing Packet;
+fail/timeout/partial returns `blocked`, null Packet and the existing blocking
+code without preparing. Post-commit preparation failure returns `failed`, null
+Packet and sanitized errors, while preserving the Receipt and outer warnings.
+Give a ready Packet directly to reviewers; do not prepare it again.
+
+For preparation-only failure, retry only the read-only operation against the
+same saved Receipt:
+
+```powershell
+python .agents/skills/task-governance-tool/scripts/taskgov.py review prepare <task-id> --verification-receipt-id <recorded-id> --read-only --json
+```
+
+Both Packet reads validate that Receipt's exact current Task, Contract and full
+target basis. Stale evidence cannot be rebound; it requires fresh targeting
+and verification. If the response was lost or timed out, inspect recorded
+state first to learn whether registration actually committed. Do not infer
+rollback or blindly replay registration; the same generation accepts one
+immutable Receipt only. No review, completion, or external verification is
+automatically launched. Receiptless/Runner-pass routes do not register one.
+Only for output integration or historical subject
 inspection, read [Receipt output detail](#receipt-output-for-integration-or-audit).
 
 `--read-only` and every failed call perform no business or maintenance write.
@@ -1211,7 +1232,9 @@ task or task event.
 
 ### `review prepare`
 
-Prepare one bounded read-only reviewer packet. Use `<task-id>` from the
+Prepare one bounded read-only reviewer packet. A successful qualifying Receipt
+registration already returns this Packet, so use this command for Receiptless
+routes or explicit preparation/retry. Use `<task-id>` from the
 successful target-set response's `data.task.task_id`, after handling its
 verification route:
 
@@ -1220,7 +1243,12 @@ python .agents/skills/task-governance-tool/scripts/taskgov.py review prepare --r
 ```
 
 Supported target kinds are `git_snapshot`, `git_commit`, `diff_fingerprint`,
-and `external_revision`. The command takes no caller focus, reviewer, import,
+and `external_revision`. Optional `--verification-receipt-id <id>` binds a
+Packet-only retry to that exact-current pass/full Receipt in both reads;
+mismatch uses `verification_basis_stale`, and non-pass/full uses
+`verification_receipt_blocking`. The Receipt ID uses its existing fixed syntax.
+Omitting it retains standalone preparation, which is not proof of verification
+eligibility. The command takes no caller focus, reviewer, import,
 receipt-file, or output-destination argument. It launches no reviewer, imports
 no result, writes no packet, and changes neither local task state nor target
 Git.
@@ -1320,7 +1348,9 @@ needs a new target and fresh receipts.
 
 The normal multi-reviewer path is [Structured Review Results](#structured-review-results).
 The existing single-Receipt form remains available. Use the Task ID in the
-actual Review Packet's `data.task.task_id`, and the reviewer's actual declaration:
+actual Review Packet's `task.task_id`, and the reviewer's actual declaration
+(Packet is `data.review_preparation.packet` after registration or `data` after
+standalone preparation):
 
 ```powershell
 python .agents/skills/task-governance-tool/scripts/taskgov.py review receipt add --repo <target-project> <task-id> --reviewer <stable-reviewer-key> --kind independent --verdict pass --summary "No blocking findings" --reviewer-class human --model-state not_applicable --skill-state not_applicable --context-relation external_context --review-profile general --review-lens correctness --review-method review_packet_inspection --json
@@ -1409,7 +1439,8 @@ processes, independence, authenticated provenance, or summary truth.
 
 #### Finding Creation And Resolution
 
-Use the Task ID from the actual Review Packet's `data.task.task_id`.
+Use `task.task_id` from the actual Packet object returned by registration or
+standalone preparation.
 `<receipt-id>` is `data.receipt.review_receipt_id` from single Receipt creation,
 or the corresponding `data.receipts[].receipt.review_receipt_id` from grouped
 results. `<finding-id>` is the selected `review_finding_id` returned by Finding
@@ -1506,9 +1537,10 @@ target with those returned in the actual Review Packet):
 }
 ```
 
-From that successful Packet, copy `data.task.task_id` into both the command's
-`<task-id>` and document `task_id`, `data.contract.revision` into
-`contract_revision`, and the complete `data.review_target` into `review_target`.
+Use the actual Packet object: `data.review_preparation.packet` after qualifying
+registration or `data` after standalone preparation. Copy its `task.task_id`
+into both the command's `<task-id>` and document `task_id`, `contract.revision`
+into `contract_revision`, and complete `review_target` into `review_target`.
 Combine only reviewers' `receipts` arrays with identical envelope values;
 preserve returned verdicts and provenance rather than filling or retyping them.
 
@@ -1585,13 +1617,20 @@ kind `legacy_caller_label`, both IDs null, and the preserved label. The audit
 Receipt rows use the same union. These are tool-owned bindings, not caller
 identity authentication or permission to reuse historical evidence.
 
-Successful text remains exactly:
+Successful text starts with this unchanged Receipt prefix:
 
 ```text
 Verification receipt recorded: <verification_receipt_id>
 Result: <result>  Coverage: <scope_coverage>
 Source: <kind>/generation <generation>
 ```
+
+It is followed by `Review preparation: <ready|blocked|failed>` and the Packet
+text or sanitized code/message lines. JSON additionally returns
+`data.review_preparation` as described under [Verification Receipt](#verification-receipt).
+The Packet component keeps the standalone 32,768-byte envelope check; the
+combined output also includes the bounded Receipt/status and is not subject
+to a new combined 32,768-byte cap.
 
 ### Review Provenance Output
 

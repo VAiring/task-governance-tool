@@ -278,6 +278,8 @@ python .agents/skills/task-governance-tool/scripts/taskgov.py review target set 
 # Only for verification_route=receipt_required, run the exact approved verification here.
 # Taskgov never executes it.
 python .agents/skills/task-governance-tool/scripts/taskgov.py verification receipt add <task-id> --result pass --duration-ms <milliseconds> --scope-coverage full --expected-target-generation <generation-from-target-set> --json
+# Use data.review_preparation.packet only when its status is ready.
+# Only for not_required or runner_pass instead of the Receipt call:
 python .agents/skills/task-governance-tool/scripts/taskgov.py review prepare <task-id> --json
 # Obtain the structured reviewer results for this exact Task and target.
 $OutputEncoding = [Console]::InputEncoding = [System.Text.UTF8Encoding]::new($false)
@@ -288,7 +290,11 @@ python .agents/skills/task-governance-tool/scripts/taskgov.py task complete <tas
 ```
 
 The `not_required` and `runner_pass` routes skip the verification and
-Verification Receipt lines above. The `blocked` route stops closed and reports
+Verification Receipt lines above and use standalone preparation. For Receipt
+registration, `ok=true` means the result was saved, not that verification passed.
+Preparation failure preserves that result; retry only preparation with
+`--verification-receipt-id <recorded-id>`, not the registration. An uncertain
+response requires inspecting saved state first. The `blocked` route stops closed and reports
 its existing gate code in `blocking_code`.
 
 The staged snapshot excludes unstaged and untracked content. Taskgov records

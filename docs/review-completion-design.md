@@ -572,8 +572,9 @@ stored target structure/presence, expected generation, capture version, then
 the current schema-v22 Runner selector, then uniqueness. It is
 used before and after the writer lock so a concurrent status, Contract,
 expectation, or target change cannot select a different semantic ordering or
-bind the row to new material. CLI formatting owns the exact three-line success
-text and adds no synthetic Task event.
+bind the row to new material. CLI formatting retains the three-line Receipt
+prefix and appends preparation status and Packet/errors; no synthetic Task
+event is added.
 
 No label or subject argument exists. Version-aware stored validation applies
 the legacy command-label predicate only to subject-zero rows and requires only
@@ -646,8 +647,18 @@ bridge. A version-1 nonempty cycle whose stored tagged arm has neither its valid
 linked Receipt nor its valid qualifying Runner observation is
 `completion_history_inconsistent`, never an inferred legacy success.
 
-The one Receipt command is `verification receipt add`. Its success data is
-exactly `receipt`. `task show` obtains Receipt totals, exact-current
+The one Receipt command is `verification receipt add`. Its CLI handler commits
+the existing Receipt transaction before invoking the existing Packet handler
+for pass/full, with a fresh read connection and the recorded Receipt ID.
+Success data is `receipt` plus `review_preparation`; registration errors remain
+failures, while post-commit preparation errors are explicit partial success.
+The original mutation outcome and one outer maintenance pass are preserved.
+`verification_receipts.py` owns exact-current Receipt-ID binding using its
+existing snapshot validator. `review_packet.py` applies it in both existing
+reads, including readonly `--verification-receipt-id` retries. No generic
+workflow engine, new ledger, global admission change, or completion selector
+is introduced. Packet-only retries cannot write or change the recorded basis.
+`task show` obtains Receipt totals, exact-current
 counts, gate, and newest 10 rows in the same query-only transaction as the
 Task. A show-only collector retains the validated exact-current row for normal
 presentation; filtering recent rows cannot establish that exact-current row.
@@ -680,7 +691,8 @@ explicit legacy exemption even when its target is absent, including the sole
 bridge-created cycle. A version-1 done cycle is validated against its stored
 manual or Runner branch before projection. Task-show failure data includes a null
 `verification_evidence`; audit text Task show remains unchanged. The Receipt write
-alone has the fixed three-line text projection.
+retains its three-line prefix, followed by preparation status and Packet or
+sanitized errors under the public connection contract.
 
 The audit completion-history JSON remains unchanged. The current done Task
 retains its target and Receipt, so normal `task show.verification_evidence` exposes

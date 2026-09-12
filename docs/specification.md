@@ -184,6 +184,11 @@ The public CLI has exactly 23 command leaves:
 [structured resolution input](review-completion-specification.md#structured-finding-resolutions).
 `verification receipt add --from-stdin` is likewise an input mode, defined by
 the [structured result contract](review-completion-specification.md#structured-verification-result).
+Both Receipt input forms automatically prepare the Packet after a qualifying
+registration, with explicit partial-success reporting and same-Receipt readonly
+retry on `review prepare --verification-receipt-id`, as defined by
+[Receipt output and preparation](review-completion-specification.md#public-and-read-projection).
+This changes success output, not the leaf inventory or completion gate.
 Applicable commands retain
 `--repo`, `--json`, and `--read-only`; root `--version` is project-free.
 Omitted `--repo` means the current directory, including a physical non-Git
@@ -275,7 +280,7 @@ Current success-data projections are:
 | `review.finding.add` | `finding`, `event` |
 | single `review.finding.resolve` | `finding`, `event` |
 | `review.finding.resolve --from-stdin` | `findings`; input-order Finding/event results |
-| `verification.receipt.add` | `receipt` |
+| `verification.receipt.add` | `receipt`, `review_preparation` |
 
 `task.show` uses a fixed normal working projection; `--audit` selects the
 previous bounded historical detail. The top-level keys above are shared, while

@@ -377,6 +377,10 @@ def build_parser() -> argparse.ArgumentParser:
     )
     add_common_options(review_prepare_parser)
     review_prepare_parser.add_argument("task_id")
+    review_prepare_parser.add_argument(
+        "--verification-receipt-id",
+        help="retry Packet preparation bound to the same recorded verification Receipt",
+    )
 
     review_target_parser = review_subparsers.add_parser("target", help="review target commands")
     review_target_subparsers = review_target_parser.add_subparsers(dest="review_action")

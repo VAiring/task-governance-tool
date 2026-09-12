@@ -2090,6 +2090,7 @@ def handle_review_prepare(context: CommandContext) -> CommandResult:
             target,
             getattr(context.args, "task_id", ""),
             initial_connection=context.read_connection_override,
+            verification_receipt_id=getattr(context.args, "verification_receipt_id", None),
         )
         text = format_review_packet_text(data)
         result = CommandResult(
@@ -2113,6 +2114,7 @@ def handle_review_prepare(context: CommandContext) -> CommandResult:
         return result
     except (
         ReviewPacketError,
+        VerificationReceiptError,
         TaskRepositoryError,
         TaskValidationError,
     ) as exc:
@@ -2508,12 +2510,46 @@ def handle_verification_receipt_add(context: CommandContext) -> CommandResult:
         )
 
     receipt = result.receipt
+    preparation = {"status": "blocked", "packet": None, "errors": [{
+        "code": "verification_receipt_blocking",
+        "message": "current verification evidence does not satisfy the required result and coverage",
+    }]}
+    packet_warnings = []
+    if receipt["result"] == "pass" and receipt["scope_coverage"] == "full":
+        # The Receipt transaction is committed and closed. A later read failure
+        # cannot turn it into a failed registration or authorize resubmission.
+        try:
+            packet_result = handle_review_prepare(replace(
+                context, command="review.prepare", read_connection_override=None,
+                args=argparse.Namespace(
+                    task_id=receipt["task_id"],
+                    verification_receipt_id=receipt["verification_receipt_id"],
+                ),
+            ))
+            preparation = {
+                "status": "ready" if packet_result.ok else "failed",
+                "packet": packet_result.data if packet_result.ok else None,
+                "errors": packet_result.errors,
+            }
+            packet_warnings = packet_result.warnings
+        except Exception:
+            preparation = {"status": "failed", "packet": None, "errors": [{
+                "code": "internal_error", "message": "could not prepare review context",
+            }]}
+    preparation_text = f"Review preparation: {preparation['status']}"
+    if preparation["packet"] is not None:
+        preparation_text += "\n" + format_review_packet_text(preparation["packet"])
+    else:
+        preparation_text += "\n" + "\n".join(
+            f"{error['code']}: {error['message']}" for error in preparation["errors"]
+        )
     return CommandResult(
         ok=True,
         command=context.command,
         project_id=project_id,
-        data={"receipt": receipt},
-        text=verification_receipt_text(receipt),
+        data={"receipt": receipt, "review_preparation": preparation},
+        text=verification_receipt_text(receipt) + "\n" + preparation_text,
+        warnings=packet_warnings,
         exit_code=EXIT_SUCCESS,
         mutation_outcome=MutationOutcome(
             state_changed=True,

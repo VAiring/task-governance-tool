@@ -513,13 +513,17 @@ There is no separate history command or pagination. `task context` and default
 --audit` and the automatically maintained Viewer supply bounded history detail.
 
 The normal no-finding Tier 2 manual/fallback Task flow uses one batch result
-registration and at most seven governance subprocess calls with the default-off
-Effort Advisory, or eight when
+registration and at most six governance subprocess calls with the default-off
+Effort Advisory, or seven when
 an enabled valid profile mechanically adds `task effort`. Doctor, checkpoint,
 and completion check are optional and absent from the standard success path. A
-qualifying Runner pass omits the Verification Receipt call and is one call lower
-than either maximum. Explicit individual Receipt registration retains the
-eight/nine manual and seven/eight Runner-pass bounds. These operation counts do
+qualifying Runner pass uses standalone Packet preparation instead of the
+combined Receipt-registration/preparation call and has the same bounds.
+Explicit individual Review Receipt registration has seven/eight bounds on
+either path. Receipt registration success now also reports preparation status,
+Packet or sanitized errors; a preparation failure preserves the committed
+Receipt and supports same-Receipt readonly retry without a second write.
+These operation counts do
 not establish a measured reduction in total LLM tokens.
 
 An enabled `task effort` result returns `suggested_action=continue` or the
@@ -692,9 +696,10 @@ Action-bearing `task edit` adds only the closed
 `runner_plan_update` (`action` and status); `review target set` remains the sole
 Runner dispatch and retains its two closed route fields. With no post-target `task show`, the
 manual/fallback no-finding Tier 2 flow with batch review-result registration is
-bounded to seven calls, or eight with
-the enabled Effort Advisory; the Receiptless Runner-pass path is one call
-lower. The public inventory is exactly 23 leaves. No exact final candidate
+bounded to six calls, or seven with
+the enabled Effort Advisory, using automatic Packet preparation after a
+qualifying Receipt. The Receiptless Runner-pass path uses standalone
+preparation and has the same bound. The public inventory is exactly 23 leaves. No exact final candidate
 commit, tag, archive, checksum, or GitHub Release identity is fixed. An ordinary
 push to `main` is CI input, not release publication; nothing here dispatches CI
 or publishes a Release.

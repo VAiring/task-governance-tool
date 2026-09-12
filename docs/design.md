@@ -207,7 +207,7 @@ The implementation keeps these narrow ownership boundaries:
   retains same-Task ownership, existing resolution writes, and atomic batch
   coordination without changing review gates.
 - `verification_receipts.py` owns caller Receipt validation, exact-current
-  classification, completion-gate evaluation, and the bounded Task-show read
+  classification, same-Receipt Packet binding, completion-gate evaluation, and the bounded Task-show read
   model.
 - `verification_receipt_repository.py` owns Receipt snapshots, append queries,
   and version-aware legacy-label/internal-subject stored-row validation using
@@ -884,8 +884,9 @@ a real consuming project or Git state. Tests cover:
 - package self-containment, manifest integrity, project-scoped/self-host
   layouts, ignore rules, Windows Python 3.12/3.14, and junction rejection;
 - Reduced-loop fresh-session behavioral fixtures plus the current manual/fallback
-  seven-call batch default flow and mechanically enabled eight-call flow, with the
-  Receiptless Runner-pass branch one call lower; and
+  six-call batch default flow and mechanically enabled seven-call flow. Receipt
+  registration includes Packet preparation; Receiptless Runner-pass uses its
+  standalone preparation without an additional Receipt; and
 - release archive reproducibility, license/manifest/archive inclusion,
   legacy upgrade/paired rollback, exact workflow identity, and sanitized
   release evidence.

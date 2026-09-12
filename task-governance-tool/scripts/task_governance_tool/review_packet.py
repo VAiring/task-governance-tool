@@ -51,6 +51,10 @@ from task_governance_tool.task_values import (
     validate_task_id,
     validate_text,
 )
+from task_governance_tool.verification_receipts import (
+    require_packet_verification_receipt,
+    validate_verification_receipt_id,
+)
 
 
 REVIEW_PACKET_MAX_BYTES = 32_768
@@ -150,6 +154,7 @@ def _read_basis(
     *,
     revalidation: bool,
     connection: sqlite3.Connection | None = None,
+    verification_receipt_id: str | None = None,
 ) -> ReviewPacketBasis:
     try:
         manager = (
@@ -252,6 +257,10 @@ def _read_basis(
                 raise ValueError("review target generation must be positive")
 
             validate_stored_review_target(stored)
+            if verification_receipt_id is not None:
+                require_packet_verification_receipt(
+                    active_connection, task=stored, receipt_id=verification_receipt_id,
+                )
             if normalized_kind == "git_commit":
                 if (
                     FULL_GIT_OBJECT_ID.fullmatch(target_value) is None
@@ -484,13 +493,19 @@ def prepare_review_packet(
     task_id: Any,
     *,
     initial_connection: sqlite3.Connection | None = None,
+    verification_receipt_id: Any = None,
 ) -> dict[str, Any]:
     normalized_task_id = validate_task_id(task_id)
+    receipt_id = (
+        validate_verification_receipt_id(verification_receipt_id)
+        if verification_receipt_id is not None else None
+    )
     basis = _read_basis(
         target,
         normalized_task_id,
         revalidation=False,
         connection=initial_connection,
+        verification_receipt_id=receipt_id,
     )
     if initial_connection is not None:
         initial_connection.close()
@@ -510,6 +525,7 @@ def prepare_review_packet(
         target,
         normalized_task_id,
         revalidation=True,
+        verification_receipt_id=receipt_id,
     )
     if current.stability_token != basis.stability_token:
         raise packet_error(

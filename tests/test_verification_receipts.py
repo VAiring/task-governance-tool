@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import sqlite3
 import tempfile
 import unittest
@@ -23,6 +24,7 @@ from tests.verification_receipt_test_support import (
 )
 
 from task_governance_tool import cli as cli_module
+from task_governance_tool import review_packet as packet_module
 from task_governance_tool import verification_receipts as receipt_service
 from task_governance_tool.storage import verification_expectation_digest
 from task_governance_tool.verification_receipts import (
@@ -165,6 +167,13 @@ class VerificationReceiptIntegrationTests(unittest.TestCase):
                     )["data"]["verification_evidence"]
 
                     qualifies = result == "pass" and coverage == "full"
+                    preparation = payload(recorded)["data"]["review_preparation"]
+                    self.assertEqual(preparation["status"], "ready" if qualifies else "blocked")
+                    self.assertEqual(preparation["packet"] is not None, qualifies)
+                    self.assertEqual(preparation["errors"], [] if qualifies else [{
+                        "code": "verification_receipt_blocking",
+                        "message": "current verification evidence does not satisfy the required result and coverage",
+                    }])
                     self.assertEqual(shown["gate"]["satisfied"], qualifies)
                     self.assertEqual(
                         shown["gate"]["blocking_code"],
@@ -508,6 +517,183 @@ class VerificationReceiptIntegrationTests(unittest.TestCase):
 
 
 
+
+
+class ReceiptPacketConnectionTests(unittest.TestCase):
+    def prepare(self, db, repo, task_id, receipt_id=None):
+        args = ["review", "prepare", task_id, "--db", str(db), "--repo", str(repo),
+                "--read-only", "--json"]
+        if receipt_id is not None:
+            args.extend(("--verification-receipt-id", receipt_id))
+        return run_taskgov(*args)
+
+    def test_success_keeps_both_operations_but_removes_the_public_relay(self):
+        with tempfile.TemporaryDirectory() as temp:
+            repo, db = initialize(Path(temp))
+            task_id = add_task(db, repo)["task_id"]
+            generation = set_target(db, repo, task_id)
+            with mock.patch.object(cli_module, "add_verification_receipt",
+                                   wraps=cli_module.add_verification_receipt) as write, \
+                 mock.patch.object(cli_module, "prepare_review_packet",
+                                   wraps=cli_module.prepare_review_packet) as prepare:
+                recorded = add_receipt(db, repo, task_id, generation)
+            self.assertEqual(recorded.returncode, 0, recorded.stdout)
+            self.assertEqual((write.call_count, prepare.call_count), (1, 1))
+            data = payload(recorded)["data"]
+            self.assertEqual(set(data), {"receipt", "review_preparation"})
+            packet = data["review_preparation"]["packet"]
+            self.assertEqual(packet["task"]["task_id"], data["receipt"]["task_id"])
+            self.assertEqual(packet["contract"]["revision"], data["receipt"]["contract_revision"])
+            self.assertEqual(packet["review_target"]["generation"], generation)
+            for key in ("kind", "value", "generation"):
+                self.assertEqual(packet["review_target"][key], data["receipt"]["source_revision"][key])
+            self.assertEqual(packet["review_target"]["base_revision"] or None,
+                             data["receipt"]["source_revision"]["base_revision"])
+            before = db.read_bytes()
+            separate = self.prepare(db, repo, task_id)
+            self.assertEqual(payload(separate)["data"], packet)
+            self.assertEqual(db.read_bytes(), before)
+            # A representative segment: both service operations remain, but the
+            # caller receives one CLI response instead of two. Byte counts are
+            # distinct from LLM tokens and do not claim a total-token saving.
+            combined_bytes = len(recorded.stdout.encode("utf-8"))
+            old_envelope = payload(recorded)
+            old_envelope["data"] = {"receipt": data["receipt"]}
+            separate_bytes = len((json.dumps(old_envelope, ensure_ascii=False,
+                                             separators=(",", ":")) + "\n").encode("utf-8"))
+            separate_bytes += len(separate.stdout.encode("utf-8"))
+            self.assertGreater(combined_bytes, 0)
+            self.assertGreater(separate_bytes, 0)
+            self.assertEqual(table_count(db, "verification_receipts"), 1)
+
+    def test_post_commit_failure_preserves_receipt_and_retry_is_read_only(self):
+        with tempfile.TemporaryDirectory() as temp:
+            repo, db = initialize(Path(temp))
+            task_id = add_task(db, repo)["task_id"]
+            generation = set_target(db, repo, task_id)
+            for failure in (packet_module.ReviewPacketError(
+                    "review_packet_stale", "review context changed while preparing the packet"),
+                    RuntimeError("private exception must not escape")):
+                with self.subTest(failure=type(failure).__name__):
+                    with mock.patch.object(cli_module, "prepare_review_packet", side_effect=failure):
+                        recorded = add_receipt(db, repo, task_id, generation)
+                    self.assertEqual(recorded.returncode, 0, recorded.stdout)
+                    envelope = payload(recorded)
+                    self.assertTrue(envelope["ok"])
+                    data = envelope["data"]
+                    self.assertEqual(data["review_preparation"]["status"], "failed")
+                    self.assertIsNone(data["review_preparation"]["packet"])
+                    self.assertNotIn("private exception", recorded.stdout)
+                    receipt_id = data["receipt"]["verification_receipt_id"]
+                    before = db.read_bytes()
+                    retried = self.prepare(db, repo, task_id, receipt_id)
+                    self.assertEqual(retried.returncode, 0, retried.stdout)
+                    self.assertEqual(db.read_bytes(), before)
+                    replay = add_receipt(db, repo, task_id, generation)
+                    self.assertEqual(payload(replay)["errors"][0]["code"],
+                                     "verification_receipt_already_recorded")
+                    generation = set_target(db, repo, task_id)
+
+    def test_retry_rejects_other_task_old_generation_and_nonpassing_receipts(self):
+        with tempfile.TemporaryDirectory() as temp:
+            repo, db = initialize(Path(temp))
+            task_id = add_task(db, repo)["task_id"]
+            other_id = add_task(db, repo, title="Other task")["task_id"]
+            set_target(db, repo, other_id)
+            generation = set_target(db, repo, task_id)
+            receipt = payload(add_receipt(db, repo, task_id, generation))["data"]["receipt"]
+            receipt_id = receipt["verification_receipt_id"]
+            wrong_task = self.prepare(db, repo, other_id, receipt_id)
+            self.assertEqual(payload(wrong_task)["errors"][0]["code"], "verification_basis_stale")
+            generation = set_target(db, repo, task_id, fingerprint=FINGERPRINT_B)
+            current = payload(add_receipt(db, repo, task_id, generation, result="fail"))["data"]["receipt"]
+            for saved_id, expected in ((receipt_id, "verification_basis_stale"),
+                    (current["verification_receipt_id"], "verification_receipt_blocking")):
+                result = self.prepare(db, repo, task_id, saved_id)
+                self.assertEqual(payload(result)["errors"][0]["code"], expected)
+            # Standalone preparation is still permitted but is not a gate PASS.
+            self.assertEqual(self.prepare(db, repo, task_id).returncode, 0)
+            self.assertFalse(payload(show_task(db, repo, task_id, json_output=True))
+                             ["data"]["verification_evidence"]["gate"]["satisfied"])
+
+    def test_target_change_during_packet_observation_is_not_rebound(self):
+        with tempfile.TemporaryDirectory() as temp:
+            repo, db = initialize(Path(temp))
+            task_id = add_task(db, repo)["task_id"]
+            generation = set_target(db, repo, task_id)
+            observe = packet_module._observe_target
+            def change_target(*args, **kwargs):
+                set_target(db, repo, task_id, fingerprint=FINGERPRINT_B)
+                return observe(*args, **kwargs)
+            with mock.patch.object(packet_module, "_observe_target", side_effect=change_target):
+                recorded = add_receipt(db, repo, task_id, generation)
+            self.assertEqual(recorded.returncode, 0, recorded.stdout)
+            data = payload(recorded)["data"]
+            self.assertEqual(data["review_preparation"]["status"], "failed")
+            self.assertEqual(data["review_preparation"]["errors"][0]["code"], "verification_basis_stale")
+            self.assertEqual(data["receipt"]["source_revision"]["generation"], generation)
+            self.assertEqual(table_count(db, "verification_receipts"), 1)
+
+    def test_registration_failure_and_nonpassing_result_never_prepare(self):
+        with tempfile.TemporaryDirectory() as temp:
+            repo, db = initialize(Path(temp))
+            task_id = add_task(db, repo)["task_id"]
+            generation = set_target(db, repo, task_id)
+            with mock.patch.object(cli_module, "prepare_review_packet") as prepare:
+                failed = add_receipt(db, repo, task_id, generation + 1)
+                blocked = add_receipt(db, repo, task_id, generation, result="timeout")
+            prepare.assert_not_called()
+            self.assertFalse(payload(failed)["ok"])
+            self.assertEqual(payload(failed)["data"], {"receipt": None})
+            self.assertTrue(payload(blocked)["ok"])
+            self.assertEqual(payload(blocked)["data"]["review_preparation"]["status"], "blocked")
+
+    def test_contract_change_between_commit_and_prepare_keeps_only_the_receipt(self):
+        with tempfile.TemporaryDirectory() as temp:
+            repo, db = initialize(Path(temp))
+            task_id = add_task(db, repo)["task_id"]
+            generation = set_target(db, repo, task_id)
+            prepare = cli_module.prepare_review_packet
+            def revise_contract(*args, **kwargs):
+                edited = run_taskgov("task", "edit", task_id, "--db", str(db),
+                                     "--repo", str(repo), "--scope", "Changed accepted scope", "--json")
+                self.assertEqual(edited.returncode, 0, edited.stdout)
+                return prepare(*args, **kwargs)
+            with mock.patch.object(cli_module, "prepare_review_packet", side_effect=revise_contract):
+                recorded = add_receipt(db, repo, task_id, generation)
+            self.assertTrue(payload(recorded)["ok"])
+            preparation = payload(recorded)["data"]["review_preparation"]
+            self.assertEqual(preparation["status"], "failed")
+            self.assertIsNone(preparation["packet"])
+            self.assertEqual(table_count(db, "verification_receipts"), 1)
+
+    def test_retry_identifier_errors_are_sanitized_and_do_not_write(self):
+        with tempfile.TemporaryDirectory() as temp:
+            repo, db = initialize(Path(temp))
+            task_id = add_task(db, repo)["task_id"]
+            set_target(db, repo, task_id)
+            before = db.read_bytes()
+            for value in ("", "bad-receipt", "tg_verification_receipt_" + "a" * 17):
+                result = self.prepare(db, repo, task_id, value)
+                self.assertEqual(payload(result)["errors"][0]["code"], "invalid_verification_evidence")
+                self.assertEqual(payload(result)["data"], {})
+                self.assertEqual(db.read_bytes(), before)
+
+    def test_lost_response_recovers_existing_id_without_replaying_registration(self):
+        with tempfile.TemporaryDirectory() as temp:
+            repo, db = initialize(Path(temp))
+            task_id = add_task(db, repo)["task_id"]
+            generation = set_target(db, repo, task_id)
+            # Discard the response as if the caller lost it after the commit.
+            add_receipt(db, repo, task_id, generation)
+            shown = payload(show_task(db, repo, task_id, json_output=True))["data"]
+            saved = shown["verification_evidence"]["current_receipt"]
+            self.assertEqual((saved["result"], saved["scope_coverage"]), ("pass", "full"))
+            before = db.read_bytes()
+            retried = self.prepare(db, repo, task_id, saved["verification_receipt_id"])
+            self.assertEqual(retried.returncode, 0, retried.stdout)
+            self.assertEqual(db.read_bytes(), before)
+            self.assertEqual(table_count(db, "verification_receipts"), 1)
 
 
 if __name__ == "__main__":

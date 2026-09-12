@@ -134,7 +134,14 @@ target-project root; optional branches are read only when their condition occurs
    another run can become current; a Receipt cannot override a blocked Runner.
    See [Receipt conditions](cli_contracts.md#verification-receipt) only for their
    exact bounds or a rejected/stale basis.
-7. After verification passes, [prepare one packet and record the actual reviews](#prepare-and-record-reviews).
+   Registration `ok=true` does not mean verification passed. Continue only with
+   `data.review_preparation.status=ready`, using its `packet` directly; do not
+   run a second prepare/show/context. `blocked` or `failed` does not permit
+   review continuation. For preparation-only failure or an uncertain response,
+   follow [same-Receipt retry](cli_contracts.md#verification-receipt); never
+   blindly register the result again.
+7. [Record the actual reviews](#prepare-and-record-reviews) using the returned
+   Packet. Only the Receiptless routes need standalone Packet preparation.
 8. After the current gates pass, [complete with the appropriate evidence](#complete-work).
 
 `doctor`, completion `--check`, and `task checkpoint` are optional and absent
@@ -410,7 +417,9 @@ the old target is never upgraded in place.
 
 ### Prepare And Record Reviews
 
-After the exact-target verification requirement is satisfied, prepare one packet:
+For a Receipt-required route, use the actual `data.review_preparation.packet`
+returned with status `ready` by registration. For `not_required` or `runner_pass`
+only, after handling the exact-target requirement, prepare one packet:
 
 ```powershell
 python .agents/skills/task-governance-tool/scripts/taskgov.py review prepare <task-id> --read-only --json
@@ -418,8 +427,9 @@ python .agents/skills/task-governance-tool/scripts/taskgov.py review prepare <ta
 
 Give that actual packet to the required independent reviewers; do not rebuild
 Task/Contract/target prompts from separate reads. The command launches no
-reviewer and stores no packet/result. Use its `data.review_target`,
-`data.contract.revision`, and `data.task.task_id` for result binding.
+reviewer and stores no packet/result. Use the Packet's `review_target`,
+`contract.revision`, and `task.task_id` for result binding. Standalone
+preparation success by itself is not verification gate success.
 Follow its target-kind inspection instruction:
 
 - `git_snapshot`: matching stage-0 index against the stored base, never

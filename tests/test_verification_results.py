@@ -199,7 +199,7 @@ class VerificationResultCliTests(unittest.TestCase):
         code, stdout, stderr = self.invoke(stdin=BinaryInput(producer.stdout))
         self.assertEqual((code, stderr), (0, ""), stdout)
         envelope = json.loads(stdout)
-        self.assertEqual(set(envelope["data"]), {"receipt"})
+        self.assertEqual(set(envelope["data"]), {"receipt", "review_preparation"})
         receipt = envelope["data"]["receipt"]
         self.assertEqual(set(receipt), set(receipt_service.PUBLIC_VERIFICATION_RECEIPT_FIELDS))
         self.assertEqual((receipt["result"], receipt["duration_ms"], receipt["scope_coverage"]), ("pass", 17, "full"))
@@ -473,7 +473,7 @@ class VerificationResultCliTests(unittest.TestCase):
         self.generation = set_target(self.db, self.repo, self.task_id)
         code, stdout, stderr = self.invoke(json_output=False)
         self.assertEqual((code, stderr), (0, ""), stdout)
-        self.assertRegex(stdout, r"^Verification receipt recorded: tg_verification_receipt_[0-9a-f]{16}\nResult: pass  Coverage: full\nSource: diff_fingerprint/generation [0-9]+\n$")
+        self.assertRegex(stdout, r"^Verification receipt recorded: tg_verification_receipt_[0-9a-f]{16}\nResult: pass  Coverage: full\nSource: diff_fingerprint/generation [0-9]+\nReview preparation: ready\nTask: ")
 
 
 if __name__ == "__main__":

@@ -175,16 +175,17 @@ The deterministic Skill call graph is:
   or exact closed no-launch fallback, one `verification receipt add` call after
   the caller runs the complete governed verification against that exact target;
   the not-required and qualifying Runner-pass branches need no Receipt call;
-- one `review prepare` call instead of separate task, Contract, target, and Git
-  context reads;
+- the Packet returned by qualifying Receipt registration, or one standalone
+  `review prepare` on a Receiptless route, instead of separate Task, Contract,
+  target, and Git context reads;
 - one `review result add` to record the actual structured Receipts and Findings
   together for the packet's exact Task/Contract/target; and
 - one thin complete call.
 
 A default-off no-finding Tier 2 manual/fallback path therefore has at most
-seven governance subprocess calls; a profile-enabled path has at most eight.
-The qualifying Runner-pass path omits Verification Receipt add and remains
-bounded to six or seven calls respectively. The existing individual Receipt
+six governance subprocess calls; a profile-enabled path has at most seven.
+The qualifying Runner-pass path uses standalone preparation instead of
+Verification Receipt add and has the same bounds. The existing individual Receipt
 path remains available and takes one additional call for two Receipts without
 Findings. All counts exclude real progress updates, the external verification
 process and the two independent review model decisions; fewer registration
@@ -193,10 +194,11 @@ For a new Task whose registration and immediate start are already authorized,
 the [registration rule](#explicit-registration-and-contract-population) records
 initial `in_progress` and retains the following context read. Only the separate
 start edit disappears. With individual Review Receipts, the same new-registration
-manual flow goes from nine calls to eight (including add); with grouped Review
-Results it goes from eight to seven. Already registered/active flows gain no
-registration saving. Verification and Packet preparation remain separate calls;
-these counts do not combine a different optimization or measure token savings.
+manual flow goes from eight calls to seven (including add); with grouped Review
+Results it goes from seven to six. Already registered/active flows gain no
+registration saving. These comparisons hold automatic Packet preparation fixed
+on both sides; they isolate only the initial-start saving and do not measure
+token savings.
 `task complete --check`, `doctor`, and `task checkpoint` are absent from the
 default success path.
 

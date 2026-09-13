@@ -94,7 +94,7 @@ confirmation is required.
 | A discovery outside accepted scope | [Local handoff](references/task_workflow.md#scope-control-and-local-handoff) |
 | Exact review material ready, including `git_snapshot` before commit | [Review and completion](references/task_workflow.md#review-and-completion) |
 | Explicit Receipt/provenance or saved-history investigation | [Task audit](references/cli_contracts.md#task-audit-detail) |
-| Explicit trusted-local Runner Plan authoring | [Plan actions](references/cli_contracts.md#runner-plan-actions) and [OS limits/example](references/cli_contracts.md#runner-plan-example-and-os-limits) |
+| Explicit trusted-local Runner Plan authoring | [Plan actions, example, and OS limits](references/cli_contracts.md#runner-plan-actions) |
 | Maintenance warning after a successful write | [Continuity warnings](references/cli_contracts.md#internal-continuity-boundary) |
 
 For exact options, fields, bounds, and errors, use the matching command in the

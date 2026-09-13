@@ -19,10 +19,12 @@ detail are not prerequisites for normal Task work.
   - [`task context`](#task-context)
   - [`task effort`](#task-effort)
   - [`task show`](#task-show)
-    - [Historical investigation (`--audit`)](#task-audit-detail)
+    - [Task Read Conditions](#task-read-conditions)
+  - [Historical investigation (`--audit`)](#task-audit-detail)
   - [`task checkpoint`](#task-checkpoint)
   - [`task edit`](#task-edit)
-    - [Runner Plan actions](#runner-plan-actions)
+  - [Runner Plan actions](#runner-plan-actions)
+    - [Runner Plan example and OS limits](#runner-plan-example-and-os-limits)
   - [`task complete`](#task-complete)
 - [Verification Receipt](#verification-receipt)
 - [Local Handoff Commands](#local-handoff-commands)
@@ -726,7 +728,7 @@ for verification readiness. `current_receipt` is null or the exact-current
 Receipt's ID, result, duration, coverage, and recording time. Its absence or
 zero Receipt counts do not imply failure: a qualifying Runner pass needs no
 Receipt. Do not reconstruct the gate from internal markers or historical rows.
-For a returned blocking code or read failure, use the conditions below.
+For a returned blocking code or read failure, use [Task Read Conditions](#task-read-conditions).
 
 #### Task Read Conditions
 
@@ -750,11 +752,12 @@ another candidate. Neither mode exposes raw reviews or private reasoning.
 
 <a id="task-audit-detail"></a>
 
-#### Historical Investigation (`--audit`)
+### Historical Investigation (`--audit`)
 
 Use this mode only for explicit Receipt/provenance or completion-history
 investigation. It is bounded detail, not an exhaustive export or an additional
-normal-loop read. Use the same `<task-id>` as the normal show operation:
+normal-loop read. Use the same `<task-id>` as the [normal show operation](#task-show)
+and apply the shared [Task Read Conditions](#task-read-conditions):
 
 ```powershell
 python .agents/skills/task-governance-tool/scripts/taskgov.py task show --repo <target-project> <task-id> --audit --json
@@ -908,12 +911,17 @@ completion/review eligibility, and requires fresh gates.
 
 The existing done transition remains accepted through `task edit` and enforces
 the same validator as thin `task complete`. Prefer the thin command for normal
-completion. Read the next section only for an explicit Runner Plan action or
+completion. Read [Runner Plan Actions](#runner-plan-actions) only for an explicit Runner Plan action or
 `runner_plan_action_required`, not for ordinary metadata/state edits.
 
 <a id="runner-plan-actions"></a>
 
-#### Runner Plan Actions
+### Runner Plan Actions
+
+Use only for an explicit Plan action or `runner_plan_action_required`.
+Use the Task ID from [task edit](#task-edit); its shared Task/Contract edit
+conditions also apply to combined changes. The [example and OS limits](#runner-plan-example-and-os-limits) are part
+of this authoring guidance, not ordinary Task-edit prerequisites.
 
 An action-bearing success adds
 exactly `runner_plan_update={"action":<action>,"status":<status>}`, where status
@@ -1409,6 +1417,7 @@ and existing Runner work, without a Verification Receipt. `review_preparation`
 has `status`, `binding`, `packet`, and `errors`: `ready` carries the Packet;
 `failed` carries sanitized errors and retains the binding for read-only retry.
 Preparation failure keeps outer `ok=true`, exit zero, and the saved target.
+For preparation-only retry or a lost response, follow [bound Packet recovery](#review-prepare).
 For `receipt_required`/`blocked`, status is `not_applicable`, binding and Packet
 are null, errors empty, and no preparation is attempted. Text appends the
 status and Packet or failure/retry detail. Warnings and one existing maintenance

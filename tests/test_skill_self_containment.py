@@ -1607,6 +1607,62 @@ class ReferenceRetrievalTests(unittest.TestCase):
             self.reader().section('# A\n<a id="same"></a>\n## B\n'
                                   '<a id="same"></a>\n## C\n', 'same')
 
+    def linked_output(self, source, text, fragment):
+        targets = {_resolve(SKILL_ROOT, source, link.target)
+                   for link in _scan(source, text, []).links
+                   if link.target.endswith('#' + fragment)}
+        self.assertEqual(len(targets), 1, (source, fragment))
+        path, resolved_fragment = targets.pop()
+        return path, self.reader().read_reference(f'{path}#{resolved_fragment}', SKILL_ROOT)
+
+    def test_normal_and_conditional_links_keep_shared_conditions_reachable(self):
+        cli_path = 'references/cli_contracts.md'
+        cli_text = (SKILL_ROOT / cli_path).read_text(encoding='utf-8')
+        skill_text = (SKILL_ROOT / 'SKILL.md').read_text(encoding='utf-8')
+        _, show = self.linked_output(cli_path, cli_text, 'task-show')
+        _, edit = self.linked_output(cli_path, cli_text, 'task-edit')
+        audit_path, audit = self.linked_output('SKILL.md', skill_text, 'task-audit-detail')
+        plan_path, plan = self.linked_output('SKILL.md', skill_text, 'runner-plan-actions')
+        for source, output in ((cli_path, show), (audit_path, audit)):
+            _, conditions = self.linked_output(source, output, 'task-read-conditions')
+            for code in ('review_target_required', 'evidence_basis_stale',
+                         'verification_receipt_required', 'verification_receipt_blocking',
+                         'project_state_unreadable', 'invalid_verification_evidence',
+                         'completion_history_inconsistent'):
+                self.assertIn(code, conditions)
+            self.linked_output(source, output, 'task-audit-detail' if output == show else 'task-show')
+        self.assertIn('#### Task Read Conditions', show)
+        self.assertNotIn('completion_cycle_id', show)
+        self.assertIn('completion_cycle_id', audit)
+        self.assertNotIn('"windows_limits"', edit)
+        self.assertNotIn('task_applied_runner_plan_unconfirmed', edit)
+        self.linked_output(cli_path, edit, 'runner-plan-actions')
+        _, shared_edit = self.linked_output(plan_path, plan, 'task-edit')
+        self.assertIn('--reopen-reason', shared_edit)
+        self.assertIn('--contract-change-reason', shared_edit)
+        self.assertIn('task_applied_runner_plan_unconfirmed', plan)
+        self.assertIn('runner_plan_update_failed', plan)
+        self.assertIn('"windows_limits": {"memory_mib": 256, "process_limit": 4}', plan)
+        _, example = self.linked_output(cli_path, cli_text, 'runner-plan-example-and-os-limits')
+        self.assertIn('task_applied_runner_plan_unconfirmed', example)
+        self.assertIn('--runner-plan-action replace', example)
+
+    def test_workflow_target_link_excludes_unrelated_registration_details(self):
+        source = 'references/task_workflow.md'
+        workflow = (SKILL_ROOT / source).read_text(encoding='utf-8')
+        target_path, target = self.linked_output(source, workflow, 'review-target')
+        for value in ('git_snapshot', 'git_commit', 'diff_fingerprint', 'external_revision',
+                      '--revision', 'generation', 'runner_pass', 'receipt_required',
+                      'review_preparation', 'evidence_basis_stale'):
+            self.assertIn(value, target)
+        self.assertNotIn('Receipt Input And Provenance', target)
+        self.assertNotIn('Finding Creation And Resolution', target)
+        self.assertNotIn('Structured Finding Resolutions', target)
+        _, recovery = self.linked_output(target_path, target, 'review-prepare')
+        self.assertIn('--expected-binding', recovery)
+        self.assertIn('preparation_binding', recovery)
+        self.assertIn('review_packet_stale', recovery)
+
     def test_standalone_copy_is_read_only_from_an_unrelated_directory(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

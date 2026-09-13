@@ -409,7 +409,7 @@ Use the Task ID from `data.selected.task.task_id` in the context response.
 `git_snapshot` rejects `--revision`; unstaged/untracked material is excluded.
 For already committed or non-Git material, the existing `git_commit`,
 `diff_fingerprint`, or `external_revision` kind requires `--revision`.
-See [target input](cli_contracts.md#review-evidence) for those forms.
+See [target input](cli_contracts.md#review-target) for those forms.
 
 Every successful set advances the generation. Retain
 `data.task.review_target_generation` and apply that response's

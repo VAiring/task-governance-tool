@@ -124,7 +124,7 @@ Verification without explicit Runner opt-in remains manual.
   [isolated reopen procedure](references/task_workflow.md#reopen) for approved
   follow-up work.
 
-Read [references/reconciliation.md](references/reconciliation.md) only when
+Read [references/reconciliation.md](references/reconciliation.md#reconciliation-and-test-repair) only when
 Effort returns `data.suggested_action=reconcile_scope`, or when a test or review
 failure recurs after an attempted repair. One Effort result is one non-blocking
 episode, not one per exceeded metric. Neither trigger adds a green-path command,

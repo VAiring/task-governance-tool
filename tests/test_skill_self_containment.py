@@ -632,10 +632,10 @@ class SkillSelfContainmentTests(unittest.TestCase):
         )
 
         direct_link = (
-            "[references/reconciliation.md](references/reconciliation.md)"
+            "[references/reconciliation.md](references/reconciliation.md#reconciliation-and-test-repair)"
         )
         self.assertIn(direct_link, skill_md)
-        self.assertIn("[reconciliation.md](reconciliation.md)", workflow)
+        self.assertIn("[reconciliation.md](reconciliation.md#reconciliation-and-test-repair)", workflow)
         self.assertIn(
             "`task-governance-tool/references/reconciliation.md`",
             agents,
@@ -1578,9 +1578,24 @@ class ReferenceRetrievalTests(unittest.TestCase):
                 if not resolved:
                     continue
                 path, fragment = resolved
-                if fragment and path.startswith('references/'):
+                if path.startswith('references/'):
                     with self.subTest(source=name, link=link.target):
+                        self.assertTrue(fragment, 'Reader links require an exact section')
                         self.assertTrue(self.reader().read_reference(f'{path}#{fragment}', SKILL_ROOT))
+
+    def test_reconciliation_links_return_the_complete_guide(self):
+        guide_path = 'references/reconciliation.md'
+        guide = (SKILL_ROOT / guide_path).read_text(encoding='utf-8')
+        for name, expected_count in (('SKILL.md', 1), ('references/task_workflow.md', 2)):
+            source = (SKILL_ROOT / name).read_text(encoding='utf-8')
+            links = [resolved for link in _scan(name, source, []).links
+                     if (resolved := _resolve(SKILL_ROOT, name, link.target))
+                     and resolved[0] == guide_path]
+            self.assertEqual(len(links), expected_count)
+            for path, fragment in links:
+                with self.subTest(source=name, fragment=fragment):
+                    output = self.reader().read_reference(f'{path}#{fragment}', SKILL_ROOT)
+                    self.assertEqual(output.split('\n\n', 1)[1], guide)
 
     def test_invalid_or_unavailable_targets_do_not_fall_back(self):
         for target in ('references/cli_contracts.md', '../SKILL.md#x',

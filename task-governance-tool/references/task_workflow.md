@@ -286,7 +286,7 @@ python .agents/skills/task-governance-tool/scripts/taskgov.py task effort --repo
 Run it once at the existing verification/review boundary. Continue directly
 when `suggested_action=continue`. When
 `suggested_action=reconcile_scope`, read
-[reconciliation.md](reconciliation.md) and run one non-blocking
+[reconciliation.md](reconciliation.md#reconciliation-and-test-repair) and run one non-blocking
 session-local episode for the whole result, not one episode per exceeded
 metric. Neither action by itself asks the user, creates a handoff, expands
 acceptance, pauses, blocks, fails, or adds a completion/review gate. A separate
@@ -484,7 +484,7 @@ A current-generation `changes_requested` Receipt or unresolved high/medium
 Finding blocks completion. After a meaningful fix, set a newer target and obtain
 fresh qualifying reviews. A result that remains blocking counts as an
 unsuccessful remediation cycle. If test or review failure recurs after an
-attempted repair, read [reconciliation.md](reconciliation.md) before another
+attempted repair, read [reconciliation.md](reconciliation.md#reconciliation-and-test-repair) before another
 materially equivalent repair.
 
 ### Complete Work

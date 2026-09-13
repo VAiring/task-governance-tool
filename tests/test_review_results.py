@@ -124,18 +124,18 @@ class ReviewResultsInputTests(unittest.TestCase):
             index for index, line in enumerate(lines)
             if line.lstrip().startswith("python ") and " review result add " in line
         ]
-        prepare_lines = [
+        encoding_lines = [
             index for index, line in enumerate(lines)
-            if line.lstrip().startswith("python ") and " review prepare " in line
+            if line.lstrip().startswith("$OutputEncoding =")
         ]
-        self.assertEqual((len(result_lines), len(prepare_lines)), (1, 1))
-        self.assertLess(prepare_lines[0], result_lines[0])
+        self.assertEqual((len(result_lines), len(encoding_lines)), (1, 1))
+        self.assertLess(encoding_lines[0], result_lines[0])
         # Execute the documented transport unchanged, including its encoding
         # setup. Substitute only the native consumer so no Task or Git command
         # runs; ASCII hex reveals the exact stdin bytes without stdout recoding.
         python_path = sys.executable.replace("'", "''")
         consumer = f"& '{python_path}' -I -S -c 'import sys; print(sys.stdin.buffer.read().hex())'"
-        pipeline = "\n".join(lines[prepare_lines[0] + 1:result_lines[0]] + [consumer])
+        pipeline = "\n".join(lines[encoding_lines[0]:result_lines[0]] + [consumer])
         payload = document(receipts=[receipt(findings=[{"severity": "low", "summary": "所見も保持する 🔍"}])])
         raw = encode(payload)
         with tempfile.TemporaryDirectory() as temporary:

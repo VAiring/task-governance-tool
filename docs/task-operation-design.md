@@ -712,12 +712,19 @@ The Markdown remains the only instruction source; no duplicate prose registry
 or natural-language operation classifier is introduced.
 
 Host-access guidance is maintained once in the package CLI reference's
-`Execution Access` section, with a short conditional entry in `SKILL.md`.
+`Execution Access` section, including default-read and conditional-write host
+tool examples. Short conditional routes in `SKILL.md`, CLI invocation, the
+bounded loop's first update, and registration retain access conditions when
+read separately through the public reference reader. Host tool arguments are
+distinct from CLI/shell options; initial and later protected-storage writes use
+current effective grants, without assuming permanent access from one success.
 It describes effective host access and approval, not a taskgov permission
 resolver, ACL editor, state relocation mechanism, preflight, or new error
 mapping. Existing public inspection recovers uncertain write outcomes; existing
 transaction and post-commit owners retain their behavior. Scenario review covers
-read-only use, valid grants, required/unavailable/denied approval, unknown causes,
+read-only use, DB and other contract-enabled storage writes, initial/later writes,
+valid and expired/out-of-scope grants, unrestricted use,
+required/prohibited/unavailable/denied approval, unknown causes,
 and uncertain outcomes without introducing prose-matching runtime checks.
 
 ### Neutral Forward-Test Boundary

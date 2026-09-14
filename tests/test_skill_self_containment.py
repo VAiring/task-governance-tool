@@ -1663,6 +1663,36 @@ class ReferenceRetrievalTests(unittest.TestCase):
         self.assertIn('preparation_binding', recovery)
         self.assertIn('review_packet_stale', recovery)
 
+    def test_access_routes_retain_complete_shared_section_and_host_examples(self):
+        cli_path = 'references/cli_contracts.md'
+        cli = (SKILL_ROOT / cli_path).read_text(encoding='utf-8')
+        access = self.reader().section(cli, 'execution-access')
+        entries = [('SKILL.md', (SKILL_ROOT / 'SKILL.md').read_text(encoding='utf-8'))]
+        for path, fragment in (
+            ('references/task_workflow.md', 'bounded-operating-loop'),
+            ('references/task_workflow.md', 'registration-contract-and-ordering'),
+            (cli_path, 'invocation-and-public-inventory'),
+        ):
+            entries.append((path, self.reader().read_reference(f'{path}#{fragment}', SKILL_ROOT)))
+        for path, output in entries:
+            with self.subTest(entry=path):
+                _, linked = self.linked_output(path, output, 'execution-access')
+                self.assertTrue(linked.endswith(access))
+        # Only closed tool-call structure is checked here; applicability and
+        # permission semantics are assessed by independent scenario review.
+        examples = [json.loads(block) for block in re.findall(r'```json\n(.*?)\n```', access, re.S)]
+        self.assertEqual(len(examples), 2)
+        read, write = examples
+        self.assertEqual(set(read), {'cmd'})
+        self.assertEqual(set(write), {'cmd', 'sandbox_permissions', 'justification'})
+        self.assertEqual(write['sandbox_permissions'], 'require_escalated')
+        self.assertTrue(write['justification'])
+        for example, arguments in ((read, ['task', 'context', '--json']),
+                                   (write, ['task', 'edit', '<task-id>', '--status', 'in_progress', '--json'])):
+            tokens = example['cmd'].split()
+            self.assertEqual(tokens[:2], ['python', '.agents/skills/task-governance-tool/scripts/taskgov.py'])
+            self.assertEqual(tokens[2:], arguments)
+
     def test_standalone_copy_is_read_only_from_an_unrelated_directory(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

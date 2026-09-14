@@ -72,6 +72,9 @@ Ordinary Task use supports Windows, Linux, and macOS. The explicit trusted-local
 Runner supports the same three platforms under their OS-specific limits;
 verification without Runner opt-in remains manual. There is no OS-selection command.
 
+For known host restrictions on storage writes, see [Execution Access](#execution-access).
+Its host tool arguments are not additional taskgov or shell options.
+
 The complete public command inventory is exactly these 23 leaves:
 
 1. `setup`
@@ -168,7 +171,10 @@ preflight. Reading Skill explanations needs read access to the package files;
 read-only taskgov inspection also reads its governed project and canonical
 state. Ordinary authorized Task/evidence updates need write access under the
 physical package's canonical `state/`, including SQLite transaction files and
-bounded post-commit artifacts. Read access alone does not authorize those writes.
+bounded post-commit artifacts. This includes evidence or Viewer files only when
+their existing contracts and enabled configuration require them; it adds no
+generation or launch. Access depends on writing protected storage, not just on
+whether a command updates the DB. Read access alone does not authorize writes.
 
 Codex's default workspace-write policy protects an existing `.agents` directory
 recursively as read-only, even inside a writable workspace. Thus an installed
@@ -176,15 +182,43 @@ package's `state/` can require host approval although the project is writable.
 This is a host condition, not taskgov's permission policy or evidence that
 every installation is blocked. Use the current host's effective restrictions
 and valid existing grants; the Skill itself grants no execution permission.
+Protection persists from initial Task registration through later updates,
+evidence registration, and completion. Task approval is not a host execution
+grant, and a first approval or successful write does not permanently unlock
+storage or cover other operations or a resumed session automatically.
 
 When a known restriction affects the intended authorized write, use the host's
 formal scoped approval mechanism for that operation without first provoking a
 known-denied write. Reuse an existing grant only while it covers the same access
-and remains valid. Do not request administrator or unrestricted access by
+and remains valid, using available host/grant information rather than a new
+checker or repeated guide reads. Do not request administrator or unrestricted access by
 default, add a per-call permission check/question, or change ACLs, sandbox
-settings, or state location. If required approval is unavailable or denied,
+settings, or state location. If required approval is prohibited, unavailable or denied,
 report the affected operation and required access; do not bypass the restriction.
 Continue unrelated authorized work where possible.
+
+For a host exposing `exec_command`, these JSON objects illustrate **host tool
+arguments**, not PowerShell commands or taskgov CLI arguments. Run from the
+governed-project root; replace `<task-id>` with the selected Task's ID. Read-only
+inspection uses the normal/default execution path:
+
+```json
+{"cmd": "python .agents/skills/task-governance-tool/scripts/taskgov.py task context --json"}
+```
+
+Only when that host permits and requires its formal scoped approval mechanism
+for the authorized write, and no valid existing grant covers it:
+
+```json
+{"cmd": "python .agents/skills/task-governance-tool/scripts/taskgov.py task edit <task-id> --status in_progress --json", "sandbox_permissions": "require_escalated", "justification": "Allow this authorized Task status update to write its protected canonical state?"}
+```
+
+`sandbox_permissions` and `justification` belong to `exec_command`; never append
+them to the CLI or shell command. Hosts without this permitted interface use
+their own available formal path, or stop the affected write if none is available.
+Unrestricted writes and writes covered by a current valid grant use the ordinary
+permitted path: do not fix escalation on every write or ask for redundant approval.
+These examples do not remove host approval review or add routine permission calls.
 
 An `internal_error` alone does not identify a permission failure. Follow
 [the existing error guidance](#errors-and-privacy); do not diagnose its cause

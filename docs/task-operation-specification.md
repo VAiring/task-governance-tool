@@ -776,6 +776,11 @@ policy.
 Instruction-layer guidance distinguishes package/document read access from
 the canonical `state/` write access required for ordinary authorized Task and
 evidence updates, including their transaction and bounded maintenance files.
+The boundary is protected-storage writes, not DB mutation alone: evidence and
+Viewer writes remain conditional on their existing contracts/configuration,
+with no new generation or launch. Restrictions persist from initial registration
+through later updates, evidence, and completion; first approval or success does
+not permanently unlock storage or automatically cover another operation/resume.
 Codex's default workspace-write policy recursively protects existing `.agents`
 directories even beneath writable roots; this is a host restriction, not a
 taskgov gate. See the [official protected-path documentation](https://learn.chatgpt.com/docs/agent-approvals-security#protected-paths-in-writable-roots).
@@ -784,7 +789,12 @@ Known restrictions use the current host's formal scoped approval path only
 when needed, reusing applicable valid grants without a deliberate failed
 probe. Neither Skill instructions nor Task approval expand host permissions.
 Normal accessible operations gain no preflight, doctor, repeated question, or
-reapproval. Unavailable/denied approval prevents only the affected operation;
+reapproval or mandatory guide rereads. Use available effective host/grant
+information, not a new per-call checker. The CLI reference centralizes default
+read and conditional write-approval host tool examples; `sandbox_permissions`
+and `justification` are host tool fields, never CLI or shell options. Use them
+only where that interface is available and permitted, not for every write.
+Prohibited/unavailable/denied approval prevents only the affected operation;
 report required access without bypassing protection, moving state, changing
 ACL/sandbox settings, or demanding administrator/full access by default.
 An `internal_error` does not establish a permission cause. Unknown write

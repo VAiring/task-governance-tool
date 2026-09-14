@@ -23,6 +23,15 @@ routed by the [authority index](authority.md).
 
 ## Typed Completion Evidence
 
+Documentation status: **削除予定（計測後判断・実装維持）** for the legacy
+`task edit --completion-commit-hash` input. The implementation still accepts
+its Git-only hash and synchronizes the compatibility projection. Skill guidance
+instead uses typed `--completion-evidence-kind git_commit --completion-revision`
+with `task complete` for completion. Only usage guidance is removed now;
+execution measurement and any later implementation removal require separate
+decisions. This note is not a runtime flag, a removal authorization, or a change
+to stored evidence, help, errors, or gates.
+
 Schema v4 retains the old required/hash columns only as synchronized
 compatibility projections. Current evidence kinds and matrices are:
 
@@ -344,6 +353,17 @@ explicitly writes coverage `complete`; the column default remains
 `legacy_unknown` for schema-v15 safety.
 
 ### Native Done And Reopen Transactions
+
+Documentation status: **削除予定（計測後判断・実装維持）** for
+`task edit --status done`. It remains accepted, but Skill usage guidance routes
+completion to `task complete` with typed evidence. It is not an identical alias:
+the edit path retains its permitted combined-edit behavior and response/event
+contract, while the thin command accepts no non-completion edit. Shared validators
+and native capture remain intact. Runtime messages that still direct callers to
+`task edit --status done` (including verification/review confirmation and missing
+evidence errors in `tasks.py`) remain unchanged and are a pending cleanup item.
+Measurement and implementation deletion are later separate decisions; this
+documentation marker authorizes neither and adds no completion prerequisite.
 
 Both `task complete` and compatibility `task edit --status done` perform Git
 preflight outside SQLite and converge on one locked native capture:

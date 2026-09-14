@@ -921,7 +921,7 @@ Editable arguments are:
 --title --description --kind --lane --order --priority --status
 --blocked-reason --pause-reason --review-tier --verification --tags
 --add-note --reopen-reason --review-tier-change-reason
---completion-commit-hash --completion-evidence-kind --completion-revision
+--completion-evidence-kind --completion-revision
 --completion-evidence-reason --external-revision-approved
 --commit-not-required --verification-complete --review-complete
 --contract-scope --contract-acceptance --contract-constraints
@@ -944,7 +944,7 @@ vocabulary or grant authority.
 
 Only `in_progress|review_pending -> paused` is valid and requires
 `--pause-reason`. Resume explicitly to `in_progress`. Sequential transitions
-to active, review-pending, or done use the same predecessor rule as
+to active or review-pending use the same predecessor rule as
 `task next`.
 
 Lower a review tier only before any target has been set and provide
@@ -953,9 +953,8 @@ isolated `--status in_progress --reopen-reason <summary>` transition. Reopen
 preserves saved completion cycles as audit history, clears current
 completion/review eligibility, and requires fresh gates.
 
-The existing done transition remains accepted through `task edit` and enforces
-the same validator as thin `task complete`. Prefer the thin command for normal
-completion. Read [Runner Plan Actions](#runner-plan-actions) only for an explicit Runner Plan action or
+For completion, use [task complete](#task-complete) with its typed evidence,
+confirmations, and current gates. Read [Runner Plan Actions](#runner-plan-actions) only for an explicit Runner Plan action or
 `runner_plan_action_required`, not for ordinary metadata/state edits.
 
 <a id="runner-plan-actions"></a>

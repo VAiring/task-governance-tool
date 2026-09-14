@@ -356,6 +356,13 @@ read revalidates Task, Contract, and every target field/generation; drift fails
 
 ## Completion Evidence And Commands
 
+Skill guidance uses `task complete` and typed evidence, omitting the legacy
+hash-input and edit-to-done usage routes. Both legacy inputs remain accepted
+under the contracts below. Their documentation-only removal-pending notes live
+in the [typed-evidence design](review-completion-design.md#typed-completion-evidence)
+and [native-transaction design](review-completion-design.md#native-done-and-reopen-transactions);
+neither changes runtime help/errors or authorizes implementation deletion.
+
 Every done transition supplies exactly one:
 
 - `git_commit`: canonical existing target-project commit;

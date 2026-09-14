@@ -1730,6 +1730,15 @@ class ReferenceRetrievalTests(unittest.TestCase):
                 self.assertNotIn(title, output.splitlines())
                 self.assertIn(title, detail.splitlines())
 
+    def test_edit_guidance_routes_to_typed_completion(self):
+        source = 'references/cli_contracts.md'
+        edit = self.reader().read_reference(f'{source}#task-edit', SKILL_ROOT)
+        _, complete = self.linked_output(source, edit, 'task-complete')
+        self.assertNotIn('--completion-commit-hash', edit)
+        for option in ('--completion-evidence-kind', '--completion-revision',
+                       '--verification-complete', '--review-complete'):
+            self.assertIn(option, complete)
+
     def test_run10_representative_retrieval_comparison(self):
         # Controlled document-only cases, not a replay or total-token estimate.
         cases = (('initial', 'task_workflow.md', 'bounded-operating-loop'),

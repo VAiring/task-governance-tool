@@ -803,6 +803,14 @@ replay; post-commit warnings preserve primary success. Setup, installation,
 Runner Plan publication, Git and external writes retain their separate
 contracts. Runtime behavior, stored errors, and completion gates are unchanged.
 
+Separately authorized Git writes under known `.git` protection use the same
+effective-grant/formal host path without a known-denied probe. Each Git result
+controls its dependent action: intended staging must succeed before snapshot
+target capture, and the intended commit before completion registration. Later
+command success cannot mask prior Git failure. This is instruction guidance,
+not new Git authority, automatic Git execution, normal-path inspection, or a
+restriction on partial staging and unrelated unstaged/untracked work.
+
 ## Stored Task Read And Privacy Contract
 
 <a id="stored-task-read-and-privacy-contract"></a>

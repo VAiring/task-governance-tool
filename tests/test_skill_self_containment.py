@@ -1671,6 +1671,8 @@ class ReferenceRetrievalTests(unittest.TestCase):
         for path, fragment in (
             ('references/task_workflow.md', 'bounded-operating-loop'),
             ('references/task_workflow.md', 'registration-contract-and-ordering'),
+            ('references/task_workflow.md', 'set-the-review-target'),
+            ('references/task_workflow.md', 'complete-work'),
             (cli_path, 'invocation-and-public-inventory'),
         ):
             entries.append((path, self.reader().read_reference(f'{path}#{fragment}', SKILL_ROOT)))

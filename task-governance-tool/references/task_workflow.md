@@ -401,7 +401,9 @@ applicable subsection below for exact target, review, completion, or repair work
 ### Set The Review Target
 
 Only after the exact material is ready, stage precisely the intended Git files
-through the project's approved Git workflow, then capture the staged candidate:
+through the project's approved Git workflow. For known protected `.git` writes,
+use [execution access](cli_contracts.md#execution-access), not a known-denied
+probe. Only after the intended staging succeeds, capture the staged candidate:
 
 ```powershell
 python .agents/skills/task-governance-tool/scripts/taskgov.py review target set <task-id> --kind git_snapshot --json
@@ -493,7 +495,9 @@ materially equivalent repair.
 
 For a reviewed `git_snapshot`, create the completion commit through the
 project's approved Git workflow without changing the reviewed staged tree.
-Use the full commit ID returned by that workflow as `<hash>`:
+For known protected `.git` writes, use
+[execution access](cli_contracts.md#execution-access). Only after that commit
+succeeds, use its full commit ID as `<hash>`:
 
 ```powershell
 python .agents/skills/task-governance-tool/scripts/taskgov.py task complete <task-id> --verification-complete --review-complete --completion-evidence-kind git_commit --completion-revision <hash> --json

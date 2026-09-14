@@ -727,6 +727,13 @@ valid and expired/out-of-scope grants, unrestricted use,
 required/prohibited/unavailable/denied approval, unknown causes,
 and uncertain outcomes without introducing prose-matching runtime checks.
 
+The workflow's target and completion sections link that same access guidance
+for authorized protected Git writes. They sequence capture after successful
+intended staging and completion after successful commit, retaining each Git
+operation's result rather than the final command alone. No Git wrapper,
+permission detector, or snapshot/partial-stage validation change is introduced;
+the existing Review/Completion owners retain exact binding behavior.
+
 ### Neutral Forward-Test Boundary
 
 Neutral forward tests for this instruction layer give fresh, minimal-context

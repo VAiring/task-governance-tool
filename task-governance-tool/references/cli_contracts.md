@@ -220,6 +220,16 @@ Unrestricted writes and writes covered by a current valid grant use the ordinary
 permitted path: do not fix escalation on every write or ask for redundant approval.
 These examples do not remove host approval review or add routine permission calls.
 
+For separately authorized Git writes, a known host protection on `.git` uses
+the same applicable-grant or formal scoped execution path, without a deliberate
+denied attempt. Task approval still grants no Git operation permission. Treat
+each stage/commit result individually: a later command's success does not erase
+an earlier failure (for example, inspect `$LASTEXITCODE` immediately after each
+native Git call in PowerShell, not only after the last command). Failed staging
+stops dependent target capture; failed commit stops dependent completion. This
+adds no normal-path read, probe, or reapproval and does not reject unrelated
+unstaged/untracked work or prohibit intentional partial staging.
+
 An `internal_error` alone does not identify a permission failure. Follow
 [the existing error guidance](#errors-and-privacy); do not diagnose its cause
 from that code alone. If a write response is lost or its committed outcome is

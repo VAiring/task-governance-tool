@@ -711,6 +711,14 @@ state connection, subprocess, network, write, or recursive dependency loading.
 The Markdown remains the only instruction source; no duplicate prose registry
 or natural-language operation classifier is introduced.
 
+Conditional workflow detail uses directly linked sibling sections outside
+ordinary retrieval subtrees. Each route retains its applicability and stop
+condition; each moved section keeps its required shared-rule links. Concise
+Contract examples are likewise separate from the operative Contract rules.
+Reader implementation and output semantics stay unchanged; focused retrieval
+checks exercise the actual public output and conditional link reachability,
+with semantic scenario review rather than natural-language matching rules.
+
 Host-access guidance is maintained once in the package CLI reference's
 `Execution Access` section, including default-read and conditional-write host
 tool examples. Short conditional routes in `SKILL.md`, CLI invocation, the

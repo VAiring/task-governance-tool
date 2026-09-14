@@ -13,13 +13,17 @@ with `python3`. `<task-id>` comes from `task context` at
 - [Bounded Operating Loop](#bounded-operating-loop)
 - [Selection And Execution Boundary](#selection-and-execution-boundary)
 - [Task Contract](#task-contract)
-  - [Concise Contracts With Current Owners](#concise-contracts-with-current-owners)
+- [Concise Contracts With Current Owners](#concise-contracts-with-current-owners)
 - [Optional Effort Advisory](#optional-effort-advisory)
 - [Optional Continuation Checkpoint](#optional-continuation-checkpoint)
 - [Pause, Resume, And Block](#pause-resume-and-block)
 - [Scope Control And Local Handoff](#scope-control-and-local-handoff)
 - [Review And Completion](#review-and-completion)
+- [Repair Findings](#repair-findings)
+- [Reopen](#reopen)
 - [Taskize Or Add Scope](#taskize-or-add-scope)
+- [Explicit Mid-Task Scope Addition](#explicit-mid-task-scope-addition)
+- [Partial-Add Recovery](#partial-add-recovery)
 - [Safety Boundary](#safety-boundary)
 
 ## Source Of Truth And Install Boundary
@@ -236,7 +240,13 @@ external-operation intent or evidence, use
 idempotency metadata. Current explicit authority for the operation remains
 separate.
 
-### Concise Contracts With Current Owners
+For an illustrative concise Contract referring to existing shared owners, see
+[the authoring example](#concise-contracts-with-current-owners) only when needed.
+
+## Concise Contracts With Current Owners
+
+Use this example when authoring a concise Contract; the
+[Task Contract rules](#task-contract) still apply.
 
 A concise Contract can retain the Task-specific outcome, scope, acceptance,
 exceptions, and existing consultation conditions while referencing shared rules
@@ -397,6 +407,11 @@ durable or the user explicitly accepts forgetting risk.
 
 Follow the [normal loop](#bounded-operating-loop) for sequencing. Use the
 applicable subsection below for exact target, review, completion, or repair work.
+Current-generation `changes_requested` receipts or unresolved high/medium
+Findings stop completion; use [Repair Findings](#repair-findings). Low Findings
+alone do not stop completion; the same repair route remains available.
+Reopening a done Task requires approved
+follow-up work and the [isolated reopen procedure](#reopen).
 
 ### Set The Review Target
 
@@ -475,22 +490,6 @@ still blocks. Distinct reviewer keys prove distinct stored strings, not distinct
 people, LLMs, machines, independent processes, independence, or authenticated
 provenance. Caller declarations do not prove actual model/Skill use or review truth.
 
-### Repair Findings
-
-For returned Findings, use their actual `review_finding_id` from the successful
-registration response (batch: `data.receipts[].findings[].finding.review_finding_id`).
-After confirming fixes, record [selected resolutions](cli_contracts.md#structured-finding-resolutions);
-share a reason only for explicitly grouped IDs, never derive resolution from PASS.
-Preserve successful resolutions after a lost response and resubmit only IDs
-proven still open. Unselected Findings and original content remain unchanged.
-
-A current-generation `changes_requested` Receipt or unresolved high/medium
-Finding blocks completion. After a meaningful fix, set a newer target and obtain
-fresh qualifying reviews. A result that remains blocking counts as an
-unsuccessful remediation cycle. If test or review failure recurs after an
-attempted repair, read [reconciliation.md](reconciliation.md#reconciliation-and-test-repair) before another
-materially equivalent repair.
-
 ### Complete Work
 
 For a reviewed `git_snapshot`, create the completion commit through the
@@ -526,7 +525,24 @@ and never replaces the write's fresh revalidation.
 Maintenance warnings preserve the successful business result; follow
 [continuity warnings](cli_contracts.md#internal-continuity-boundary), not a new retry loop.
 
-### Reopen
+## Repair Findings
+
+For returned Findings, use their actual `review_finding_id` from the successful
+registration response (batch: `data.receipts[].findings[].finding.review_finding_id`).
+After confirming fixes, record [selected resolutions](cli_contracts.md#structured-finding-resolutions);
+share a reason only for explicitly grouped IDs, never derive resolution from PASS.
+Preserve successful resolutions after a lost response and resubmit only IDs
+proven still open. Unselected Findings and original content remain unchanged.
+
+A current-generation `changes_requested` Receipt or unresolved high/medium
+Finding blocks completion. After a meaningful fix, set a newer target and obtain
+fresh qualifying reviews. A result that remains blocking counts as an
+unsuccessful remediation cycle. If test or review failure recurs after an
+attempted repair, read [reconciliation.md](reconciliation.md#reconciliation-and-test-repair) before another
+materially equivalent repair.
+Resume the [normal loop](#bounded-operating-loop) with the fresh target basis.
+
+## Reopen
 
 Done Tasks are write-locked. Reopen approved follow-up work only as an isolated
 transition using the known Task ID:
@@ -549,6 +565,11 @@ and clarifications about the same outcome stay in the same event; only
 materially changed scope, order, or permission authority starts another event.
 Keep the authority envelope, candidates, fragment coupling, grouping, and Tier
 basis session-local; do not persist a classifier record, worksheet, or basis.
+For an explicit addition to active work, apply
+[the scope-addition disposition](#explicit-mid-task-scope-addition).
+On failed, partial, or uncertain registration, stop blind replay and follow
+[Partial-Add Recovery](#partial-add-recovery); successful registration needs no
+recovery read.
 
 ### One-Pass Select-Split-Merge
 
@@ -669,7 +690,11 @@ never alone selects Tier 2. Splitting cannot lower a Task's applicable floor,
 and a sibling Task's Tier does not propagate. Every final Task must satisfy its
 own gate rather than relying on later integration review.
 
-### Explicit Mid-Task Scope Addition
+## Explicit Mid-Task Scope Addition
+
+Only for an explicit scope addition to an `in_progress` or `review_pending`
+Task, use the [taskization authority and one-pass rules](#taskize-or-add-scope).
+Discovery or a failed check alone does not authorize this branch.
 
 Apply the same completion-purpose and Merge criteria once to the addition and
 its relationship to the current responsibility, then choose one disposition:
@@ -693,7 +718,10 @@ semantic Contract revision retains the existing target and evidence
 invalidation effects; `keep-current` preserves them only under ordinary
 exact-target rules.
 
-### Partial-Add Recovery
+## Partial-Add Recovery
+
+Use this branch only after failed, partial, or uncertain registration under
+the [current registration authority](#taskize-or-add-scope).
 
 A structured batch either registers every input or rolls back its entire set;
 after a confirmed rollback, correct the invalid input and resubmit that explicit

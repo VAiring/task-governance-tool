@@ -757,6 +757,14 @@ read replacement, not a normal-loop addition, prerequisite, state operation,
 permission grant, or change to the public taskgov command inventory. Local
 retrieval measurements do not establish total LLM token or elapsed-time savings.
 
+Normal retrieval keeps commands, required inputs and ID sources, ordering,
+success/stop conditions, and applicable exception routes. Scope-addition,
+registration recovery, review repair, and reopen detail can be sibling sections
+outside ordinary subtrees, linked by their triggering conditions. This changes
+document organization only: no extra normal-path call, search, reread, choice,
+reader behavior, or gate is introduced. Compare actual reader output, including
+ancestor introductions and descendants, rather than file length alone.
+
 Select-Split-Merge decisions remain instruction-layer guidance in current
 `SKILL.md` and `references/task_workflow.md`. The separately defined structured
 registration mode only transports those explicit decisions. The guidance itself

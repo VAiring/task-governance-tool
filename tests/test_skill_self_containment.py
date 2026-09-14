@@ -411,8 +411,8 @@ class SkillSelfContainmentTests(unittest.TestCase):
             "### One-Pass Select-Split-Merge",
             "### Registration, Contract, And Ordering",
             "### Review Tier Selection",
-            "### Explicit Mid-Task Scope Addition",
-            "### Partial-Add Recovery",
+            "## Explicit Mid-Task Scope Addition",
+            "## Partial-Add Recovery",
         )
         self.assertEqual(
             [taskization.count(heading) for heading in headings],
@@ -1712,6 +1712,23 @@ class ReferenceRetrievalTests(unittest.TestCase):
                     self.assertIn(b'Bounded Operating Loop', result.stdout)
                     result.stdout.decode('utf-8', errors='strict')
             self.assertEqual(tree_snapshot(root), before)
+
+    def test_conditional_workflow_sections_are_reachable_outside_normal_subtrees(self):
+        source = 'references/task_workflow.md'
+        for normal, conditional in (
+            ('taskize-or-add-scope', 'explicit-mid-task-scope-addition'),
+            ('taskize-or-add-scope', 'partial-add-recovery'),
+            ('review-and-completion', 'repair-findings'),
+            ('review-and-completion', 'reopen'),
+            ('task-contract', 'concise-contracts-with-current-owners'),
+        ):
+            with self.subTest(normal=normal, conditional=conditional):
+                output = self.reader().read_reference(f'{source}#{normal}', SKILL_ROOT)
+                _, detail = self.linked_output(source, output, conditional)
+                # Structural subtree isolation, not a wording/meaning parser.
+                title = next(line for line in detail.splitlines() if line.startswith('## '))
+                self.assertNotIn(title, output.splitlines())
+                self.assertIn(title, detail.splitlines())
 
     def test_run10_representative_retrieval_comparison(self):
         # Controlled document-only cases, not a replay or total-token estimate.

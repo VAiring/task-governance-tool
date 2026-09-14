@@ -336,10 +336,15 @@ class VerificationRunnerServiceTests(unittest.TestCase):
                     "event",
                     "verification_route",
                     "blocking_code",
+                    "review_preparation",
                 },
             )
             self.assertEqual(payload["data"]["verification_route"], "receipt_required")
             self.assertIsNone(payload["data"]["blocking_code"])
+            self.assertEqual(
+                payload["data"]["review_preparation"],
+                {"status": "not_applicable", "binding": None, "packet": None, "errors": []},
+            )
             self.assertEqual(
                 row_counts(fixture.db),
                 {
@@ -506,10 +511,15 @@ class VerificationRunnerServiceTests(unittest.TestCase):
                     "event",
                     "verification_route",
                     "blocking_code",
+                    "review_preparation",
                 },
             )
             self.assertEqual(success_data["verification_route"], "receipt_required")
             self.assertIsNone(success_data["blocking_code"])
+            self.assertEqual(
+                success_data["review_preparation"],
+                {"status": "not_applicable", "binding": None, "packet": None, "errors": []},
+            )
             self.assertEqual(
                 review_text("review.target.set", success_data),
                 review_text(

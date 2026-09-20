@@ -124,6 +124,14 @@ runtime ownership and connection/transaction rules remain in the implementation
 design. Setup, recovery policy, domain repositories, and public completion
 operations retain their separately routed owners.
 
+## Conditional State Separation Plan
+
+[Project state separation](state-layout-separation-plan.md) owns the approved
+three-unit execution boundaries and the proposed design pending isolated
+validation and adoption. It does not activate a production layout change;
+current Setup/state and other product owners remain controlling until the
+reviewed implementation switch.
+
 ## Delegated Repository Operating Guides
 
 - [Artifact authoring](artifact-authoring.md)
@@ -182,11 +190,11 @@ enforced meaning.
 
 ```json
 {
-  "schema": "taskgov-document-authority-v15",
+  "schema": "taskgov-document-authority-v16",
   "mandatory_start": ["AGENTS.md", "docs/authority.md", "live_task_contract"],
   "current": ["docs/specification.md", "docs/design.md", "plan.md", "docs/viewer-specification.md", "docs/viewer-design.md", "docs/runner-plan-authoring-specification.md", "docs/runner-plan-authoring-design.md", "docs/task-operation-specification.md", "docs/task-operation-design.md", "docs/runner-execution-specification.md", "docs/runner-execution-design.md", "docs/evidence-specification.md", "docs/evidence-design.md", "docs/review-completion-specification.md", "docs/review-completion-design.md", "docs/setup-state-specification.md", "docs/setup-state-design.md", "docs/database-specification.md", "docs/database-design.md"],
   "mixed_execution": [],
-  "conditional": [],
+  "conditional": ["docs/state-layout-separation-plan.md"],
   "history_index": "docs/history/README.md"
 }
 ```

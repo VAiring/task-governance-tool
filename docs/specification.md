@@ -29,9 +29,10 @@ Required current behavior never depends on historical text.
 
 `docs/authority.md` is the repository-visible registry and selective-read
 router. Root `AGENTS.md` plus that index are the mandatory start set; the live
-Task Contract selects the applicable current owners and sections. No execution
-or documentation-governance sequence is currently active or conditional;
-completed sequence detail is indexed non-authoritative history. History is
+Task Contract selects the applicable current owners and sections. Conditional
+execution plans are indexed there and do not replace current operational
+contracts before their reviewed activation. Completed sequence detail is
+indexed non-authoritative history. History is
 indexed by `docs/history/README.md`.
 Each captured body is immutable after its capture commit; later history work
 may append a new file and index entry but never revise an archived body.

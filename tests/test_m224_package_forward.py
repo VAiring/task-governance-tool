@@ -141,7 +141,7 @@ class M224PackageForwardTests(unittest.TestCase):
         for commit, version in QUALIFIED_OLD_EXECUTABLES:
             for origin in ("fresh", "old_fixed"):
                 with self.subTest(commit=commit, origin=origin), tempfile.TemporaryDirectory() as tmp:
-                    root = Path(tmp)
+                    root = Path(tmp).resolve(strict=True)
                     exact_package = extract_skill_at_commit(root / "exact-code", commit)
                     self.assertEqual(
                         require_repository_git("rev-parse", f"{commit}^{{commit}}")
@@ -236,7 +236,7 @@ class M224PackageForwardTests(unittest.TestCase):
         )
 
         with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary)
+            root = Path(temporary).resolve(strict=True)
             install = setup_exact_install(root / "schema-v17", SCHEMA_V17_COMMIT)
             legacy_package = file_snapshot(install.skill_root, exclude_state=True)
 

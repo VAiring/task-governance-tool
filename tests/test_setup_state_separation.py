@@ -30,7 +30,8 @@ class SetupStateSeparationTests(unittest.TestCase):
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory()
         self.addCleanup(self.temporary.cleanup)
-        self.install = make_physical_install(Path(self.temporary.name))
+        self.temporary_root = Path(self.temporary.name).resolve(strict=True)
+        self.install = make_physical_install(self.temporary_root)
         self.new_root = self.install.project_root / ".taskgov"
         self.old_root = self.install.skill_root / "state"
 
@@ -64,7 +65,7 @@ class SetupStateSeparationTests(unittest.TestCase):
         return target
 
     def reset_install(self, root):
-        self.install = make_physical_install(Path(root))
+        self.install = make_physical_install(Path(root).resolve(strict=True))
         self.new_root = self.install.project_root / ".taskgov"
         self.old_root = self.install.skill_root / "state"
 
@@ -329,7 +330,7 @@ class SetupStateSeparationTests(unittest.TestCase):
     def test_backup_only_source_observation_is_not_reselected_under_lock(self):
         for layout in ("fixed", "legacy"):
             with self.subTest(layout=layout), tempfile.TemporaryDirectory() as tmp:
-                self.install = make_physical_install(Path(tmp))
+                self.install = make_physical_install(Path(tmp).resolve(strict=True))
                 self.new_root = self.install.project_root / ".taskgov"
                 self.old_root = self.install.skill_root / "state"
                 if layout == "fixed":
@@ -564,13 +565,14 @@ class SetupStateSeparationTests(unittest.TestCase):
     def test_confirmed_relocation_sealed_and_fenced_retries_need_no_new_confirmation(self):
         for phase in ("sealed", "fenced"):
             with self.subTest(phase=phase), tempfile.TemporaryDirectory() as temporary:
-                install = make_physical_install(Path(temporary))
+                temporary_root = Path(temporary).resolve(strict=True)
+                install = make_physical_install(temporary_root)
                 original_install, original_new, original_old = self.install, self.new_root, self.old_root
                 self.install = install
                 self.new_root = install.project_root / ".taskgov"
                 self.old_root = install.skill_root / "state"
                 try:
-                    previous = Path(temporary) / "previous"
+                    previous = temporary_root / "previous"
                     previous.mkdir()
                     target = self.old_current(repo=previous)
                     preview = self.run_setup(read_only=True)
@@ -598,7 +600,7 @@ class SetupStateSeparationTests(unittest.TestCase):
     def runner_source(self, *, terminal):
         from tests.test_m242_runner_service import RunnerServiceFixture, service
 
-        root = Path(self.temporary.name) / "runner-fixture"
+        root = self.temporary_root / "runner-fixture"
         root.mkdir()
         fixture = RunnerServiceFixture(root)
         skill_parent = fixture.repo / ".agents" / "skills"
@@ -690,7 +692,7 @@ class SetupStateSeparationTests(unittest.TestCase):
         self.assertEqual(file_snapshot(self.install.project_root), before)
 
     def test_malformed_old_stage_precedes_relocation_and_preserves_bytes(self):
-        previous = Path(self.temporary.name) / "previous"
+        previous = self.temporary_root / "previous"
         previous.mkdir()
         self.old_current(repo=previous)
         residue = self.old_root / (".current-stage-" + "e" * 32)
@@ -724,7 +726,7 @@ class SetupStateSeparationTests(unittest.TestCase):
 
     def test_moved_active_state_cannot_repair_barrier_without_confirmation(self):
         self.assert_success(self.run_setup())
-        moved = Path(self.temporary.name) / "moved"
+        moved = self.temporary_root / "moved"
         shutil.copytree(self.install.project_root, moved)
         self.install = PhysicalInstall(project_root=moved, skill_root=moved / ".agents" / "skills" / "task-governance-tool")
         self.new_root = moved / ".taskgov"
@@ -806,8 +808,8 @@ class SetupStateSeparationTests(unittest.TestCase):
         from task_governance_tool.setup_state_inventory import inspect_inventory, inspect_retired_source
         from task_governance_tool.state_separation import SeparationRecord
 
-        retained = Path(self.temporary.name) / "retained"
-        old = Path(self.temporary.name) / "old"
+        retained = self.temporary_root / "retained"
+        old = self.temporary_root / "old"
         (retained / "viewer").mkdir(parents=True)
         (old / "current" / "viewer").mkdir(parents=True)
         (retained / "taskgov.sqlite").write_bytes(b"physical inventory only")
@@ -825,7 +827,7 @@ class SetupStateSeparationTests(unittest.TestCase):
     def test_domain_inventory_does_not_use_the_legacy_32_file_stage_cap(self):
         from task_governance_tool.setup_state_inventory import inspect_inventory, copy_inventory
 
-        root = Path(self.temporary.name) / "inventory"
+        root = self.temporary_root / "inventory"
         root.mkdir()
         (root / "taskgov.sqlite").write_bytes(b"inventory is physical, not a SQLite validator")
         bundles = root / "evidence" / "bundles"
@@ -834,7 +836,7 @@ class SetupStateSeparationTests(unittest.TestCase):
             (bundles / f"tg_completion_evidence_bundle_{number:016x}.json").write_bytes(b"{}")
         observed = inspect_inventory(root, strict=True)
         self.assertEqual(len(observed.files), 41)
-        destination = Path(self.temporary.name) / "inventory-copy"
+        destination = self.temporary_root / "inventory-copy"
         destination.mkdir()
         copy_inventory(observed, destination, skip_database=False)
         self.assertEqual(inspect_inventory(destination, strict=True).digest, observed.digest)

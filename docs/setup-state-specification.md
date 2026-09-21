@@ -147,14 +147,107 @@ equivalent of:
 git check-ignore --quiet --no-index -- <canonical-state-directory/>
 ```
 
-The one target-relative operand is
-`.agents/skills/task-governance-tool/state/` or self-host
-`task-governance-tool/state/`, with forward slashes and trailing slash.
+The one target-relative operand is `.taskgov/` for both an ordinary package
+and the self-host exception, with forward slashes and trailing slash.
 Exit 0 alone proves effective ignore. Exit 1, timeout, launch failure, or other
 result fails closed without output or write. Git decides parent rules,
 gitfiles, submodules, and negation; taskgov does not parse `.gitignore`, test
 trackedness, edit ignore files, cache, retry, or expose path/pattern/error
 detail. Later setup structural revalidation does not repeat this subprocess.
+
+<a id="project-state-separation"></a>
+
+## Project State Separation
+
+Generated state has one owner at `<governed-project>/.taskgov/`; the physical
+package and supported `config/` files remain in place. Changing this storage
+location alone preserves project identity, binding generation/history, schema,
+Task and evidence IDs, maintenance policy and validated artifacts. It is not
+project relocation. Actual binding changes still require the existing explicit
+confirmation flow. Historical evidence remains historical.
+
+Only explicit `setup` initializes or changes the layout. `setup --read-only`
+previews it without directories, identities, locks or temporaries. Ordinary
+commands and `doctor` never copy, fence, repair or activate state. Before the
+first cutover, stop Taskgov writers and enabled Runner processes, update the
+one physical package, then run setup in that offline maintenance window. A
+new transition lock cannot establish that every old executable has stopped.
+Taskgov does not kill processes, relax host protection or claim online cutover.
+
+Before upgrading, finish any incomplete predecessor-layout migration with the
+compatible installed pre-separation version's `setup`. This prerequisite applies
+only to validated `legacy_cleanup_pending` state or recognized owned
+`.current-stage-*` residue, including an owner-only interrupted stage. New
+separation preview and write setup preserve these inputs and return
+`setup_incomplete`; they neither execute the old deletion intent nor remove the
+owned stage. A healthy old layout needs no extra setup. Malformed or unowned
+residue retains its existing refusal, not permission for cleanup. This is
+separate from a new separation's private/fenced retry below: never run an older
+runtime against an activated new layout or use it to repair new private data.
+
+Selection is deterministic:
+
+- No state or candidate-shaped residue at either location permits fresh setup.
+- Valid package-local state requires migration, with the existing source
+  identity/schema/binding and deep artifact checks. Invalid present source,
+  ambiguous legacy state and backup-set faults retain their existing failures.
+- A private or fenced transition is setup-only. Normal calls cannot use its
+  candidate, including after directory publication but before activation.
+- Activated new state requires its matching old-path retirement marker.
+  A missing marker is a setup repair condition; an unrelated present old
+  primary or mismatched marker is a conflict, never overwritten as repair.
+  Repair validates old-location material against the recorded transition,
+  both in preview and under the existing locks before publication. Only
+  unchanged recognized retirement material is allowed; another legacy
+  candidate or unexplained migration residue is preserved and stops repair.
+  A formerly hidden old candidate is not authorized by fixed-source precedence.
+- Two usable databases, unexplained residue or mismatched identities stop
+  without merging, selecting a timestamp, deleting material or initializing.
+- After activation, a missing primary uses only new-root managed recovery.
+  An invalid present primary remains authoritative and blocking. Retained old
+  material is never a fallback or another active database.
+
+Setup retains one complete inventoried source set outside managed-backup
+pruning and prepares a private candidate below `.taskgov/.state-separation/`.
+SQLite files are snapshotted with the backup API, not copied while open.
+Existing source schema/recovery normalization runs only on the private copy.
+All durable business records and valid managed backups and projections remain
+preserved. Runner graph validation is unchanged: pending intents or actual
+attempt/quarantine trees stop cutover; migration never runs cleanup or invents
+cleanup success. A completed/restart-cleaned Runner graph already requires
+tree absence, and its rows and valid empty physical layout are preserved.
+
+After revalidation, setup atomically replaces only the validated old fixed
+primary with a prepared non-SQLite retirement marker; there is no rename-away
+gap. When the primary was absent, publication is no-replace. Fresh setup also
+publishes this marker. The complete candidate is then published no-replace at
+the new `current/`, and the transition record is activated last. Source
+retention, candidate validation and matching marker are prerequisites, not
+additional LLM choices. The public durable write labels are
+`state_layout_retire`, `state_layout_publish`, `state_layout_activate`, in that
+order. Private candidate work is not reported as a change to the live DB.
+
+Retry checks both recorded phase and actual objects. A matching marker can
+prove fencing completed before phase persistence; a matching published
+candidate can prove publication completed before activation. Changed source,
+unowned/changed residue, mismatched marker or competing publication is preserved
+and rejected. A nonempty preparation interrupted before its digests were sealed
+is also preserved and reports `setup_incomplete`, rather than deleting or
+accepting uncertain private bytes. Phase-boundary retry does not claim automatic
+reconstruction at every interior preparation step. Process interruption is supported at these boundaries; this is
+not a cross-location power-loss durability or arbitrary concurrent-old-process
+guarantee. The qualified old executables are v0.10.0
+`a9b80ce177a6dead10d51a070b76ff01f7af0294` and baseline
+`c997fb65d58c598dac20f430498edf58b612fe32`. Blocking v0.1 executable reuse is
+not supported; schema-v2 source-data migration remains supported separately.
+
+Keep the old exclusion and marker during package replacement. Retained source
+has no automatic expiry, pruning or deletion. After new writes, it is stale;
+any return to it is an explicitly selected
+[paired rollback](release-install.md#release-upgrade-and-paired-rollback), not
+error recovery. No reverse-schema migration, row merge, network operation or
+new normal-loop command is introduced. State in the writable workspace is not
+tamper-proof; existing structural, identity and evidence validation remains.
 
 <a id="recovery-candidate-validity-contract"></a>
 
@@ -285,13 +378,14 @@ binding. Every business writer revalidates ID/hash/generation under its short
 lock. An authoritative fixed primary is validated without gating ordinary
 business reads on backups or Viewer. Setup alone uses deep artifact validation.
 
-With no fixed primary, the resolver inspects only direct physical children of
+Within a package-local migration source, with no fixed primary or eligible
+fixed recovery, the resolver inspects only direct physical children of
 `state/projects`, at most 64, without traversing unknown content. Unknown
 direct children, unsafe canonical paths, links/reparse points, multiple
 candidates/identities, newer/corrupt/foreign state, or validation ambiguity
 fail closed and never fall through to fresh initialization.
 
-Source precedence is:
+Within that pre-activation source, precedence is:
 
 1. existing fixed primary, even when invalid (never replaced);
 2. valid fixed managed-backup recovery with coherent identity/binding lineage;
@@ -404,10 +498,12 @@ the read-only future `planned_writes`; invalid/expired/stale/used/not-required
 token rows have empty write arrays and mechanically observed bounded context.
 Earlier common-preflight errors retain precedence.
 
-The complete setup write vocabulary is `database_restore`,
+The setup write vocabulary includes `database_restore`,
 `database_initialize`, `migration_backup`, `database_migrate`,
 `maintenance_configure`, `legacy_state_publish`, `project_binding_update`,
-`evidence_projection_publish`, `viewer_publish`, and `legacy_state_cleanup`. Durable order is:
+`evidence_projection_publish`, `viewer_publish`, and `legacy_state_cleanup`,
+plus the three separation stages defined above. For already activated state,
+the existing ordinary setup durable order is:
 
 1. one source prefix: empty, restore, legacy publish, restore plus legacy
    publish, or initialize;
@@ -418,13 +514,15 @@ The complete setup write vocabulary is `database_restore`,
 6. Viewer publication;
 7. legacy cleanup only after fixed database, binding, maintenance, Evidence, and Viewer.
 
-Legacy work occurs in one private contained stage. Pre-publication staging is
-not reported completed. Atomic no-clobber publication makes its staged prefix
-durable together. Binding CAS appends generation and increments Viewer source
+New package-local fixed/legacy sources instead use the retained-source
+[separation procedure](#project-state-separation), not the predecessor
+delete-after-publication procedure below. Private preparation is not reported
+as a live change. Binding CAS appends generation and increments Viewer source
 generation in one short transaction; overflow/missing Viewer state/mismatch
 rolls back without consuming the token.
 
-Private stage names are:
+Predecessor stage/cleanup metadata remains a recognized compatibility input.
+Its bounded stage names are:
 
 ```text
 state/.current-stage-<32-lowercase-hex>
@@ -440,12 +538,12 @@ database/journal, up to 21 managed backups, canonical locks, Viewer HTML, and
 one recognized temporary per class; each file is at most source database plus
 16,777,216 bytes.
 
-Write setup may remove only one fully owner-validated residue, enumerating
+The predecessor cleanup primitive may remove only one fully owner-validated residue, enumerating
 explicit allowed files then proven-empty directories. Read-only setup never
 removes it. A stage without owner, invalid/mismatched owner, multiple pairs,
 unsafe/unknown/oversized content fails `setup_incomplete` with no deletion.
 
-Before publication, setup stores canonical cleanup inventory JSON:
+Its persisted cleanup inventory is canonical JSON:
 
 ```json
 {"entries":[{"kind":"file","name":"relative/posix/name","sha256":"64hex","size":0}],"v":1}
@@ -459,15 +557,17 @@ after kind/size/hash validation, then deletes verified retirement entries.
 Retry continues only the persisted subset. Both source/destination present,
 changed content, unrecorded retirement content, or collision stops; unrelated
 legacy files remain. After all recorded entries are absent, setup clears
-pending inventory metadata atomically. Normal business commands remain usable
-while valid fixed cleanup is pending.
+pending inventory metadata atomically. In the predecessor runtime, normal
+business commands remain usable while valid fixed cleanup is pending; its
+setup must complete that cleanup before separation.
 
-Preview creates no directory, lock, sidecar, temporary, backup, Evidence, Viewer, Git, or
-target change. Actual publication holds one fail-fast package transition lock
-before the backup lock, uses SQLite backup API without a source writer during
-copy, and releases writers before Viewer/cleanup. Failures before fixed
-publication remove only proven owned staging; failures after publication keep
-fixed state authoritative and legacy state intact for resumable cleanup.
+New separation neither creates this delete-intent inventory nor retires the
+original source through it. It preserves source material under its distinct
+record and domain inventories, without relaxing the predecessor limits.
+Preview creates no directory, lock, sidecar, temporary, backup, Evidence,
+Viewer, Git or target change. Activated-state relocation uses the existing
+short binding transaction; separation uses the explicit offline lock order
+and retained-source rules above.
 
 <a id="setup-recovery-evidence-backup-and-viewer-maintenance"></a>
 

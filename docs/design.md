@@ -84,7 +84,7 @@ The source repository has one development-only self-host exception: an
 explicit `--repo` may use the physical package at
 `<repo>/task-governance-tool` when the four fixed source-shape marker files and the
 fixed package entry/manifest files identify that source shape and no competing
-project-scoped install exists. It uses the same package-local state resolver;
+project-scoped install exists. It uses the same governed-root state resolver;
 it is not a second state mode or install recommendation.
 
 The supported runtime is Python 3.12 or newer for ordinary functionality on
@@ -131,6 +131,12 @@ The implementation keeps these narrow ownership boundaries:
   targets.
 - `state_transition.py` owns private staging, no-clobber publication, and
   bounded legacy cleanup.
+- `state_separation.py` owns the closed state-separation record and retirement
+  marker codec, read-only observation and exact physical publication. It does
+  not select a database or validate business records.
+- `setup_state_separation.py` owns explicit offline state separation and its
+  retry sequence. `setup_state_inventory.py` owns its domain-bounded inventory
+  and copying; neither introduces a general filesystem migration service.
 - `sqlite_connection.py` owns configured SQLite connections, registered SQL
   functions, journal/sidecar preflight, and sanitized low-level errors.
 - `project_binding_repository.py` owns validated binding snapshots and lineage,
@@ -930,6 +936,10 @@ native cases run only on their applicable host. Runner preparation covers
 native fixed-image and clean-environment observation plus exact private materialization and cleanup,
 without launching a POSIX Runner. The private process tests follow their
 [execution owner](runner-execution-design.md#private-posix-process-execution).
+The same portable selection includes state-separation record/marker
+publication, canonical resolver admission and explicit setup cutover/retry
+regressions. They exercise real temporary physical roots without changing a
+live installation; no mocked Windows result qualifies Linux/macOS behavior.
 The separate `test_os_runner_gate` module exercises public Runner dispatch
 through completion and independent Evidence reading on Linux/macOS. Platform
 selection includes it on both hosts; its native guard skips it on other hosts in the

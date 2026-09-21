@@ -122,6 +122,15 @@ schemas/layouts can be normalized in the private candidate, and prove the
 same supported cases in unit 2; no live source-schema upgrade is implicit in
 the design/prototype unit.
 
+On 2026-09-21 the user approved a bounded prerequisite for already unfinished
+predecessor migrations: complete validated legacy cleanup or an owned old
+stage with the compatible installed pre-separation setup before the package
+upgrade. New separation preserves/refuses these cases instead of duplicating
+old cleanup/retry. Healthy old sources still migrate directly, including the
+supported schema-v2 source. The current behavior is owned by the
+[separation contract](setup-state-specification.md#project-state-separation);
+this decision neither authorizes live migration nor adds a normal-loop step.
+
 ### Cutover And Old-Binary Barrier Candidate
 
 The smallest candidate worth testing is a private staged copy plus a permanent

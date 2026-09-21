@@ -4,7 +4,8 @@
 # Local research notes.
 /research.md
 
-# Skill-local runtime state and databases.
+# Generated project state and retained package-local migration material.
+/.taskgov/
 /task-governance-tool/state/
 /.agents/skills/task-governance-tool/state/
 

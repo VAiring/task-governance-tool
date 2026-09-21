@@ -20,10 +20,17 @@ if str(SCRIPTS_ROOT) not in sys.path:
 from task_governance_tool import state_resolver  # noqa: E402
 from task_governance_tool.state_resolver import (  # noqa: E402
     canonical_state_paths,
+    package_state_paths,
     observe_current_root,
     resolve_project_state,
     resolve_setup_project_state,
     resolve_staged_project_state,
+)
+from task_governance_tool.state_separation import (  # noqa: E402
+    SeparationRecord,
+    encode_separation_record,
+    retirement_marker_bytes,
+    separation_paths,
 )
 from task_governance_tool.state_transition import (  # noqa: E402
     CleanupInventoryEntry,
@@ -72,6 +79,25 @@ def _inspect_database(repo: Path):
         return _database_observation(repo, db_path)
 
     return inspect
+
+
+def _activate_synthetic_layout(skill_root: Path, repo: Path) -> None:
+    """Supply closed activation metadata for the mocked business observation."""
+
+    paths = canonical_state_paths(skill_root, repo=repo)
+    record = SeparationRecord(
+        v=1,
+        transition_id="1" * 32,
+        phase="activated",
+        project_id=PROJECT_ID,
+        candidate_digest="a" * 64,
+    )
+    record_path = separation_paths(paths.state_root).record
+    record_path.parent.mkdir(parents=True)
+    record_path.write_bytes(encode_separation_record(record))
+    old_database = package_state_paths(skill_root).database
+    old_database.parent.mkdir(parents=True)
+    old_database.write_bytes(retirement_marker_bytes(record))
 
 
 def _inventory_entry(root: Path, relative_name: str) -> CleanupInventoryEntry:
@@ -139,9 +165,10 @@ class EvidenceResolverBoundaryTests(unittest.TestCase):
             repo = root / "project"
             skill_root.mkdir()
             repo.mkdir()
-            paths = canonical_state_paths(skill_root)
+            paths = canonical_state_paths(skill_root, repo=repo)
             paths.fixed_root.mkdir(parents=True)
             paths.database.write_bytes(b"database")
+            _activate_synthetic_layout(skill_root, repo)
 
             with mock.patch.object(
                 state_resolver,
@@ -153,7 +180,7 @@ class EvidenceResolverBoundaryTests(unittest.TestCase):
                     repo=repo,
                 )
 
-            expected_root = skill_root.resolve() / "state" / "current" / "evidence"
+            expected_root = repo.resolve() / ".taskgov" / "current" / "evidence"
             self.assertEqual(paths.evidence_root, expected_root)
             self.assertEqual(paths.evidence_index, expected_root / "index.json")
             self.assertEqual(paths.evidence_bundles, expected_root / "bundles")
@@ -179,6 +206,7 @@ class EvidenceResolverBoundaryTests(unittest.TestCase):
                 staged = resolve_staged_project_state(
                     stage_root=stage_root,
                     repo=repo,
+                    skill_root=skill_root,
                 )
             self.assertIsNone(staged.error_code)
             self.assertIsNotNone(staged.target)
@@ -208,9 +236,10 @@ class EvidenceResolverBoundaryTests(unittest.TestCase):
                 repo = root / "project"
                 skill_root.mkdir()
                 repo.mkdir()
-                paths = canonical_state_paths(skill_root)
+                paths = canonical_state_paths(skill_root, repo=repo)
                 paths.fixed_root.mkdir(parents=True)
                 paths.database.write_bytes(b"database")
+                _activate_synthetic_layout(skill_root, repo)
                 paths.evidence_root.mkdir()
 
                 patcher = None

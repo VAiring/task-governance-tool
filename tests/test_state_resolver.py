@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import hashlib
+import shutil
 import sqlite3
 import sys
 import tempfile
 import unittest
 from contextlib import closing
+from dataclasses import replace
 from pathlib import Path
 
 from tests.m14_test_support import SOURCE_SCRIPTS_ROOT, create_v14_target
@@ -18,9 +20,17 @@ from task_governance_tool.state_resolver import (  # noqa: E402
     canonical_state_paths,
     consumer_error_code,
     observe_current_root,
+    package_state_paths,
+    resolve_package_project_state,
     resolve_project_state,
     resolve_setup_project_state,
     resolve_staged_project_state,
+)
+from task_governance_tool.state_separation import (  # noqa: E402
+    SeparationRecord,
+    encode_separation_record,
+    retirement_marker_bytes,
+    separation_paths,
 )
 from task_governance_tool.project_scope import PROJECT_STATE_MESSAGES  # noqa: E402
 from task_governance_tool.backup_metadata_repository import (  # noqa: E402
@@ -193,6 +203,7 @@ def resolve_layout(
         return resolve_staged_project_state(
             stage_root=target.db_path.parent,
             repo=fixture.repo,
+            skill_root=fixture.skill_root,
         )
     return resolve_setup_project_state(
         skill_root=fixture.skill_root,
@@ -202,18 +213,20 @@ def resolve_layout(
 
 class ResolverFixture:
     def __init__(self, root: Path) -> None:
+        self.root = root
         self.skill_root = root / "skill"
         self.repo = root / "project"
         self.skill_root.mkdir()
         self.repo.mkdir()
-        self.paths = canonical_state_paths(self.skill_root)
+        self.paths = canonical_state_paths(self.skill_root, repo=self.repo)
+        self.old_paths = package_state_paths(self.skill_root)
 
     def legacy_target(self, *, repo: Path | None = None) -> DatabaseTarget:
         identity = project_identity(repo or self.repo)
         return DatabaseTarget(
             project=identity,
             db_path=(
-                self.paths.legacy_projects
+                self.old_paths.legacy_projects
                 / identity.project_id
                 / "taskgov.sqlite"
             ),
@@ -238,27 +251,210 @@ class ResolverFixture:
             connection.commit()
         return target
 
-    def initialize_fixed_uuid(self) -> DatabaseTarget:
+    def initialize_fixed_uuid(self, *, old: bool = False) -> DatabaseTarget:
         current = observe_current_root(self.repo)
         result = initialize_uuid_database(
             UnboundDatabaseTarget(
                 canonical_repo=current.canonical_repo,
                 canonical_path_hash=current.canonical_path_hash,
                 display_name=current.display_name,
-                db_path=self.paths.database,
+                db_path=(self.old_paths if old else self.paths).database,
                 explicit_db=True,
             ),
             project_id_factory=lambda: UUID_HEX,
             clock=lambda: "2026-07-29T01:02:03Z",
         )
+        if not old:
+            self.write_record()
         return result.target
+
+    def write_record(
+        self,
+        record: SeparationRecord | None = None,
+        *,
+        marker: bool = True,
+    ) -> SeparationRecord:
+        record = record or SeparationRecord(
+            v=1,
+            transition_id="1234567890abcdef1234567890abcdef",
+            phase="activated",
+            project_id=UUID_PROJECT_ID,
+            candidate_digest="a" * 64,
+        )
+        record_path = separation_paths(self.paths.state_root).record
+        record_path.parent.mkdir(parents=True, exist_ok=True)
+        record_path.write_bytes(encode_separation_record(record))
+        if marker:
+            self.old_paths.database.parent.mkdir(parents=True, exist_ok=True)
+            self.old_paths.database.write_bytes(retirement_marker_bytes(record))
+        return record
 
 
 class StateResolverTests(unittest.TestCase):
+    def test_old_package_current_is_setup_source_never_an_ordinary_target(self):
+        for backup_only in (False, True):
+            with self.subTest(backup_only=backup_only), tempfile.TemporaryDirectory() as tmp:
+                fixture = ResolverFixture(Path(tmp))
+                target = fixture.initialize_fixed_uuid(old=True)
+                if backup_only:
+                    copy_sqlite(target.db_path, fixture.old_paths.backups / backup_name())
+                    target.db_path.unlink()
+                before = tree_snapshot(fixture.root)
+
+                ordinary = resolve_project_state(
+                    skill_root=fixture.skill_root, repo=fixture.repo,
+                    include_doctor_state=True, retain_read_connection=True,
+                )
+                setup = resolve_setup_project_state(
+                    skill_root=fixture.skill_root, repo=fixture.repo,
+                )
+                self.assertIsNone(ordinary.error_code)
+                self.assertEqual(consumer_error_code(ordinary), "migration_required")
+                self.assertIsNone(ordinary.target)
+                self.assertIsNone(ordinary.read_connection)
+                self.assertIsNone(ordinary.doctor_state)
+                self.assertIsNone(ordinary.fixed_recovery)
+                self.assertIsNone(ordinary.layout_migration.source)
+                self.assertEqual(setup.layout_migration.action, "migrate")
+                source = setup.layout_migration.source
+                self.assertEqual(source.paths.database, fixture.old_paths.database)
+                self.assertEqual(source.project_id, target.project.project_id)
+                self.assertEqual(source.fixed_recovery is not None, backup_only)
+                self.assertEqual(before, tree_snapshot(fixture.root))
+
+    def test_unrecorded_project_state_never_becomes_fresh_or_active(self):
+        for shape in ("current", "unknown", "competing"):
+            with self.subTest(shape=shape), tempfile.TemporaryDirectory() as tmp:
+                fixture = ResolverFixture(Path(tmp))
+                if shape in {"current", "competing"}:
+                    fixture.initialize_fixed_uuid()
+                    separation_paths(fixture.paths.state_root).record.unlink()
+                    fixture.old_paths.database.unlink()
+                    if shape == "competing":
+                        fixture.initialize_fixed_uuid(old=True)
+                else:
+                    fixture.paths.state_root.mkdir()
+                    (fixture.paths.state_root / "unknown.txt").write_bytes(b"retain")
+                before = tree_snapshot(fixture.root)
+                for resolver in (resolve_project_state, resolve_setup_project_state):
+                    resolution = resolver(skill_root=fixture.skill_root, repo=fixture.repo)
+                    self.assertEqual(resolution.error_code, "project_state_unreadable")
+                    self.assertIsNone(resolution.target)
+                    self.assertIsNone(resolution.layout_migration)
+                self.assertEqual(before, tree_snapshot(fixture.root))
+
+    def test_activated_missing_marker_is_setup_repair_only(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            fixture = ResolverFixture(Path(tmp))
+            fixture.initialize_fixed_uuid()
+            fixture.old_paths.database.unlink()
+            before = tree_snapshot(fixture.root)
+            for resolver in (resolve_project_state, resolve_setup_project_state):
+                resolution = resolver(skill_root=fixture.skill_root, repo=fixture.repo)
+                self.assertIsNone(resolution.error_code)
+                self.assertEqual(resolution.project_id, UUID_PROJECT_ID)
+                self.assertEqual(resolution.layout_migration.action, "repair_barrier")
+                self.assertEqual(consumer_error_code(resolution), "migration_required")
+                self.assertIsNone(resolution.target)
+            self.assertEqual(before, tree_snapshot(fixture.root))
+
+    def test_activated_foreign_record_or_competing_old_database_rejects(self):
+        for shape in ("identity", "old_database"):
+            with self.subTest(shape=shape), tempfile.TemporaryDirectory() as tmp:
+                fixture = ResolverFixture(Path(tmp))
+                fixture.initialize_fixed_uuid()
+                if shape == "identity":
+                    record = fixture.write_record()
+                    fixture.write_record(replace(
+                        record, project_id="tg_project_20112233445546778899aabbccddeeff",
+                    ))
+                else:
+                    fixture.old_paths.database.unlink()
+                    copy_sqlite(fixture.paths.database, fixture.old_paths.database)
+                before = tree_snapshot(fixture.root)
+                resolution = resolve_project_state(
+                    skill_root=fixture.skill_root, repo=fixture.repo,
+                    retain_read_connection=True,
+                )
+                self.assertEqual(resolution.error_code, "project_state_unreadable")
+                self.assertIsNone(resolution.target)
+                self.assertIsNone(resolution.read_connection)
+                self.assertEqual(before, tree_snapshot(fixture.root))
+
+    def test_private_old_source_is_setup_only_and_revalidated_against_record(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            fixture = ResolverFixture(Path(tmp))
+            target = fixture.initialize_legacy_v1()
+            record = SeparationRecord(
+                v=1, transition_id="1" * 32, phase="private",
+                project_id=target.project.project_id,
+                source_layout="legacy_projects_v1", source_schema_version=1,
+                source_binding_generation=0,
+                source_path_hash=target.project.canonical_path_hash,
+                source_fingerprint="b" * 64,
+            )
+            fixture.write_record(record, marker=False)
+            marker_temp = (
+                fixture.old_paths.state_root
+                / f".taskgov-retirement-{record.transition_id}.tmp"
+            )
+            marker_temp.write_bytes(retirement_marker_bytes(record))
+            before = tree_snapshot(fixture.root)
+            ordinary = resolve_project_state(skill_root=fixture.skill_root, repo=fixture.repo)
+            setup = resolve_setup_project_state(skill_root=fixture.skill_root, repo=fixture.repo)
+            source = resolve_package_project_state(skill_root=fixture.skill_root, repo=fixture.repo)
+            self.assertEqual(ordinary.layout_migration.action, "resume")
+            self.assertEqual(consumer_error_code(ordinary), "migration_required")
+            self.assertIsNone(ordinary.target)
+            self.assertIsNone(ordinary.layout_migration.source)
+            self.assertEqual(setup.layout_migration.source.project_id, source.project_id)
+            self.assertEqual(before, tree_snapshot(fixture.root))
+            fixture.write_record(replace(record, source_path_hash="c" * 64), marker=False)
+            rejected = resolve_setup_project_state(skill_root=fixture.skill_root, repo=fixture.repo)
+            self.assertEqual(rejected.error_code, "project_state_unreadable")
+
+    def test_fenced_candidate_and_fresh_private_are_never_admitted(self):
+        for phase in ("private", "fenced"):
+            with self.subTest(phase=phase), tempfile.TemporaryDirectory() as tmp:
+                fixture = ResolverFixture(Path(tmp))
+                record = SeparationRecord(
+                    v=1, transition_id="1" * 32, phase=phase,
+                    project_id=UUID_PROJECT_ID,
+                    candidate_digest="a" * 64 if phase == "fenced" else None,
+                )
+                fixture.write_record(record, marker=phase == "fenced")
+                if phase == "fenced":
+                    separation_paths(fixture.paths.state_root).candidate.mkdir()
+                before = tree_snapshot(fixture.root)
+                resolution = resolve_project_state(skill_root=fixture.skill_root, repo=fixture.repo)
+                self.assertIsNone(resolution.error_code)
+                self.assertEqual(resolution.layout_migration.action, "resume")
+                self.assertEqual(consumer_error_code(resolution), "migration_required")
+                self.assertIsNone(resolution.target)
+                self.assertEqual(before, tree_snapshot(fixture.root))
+
+    def test_staged_pre_v14_source_uses_actual_skill_and_ignores_siblings(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            fixture = ResolverFixture(Path(tmp))
+            target = fixture.initialize_legacy_v1()
+            paths = separation_paths(fixture.paths.state_root)
+            copy_sqlite(target.db_path, paths.source / "taskgov.sqlite")
+            (paths.root / "record.json").write_bytes(b"sibling is not stage authority")
+            paths.candidate.mkdir()
+            before = tree_snapshot(fixture.root)
+            resolution = resolve_staged_project_state(
+                stage_root=paths.source, repo=fixture.repo, skill_root=fixture.skill_root,
+            )
+            self.assertIsNone(resolution.error_code)
+            self.assertEqual(resolution.source_schema_version, 1)
+            self.assertEqual(resolution.target.skill_root, fixture.skill_root.resolve())
+            self.assertEqual(resolution.paths.skill_root, fixture.skill_root.resolve())
+            self.assertEqual(before, tree_snapshot(fixture.root))
+
     def test_missing_state_is_unbound_and_resolution_creates_nothing(self):
         with tempfile.TemporaryDirectory() as temporary:
             fixture = ResolverFixture(Path(temporary))
-            before = tree_snapshot(fixture.skill_root)
+            before = tree_snapshot(fixture.root)
 
             resolution = resolve_project_state(
                 skill_root=fixture.skill_root,
@@ -269,15 +465,18 @@ class StateResolverTests(unittest.TestCase):
             self.assertEqual(resolution.binding, "unbound")
             self.assertIsNone(resolution.project_id)
             self.assertIsNone(resolution.error_code)
+            self.assertIsNone(resolution.target)
+            self.assertEqual(resolution.layout_migration.action, "fresh")
+            self.assertIsNone(resolution.layout_migration.source)
             self.assertEqual(consumer_error_code(resolution), "db_not_initialized")
             self.assertEqual(
                 resolution.paths.database,
-                fixture.skill_root.resolve()
-                / "state"
+                fixture.repo.resolve()
+                / ".taskgov"
                 / "current"
                 / "taskgov.sqlite",
             )
-            self.assertEqual(before, tree_snapshot(fixture.skill_root))
+            self.assertEqual(before, tree_snapshot(fixture.root))
 
     def test_fixed_uuid_database_is_authoritative_and_matching(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -286,7 +485,7 @@ class StateResolverTests(unittest.TestCase):
             legacy = fixture.initialize_legacy_v14()
             unrelated = legacy.db_path.parent / "local.sqlite"
             unrelated.write_bytes(b"opaque")
-            before = tree_snapshot(fixture.skill_root)
+            before = tree_snapshot(fixture.root)
 
             resolution = resolve_project_state(
                 skill_root=fixture.skill_root,
@@ -299,7 +498,7 @@ class StateResolverTests(unittest.TestCase):
             self.assertEqual(resolution.stored_project.identity_scheme, "uuid_v1")
             self.assertEqual(resolution.source_schema_version, 22)
             self.assertIsNone(consumer_error_code(resolution))
-            self.assertEqual(before, tree_snapshot(fixture.skill_root))
+            self.assertEqual(before, tree_snapshot(fixture.root))
 
     def test_fixed_primary_consumer_ignores_non_authoritative_artifact_damage(self):
         for shape in ("corrupt_backup", "invalid_viewer_lock"):
@@ -320,7 +519,7 @@ class StateResolverTests(unittest.TestCase):
                     )
                     viewer_lock.parent.mkdir(parents=True)
                     viewer_lock.write_bytes(b"XX")
-                before = tree_snapshot(fixture.skill_root)
+                before = tree_snapshot(fixture.root)
 
                 consumer = resolve_project_state(
                     skill_root=fixture.skill_root,
@@ -339,7 +538,7 @@ class StateResolverTests(unittest.TestCase):
                     setup.error_code,
                     "project_state_unreadable",
                 )
-                self.assertEqual(before, tree_snapshot(fixture.skill_root))
+                self.assertEqual(before, tree_snapshot(fixture.root))
 
     def test_staged_fixed_database_resolves_matching_without_legacy_state(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -358,6 +557,7 @@ class StateResolverTests(unittest.TestCase):
             resolution = resolve_staged_project_state(
                 stage_root=stage_root,
                 repo=repo,
+                skill_root=root / "physical-skill",
             )
 
             self.assertEqual(resolution.layout, "fixed_current_v1")
@@ -395,6 +595,7 @@ class StateResolverTests(unittest.TestCase):
             resolution = resolve_staged_project_state(
                 stage_root=stage_root,
                 repo=repo,
+                skill_root=root / "physical-skill",
             )
 
             self.assertEqual(
@@ -439,6 +640,7 @@ class StateResolverTests(unittest.TestCase):
                     resolution = resolve_staged_project_state(
                         stage_root=stage_root,
                         repo=repo,
+                        skill_root=root / "physical-skill",
                     )
 
                     self.assertEqual(
@@ -472,7 +674,7 @@ class StateResolverTests(unittest.TestCase):
                             )
                             lock_path.parent.mkdir(parents=True, exist_ok=True)
                             lock_path.write_bytes(b"x" * size)
-                            before = tree_snapshot(fixture.skill_root)
+                            before = tree_snapshot(fixture.root)
 
                             resolution = resolve_layout(
                                 fixture,
@@ -498,7 +700,7 @@ class StateResolverTests(unittest.TestCase):
                                 self.assertIsNone(resolution.project_id)
                             self.assertEqual(
                                 before,
-                                tree_snapshot(fixture.skill_root),
+                                tree_snapshot(fixture.root),
                             )
 
     def test_fixed_legacy_and_stage_share_database_plus_overhead_cap(self):
@@ -522,7 +724,7 @@ class StateResolverTests(unittest.TestCase):
                         )
                         with viewer.open("wb") as stream:
                             stream.truncate(maximum + extra)
-                        before = tree_snapshot(fixture.skill_root)
+                        before = tree_snapshot(fixture.root)
 
                         resolution = resolve_layout(
                             fixture,
@@ -540,7 +742,7 @@ class StateResolverTests(unittest.TestCase):
                             self.assertIsNone(resolution.project_id)
                         self.assertEqual(
                             before,
-                            tree_snapshot(fixture.skill_root),
+                            tree_snapshot(fixture.root),
                         )
 
     def test_missing_primary_journal_rejects_fixed_legacy_and_stage_recovery(self):
@@ -555,7 +757,7 @@ class StateResolverTests(unittest.TestCase):
                     target.db_path.unlink()
                     journal = Path(f"{target.db_path}-journal")
                     journal.write_bytes(b"x")
-                    before = tree_snapshot(fixture.skill_root)
+                    before = tree_snapshot(fixture.root)
 
                     resolution = resolve_layout(
                         fixture,
@@ -570,7 +772,7 @@ class StateResolverTests(unittest.TestCase):
                     self.assertIsNone(resolution.project_id)
                     self.assertEqual(
                         before,
-                        tree_snapshot(fixture.skill_root),
+                        tree_snapshot(fixture.root),
                     )
 
     def test_fixed_database_with_different_root_is_read_only_mismatch(self):
@@ -579,7 +781,8 @@ class StateResolverTests(unittest.TestCase):
             fixture.initialize_fixed_uuid()
             moved = Path(temporary) / "moved-project"
             moved.mkdir()
-            before = tree_snapshot(fixture.skill_root)
+            shutil.copytree(fixture.paths.state_root, moved / ".taskgov")
+            before = tree_snapshot(fixture.root)
 
             resolution = resolve_project_state(
                 skill_root=fixture.skill_root,
@@ -600,15 +803,15 @@ class StateResolverTests(unittest.TestCase):
                     "run setup --read-only"
                 ),
             )
-            self.assertEqual(before, tree_snapshot(fixture.skill_root))
+            self.assertEqual(before, tree_snapshot(fixture.root))
 
     def test_invalid_fixed_primary_never_falls_back_to_valid_legacy(self):
         with tempfile.TemporaryDirectory() as temporary:
             fixture = ResolverFixture(Path(temporary))
             legacy = fixture.initialize_legacy_v14()
-            fixture.paths.fixed_root.mkdir(parents=True)
-            fixture.paths.database.write_bytes(b"not sqlite")
-            before = tree_snapshot(fixture.skill_root)
+            fixture.old_paths.fixed_root.mkdir(parents=True)
+            fixture.old_paths.database.write_bytes(b"not sqlite")
+            before = tree_snapshot(fixture.root)
 
             resolution = resolve_project_state(
                 skill_root=fixture.skill_root,
@@ -619,7 +822,7 @@ class StateResolverTests(unittest.TestCase):
             self.assertEqual(resolution.layout, "missing")
             self.assertIsNone(resolution.project_id)
             self.assertTrue(legacy.db_path.is_file())
-            self.assertEqual(before, tree_snapshot(fixture.skill_root))
+            self.assertEqual(before, tree_snapshot(fixture.root))
 
     def test_fixed_backup_only_recovery_is_observed_without_restore(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -628,7 +831,7 @@ class StateResolverTests(unittest.TestCase):
             backup = fixture.paths.backups / backup_name()
             copy_sqlite(fixture.paths.database, backup)
             fixture.paths.database.unlink()
-            before = tree_snapshot(fixture.skill_root)
+            before = tree_snapshot(fixture.root)
 
             resolution = resolve_project_state(
                 skill_root=fixture.skill_root,
@@ -644,7 +847,7 @@ class StateResolverTests(unittest.TestCase):
                 "db_not_initialized",
             )
             self.assertFalse(fixture.paths.database.exists())
-            self.assertEqual(before, tree_snapshot(fixture.skill_root))
+            self.assertEqual(before, tree_snapshot(fixture.root))
 
     def test_moved_fixed_backup_only_state_is_unreadable(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -655,7 +858,8 @@ class StateResolverTests(unittest.TestCase):
             fixture.paths.database.unlink()
             moved = Path(temporary) / "moved-project"
             moved.mkdir()
-            before = tree_snapshot(fixture.skill_root)
+            shutil.copytree(fixture.paths.state_root, moved / ".taskgov")
+            before = tree_snapshot(fixture.root)
 
             resolution = resolve_project_state(
                 skill_root=fixture.skill_root,
@@ -665,13 +869,13 @@ class StateResolverTests(unittest.TestCase):
             self.assertEqual(resolution.error_code, "project_state_unreadable")
             self.assertIsNone(resolution.project_id)
             self.assertFalse(fixture.paths.database.exists())
-            self.assertEqual(before, tree_snapshot(fixture.skill_root))
+            self.assertEqual(before, tree_snapshot(fixture.root))
 
     def test_pre_v14_legacy_database_has_implicit_generation_one(self):
         with tempfile.TemporaryDirectory() as temporary:
             fixture = ResolverFixture(Path(temporary))
             target = fixture.initialize_legacy_v1()
-            before = tree_snapshot(fixture.skill_root)
+            before = tree_snapshot(fixture.root)
 
             resolution = resolve_project_state(
                 skill_root=fixture.skill_root,
@@ -690,7 +894,7 @@ class StateResolverTests(unittest.TestCase):
                 consumer_error_code(resolution),
                 "migration_required",
             )
-            self.assertEqual(before, tree_snapshot(fixture.skill_root))
+            self.assertEqual(before, tree_snapshot(fixture.root))
 
     def test_v14_legacy_database_is_accepted_only_for_legacy_identity(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -710,12 +914,12 @@ class StateResolverTests(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as temporary:
             fixture = ResolverFixture(Path(temporary))
-            fixture.initialize_fixed_uuid()
+            fixture.initialize_fixed_uuid(old=True)
             invalid_candidate = (
-                fixture.paths.legacy_projects / UUID_PROJECT_ID
+                fixture.old_paths.legacy_projects / UUID_PROJECT_ID
             )
             invalid_candidate.parent.mkdir(parents=True)
-            fixture.paths.fixed_root.rename(invalid_candidate)
+            fixture.old_paths.fixed_root.rename(invalid_candidate)
 
             rejected = resolve_project_state(
                 skill_root=fixture.skill_root,
@@ -731,7 +935,7 @@ class StateResolverTests(unittest.TestCase):
             original.mkdir()
             target = fixture.initialize_legacy_v14(repo=original)
             moved = fixture.repo
-            before = tree_snapshot(fixture.skill_root)
+            before = tree_snapshot(fixture.root)
 
             primary = resolve_project_state(
                 skill_root=fixture.skill_root,
@@ -745,12 +949,12 @@ class StateResolverTests(unittest.TestCase):
                 consumer_error_code(primary),
                 "project_relocation_required",
             )
-            self.assertEqual(before, tree_snapshot(fixture.skill_root))
+            self.assertEqual(before, tree_snapshot(fixture.root))
 
             backup = target.db_path.parent / "backups" / backup_name()
             copy_sqlite(target.db_path, backup)
             target.db_path.unlink()
-            backup_before = tree_snapshot(fixture.skill_root)
+            backup_before = tree_snapshot(fixture.root)
 
             backup_only = resolve_project_state(
                 skill_root=fixture.skill_root,
@@ -762,7 +966,7 @@ class StateResolverTests(unittest.TestCase):
                 "project_state_unreadable",
             )
             self.assertIsNone(backup_only.project_id)
-            self.assertEqual(backup_before, tree_snapshot(fixture.skill_root))
+            self.assertEqual(backup_before, tree_snapshot(fixture.root))
 
     def test_candidate_basename_mismatch_is_project_mismatch(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -770,7 +974,7 @@ class StateResolverTests(unittest.TestCase):
             target = fixture.initialize_legacy_v14()
             wrong = target.db_path.parent.with_name("wrong-project")
             target.db_path.parent.rename(wrong)
-            before = tree_snapshot(fixture.skill_root)
+            before = tree_snapshot(fixture.root)
 
             resolution = resolve_project_state(
                 skill_root=fixture.skill_root,
@@ -779,7 +983,7 @@ class StateResolverTests(unittest.TestCase):
 
             self.assertEqual(resolution.error_code, "project_mismatch")
             self.assertIsNone(resolution.project_id)
-            self.assertEqual(before, tree_snapshot(fixture.skill_root))
+            self.assertEqual(before, tree_snapshot(fixture.root))
 
     def test_primary_present_accepts_each_bounded_backup_crash_relation(self):
         forms = (
@@ -798,9 +1002,9 @@ class StateResolverTests(unittest.TestCase):
                     if row_present:
                         insert_generation_rows(target, (metadata,))
                         set_generation_pointer(target, metadata)
-                    before = tree_snapshot(fixture.skill_root)
+                    before = tree_snapshot(fixture.root)
 
-                    resolution = resolve_project_state(
+                    resolution = resolve_setup_project_state(
                         skill_root=fixture.skill_root,
                         repo=fixture.repo,
                     )
@@ -811,7 +1015,7 @@ class StateResolverTests(unittest.TestCase):
                     )
                     self.assertEqual(resolution.binding, "matching")
                     self.assertEqual(
-                        len(resolution.legacy_source.managed_backups),
+                        len(resolution.layout_migration.source.legacy_source.managed_backups),
                         1 if artifact_present else 0,
                     )
                     self.assertEqual(
@@ -820,7 +1024,7 @@ class StateResolverTests(unittest.TestCase):
                     )
                     self.assertEqual(
                         before,
-                        tree_snapshot(fixture.skill_root),
+                        tree_snapshot(fixture.root),
                     )
 
     def test_primary_accepts_twenty_retained_plus_one_before_and_after_row(self):
@@ -833,39 +1037,39 @@ class StateResolverTests(unittest.TestCase):
                 set_generation_pointer(target, metadata)
             in_flight = backup_metadata(21)
             create_backup_artifact(target, in_flight)
-            before_pre_row = tree_snapshot(fixture.skill_root)
+            before_pre_row = tree_snapshot(fixture.root)
 
-            pre_row = resolve_project_state(
+            pre_row = resolve_setup_project_state(
                 skill_root=fixture.skill_root,
                 repo=fixture.repo,
             )
 
             self.assertEqual(pre_row.layout, "legacy_projects_v1")
             self.assertEqual(
-                len(pre_row.legacy_source.managed_backups),
+                len(pre_row.layout_migration.source.legacy_source.managed_backups),
                 21,
             )
             self.assertEqual(
                 before_pre_row,
-                tree_snapshot(fixture.skill_root),
+                tree_snapshot(fixture.root),
             )
 
             insert_generation_rows(target, (in_flight,))
             set_generation_pointer(target, in_flight)
-            before_post_row = tree_snapshot(fixture.skill_root)
-            post_row = resolve_project_state(
+            before_post_row = tree_snapshot(fixture.root)
+            post_row = resolve_setup_project_state(
                 skill_root=fixture.skill_root,
                 repo=fixture.repo,
             )
 
             self.assertEqual(post_row.layout, "legacy_projects_v1")
             self.assertEqual(
-                len(post_row.legacy_source.managed_backups),
+                len(post_row.layout_migration.source.legacy_source.managed_backups),
                 21,
             )
             self.assertEqual(
                 before_post_row,
-                tree_snapshot(fixture.skill_root),
+                tree_snapshot(fixture.root),
             )
 
     def test_missing_primary_accepts_newest_file_only_and_missing_older_rows(self):
@@ -878,24 +1082,24 @@ class StateResolverTests(unittest.TestCase):
             newest = backup_metadata(21)
             newest_path = create_backup_artifact(target, newest)
             target.db_path.unlink()
-            before = tree_snapshot(fixture.skill_root)
+            before = tree_snapshot(fixture.root)
 
-            resolution = resolve_project_state(
+            resolution = resolve_setup_project_state(
                 skill_root=fixture.skill_root,
                 repo=fixture.repo,
             )
 
             self.assertEqual(resolution.layout, "legacy_projects_v1")
             self.assertEqual(resolution.binding, "matching")
-            self.assertFalse(resolution.legacy_source.primary_present)
+            self.assertFalse(resolution.layout_migration.source.legacy_source.primary_present)
             self.assertEqual(
-                resolution.legacy_source.source_database,
+                resolution.layout_migration.source.legacy_source.source_database,
                 newest_path,
             )
             self.assertEqual(
                 [
                     item.metadata.generation_id
-                    for item in resolution.legacy_source.managed_backups
+                    for item in resolution.layout_migration.source.legacy_source.managed_backups
                 ],
                 [newest.generation_id],
             )
@@ -903,7 +1107,7 @@ class StateResolverTests(unittest.TestCase):
                 consumer_error_code(resolution),
                 "migration_required",
             )
-            self.assertEqual(before, tree_snapshot(fixture.skill_root))
+            self.assertEqual(before, tree_snapshot(fixture.root))
 
     def test_invalid_backup_generation_envelopes_fail_closed(self):
         cases = (
@@ -939,7 +1143,7 @@ class StateResolverTests(unittest.TestCase):
                             target,
                             backup_metadata(22),
                         )
-                    before = tree_snapshot(fixture.skill_root)
+                    before = tree_snapshot(fixture.root)
 
                     resolution = resolve_project_state(
                         skill_root=fixture.skill_root,
@@ -953,21 +1157,21 @@ class StateResolverTests(unittest.TestCase):
                     self.assertIsNone(resolution.project_id)
                     self.assertEqual(
                         before,
-                        tree_snapshot(fixture.skill_root),
+                        tree_snapshot(fixture.root),
                     )
 
     def test_zero_multiple_and_sixty_five_legacy_entries_are_bounded(self):
         with tempfile.TemporaryDirectory() as temporary:
             fixture = ResolverFixture(Path(temporary))
-            fixture.paths.legacy_projects.mkdir(parents=True)
+            fixture.old_paths.legacy_projects.mkdir(parents=True)
             empty = resolve_project_state(
                 skill_root=fixture.skill_root,
                 repo=fixture.repo,
             )
             self.assertEqual(empty.layout, "missing")
 
-            (fixture.paths.legacy_projects / "one").mkdir()
-            (fixture.paths.legacy_projects / "two").mkdir()
+            (fixture.old_paths.legacy_projects / "one").mkdir()
+            (fixture.old_paths.legacy_projects / "two").mkdir()
             multiple = resolve_project_state(
                 skill_root=fixture.skill_root,
                 repo=fixture.repo,
@@ -979,9 +1183,9 @@ class StateResolverTests(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as temporary:
             fixture = ResolverFixture(Path(temporary))
-            fixture.paths.legacy_projects.mkdir(parents=True)
+            fixture.old_paths.legacy_projects.mkdir(parents=True)
             for index in range(65):
-                (fixture.paths.legacy_projects / f"entry-{index:02d}").mkdir()
+                (fixture.old_paths.legacy_projects / f"entry-{index:02d}").mkdir()
             over_limit = resolve_project_state(
                 skill_root=fixture.skill_root,
                 repo=fixture.repo,
@@ -1002,9 +1206,9 @@ class StateResolverTests(unittest.TestCase):
             second = candidate / ".taskgov-restore-bbbbbbbb.tmp"
             first.write_bytes(b"one")
             second.write_bytes(b"two")
-            before = tree_snapshot(fixture.skill_root)
+            before = tree_snapshot(fixture.root)
 
-            resolution = resolve_project_state(
+            resolution = resolve_setup_project_state(
                 skill_root=fixture.skill_root,
                 repo=fixture.repo,
             )
@@ -1012,13 +1216,13 @@ class StateResolverTests(unittest.TestCase):
             self.assertEqual(resolution.layout, "legacy_projects_v1")
             self.assertNotIn(
                 first.name,
-                resolution.legacy_source.recognized_entries,
+                resolution.layout_migration.source.legacy_source.recognized_entries,
             )
             self.assertNotIn(
                 second.name,
-                resolution.legacy_source.recognized_entries,
+                resolution.layout_migration.source.legacy_source.recognized_entries,
             )
-            self.assertEqual(before, tree_snapshot(fixture.skill_root))
+            self.assertEqual(before, tree_snapshot(fixture.root))
 
     def test_one_bounded_temporary_per_class_is_recognized_read_only(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -1035,15 +1239,15 @@ class StateResolverTests(unittest.TestCase):
             for path in (root_temp, backup_temp, viewer_temp):
                 path.parent.mkdir(parents=True, exist_ok=True)
                 path.write_bytes(b"bounded")
-            before = tree_snapshot(fixture.skill_root)
+            before = tree_snapshot(fixture.root)
 
-            resolution = resolve_project_state(
+            resolution = resolve_setup_project_state(
                 skill_root=fixture.skill_root,
                 repo=fixture.repo,
             )
 
             self.assertEqual(
-                set(resolution.legacy_source.recognized_entries),
+                set(resolution.layout_migration.source.legacy_source.recognized_entries),
                 {
                     "taskgov.sqlite",
                     root_temp.name,
@@ -1051,7 +1255,7 @@ class StateResolverTests(unittest.TestCase):
                     f"viewer/{viewer_temp.name}",
                 },
             )
-            self.assertEqual(before, tree_snapshot(fixture.skill_root))
+            self.assertEqual(before, tree_snapshot(fixture.root))
 
 
 if __name__ == "__main__":

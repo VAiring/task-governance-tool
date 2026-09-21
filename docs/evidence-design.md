@@ -265,7 +265,7 @@ later completion create a fresh target, cycle, and Bundle.
 
 `CanonicalStatePaths` and `DatabaseTarget` add only `evidence_root`,
 `evidence_index`, `evidence_bundles`, and `evidence_lock` beneath
-`state/current/evidence`. The fixed Bundle filename is its Bundle ID plus
+`<governed-project>/.taskgov/current/evidence`. The fixed Bundle filename is its Bundle ID plus
 `.json`; no caller path exists. Resolution rejects links, reparse points,
 nonregular files, containment changes, DB aliases, unknown recognized names,
 and unsafe staged content. Generated Evidence remains outside manifests and

@@ -482,6 +482,8 @@ def forbidden_tracked_artifact(path: str) -> bool:
 
     if lowered == "research.md" or lowered.startswith("references/"):
         return True
+    if lowered.startswith(".taskgov/"):
+        return True
     if lowered.startswith(f"{SKILL_DIRECTORY}/state/"):
         return True
     if lowered.startswith(f"{SKILL_DIRECTORY}/config/"):

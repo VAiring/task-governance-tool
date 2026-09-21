@@ -2151,7 +2151,7 @@ class M243BSchema21CompatibilityTests(unittest.TestCase):
             captured_implementation = artifact.payload["runner_observation"][
                 "runner_implementation_digest"
             ]
-            history_before = tree_snapshot(install.skill_root / "state")
+            history_before = install.state_snapshot()
             implementation_before = capture_runner_implementation(install.skill_root)
             core = install.skill_root / "SKILL.md"
             core.write_bytes(
@@ -2228,7 +2228,7 @@ class M243BSchema21CompatibilityTests(unittest.TestCase):
                 ],
                 captured_implementation,
             )
-            self.assertEqual(tree_snapshot(install.skill_root / "state"), history_before)
+            self.assertEqual(install.state_snapshot(), history_before)
             self.assertEqual(snapshot["snapshot_version"], 4)
             self.assertEqual(snapshot["source_schema_version"], 21)
             serialized = json.dumps(snapshot, sort_keys=True)

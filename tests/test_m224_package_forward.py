@@ -10,6 +10,9 @@ from contextlib import closing
 from pathlib import Path
 
 from tests.m14_test_support import (
+    OldFixedPhysicalInstall,
+    PhysicalInstall,
+    extract_skill_at_commit,
     file_snapshot,
     json_payload,
     make_physical_install,
@@ -20,11 +23,56 @@ from tests.m14_test_support import (
 )
 from tests.m223_test_support import logical_database_digest
 from tests.m224_report_consumer import read_evidence_report
+from tests.test_m19_legacy_upgrade_rehearsal import (
+    seed_supported_local_configs,
+    supported_local_config_snapshot,
+)
 
 
 SCHEMA_V17_COMMIT = "92ab0060f3e7fa08f929cd02b3475f15c539cb0d"
 SCHEMA_V17_PACKAGE_TREE = "44c50fa7596bd544c4aaf3876b937b11cde4d470"
 TARGET_FINGERPRINT = "sha256:" + ("7" * 64)
+LAYOUT_WRITES = [
+    "state_layout_retire", "state_layout_publish", "state_layout_activate",
+]
+QUALIFIED_OLD_EXECUTABLES = (
+    ("a9b80ce177a6dead10d51a070b76ff01f7af0294", "0.10.0"),
+    ("c997fb65d58c598dac20f430498edf58b612fe32", "0.13.0"),
+)
+
+
+def replace_probe_core(
+    install: PhysicalInstall,
+    replacement: Path,
+    *,
+    retired_core: Path,
+    fixture_root: Path,
+) -> None:
+    """Exchange only temp-fixture core; retain every old core and all state/config."""
+
+    root = fixture_root.resolve(strict=True)
+    skill = install.skill_root.resolve(strict=True)
+    replacement = replacement.resolve(strict=True)
+    retired_core = retired_core.resolve(strict=False)
+    for selected in (skill, replacement, retired_core):
+        selected.relative_to(root)
+    if (
+        skill != install.project_root.resolve() / ".agents" / "skills" / "task-governance-tool"
+        or replacement == skill
+        or retired_core.exists()
+        or any((replacement / name).exists() for name in ("state", "config"))
+    ):
+        raise AssertionError("test core exchange scope is invalid")
+    retired_core.mkdir()
+    for child in tuple(skill.iterdir()):
+        if child.name not in {"state", "config"}:
+            child.rename(retired_core / child.name)
+    for child in replacement.iterdir():
+        destination = skill / child.name
+        if child.is_dir():
+            shutil.copytree(child, destination)
+        else:
+            shutil.copyfile(child, destination)
 
 
 def require_cli_json(install, *arguments: str) -> dict[str, object]:
@@ -89,6 +137,88 @@ def project_columns(
 
 
 class M224PackageForwardTests(unittest.TestCase):
+    def test_qualified_old_executables_refuse_real_setup_retirement_barrier(self):
+        for commit, version in QUALIFIED_OLD_EXECUTABLES:
+            for origin in ("fresh", "old_fixed"):
+                with self.subTest(commit=commit, origin=origin), tempfile.TemporaryDirectory() as tmp:
+                    root = Path(tmp)
+                    exact_package = extract_skill_at_commit(root / "exact-code", commit)
+                    self.assertEqual(
+                        require_repository_git("rev-parse", f"{commit}^{{commit}}")
+                        .decode("ascii").strip(),
+                        commit,
+                    )
+                    if origin == "old_fixed":
+                        old = setup_exact_install(root / "install", commit)
+                        source = require_cli_json(
+                            old, "task", "add", "--title", "Preserved old-binary barrier source",
+                            "--status", "in_progress", "--review-tier", "0",
+                        )
+                        source_task_id = source["data"]["task"]["task_id"]
+                        source_project_id = source["project_id"]
+                        config = seed_supported_local_configs(old.skill_root)
+                        original_state = old.state_snapshot()
+                        candidate = make_physical_install(root / "candidate")
+                        replace_probe_core(
+                            old, candidate.skill_root, retired_core=root / "original-core",
+                            fixture_root=root,
+                        )
+                        self.assertEqual(old.state_snapshot(), original_state)
+                        install = PhysicalInstall(old.project_root, old.skill_root)
+                    else:
+                        install = make_physical_install(root / "install")
+                        config = seed_supported_local_configs(install.skill_root)
+                        source_task_id = source_project_id = None
+
+                    activated = require_cli_json(install, "setup")
+                    self.assertEqual(activated["data"]["completed_writes"], LAYOUT_WRITES)
+                    if source_project_id is not None:
+                        self.assertEqual(activated["project_id"], source_project_id)
+                        shown = require_cli_json(install, "task", "show", source_task_id)
+                        self.assertEqual(shown["data"]["task"]["task_id"], source_task_id)
+                    added = require_cli_json(
+                        install, "task", "add", "--title", "Active new-state barrier sentinel",
+                        "--status", "in_progress", "--review-tier", "0",
+                    )
+                    sentinel_id = added["data"]["task"]["task_id"]
+                    old = OldFixedPhysicalInstall(install.project_root, install.skill_root)
+                    marker_bytes = old.db_path.read_bytes()
+                    marker = json.loads(marker_bytes)
+                    self.assertEqual(marker["kind"], "taskgov-retired-state")
+                    self.assertEqual(marker["project_id"], activated["project_id"])
+                    state_before = install.state_snapshot()
+                    self.assertEqual(supported_local_config_snapshot(install.skill_root), config)
+
+                    # Deliberate negative old-executable probe, not a rollback:
+                    # no old business DB is restored and new state stays active.
+                    saved_current_core = root / "current-core"
+                    replace_probe_core(
+                        install, exact_package, retired_core=saved_current_core,
+                        fixture_root=root,
+                    )
+                    old_version = old.run("--version")
+                    self.assertEqual(old_version.returncode, 0)
+                    self.assertEqual(old_version.stdout.strip(), f"taskgov {version}")
+                    for arguments in (("task", "current"), ("setup",)):
+                        refused = old.run(*arguments, "--repo", str(old.project_root), "--json")
+                        self.assertEqual(refused.returncode, 2, refused.stdout or refused.stderr)
+                        payload = json_payload(refused)
+                        self.assertEqual(payload["errors"][0]["code"], "project_state_unreadable")
+                        if arguments == ("setup",):
+                            self.assertEqual(payload["data"]["completed_writes"], [])
+                        self.assertEqual(old.db_path.read_bytes(), marker_bytes)
+                        self.assertEqual(install.state_snapshot(), state_before)
+                        self.assertEqual(supported_local_config_snapshot(install.skill_root), config)
+
+                    replace_probe_core(
+                        install, saved_current_core, retired_core=root / "probed-old-core",
+                        fixture_root=root,
+                    )
+                    shown = require_cli_json(install, "task", "show", sentinel_id)
+                    self.assertEqual(shown["data"]["task"]["task_id"], sentinel_id)
+                    self.assertEqual(install.state_snapshot(), state_before)
+                    self.assertEqual(supported_local_config_snapshot(install.skill_root), config)
+
     def test_schema_v17_state_migrates_without_inventing_legacy_evidence(self):
         self.assertEqual(
             require_repository_git(
@@ -222,17 +352,17 @@ class M224PackageForwardTests(unittest.TestCase):
                 source_logical_digest,
             )
 
-            preview_tree = tree_snapshot(install.skill_root / "state")
+            preview_tree = install.state_snapshot()
             preview_db_hash = file_digest(install.db_path)
             preview_logical_digest = database_logical_digest(install.db_path)
             preview = require_cli_json(install, "setup", "--read-only")
 
             self.assertEqual(preview["data"]["status"], "setup_preview")
             self.assertEqual(preview["data"]["schema_from"], 17)
-            self.assertIn("database_migrate", preview["data"]["planned_writes"])
+            self.assertEqual(preview["data"]["planned_writes"], LAYOUT_WRITES)
             self.assertEqual(preview["data"]["completed_writes"], [])
             self.assertEqual(
-                tree_snapshot(install.skill_root / "state"),
+                install.state_snapshot(),
                 preview_tree,
             )
             self.assertEqual(file_digest(install.db_path), preview_db_hash)
@@ -243,7 +373,20 @@ class M224PackageForwardTests(unittest.TestCase):
 
             migrated = require_cli_json(install, "setup")
             self.assertEqual(migrated["data"]["schema_from"], 17)
-            self.assertIn("database_migrate", migrated["data"]["completed_writes"])
+            self.assertEqual(migrated["data"]["completed_writes"], LAYOUT_WRITES)
+            # The exact old binary owns package-local paths until explicit
+            # activation. Never infer the active layout from file existence.
+            old_install = install
+            install = PhysicalInstall(old_install.project_root, old_install.skill_root)
+            self.assertNotEqual(install.db_path, old_install.db_path)
+            marker = json.loads(old_install.db_path.read_bytes())
+            self.assertEqual(marker["kind"], "taskgov-retired-state")
+            self.assertEqual(marker["project_id"], project_id)
+            retained = (
+                install.project_root / ".taskgov" / ".state-separation"
+                / "source" / "taskgov.sqlite"
+            )
+            self.assertEqual(database_logical_digest(retained), source_logical_digest)
             with closing(sqlite3.connect(install.db_path)) as connection:
                 self.assertEqual(
                     connection.execute(
@@ -372,13 +515,13 @@ class M224PackageForwardTests(unittest.TestCase):
                 self.assertNotIn(forbidden.encode("utf-8"), index_bytes)
 
             consumer_db_before = database_logical_digest(install.db_path)
-            consumer_tree_before = tree_snapshot(install.skill_root / "state")
+            consumer_tree_before = install.state_snapshot()
             report = read_evidence_report(
                 install.fixed_root / "evidence",
                 expected_project_id=project_id,
             )
             consumer_db_after = database_logical_digest(install.db_path)
-            consumer_tree_after = tree_snapshot(install.skill_root / "state")
+            consumer_tree_after = install.state_snapshot()
             self.assertEqual((report["bundle_count"], report["legacy_count"]), (0, 1))
             self.assertEqual(
                 report["code_occurrences"],

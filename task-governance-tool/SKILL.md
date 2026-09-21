@@ -31,7 +31,7 @@ Use only the [public commands and common options](references/cli_contracts.md#in
 Do not invent aliases, alternate state paths, or administrative commands.
 
 Reference reads need read access; ordinary state updates also need write access
-under the installed package's canonical `state/`. From initial registration
+under the governed project's canonical `.taskgov/`. From initial registration
 through later updates and completion, use [execution access guidance](references/cli_contracts.md#execution-access)
 when a host restriction is known or access is denied; a first approval does not
 permanently unlock protected storage.

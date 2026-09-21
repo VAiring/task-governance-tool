@@ -156,7 +156,8 @@ Install one physical package copy per governed project at exactly:
 No other ordinary stateful layout is supported. Before installation or update,
 show the complete destination and obtain explicit user approval. Do not
 overwrite an existing package without a separate update decision. During an
-approved update, do not delete generated project-local `state/`, and leave each
+approved update, preserve project-root `.taskgov/` and all package-local
+retirement/migration material under `state/`, and leave each
 existing supported project-local configuration file byte-for-byte unchanged
 while replacing packaged core files:
 
@@ -169,10 +170,11 @@ artifacts remain free of all `config/` content; that artifact exclusion does
 not extend byte preservation to unrecognized configuration files.
 
 For a Git-managed target project, the required taskgov ignore treatment is
-limited to generated Skill state and the canonical Runner Plan. These narrow
+limited to generated project state, retained old state and the canonical Runner Plan. These narrow
 target-local rules are recommended:
 
 ```gitignore
+/.taskgov/
 /.agents/skills/task-governance-tool/state/
 /.agents/skills/task-governance-tool/config/verification-runner.json
 ```
@@ -225,7 +227,18 @@ Setup reports `schema_to=22` and `evidence_status` as `not_present`, `current`,
 `evidence_projection_publish` after maintenance/binding and before
 `viewer_publish`; read-only preview plans it without writing.
 
-Version 0.13.0 retains the fixed package-local `state/current/` layout. Fresh
+The current candidate uses governed-root `.taskgov/current/` state. Upgrading
+from package-local `state/` requires the explicit offline
+[separation procedure](setup-state-specification.md#project-state-separation):
+stop writers and Runner processes, finish any recognized unfinished
+predecessor migration using the compatible installed version's setup, update
+the package, preview, then run setup. Healthy old layouts need no extra setup;
+the new version preserves and refuses pending predecessor cleanup or owned
+stage residue instead of taking over its deletion/retry work.
+It preserves a recoverable source, installs the old fixed-primary retirement
+marker and activates only the validated new candidate. Keep that marker and
+retained source during subsequent package replacement; they are not a second
+active DB. Ordinary operations add no path choice or loop command. Fresh
 write-mode setup creates one UUIDv4-backed immutable project identity and
 stores the mutable governed-directory binding separately. Explicit setup
 publishes supported schema-v1-through-v13 legacy state into the fixed layout
@@ -233,15 +246,19 @@ without changing any existing project, Task, event, Contract, handoff, review,
 completion, or maintenance identity. Same-binding migration is mechanical and
 adds no user choice.
 
-If the fixed canonical DB is missing, setup first validates fixed-layout
+Within the package-local source before activation, if the fixed canonical DB
+is missing, setup first validates fixed-layout
 managed generations. If no fixed source exists, the shared resolver may select
 exactly one eligible legacy-layout source. A same-binding legacy primary or
 legacy backup-only source is staged and published into the fixed layout;
-backup-only recovery performs `database_restore` inside that private stage
-before `legacy_state_publish` and never recreates the old legacy primary.
-Setup then continues normal
-migration/configuration/Viewer repair without overwriting an existing
-canonical DB. Invalid, foreign, linked, unrecognized, and ambiguous artifacts
+backup-only recovery runs inside the private candidate and never recreates
+the old legacy primary. The separation output reports its durable
+`state_layout_retire`, `state_layout_publish`, `state_layout_activate` prefix;
+private preparation is not reported as a live-source change.
+Migration/configuration/Viewer repair occurs inside the private candidate
+before publication/activation. Later activated-state setup uses only new-root
+managed recovery and never falls back to the old source. Recovery does not
+overwrite an existing canonical DB. Invalid, foreign, linked, unrecognized, and ambiguous artifacts
 are unchanged. If no valid matching managed candidate exists, setup fails
 instead of creating empty task state. An orphan rollback journal for a missing
 fixed primary also fails closed and remains untouched. A moved legacy
@@ -367,6 +384,13 @@ alone as rollback is unsupported. After cutover, a defect is handled by a
 forward fix and new candidate/version, not a force update, history rewrite,
 retag, or asset replacement.
 
+A layout rollback must also remove the activated new location from service as
+part of that explicitly selected compatibility point and restore the matching
+old primary in place of its marker. Never leave two active locations. After
+new business writes, the retained pre-cutover source is stale; selecting it
+can lose later work and is not automatic failure recovery. There is no
+automatic deletion/pruning of retained separation material.
+
 ## Doctor Contract
 
 `doctor` is the sole diagnostic:
@@ -409,9 +433,9 @@ separate model decision. Every changed mutation may retry due Evidence work,
 but only cycle insertion advances its source generation; Handoff-only writes
 do not change either projection generation. Setup publishes Evidence then Viewer directly.
 
-Evidence JSON is generated only at fixed `state/current/evidence/index.json`
-and `state/current/evidence/bundles/<completion-evidence-bundle-id>.json`, with
-the zero-wait lock at `state/current/evidence/taskgov-evidence.lock`. A
+Evidence JSON is generated only at fixed `.taskgov/current/evidence/index.json`
+and `.taskgov/current/evidence/bundles/<completion-evidence-bundle-id>.json`, with
+the zero-wait lock at `.taskgov/current/evidence/taskgov-evidence.lock`. A
 schema-v20-through-v22 publication uses index format 2 and adds `bundle_format_version`:
 null for `legacy_unknown`, 1 for a preserved Bundle v1, and 2 for a native
 Bundle v2. Retained source-19/20/21 Bundle bytes and digests remain unchanged.
@@ -420,7 +444,7 @@ published last, SQLite remains canonical, and JSON is never imported. Failure
 preserves the committed mutation and last-good index with one fixed warning.
 
 The Viewer is a self-contained, read-only `file://` projection under the
-ignored package state. Snapshot v4 accepts source schemas v5-v22 and includes
+ignored project state. Snapshot v4 accepts source schemas v5-v22 and includes
 the same bounded newest-first completion history as `task show --audit`; sources v5-v14
 receive an empty, legacy-incomplete history and sources v15-v22 use stored
 cycles. It omits internal event links,

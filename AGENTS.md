@@ -205,7 +205,7 @@ The product must not become:
   explicit `--repo` may use a physical package exactly at
   `<repo>/task-governance-tool` when the governing source documents and package
   manifest identify that source-tree layout and no competing project-scoped
-  install exists. It reuses the source package's existing canonical state; it
+  install exists. It uses the governed project's existing canonical state; it
   is not install guidance, relocation, or a second state mode. User-wide,
   symbolic-link, and Windows junction layouts remain unsupported.
 
@@ -286,24 +286,29 @@ The product must not become:
 
 ## SQLite And State Rules
 
-- The runtime uses only the canonical state path under the supported physical
-  package. Public `--db` is removed; storage/repository constructors and tests
+- The runtime uses only the canonical `.taskgov/` state path under the validated
+  governed project. Public `--db` is removed; storage/repository constructors and tests
   retain explicit path injection.
-- Because the MVP skill is installed per governed project, generated local
-  state belongs under the physical project-scoped package's `state/`
+- Because the skill is installed per governed project, generated local
+  state belongs under that governed project's `.taskgov/`
   directory. The public CLI does not expose an alternate state path.
-- One shared storage resolver owns the canonical package-local database,
+- One shared storage resolver owns the canonical project-local database,
   backup, and Viewer targets. Feature code must not reconstruct a project ID
   or state path, and approved future layout contracts remain inactive until
   their owning resolver-activation unit is complete.
-- Generated state under a project-scoped install must be ignored or otherwise
+- Package-local state is only a supported migration source and retirement
+  boundary. Only explicit setup may perform the separation/repair owned by
+  the current Setup/state contract; ordinary operations never rewrite that
+  material or select it as a fallback. Keep code/config and generated-state
+  permissions distinct.
+- Generated state under the governed project must be ignored or otherwise
   kept out of source commits before `setup` or other write commands are used.
 - The canonical static Viewer produced by explicit setup and opted-in bounded
-  post-commit maintenance lives under that ignored project-specific `state/`
+  post-commit maintenance lives under that ignored project-specific `.taskgov/`
   directory. It is a local projection of SQLite state, not an additional
   source of truth, and must remain out of source commits and release artifacts.
 - The optional `config/viewer.json` presentation policy is separate from
-  SQLite backup policy and generated `state/`. Its absence is a valid
+  SQLite backup policy and generated `.taskgov/`. Its absence is a valid
   disabled state; taskgov never creates it as a setup side effect.
 - The SQLite database is a helper state store, not the source of truth for a
   target project's decisions.
@@ -349,12 +354,15 @@ The product must not become:
   target-project mutation and requires explicit user approval for that
   destination. Ordinary writes use only the canonical generated database, and
   setup or bounded post-commit maintenance may publish only the canonical
-  Viewer under the supported package's ignored `state/` directory. Inspection
+  Viewer under the governed project's ignored `.taskgov/` directory. Inspection
   alone never authorizes either write.
+  Explicit setup's additional source-retention and retirement writes are
+  limited to the current Setup/state separation contract; package inspection
+  or an ordinary Task write does not authorize them.
 - A governed target remains the project-identity and state-ownership root when
   it is nested inside an enclosing Git worktree. When the target or an ancestor
   has a Git administrative marker, setup and doctor must use one bounded,
-  shell-free effective-ignore check for the canonical package `state/`
+  shell-free effective-ignore check for the canonical project `.taskgov/`
   directory. Only an ignored result is accepted; an unignored, timed-out, or
   uninspectable result fails closed with the existing sanitized
   `state_ignore_required` contract and no target-project write. A physical

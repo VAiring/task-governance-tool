@@ -83,6 +83,7 @@ class PosixRunnerPublicGateTests(unittest.TestCase):
         self._git("config", "commit.gpgsign", "false")
         self._git("config", "core.hooksPath", str(self.repo / ".git" / "disabled-hooks"))
         (self.repo / ".gitignore").write_text(
+            "/.taskgov/\n"
             "/.agents/skills/task-governance-tool/state/\n"
             "/.agents/skills/task-governance-tool/config/verification-runner.json\n",
             encoding="utf-8",
@@ -235,7 +236,7 @@ class PosixRunnerPublicGateTests(unittest.TestCase):
 
     def _target_snapshot(self):
         # Include every nongenerated project/package file, as well as Git index/refs.
-        state = self.install.skill_root / "state"
+        state = self.repo / ".taskgov"
         files = {
             path.relative_to(self.repo).as_posix(): path.read_bytes()
             for path in self.repo.rglob("*")

@@ -12545,12 +12545,19 @@ def initialize_uuid_database(
     )
     current_directory_existed = db_path.parent.exists()
     state_directory_existed = db_path.parent.parent.exists()
+    project_state_root = Path(canonical_repo) / ".taskgov"
+    supported_location = (
+        # Retain the established explicitly injected repository/test seam.
+        (db_path.parent.name.casefold() == "current"
+         and db_path.parent.parent.name.casefold() == "state")
+        or db_path == project_state_root / "current" / "taskgov.sqlite"
+        or db_path == project_state_root / ".state-separation" / "candidate" / "taskgov.sqlite"
+    )
     if (
         target.explicit_db is not True
         or not db_path.is_absolute()
         or db_path.name.casefold() != "taskgov.sqlite"
-        or db_path.parent.name.casefold() != "current"
-        or db_path.parent.parent.name.casefold() != "state"
+        or not supported_location
     ):
         raise StorageError("internal_error", "fixed database target is invalid")
     try:

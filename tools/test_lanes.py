@@ -41,6 +41,9 @@ PLATFORM_SMOKE_MODULES = (
     "test_os_runner_preparation",
     "test_os_runner_process",
     "test_os_runner_process_failures",
+    "test_setup_state_separation",
+    "test_state_resolver",
+    "test_state_separation",
     "test_state_transition_primitives",
     "test_task_validation",
 )
@@ -54,6 +57,8 @@ PLATFORM_RUNNER_GATE_TEST_IDS = (
     "test_posix_pending_cleanup_only_and_stale_target_refuse_completion",
 )
 PLATFORM_ORDINARY_TEST_IDS = (
+    "test_m224_package_forward.M224PackageForwardTests."
+    "test_qualified_old_executables_refuse_real_setup_retirement_barrier",
     "test_m14_integrated_acceptance.M14IntegratedAcceptanceTests."
     "test_setup_doctor_and_default_flow_are_integrated_and_target_safe",
     "test_m224_evidence_acceptance.M224EvidenceAcceptanceTests."
@@ -202,7 +207,9 @@ LANE_MODULES: dict[str, tuple[str, ...]] = {
         "test_setup",
         "test_setup_backup",
         "test_setup_recovery",
+        "test_setup_state_separation",
         "test_state_resolver",
+        "test_state_separation",
         "test_state_transition_primitives",
         "test_verification_receipts",
         "test_verification_results",

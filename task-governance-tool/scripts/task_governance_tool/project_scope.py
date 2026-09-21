@@ -82,8 +82,8 @@ PACKAGE_REQUIRED_FILES = (
     Path("scripts/taskgov.py"),
 )
 STATE_IGNORE_OPERANDS = {
-    "ordinary": ".agents/skills/task-governance-tool/state/",
-    "source": "task-governance-tool/state/",
+    "ordinary": ".taskgov/",
+    "source": ".taskgov/",
 }
 
 
@@ -207,14 +207,15 @@ def _required_files_are_regular(root: Path, relative_paths: Iterable[Path]) -> b
     return True
 
 
-def _state_path_is_valid(skill_root: Path) -> bool:
-    paths = canonical_state_paths(skill_root)
+def _state_path_is_valid(skill_root: Path, repo: Path) -> bool:
+    paths = canonical_state_paths(skill_root, repo=repo)
     state_root = paths.state_root
     current_root = paths.fixed_root
     database_path = paths.database
     try:
         resolved_state = state_root.resolve(strict=False)
         resolved_current = current_root.resolve(strict=False)
+        resolved_state.relative_to(repo.resolve(strict=False))
         resolved_current.relative_to(resolved_state)
     except (OSError, RuntimeError, ValueError):
         return False
@@ -380,7 +381,7 @@ def inspect_project_scope(
 
     scope: ProjectScope | None = None
     if canonical_repo is not None and layout is not None:
-        if not _state_path_is_valid(physical_skill_root):
+        if not _state_path_is_valid(physical_skill_root, canonical_repo):
             add_issue("state_path_invalid")
         scope = ProjectScope(
             skill_root=physical_skill_root,

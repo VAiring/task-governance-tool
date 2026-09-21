@@ -133,7 +133,7 @@ class ReleaseContractCheckerTests(unittest.TestCase):
         self.assertEqual(result.runtime, runtime)
         self.assertEqual(len(runtime.public_commands), 23)
         self.assertEqual(result.ci_python_versions, ("3.12", "3.14"))
-        self.assertEqual(result.manifest_core_count, 97)
+        self.assertEqual(result.manifest_core_count, 100)
         manifest = json.loads(
             (SKILL_ROOT / "release-manifest.json").read_text(encoding="utf-8")
         )
@@ -351,6 +351,53 @@ class ReleaseContractCheckerTests(unittest.TestCase):
                 result = check_fixture(fixture)
 
                 self.assertIn("documented_runtime_mismatch", issue_codes(result))
+
+    def test_project_root_generated_state_is_excluded_from_tracked_source(self):
+        forbidden = (
+            ".taskgov/current/evidence/index.json",
+            ".taskgov/current/evidence/bundles/example.json",
+            ".taskgov/taskgov-state.lock",
+            ".taskgov/transition.json",
+            ".taskgov/retained-source/inventory",
+            ".taskgov/current/verification-runner/attempts/example/input/README",
+            ".taskgov/current/verification-runner/quarantine/example/record.json",
+            "././.TASKGOV/current/write-lock",
+            r".\.TASKGOV\current\evidence\index.json",
+        )
+        for relative in forbidden:
+            with self.subTest(relative=relative):
+                self.assertTrue(forbidden_tracked_artifact(relative))
+
+        with tempfile.TemporaryDirectory() as temporary:
+            fixture = copy_release_fixture(Path(temporary))
+            result = check_fixture(
+                fixture, inventory=(*tracked_paths(), *forbidden)
+            )
+            self.assertEqual(
+                {
+                    issue.subject
+                    for issue in result.issues
+                    if issue.code == "generated_artifact_tracked"
+                },
+                {relative.replace("\\", "/") for relative in forbidden},
+            )
+
+    def test_project_state_exclusion_allows_similarly_named_source(self):
+        allowed = (
+            ".taskgov.json",
+            ".taskgov-template/transition.json",
+            "taskgov/current/evidence/index.json",
+            "docs/.taskgov-format.md",
+            "tests/fixtures/.taskgov/transition.json",
+        )
+        for relative in allowed:
+            with self.subTest(relative=relative):
+                self.assertFalse(forbidden_tracked_artifact(relative))
+
+        with tempfile.TemporaryDirectory() as temporary:
+            fixture = copy_release_fixture(Path(temporary))
+            result = check_fixture(fixture, inventory=(*tracked_paths(), *allowed))
+            self.assertTrue(result.ok, result.issues)
 
     def test_generated_tracked_artifacts_fail_but_untracked_state_does_not(self):
         forbidden = (

@@ -514,6 +514,8 @@ class TestLanePolicyTests(unittest.TestCase):
                 "test_cli_help", "test_os_artifact_operations",
                 "test_os_runner_preparation",
                 "test_os_runner_process", "test_os_runner_process_failures",
+                "test_setup_state_separation", "test_state_resolver",
+                "test_state_separation",
                 "test_state_transition_primitives", "test_task_validation",
             ),
         )
@@ -552,6 +554,11 @@ class TestLanePolicyTests(unittest.TestCase):
             ),
         )
         self.assertTrue(PLATFORM_ORDINARY_TEST_IDS)
+        self.assertIn(
+            "test_m224_package_forward.M224PackageForwardTests."
+            "test_qualified_old_executables_refuse_real_setup_retirement_barrier",
+            PLATFORM_ORDINARY_TEST_IDS,
+        )
         for platform in ("win32", "linux", "darwin"):
             with self.subTest(platform=platform):
                 expected = tuple(

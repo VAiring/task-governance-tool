@@ -170,22 +170,19 @@ Use this section for a known host restriction or access failure, not a normal
 preflight. Reading Skill explanations needs read access to the package files;
 read-only taskgov inspection also reads its governed project and canonical
 state. Ordinary authorized Task/evidence updates need write access under the
-physical package's canonical `state/`, including SQLite transaction files and
+governed project's canonical `.taskgov/`, including SQLite transaction files and
 bounded post-commit artifacts. This includes evidence or Viewer files only when
 their existing contracts and enabled configuration require them; it adds no
 generation or launch. Access depends on writing protected storage, not just on
 whether a command updates the DB. Read access alone does not authorize writes.
 
-Codex's default workspace-write policy protects an existing `.agents` directory
-recursively as read-only, even inside a writable workspace. Thus an installed
-package's `state/` can require host approval although the project is writable.
-This is a host condition, not taskgov's permission policy or evidence that
-every installation is blocked. Use the current host's effective restrictions
-and valid existing grants; the Skill itself grants no execution permission.
-Protection persists from initial Task registration through later updates,
-evidence registration, and completion. Task approval is not a host execution
-grant, and a first approval or successful write does not permanently unlock
-storage or cover other operations or a resumed session automatically.
+Ordinary updates do not write the physical Skill or its retired package-local
+state. Installation/update, explicit layout setup and configuration publication
+still have their own write boundaries; layout setup also writes the old-path
+retirement marker. A host may protect those package files or generated state.
+Use its effective restrictions and valid grants; the Skill itself grants no
+execution permission. A first approval or successful write does not permanently
+unlock storage or cover other operations or a resumed session automatically.
 
 When a known restriction affects the intended authorized write, use the host's
 formal scoped approval mechanism for that operation without first provoking a
@@ -268,13 +265,34 @@ successful managed copy and three retained generations. Once configured,
 omitted options preserve stored values; values equal to stored policy are a
 write-free replay.
 
-When the canonical database is absent, setup automatically prefers eligible
-fixed-layout managed recovery, then at most one eligible legacy source. It
+Initial setup or upgrade to separated state uses the fixed project-root
+`.taskgov/` area. Stop Taskgov writers and enabled Runner processes before
+updating the package and running this explicit offline transition. Preview
+creates nothing; write setup preserves the source, validates a private copy,
+fences the old fixed location and activates the new state. Do not kill
+processes, change ACLs, select another path or initialize around a reported
+conflict. No normal Task-loop step is added. Keep package-local retirement
+material during updates; it is not a second active DB or automatic fallback.
+
+If the old layout has validated pending legacy cleanup or an owned legacy
+migration stage, finish that prior migration with the compatible installed
+pre-separation version's setup before upgrading. New setup preserves it and
+returns `setup_incomplete`; repeatedly invoking the new version does not finish
+the predecessor's work. This applies only to that unfinished old migration,
+not healthy sources or new separation preparation. It authorizes no manual
+deletion, package downgrade against newer data, or additional normal-loop call.
+
+Within a pre-activation package-local source, setup automatically prefers
+eligible fixed-layout managed recovery, then at most one eligible legacy source. It
 does not ask the LLM to choose a backup or path. Same-binding legacy primary or
 legacy backup-only state can be recovered; a moved legacy backup-only source
 is not a relocation candidate and fails no-write as `project_state_unreadable`.
-An existing database is never overwritten, even when unreadable. Invalid,
+Recovery never overwrites an existing database, even when unreadable. Only
+the explicit layout cutover replaces the validated old primary with its
+retirement marker after retaining a complete source. Invalid,
 foreign, linked, unrecognized, or ambiguous artifacts remain unchanged.
+After activation, a missing primary uses only new-root managed recovery and
+never selects the old source or retained copy.
 
 Only stored Task-verification privacy/capacity rejection may select an older
 eligible same-binding backup. If none remains, setup returns
@@ -308,16 +326,14 @@ Expired or stale context requires a fresh preview and fresh user approval.
 {
   "status": "setup_complete",
   "planned_writes": [
-    "database_initialize",
-    "maintenance_configure",
-    "evidence_projection_publish",
-    "viewer_publish"
+    "state_layout_retire",
+    "state_layout_publish",
+    "state_layout_activate"
   ],
   "completed_writes": [
-    "database_initialize",
-    "maintenance_configure",
-    "evidence_projection_publish",
-    "viewer_publish"
+    "state_layout_retire",
+    "state_layout_publish",
+    "state_layout_activate"
   ],
   "schema_from": null,
   "schema_to": 22,
@@ -328,9 +344,9 @@ Expired or stale context requires a fresh preview and fresh user approval.
   "viewer_status": "published",
   "relocation": {
     "required": false,
-    "source_layout": null,
-    "identity_scheme": null,
-    "binding_generation": null,
+    "source_layout": "fixed_current_v1",
+    "identity_scheme": "uuid_v1",
+    "binding_generation": 1,
     "confirmation_token": null,
     "expires_at": null
   }
@@ -341,12 +357,22 @@ Successful `status` is `setup_preview`, `relocation_preview`,
 `setup_complete`, or `already_setup`. Write-list values are limited to
 `database_restore`, `legacy_state_publish`, `database_initialize`,
 `migration_backup`, `database_migrate`, `maintenance_configure`,
-`project_binding_update`, `evidence_projection_publish`, `viewer_publish`, and `legacy_state_cleanup` in
+`project_binding_update`, `evidence_projection_publish`, `viewer_publish`, `legacy_state_cleanup`,
+`state_layout_retire`, `state_layout_publish`, and `state_layout_activate` in
 execution order. `viewer_status` is `not_present`, `current`, `published`, or
 `repair_required`.
 
+Separation reports its three durable stages, not private candidate writes as
+live DB changes. After activation, ordinary setup uses its existing stage
+labels. A sealed cutover is resumable at the publication boundaries, never
+permission to use an unactivated candidate. Nonempty preparation interrupted
+before its digests were sealed is preserved and reports `setup_incomplete`;
+retry does not automatically delete, rebuild or accept those uncertain bytes.
+
 `evidence_status` uses the same four values. Evidence publication follows
-maintenance/binding and precedes Viewer; preview lists it without writing.
+maintenance/binding and precedes Viewer. Ordinary setup preview lists it
+without writing; separation performs it privately before its three public
+durable stages.
 
 `relocation` is always present with exactly the six shown keys. `required`
 is boolean. `source_layout` is null, `legacy_projects_v1`, or
@@ -361,8 +387,10 @@ Preview reports current durable state, not planned state:
 error has `status=null`; preflight/policy failures use empty write lists and
 null observed values except `schema_to=22`. A later-stage failure reports only
 the durable ordered prefix. Inspect `data.completed_writes` before retrying;
-`setup_incomplete` calls for rerunning setup, which recomputes from durable
-state rather than repeating an assumed failed stage.
+`setup_incomplete` permits a retry that recomputes from durable state rather
+than repeating an assumed failed stage; it does not guarantee automatic repair
+of unsealed preparation. Repeated failure does not authorize deletion or an
+unbounded retry loop; follow the existing reconciliation guidance.
 
 Setup is noninteractive and idempotent. It does not create a second
 configuration file, disable continuity after opt-in, contact a network, mutate

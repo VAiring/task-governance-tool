@@ -38,6 +38,7 @@ from task_governance_tool.state_resolver import (  # noqa: E402
 from task_governance_tool.viewer import build_viewer_snapshot  # noqa: E402
 from tests.m14_test_support import (  # noqa: E402
     PhysicalInstall,
+    activate_fresh_uuid_fixture,
     make_physical_install,
     refresh_test_manifest,
     tree_snapshot,
@@ -63,7 +64,9 @@ _SCHEMA20_RUNTIME_PATCH_TARGETS = (
     "task_governance_tool.evidence_projection.SCHEMA_VERSION",
     "task_governance_tool.reviews.SCHEMA_VERSION",
     "task_governance_tool.setup.SCHEMA_VERSION",
+    "task_governance_tool.setup_state_separation.SCHEMA_VERSION",
     "task_governance_tool.state_resolver.SCHEMA_VERSION",
+    "task_governance_tool.state_separation.SCHEMA_VERSION",
     "task_governance_tool.storage.SCHEMA_VERSION",
     "task_governance_tool.stored_task_validation.SCHEMA_VERSION",
     "task_governance_tool.tasks.SCHEMA_VERSION",
@@ -177,6 +180,9 @@ def _fixed_current20(
     )
     if initialized.schema_version != 20:
         raise AssertionError("fresh fixed test database did not reach schema v20")
+    activate_fresh_uuid_fixture(
+        install, project_id=initialized.target.project.project_id,
+    )
     resolution = resolve_project_state(
         skill_root=install.skill_root,
         repo=install.project_root,
@@ -938,7 +944,7 @@ class R3BSchema20ActivationTests(unittest.TestCase):
                     for path in (target.db_path, *backup_paths):
                         _inject_v20_marker(path, marker)
 
-                    baseline = tree_snapshot(install.skill_root / "state")
+                    baseline = install.state_snapshot()
 
                     resolution = resolve_project_state(
                         skill_root=install.skill_root,
@@ -949,7 +955,7 @@ class R3BSchema20ActivationTests(unittest.TestCase):
                         "project_state_unreadable",
                     )
                     self.assertEqual(
-                        tree_snapshot(install.skill_root / "state"),
+                        install.state_snapshot(),
                         baseline,
                     )
 
@@ -960,7 +966,7 @@ class R3BSchema20ActivationTests(unittest.TestCase):
                         "project_state_unreadable",
                     )
                     self.assertEqual(
-                        tree_snapshot(install.skill_root / "state"),
+                        install.state_snapshot(),
                         baseline,
                     )
 
@@ -974,7 +980,7 @@ class R3BSchema20ActivationTests(unittest.TestCase):
                             before_digest,
                         )
                     self.assertEqual(
-                        tree_snapshot(install.skill_root / "state"),
+                        install.state_snapshot(),
                         baseline,
                     )
 
@@ -994,7 +1000,7 @@ class R3BSchema20ActivationTests(unittest.TestCase):
                             before_digest,
                         )
                     self.assertEqual(
-                        tree_snapshot(install.skill_root / "state"),
+                        install.state_snapshot(),
                         baseline,
                     )
 
@@ -1005,7 +1011,7 @@ class R3BSchema20ActivationTests(unittest.TestCase):
                             build_viewer_snapshot(connection, target)
                     self.assertEqual(viewer.exception.code, "migration_required")
                     self.assertEqual(
-                        tree_snapshot(install.skill_root / "state"),
+                        install.state_snapshot(),
                         baseline,
                     )
 
@@ -1013,7 +1019,7 @@ class R3BSchema20ActivationTests(unittest.TestCase):
                         publish_setup_backup(target, 3)
                     self.assertEqual(backup.exception.code, "setup_backup_failed")
                     self.assertEqual(
-                        tree_snapshot(install.skill_root / "state"),
+                        install.state_snapshot(),
                         baseline,
                     )
 
@@ -1024,7 +1030,7 @@ class R3BSchema20ActivationTests(unittest.TestCase):
                         "setup_restore_failed",
                     )
                     self.assertEqual(
-                        tree_snapshot(install.skill_root / "state"),
+                        install.state_snapshot(),
                         baseline,
                     )
 
@@ -1062,7 +1068,7 @@ class R3BSchema20ActivationTests(unittest.TestCase):
             for path in (target.db_path, *backup_paths):
                 _inject_valid_runner_resolution(path, task_id)
 
-            baseline = tree_snapshot(install.skill_root / "state")
+            baseline = install.state_snapshot()
 
             resolution = resolve_project_state(
                 skill_root=install.skill_root,
@@ -1070,7 +1076,7 @@ class R3BSchema20ActivationTests(unittest.TestCase):
             )
             self.assertEqual(resolution.error_code, "project_state_unreadable")
             self.assertEqual(
-                tree_snapshot(install.skill_root / "state"),
+                install.state_snapshot(),
                 baseline,
             )
 
@@ -1078,7 +1084,7 @@ class R3BSchema20ActivationTests(unittest.TestCase):
                 storage.inspect_setup_state(target)
             self.assertEqual(inspected.exception.code, "project_state_unreadable")
             self.assertEqual(
-                tree_snapshot(install.skill_root / "state"),
+                install.state_snapshot(),
                 baseline,
             )
 
@@ -1094,7 +1100,7 @@ class R3BSchema20ActivationTests(unittest.TestCase):
                 self.assertEqual(reentry.exception.code, "project_state_unreadable")
                 self.assertEqual(logical_database_digest(connection), before_digest)
             self.assertEqual(
-                tree_snapshot(install.skill_root / "state"),
+                install.state_snapshot(),
                 baseline,
             )
 
@@ -1113,7 +1119,7 @@ class R3BSchema20ActivationTests(unittest.TestCase):
                     build_viewer_snapshot(connection, target)
             self.assertEqual(viewer.exception.code, "project_state_unreadable")
             self.assertEqual(
-                tree_snapshot(install.skill_root / "state"),
+                install.state_snapshot(),
                 baseline,
             )
 
@@ -1121,13 +1127,13 @@ class R3BSchema20ActivationTests(unittest.TestCase):
                 publish_setup_backup(target, 3)
             self.assertEqual(backup.exception.code, "setup_backup_failed")
             self.assertEqual(
-                tree_snapshot(install.skill_root / "state"),
+                install.state_snapshot(),
                 baseline,
             )
 
             self.assertEqual(discover_managed_backup_metadata(target), ())
             self.assertEqual(
-                tree_snapshot(install.skill_root / "state"),
+                install.state_snapshot(),
                 baseline,
             )
 
@@ -1135,7 +1141,7 @@ class R3BSchema20ActivationTests(unittest.TestCase):
                 select_managed_backup_for_recovery(target)
             self.assertEqual(recovery.exception.code, "setup_restore_failed")
             self.assertEqual(
-                tree_snapshot(install.skill_root / "state"),
+                install.state_snapshot(),
                 baseline,
             )
 

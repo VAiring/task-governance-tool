@@ -3,6 +3,7 @@ import sqlite3
 import tempfile
 import unittest
 from contextlib import closing, contextmanager
+from dataclasses import replace
 from pathlib import Path
 from unittest import mock
 
@@ -10,6 +11,7 @@ from unittest import mock
 ROOT = Path(__file__).resolve().parents[1]
 try:  # noqa: E402
     from m14_test_support import (
+        activate_fixed_fixture,
         canonical_managed_sqlite_files,
         canonical_test_path,
         create_v10_database,
@@ -17,6 +19,7 @@ try:  # noqa: E402
         create_v12_database,
         create_v12_target,
         create_v9_database,
+        create_v9_target,
         file_snapshot,
         json_payload,
         make_physical_install,
@@ -26,6 +29,7 @@ try:  # noqa: E402
     )
 except ModuleNotFoundError:  # noqa: E402
     from tests.m14_test_support import (
+        activate_fixed_fixture,
         canonical_managed_sqlite_files,
         canonical_test_path,
         create_v10_database,
@@ -33,6 +37,7 @@ except ModuleNotFoundError:  # noqa: E402
         create_v12_database,
         create_v12_target,
         create_v9_database,
+        create_v9_target,
         file_snapshot,
         json_payload,
         make_physical_install,
@@ -44,6 +49,12 @@ except ModuleNotFoundError:  # noqa: E402
 from task_governance_tool import setup as setup_service
 from task_governance_tool import backup as backup_service
 from task_governance_tool import project_scope as project_scope_service
+from task_governance_tool import setup_state_separation as separation_service
+from task_governance_tool.state_separation import (
+    encode_separation_record,
+    read_record,
+    separation_paths,
+)
 from task_governance_tool.backup_metadata_repository import (
     MigrationBackupMetadata,
 )
@@ -124,20 +135,10 @@ FIXED_LEGACY_RELOCATION = {
     "identity_scheme": "legacy_path_v1",
     "binding_generation": 1,
 }
-FRESH_WRITES = [
-    "database_initialize",
-    "maintenance_configure",
-    "evidence_projection_publish",
-    "viewer_publish",
-]
-LEGACY_MIGRATION_WRITES = [
-    "legacy_state_publish",
-    "migration_backup",
-    "database_migrate",
-    "maintenance_configure",
-    "evidence_projection_publish",
-    "viewer_publish",
-    "legacy_state_cleanup",
+LAYOUT_WRITES = [
+    "state_layout_retire",
+    "state_layout_publish",
+    "state_layout_activate",
 ]
 MIGRATION_WRITES = [
     "migration_backup",
@@ -145,19 +146,12 @@ MIGRATION_WRITES = [
     "evidence_projection_publish",
     "viewer_publish",
 ]
-CONFIGURED_LEGACY_MIGRATION_WRITES = [
-    "legacy_state_publish",
-    "migration_backup",
-    "database_migrate",
-    "evidence_projection_publish",
-    "viewer_publish",
-    "legacy_state_cleanup",
-]
 
 
-def fixed_fixture_target(install) -> DatabaseTarget:
-    """Construct a fixed-current fixture without using production resolution."""
+def fixed_fixture_target(install, *, schema_version: int = 9) -> DatabaseTarget:
+    """Construct an intentionally activated fixed-current legacy fixture."""
 
+    activate_fixed_fixture(install, source_schema_version=schema_version)
     return DatabaseTarget(
         project=install.legacy_target.project,
         db_path=install.db_path,
@@ -194,7 +188,7 @@ class SetupCommandTests(unittest.TestCase):
                 preview_data,
                 {
                     "status": "setup_preview",
-                    "planned_writes": FRESH_WRITES,
+                    "planned_writes": LAYOUT_WRITES,
                     "completed_writes": [],
                     "schema_from": None,
                     "schema_to": 22,
@@ -221,8 +215,8 @@ class SetupCommandTests(unittest.TestCase):
                 r"\Atg_project_[0-9a-f]{32}\Z",
             )
             self.assertEqual(completed_data["status"], "setup_complete")
-            self.assertEqual(completed_data["planned_writes"], FRESH_WRITES)
-            self.assertEqual(completed_data["completed_writes"], FRESH_WRITES)
+            self.assertEqual(completed_data["planned_writes"], LAYOUT_WRITES)
+            self.assertEqual(completed_data["completed_writes"], LAYOUT_WRITES)
             self.assertEqual(completed_data["schema_from"], None)
             self.assertEqual(completed_data["schema_to"], 22)
             self.assertTrue(completed_data["maintenance_enabled"])
@@ -232,7 +226,7 @@ class SetupCommandTests(unittest.TestCase):
             self.assertEqual(completed_data["viewer_status"], "published")
             self.assertEqual(
                 completed_data["relocation"],
-                EMPTY_RELOCATION,
+                FIXED_UUID_RELOCATION,
             )
             self.assertTrue(install.db_path.is_file())
             self.assertTrue(install.viewer_path.is_file())
@@ -671,155 +665,96 @@ class SetupCommandTests(unittest.TestCase):
 
     def test_stage_failures_report_exact_ordered_progress(self):
         cases = (
-            (
-                "fresh initialization",
-                "fresh",
-                "initialize_uuid_database",
-                "setup_initialization_failed",
-                FRESH_WRITES,
-                [],
-                False,
-                "not_present",
-            ),
-            (
-                "migration backup",
-                "migrated",
-                "publish_setup_backup",
-                "setup_backup_failed",
-                LEGACY_MIGRATION_WRITES,
-                [],
-                False,
-                "not_present",
-            ),
-            (
-                "database migration",
-                "migrated",
-                "initialize_database",
-                "setup_migration_failed",
-                LEGACY_MIGRATION_WRITES,
-                [],
-                False,
-                "not_present",
-            ),
-            (
-                "fresh maintenance",
-                "fresh",
-                "configure_project_maintenance",
-                "setup_incomplete",
-                FRESH_WRITES,
-                ["database_initialize"],
-                False,
-                "not_present",
-            ),
-            (
-                "fresh evidence",
-                "fresh",
-                "_publish_evidence",
-                "setup_incomplete",
-                FRESH_WRITES,
-                ["database_initialize", "maintenance_configure"],
-                True,
-                "not_present",
-            ),
-            (
-                "fresh viewer",
-                "fresh",
-                "_publish_viewer",
-                "setup_incomplete",
-                FRESH_WRITES,
-                [
-                    "database_initialize",
-                    "maintenance_configure",
-                    "evidence_projection_publish",
-                ],
-                True,
-                "not_present",
-            ),
-            (
-                "migrated maintenance",
-                "migrated",
-                "configure_project_maintenance",
-                "setup_incomplete",
-                LEGACY_MIGRATION_WRITES,
-                [],
-                False,
-                "not_present",
-            ),
-            (
-                "migrated viewer",
-                "migrated",
-                "_publish_viewer",
-                "setup_incomplete",
-                LEGACY_MIGRATION_WRITES,
-                [],
-                False,
-                "not_present",
-            ),
+            ("fresh initialization", "fresh", separation_service,
+             "initialize_uuid_database", "setup_initialization_failed"),
+            ("migration backup", "migrated", separation_service,
+             "publish_setup_backup", "setup_backup_failed"),
+            ("database migration", "migrated", separation_service,
+             "migrate_bound_database", "setup_migration_failed"),
+            ("fresh maintenance", "fresh", separation_service,
+             "configure_project_maintenance", "setup_incomplete"),
+            ("fresh evidence", "fresh", setup_service,
+             "_publish_evidence", "setup_incomplete"),
+            ("fresh viewer", "fresh", setup_service,
+             "_publish_viewer", "setup_incomplete"),
+            ("migrated maintenance", "migrated", separation_service,
+             "configure_project_maintenance", "setup_incomplete"),
+            ("migrated viewer", "migrated", setup_service,
+             "_publish_viewer", "setup_incomplete"),
         )
-        for (
-            label,
-            starting_state,
-            patched_stage,
-            error_code,
-            planned,
-            completed,
-            maintenance_enabled,
-            viewer_status,
-        ) in cases:
+        for label, starting_state, owner, stage, error_code in cases:
             with self.subTest(case=label), tempfile.TemporaryDirectory() as tmp:
                 install = make_physical_install(Path(tmp))
                 schema_from = None
+                source_before = None
                 if starting_state == "migrated":
                     create_v9_database(install)
                     schema_from = 9
-
+                    source_before = install.legacy_db_path.read_bytes()
                 with mock.patch.object(
-                    setup_service,
-                    patched_stage,
+                    owner, stage,
                     side_effect=(
                         setup_service.ViewerError(
-                            "output_write_failed",
-                            "injected setup stage failure",
-                        )
-                        if patched_stage == "_publish_viewer"
+                            "output_write_failed", "injected setup stage failure",
+                        ) if stage == "_publish_viewer"
                         else RuntimeError("injected setup stage failure")
                     ),
                 ):
                     result = setup_service.run_setup(
-                        repo=str(install.project_root),
-                        repo_explicit=True,
-                        script_path=install.entrypoint,
-                        read_only=False,
-                        backup_interval_minutes=None,
-                        backup_generations=None,
+                        repo=str(install.project_root), repo_explicit=True,
+                        script_path=install.entrypoint, read_only=False,
+                        backup_interval_minutes=None, backup_generations=None,
                     )
 
                 self.assertFalse(result.ok)
                 self.assertEqual(result.error_code, error_code)
-                self.assertEqual(
-                    result.data,
-                    {
-                        "status": None,
-                        "planned_writes": planned,
-                        "completed_writes": completed,
-                        "schema_from": schema_from,
-                        "schema_to": 22,
-                        "maintenance_enabled": maintenance_enabled,
-                        "backup_interval_minutes": 30,
-                        "backup_generations": 3,
-                        "evidence_status": (
-                            "published"
-                            if "evidence_projection_publish" in completed
-                            else "not_present"
-                        ),
-                        "viewer_status": viewer_status,
-                        "relocation": (
-                            EMPTY_RELOCATION
-                            if starting_state == "fresh"
-                            else LEGACY_SOURCE_RELOCATION
-                        ),
-                    },
-                )
+                self.assertEqual(result.data, {
+                    "status": None, "planned_writes": LAYOUT_WRITES,
+                    "completed_writes": [], "schema_from": schema_from,
+                    "schema_to": 22, "maintenance_enabled": False,
+                    "backup_interval_minutes": 30, "backup_generations": 3,
+                    "evidence_status": "not_present", "viewer_status": "not_present",
+                    "relocation": (EMPTY_RELOCATION if starting_state == "fresh"
+                                   else LEGACY_SOURCE_RELOCATION),
+                })
+                self.assertFalse(install.db_path.exists())
+                if source_before is not None:
+                    self.assertEqual(install.legacy_db_path.read_bytes(), source_before)
+
+    def test_activated_migration_failures_keep_exact_durable_prefixes(self):
+        writes = ["migration_backup", "database_migrate", "maintenance_configure",
+                  "evidence_projection_publish", "viewer_publish"]
+        cases = (
+            ("publish_setup_backup", "setup_backup_failed", [], False),
+            ("migrate_bound_database", "setup_migration_failed", writes[:1], False),
+            ("configure_project_maintenance", "setup_incomplete", writes[:2], False),
+            ("_publish_evidence", "setup_incomplete", writes[:3], True),
+            ("_publish_viewer", "setup_incomplete", writes[:4], True),
+        )
+        for stage, code, completed, enabled in cases:
+            with self.subTest(stage=stage), tempfile.TemporaryDirectory() as tmp:
+                install = make_physical_install(Path(tmp))
+                create_v9_target(fixed_fixture_target(install))
+                marker = install.skill_root / "state" / "current" / "taskgov.sqlite"
+                marker_before = marker.read_bytes()
+                with mock.patch.object(
+                    setup_service, stage,
+                    side_effect=(
+                        setup_service.ViewerError("output_write_failed", "injected failure")
+                        if stage == "_publish_viewer" else RuntimeError("injected failure")
+                    ),
+                ):
+                    result = setup_service.run_setup(
+                        repo=str(install.project_root), repo_explicit=True,
+                        script_path=install.entrypoint, read_only=False,
+                        backup_interval_minutes=None, backup_generations=None,
+                    )
+                self.assertFalse(result.ok)
+                self.assertEqual(result.error_code, code)
+                self.assertEqual(result.data["planned_writes"], writes)
+                self.assertEqual(result.data["completed_writes"], completed)
+                self.assertEqual(result.data["maintenance_enabled"], enabled)
+                self.assertEqual(marker.read_bytes(), marker_before)
 
     def test_viewer_observation_busy_is_a_preflight_failure_without_writes(self):
         for patched_stage in ("connect_snapshot_readonly", "build_viewer_snapshot"):
@@ -872,88 +807,44 @@ class SetupCommandTests(unittest.TestCase):
                 )
                 self.assertEqual(file_snapshot(install.project_root), before)
 
-    def test_legacy_failure_cleanup_preserves_a_replacement_owned_stage(self):
+    def test_separation_failure_preserves_replacement_record_and_private_stage(self):
         with tempfile.TemporaryDirectory() as tmp:
             install = make_physical_install(Path(tmp))
             create_v10_database(install, enabled=True)
-            state_root = install.skill_root / "state"
-            replacement_stage_id = "f" * 32
-            transition_calls = 0
-            replacement_created = False
-            real_lock = setup_service.state_transition_lock
-            real_inspect = setup_service.inspect_stage_residue
-            real_remove = setup_service.remove_stage_residue
+            state_root = install.project_root / ".taskgov"
+            source_before = install.legacy_db_path.read_bytes()
+            replacement_snapshot = None
 
-            @contextmanager
-            def interleaving_lock(root):
-                nonlocal transition_calls, replacement_created
-                transition_calls += 1
-                call_number = transition_calls
-                try:
-                    with real_lock(root):
-                        yield
-                finally:
-                    if call_number == 1:
-                        with real_lock(root):
-                            residue = real_inspect(
-                                root,
-                                max_file_bytes=100_000_000,
-                            )
-                            self.assertIsNotNone(residue)
-                            self.assertNotEqual(
-                                residue.owner.stage_id,
-                                replacement_stage_id,
-                            )
-                            real_remove(root, residue)
-                            setup_service.create_owned_stage(
-                                root,
-                                project_id=residue.owner.project_id,
-                                inventory_fingerprint=(
-                                    residue.owner.inventory_fingerprint
-                                ),
-                                stage_id=replacement_stage_id,
-                            )
-                            replacement_created = True
+            def replace_record_then_fail(*args, **kwargs):
+                nonlocal replacement_snapshot
+                paths = separation_paths(state_root)
+                replacement = replace(read_record(state_root), transition_id="f" * 32)
+                paths.record.write_bytes(encode_separation_record(replacement))
+                # The outer transition lock is actively held on Windows;
+                # snapshot the replaced record and its private trees only.
+                replacement_snapshot = file_snapshot(paths.root)
+                raise setup_service.ViewerError(
+                    "output_write_failed", "injected pre-publish failure",
+                )
 
-            with (
-                mock.patch.object(
-                    setup_service,
-                    "state_transition_lock",
-                    side_effect=interleaving_lock,
-                ),
-                mock.patch.object(
-                    setup_service,
-                    "_publish_viewer",
-                    side_effect=setup_service.ViewerError(
-                        "output_write_failed",
-                        "injected pre-publish failure",
-                    ),
-                ),
+            with mock.patch.object(
+                setup_service, "_publish_viewer", side_effect=replace_record_then_fail,
             ):
                 result = setup_service.run_setup(
-                    repo=str(install.project_root),
-                    repo_explicit=True,
-                    script_path=install.entrypoint,
-                    read_only=False,
-                    backup_interval_minutes=None,
-                    backup_generations=None,
+                    repo=str(install.project_root), repo_explicit=True,
+                    script_path=install.entrypoint, read_only=False,
+                    backup_interval_minutes=None, backup_generations=None,
                 )
 
             self.assertFalse(result.ok)
             self.assertEqual(result.error_code, "setup_incomplete")
-            self.assertTrue(replacement_created)
-            self.assertEqual(transition_calls, 2)
-            self.assertFalse(install.fixed_root.exists())
-            self.assertTrue(install.legacy_db_path.is_file())
-            replacement = real_inspect(
-                state_root,
-                max_file_bytes=100_000_000,
-            )
-            self.assertIsNotNone(replacement)
+            self.assertIsNotNone(replacement_snapshot, result)
             self.assertEqual(
-                replacement.owner.stage_id,
-                replacement_stage_id,
+                file_snapshot(separation_paths(state_root).root), replacement_snapshot,
             )
+            self.assertEqual(read_record(state_root).transition_id, "f" * 32)
+            self.assertFalse(install.fixed_root.exists())
+            self.assertEqual(install.legacy_db_path.read_bytes(), source_before)
 
     def test_malformed_stage_residue_precedes_relocation_without_writes(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -1018,11 +909,10 @@ class SetupCommandTests(unittest.TestCase):
                 tempfile.TemporaryDirectory() as tmp,
             ):
                 install = make_physical_install(Path(tmp))
-                state_root = install.skill_root / "state"
+                state_root = install.project_root / ".taskgov"
                 if starting_state == "legacy":
                     create_v10_database(install, enabled=True)
-                else:
-                    state_root.mkdir()
+                state_root.mkdir()
 
                 with setup_service.state_transition_lock(state_root):
                     pass
@@ -1058,12 +948,13 @@ class SetupCommandTests(unittest.TestCase):
     def test_failure_status_fallback_preserves_the_original_stage_error(self):
         with tempfile.TemporaryDirectory() as tmp:
             install = make_physical_install(Path(tmp))
+            create_v12_target(fixed_fixture_target(install, schema_version=12))
             with mock.patch.object(
                 setup_service,
                 "_viewer_status",
-                side_effect=RuntimeError(
+                side_effect=["not_present", RuntimeError(
                     "secondary Viewer observation failure"
-                ),
+                )],
             ), mock.patch.object(
                 setup_service,
                 "configure_project_maintenance",
@@ -1081,10 +972,13 @@ class SetupCommandTests(unittest.TestCase):
             self.assertFalse(result.ok)
             self.assertEqual(result.error_code, "setup_incomplete")
             self.assertEqual(result.data["viewer_status"], "repair_required")
-            self.assertEqual(result.data["planned_writes"], FRESH_WRITES)
+            self.assertEqual(result.data["planned_writes"], [
+                "migration_backup", "database_migrate", "maintenance_configure",
+                "evidence_projection_publish", "viewer_publish",
+            ])
             self.assertEqual(
                 result.data["completed_writes"],
-                ["database_initialize"],
+                ["migration_backup", "database_migrate"],
             )
 
     def test_linklike_canonical_state_candidates_fail_before_writes(self):
@@ -1095,7 +989,7 @@ class SetupCommandTests(unittest.TestCase):
             ):
                 install = make_physical_install(Path(tmp))
                 candidate = (
-                    install.skill_root / "state"
+                    install.project_root / ".taskgov"
                     if candidate_kind == "state_root"
                     else install.db_path
                 )
@@ -1150,7 +1044,7 @@ class SetupCommandTests(unittest.TestCase):
             self.assertFalse((install.skill_root / "state").exists())
 
             ignore.write_text(
-                "/.agents/skills/task-governance-tool/state/\n",
+                "/.taskgov/\n/.agents/skills/task-governance-tool/state/\n",
                 encoding="utf-8",
             )
             accepted = install.run("setup", "--json")
@@ -1161,6 +1055,7 @@ class SetupCommandTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             install = make_physical_install(Path(tmp))
             create_v9_database(install)
+            source_before = install.legacy_db_path.read_bytes()
             before_non_state = file_snapshot(install.project_root, exclude_state=True)
 
             migrated = install.run(
@@ -1176,13 +1071,14 @@ class SetupCommandTests(unittest.TestCase):
             self.assertEqual(data["schema_to"], 22)
             self.assertEqual(
                 data["planned_writes"],
-                LEGACY_MIGRATION_WRITES,
+                LAYOUT_WRITES,
             )
             self.assertEqual(
                 data["completed_writes"],
-                LEGACY_MIGRATION_WRITES,
+                LAYOUT_WRITES,
             )
-            self.assertFalse(install.legacy_db_path.exists())
+            self.assertTrue(install.legacy_db_path.is_file())
+            self.assertEqual(install.legacy_db_path.read_bytes(), source_before)
             self.assertEqual(data["backup_generations"], 2)
             self.assertEqual(data["evidence_status"], "published")
             self.assertEqual(
@@ -1229,17 +1125,19 @@ class SetupCommandTests(unittest.TestCase):
                 interval_minutes=45,
                 generations=2,
             )
+            source_before = install.legacy_db_path.read_bytes()
 
             migrated = install.run("setup", "--json")
 
             self.assertEqual(migrated.returncode, 0, migrated.stderr)
             data = self.assert_setup_shape(json_payload(migrated))
-            expected_writes = CONFIGURED_LEGACY_MIGRATION_WRITES
+            expected_writes = LAYOUT_WRITES
             self.assertEqual(data["schema_from"], 10)
             self.assertEqual(data["schema_to"], 22)
             self.assertEqual(data["planned_writes"], expected_writes)
             self.assertEqual(data["completed_writes"], expected_writes)
-            self.assertFalse(install.legacy_db_path.exists())
+            self.assertTrue(install.legacy_db_path.is_file())
+            self.assertEqual(install.legacy_db_path.read_bytes(), source_before)
             self.assertEqual(data["backup_interval_minutes"], 45)
             self.assertEqual(data["backup_generations"], 2)
             self.assertEqual(data["evidence_status"], "published")
@@ -1300,6 +1198,7 @@ class SetupCommandTests(unittest.TestCase):
                     interval_minutes=45,
                     generations=2,
                 )
+                source_before = install.legacy_db_path.read_bytes()
 
                 migrated = install.run("setup", *options, "--json")
 
@@ -1309,10 +1208,11 @@ class SetupCommandTests(unittest.TestCase):
                 self.assertEqual(data["schema_to"], 22)
                 self.assertEqual(
                     data["planned_writes"],
-                    CONFIGURED_LEGACY_MIGRATION_WRITES,
+                    LAYOUT_WRITES,
                 )
                 self.assertEqual(data["completed_writes"], data["planned_writes"])
-                self.assertFalse(install.legacy_db_path.exists())
+                self.assertTrue(install.legacy_db_path.is_file())
+                self.assertEqual(install.legacy_db_path.read_bytes(), source_before)
                 self.assertNotIn("maintenance_configure", data["completed_writes"])
                 self.assertEqual(data["backup_interval_minutes"], 45)
                 self.assertEqual(data["backup_generations"], 2)
@@ -1373,7 +1273,7 @@ class SetupCommandTests(unittest.TestCase):
         with self.subTest(boundary="file_published"), tempfile.TemporaryDirectory() as tmp:
             install = make_physical_install(Path(tmp))
             create_v12_target(
-                fixed_fixture_target(install),
+                fixed_fixture_target(install, schema_version=12),
                 enabled=True,
             )
             with mock.patch.object(
@@ -1410,7 +1310,7 @@ class SetupCommandTests(unittest.TestCase):
         with self.subTest(boundary="row_committed"), tempfile.TemporaryDirectory() as tmp:
             install = make_physical_install(Path(tmp))
             create_v12_target(
-                fixed_fixture_target(install),
+                fixed_fixture_target(install, schema_version=12),
                 enabled=True,
                 generations=1,
             )
@@ -1456,7 +1356,7 @@ class SetupCommandTests(unittest.TestCase):
         with self.subTest(boundary="file_before_row_prune"), tempfile.TemporaryDirectory() as tmp:
             install = make_physical_install(Path(tmp))
             create_v12_target(
-                fixed_fixture_target(install),
+                fixed_fixture_target(install, schema_version=12),
                 enabled=True,
                 generations=1,
             )
@@ -1487,7 +1387,7 @@ class SetupCommandTests(unittest.TestCase):
                 publication_retention=3,
             )
             create_v10_target(
-                fixed_fixture_target(install),
+                fixed_fixture_target(install, schema_version=10),
                 enabled=True,
                 setup_backup=missing,
             )
@@ -1525,10 +1425,11 @@ class SetupCommandTests(unittest.TestCase):
     def test_migration_lock_spans_backup_publication_and_migration_commit(self):
         with tempfile.TemporaryDirectory() as tmp:
             install = make_physical_install(Path(tmp))
-            create_v9_database(install)
+            create_v9_target(fixed_fixture_target(install))
             lock_active = False
+            observed_stages = []
             real_backup = setup_service.publish_setup_backup
-            real_initialize = setup_service.initialize_database
+            real_initialize = setup_service.migrate_bound_database
 
             @contextmanager
             def observed_lock(_target):
@@ -1542,11 +1443,12 @@ class SetupCommandTests(unittest.TestCase):
 
             def checked_backup(*args, **kwargs):
                 self.assertTrue(lock_active)
+                observed_stages.append("backup")
                 return real_backup(*args, **kwargs)
 
             def checked_initialize(*args, **kwargs):
-                if kwargs.get("setup_backup") is not None:
-                    self.assertTrue(lock_active)
+                self.assertTrue(lock_active)
+                observed_stages.append("migration")
                 return real_initialize(*args, **kwargs)
 
             with (
@@ -1562,7 +1464,7 @@ class SetupCommandTests(unittest.TestCase):
                 ),
                 mock.patch.object(
                     setup_service,
-                    "initialize_database",
+                    "migrate_bound_database",
                     side_effect=checked_initialize,
                 ),
             ):
@@ -1577,10 +1479,12 @@ class SetupCommandTests(unittest.TestCase):
 
             self.assertTrue(result.ok, result.error_message)
             self.assertFalse(lock_active)
+            self.assertEqual(observed_stages, ["backup", "migration"])
 
     def test_locked_configuration_preserves_concurrently_set_omitted_values(self):
         with tempfile.TemporaryDirectory() as tmp:
             install = make_physical_install(Path(tmp))
+            create_v12_target(fixed_fixture_target(install, schema_version=12))
             real_configure = setup_service.configure_project_maintenance
 
             def configure_after_concurrent_explicit_update(target, **kwargs):

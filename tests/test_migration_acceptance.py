@@ -37,9 +37,9 @@ from task_governance_tool.backup import (  # noqa: E402
     select_managed_backup_for_recovery,
 )
 try:  # noqa: E402
-    from m14_test_support import json_payload, make_physical_install
+    from m14_test_support import activate_fixed_fixture, json_payload, make_physical_install
 except ModuleNotFoundError:  # noqa: E402
-    from tests.m14_test_support import json_payload, make_physical_install
+    from tests.m14_test_support import activate_fixed_fixture, json_payload, make_physical_install
 
 
 MIGRATION_SETUP_WRITES = [
@@ -456,6 +456,8 @@ class RealisticMigrationAcceptanceTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             install = make_physical_install(root)
+            # Exercise active-root schema migration, not old-layout cutover.
+            activate_fixed_fixture(install, source_schema_version=2)
             repo = install.project_root
             db_path = install.db_path
             db_path.parent.mkdir(parents=True)
@@ -656,6 +658,7 @@ class RealisticMigrationAcceptanceTests(unittest.TestCase):
             with self.subTest(source_version=source_version), tempfile.TemporaryDirectory() as tmp:
                 root = Path(tmp)
                 install = make_physical_install(root)
+                activate_fixed_fixture(install, source_schema_version=source_version)
                 repo = install.project_root
                 db_path = install.db_path
                 db_path.parent.mkdir(parents=True)
@@ -812,6 +815,7 @@ class RealisticMigrationAcceptanceTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             install = make_physical_install(root)
+            activate_fixed_fixture(install, source_schema_version=12)
             db_path = install.db_path
             db_path.parent.mkdir(parents=True)
             project = create_realistic_review_database(

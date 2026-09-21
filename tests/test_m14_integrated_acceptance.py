@@ -542,7 +542,7 @@ class M14IntegratedAcceptanceTests(unittest.TestCase):
             self.assertEqual(setup["data"]["backup_interval_minutes"], 30)
             self.assertEqual(setup["data"]["backup_generations"], 3)
 
-            state_before_doctor = file_snapshot(install.skill_root / "state")
+            state_before_doctor = install.state_snapshot()
             doctor_after, _ = self.run_json(
                 install,
                 "doctor",
@@ -557,7 +557,7 @@ class M14IntegratedAcceptanceTests(unittest.TestCase):
                 "continue",
             )
             self.assertEqual(
-                file_snapshot(install.skill_root / "state"),
+                install.state_snapshot(),
                 state_before_doctor,
             )
 

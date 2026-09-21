@@ -42,23 +42,14 @@ from task_governance_tool.storage import project_identity
 
 
 PRE_V9_WRITES = [
-    "legacy_state_publish",
-    "migration_backup",
-    "database_migrate",
-    "maintenance_configure",
-    "evidence_projection_publish",
-    "viewer_publish",
-    "legacy_state_cleanup",
+    "state_layout_retire",
+    "state_layout_publish",
+    "state_layout_activate",
 ]
 MOVED_V13_WRITES = [
-    "legacy_state_publish",
-    "migration_backup",
-    "database_migrate",
-    "maintenance_configure",
-    "project_binding_update",
-    "evidence_projection_publish",
-    "viewer_publish",
-    "legacy_state_cleanup",
+    "state_layout_retire",
+    "state_layout_publish",
+    "state_layout_activate",
 ]
 
 
@@ -146,6 +137,7 @@ class M17ReleaseAcceptanceTests(unittest.TestCase):
             )
             with closing(sqlite3.connect(install.legacy_db_path)) as connection:
                 before_records = legacy_v2_projection(connection)
+            source_bytes = install.legacy_db_path.read_bytes()
             before_preview = tree_snapshot(install.project_root)
 
             preview_process = install.run(
@@ -207,7 +199,7 @@ class M17ReleaseAcceptanceTests(unittest.TestCase):
                 PRE_V9_WRITES,
             )
             self.assertTrue(install.db_path.is_file())
-            self.assertFalse(install.legacy_db_path.exists())
+            self.assertEqual(install.legacy_db_path.read_bytes(), source_bytes)
             self.assertTrue(install.viewer_path.is_file())
 
             with closing(sqlite3.connect(install.db_path)) as connection:
@@ -354,7 +346,7 @@ class M17ReleaseAcceptanceTests(unittest.TestCase):
                 MOVED_V13_WRITES,
             )
             self.assertTrue(moved.db_path.is_file())
-            self.assertFalse(moved_legacy_db.exists())
+            self.assertEqual(moved_legacy_db.read_bytes(), source_bytes)
             self.assertTrue(moved.viewer_path.is_file())
 
             expected_binding = project_identity(moved.project_root)

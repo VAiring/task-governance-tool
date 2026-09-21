@@ -75,7 +75,7 @@ The tool is offline by default. It never creates or changes target-project
 source, Git commits, branches, refs, tags, PRs, Issues, external services, or
 network state. Read-only Git subprocesses are permitted only for the exact
 [validation and review operations](review-completion-specification.md#git-snapshot-and-target-binding). Explicit setup may create the
-canonical ignored package-local state and generated Viewer; successful
+canonical ignored project-local state and generated Viewer; successful
 business mutations may perform the opted-in bounded same-process maintenance
 defined below. One explicit `task edit --runner-plan-action` invocation may
 also create or replace only the canonical ignored package-local Runner Plan
@@ -96,7 +96,7 @@ self-host exception at `<repo>/task-governance-tool`: it requires explicit
 `--repo`, a physical package and repository, the four fixed source-shape marker
 files, a valid
 manifest/package boundary, and no competing ordinary install. It reuses the
-source package's canonical state and is not install guidance for consumers.
+governed project's canonical state and is not install guidance for consumers.
 
 Python 3.12 or newer is required. Ordinary functionality supports Windows,
 Linux, and macOS, with representative verification on Windows x86-64,
@@ -127,26 +127,34 @@ state and target-local presentation configuration are not release-package
 content. The fixed generated targets are:
 
 ```text
-<physical-skill>/state/current/taskgov.sqlite
-<physical-skill>/state/current/backups/
-<physical-skill>/state/current/evidence/index.json
-<physical-skill>/state/current/evidence/bundles/<completion-evidence-bundle-id>.json
-<physical-skill>/state/current/evidence/taskgov-evidence.lock
-<physical-skill>/state/current/viewer/task-viewer.html
-<physical-skill>/state/current/verification-runner/
+<governed-project>/.taskgov/current/taskgov.sqlite
+<governed-project>/.taskgov/current/backups/
+<governed-project>/.taskgov/current/evidence/index.json
+<governed-project>/.taskgov/current/evidence/bundles/<completion-evidence-bundle-id>.json
+<governed-project>/.taskgov/current/evidence/taskgov-evidence.lock
+<governed-project>/.taskgov/current/viewer/task-viewer.html
+<governed-project>/.taskgov/current/verification-runner/
 ```
 
-The package `state/` directory is the generated-state and Git-ignore boundary.
+The governed project's `.taskgov/` is the generated-state and Git-ignore boundary.
 The recommended target-local rule is exactly:
 
 ```gitignore
-/.agents/skills/task-governance-tool/state/
+/.taskgov/
 ```
 
 An effective enclosing rule is also valid. Broad `*.sqlite`, `*.sqlite3`, or
 `*.db` guidance is prohibited. Public alternate database, backup, Viewer,
 state, export, and output paths do not exist; explicit path injection is an
 internal test/service seam only.
+
+The physical package and its three supported local `config/` files stay in
+place. Package-local `state/` is retained only as migration source/retirement
+material, never a second active state or automatic fallback. Keep its existing
+ignore rule during migration and upgrades. Explicit offline
+[state separation](setup-state-specification.md#project-state-separation)
+preserves identity, binding and durable records without a schema change or a
+new normal Task-loop command. Writable workspace state is not tamper-proof.
 
 ## Public CLI And Output Contract
 

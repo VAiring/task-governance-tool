@@ -300,9 +300,9 @@ Bundles never satisfy a current gate.
 ## Canonical Evidence Bundle And Index Formats
 
 The only generated paths are
-`state/current/evidence/index.json` and
-`state/current/evidence/bundles/<completion-evidence-bundle-id>.json` beneath
-the ignored canonical package state. There is no public command, custom path,
+`.taskgov/current/evidence/index.json` and
+`.taskgov/current/evidence/bundles/<completion-evidence-bundle-id>.json` beneath
+the governed project. There is no public command, custom path,
 import, endpoint, watcher, background worker, or Viewer Evidence UI.
 
 Canonical JSON accepts only null, Boolean, string, integer, array, and object;

@@ -21,6 +21,7 @@ from tests.test_state_resolver import (
 from tests.test_db_init import insert_task
 
 from task_governance_tool import setup as setup_service
+from task_governance_tool import setup_state_separation as separation_service
 from task_governance_tool.state_resolver import resolve_project_state
 from task_governance_tool.backup_metadata_repository import (
     MigrationBackupMetadata,
@@ -191,11 +192,18 @@ class M17LegacyRecoveryMatrixTests(unittest.TestCase):
                 install = make_physical_install(Path(tmp))
                 legacy_target, _ = _build_positive_source(install, shape)
                 legacy_project_id = legacy_target.project.project_id
+                source_before = file_snapshot(install.legacy_root)
 
                 result = _run_setup(install)
 
                 self.assertTrue(result.ok, result)
-                self.assertFalse(install.legacy_root.exists())
+                source_after = file_snapshot(install.legacy_root)
+                self.assertEqual(
+                    {name: source_after[name] for name in source_before}, source_before,
+                )
+                self.assertLessEqual(
+                    set(source_after) - set(source_before), {"backups/taskgov-backup.lock"},
+                )
                 resolution = resolve_project_state(
                     skill_root=install.skill_root,
                     repo=install.project_root,
@@ -295,7 +303,7 @@ class M17LegacyRecoveryMatrixTests(unittest.TestCase):
                         _metadata(22, retention=1),
                     )
                 target.db_path.unlink()
-                before = file_snapshot(install.skill_root)
+                before = file_snapshot(install.project_root)
 
                 result = _run_setup(install)
 
@@ -308,7 +316,7 @@ class M17LegacyRecoveryMatrixTests(unittest.TestCase):
                 self.assertEqual(result.data["completed_writes"], [])
                 self.assertFalse(install.db_path.exists())
                 self.assertEqual(
-                    file_snapshot(install.skill_root),
+                    file_snapshot(install.project_root),
                     before,
                 )
 
@@ -343,7 +351,7 @@ class M17LegacyRecoveryMatrixTests(unittest.TestCase):
             _, _, selected_path, _ = _build_local_invalid_newer_source(
                 install
             )
-            real_copy = setup_service.copy_database_snapshot
+            real_copy = separation_service.copy_database_snapshot
             changed_bytes: bytes | None = None
 
             def invalidate_selected_before_copy(**kwargs):
@@ -382,7 +390,7 @@ class M17LegacyRecoveryMatrixTests(unittest.TestCase):
                 return real_copy(**kwargs)
 
             with mock.patch.object(
-                setup_service,
+                separation_service,
                 "copy_database_snapshot",
                 side_effect=invalidate_selected_before_copy,
             ) as copied:
@@ -404,13 +412,16 @@ class M17LegacyRecoveryMatrixTests(unittest.TestCase):
             _, _, selected_path, _ = _build_local_invalid_newer_source(
                 install
             )
-            real_lock = setup_service.state_transition_lock
+            real_lock = separation_service.zero_wait_artifact_lock
             changed_bytes: bytes | None = None
 
             @contextmanager
-            def invalidate_selected_after_plan(state_root):
+            def invalidate_selected_after_plan(lock_path):
                 nonlocal changed_bytes
-                with real_lock(state_root):
+                with real_lock(lock_path) as lock_bytes:
+                    if lock_path != install.project_root / ".taskgov" / "taskgov-state.lock":
+                        yield lock_bytes
+                        return
                     before = selected_path.stat()
                     with closing(sqlite3.connect(selected_path)) as connection:
                         cursor = connection.execute(
@@ -426,11 +437,11 @@ class M17LegacyRecoveryMatrixTests(unittest.TestCase):
                         ns=(changed.st_atime_ns, before.st_mtime_ns),
                     )
                     changed_bytes = selected_path.read_bytes()
-                    yield
+                    yield lock_bytes
 
             with mock.patch.object(
-                setup_service,
-                "state_transition_lock",
+                separation_service,
+                "zero_wait_artifact_lock",
                 invalidate_selected_after_plan,
             ):
                 result = _run_setup(install)
@@ -448,12 +459,14 @@ class M17LegacyRecoveryMatrixTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             install = make_physical_install(Path(tmp))
             _, older_path, _, _ = _build_local_invalid_newer_source(install)
-            real_resolve_staged = setup_service.resolve_staged_project_state
+            real_resolve_staged = separation_service.resolve_staged_project_state
             changed_bytes: bytes | None = None
 
             def invalidate_nonselected_candidate(**kwargs):
                 nonlocal changed_bytes
                 result = real_resolve_staged(**kwargs)
+                if changed_bytes is not None:
+                    return result
                 before = older_path.stat()
                 with closing(sqlite3.connect(older_path)) as connection:
                     cursor = connection.execute(
@@ -487,7 +500,7 @@ class M17LegacyRecoveryMatrixTests(unittest.TestCase):
                 return result
 
             with mock.patch.object(
-                setup_service,
+                separation_service,
                 "resolve_staged_project_state",
                 side_effect=invalidate_nonselected_candidate,
             ) as staged:
@@ -496,7 +509,7 @@ class M17LegacyRecoveryMatrixTests(unittest.TestCase):
             self.assertFalse(result.ok)
             self.assertEqual(result.error_code, "setup_restore_failed")
             self.assertEqual(result.data["completed_writes"], [])
-            staged.assert_called_once()
+            self.assertGreaterEqual(staged.call_count, 1)
             self.assertFalse(install.fixed_root.exists())
             self.assertIsNotNone(changed_bytes)
             self.assertEqual(older_path.read_bytes(), changed_bytes)

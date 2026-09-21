@@ -55,6 +55,12 @@ from task_governance_tool.storage import (  # noqa: E402
 from task_governance_tool.state_resolver import (  # noqa: E402
     observe_current_root,
 )
+from task_governance_tool.state_separation import (  # noqa: E402
+    SeparationRecord,
+    encode_separation_record,
+    retirement_marker_bytes,
+    separation_paths,
+)
 
 
 MANIFEST_NAME = "release-manifest.json"
@@ -212,7 +218,9 @@ def file_snapshot(root: Path, *, exclude_state: bool = False) -> dict[str, str]:
         if not path.is_file():
             continue
         relative = path.relative_to(root)
-        if exclude_state and "state" in relative.parts:
+        if exclude_state and (
+            "state" in relative.parts or relative.parts[0] == ".taskgov"
+        ):
             continue
         result[relative.as_posix()] = hashlib.sha256(path.read_bytes()).hexdigest()
     return result
@@ -268,7 +276,15 @@ class PhysicalInstall:
 
     @property
     def fixed_root(self) -> Path:
-        return self.skill_root.resolve() / "state" / "current"
+        return self.project_root.resolve() / ".taskgov" / "current"
+
+    def state_snapshot(self) -> dict[str, dict[str, tuple[object, ...]]]:
+        """Observe both generated state and the retained package boundary."""
+
+        return {
+            "project_state": tree_snapshot(self.project_root / ".taskgov"),
+            "package_state": tree_snapshot(self.skill_root / "state"),
+        }
 
     @property
     def db_path(self) -> Path:
@@ -359,6 +375,15 @@ class PhysicalInstall:
 
 
 @dataclass(frozen=True)
+class OldFixedPhysicalInstall(PhysicalInstall):
+    """Explicit fixture for exact binaries using package-local fixed state."""
+
+    @property
+    def fixed_root(self) -> Path:
+        return self.skill_root.resolve() / "state" / "current"
+
+
+@dataclass(frozen=True)
 class LegacyPhysicalInstall(PhysicalInstall):
     """M17.1 staging fixture whose canonical runtime target is still legacy."""
 
@@ -378,6 +403,66 @@ class LegacyPhysicalInstall(PhysicalInstall):
         return self.legacy_target
 
 
+def activate_fixed_fixture(install: PhysicalInstall, *, source_schema_version: int) -> None:
+    """Close synthetic pre-v14 fixed-layout admission, not migration evidence.
+
+    Only intentional injected active-layout tests call this helper. The source
+    basis uses their legacy ID and current binding; fixed placeholder digests
+    are codec-valid fixture values, not claims of a retained migration copy.
+    Public setup and old-source fixtures must not call it implicitly.
+    """
+
+    if not 1 <= source_schema_version <= 13:
+        raise AssertionError("synthetic legacy fixture requires schema v1-v13")
+    record = SeparationRecord(
+        v=1, transition_id="c" * 32, phase="activated",
+        project_id=install.legacy_project_id,
+        source_layout="fixed_current_v1",
+        source_schema_version=source_schema_version,
+        source_binding_generation=0,
+        source_path_hash=install.legacy_target.project.canonical_path_hash,
+        source_fingerprint="a" * 64, retained_digest="b" * 64,
+        candidate_digest="d" * 64,
+    )
+    paths = separation_paths(install.project_root / ".taskgov")
+    record_path = paths.record
+    record_path.parent.mkdir(parents=True)
+    # The activated metadata observer requires the declared retained container;
+    # its synthetic empty content is not used by these active-DB tests.
+    paths.source.mkdir()
+    record_path.write_bytes(encode_separation_record(record))
+    marker = install.skill_root / "state" / "current" / "taskgov.sqlite"
+    marker.parent.mkdir(parents=True)
+    marker.write_bytes(retirement_marker_bytes(record))
+
+
+def activate_fresh_uuid_fixture(install: PhysicalInstall, *, project_id: str) -> None:
+    """Close an explicitly initialized fresh UUID fixture, not setup evidence.
+
+    This opt-in seam is only for tests that intentionally inject a fresh DB.
+    It preserves their initialized identity and has no old source or retained
+    snapshot. The placeholder candidate digest is not a migration-copy claim.
+    """
+
+    with closing(connect_readonly(install.db_path)) as connection:
+        binding = connection.execute(
+            "SELECT project_id, identity_scheme, binding_generation, binding_reason "
+            "FROM project_meta"
+        ).fetchall()
+    if [tuple(row) for row in binding] != [(project_id, "uuid_v1", 1, "fresh_setup")]:
+        raise AssertionError("fresh UUID activation requires the exact initialized binding")
+    record = SeparationRecord(
+        v=1, transition_id="c" * 32, phase="activated", project_id=project_id,
+        candidate_digest="d" * 64,
+    )
+    paths = separation_paths(install.project_root / ".taskgov")
+    paths.record.parent.mkdir(parents=True)
+    paths.record.write_bytes(encode_separation_record(record))
+    marker = install.skill_root / "state" / "current" / "taskgov.sqlite"
+    marker.parent.mkdir(parents=True)
+    marker.write_bytes(retirement_marker_bytes(record))
+
+
 def make_physical_install(root: Path, *, git_managed: bool = False) -> PhysicalInstall:
     project = root / "project"
     skill_parent = project / ".agents" / "skills"
@@ -393,20 +478,20 @@ def make_physical_install(root: Path, *, git_managed: bool = False) -> PhysicalI
             check=True,
         )
         (project / ".gitignore").write_text(
-            "/.agents/skills/task-governance-tool/state/\n",
+            "/.taskgov/\n/.agents/skills/task-governance-tool/state/\n",
             encoding="utf-8",
         )
     return PhysicalInstall(project_root=project, skill_root=skill_root)
 
 
-def setup_exact_install(root: Path, commit: str) -> PhysicalInstall:
-    """Install and set up one complete package from an exact local commit."""
+def setup_exact_install(root: Path, commit: str) -> OldFixedPhysicalInstall:
+    """Set up an exact pre-separation package with its explicit old layout."""
 
     project = root / "project"
     skill_parent = project / ".agents" / "skills"
     skill_parent.mkdir(parents=True)
     skill_root = extract_skill_at_commit(skill_parent, commit)
-    install = PhysicalInstall(project_root=project, skill_root=skill_root)
+    install = OldFixedPhysicalInstall(project_root=project, skill_root=skill_root)
     result = install.run("setup", "--json")
     if result.returncode != 0:
         raise AssertionError(result.stdout or result.stderr)
@@ -834,7 +919,9 @@ def canonical_managed_sqlite_files(
     exclude: Iterable[Path] = (),
 ) -> list[Path]:
     excluded = {path.resolve(strict=False) for path in exclude}
-    state_root = install.skill_root / "state"
+    # Only the selected runtime tree is managed. Retained separation source
+    # snapshots are not backups and must not enter backup-count assertions.
+    state_root = install.db_path.parent
     if not state_root.exists():
         return []
     return sorted(

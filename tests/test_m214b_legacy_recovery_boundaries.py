@@ -8,11 +8,11 @@ from pathlib import Path
 from unittest import mock
 
 from tests.m14_test_support import (
+    activate_fixed_fixture,
     create_v10_target,
     create_v14_target,
     make_physical_install,
     remove_v18_evidence_ledger_for_test,
-    tree_snapshot,
 )
 from tests.m214b_test_support import (
     inject_primary_candidate_metadata_conflict,
@@ -51,8 +51,7 @@ class M214BLegacyRecoveryBoundaryTests(unittest.TestCase):
                 "Legacy structural backup task",
                 sqlite3.Binary(b"malformed"),
             )
-            state_root = install.skill_root / "state"
-            before_managed_state = tree_snapshot(state_root)
+            before_managed_state = install.state_snapshot()
 
             result = setup_service.run_setup(
                 repo=str(install.project_root),
@@ -67,7 +66,7 @@ class M214BLegacyRecoveryBoundaryTests(unittest.TestCase):
             self.assertEqual(result.error_code, "project_state_unreadable")
             self.assertEqual(result.data["planned_writes"], [])
             self.assertEqual(result.data["completed_writes"], [])
-            self.assertEqual(tree_snapshot(state_root), before_managed_state)
+            self.assertEqual(install.state_snapshot(), before_managed_state)
             self.assertFalse(install.fixed_root.exists())
 
     def test_legacy_primary_rejects_candidate_metadata_conflict(self):
@@ -80,8 +79,7 @@ class M214BLegacyRecoveryBoundaryTests(unittest.TestCase):
                 "2099-02-01T00:00:00Z",
             )[-1]
             inject_primary_candidate_metadata_conflict(target, artifact)
-            state_root = install.skill_root / "state"
-            before_managed_state = tree_snapshot(state_root)
+            before_managed_state = install.state_snapshot()
 
             result = setup_service.run_setup(
                 repo=str(install.project_root),
@@ -96,7 +94,7 @@ class M214BLegacyRecoveryBoundaryTests(unittest.TestCase):
             self.assertEqual(result.error_code, "project_state_unreadable")
             self.assertEqual(result.data["planned_writes"], [])
             self.assertEqual(result.data["completed_writes"], [])
-            self.assertEqual(tree_snapshot(state_root), before_managed_state)
+            self.assertEqual(install.state_snapshot(), before_managed_state)
             self.assertFalse(install.fixed_root.exists())
 
     def test_v10_legacy_primary_rejects_candidate_pointer_conflict(self):
@@ -125,8 +123,7 @@ class M214BLegacyRecoveryBoundaryTests(unittest.TestCase):
                 published_at="2096-03-01T00:00:00Z",
                 retention=3,
             )
-            state_root = install.skill_root / "state"
-            before_managed_state = tree_snapshot(state_root)
+            before_managed_state = install.state_snapshot()
 
             result = setup_service.run_setup(
                 repo=str(install.project_root),
@@ -141,7 +138,7 @@ class M214BLegacyRecoveryBoundaryTests(unittest.TestCase):
             self.assertEqual(result.error_code, "project_state_unreadable")
             self.assertEqual(result.data["planned_writes"], [])
             self.assertEqual(result.data["completed_writes"], [])
-            self.assertEqual(tree_snapshot(state_root), before_managed_state)
+            self.assertEqual(install.state_snapshot(), before_managed_state)
             self.assertFalse(install.fixed_root.exists())
 
     def test_v10_older_fallback_points_to_mechanical_head(self):
@@ -153,6 +150,7 @@ class M214BLegacyRecoveryBoundaryTests(unittest.TestCase):
                 explicit_db=True,
             )
             create_v10_target(target)
+            activate_fixed_fixture(install, source_schema_version=10)
             with closing(sqlite3.connect(target.db_path)) as connection:
                 insert_task(
                     connection,
@@ -230,6 +228,7 @@ class M214BLegacyRecoveryBoundaryTests(unittest.TestCase):
                 explicit_db=True,
             )
             create_v10_target(target)
+            activate_fixed_fixture(install, source_schema_version=10)
             artifacts = publish_generations(
                 target,
                 "2098-01-01T00:00:00Z",
@@ -244,8 +243,7 @@ class M214BLegacyRecoveryBoundaryTests(unittest.TestCase):
                 retention=3,
             )
             target.db_path.unlink()
-            state_root = install.skill_root / "state"
-            before_managed_state = tree_snapshot(state_root)
+            before_managed_state = install.state_snapshot()
 
             result = setup_service.run_setup(
                 repo=str(install.project_root),
@@ -260,7 +258,7 @@ class M214BLegacyRecoveryBoundaryTests(unittest.TestCase):
             self.assertEqual(result.error_code, "project_state_unreadable")
             self.assertEqual(result.data["planned_writes"], [])
             self.assertEqual(result.data["completed_writes"], [])
-            self.assertEqual(tree_snapshot(state_root), before_managed_state)
+            self.assertEqual(install.state_snapshot(), before_managed_state)
             self.assertFalse(target.db_path.exists())
 
     def test_v10_absent_predecessor_id_cannot_collide_with_physical_set(self):
@@ -272,6 +270,7 @@ class M214BLegacyRecoveryBoundaryTests(unittest.TestCase):
                 explicit_db=True,
             )
             create_v10_target(target)
+            activate_fixed_fixture(install, source_schema_version=10)
             artifacts = publish_generations(
                 target,
                 "2098-02-01T00:00:00Z",
@@ -287,8 +286,7 @@ class M214BLegacyRecoveryBoundaryTests(unittest.TestCase):
                 retention=3,
             )
             target.db_path.unlink()
-            state_root = install.skill_root / "state"
-            before_managed_state = tree_snapshot(state_root)
+            before_managed_state = install.state_snapshot()
 
             result = setup_service.run_setup(
                 repo=str(install.project_root),
@@ -303,7 +301,7 @@ class M214BLegacyRecoveryBoundaryTests(unittest.TestCase):
             self.assertEqual(result.error_code, "project_state_unreadable")
             self.assertEqual(result.data["planned_writes"], [])
             self.assertEqual(result.data["completed_writes"], [])
-            self.assertEqual(tree_snapshot(state_root), before_managed_state)
+            self.assertEqual(install.state_snapshot(), before_managed_state)
             self.assertFalse(target.db_path.exists())
 
     def test_mixed_schema_older_fallback_can_complete_migration(self):
@@ -319,6 +317,7 @@ class M214BLegacyRecoveryBoundaryTests(unittest.TestCase):
                 enabled=True,
                 generations=5,
             )
+            activate_fixed_fixture(install, source_schema_version=10)
             publish_generations(
                 target,
                 "2026-01-01T00:00:00Z",

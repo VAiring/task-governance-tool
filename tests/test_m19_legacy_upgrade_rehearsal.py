@@ -14,6 +14,7 @@ from pathlib import Path, PurePosixPath
 from typing import Any
 
 from tests.m14_test_support import (
+    PhysicalInstall,
     extract_skill_at_commit,
     run_repository_git as run_git,
 )
@@ -44,13 +45,9 @@ SUPPORTED_LOCAL_CONFIG_CONTENTS = {
     ),
 }
 LEGACY_SETUP_WRITES = [
-    "legacy_state_publish",
-    "migration_backup",
-    "database_migrate",
-    "maintenance_configure",
-    "evidence_projection_publish",
-    "viewer_publish",
-    "legacy_state_cleanup",
+    "state_layout_retire",
+    "state_layout_publish",
+    "state_layout_activate",
 ]
 INJECTED_SETUP = r"""
 import sys
@@ -58,14 +55,14 @@ from pathlib import Path
 
 scripts = Path(sys.argv[1]).resolve()
 sys.path.insert(0, str(scripts))
-from task_governance_tool import cli, setup
+from task_governance_tool import cli, setup_state_separation
 
 cli.set_cli_script_path(scripts / "taskgov.py")
 
 def fail_migration(*args, **kwargs):
     raise RuntimeError("injected migration failure")
 
-setup.initialize_database = fail_migration
+setup_state_separation.migrate_bound_database = fail_migration
 raise SystemExit(
     cli.main(["setup", "--repo", sys.argv[2], "--json"])
 )
@@ -133,7 +130,32 @@ def overlay_current_package(skill_root: Path) -> None:
         shutil.copyfile(source, destination)
 
 
-def restore_compatibility_point(skill_root: Path, compatibility: Path) -> None:
+def restore_compatibility_point(
+    skill_root: Path,
+    compatibility: Path,
+    *,
+    project: Path,
+    retired_state: Path,
+) -> None:
+    # This helper is only for this TemporaryDirectory-owned compatibility
+    # point. Keep new business state intact but outside its active location.
+    project = project.resolve(strict=True)
+    skill_root = skill_root.resolve(strict=True)
+    compatibility = compatibility.resolve(strict=True)
+    retired_state = retired_state.resolve(strict=False)
+    if (
+        skill_root != project / ".agents" / "skills" / "task-governance-tool"
+        or compatibility.parent != project.parent
+        or retired_state.parent != project.parent
+        or retired_state.exists()
+        or (compatibility / "config").exists()
+    ):
+        raise AssertionError("test compatibility-point scope is invalid")
+    active_state = project / ".taskgov"
+    if active_state.is_symlink() or not active_state.is_dir():
+        raise AssertionError("test active state is not a physical directory")
+    active_state.resolve(strict=True).relative_to(project)
+    active_state.rename(retired_state)
     config = skill_root / "config"
     for child in tuple(skill_root.iterdir()):
         if child == config:
@@ -353,7 +375,7 @@ class LegacyUpgradeAndRollbackRehearsalTests(unittest.TestCase):
             (install.skill_root / "scripts" / "taskgov.py").write_bytes(
                 b"# superseded installed core\n"
             )
-            state_before = tree_snapshot(install.skill_root / "state")
+            state_before = install.state_snapshot()
 
             overlay_current_package(install.skill_root)
 
@@ -370,7 +392,7 @@ class LegacyUpgradeAndRollbackRehearsalTests(unittest.TestCase):
             }
             self.assertEqual(installed_core, candidate_core)
             self.assertFalse(obsolete.exists())
-            self.assertEqual(tree_snapshot(install.skill_root / "state"), state_before)
+            self.assertEqual(install.state_snapshot(), state_before)
             self.assertEqual(supported_local_config_snapshot(install.skill_root), configs)
             self.assertEqual(sentinel.read_bytes(), b'{"inert":true}\n')
 
@@ -431,6 +453,7 @@ class LegacyUpgradeAndRollbackRehearsalTests(unittest.TestCase):
             shutil.copytree(legacy_skill, compatibility)
             compatibility_snapshot = tree_snapshot(compatibility)
             legacy_state_snapshot = tree_snapshot(legacy_skill / "state")
+            legacy_db_digest = hashlib.sha256(legacy_db.read_bytes()).hexdigest()
             self.assertFalse((compatibility / "config").exists())
             supported_config_snapshot = seed_supported_local_configs(legacy_skill)
             self.assertEqual(
@@ -448,6 +471,7 @@ class LegacyUpgradeAndRollbackRehearsalTests(unittest.TestCase):
             version = run_cli(legacy_skill, project, "--version")
             self.assertEqual(version.returncode, 0)
             self.assertEqual(version.stdout.strip(), "taskgov 0.13.0")
+            preview_project_snapshot = tree_snapshot(project)
 
             preview = self.invoke(
                 legacy_skill, project, "setup", "--repo", str(project),
@@ -458,6 +482,7 @@ class LegacyUpgradeAndRollbackRehearsalTests(unittest.TestCase):
             self.assertEqual(preview["data"]["planned_writes"], LEGACY_SETUP_WRITES)
             self.assertEqual(preview["data"]["completed_writes"], [])
             self.assertEqual(preview["data"]["evidence_status"], "not_present")
+            self.assertEqual(tree_snapshot(project), preview_project_snapshot)
             self.assertEqual(
                 tree_snapshot(legacy_skill / "state"),
                 overlay_state_snapshot,
@@ -491,8 +516,44 @@ class LegacyUpgradeAndRollbackRehearsalTests(unittest.TestCase):
             )
             self.assertEqual(sqlite_version(legacy_db), 2)
             self.assertEqual(
+                hashlib.sha256(legacy_db.read_bytes()).hexdigest(), legacy_db_digest,
+            )
+            self.assertEqual(
                 supported_local_config_snapshot(legacy_skill),
                 supported_config_snapshot,
+            )
+
+            # Interior preparation failure is preserved, never silently blessed
+            # or deleted on retry. Recover this test fixture by selecting the
+            # saved compatibility point before beginning a distinct attempt.
+            separation = project / ".taskgov" / ".state-separation"
+            record = json.loads((separation / "record.json").read_bytes())
+            self.assertEqual(record["phase"], "private")
+            self.assertIsNone(record["candidate_digest"])
+            self.assertEqual(
+                legacy_projection(separation / "source" / "taskgov.sqlite"),
+                pre_upgrade_projection,
+            )
+            self.assertFalse((project / ".taskgov" / "current").exists())
+            failed_before_retry = tree_snapshot(project)
+            retry = self.invoke(
+                legacy_skill, project, "setup", "--repo", str(project),
+                "--json", expected=2,
+            )
+            self.assertEqual(retry["errors"][0]["code"], "setup_incomplete")
+            self.assertEqual(tree_snapshot(project), failed_before_retry)
+            failed_preparation = root / "failed-preparation-state"
+            failed_preparation_snapshot = tree_snapshot(project / ".taskgov")
+            restore_compatibility_point(
+                legacy_skill, compatibility, project=project,
+                retired_state=failed_preparation,
+            )
+            self.assertFalse((project / ".taskgov").exists())
+            self.assertEqual(tree_snapshot(failed_preparation), failed_preparation_snapshot)
+            self.assertEqual(tree_snapshot(legacy_skill / "state"), legacy_state_snapshot)
+            overlay_current_package(legacy_skill)
+            self.assertEqual(
+                supported_local_config_snapshot(legacy_skill), supported_config_snapshot,
             )
 
             upgraded = self.invoke(
@@ -509,13 +570,28 @@ class LegacyUpgradeAndRollbackRehearsalTests(unittest.TestCase):
                 supported_config_snapshot,
             )
 
-            current_db = legacy_skill / "state" / "current" / "taskgov.sqlite"
-            viewer = (
-                legacy_skill / "state" / "current" / "viewer" / "task-viewer.html"
-            )
+            active = PhysicalInstall(project, legacy_skill)
+            current_db = active.db_path
+            viewer = active.viewer_path
             self.assertTrue(current_db.is_file())
             self.assertTrue(viewer.is_file())
-            self.assertFalse(legacy_db.exists())
+            self.assertTrue(legacy_db.is_file())
+            self.assertEqual(sqlite_version(legacy_db), 2)
+            self.assertEqual(
+                hashlib.sha256(legacy_db.read_bytes()).hexdigest(), legacy_db_digest,
+            )
+            marker = json.loads(
+                (legacy_skill / "state" / "current" / "taskgov.sqlite").read_bytes()
+            )
+            self.assertEqual(marker["kind"], "taskgov-retired-state")
+            self.assertEqual(marker["project_id"], upgraded["project_id"])
+            retained_source = project / ".taskgov" / ".state-separation" / "source"
+            self.assertEqual(sqlite_version(retained_source / "taskgov.sqlite"), 2)
+            self.assertEqual(
+                legacy_projection(retained_source / "taskgov.sqlite"), pre_upgrade_projection,
+            )
+            retired_package_state = tree_snapshot(legacy_skill / "state")
+            retained_source_snapshot = tree_snapshot(retained_source)
             self.assertEqual(sqlite_version(current_db), 22)
             self.assertEqual(legacy_projection(current_db), pre_upgrade_projection)
 
@@ -757,7 +833,18 @@ class LegacyUpgradeAndRollbackRehearsalTests(unittest.TestCase):
 
             # Never invoke the legacy runtime until its matching package and
             # schema-v2 state have both been restored.
-            restore_compatibility_point(legacy_skill, compatibility)
+            self.assertEqual(tree_snapshot(legacy_skill / "state"), retired_package_state)
+            self.assertEqual(tree_snapshot(retained_source), retained_source_snapshot)
+            retired_active = root / "post-upgrade-state"
+            active_snapshot = tree_snapshot(project / ".taskgov")
+            restore_compatibility_point(
+                legacy_skill, compatibility, project=project,
+                retired_state=retired_active,
+            )
+            self.assertFalse((project / ".taskgov").exists())
+            self.assertEqual(tree_snapshot(retired_active), active_snapshot)
+            self.assertEqual(tree_snapshot(failed_preparation), failed_preparation_snapshot)
+            self.assertEqual(tree_snapshot(compatibility), compatibility_snapshot)
             self.assertEqual(
                 tuple(
                     item

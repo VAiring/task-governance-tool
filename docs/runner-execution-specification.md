@@ -374,7 +374,7 @@ only proved cleanup and a cleanup-only event; it creates no observation and
 returns a tool-service error.
 
 The fixed private root is
-`<physical-package>/state/current/verification-runner`, with only the fixed
+`<governed-project>/.taskgov/current/verification-runner`, with only the fixed
 one-byte lock, `attempts`, and `quarantine` children. It is resolved by the
 shared canonical state resolver and is created only for an admitted Runner
 route; feature code never reconstructs it. The

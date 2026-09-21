@@ -49,10 +49,11 @@ An approved package update preserves `config/verification-runner.json`,
 artifacts exclude all `config/` content, and package creation never initializes
 project state.
 
-For a Git-managed target, ensure the canonical Skill state directory is
+For a Git-managed target, ensure the canonical project state directory is
 effectively ignored before setup. This narrow target-local rule is recommended:
 
 ```gitignore
+/.taskgov/
 /.agents/skills/task-governance-tool/state/
 /.agents/skills/task-governance-tool/config/verification-runner.json
 ```
@@ -80,16 +81,26 @@ opt-in to project-local maintenance and publishes or repairs the canonical
 Evidence JSON and offline Viewer. It is noninteractive and idempotent. If the canonical DB is
 missing while a valid fixed-layout managed generation remains, setup recovers
 the newest valid same-project generation before normal migration and Viewer
-repair. It also supports one unambiguous same-binding legacy backup-only
+repair. Before layout activation, source selection also supports one
+unambiguous same-binding legacy backup-only
 source: recovery occurs in the private fixed-layout stage and never recreates
 the old legacy primary. A moved legacy backup-only source is not a relocation
 candidate and fails no-write as `project_state_unreadable`. It does not add a
 recovery command or accept a recovery path. Setup never creates or edits the
 Runner Plan.
 
-The 0.13.0 candidate retains one immutable project identity in the fixed
-package-local `state/current/` layout and keeps the governed-directory binding
-separately.
+After activation, recovery uses only new-root managed backups, never the old
+package-local source or retained copy.
+
+The candidate uses fixed `<governed-project>/.taskgov/current/` state and keeps
+one immutable project identity separate from the governed-directory binding.
+Upgrading from package-local state requires an explicit offline setup: stop
+Taskgov writers and enabled Runner processes, update the package, preview,
+then run setup. It retains a recoverable source, fences the old location and
+activates the new state without changing identity merely for the path move.
+Preserve old retirement material and its ignore rule during package updates.
+The exact [migration/retry boundary](docs/setup-state-specification.md#project-state-separation)
+does not add a normal-loop command or an arbitrary state-path option.
 Fresh setup creates a UUID-backed identity. Explicit setup mechanically moves
 a supported schema-v1-through-v13 legacy database to the fixed layout when its
 stored binding still matches the current project.
@@ -107,9 +118,9 @@ rather than being inferred.
 
 Schema v19 adds immutable criterion links and Finding snapshots, seals one
 version-1 Bundle with each native completion, and maintains deterministic
-Evidence JSON at fixed `state/current/evidence/index.json` and
-`state/current/evidence/bundles/<completion-evidence-bundle-id>.json` paths,
-with its lock at `state/current/evidence/taskgov-evidence.lock`. Pre-v19 cycles remain
+Evidence JSON at fixed `.taskgov/current/evidence/index.json` and
+`.taskgov/current/evidence/bundles/<completion-evidence-bundle-id>.json` paths,
+with its lock at `.taskgov/current/evidence/taskgov-evidence.lock`. Pre-v19 cycles remain
 index-only `legacy_unknown`. SQLite stays canonical and JSON is never imported.
 Schema v20 preserves existing Bundle-v1 bytes and digests, seals Bundle v2 with
 a derived verification basis and null Runner observation for each new native
@@ -376,7 +387,7 @@ reported only as bounded sanitized warnings.
 
 Taskgov starts no daemon, timer, background process, queue, service, browser,
 or maintenance command. Generated Evidence JSON, Viewer, and managed backups
-remain runtime artifacts under the ignored Skill `state/` directory. Evidence
+remain runtime artifacts under the ignored project `.taskgov/` directory. Evidence
 projection failure keeps the mutation successful and the last-good index,
 leaves work due, and emits only its fixed warning. Viewer snapshot v4 reads source schemas 5 through 22 and includes the same
 bounded newest-first completion history as `task show --audit`. Sources 5-14 are shown

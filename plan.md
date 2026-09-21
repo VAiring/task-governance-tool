@@ -83,6 +83,17 @@ gates. It is not the product contract, execution ledger, or evidence store:
 - Durable project identity is separate from mutable filesystem binding. A path
   mismatch is not move/copy/fork intent; only explicit setup confirmation may
   advance a binding.
+- Generated state uses the governed root's fixed `.taskgov/` boundary while
+  Skill code/config remain in the physical package. The explicit offline
+  [separation contract](docs/setup-state-specification.md#project-state-separation)
+  preserves identity and defines source retention, retirement and retry;
+  it adds no schema, arbitrary path or normal-loop call. Its three-unit
+  execution boundary remains in the separately routed conditional plan.
+- The user-approved 2026-09-21 migration prerequisite leaves completion of an
+  unfinished predecessor migration with the compatible pre-separation setup;
+  new separation preserves/refuses it. See the same separation contract for
+  its exact applicability. Healthy-source migration and normal Task work do
+  not gain another setup call.
 - The Viewer is a generated offline projection. Optional same-file reload and
   bounded one-shot UI-state handoff are presentation-only and add no Skill
   trigger, service, network action, or browser launch.
@@ -138,6 +149,8 @@ gates. It is not the product contract, execution ledger, or evidence store:
   [design](docs/runner-execution-design.md#typed-process-value-boundary), and
   private process tests follow their [execution owner](docs/runner-execution-design.md#private-posix-process-execution).
   Both hosts additionally select the public Runner-to-completion/Evidence module
+  and the portable state-separation record, resolver and explicit setup
+  cutover/retry modules,
   and existing exact Runner cases for uncertain process cleanup, restart cleanup,
   and pending/cleanup-only/stale completion refusal. Selected applicable tests
   must execute without SKIP; this does not prohibit legitimate OS-inapplicable

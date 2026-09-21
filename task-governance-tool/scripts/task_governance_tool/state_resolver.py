@@ -1,4 +1,4 @@
-"""Bounded read-only resolution of the one package-local project state.
+"""Bounded read-only resolution of the one project-local generated state.
 
 The resolver deliberately does not create directories, initialize SQLite, acquire
 artifact locks, or repair legacy state.  It establishes enough immutable context
@@ -26,7 +26,15 @@ from task_governance_tool.state_paths import (
     EVIDENCE_INDEX_MAX_BYTES,
     EVIDENCE_LOCK_FILENAME,
     EVIDENCE_MAX_BUNDLE_FILES,
+    StatePathError,
     evidence_relative_file_kind,
+    inspect_physical_directory,
+    inspect_physical_file,
+)
+from task_governance_tool.state_separation import (
+    SeparationError,
+    SeparationObservation,
+    inspect_separation,
 )
 from task_governance_tool.project_binding_repository import (
     read_project_binding_state,
@@ -101,7 +109,7 @@ _KNOWN_RESOLVER_ERRORS = frozenset(
 
 @dataclass(frozen=True)
 class CanonicalStatePaths:
-    """Canonical paths owned by the physical Skill package."""
+    """Generated paths with the physical Skill retained separately."""
 
     skill_root: Path = field(repr=False)
     state_root: Path = field(repr=False)
@@ -178,6 +186,15 @@ class FixedRecoveryObservation:
 
 
 @dataclass(frozen=True)
+class LayoutMigrationObservation:
+    """Setup-only source and transition context; never an active target."""
+
+    action: Literal["fresh", "migrate", "resume", "repair_barrier"]
+    source: ProjectStateResolution | None = field(repr=False)
+    transition: SeparationObservation = field(repr=False)
+
+
+@dataclass(frozen=True)
 class ProjectStateResolution:
     """One immutable resolver result shared by setup and DB-backed consumers."""
 
@@ -199,6 +216,10 @@ class ProjectStateResolution:
         compare=False,
     )
     error_code: str | None = None
+    layout_migration: LayoutMigrationObservation | None = field(
+        default=None,
+        repr=False,
+    )
 
     @property
     def project_id(self) -> str | None:
@@ -245,11 +266,8 @@ class _ResolverFailure(Exception):
     code: str
 
 
-def canonical_state_paths(skill_root: Path) -> CanonicalStatePaths:
-    """Derive the only production state hierarchy from the physical package."""
-
+def _state_paths_at(skill_root: Path, state_root: Path) -> CanonicalStatePaths:
     canonical_skill = Path(skill_root).expanduser().resolve(strict=False)
-    state_root = canonical_skill / "state"
     fixed_root = state_root / "current"
     evidence_root = fixed_root / EVIDENCE_DIRECTORY_NAME
     return CanonicalStatePaths(
@@ -267,6 +285,19 @@ def canonical_state_paths(skill_root: Path) -> CanonicalStatePaths:
         verification_runner_root=fixed_root / "verification-runner",
         legacy_projects=state_root / "projects",
     )
+
+
+def canonical_state_paths(skill_root: Path, *, repo: Path) -> CanonicalStatePaths:
+    """Derive generated paths from the validated governed project root."""
+
+    return _state_paths_at(skill_root, canonicalize_repo(repo) / ".taskgov")
+
+
+def package_state_paths(skill_root: Path) -> CanonicalStatePaths:
+    """Derive the retired package-state source and permanent fence location."""
+
+    canonical_skill = Path(skill_root).expanduser().resolve(strict=False)
+    return _state_paths_at(canonical_skill, canonical_skill / "state")
 
 
 def observe_current_root(repo: Path) -> CurrentRootObservation:
@@ -291,6 +322,12 @@ def consumer_error_code(resolution: ProjectStateResolution) -> str | None:
         return resolution.error_code
     if resolution.binding == "relocation_required":
         return "project_relocation_required"
+    if resolution.layout_migration is not None:
+        return (
+            "db_not_initialized"
+            if resolution.layout_migration.action == "fresh"
+            else "migration_required"
+        )
     if (
         resolution.layout == "fixed_current_v1"
         and resolution.source_schema_version != SCHEMA_VERSION
@@ -310,16 +347,12 @@ def resolve_project_state(
     include_doctor_state: bool = False,
     retain_read_connection: bool = False,
 ) -> ProjectStateResolution:
-    """Resolve fixed, fixed-recovery, legacy, or missing state without writes."""
+    """Admit activated state or report setup work without exposing old targets."""
 
-    paths = canonical_state_paths(skill_root)
-    current_root = observe_current_root(repo)
-    return _resolve_with_paths(
-        paths,
-        current_root,
-        include_legacy=True,
-        validate_fixed_artifacts=False,
-        repair_evidence_artifacts=False,
+    return _resolve_separated_state(
+        skill_root=skill_root,
+        repo=repo,
+        setup_mode=False,
         include_doctor_state=include_doctor_state,
         retain_read_connection=retain_read_connection,
     )
@@ -332,11 +365,25 @@ def resolve_setup_project_state(
 ) -> ProjectStateResolution:
     """Resolve setup state with deep validation of fixed artifacts."""
 
-    paths = canonical_state_paths(skill_root)
-    current_root = observe_current_root(repo)
+    return _resolve_separated_state(
+        skill_root=skill_root,
+        repo=repo,
+        setup_mode=True,
+        include_doctor_state=False,
+        retain_read_connection=False,
+    )
+
+
+def resolve_package_project_state(
+    *,
+    skill_root: Path,
+    repo: Path,
+) -> ProjectStateResolution:
+    """Deeply observe an old source for setup, including lock-held revalidation."""
+
     return _resolve_with_paths(
-        paths,
-        current_root,
+        package_state_paths(skill_root),
+        observe_current_root(repo),
         include_legacy=True,
         validate_fixed_artifacts=True,
         repair_evidence_artifacts=True,
@@ -345,18 +392,148 @@ def resolve_setup_project_state(
     )
 
 
+def _resolve_separated_state(
+    *,
+    skill_root: Path,
+    repo: Path,
+    setup_mode: bool,
+    include_doctor_state: bool,
+    retain_read_connection: bool,
+) -> ProjectStateResolution:
+    paths = canonical_state_paths(skill_root, repo=repo)
+    old_paths = package_state_paths(skill_root)
+    current_root = observe_current_root(repo)
+    try:
+        transition = inspect_separation(
+            state_root=paths.state_root,
+            old_database=old_paths.database,
+        )
+    except SeparationError as exc:
+        return _error_resolution(paths, current_root, exc.code)
+    except (OSError, RuntimeError, ValueError):
+        return _error_resolution(paths, current_root, "project_state_unreadable")
+
+    if transition.state in {"activated", "repair_barrier"}:
+        resolution = _resolve_with_paths(
+            paths,
+            current_root,
+            include_legacy=False,
+            validate_fixed_artifacts=setup_mode,
+            repair_evidence_artifacts=setup_mode,
+            include_doctor_state=(
+                include_doctor_state and transition.state == "activated"
+            ),
+            retain_read_connection=(
+                retain_read_connection and transition.state == "activated"
+            ),
+        )
+        if resolution.error_code is not None:
+            return resolution
+        if (
+            transition.record is None
+            or resolution.project_id != transition.record.project_id
+        ):
+            if resolution.read_connection is not None:
+                resolution.read_connection.close()
+            return _error_resolution(paths, current_root, "project_state_unreadable")
+        if transition.state == "activated":
+            return resolution
+        return replace(
+            resolution,
+            target=None,
+            fixed_recovery=None,
+            doctor_state=None,
+            read_connection=None,
+            layout_migration=LayoutMigrationObservation(
+                action="repair_barrier",
+                source=None,
+                transition=transition,
+            ),
+        )
+
+    if transition.state not in {"absent", "pending"}:
+        return _error_resolution(paths, current_root, "project_state_unreadable")
+    source: ProjectStateResolution | None = None
+    if transition.state == "absent" or (
+        transition.record is not None
+        and transition.record.source_layout is not None
+        and not transition.marker_matches
+    ):
+        source = _resolve_with_paths(
+            old_paths,
+            current_root,
+            include_legacy=True,
+            validate_fixed_artifacts=setup_mode,
+            repair_evidence_artifacts=setup_mode,
+            include_doctor_state=False,
+            retain_read_connection=False,
+        )
+        if source.error_code is not None:
+            return _error_resolution(paths, current_root, source.error_code)
+        if transition.record is not None and (
+            source.project_id != transition.record.project_id
+            or source.layout != transition.record.source_layout
+            or source.source_schema_version != transition.record.source_schema_version
+            or source.stored_project is None
+            or source.stored_project.canonical_path_hash
+            != transition.record.source_path_hash
+            or (
+                source.stored_project.binding_generation
+                if source.source_schema_version is not None
+                and source.source_schema_version >= 14
+                else 0
+            )
+            != transition.record.source_binding_generation
+        ):
+            return _error_resolution(paths, current_root, "project_state_unreadable")
+
+    fresh = (
+        transition.state == "absent"
+        and source is not None
+        and source.layout == "missing"
+    )
+    action = "fresh" if fresh else (
+        "resume" if transition.state == "pending" else "migrate"
+    )
+    return ProjectStateResolution(
+        paths=paths,
+        current_root=current_root,
+        layout=source.layout if source is not None else "missing",
+        binding=source.binding if source is not None else "unbound",
+        stored_project=source.stored_project if source is not None else None,
+        layout_migration=LayoutMigrationObservation(
+            action=action,
+            source=(source if setup_mode and not fresh else None),
+            transition=transition,
+        ),
+    )
+
+
 def resolve_staged_project_state(
     *,
     stage_root: Path,
     repo: Path,
+    skill_root: Path,
 ) -> ProjectStateResolution:
     """Validate one private fixed-layout stage without legacy fallback."""
 
-    fixed_root = Path(stage_root).resolve(strict=False)
+    return _resolve_with_paths(
+        _private_state_paths(stage_root, skill_root=skill_root),
+        observe_current_root(repo),
+        include_legacy=False,
+        validate_fixed_artifacts=True,
+        repair_evidence_artifacts=False,
+        include_doctor_state=False,
+        retain_read_connection=False,
+    )
+
+
+def _private_state_paths(root: Path, *, skill_root: Path) -> CanonicalStatePaths:
+    fixed_root = Path(root).resolve(strict=False)
     state_root = fixed_root.parent
     evidence_root = fixed_root / EVIDENCE_DIRECTORY_NAME
-    paths = CanonicalStatePaths(
-        skill_root=state_root.parent,
+    return CanonicalStatePaths(
+        skill_root=Path(skill_root).expanduser().resolve(strict=False),
         state_root=state_root,
         transition_lock=state_root / "taskgov-state.lock",
         fixed_root=fixed_root,
@@ -370,15 +547,36 @@ def resolve_staged_project_state(
         verification_runner_root=fixed_root / "verification-runner",
         legacy_projects=state_root / "projects",
     )
-    return _resolve_with_paths(
-        paths,
-        observe_current_root(repo),
-        include_legacy=False,
-        validate_fixed_artifacts=True,
-        repair_evidence_artifacts=False,
-        include_doctor_state=False,
-        retain_read_connection=False,
-    )
+
+
+def resolve_retained_source_snapshot(
+    *, source_root: Path, repo: Path, skill_root: Path,
+) -> ProjectStateResolution:
+    """Observe setup's immutable retained DB, never select or admit active state.
+
+    The coordinator owns the sealed complete inventory and recorded source
+    basis. Its selected snapshot retains pre-publication repository rows, so
+    only the normalized candidate may use the full staged backup envelope.
+    """
+    paths = _private_state_paths(source_root, skill_root=skill_root)
+    current_root = observe_current_root(repo)
+    try:
+        inspect_physical_directory(Path(source_root), root=current_root.canonical_repo)
+        inspect_physical_file(paths.database, root=paths.fixed_root)
+        _validate_optional_regular_file(paths.transition_lock)
+        validate_operational_journal_state(paths.database)
+        database = _inspect_database(
+            paths.database, mutable=False, classify_recovery_content=True,
+        )
+        if not database.recovery_content_valid:
+            raise _ResolverFailure("project_state_unreadable")
+        return _fixed_resolution(paths, current_root, database, fixed_recovery=None)
+    except _ResolverFailure as exc:
+        return _error_resolution(paths, current_root, exc.code)
+    except StorageError as exc:
+        return _error_resolution(paths, current_root, _storage_error_code(exc))
+    except (OSError, RuntimeError, ValueError, StatePathError, sqlite3.Error):
+        return _error_resolution(paths, current_root, "project_state_unreadable")
 
 
 def _resolve_with_paths(

@@ -10,6 +10,9 @@ from unittest import mock
 
 try:
     from m14_test_support import (
+        OldFixedPhysicalInstall,
+        activate_fixed_fixture,
+        file_snapshot,
         canonical_managed_sqlite_files,
         canonical_test_path,
         create_v10_target,
@@ -22,6 +25,9 @@ try:
     )
 except ModuleNotFoundError:
     from tests.m14_test_support import (
+        OldFixedPhysicalInstall,
+        activate_fixed_fixture,
+        file_snapshot,
         canonical_managed_sqlite_files,
         canonical_test_path,
         create_v10_target,
@@ -61,9 +67,10 @@ CONFIGURED_RECOVERY_MIGRATION_WRITES = [
 ]
 
 
-def fixed_fixture_target(install) -> DatabaseTarget:
-    """Create an explicit fixed-current target for pre-v14 fixtures."""
+def fixed_fixture_target(install, *, schema_version: int = 9) -> DatabaseTarget:
+    """Create an intentionally activated fixed-current pre-v14 fixture."""
 
+    activate_fixed_fixture(install, source_schema_version=schema_version)
     return DatabaseTarget(
         project=install.legacy_target.project,
         db_path=install.db_path,
@@ -149,11 +156,7 @@ class SetupManagedBackupRecoveryTests(unittest.TestCase):
             before_backup = backup_path.read_bytes()
             install.db_path.unlink()
 
-            before_preview = {
-                path.relative_to(install.skill_root).as_posix(): path.read_bytes()
-                for path in install.skill_root.rglob("*")
-                if path.is_file()
-            }
+            before_preview = file_snapshot(install.project_root)
             preview = install.run("setup", "--read-only", "--json")
 
             self.assertEqual(preview.returncode, 0, preview.stderr)
@@ -168,12 +171,7 @@ class SetupManagedBackupRecoveryTests(unittest.TestCase):
             self.assertEqual(preview_data["evidence_status"], "not_present")
             self.assertFalse(preview_data["maintenance_enabled"])
             self.assertEqual(
-                {
-                    path.relative_to(install.skill_root).as_posix():
-                    path.read_bytes()
-                    for path in install.skill_root.rglob("*")
-                    if path.is_file()
-                },
+                file_snapshot(install.project_root),
                 before_preview,
             )
 
@@ -668,7 +666,7 @@ class SetupManagedBackupRecoveryTests(unittest.TestCase):
             with self.subTest(version=version), tempfile.TemporaryDirectory() as tmp:
                 install = make_physical_install(Path(tmp))
                 create_fixture(
-                    fixed_fixture_target(install),
+                    fixed_fixture_target(install, schema_version=version),
                     enabled=True,
                     interval_minutes=45,
                     generations=2,
@@ -738,6 +736,7 @@ class SetupManagedBackupRecoveryTests(unittest.TestCase):
                 root / "foreign"
             )
             local = make_physical_install(root / "local")
+            activate_fixed_fixture(local, source_schema_version=9)
             local_backup_dir = local.db_path.parent / "backups"
             local_backup_dir.mkdir(parents=True)
             copied = local_backup_dir / foreign_backup.name
@@ -893,6 +892,7 @@ class SetupManagedBackupRecoveryTests(unittest.TestCase):
                 tempfile.TemporaryDirectory() as tmp,
             ):
                 install = make_physical_install(Path(tmp))
+                install = OldFixedPhysicalInstall(install.project_root, install.skill_root)
                 backup_files: dict[Path, bytes] = {}
                 backup_dir = install.db_path.parent / "backups"
                 if material == "invalid":
@@ -974,6 +974,40 @@ class SetupManagedBackupRecoveryTests(unittest.TestCase):
             self.assertEqual(backup_path.read_bytes(), before_backup)
             self.assertEqual(self._temporary_restore_paths(install), [])
 
+    def test_activated_missing_current_without_backups_never_initializes_empty_state(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            install, backup_path = self._initialize_with_backed_up_task(root)
+            hidden = root / backup_path.name
+            backup_bytes = backup_path.read_bytes()
+            shutil.move(backup_path, hidden)
+            shutil.rmtree(install.fixed_root)
+            before = file_snapshot(install.project_root)
+            with mock.patch.object(
+                setup_service, "initialize_uuid_database",
+                side_effect=AssertionError("activated identity must not be reinitialized"),
+            ) as initialize:
+                failed = setup_service.run_setup(
+                    repo=str(install.project_root), repo_explicit=True,
+                    script_path=install.entrypoint, read_only=False,
+                    backup_interval_minutes=None, backup_generations=None,
+                )
+
+            self.assertFalse(failed.ok)
+            self.assertEqual(failed.error_code, "project_state_unreadable")
+            self.assertEqual(file_snapshot(install.project_root), before)
+            initialize.assert_not_called()
+            backup_path.parent.mkdir(parents=True)
+            shutil.move(hidden, backup_path)
+            self.assertEqual(backup_path.read_bytes(), backup_bytes)
+            recovered = install.run("setup", "--json")
+            self.assertEqual(recovered.returncode, 0, recovered.stderr)
+            with closing(sqlite3.connect(install.db_path)) as connection:
+                self.assertEqual(
+                    connection.execute("SELECT title FROM tasks ORDER BY created_at, task_id").fetchall(),
+                    [("Retained recovery task",)],
+                )
+
     def test_candidate_appearing_before_fresh_initialize_blocks_empty_state(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -981,8 +1015,11 @@ class SetupManagedBackupRecoveryTests(unittest.TestCase):
             hidden = root / backup_path.name
             backup_bytes = backup_path.read_bytes()
             shutil.move(backup_path, hidden)
-            install.db_path.unlink()
-            shutil.rmtree(install.fixed_root)
+            # This fixture represents a genuinely fresh layout observation;
+            # the retained candidate appears only after that plan is fixed.
+            shutil.rmtree(install.project_root / ".taskgov")
+            shutil.rmtree(install.skill_root / "state")
+            old_candidate = install.skill_root / "state" / "current" / "backups" / hidden.name
             real_revalidate = setup_service._revalidate_scope
             restored_candidate = False
 
@@ -990,44 +1027,40 @@ class SetupManagedBackupRecoveryTests(unittest.TestCase):
                 nonlocal restored_candidate
                 scope = real_revalidate(**kwargs)
                 if not restored_candidate:
-                    backup_path.parent.mkdir(parents=True)
-                    shutil.move(hidden, backup_path)
+                    old_candidate.parent.mkdir(parents=True)
+                    shutil.move(hidden, old_candidate)
                     restored_candidate = True
                 return scope
 
             with mock.patch.object(
-                setup_service,
-                "_revalidate_scope",
+                setup_service, "_revalidate_scope",
                 side_effect=revalidate_then_restore_candidate,
             ):
                 failed = setup_service.run_setup(
-                    repo=str(install.project_root),
-                    repo_explicit=True,
-                    script_path=install.entrypoint,
-                    read_only=False,
-                    backup_interval_minutes=None,
-                    backup_generations=None,
+                    repo=str(install.project_root), repo_explicit=True,
+                    script_path=install.entrypoint, read_only=False,
+                    backup_interval_minutes=None, backup_generations=None,
                 )
 
+            self.assertTrue(restored_candidate)
             self.assertFalse(failed.ok)
             self.assertEqual(failed.error_code, "setup_restore_failed")
+            self.assertEqual(failed.data["completed_writes"], [])
             self.assertFalse(install.db_path.exists())
-            self.assertEqual(backup_path.read_bytes(), backup_bytes)
+            self.assertEqual(old_candidate.read_bytes(), backup_bytes)
 
             recovered = install.run("setup", "--json")
-
             self.assertEqual(recovered.returncode, 0, recovered.stderr)
             with closing(sqlite3.connect(install.db_path)) as connection:
                 self.assertEqual(
-                    connection.execute(
-                        "SELECT title FROM tasks ORDER BY created_at, task_id"
-                    ).fetchall(),
+                    connection.execute("SELECT title FROM tasks ORDER BY created_at, task_id").fetchall(),
                     [("Retained recovery task",)],
                 )
 
     def test_unrecognized_fixed_backup_content_blocks_fresh_setup_unchanged(self):
         with tempfile.TemporaryDirectory() as tmp:
             install = make_physical_install(Path(tmp))
+            install = OldFixedPhysicalInstall(install.project_root, install.skill_root)
             backup_dir = install.db_path.parent / "backups"
             backup_dir.mkdir(parents=True)
             unrelated = backup_dir / "notes.txt"

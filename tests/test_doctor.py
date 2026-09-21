@@ -588,7 +588,9 @@ class DoctorCommandTests(unittest.TestCase):
                     script_path=install.entrypoint,
                 )
                 current_root = observe_current_root(install.project_root)
-                paths = canonical_state_paths(install.skill_root)
+                paths = canonical_state_paths(
+                    install.skill_root, repo=install.project_root,
+                )
                 stored = StoredProjectObservation(
                     project_id=install.legacy_project_id,
                     identity_scheme="legacy_path_v1",

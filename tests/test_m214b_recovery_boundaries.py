@@ -9,7 +9,6 @@ from unittest import mock
 
 from tests.m14_test_support import (
     remove_v18_evidence_ledger_for_test,
-    tree_snapshot,
 )
 from tests.m214b_test_support import (
     inject_primary_candidate_metadata_conflict as _inject_primary_candidate_metadata_conflict,
@@ -95,8 +94,7 @@ class M214BRecoveryBoundaryTests(unittest.TestCase):
                     if not primary_present:
                         target.db_path.unlink()
 
-                    state_root = install.skill_root / "state"
-                    before_managed_state = tree_snapshot(state_root)
+                    before_managed_state = install.state_snapshot()
                     if primary_present:
                         with self.assertRaises(StorageError) as caught:
                             read_managed_backup_repository(target)
@@ -122,7 +120,7 @@ class M214BRecoveryBoundaryTests(unittest.TestCase):
                     self.assertEqual(result.data["planned_writes"], [])
                     self.assertEqual(result.data["completed_writes"], [])
                     self.assertEqual(
-                        tree_snapshot(state_root),
+                        install.state_snapshot(),
                         before_managed_state,
                     )
                     self.assertEqual(
@@ -177,8 +175,7 @@ class M214BRecoveryBoundaryTests(unittest.TestCase):
                 "Fixed structural backup task",
                 sqlite3.Binary(b"malformed"),
             )
-            state_root = install.skill_root / "state"
-            before_managed_state = tree_snapshot(state_root)
+            before_managed_state = install.state_snapshot()
             primary_bytes = target.db_path.read_bytes()
             backup_bytes = artifact.path.read_bytes()
 
@@ -195,7 +192,7 @@ class M214BRecoveryBoundaryTests(unittest.TestCase):
             self.assertEqual(result.error_code, "project_state_unreadable")
             self.assertEqual(result.data["planned_writes"], [])
             self.assertEqual(result.data["completed_writes"], [])
-            self.assertEqual(tree_snapshot(state_root), before_managed_state)
+            self.assertEqual(install.state_snapshot(), before_managed_state)
             self.assertEqual(target.db_path.read_bytes(), primary_bytes)
             self.assertEqual(artifact.path.read_bytes(), backup_bytes)
 
@@ -499,8 +496,7 @@ class M214BRecoveryBoundaryTests(unittest.TestCase):
                 "2099-02-01T00:00:00Z",
             )[-1]
             _inject_primary_candidate_metadata_conflict(target, artifact)
-            state_root = install.skill_root / "state"
-            before_managed_state = tree_snapshot(state_root)
+            before_managed_state = install.state_snapshot()
             primary_bytes = target.db_path.read_bytes()
             backup_bytes = artifact.path.read_bytes()
 
@@ -517,7 +513,7 @@ class M214BRecoveryBoundaryTests(unittest.TestCase):
             self.assertEqual(result.error_code, "project_state_unreadable")
             self.assertEqual(result.data["planned_writes"], [])
             self.assertEqual(result.data["completed_writes"], [])
-            self.assertEqual(tree_snapshot(state_root), before_managed_state)
+            self.assertEqual(install.state_snapshot(), before_managed_state)
             self.assertEqual(target.db_path.read_bytes(), primary_bytes)
             self.assertEqual(artifact.path.read_bytes(), backup_bytes)
 

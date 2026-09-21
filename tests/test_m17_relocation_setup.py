@@ -15,6 +15,7 @@ from unittest import mock
 try:
     from m14_test_support import (
         PhysicalInstall,
+        activate_fresh_uuid_fixture,
         create_v14_target,
         json_payload,
         make_physical_install,
@@ -22,12 +23,14 @@ try:
 except ModuleNotFoundError:
     from tests.m14_test_support import (
         PhysicalInstall,
+        activate_fresh_uuid_fixture,
         create_v14_target,
         json_payload,
         make_physical_install,
     )
 
 from task_governance_tool import setup as setup_service
+from task_governance_tool import setup_state_separation as separation_service
 from task_governance_tool.relocation import (
     RelocationContext,
     decode_relocation_token,
@@ -36,7 +39,6 @@ from task_governance_tool.relocation import (
     relocation_token_expiry,
 )
 from task_governance_tool.state_resolver import resolve_setup_project_state
-from task_governance_tool.state_transition import cleanup_roots
 from task_governance_tool.storage import (
     initialize_uuid_database,
     project_identity,
@@ -66,24 +68,11 @@ UNCONFIGURED_FIXED_WRITES = [
     *FIXED_WRITES,
 ]
 LEGACY_MIGRATION_WRITES = [
-    "legacy_state_publish",
-    "migration_backup",
-    "database_migrate",
-    "maintenance_configure",
-    "evidence_projection_publish",
-    "viewer_publish",
-    "legacy_state_cleanup",
+    "state_layout_retire",
+    "state_layout_publish",
+    "state_layout_activate",
 ]
-LEGACY_WRITES = [
-    "legacy_state_publish",
-    "migration_backup",
-    "database_migrate",
-    "maintenance_configure",
-    "project_binding_update",
-    "evidence_projection_publish",
-    "viewer_publish",
-    "legacy_state_cleanup",
-]
+LEGACY_WRITES = LEGACY_MIGRATION_WRITES
 RELOCATION_MESSAGES = {
     "project_relocation_required": (
         "project state is bound to a different project location; "
@@ -167,7 +156,10 @@ def make_moved_unconfigured_fixed_install(root: Path) -> PhysicalInstall:
         skill_root=install.skill_root,
         repo=install.project_root,
     )
-    initialize_uuid_database(setup_service._unbound_target(resolution))
+    initialized = initialize_uuid_database(setup_service._unbound_target(resolution))
+    activate_fresh_uuid_fixture(
+        install, project_id=initialized.target.project.project_id,
+    )
     return relocate_install(
         install,
         destination=root / "moved-project",
@@ -209,10 +201,9 @@ def run_service_setup(
     confirmation_token: str | None = None,
     now: str,
 ):
-    with mock.patch.object(
-        setup_service,
-        "utc_now",
-        return_value=now,
+    with (
+        mock.patch.object(setup_service, "utc_now", return_value=now),
+        mock.patch.object(separation_service, "utc_now", return_value=now),
     ):
         return setup_service.run_setup(
             repo=str(install.project_root),
@@ -1068,7 +1059,7 @@ class M17RelocationSetupTests(unittest.TestCase):
                 before_not_required,
             )
 
-    def test_moved_legacy_viewer_failure_preserves_source_and_token_for_retry(
+    def test_moved_legacy_viewer_failure_preserves_source_and_unsealed_candidate(
         self,
     ):
         with tempfile.TemporaryDirectory() as temporary:
@@ -1146,26 +1137,66 @@ class M17RelocationSetupTests(unittest.TestCase):
             )
             self.assertEqual(history, [(1, None)])
 
+            before_retry = tree_snapshot(install.project_root)
             retried = run_service_setup(
                 install,
                 read_only=False,
                 confirmation_token=token,
                 now=SECOND_CHECKED_AT,
             )
-            self.assertTrue(retried.ok)
+            self.assertFalse(retried.ok)
+            self.assertEqual(retried.error_code, "setup_incomplete")
             self.assertEqual(
                 retried.data["planned_writes"],
                 LEGACY_WRITES,
             )
             self.assertEqual(
                 retried.data["completed_writes"],
-                LEGACY_WRITES,
+                [],
             )
-            self.assertTrue(install.fixed_root.is_dir())
-            self.assertTrue(install.db_path.is_file())
-            self.assertFalse(legacy_root.exists())
+            self.assertFalse(install.fixed_root.exists())
+            self.assertFalse(install.db_path.exists())
+            self.assertEqual(tree_snapshot(install.project_root), before_retry)
+            self.assertEqual(legacy_database.read_bytes(), source_bytes)
 
-    def test_moved_legacy_cleanup_failure_reports_durable_state_and_used_replay(
+    def test_moved_legacy_rejected_tokens_keep_empty_arrays_and_source(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            install = make_moved_legacy_install(Path(temporary))
+            context = relocation_context(install)
+            preview = run_service_setup(install, read_only=True, now=ISSUED_AT)
+            self.assertTrue(preview.ok, preview)
+            token = preview.data["relocation"]["confirmation_token"]
+            stale = encode_relocation_token(
+                replace(context, source_schema_version=13), issued_at=ISSUED_AT,
+            )
+            expected = {
+                **preview.data,
+                "status": None,
+                "planned_writes": [],
+                "completed_writes": [],
+                "relocation": {
+                    **preview.data["relocation"],
+                    "confirmation_token": None,
+                    "expires_at": None,
+                },
+            }
+            for code, value, checked_at in (
+                ("relocation_token_invalid", "REJECTED_PRIVATE_TOKEN_VALUE", ISSUED_AT),
+                ("relocation_token_expired", token, relocation_token_expiry(ISSUED_AT)),
+                ("relocation_token_stale", stale, CONFIRMED_AT),
+            ):
+                with self.subTest(code=code):
+                    before = tree_snapshot(install.project_root)
+                    result = run_service_setup(
+                        install, read_only=False, confirmation_token=value, now=checked_at,
+                    )
+                    self.assertFalse(result.ok)
+                    self.assertEqual(result.error_code, code)
+                    self.assertEqual(result.data, expected)
+                    self.assertEqual(tree_snapshot(install.project_root), before)
+                    self.assertNotIn(value, json.dumps(result.data))
+
+    def test_moved_legacy_separation_never_invokes_predecessor_cleanup(
         self,
     ):
         with tempfile.TemporaryDirectory() as temporary:
@@ -1184,23 +1215,22 @@ class M17RelocationSetupTests(unittest.TestCase):
                 "_complete_pending_cleanup",
                 side_effect=setup_service.StateTransitionError(),
             ):
-                failed = run_service_setup(
+                confirmed = run_service_setup(
                     install,
                     read_only=False,
                     confirmation_token=token,
                     now=CONFIRMED_AT,
                 )
 
-            self.assertFalse(failed.ok)
-            self.assertEqual(failed.error_code, "setup_incomplete")
+            self.assertTrue(confirmed.ok, confirmed)
             self.assertEqual(
-                failed.data["completed_writes"],
-                LEGACY_WRITES[:-1],
+                confirmed.data["completed_writes"],
+                LEGACY_WRITES,
             )
-            self.assertTrue(failed.data["maintenance_enabled"])
-            self.assertEqual(failed.data["viewer_status"], "published")
+            self.assertTrue(confirmed.data["maintenance_enabled"])
+            self.assertEqual(confirmed.data["viewer_status"], "published")
             self.assertEqual(
-                failed.data["relocation"],
+                confirmed.data["relocation"],
                 {
                     "required": False,
                     "source_layout": "fixed_current_v1",
@@ -1221,14 +1251,10 @@ class M17RelocationSetupTests(unittest.TestCase):
                         ON m.project_id = p.project_id
                     """
                 ).fetchone()
-            self.assertEqual(durable, (1, 30, 3))
-
-            _, retirement_root = cleanup_roots(
-                install.fixed_root.parent,
-                context.project_id,
-            )
-            retirement_root.mkdir()
-            (retirement_root / "unrecorded.txt").write_bytes(b"preserve")
+            self.assertEqual(durable, (0, 30, 3))
+            original_root = install.skill_root / "state" / "projects" / context.project_id
+            self.assertTrue((original_root / "taskgov.sqlite").is_file())
+            (original_root / "unrecorded.txt").write_bytes(b"preserve")
             before_replay = tree_snapshot(install.project_root)
 
             replay = run_service_setup(
@@ -1262,15 +1288,21 @@ class M17RelocationSetupTests(unittest.TestCase):
             )
             token = preview.data["relocation"]["confirmation_token"]
             self.assertIsInstance(token, str)
-            real_backup_lock = (
-                setup_service._legacy_managed_backup_lock
+            real_lock = separation_service.zero_wait_artifact_lock
+            old_transition = install.skill_root / "state" / "taskgov-state.lock"
+            old_database = (
+                install.skill_root / "state" / "projects" / preview.project_id
+                / "taskgov.sqlite"
             )
 
             @contextmanager
-            def busy_backup_lock(target):
-                with real_backup_lock(target) as lock_bytes:
+            def busy_source_lock(lock_path):
+                with real_lock(lock_path) as lock_bytes:
+                    if lock_path != old_transition:
+                        yield lock_bytes
+                        return
                     blocker = sqlite3.connect(
-                        target.db_path,
+                        old_database,
                         timeout=0.0,
                     )
                     blocker.execute("BEGIN EXCLUSIVE")
@@ -1281,9 +1313,9 @@ class M17RelocationSetupTests(unittest.TestCase):
                         blocker.close()
 
             with mock.patch.object(
-                setup_service,
-                "_legacy_managed_backup_lock",
-                busy_backup_lock,
+                separation_service,
+                "zero_wait_artifact_lock",
+                busy_source_lock,
             ):
                 failed = run_service_setup(
                     install,
@@ -1325,18 +1357,18 @@ class M17RelocationSetupTests(unittest.TestCase):
             )
             token = preview.data["relocation"]["confirmation_token"]
             self.assertIsInstance(token, str)
-            real_lock = setup_service.state_transition_lock
+            real_lock = separation_service.zero_wait_artifact_lock
             first_entry = True
             winner_results = []
 
             @contextmanager
-            def racing_lock(state_root):
+            def racing_lock(lock_path):
                 nonlocal first_entry
                 if first_entry:
                     first_entry = False
                     with mock.patch.object(
-                        setup_service,
-                        "state_transition_lock",
+                        separation_service,
+                        "zero_wait_artifact_lock",
                         real_lock,
                     ):
                         winner_results.append(
@@ -1347,12 +1379,12 @@ class M17RelocationSetupTests(unittest.TestCase):
                                 now=CONFIRMED_AT,
                             )
                         )
-                with real_lock(state_root):
-                    yield
+                with real_lock(lock_path) as lock_bytes:
+                    yield lock_bytes
 
             with mock.patch.object(
-                setup_service,
-                "state_transition_lock",
+                separation_service,
+                "zero_wait_artifact_lock",
                 racing_lock,
             ):
                 replay = run_service_setup(
@@ -1441,7 +1473,7 @@ class M17RelocationSetupTests(unittest.TestCase):
                 },
             )
 
-    def test_moved_legacy_cli_confirmation_publishes_rebinds_and_cleans(self):
+    def test_moved_legacy_cli_confirmation_publishes_rebinds_and_preserves_source(self):
         with tempfile.TemporaryDirectory() as temporary:
             install = make_moved_legacy_install(Path(temporary))
             context = relocation_context(install)
@@ -1531,7 +1563,8 @@ class M17RelocationSetupTests(unittest.TestCase):
                 LEGACY_WRITES,
             )
             self.assertTrue(install.db_path.is_file())
-            self.assertFalse(legacy_root.exists())
+            self.assertTrue(legacy_root.is_dir())
+            self.assertEqual(legacy_database.read_bytes(), source_bytes)
             self.assertTrue(install.viewer_path.is_file())
             with closing(sqlite3.connect(install.db_path)) as connection:
                 current = connection.execute(

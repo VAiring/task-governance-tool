@@ -125,6 +125,9 @@ from task_governance_tool.no_replace import rename_no_replace
 
 
 SETUP_WRITE_ORDER = (
+    "state_layout_retire",
+    "state_layout_publish",
+    "state_layout_activate",
     "database_restore",
     "legacy_state_publish",
     "database_initialize",
@@ -191,7 +194,7 @@ class SetupPlan:
             "viewer_publish": self.publish_viewer,
             "legacy_state_cleanup": self.legacy_cleanup,
         }
-        return [name for name in SETUP_WRITE_ORDER if selected[name]]
+        return [name for name in SETUP_WRITE_ORDER if selected.get(name, False)]
 
 
 @dataclass(frozen=True)
@@ -852,12 +855,14 @@ def _raise_if_used_confirmation(
 
 def _ensure_state_root(scope: ProjectScope, resolution: ProjectStateResolution) -> None:
     state_root = resolution.paths.state_root
+    owner = (scope.canonical_repo if state_root == scope.canonical_repo / ".taskgov"
+             else scope.skill_root)
     if path_lexically_exists(state_root):
-        inspect_physical_directory(state_root, root=scope.skill_root)
+        inspect_physical_directory(state_root, root=owner)
         return
     create_physical_directory_exclusive(
         state_root,
-        root=scope.skill_root,
+        root=owner,
     )
 
 
@@ -1544,6 +1549,7 @@ def _publish_legacy(
                 staged_resolution = resolve_staged_project_state(
                     stage_root=residue.stage_directory.path,
                     repo=refreshed_scope.canonical_repo,
+                    skill_root=refreshed_scope.skill_root,
                 )
                 expected = locked.stored_project
                 observed = staged_resolution.stored_project
@@ -1946,6 +1952,20 @@ def run_setup(
         repo_explicit=repo_explicit,
         script_path=script_path,
     )
+    return _run_setup_from_inspection(
+        inspection=inspection, repo=repo, repo_explicit=repo_explicit,
+        script_path=script_path, read_only=read_only,
+        backup_interval_minutes=backup_interval_minutes,
+        backup_generations=backup_generations, confirmation_token=confirmation_token,
+    )
+
+
+def _run_setup_from_inspection(
+    *, inspection: ProjectScopeInspection, repo: str, repo_explicit: bool,
+    script_path: Path, read_only: bool, backup_interval_minutes: int | None,
+    backup_generations: int | None, confirmation_token: str | None,
+) -> SetupServiceResult:
+    """Continue this setup invocation without repeating its effective-ignore check."""
     issue = inspection.first_issue()
     if issue is not None:
         return _preflight_failure(
@@ -1995,6 +2015,15 @@ def run_setup(
             inspection,
             code=resolution.error_code,
             message=error_message,
+        )
+    if resolution.layout_migration is not None:
+        from task_governance_tool.setup_state_separation import run_state_separation
+
+        return run_state_separation(
+            inspection=inspection, resolution=resolution, repo=repo,
+            repo_explicit=repo_explicit, script_path=script_path, read_only=read_only,
+            backup_interval_minutes=backup_interval_minutes,
+            backup_generations=backup_generations, confirmation_token=confirmation_token,
         )
     try:
         inspect_state_transition_lock(resolution.paths.state_root)

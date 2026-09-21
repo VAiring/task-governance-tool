@@ -53,7 +53,11 @@ it does not ask the LLM for a path or generation or silently replace invalid
 recovery material with empty state. See [setup results and failure handling](cli_contracts.md#setup)
 when previewing or interpreting setup.
 
-For an upgrade, preserve project-local state and run explicit setup.
+For an upgrade, preserve project-local state and run explicit setup. When
+moving from package-local state to `.taskgov/`, follow the
+[offline transition requirements](cli_contracts.md#setup); preserve the old
+retirement marker and retained recovery material. This is not a normal-loop
+action or an invitation to select a storage path.
 There is no downgrade or restore command. Release rollback restores one
 matched pre-migration package, database, and managed-artifact set together;
 never run an older runtime against a newer schema, mix generations, or treat a

@@ -20,10 +20,10 @@ contracts without duplicating them here.
 
 ## Fixed State Resolver
 
-One physical package owns:
+One validated governed project and one physical package determine:
 
 ```text
-state root       <physical-skill>/state
+state root       <governed-project>/.taskgov
 transition lock  <state-root>/taskgov-state.lock
 fixed root       <state-root>/current
 database         <fixed-root>/taskgov.sqlite
@@ -42,7 +42,7 @@ The resolver returns canonical paths, the in-memory governed root/hash/display
 observation, stored identity/binding when available, source schema, layout
 state (`missing`, `fixed_current_v1`, or `legacy_projects_v1`), binding state
 (`unbound`, `matching`, or `relocation_required`), and an optional deep
-setup-only recovery/legacy observation. None of its raw paths or path hashes
+setup-only recovery/legacy or layout-migration observation. None of its raw paths or path hashes
 crosses a formatter.
 
 For the Runner subsystem, `CanonicalStatePaths` derives the four fixed paths above
@@ -59,6 +59,94 @@ discovery use the deep bounded inventory projection. The caller selects the
 projection mechanically; it is not a CLI or LLM choice. Every DB-backed leaf
 uses the same resolver observation. Feature code may not reconstruct a
 project ID or state path.
+
+`canonical_state_paths(skill_root, repo=...)` takes the validated governed root
+explicitly. `package_state_paths(skill_root)` is limited to the old migration
+source and marker. `DatabaseTarget` transports the generated paths while its
+actual physical Skill root continues to own config/templates. Private staged
+validation receives both roots explicitly; it never infers Skill ownership
+from the candidate's parent. Activated layout remains `fixed_current_v1`;
+layout separation is an orthogonal setup-only observation, not another schema
+or normal-path storage mode. Before activation the outer resolution has no
+ordinary target. Only setup receives a nested old-source observation.
+
+### Separation Record And Publication
+
+`state_separation.py` imports neither resolver nor setup. It owns the canonical
+ASCII v1 record at `.taskgov/.state-separation/record.json`, fixed sibling
+`source/` and `candidate/`, and the old fixed-primary retirement marker.
+The record carries only transition ID, phase (`private`, `fenced`, `activated`),
+project ID, optional original layout/schema/binding basis, original source
+inventory fingerprint, retained-snapshot digest and prepared-candidate digest.
+Those three digests have different meanings: SQLite backup need not reproduce
+original database bytes. Fresh preparation has no source basis and persists
+its UUID once. Missing preparation digests are permitted only in `private`
+and cannot authorize fencing. No arbitrary path or business row is recorded.
+
+`setup_state_separation.py` owns explicit offline planning and the retained
+lock sequence: new-root transition, old-root transition, then source Runner,
+Evidence, Viewer and backup locks. All are zero-wait. No SQLite writer spans
+copying, validation, projection rendering or directory publication. The
+domain-bounded inventory helper composes existing source validators; it does
+not enlarge the legacy staging cap or weaken their admission meanings.
+Initial inventory observation takes no lock: an OS-denied read of a held lock
+file is a source-read failure; contention detected during zero-wait acquisition
+is `database_busy`. Neither outcome authorizes source replacement.
+If a supplied relocation confirmation was concurrently activated for the same
+project, release all transition locks before passing the unchanged invocation
+to current-state setup validation. This preserves the existing used-token
+response and one ignore preflight; it is not a general retry or source fallback.
+
+Before source preparation or relocation confirmation, the coordinator uses
+the existing old-stage inspector and validated cleanup flag to recognize an
+unfinished predecessor migration. It preserves that state and reports
+`setup_incomplete`, leaving its completion to the compatible pre-separation
+runtime before upgrade. It does not invoke the predecessor cleanup primitive
+or reinterpret its inventory against the new root. Healthy sources continue
+directly; new separation preparation has its own retry rules below.
+
+Setup validates and retains the source, normalizes only its private candidate,
+prepares/flushed the marker beside the old state root, and atomically replaces
+the validated primary (or publishes no-replace when absent). It publishes the
+candidate no-replace and records activation last. Record updates use an exact
+validated predecessor and a flushed sibling temporary; retries accept only the
+same prepared successor. Ordinary admission requires activation plus matching
+marker, validates new state with existing consumers, and never compares a
+live DB to its pre-activation digest. Missing/corrupt new primary uses the
+existing new-root recovery contract, never retained-source selection.
+
+A retained backup-only source is still the selected immutable recovery
+snapshot, not a normalized active primary. Its copied DB must pass the
+existing selected-observation validation; the complete retained inventory is
+sealed separately. On retry, the retained-snapshot reader checks that seal,
+the recorded identity/schema/binding basis, and the existing physical and DB
+validators without treating the snapshot's pre-publication backup rows as an
+active-primary repository. Only the private candidate is reconciled, then
+fully checked by the unchanged staged resolver. Ordinary and candidate
+admission never use this retained-source reader. Recovery selection and the
+complete original source set remain pinned through the final pre-fence check;
+post-plan drift retains `setup_restore_failed`.
+
+Missing-marker repair validates the retained source digest and the old domains
+without comparing the active DB to historical bytes. Fresh origin permits no
+old generated source; fixed origin compares retained recognized artifacts with
+the old fixed inventory excluding only the replaced primary; legacy origin
+compares the sole original legacy source with its recorded fingerprint. An
+additional project candidate or old-stage residue is a conflict. Repeat the
+observation under the existing transition/domain locks before publishing the
+marker. This setup-only check adds no ordinary-command old-tree scan or new
+record format, and does not select among competing old databases.
+
+An unsealed nonempty partial preparation is preserved and reports
+`setup_incomplete`: recognized names alone cannot prove its original bytes.
+It is not automatically deleted, regenerated or blessed as a complete
+candidate. Empty owned preparation may proceed. After sealing, retry requires
+the recorded source/candidate observations.
+An observed matching marker or published candidate may be ahead of its phase
+record; setup recognizes that exact completed step. The retained source is
+outside routine pruning and has no automatic cleanup. These are process-crash
+reentry guarantees within the offline prerequisite, not power-loss or online
+migration guarantees.
 
 <a id="stable-project-identity-binding-and-relocation"></a>
 
@@ -285,9 +373,9 @@ Write-mode mismatch without the exact token remains no-write.
 
 ### Staged Publication And Cleanup
 
-Write-mode setup acquires locks in this order:
+Ordinary already-activated setup acquires locks in this order:
 
-1. zero-wait package state-transition lock;
+1. zero-wait project state-transition lock;
 2. relevant source/fixed managed-backup artifact lock; and
 3. short private or canonical SQLite transactions.
 
@@ -296,8 +384,10 @@ publishing a directory, or cleaning legacy files. Normal business commands do
 not acquire the transition lock; canonical rebind instead uses SQLite
 compare-and-swap.
 
-Legacy publication and confirmed moved-legacy publication share one bounded
-primitive:
+The predecessor legacy publication primitive remains a bounded compatibility
+mechanism for its persisted stage/cleanup inputs, with the following format.
+New separation does not invoke this delete-after-publication path; it uses
+the separate source retention and record above.
 
 1. Revalidate scope, ignore, destination absence, journal, schema, integrity,
    identity/binding, artifact inventory, and optional token under the
@@ -342,7 +432,8 @@ location. Cleanup first no-replace moves remaining old files, then deletes
 verified retirement files one by one and only proven-empty owned directories.
 Unexpected or changed content stops; unrelated old content remains. One short
 transaction clears cleanup state after the recorded set and retirement
-directory are absent. Token-free setup resumes a valid pending cleanup.
+directory are absent. The compatible predecessor runtime's token-free setup
+resumes this pending cleanup before the separation prerequisite is satisfied.
 
 Fixed-state relocation performs only the binding transaction, then publishes
 the Viewer by its generation contract. A crash or Viewer failure after commit
@@ -366,9 +457,8 @@ git -C <governed-target> -c core.fsmonitor=false \
   check-ignore --quiet --no-index -- <target-relative-state-directory>
 ```
 
-The operand is exactly the ordinary
-`.agents/skills/task-governance-tool/state/` or self-host
-`task-governance-tool/state/`, with forward slashes and directory semantics.
+The operand is exactly `.taskgov/` for ordinary and self-host layouts, with
+forward slashes and directory semantics.
 The process uses safe Git environment, null stdin/stdout/stderr, and a
 two-second timeout. Return 0 is accepted; every other result is
 `state_ignore_required`. No marker means a valid non-Git target and no

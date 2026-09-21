@@ -56,6 +56,32 @@ def initialize_repository(repo: Path, *, commit: bool = False) -> None:
         run_git(repo, "commit", "--quiet", "-m", "fixture")
 
 
+class ProjectScopeStatePathTests(unittest.TestCase):
+    def test_generated_targets_are_project_local_and_skill_stays_physical(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp) / "project"
+            skill = repo / ".agents" / "skills" / "task-governance-tool"
+            skill.mkdir(parents=True)
+            paths = project_scope_service.canonical_state_paths(skill, repo=repo)
+            self.assertEqual(paths.state_root, repo.resolve() / ".taskgov")
+            self.assertEqual(paths.skill_root, skill.resolve())
+            self.assertTrue(project_scope_service._state_path_is_valid(skill, repo))
+            self.assertFalse(paths.state_root.exists())
+
+    def test_project_local_target_type_damage_is_rejected(self):
+        for relative in (".taskgov", ".taskgov/current", ".taskgov/current/backups"):
+            with self.subTest(relative=relative), tempfile.TemporaryDirectory() as tmp:
+                repo = Path(tmp) / "project"
+                skill = repo / "task-governance-tool"
+                skill.mkdir(parents=True)
+                damaged = repo / relative
+                damaged.parent.mkdir(parents=True, exist_ok=True)
+                damaged.write_bytes(b"not a directory")
+                before = file_snapshot(repo)
+                self.assertFalse(project_scope_service._state_path_is_valid(skill, repo))
+                self.assertEqual(before, file_snapshot(repo))
+
+
 class ProjectScopeIgnoreTests(unittest.TestCase):
     def test_no_marker_skips_git_and_scan_error_fails_closed(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -92,8 +118,8 @@ class ProjectScopeIgnoreTests(unittest.TestCase):
             repo = (Path(tmp) / "project").resolve()
             repo.mkdir()
             cases = (
-                ("ordinary", ".agents/skills/task-governance-tool/state/"),
-                ("source", "task-governance-tool/state/"),
+                ("ordinary", ".taskgov/"),
+                ("source", ".taskgov/"),
             )
             for layout, operand in cases:
                 with (
@@ -182,7 +208,7 @@ class ProjectScopeIgnoreTests(unittest.TestCase):
             initialize_repository(enclosing)
             install = make_physical_install(enclosing / "nested")
             (enclosing / ".gitignore").write_text(
-                "/nested/project/.agents/skills/task-governance-tool/state/\n",
+                "/nested/project/.taskgov/\n",
                 encoding="utf-8",
             )
 
@@ -208,8 +234,8 @@ class ProjectScopeIgnoreTests(unittest.TestCase):
             install = make_physical_install(enclosing / "nested")
             (enclosing / ".gitignore").write_text(
                 (
-                    "/nested/project/.agents/skills/task-governance-tool/state/\n"
-                    "!/nested/project/.agents/skills/task-governance-tool/state/\n"
+                    "/nested/project/.taskgov/\n"
+                    "!/nested/project/.taskgov/\n"
                 ),
                 encoding="utf-8",
             )
@@ -227,6 +253,7 @@ class ProjectScopeIgnoreTests(unittest.TestCase):
             )
             self.assertEqual(file_snapshot(enclosing), before)
             self.assertFalse((install.skill_root / "state").exists())
+            self.assertFalse((install.project_root / ".taskgov").exists())
 
     def test_linked_worktree_and_submodule_gitfile_use_nearest_repository(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -237,7 +264,7 @@ class ProjectScopeIgnoreTests(unittest.TestCase):
             run_git(primary, "worktree", "add", "--quiet", "--detach", str(linked))
             linked_install = make_physical_install(linked / "nested")
             (linked / ".gitignore").write_text(
-                "/nested/project/.agents/skills/task-governance-tool/state/\n",
+                "/nested/project/.taskgov/\n",
                 encoding="utf-8",
             )
             self.assertTrue((linked / ".git").is_file())
@@ -268,7 +295,7 @@ class ProjectScopeIgnoreTests(unittest.TestCase):
             )
             self.assertEqual(init.returncode, 0, init.stderr)
             (superproject / ".gitignore").write_text(
-                "/project/.agents/skills/task-governance-tool/state/\n",
+                "/project/.taskgov/\n",
                 encoding="utf-8",
             )
             self.assertTrue((nested_install.project_root / ".git").is_file())
@@ -279,7 +306,7 @@ class ProjectScopeIgnoreTests(unittest.TestCase):
                 )
             )
             (nested_install.project_root / ".gitignore").write_text(
-                "/.agents/skills/task-governance-tool/state/\n",
+                "/.taskgov/\n",
                 encoding="utf-8",
             )
             self.assertTrue(

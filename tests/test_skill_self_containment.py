@@ -43,13 +43,17 @@ from task_governance_tool.viewer import (  # noqa: E402
 )
 try:  # noqa: E402
     from m14_test_support import (
+        canonical_managed_sqlite_files,
         canonical_test_path,
+        file_snapshot,
         make_physical_install,
         tree_snapshot,
     )
 except ModuleNotFoundError:  # noqa: E402
     from tests.m14_test_support import (
+        canonical_managed_sqlite_files,
         canonical_test_path,
+        file_snapshot,
         make_physical_install,
         tree_snapshot,
     )
@@ -109,6 +113,44 @@ def git_is_ignored(path: str) -> bool:
 
 
 class SkillSelfContainmentTests(unittest.TestCase):
+    def test_fixture_snapshots_detect_new_state_and_old_marker_changes(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            install = make_physical_install(Path(temporary))
+            core_before = file_snapshot(install.project_root, exclude_state=True)
+            empty = install.state_snapshot()
+            install.db_path.parent.mkdir(parents=True)
+            install.db_path.write_bytes(b"synthetic database")
+            active = install.state_snapshot()
+            self.assertNotEqual(active["project_state"], empty["project_state"])
+            self.assertEqual(active["package_state"], empty["package_state"])
+            marker = install.skill_root / "state" / "current" / "taskgov.sqlite"
+            marker.parent.mkdir(parents=True)
+            marker.write_bytes(b"synthetic retirement marker")
+            fenced = install.state_snapshot()
+            self.assertNotEqual(fenced["package_state"], active["package_state"])
+            self.assertEqual(fenced["project_state"], active["project_state"])
+            self.assertEqual(
+                file_snapshot(install.project_root, exclude_state=True), core_before
+            )
+
+    def test_fixture_backup_inventory_excludes_retained_migration_database(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            install = make_physical_install(Path(temporary))
+            backup = install.fixed_root / "backups" / "synthetic.sqlite"
+            backup.parent.mkdir(parents=True)
+            backup.write_bytes(b"managed fixture backup")
+            install.db_path.write_bytes(b"synthetic current database")
+            retained = (
+                install.project_root / ".taskgov" / ".state-separation"
+                / "source" / "taskgov.sqlite"
+            )
+            retained.parent.mkdir(parents=True)
+            retained.write_bytes(b"retained migration source")
+            self.assertEqual(
+                canonical_managed_sqlite_files(install, exclude=(install.db_path,)),
+                [backup],
+            )
+
     def test_task_decomposition_case_fixture_has_stable_requirement_coverage(self):
         def unique_object(pairs):
             keys = [key for key, _value in pairs]
@@ -1048,13 +1090,15 @@ class SkillSelfContainmentTests(unittest.TestCase):
             self.assertRegex(text.lower(), r"\b(?:only|no other)\b")
 
     def test_target_ignore_guidance_is_root_anchored_and_bounded(self):
-        expected_state = "/.agents/skills/task-governance-tool/state/"
+        expected_state = "/.taskgov/"
         expected_blocks = {
             "README.md": (
+                "/.taskgov/\n"
                 "/.agents/skills/task-governance-tool/state/\n"
                 "/.agents/skills/task-governance-tool/config/verification-runner.json"
             ),
             "docs/release-install.md": (
+                "/.taskgov/\n"
                 "/.agents/skills/task-governance-tool/state/\n"
                 "/.agents/skills/task-governance-tool/config/verification-runner.json"
             ),
@@ -1103,6 +1147,7 @@ class SkillSelfContainmentTests(unittest.TestCase):
                 "setup_required",
             )
             self.assertFalse((install.skill_root / "state").exists())
+            self.assertFalse((install.project_root / ".taskgov").exists())
 
             initialized = install.run("setup", "--json")
             self.assertEqual(initialized.returncode, 0, initialized.stderr)
@@ -1111,7 +1156,7 @@ class SkillSelfContainmentTests(unittest.TestCase):
             self.assertTrue(install.db_path.is_file())
             self.assertTrue(
                 canonical_test_path(install.db_path).is_relative_to(
-                    canonical_test_path(install.skill_root / "state")
+                    canonical_test_path(install.project_root / ".taskgov")
                 )
             )
             self.assertEqual(payload["data"]["schema_to"], SCHEMA_VERSION)
@@ -1488,12 +1533,16 @@ class SkillSelfContainmentTests(unittest.TestCase):
         ):
             self.assertNotIn(relative, manifest["core_files"])
         self.assertFalse(any(path.startswith("task-governance-tool/state/") for path in tracked))
+        self.assertFalse(any(path.startswith(".taskgov/") for path in tracked))
         self.assertFalse(any(path.startswith("task-governance-tool/config/") for path in tracked))
         self.assertFalse(any(path.endswith("/task-viewer.html") for path in tracked))
 
     def test_git_ignores_only_project_state_not_repository_database_globs(self):
         ignored_paths = [
             "references/copied-reference.md",
+            ".taskgov/current/taskgov.sqlite",
+            ".taskgov/current/evidence/index.json",
+            ".taskgov/.state-separation/record.json",
             "task-governance-tool/state/projects/example-123456789abc/taskgov.sqlite",
             "task-governance-tool/state/projects/example-123456789abc/taskgov.sqlite-wal",
             "task-governance-tool/state/projects/example-123456789abc/taskgov.sqlite-shm",

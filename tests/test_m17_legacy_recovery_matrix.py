@@ -414,12 +414,16 @@ class M17LegacyRecoveryMatrixTests(unittest.TestCase):
             )
             real_lock = separation_service.zero_wait_artifact_lock
             changed_bytes: bytes | None = None
+            injected = False
+            transition_lock = (
+                install.project_root / ".taskgov" / "taskgov-state.lock"
+            ).resolve(strict=False)
 
             @contextmanager
             def invalidate_selected_after_plan(lock_path):
-                nonlocal changed_bytes
+                nonlocal changed_bytes, injected
                 with real_lock(lock_path) as lock_bytes:
-                    if lock_path != install.project_root / ".taskgov" / "taskgov-state.lock":
+                    if lock_path.resolve(strict=False) != transition_lock:
                         yield lock_bytes
                         return
                     before = selected_path.stat()
@@ -437,6 +441,7 @@ class M17LegacyRecoveryMatrixTests(unittest.TestCase):
                         ns=(changed.st_atime_ns, before.st_mtime_ns),
                     )
                     changed_bytes = selected_path.read_bytes()
+                    injected = True
                     yield lock_bytes
 
             with mock.patch.object(
@@ -446,6 +451,7 @@ class M17LegacyRecoveryMatrixTests(unittest.TestCase):
             ):
                 result = _run_setup(install)
 
+            self.assertTrue(injected, "post-plan source fault was not injected")
             self.assertFalse(result.ok)
             self.assertEqual(result.error_code, "setup_restore_failed")
             self.assertEqual(result.data["completed_writes"], [])

@@ -93,15 +93,15 @@ class StoragePathTests(unittest.TestCase):
 
             self.assertEqual(
                 install.db_path,
-                install.skill_root.resolve()
-                / "state"
+                install.project_root.resolve()
+                / ".taskgov"
                 / "current"
                 / "taskgov.sqlite",
             )
             self.assertEqual(
                 install.viewer_path,
-                install.skill_root.resolve()
-                / "state"
+                install.project_root.resolve()
+                / ".taskgov"
                 / "current"
                 / "viewer"
                 / "task-viewer.html",

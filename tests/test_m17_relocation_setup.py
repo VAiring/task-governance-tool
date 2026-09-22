@@ -1289,16 +1289,20 @@ class M17RelocationSetupTests(unittest.TestCase):
             token = preview.data["relocation"]["confirmation_token"]
             self.assertIsInstance(token, str)
             real_lock = separation_service.zero_wait_artifact_lock
-            old_transition = install.skill_root / "state" / "taskgov-state.lock"
+            old_transition = (
+                install.skill_root / "state" / "taskgov-state.lock"
+            ).resolve(strict=False)
             old_database = (
                 install.skill_root / "state" / "projects" / preview.project_id
                 / "taskgov.sqlite"
             )
+            injected = False
 
             @contextmanager
             def busy_source_lock(lock_path):
+                nonlocal injected
                 with real_lock(lock_path) as lock_bytes:
-                    if lock_path != old_transition:
+                    if lock_path.resolve(strict=False) != old_transition:
                         yield lock_bytes
                         return
                     blocker = sqlite3.connect(
@@ -1306,6 +1310,7 @@ class M17RelocationSetupTests(unittest.TestCase):
                         timeout=0.0,
                     )
                     blocker.execute("BEGIN EXCLUSIVE")
+                    injected = True
                     try:
                         yield lock_bytes
                     finally:
@@ -1324,6 +1329,7 @@ class M17RelocationSetupTests(unittest.TestCase):
                     now=CONFIRMED_AT,
                 )
 
+            self.assertTrue(injected, "locked source fault was not injected")
             self.assertFalse(failed.ok)
             self.assertEqual(failed.error_code, "database_busy")
             self.assertEqual(

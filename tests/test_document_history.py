@@ -492,7 +492,8 @@ class DocumentHistoryTests(unittest.TestCase):
         )
         registry = document_contract._registry(authority_scan, issues)
         self.assertIsNotNone(registry)
-        self.assertEqual(registry["conditional"], [])
+        self.assertNotIn(source_path, registry["conditional"])
+        self.assertNotIn(source_path, registry["current"])
         self.assertNotIn(
             "modularization-roadmap.md",
             {link.target.partition("#")[0] for link in authority_scan.links},

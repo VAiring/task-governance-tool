@@ -573,7 +573,16 @@ def run_state_separation(
         data["relocation"] = projection
         if source is not None:
             _pending_runner(target, source.source_schema_version)
-            inspect_inventory(_source_root(source), strict=False, repair_evidence=True)
+            source_inventory = inspect_inventory(_source_root(source), strict=False, repair_evidence=True)
+            if record is not None and not migration.transition.marker_matches:
+                # Before fencing this is the original source, not its SQLite
+                # backup snapshot, whose bytes have a separate retained seal.
+                try:
+                    _same_source(record, source, source_inventory.digest)
+                except SeparationError as exc:
+                    if _backup_only(source):
+                        raise StorageError("setup_restore_failed", "managed backup could not be restored") from exc
+                    raise
         if record is not None and record.retained_digest is not None:
             if inspect_inventory(paths.source, strict=True, repair_evidence=True).digest != record.retained_digest:
                 raise SeparationError()

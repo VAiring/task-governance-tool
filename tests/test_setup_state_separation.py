@@ -809,6 +809,23 @@ class SetupStateSeparationTests(unittest.TestCase):
         state = inspect_setup_state(resolved.target)
         self.assertEqual((state.backup_interval_minutes, state.backup_generations), (45, 4))
 
+    def test_sealed_retry_rejects_changed_old_source_policy_without_writes(self):
+        from task_governance_tool.backup_metadata_repository import configure_project_maintenance
+
+        target = self.old_current()
+        self.interrupt_separation("sealed")
+        configure_project_maintenance(
+            target, requested_interval_minutes=60, requested_generations=5,
+        )
+        before = file_snapshot(self.install.project_root)
+        for read_only in (True, False):
+            with self.subTest(read_only=read_only):
+                result = self.run_setup(read_only=read_only)
+                self.assertFalse(result.ok)
+                self.assertEqual(result.error_code, "project_state_unreadable")
+                self.assertEqual(result.data["completed_writes"], [])
+                self.assertEqual(file_snapshot(self.install.project_root), before)
+
     def test_sealed_fresh_retry_rejects_unexpected_old_current_file_without_writes(self):
         self.interrupt_separation("sealed")
         (self.old_root / "current" / "sentinel.txt").write_bytes(b"preserve unexplained old material")

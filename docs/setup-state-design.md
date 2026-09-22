@@ -141,7 +141,10 @@ An unsealed nonempty partial preparation is preserved and reports
 `setup_incomplete`: recognized names alone cannot prove its original bytes.
 It is not automatically deleted, regenerated or blessed as a complete
 candidate. Empty owned preparation may proceed. After sealing, retry requires
-the recorded source/candidate observations.
+the recorded source/candidate observations. Before fencing, preview compares the
+already inspected original-source inventory with its recorded fingerprint;
+write setup repeats that comparison under locks. Once fenced, the retained
+snapshot uses its own seal, never the original database's byte fingerprint.
 The sealed-candidate reader retains ordinary supplied-token validation for a
 nonrelocated source and validates the already-authorized binding result for a
 relocated source. New backup-policy options do not rewrite a sealed candidate:

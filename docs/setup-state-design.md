@@ -142,6 +142,14 @@ An unsealed nonempty partial preparation is preserved and reports
 It is not automatically deleted, regenerated or blessed as a complete
 candidate. Empty owned preparation may proceed. After sealing, retry requires
 the recorded source/candidate observations.
+The sealed-candidate reader retains ordinary supplied-token validation for a
+nonrelocated source and validates the already-authorized binding result for a
+relocated source. New backup-policy options do not rewrite a sealed candidate:
+after exact activation and releasing transition locks, the coordinator uses
+ordinary setup's scope/identity checks and maintenance repository configuration
+to apply only supplied fields. It appends the existing `maintenance_configure`
+stage to the preview and durable result; failure preserves activation and is
+resumable through ordinary setup. Equal or omitted policy remains unchanged.
 An observed matching marker or published candidate may be ahead of its phase
 record; setup recognizes that exact completed step. The retained source is
 outside routine pruning and has no automatic cleanup. These are process-crash

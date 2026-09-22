@@ -235,6 +235,9 @@ def _validate_sealed_candidate(resolution, record, source, root, token):
             raise SeparationError()
         if token is not None and relocation_token_digest(token) != last.confirmation_token_digest:
             raise service._RelocationConfirmationFailure("relocation_token_stale")
+    elif token is not None:
+        _confirmation(source, _target_at(source, _source_database(source)[0]),
+                      token, read_only=False)
     return candidate
 
 
@@ -349,6 +352,13 @@ def run_state_separation(
     data = service._setup_data(planned_writes=list(LAYOUT_WRITES))
     project_id = record.project_id if record else resolution.project_id
     confirmation_project_id = project_id
+
+    def validate_fresh_retry_source():
+        # Marker preparation may have created an empty old current directory.
+        # Only this sealed fresh transition can resume through that directory.
+        inspect_retired_source(old.state_root, paths.source, record)
+        if path_lexically_exists(old.fixed_root) and any(old.fixed_root.iterdir()):
+            raise SeparationError()
 
     def confirmation_was_activated(observed=None):
         # This is only a supplied-token race before this cutover's durable
@@ -547,12 +557,16 @@ def run_state_separation(
             sealed_candidate = _validate_sealed_candidate(
                 resolution, record, source, sealed_root, confirmation_token,
             )
+            if source is None and not migration.transition.marker_matches:
+                validate_fresh_retry_source()
             if completed and sealed_root == resolution.paths.fixed_root:
                 completed.append("state_layout_publish")
             plan, _ = _plan(sealed_candidate, interval=backup_interval_minutes,
                             generations=backup_generations)
             data["backup_interval_minutes"] = plan.interval_minutes
             data["backup_generations"] = plan.generations
+            if plan.configure:
+                data["planned_writes"].append("maintenance_configure")
             accepted, projection = None, service._relocation_projection(sealed_candidate)
         else:
             accepted, projection = _confirmation(source, target, confirmation_token, read_only=read_only)
@@ -586,15 +600,19 @@ def run_state_separation(
             held: dict[Path, bytes] = {}
             if not transition.marker_matches:
                 planned_source = source
-                current_source = resolve_package_project_state(skill_root=scope.skill_root, repo=scope.canonical_repo)
+                if prepared_before_invocation and source is None:
+                    validate_fresh_retry_source()
+                    current_source = None
+                else:
+                    current_source = resolve_package_project_state(skill_root=scope.skill_root, repo=scope.canonical_repo)
                 _require_planned_recovery(planned_source, current_source)
-                if current_source.error_code is not None:
+                if current_source is not None and current_source.error_code is not None:
                     return source_preflight_failure(current_source)
                 if migration.action == "fresh" and current_source.layout != "missing":
                     # A fresh plan must not adopt recovery data that appeared
                     # after inspection. Preserve it for an explicit new setup.
                     raise StorageError("setup_restore_failed", "managed backup could not be restored")
-                if current_source.layout != "missing":
+                if current_source is not None and current_source.layout != "missing":
                     source = current_source
                     root = _source_root(source)
                     for relative in (
@@ -697,7 +715,8 @@ def run_state_separation(
                         raise
                 sealed = _validate_sealed_candidate(resolution, record, source, paths.candidate, confirmation_token)
                 sealed_state = inspect_setup_state(_target_at(sealed, sealed.paths.database))
-                if (sealed_state.backup_interval_minutes != plan.interval_minutes
+                if not prepared_before_invocation and (
+                        sealed_state.backup_interval_minutes != plan.interval_minutes
                         or sealed_state.backup_generations != plan.generations):
                     raise StorageError("setup_incomplete", "setup completed only partially; rerun setup")
                 _directory(old.fixed_root, root=old.state_root)
@@ -738,6 +757,26 @@ def run_state_separation(
                     evidence_status="current" if prepared_before_invocation else "published",
                     viewer_status="current" if prepared_before_invocation else "published",
                     relocation=service._relocation_projection(active))
+        if prepared_before_invocation and plan.configure:
+            # A sealed candidate is immutable until activation. Apply new retry
+            # options only to the active DB, through ordinary setup configuration.
+            try:
+                scope = service._revalidate_scope(
+                    repo=repo, repo_explicit=repo_explicit, script_path=script_path,
+                )
+                active_target = service._matching_fixed_target(
+                    scope, expected_project_id=project_id,
+                )
+                data["backup_interval_minutes"], data["backup_generations"] = (
+                    configure_project_maintenance(
+                        active_target, requested_interval_minutes=backup_interval_minutes,
+                        requested_generations=backup_generations,
+                    )
+                )
+                completed.append("maintenance_configure")
+                data["completed_writes"] = list(completed)
+            except Exception as exc:
+                raise StorageError("setup_incomplete", "setup completed only partially; rerun setup") from exc
         return service.SetupServiceResult(True, project_id, data, text="setup completed")
     except _ConfirmationActivationObserved:
         if confirmation_was_activated():
@@ -747,8 +786,9 @@ def run_state_separation(
             message=service.PROJECT_STATE_MESSAGES["project_state_unreadable"],
         )
     except service._RelocationConfirmationFailure as exc:
-        if confirmation_token is not None and not completed:
+        if confirmation_token is not None:
             data["planned_writes"] = []
+            completed.clear()
         return failure(exc.code)
     except ArtifactLockError as exc:
         return failure("database_busy" if exc.contended else "project_state_unreadable")

@@ -226,10 +226,19 @@ retention, candidate validation and matching marker are prerequisites, not
 additional LLM choices. The public durable write labels are
 `state_layout_retire`, `state_layout_publish`, `state_layout_activate`, in that
 order. Private candidate work is not reported as a change to the live DB.
+When a retry supplies changed backup-policy options for an already sealed
+candidate, setup preserves that exact candidate through activation, then applies
+the supplied fields through ordinary maintenance configuration. Preview and
+write results append `maintenance_configure` after the three layout stages;
+omitted or equal fields do not add a configuration write. Configuration failure
+retains the completed activation prefix and is resumed by ordinary setup.
 
 Retry checks both recorded phase and actual objects. A matching marker can
 prove fencing completed before phase persistence; a matching published
-candidate can prove publication completed before activation. Changed source,
+candidate can prove publication completed before activation. A sealed fresh
+transition may resume through the empty old `current/` created during marker
+preparation, after validating absence of old source material in preview and
+under locks; ordinary empty-destination refusal remains unchanged. Changed source,
 unowned/changed residue, mismatched marker or competing publication is preserved
 and rejected. A nonempty preparation interrupted before its digests were sealed
 is also preserved and reports `setup_incomplete`, rather than deleting or
@@ -240,6 +249,9 @@ guarantee. The qualified old executables are v0.10.0
 `a9b80ce177a6dead10d51a070b76ff01f7af0294` and baseline
 `c997fb65d58c598dac20f430498edf58b612fe32`. Blocking v0.1 executable reuse is
 not supported; schema-v2 source-data migration remains supported separately.
+Sealing does not waive supplied relocation-confirmation validation for an
+unchanged binding. An already confirmed and rebound candidate may still resume
+without another token; its recorded binding and confirmation digest are checked.
 
 Keep the old exclusion and marker during package replacement. Retained source
 has no automatic expiry, pruning or deletion. After new writes, it is stale;

@@ -22,6 +22,7 @@ from task_governance_tool.storage import (
     DatabaseTarget, UnboundDatabaseTarget, connect, connect_snapshot_readonly,
     initialize_uuid_database, project_identity, ensure_project_meta,
     apply_initial_schema_migration, apply_completion_commit_migration,
+    inspect_setup_state,
 )
 from task_governance_tool.backup import publish_setup_backup
 
@@ -81,6 +82,37 @@ class SetupStateSeparationTests(unittest.TestCase):
         resolved = self.assert_success(self.run_setup())
         (self.old_root / "current" / "taskgov.sqlite").unlink()
         return resolved, target
+
+    def interrupt_separation(self, phase, **options):
+        actual = separation.publish_record
+        reached = []
+
+        def interrupt_record(state_root, record, *, expected):
+            if ((phase == "retired" and record.phase == "fenced")
+                    or (phase == "published" and record.phase == "activated")):
+                reached.append(phase)
+                raise StatePathError()
+            actual(state_root, record, expected=expected)
+            if phase == "fenced" and record.phase == "fenced":
+                reached.append(phase)
+                raise StatePathError()
+
+        def interrupt_marker(*args, **kwargs):
+            reached.append(phase)
+            raise StatePathError()
+
+        patcher = (mock.patch.object(separation, "publish_retirement_marker", side_effect=interrupt_marker)
+                   if phase == "sealed" else
+                   mock.patch.object(separation, "publish_record", side_effect=interrupt_record))
+        with patcher:
+            stopped = self.run_setup(**options)
+        self.assertEqual(reached, [phase])
+        self.assertFalse(stopped.ok)
+        record = read_record(self.new_root)
+        self.assertIsNotNone(record.candidate_digest)
+        self.assertEqual(record.phase, "private" if phase in ("sealed", "retired") else "fenced")
+        self.assertEqual((self.new_root / "current").exists(), phase == "published")
+        return record
 
     def assert_success(self, result):
         self.assertTrue(result.ok, (result.error_code, result.data))
@@ -562,8 +594,8 @@ class SetupStateSeparationTests(unittest.TestCase):
                     self.assertEqual(result.data["completed_writes"], [])
                     self.assertEqual(file_snapshot(self.install.project_root), before)
 
-    def test_confirmed_relocation_sealed_and_fenced_retries_need_no_new_confirmation(self):
-        for phase in ("sealed", "fenced"):
+    def test_confirmed_relocation_sealed_fenced_and_published_retries_need_no_new_confirmation(self):
+        for phase in ("sealed", "retired", "fenced", "published"):
             with self.subTest(phase=phase), tempfile.TemporaryDirectory() as temporary:
                 temporary_root = Path(temporary).resolve(strict=True)
                 install = make_physical_install(temporary_root)
@@ -578,19 +610,7 @@ class SetupStateSeparationTests(unittest.TestCase):
                     preview = self.run_setup(read_only=True)
                     self.assertTrue(preview.ok, preview.error_code)
                     token = preview.data["relocation"]["confirmation_token"]
-                    if phase == "sealed":
-                        patcher = mock.patch.object(separation, "publish_retirement_marker", side_effect=StatePathError())
-                    else:
-                        actual = separation.publish_record
-                        def interrupt(state_root, record, *, expected):
-                            if record.phase == "fenced":
-                                raise StatePathError()
-                            actual(state_root, record, expected=expected)
-                        patcher = mock.patch.object(separation, "publish_record", side_effect=interrupt)
-                    with patcher:
-                        stopped = self.run_setup(confirmation_token=token)
-                    self.assertFalse(stopped.ok)
-                    self.assertIsNotNone(read_record(self.new_root).candidate_digest)
+                    self.interrupt_separation(phase, confirmation_token=token)
                     resolved = self.assert_success(self.run_setup())
                     self.assertEqual(resolved.project_id, target.project.project_id)
                     self.assertEqual(resolved.stored_project.binding_generation, 2)
@@ -680,16 +700,126 @@ class SetupStateSeparationTests(unittest.TestCase):
         self.assertEqual(result.error_code, "relocation_token_invalid")
         self.assertEqual(file_snapshot(self.install.project_root), before)
 
-    def test_invalid_token_cannot_activate_a_sealed_fresh_candidate(self):
-        with mock.patch.object(separation, "publish_retirement_marker", side_effect=StatePathError()):
-            stopped = self.run_setup()
-        self.assertFalse(stopped.ok)
-        self.assertIsNotNone(read_record(self.new_root).candidate_digest)
+    def test_invalid_token_cannot_activate_sealed_fresh_or_same_binding_candidates(self):
+        for origin in ("fresh", "existing"):
+            for phase in ("sealed", "fenced", "published"):
+                with self.subTest(origin=origin, phase=phase), tempfile.TemporaryDirectory() as tmp:
+                    self.reset_install(tmp)
+                    if origin == "existing":
+                        self.old_current()
+                    self.interrupt_separation(phase)
+                    before = file_snapshot(self.install.project_root)
+                    result = self.run_setup(confirmation_token="invalid")
+                    self.assertFalse(result.ok)
+                    self.assertEqual(result.error_code, "relocation_token_invalid")
+                    self.assertEqual(result.data["planned_writes"], [])
+                    self.assertEqual(result.data["completed_writes"], [])
+                    self.assertEqual(file_snapshot(self.install.project_root), before)
+
+    def test_sealed_retry_applies_only_requested_policy_after_exact_activation(self):
+        from task_governance_tool.setup_state_inventory import inspect_inventory
+
+        cases = (
+            ("fresh", "sealed", {"backup_interval_minutes": 45, "backup_generations": 4}, (45, 4)),
+            ("fresh", "fenced", {"backup_interval_minutes": 45}, (45, 7)),
+            ("fresh", "published", {"backup_generations": 4}, (60, 4)),
+            ("existing", "sealed", {}, (60, 7)),
+            ("existing", "fenced", {"backup_interval_minutes": 60, "backup_generations": 7}, (60, 7)),
+            ("existing", "published", {"backup_interval_minutes": 45, "backup_generations": 4}, (45, 4)),
+        )
+        for origin, phase, options, expected_policy in cases:
+            with self.subTest(origin=origin, phase=phase), tempfile.TemporaryDirectory() as tmp:
+                self.reset_install(tmp)
+                if origin == "existing":
+                    self.old_current()
+                record = self.interrupt_separation(
+                    phase, backup_interval_minutes=60, backup_generations=7,
+                )
+                retained = file_snapshot(self.new_root / ".state-separation" / "source")
+                configured = expected_policy != (60, 7)
+                expected_writes = [*separation.LAYOUT_WRITES, *(["maintenance_configure"] if configured else [])]
+                before = file_snapshot(self.install.project_root)
+                preview = self.run_setup(read_only=True, **options)
+                self.assertTrue(preview.ok, (preview.error_code, preview.data))
+                self.assertEqual(preview.data["planned_writes"], expected_writes)
+                self.assertEqual(preview.data["completed_writes"], [])
+                self.assertEqual((preview.data["backup_interval_minutes"], preview.data["backup_generations"]),
+                                 expected_policy)
+                self.assertEqual(file_snapshot(self.install.project_root), before)
+
+                activation_digests = []
+                publish = separation.publish_record
+
+                def observe_activation(state_root, successor, *, expected):
+                    if successor.phase == "activated":
+                        activation_digests.append(inspect_inventory(self.new_root / "current", strict=True).digest)
+                    return publish(state_root, successor, expected=expected)
+
+                with mock.patch.object(separation, "publish_record", side_effect=observe_activation), \
+                        mock.patch.object(separation, "configure_project_maintenance",
+                                          wraps=separation.configure_project_maintenance) as configure:
+                    result = self.run_setup(**options)
+                self.assertTrue(result.ok, (result.error_code, result.data))
+                self.assertEqual(result.data["status"], "setup_complete")
+                self.assertEqual(result.data["planned_writes"], expected_writes)
+                self.assertEqual(result.data["completed_writes"], expected_writes)
+                self.assertEqual(activation_digests, [record.candidate_digest])
+                self.assertEqual(read_record(self.new_root).candidate_digest, record.candidate_digest)
+                self.assertEqual(read_record(self.new_root).phase, "activated")
+                self.assertEqual(configure.call_count, int(configured))
+                resolved = resolve_setup_project_state(
+                    skill_root=self.install.skill_root, repo=self.install.project_root,
+                )
+                self.assertIsNone(resolved.error_code)
+                state = inspect_setup_state(resolved.target)
+                self.assertEqual((state.backup_interval_minutes, state.backup_generations), expected_policy)
+                self.assertEqual((result.data["backup_interval_minutes"], result.data["backup_generations"]),
+                                 expected_policy)
+                self.assertEqual(resolved.project_id, record.project_id)
+                self.assertEqual(resolved.stored_project.binding_generation, 1)
+                self.assertEqual(file_snapshot(self.new_root / ".state-separation" / "source"), retained)
+
+    def test_sealed_retry_policy_failure_keeps_activation_and_resumes_with_ordinary_setup(self):
+        self.old_current()
+        record = self.interrupt_separation("fenced", backup_interval_minutes=60, backup_generations=7)
+        options = {"backup_interval_minutes": 45, "backup_generations": 4}
+        with mock.patch.object(separation, "configure_project_maintenance", side_effect=StatePathError()) as configure:
+            failed = self.run_setup(**options)
+        configure.assert_called_once()
+        self.assertFalse(failed.ok)
+        self.assertEqual(failed.error_code, "setup_incomplete")
+        self.assertEqual(failed.data["planned_writes"], [*separation.LAYOUT_WRITES, "maintenance_configure"])
+        self.assertEqual(failed.data["completed_writes"], list(separation.LAYOUT_WRITES))
+        self.assertEqual(read_record(self.new_root).phase, "activated")
+        self.assertEqual(read_record(self.new_root).candidate_digest, record.candidate_digest)
+        resolved = resolve_setup_project_state(
+            skill_root=self.install.skill_root, repo=self.install.project_root,
+        )
+        self.assertIsNone(resolved.error_code)
+        state = inspect_setup_state(resolved.target)
+        self.assertEqual((state.backup_interval_minutes, state.backup_generations), (60, 7))
+        with mock.patch.object(separation, "configure_project_maintenance",
+                               side_effect=AssertionError("active state reentered separation")), \
+                mock.patch.object(setup, "configure_project_maintenance",
+                                  wraps=setup.configure_project_maintenance) as configure:
+            resumed = self.run_setup(**options)
+        self.assertTrue(resumed.ok, (resumed.error_code, resumed.data))
+        self.assertEqual(resumed.data["completed_writes"], ["maintenance_configure"])
+        configure.assert_called_once()
+        state = inspect_setup_state(resolved.target)
+        self.assertEqual((state.backup_interval_minutes, state.backup_generations), (45, 4))
+
+    def test_sealed_fresh_retry_rejects_unexpected_old_current_file_without_writes(self):
+        self.interrupt_separation("sealed")
+        (self.old_root / "current" / "sentinel.txt").write_bytes(b"preserve unexplained old material")
         before = file_snapshot(self.install.project_root)
-        result = self.run_setup(confirmation_token="invalid")
-        self.assertFalse(result.ok)
-        self.assertEqual(result.error_code, "relocation_token_invalid")
-        self.assertEqual(file_snapshot(self.install.project_root), before)
+        for read_only in (True, False):
+            with self.subTest(read_only=read_only):
+                result = self.run_setup(read_only=read_only)
+                self.assertFalse(result.ok)
+                self.assertEqual(result.error_code, "project_state_unreadable")
+                self.assertEqual(result.data["completed_writes"], [])
+                self.assertEqual(file_snapshot(self.install.project_root), before)
 
     def test_malformed_old_stage_precedes_relocation_and_preserves_bytes(self):
         previous = self.temporary_root / "previous"

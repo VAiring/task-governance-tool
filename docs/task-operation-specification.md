@@ -779,45 +779,14 @@ other existing fields. In-scope discovery, test-driven cross-module failure,
 and unrequested work remain governed by current rules and cannot invoke this
 policy.
 
-### Host Execution Access Guidance
-
-Instruction-layer guidance distinguishes package/document read access from
-the canonical `state/` write access required for ordinary authorized Task and
-evidence updates, including their transaction and bounded maintenance files.
-The boundary is protected-storage writes, not DB mutation alone: evidence and
-Viewer writes remain conditional on their existing contracts/configuration,
-with no new generation or launch. Restrictions persist from initial registration
-through later updates, evidence, and completion; first approval or success does
-not permanently unlock storage or automatically cover another operation/resume.
-Codex's default workspace-write policy recursively protects existing `.agents`
-directories even beneath writable roots; this is a host restriction, not a
-taskgov gate. See the [official protected-path documentation](https://learn.chatgpt.com/docs/agent-approvals-security#protected-paths-in-writable-roots).
-
-Known restrictions use the current host's formal scoped approval path only
-when needed, reusing applicable valid grants without a deliberate failed
-probe. Neither Skill instructions nor Task approval expand host permissions.
-Normal accessible operations gain no preflight, doctor, repeated question, or
-reapproval or mandatory guide rereads. Use available effective host/grant
-information, not a new per-call checker. The CLI reference centralizes default
-read and conditional write-approval host tool examples; `sandbox_permissions`
-and `justification` are host tool fields, never CLI or shell options. Use them
-only where that interface is available and permitted, not for every write.
-Prohibited/unavailable/denied approval prevents only the affected operation;
-report required access without bypassing protection, moving state, changing
-ACL/sandbox settings, or demanding administrator/full access by default.
-An `internal_error` does not establish a permission cause. Unknown write
-outcomes require public-state inspection before retry decisions, not blind
-replay; post-commit warnings preserve primary success. Setup, installation,
-Runner Plan publication, Git and external writes retain their separate
-contracts. Runtime behavior, stored errors, and completion gates are unchanged.
-
-Separately authorized Git writes under known `.git` protection use the same
-effective-grant/formal host path without a known-denied probe. Each Git result
-controls its dependent action: intended staging must succeed before snapshot
-target capture, and the intended commit before completion registration. Later
-command success cannot mask prior Git failure. This is instruction guidance,
-not new Git authority, automatic Git execution, normal-path inspection, or a
-restriction on partial staging and unrelated unstaged/untracked work.
+The Skill documents taskgov-specific authorization and write boundaries, not
+host approval mechanisms. It adds no permission-guide read or host-tool approval
+example. Host enforcement and the separate authorization for installation,
+setup, Runner Plan publication, Git, and external operations remain unchanged.
+Intended staging must succeed before snapshot target capture, and the intended
+commit before completion registration; a later command's success cannot replace
+either result. These existing operation-order rules add no Git authority,
+normal-path inspection, or restriction on intentional partial staging.
 
 ## Stored Task Read And Privacy Contract
 

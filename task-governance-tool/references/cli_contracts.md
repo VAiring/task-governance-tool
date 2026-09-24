@@ -8,7 +8,6 @@ detail are not prerequisites for normal Task work.
 
 - [Invocation And Public Inventory](#invocation-and-public-inventory)
 - [Envelope And Read/Write Boundary](#envelope-and-readwrite-boundary)
-- [Execution Access](#execution-access)
 - [`setup`](#setup)
 - [`doctor`](#doctor)
 - [Task Commands](#task-commands)
@@ -71,9 +70,6 @@ Windows junction layouts are unsupported. Python 3.12 or later is required.
 Ordinary Task use supports Windows, Linux, and macOS. The explicit trusted-local
 Runner supports the same three platforms under their OS-specific limits;
 verification without Runner opt-in remains manual. There is no OS-selection command.
-
-For known host restrictions on storage writes, see [Execution Access](#execution-access).
-Its host tool arguments are not additional taskgov or shell options.
 
 The complete public command inventory is exactly these 23 leaves:
 
@@ -157,87 +153,16 @@ Write commands other than `setup` require current initialized state. They
 never initialize or migrate implicitly. `setup` is the only initializer and
 migrator. `--read-only` rejects a write form before a business write.
 
+Ordinary Task/evidence updates write only under the governed project's
+canonical `.taskgov/`, not the physical Skill or retired package-local state.
+Installation, setup, and Runner Plan publication retain their own write boundaries.
+
 Contention returns `database_busy`; unsupported WAL state returns
 `unsupported_journal_mode`, without raw database or operating-system detail.
 Business writes revalidate their current basis and save atomically. Exceptions
 with a durable completed prefix are documented under [setup](#setup) and
 [Runner Plan actions](#runner-plan-actions). Maintenance warnings never undo a successful
 business write; see [Internal Continuity Boundary](#internal-continuity-boundary).
-
-## Execution Access
-
-Use this section for a known host restriction or access failure, not a normal
-preflight. Reading Skill explanations needs read access to the package files;
-read-only taskgov inspection also reads its governed project and canonical
-state. Ordinary authorized Task/evidence updates need write access under the
-governed project's canonical `.taskgov/`, including SQLite transaction files and
-bounded post-commit artifacts. This includes evidence or Viewer files only when
-their existing contracts and enabled configuration require them; it adds no
-generation or launch. Access depends on writing protected storage, not just on
-whether a command updates the DB. Read access alone does not authorize writes.
-
-Ordinary updates do not write the physical Skill or its retired package-local
-state. Installation/update, explicit layout setup and configuration publication
-still have their own write boundaries; layout setup also writes the old-path
-retirement marker. A host may protect those package files or generated state.
-Use its effective restrictions and valid grants; the Skill itself grants no
-execution permission. A first approval or successful write does not permanently
-unlock storage or cover other operations or a resumed session automatically.
-
-When a known restriction affects the intended authorized write, use the host's
-formal scoped approval mechanism for that operation without first provoking a
-known-denied write. Reuse an existing grant only while it covers the same access
-and remains valid, using available host/grant information rather than a new
-checker or repeated guide reads. Do not request administrator or unrestricted access by
-default, add a per-call permission check/question, or change ACLs, sandbox
-settings, or state location. If required approval is prohibited, unavailable or denied,
-report the affected operation and required access; do not bypass the restriction.
-Continue unrelated authorized work where possible.
-
-For a host exposing `exec_command`, these JSON objects illustrate **host tool
-arguments**, not PowerShell commands or taskgov CLI arguments. Run from the
-governed-project root; replace `<task-id>` with the selected Task's ID. Read-only
-inspection uses the normal/default execution path:
-
-```json
-{"cmd": "python .agents/skills/task-governance-tool/scripts/taskgov.py task context --json"}
-```
-
-Only when that host permits and requires its formal scoped approval mechanism
-for the authorized write, and no valid existing grant covers it:
-
-```json
-{"cmd": "python .agents/skills/task-governance-tool/scripts/taskgov.py task edit <task-id> --status in_progress --json", "sandbox_permissions": "require_escalated", "justification": "Allow this authorized Task status update to write its protected canonical state?"}
-```
-
-`sandbox_permissions` and `justification` belong to `exec_command`; never append
-them to the CLI or shell command. Hosts without this permitted interface use
-their own available formal path, or stop the affected write if none is available.
-Unrestricted writes and writes covered by a current valid grant use the ordinary
-permitted path: do not fix escalation on every write or ask for redundant approval.
-These examples do not remove host approval review or add routine permission calls.
-
-For separately authorized Git writes, a known host protection on `.git` uses
-the same applicable-grant or formal scoped execution path, without a deliberate
-denied attempt. Task approval still grants no Git operation permission. Treat
-each stage/commit result individually: a later command's success does not erase
-an earlier failure (for example, inspect `$LASTEXITCODE` immediately after each
-native Git call in PowerShell, not only after the last command). Failed staging
-stops dependent target capture; failed commit stops dependent completion. This
-adds no normal-path read, probe, or reapproval and does not reject unrelated
-unstaged/untracked work or prohibit intentional partial staging.
-
-An `internal_error` alone does not identify a permission failure. Follow
-[the existing error guidance](#errors-and-privacy); do not diagnose its cause
-from that code alone. If a write response is lost or its committed outcome is
-unknown, inspect actual saved state through the relevant public read before
-deciding whether any retry is needed; never blindly resubmit. A successful
-write with a [maintenance warning](#internal-continuity-boundary) stays successful.
-
-This guidance adds no write probe, normal-loop doctor, new approval gate, or
-new error classification. Setup, installation, Git, external operations and
-[Runner Plan publication](#runner-plan-actions) retain their separate explicit
-permission boundaries; ordinary Task-write approval does not authorize them.
 
 <a id="setup"></a>
 
@@ -1890,6 +1815,8 @@ Correct an observed command/argument mismatch against its command section.
 defect: the cause may be in the environment or internal processing. Report the
 sanitized failure and keep the cause unconfirmed until relevant read-only
 diagnosis establishes it; do not guess new options or blindly retry writes.
+If a write response is lost or its committed outcome is unknown, inspect the
+actual saved state through the relevant public read before deciding on a retry.
 
 Relocation setup failures use exit 2 and these fixed sanitized messages:
 

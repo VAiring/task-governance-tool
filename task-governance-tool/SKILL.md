@@ -30,13 +30,6 @@ change it, and a non-Git project is valid.
 Use only the [public commands and common options](references/cli_contracts.md#invocation-and-public-inventory).
 Do not invent aliases, alternate state paths, or administrative commands.
 
-Reference reads need read access; ordinary state updates also need write access
-under the governed project's canonical `.taskgov/`. From initial registration
-through later updates and completion, use [execution access guidance](references/cli_contracts.md#execution-access)
-when a host restriction is known or access is denied; a first approval does not
-permanently unlock protected storage.
-This adds no routine probe, doctor, or approval request when access is already valid.
-
 ## Start Or Resume
 
 Read a linked section directly instead of searching line numbers or loading a

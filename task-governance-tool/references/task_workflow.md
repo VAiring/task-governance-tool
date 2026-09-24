@@ -98,9 +98,7 @@ target-project root; optional branches are read only when their condition occurs
    that returned ID; [audit](cli_contracts.md#task-audit-detail) is historical
    investigation, never another normal read or current completion evidence.
 2. If `data.selected.task.status=ready` and its implementation is authorized,
-   start that Task. If the host restricts its storage write, follow
-   [execution access](cli_contracts.md#execution-access) using applicable valid
-   grants or the required formal approval path, including for this first update:
+   start that Task:
 
    ```powershell
    python .agents/skills/task-governance-tool/scripts/taskgov.py task edit <task-id> --status in_progress --json
@@ -420,9 +418,8 @@ follow-up work and the [isolated reopen procedure](#reopen).
 ### Set The Review Target
 
 Only after the exact material is ready, stage precisely the intended Git files
-through the project's approved Git workflow. For known protected `.git` writes,
-use [execution access](cli_contracts.md#execution-access), not a known-denied
-probe. Only after the intended staging succeeds, capture the staged candidate:
+through the project's approved Git workflow. Confirm that staging itself
+succeeded before capturing the staged candidate:
 
 ```powershell
 python .agents/skills/task-governance-tool/scripts/taskgov.py review target set <task-id> --kind git_snapshot --json
@@ -498,9 +495,8 @@ provenance. Caller declarations do not prove actual model/Skill use or review tr
 
 For a reviewed `git_snapshot`, create the completion commit through the
 project's approved Git workflow without changing the reviewed staged tree.
-For known protected `.git` writes, use
-[execution access](cli_contracts.md#execution-access). Only after that commit
-succeeds, use its full commit ID as `<hash>`:
+Only after confirming that commit itself succeeded, use its full commit ID
+as `<hash>`:
 
 ```powershell
 python .agents/skills/task-governance-tool/scripts/taskgov.py task complete <task-id> --verification-complete --review-complete --completion-evidence-kind git_commit --completion-revision <hash> --json
@@ -623,9 +619,6 @@ it shares files or checks with the feature.
 Register only explicit user-approved work. Register a finalized multiple-Task
 set once with `task add --from-stdin`, using explicit common values as described
 in [CLI contracts](cli_contracts.md#task-add); single-Task flags remain available.
-If the host restricts the registration's storage write, use
-[execution access](cli_contracts.md#execution-access); initial registration and
-later writes each need applicable access, not necessarily a new approval.
 Registration grants no implementation, target-project, Git,
 network, or external-operation permission. A non-zero Contract copies only
 explicit scope, acceptance, constraints, and authority reference.

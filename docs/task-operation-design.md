@@ -719,28 +719,14 @@ Reader implementation and output semantics stay unchanged; focused retrieval
 checks exercise the actual public output and conditional link reachability,
 with semantic scenario review rather than natural-language matching rules.
 
-Host-access guidance is maintained once in the package CLI reference's
-`Execution Access` section, including default-read and conditional-write host
-tool examples. Short conditional routes in `SKILL.md`, CLI invocation, the
-bounded loop's first update, and registration retain access conditions when
-read separately through the public reference reader. Host tool arguments are
-distinct from CLI/shell options; initial and later protected-storage writes use
-current effective grants, without assuming permanent access from one success.
-It describes effective host access and approval, not a taskgov permission
-resolver, ACL editor, state relocation mechanism, preflight, or new error
-mapping. Existing public inspection recovers uncertain write outcomes; existing
-transaction and post-commit owners retain their behavior. Scenario review covers
-read-only use, DB and other contract-enabled storage writes, initial/later writes,
-valid and expired/out-of-scope grants, unrestricted use,
-required/prohibited/unavailable/denied approval, unknown causes,
-and uncertain outcomes without introducing prose-matching runtime checks.
-
-The workflow's target and completion sections link that same access guidance
-for authorized protected Git writes. They sequence capture after successful
-intended staging and completion after successful commit, retaining each Git
-operation's result rather than the final command alone. No Git wrapper,
-permission detector, or snapshot/partial-stage validation change is introduced;
-the existing Review/Completion owners retain exact binding behavior.
+The package has no separate host-permission guide or approval-tool examples.
+Taskgov-specific write boundaries stay in the CLI operation contracts; uncertain
+write outcomes use existing public-state inspection in the error/retry guidance.
+The workflow's target and completion steps retain successful-staging and
+successful-commit ordering directly, without routing through a Git permission
+guide. Existing Review/Completion owners retain exact binding behavior. This
+instruction-only boundary adds no permission detector, Git wrapper, or runtime
+change.
 
 ### Neutral Forward-Test Boundary
 

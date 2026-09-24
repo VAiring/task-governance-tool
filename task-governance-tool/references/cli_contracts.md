@@ -1342,7 +1342,7 @@ Success data keys are exactly:
 ```text
 task, contract, review_target, changed_paths_available, changed_paths,
 changed_paths_total, changed_paths_truncated, review_focus, required_output,
-receipt_command
+result_template, result_instructions, receipt_command
 ```
 
 Changed paths are strict relative UTF-8 project paths, sorted bytewise, and
@@ -1351,7 +1351,17 @@ The complete text or JSON stdout is capped at 32,768 bytes. A truncated path
 list is not the complete review scope; inspect the exact material bound to the
 returned target.
 
-The fixed `required_output` requests a version-1 structured result with one
+The Packet's `result_template` pre-fills only version 1, Task ID, Contract
+revision and the complete target. Its one Receipt leaves reviewer, kind,
+verdict, summary, findings and all ten provenance fields null: it is unfinished
+and cannot be registered as-is. Use `result_instructions` for the existing
+closed fields, codes, combinations and limits; complete the actual review
+without a separate format lookup. No PASS, independence, review method,
+model/Skill use or empty Findings array is inferred. The new fields count
+toward the unchanged Packet cap and add no CLI call or review-method choice.
+Exact artifacts and governing documents still require inspection.
+
+The fixed `required_output` requests that completed version-1 result with one
 reviewer's Receipt, severity-ordered Findings, and actual provenance. Bounded
 summaries include exact file/line references, remaining risks and recommended
 changes without raw review reasoning. `receipt_command` names `review result add`;
@@ -1612,8 +1622,9 @@ $OutputEncoding = [Console]::InputEncoding = [System.Text.UTF8Encoding]::new($fa
 $resultJson | python .agents/skills/task-governance-tool/scripts/taskgov.py review result add <task-id> --json
 ```
 
-The document has this exact shape (replace the illustrative identity and
-target with those returned in the actual Review Packet):
+Normally complete the Packet's `result_template` using `result_instructions`.
+The document has this exact shape (this illustrative completed example is not
+evidence; do not copy its reviewer, verdict or provenance claims):
 
 ```json
 {
@@ -1641,9 +1652,9 @@ target with those returned in the actual Review Packet):
 ```
 
 Use the actual Packet object: `data.review_preparation.packet` after qualifying
-registration/target setting or `data` after standalone preparation. Copy its `task.task_id`
-into both the command's `<task-id>` and document `task_id`, `contract.revision`
-into `contract_revision`, and complete `review_target` into `review_target`.
+registration/target setting or `data` after standalone preparation. Its template
+already contains `task.task_id`, `contract.revision` and the complete
+`review_target`; keep them unchanged and use its Task ID as command `<task-id>`.
 Combine only reviewers' `receipts` arrays with identical envelope values;
 preserve returned verdicts and provenance rather than filling or retyping them.
 

@@ -211,6 +211,8 @@ class ReviewPacketTests(unittest.TestCase):
                     "changed_paths_truncated",
                     "review_focus",
                     "required_output",
+                    "result_template",
+                    "result_instructions",
                     "receipt_command",
                 ),
             )
@@ -266,6 +268,10 @@ class ReviewPacketTests(unittest.TestCase):
                 "retrieve content\n"
                 "Required output:\n"
                 + "".join(f"- {item}\n" for item in REQUIRED_OUTPUT)
+                + "Result template (unfinished; complete before registration):\n"
+                + json.dumps(diff_data["result_template"], ensure_ascii=True, separators=(",", ":"))
+                + "\nResult instructions:\n"
+                + "".join(f"- {item}\n" for item in diff_data["result_instructions"])
                 +
                 f"Receipt command: {diff_data['receipt_command']}\n"
             )
@@ -361,6 +367,22 @@ class ReviewPacketTests(unittest.TestCase):
                 REVIEW_PACKET_MAX_GIT_SUBPROCESSES,
             )
 
+            for data in (diff_data, external, commit_data, snapshot_data):
+                with self.subTest(template_target=data["review_target"]["kind"]):
+                    template = data["result_template"]
+                    self.assertEqual(template["version"], 1)
+                    self.assertEqual(template["task_id"], data["task"]["task_id"])
+                    self.assertEqual(template["contract_revision"], data["contract"]["revision"])
+                    self.assertEqual(template["review_target"], data["review_target"])
+                    self.assertEqual(len(template["receipts"]), 1)
+                    blank = template["receipts"][0]
+                    self.assertEqual(
+                        {key: value for key, value in blank.items() if key != "provenance"},
+                        dict.fromkeys(("reviewer", "kind", "verdict", "summary", "findings")),
+                    )
+                    self.assertEqual(len(blank["provenance"]), 10)
+                    self.assertTrue(all(value is None for value in blank["provenance"].values()))
+
             revision_zero_id = add_task(
                 db,
                 repo,
@@ -374,9 +396,11 @@ class ReviewPacketTests(unittest.TestCase):
                 kind="external_revision",
                 revision="external-zero",
             )
-            revision_zero = json_payload(
+            revision_zero_packet = json_payload(
                 prepare(db, repo, revision_zero_id)
-            )["data"]["contract"]
+            )["data"]
+            revision_zero = revision_zero_packet["contract"]
+            self.assertEqual(revision_zero_packet["result_template"]["contract_revision"], 0)
             self.assertEqual(
                 revision_zero,
                 {
@@ -633,6 +657,27 @@ class ReviewPacketTests(unittest.TestCase):
                             payload["errors"][0]["code"],
                             "review_packet_too_large",
                         )
+
+    def test_result_guidance_is_included_in_both_packet_size_budgets(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo = root / "repo"
+            db = root / "taskgov.sqlite"
+            initialize_repo(repo)
+            initialize_taskgov_internal(repo=repo, db=db)
+            task_id = add_task(db, repo)
+            set_target(db, repo, task_id, kind="external_revision", revision="size-bound")
+            before = file_snapshot(root)
+            with mock.patch.object(packet_module, "review_result_instructions", return_value=["x" * 32768]):
+                for json_output in (True, False):
+                    with self.subTest(json_output=json_output):
+                        result = prepare(db, repo, task_id, json_output=json_output)
+                        self.assertEqual(result.returncode, 1)
+                        self.assertIn(OVERSIZED_PACKET_MESSAGE, result.stdout + result.stderr)
+                        self.assertNotIn("x" * 100, result.stdout + result.stderr)
+                        if json_output:
+                            self.assertEqual(json_payload(result)["data"], {})
+            self.assertEqual(file_snapshot(root), before)
 
     def test_revalidation_is_lock_free_and_stale_precedes_observation_error(self):
         with tempfile.TemporaryDirectory() as tmp:

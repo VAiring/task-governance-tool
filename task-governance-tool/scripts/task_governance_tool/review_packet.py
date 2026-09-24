@@ -42,6 +42,10 @@ from task_governance_tool.tasks import (
     row_to_show_task,
 )
 from task_governance_tool.review_packet_binding import review_packet_binding
+from task_governance_tool.review_results import (
+    review_result_instructions,
+    review_result_template,
+)
 from task_governance_tool.task_values import (
     STATUSES,
     TEXT_LIMITS,
@@ -96,14 +100,13 @@ TARGET_INSPECTION_FOCUS = {
 }
 REQUIRED_OUTPUT = (
     (
-        "Return one version-1 JSON result using the structured-review-results "
-        "format in the Skill's references/cli_contracts.md: version, task_id, "
-        "contract_revision, review_target, receipts"
+        "Return one version-1 JSON result by completing result_template "
+        "according to result_instructions"
     ),
-    "Copy this packet's exact Task ID, Contract revision, and complete review_target",
+    "Preserve the template's exact Task ID, Contract revision, and complete review_target",
     (
         "Include one Receipt with reviewer, kind, verdict, summary, provenance, "
-        "and findings; return the actual pass or changes_requested verdict"
+        "and findings; return the actual verdict allowed for its kind and Task tier"
     ),
     (
         "Use concise sanitized summaries for remaining risks and recommended "
@@ -573,6 +576,10 @@ def prepare_review_packet(
             TARGET_INSPECTION_FOCUS[basis.review_target["kind"]],
         ],
         "required_output": list(REQUIRED_OUTPUT),
+        "result_template": review_result_template(
+            normalized_task_id, basis.contract["revision"], basis.review_target,
+        ),
+        "result_instructions": review_result_instructions(),
         "receipt_command": receipt_command,
     }
 
@@ -625,6 +632,10 @@ def format_review_packet_text(data: dict[str, Any]) -> str:
         *(f"- {item}" for item in data["review_focus"]),
         "Required output:",
         *(f"- {item}" for item in data["required_output"]),
+        "Result template (unfinished; complete before registration):",
+        json.dumps(data["result_template"], ensure_ascii=True, separators=(",", ":")),
+        "Result instructions:",
+        *(f"- {item}" for item in data["result_instructions"]),
         f"Receipt command: {data['receipt_command']}",
     ]
     return "\n".join(lines)

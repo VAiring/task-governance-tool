@@ -460,8 +460,14 @@ Follow its target-kind inspection instruction:
 - `diff_fingerprint` or `external_revision`: no PASS until exact supplied
   material is demonstrably bound to that value.
 
-Request each reviewer's actual verdict, sanitized summary, Findings, and
-provenance in the [structured result format](cli_contracts.md#structured-review-results).
+Ask each reviewer to complete the Packet's `result_template` using its
+`result_instructions`, preserving the filled identity. Null placeholders are
+unfinished, not defaults: supply actual verdict, sanitized summary, provenance
+and Findings, using an empty Findings array only after finding no issues.
+This format guidance does not replace exact artifact and authority inspection.
+The [structured result reference](cli_contracts.md#structured-review-results)
+remains available for registration detail; a normal Packet needs no separate
+format lookup.
 Combine only `receipts` arrays whose Task ID, Contract revision, and complete
 target tuple match exactly, preserving returned values. Do not fill missing
 provenance or rewrite judgment. Then send the assembled UTF-8 JSON once:

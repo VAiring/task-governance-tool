@@ -271,7 +271,15 @@ processes, 100 bytewise-sorted relative paths, 240 UTF-8 bytes per path, and
 an unsafe path or a packet above 32,768 bytes fails with no partial packet.
 
 Task, Contract, target, changed paths, five fixed review-focus rows, required
-output, and the batch-registration argv shape are allow-listed. The builder
+output, result template/instructions, and the batch-registration argv shape are
+allow-listed. `review_results.py` owns pure rendering helpers beside its existing
+closed decoder: the template copies only validated Packet identity and leaves
+all Receipt/provenance claims and collections null. Provenance field names,
+enums and identifier grammars come from the existing definitions; explanatory
+combination rules do not implement another validator. `review_packet.py` adds
+these projections only after its existing revalidation and renders the same
+template as compact ASCII JSON in text output. The unchanged CLI Packet-size
+boundary includes both fields. No DB/Git read or write is added. The builder
 does not launch a reviewer, execute/import a receipt, store a packet, or
 include a diff, transcript, prompt, stdout/stderr, secret, or absolute path.
 

@@ -165,6 +165,12 @@ The closed input shape is:
              findings: [{severity: string, summary: string}]}]}
 ```
 
+The [Review Packet](#review-packet) supplies this shape as an unfinished
+`result_template` with only its known identity filled. Null placeholders are
+not declarations and do not change this input contract: the existing decoder
+rejects an unfilled template. Reviewers supply the actual Receipt, provenance
+and Findings before registration; no completion values are inferred.
+
 Every shown field is required. `provenance` is null only for `not_required`;
 otherwise it has exactly the existing caller declaration fields
 `reviewer_class`, `model_state`, `declared_model_id`, `skill_state`,
@@ -323,11 +329,30 @@ adds no Skill branch.
 
 Data keys are exactly `task`, `contract`, `review_target`,
 `changed_paths_available`, `changed_paths`, `changed_paths_total`,
-`changed_paths_truncated`, `review_focus`, `required_output`, and
-`receipt_command`. Task contains ID/title/status/verification/tier; Contract
-contains revision/scope/acceptance/constraints; target contains kind/value/base/
+`changed_paths_truncated`, `review_focus`, `required_output`, `result_template`,
+`result_instructions`, and `receipt_command`. Task contains
+ID/title/status/verification/tier; Contract contains revision/scope/acceptance/constraints;
+target contains kind/value/base/
 generation. No diff, result, raw output, prompt, conversation, secret, absolute
-path, or caller-authored focus is included.
+path, or caller-authored focus is included. The template is not a review result.
+
+`result_template` has the closed version-1 structured-result shape, with only
+integer `version=1`, Task ID, Contract revision and the complete current target
+filled. Its single Receipt has null `reviewer`, `kind`, `verdict`, `summary`,
+and `findings`, plus a provenance object with all ten caller fields null.
+These deliberately invalid placeholders assert neither independence, verdict,
+methods, context, model/Skill use, nor absence of Findings. Reviewers replace
+them with actual declarations, including explicit arrays and permitted null
+identifiers, or null provenance for a genuine Tier-0 not-required Receipt.
+The existing registration validator remains the only input decision point.
+
+`result_instructions` is fixed format guidance using the existing validator's
+closed vocabularies and identifier grammars, with its Receipt/provenance
+combinations, limits, privacy and exact-binding rules. It adds no reviewer
+method, adapter, user decision, external verification fact, or normal-loop
+call. Format guidance does not replace inspection of exact artifacts and
+applicable authority. Template and instructions count toward the unchanged
+Packet cap in both output modes; overflow still fails without a partial Packet.
 
 At most 100 bytewise-ordered changed paths, 240 UTF-8 bytes each and 16,384
 bytes total, are returned. Unsafe paths fail `review_packet_path_unsafe` with
@@ -340,15 +365,16 @@ Four common focus rows are Contract compliance; state/completion integrity;
 privacy/target safety; and verification/regression. The fifth mechanically
 states the exact snapshot, commit, supplied diff-fingerprint material, or
 supplied external material boundary. Required output requests the version-1
-structured result for the packet's exact Task/Contract/target, containing one
-reviewer's Receipt and severity-ordered Findings. Bounded summaries carry exact
+structured result by completing the template without changing its identity,
+containing one reviewer's Receipt and severity-ordered Findings. Bounded summaries carry exact
 file/line references, remaining risks and recommended changes, not raw review
 reasoning. Receipt command is the non-executed `review result add` shape; the
 packet itself never imports or records results.
 
 Text order is `Task`, `Status`, `Verification`, `Contract revision`, `Scope`,
 `Acceptance`, `Constraints`, `Review target`, `Changed paths`, `Review focus`,
-`Required output`, `Receipt command`, LF-terminated. After Git, a second short
+`Required output`, `Result template` (compact ASCII JSON), `Result instructions`,
+`Receipt command`, LF-terminated. After Git, a second short
 read revalidates Task, Contract, and every target field/generation; drift fails
 `review_packet_stale` with `review context changed while preparing the packet`.
 

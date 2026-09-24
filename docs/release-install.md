@@ -536,6 +536,11 @@ The normal review flow submits versioned structured results with
 `review result add <task-id>`, reading UTF-8 JSON from stdin. It validates one
 Task, Contract revision, and complete review target and atomically records the
 new Receipts and their Findings under the existing evidence constraints.
+Review Packets now include `result_template` and `result_instructions`: known
+Task/Contract/target values are filled, but all review claims remain unfinished.
+The added output fields use the existing Packet cap and registration validator;
+they neither attest a review nor change the normal-loop call count. Their
+effect on total LLM tokens is not yet measured.
 Invalid, stale, duplicate, or incompletely bound results save nothing; missing
 provenance and user approval are never inferred from the input. See the
 [package CLI reference](../task-governance-tool/references/cli_contracts.md),

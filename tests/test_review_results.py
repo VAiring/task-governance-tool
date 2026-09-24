@@ -17,6 +17,7 @@ from tests.m14_test_support import (
     file_snapshot, initialize_taskgov_internal, make_physical_install, run_taskgov_internal,
 )
 from tests.test_review_evidence import database_target, receipt_add
+from tests.review_test_helpers import REVIEW_PROVENANCE_V1_CASES
 
 from task_governance_tool import cli as cli_service
 from task_governance_tool import review_results as result_service
@@ -88,6 +89,28 @@ class ReviewResultsInputTests(unittest.TestCase):
         with self.assertRaises(review_service.ReviewEvidenceError) as raised:
             result_service.decode_review_results(payload)
         self.assertEqual(raised.exception.code, "invalid_review_evidence")
+
+    def test_completed_template_uses_existing_provenance_and_receipt_matrix(self):
+        for case in REVIEW_PROVENANCE_V1_CASES:
+            with self.subTest(case=case.name):
+                template = result_service.review_result_template(TASK_ID, 1, document()["review_target"])
+                entry = template["receipts"][0]
+                entry.update(receipt())
+                entry["provenance"] = case.expected_normalized()
+                result = result_service.normalize_review_results(template, review_tier=2)
+                self.assertEqual(result["receipts"][0]["provenance"], case.expected_normalized())
+        for tier, kind, verdict, approved in (
+            (0, "not_required", "not_required", ()),
+            (1, "self_review_fallback", "pass", ()),
+            (2, "self_review_fallback", "pass", ("reviewer-a",)),
+            (2, "self_review_fallback", "changes_requested", ()),
+            (2, "independent", "changes_requested", ()),
+        ):
+            with self.subTest(tier=tier, kind=kind, verdict=verdict):
+                template = result_service.review_result_template(TASK_ID, 0, document()["review_target"])
+                template["receipts"][0].update(receipt(kind=kind, verdict=verdict))
+                result = result_service.normalize_review_results(template, review_tier=tier, user_approved_reviewers=approved)
+                self.assertEqual(result["receipts"][0]["verdict"], verdict)
 
     def test_utf8_decode_preserves_exact_values_and_accepts_exact_byte_limit(self):
         payload = document()
@@ -310,6 +333,55 @@ class ReviewResultsTests(unittest.TestCase):
         self.assertEqual(envelope["warnings"], [])
         self.assertEqual(stderr, "")
         return envelope
+
+    def test_packet_template_and_each_unfinished_claim_are_rejected_without_writes(self):
+        template = self.success("review", "prepare", self.task_id)["result_template"]
+        before = file_snapshot(self.root)
+        self.assert_failure(self.invoke(template), "invalid_review_evidence")
+        for field in template["receipts"][0]:
+            candidate = copy.deepcopy(template)
+            candidate["receipts"][0].update(receipt())
+            candidate["receipts"][0][field] = template["receipts"][0][field]
+            with self.subTest(unfinished=field):
+                self.assert_failure(self.invoke(candidate), "invalid_review_evidence")
+        self.assertEqual(file_snapshot(self.root), before)
+
+    def test_completed_packet_template_registers_findings_through_existing_writer(self):
+        template = self.success("review", "prepare", self.task_id)["result_template"]
+        finding = {"severity": "low", "summary": "src/example.py:12 Clarify the contract"}
+        template["receipts"][0].update(receipt(findings=[finding]))
+        code, stdout, _ = self.invoke(template)
+        self.assertEqual(code, 0, stdout)
+        saved = json.loads(stdout)["data"]["receipts"][0]
+        self.assertEqual(saved["receipt"]["verdict"], "pass")
+        self.assertEqual(saved["findings"][0]["finding"]["summary"], finding["summary"])
+
+    def test_tier_zero_packet_template_accepts_explicit_not_required_declaration(self):
+        self.task_id = self.success("task", "add", "--title", "Mechanical change", "--review-tier", "0")["task"]["task_id"]
+        targeted = self.success("review", "target", "set", self.task_id, "--kind", "external_revision", "--revision", "reviewed-mechanical-change")
+        template = targeted["review_preparation"]["packet"]["result_template"]
+        self.assertIsNone(template["receipts"][0]["verdict"])
+        template["receipts"][0].update(receipt(kind="not_required", verdict="not_required"))
+        code, stdout, _ = self.invoke(template)
+        self.assertEqual(code, 0, stdout)
+        saved = json.loads(stdout)["data"]["receipts"][0]["receipt"]
+        self.assertEqual(saved["verdict"], "not_required")
+        self.assertIsNone(saved["review_provenance"])
+
+    def test_completed_packet_template_retains_privacy_and_stale_target_rejection(self):
+        template = self.success("review", "prepare", self.task_id)["result_template"]
+        template["receipts"][0].update(receipt())
+        private = copy.deepcopy(template)
+        private["receipts"][0]["summary"] = "token=private-sentinel"
+        before = file_snapshot(self.root)
+        result = self.invoke(private)
+        self.assert_failure(result, "privacy_rejected")
+        self.assertNotIn("private-sentinel", result[1] + result[2])
+        self.assertEqual(file_snapshot(self.root), before)
+        self.success("review", "target", "set", self.task_id, "--kind", "diff_fingerprint", "--revision", FINGERPRINT)
+        before = file_snapshot(self.root)
+        self.assert_failure(self.invoke(template), "review_target_mismatch")
+        self.assertEqual(file_snapshot(self.root), before)
 
     def test_multiple_receipts_findings_keep_native_provenance_references_events_and_gates(self):
         findings = [{"severity": "low", "summary": "Shared observation 日本語"}]

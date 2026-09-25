@@ -285,7 +285,11 @@ def show_task(
     return TaskShowResult(
         task=task,
         events=[row_to_event(row) for row in audit_event_rows],
-        suggested_next_action=suggested_next_action(task),
+        suggested_next_action=suggested_next_action(
+            task,
+            review_evidence=review_evidence,
+            verification_evidence=verification_evidence,
+        ),
         review_evidence=review_evidence,
         handoff_summary=handoff_summary,
         contract=contract,

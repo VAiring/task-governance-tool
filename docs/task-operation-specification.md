@@ -94,6 +94,20 @@ once at their Task/Contract owner, rather than again in evidence summaries.
 The [Review/completion owner](review-completion-specification.md) defines the
 working evidence and explicit audit projections.
 
+For `review_pending` detail only, when required current verification is satisfied
+and the existing review gate reports only insufficient independent PASS receipts,
+the suggested action states the remaining count and directs the caller to obtain
+any unperformed reviews and register actual results using the Packet template or
+the existing structured-result input reference. It reuses the already-read gate
+evaluation and required/qualifying counts. Old-generation PASS, blocking Findings
+(including resolved Findings awaiting a newer target), changes-requested results,
+and accepted fallbacks retain their existing gate meaning. All other cases,
+including verification not required, retain the status-based hint. Both show
+modes and `task context.selected` share this hint; current/next remain unchanged.
+The hint neither asserts implementation completion, review execution, approval,
+commit success, or final completion eligibility, nor adds a read or permission.
+Final writes retain their existing locked revalidation.
+
 `task show --audit` explicitly obtains the previous bounded detail projection,
 including recent Receipt/provenance and Finding rows and saved completion
 cycles, plus the [current Packet recovery binding](review-completion-specification.md#git-snapshot-and-target-binding).

@@ -1167,7 +1167,12 @@ def build_completion_request(
     return request
 
 
-def suggested_next_action(task: dict[str, Any]) -> str:
+def suggested_next_action(
+    task: dict[str, Any],
+    *,
+    review_evidence: dict[str, Any] | None = None,
+    verification_evidence: dict[str, Any] | None = None,
+) -> str:
     status = task["status"]
     if status == "ready":
         return "Start work, then update the task state when work begins or the status changes."
@@ -1176,6 +1181,26 @@ def suggested_next_action(task: dict[str, Any]) -> str:
     if status == "blocked":
         return "Resolve the blocker, or choose another ready task."
     if status == "review_pending":
+        if (
+            review_evidence is not None
+            and verification_evidence is not None
+            and verification_evidence["gate"]["required"]
+            and verification_evidence["gate"]["satisfied"]
+        ):
+            # Reuse the completion gate's ordering, including old/fresh findings;
+            # presentation must not invent another Receipt eligibility rule.
+            from task_governance_tool.reviews import first_review_gate_error
+
+            error = first_review_gate_error(review_evidence)
+            gate = review_evidence["gate"]
+            missing = gate["required_independent_passes"] - gate["qualifying_independent_passes"]
+            if error is not None and error.code == "review_receipts_insufficient" and missing > 0:
+                return (
+                    f"Current target needs {missing} more independent PASS review(s). "
+                    "Obtain any unperformed reviews, then register actual results via "
+                    "review result add; input: Packet result_template or "
+                    "references/cli_contracts.md#structured-review-results."
+                )
         return "Complete the required review gate, then update the task status."
     if status == "paused":
         return "Review the pause reason, then resume the task to in_progress when safe."

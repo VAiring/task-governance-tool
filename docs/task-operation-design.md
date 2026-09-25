@@ -60,6 +60,13 @@ module. Task operations, shared row converters, and Viewer proof consumption sta
 in `tasks.py`; `task_show_projection.py` assembles the Task detail result from
 the caller's snapshot and existing validation/readers. Its latest-history
 summary is only a text fallback, not an additional public JSON field.
+For the narrow missing-review hint, it passes its already-read review and
+verification evidence to `tasks.py::suggested_next_action`. That pure formatter
+uses `reviews.py::first_review_gate_error` and existing required/qualifying
+counts only when required verification is satisfied on `review_pending`.
+It does not rescan receipts, query storage/Git, or own a second gate evaluator.
+Callers without that evidence, including compact next, retain the fixed mapping;
+compact current keeps its existing formatter. Completion revalidation is unchanged.
 That module also owns the fixed normal/audit presentation boundary. The audit
 form preserves the previous bounded detail; normal presentation removes
 redundant parent values and historical detail only after the same validation.

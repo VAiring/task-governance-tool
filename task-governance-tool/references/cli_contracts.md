@@ -709,7 +709,7 @@ under `task context`'s `data.selected`; no follow-up read is needed:
 | `handoff_summary` | Counts for `pending_handoff`, `handed_off`, and `handoff_withdrawn_by_user`; these do not expand Task scope. |
 | `completion_history` | `total` and `legacy_history_incomplete`, not current completion evidence. |
 | `effort_advisory_enabled` | Whether the normal loop uses the optional Effort observation. Invalid configuration returns false with a continuation warning. |
-| `suggested_next_action` | The tool's state-based next-action hint, not new authority. |
+| `suggested_next_action` | A next-action hint, not authority or proof of completion. In review-pending detail, satisfied required verification and only missing independent PASS reviews yield a remaining count and the existing result-input route; otherwise the status-based hint remains. Obtain any unperformed reviews before registering actual returned results. |
 
 Use `review_evidence.gate.satisfied` and its required/qualifying independent
 pass counts, not the number of recent reviews, to read review readiness.

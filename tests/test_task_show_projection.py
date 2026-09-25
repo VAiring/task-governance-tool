@@ -15,6 +15,7 @@ from tests.test_task_context import run
 
 from task_governance_tool import storage
 from task_governance_tool import verification_receipt_repository as receipt_repository
+from task_governance_tool import reviews, tasks, verification_receipts
 
 
 REVIEW_RECEIPT_FIELDS = {
@@ -118,6 +119,121 @@ class TaskShowProjectionTests(unittest.TestCase):
             key: value for key, value in audit["verification_evidence"]["counts"].items()
             if key != "receipts_total"
         })
+
+    def test_missing_review_hint_reuses_gate_counts_across_show_context_and_audit(self):
+        task = self.add("--verification", "Focused verification")
+        task_id = task["task_id"]
+        generation = self.target(task_id)
+        self.verification(task_id, generation)
+        self.success("task", "edit", task_id, "--status", "review_pending")
+        generic = tasks.suggested_next_action({"status": "review_pending"})
+        for missing in (2, 1, 0):
+            before = file_snapshot(self.root)
+            normal = self.show(task_id)["data"]
+            audit = self.show(task_id, audit=True)["data"]
+            with mock.patch.object(reviews, "read_review_evidence", wraps=reviews.read_review_evidence) as read_review, mock.patch.object(
+                verification_receipts, "read_verification_evidence", wraps=verification_receipts.read_verification_evidence
+            ) as read_verification:
+                context = self.success("task", "context")["data"]
+            self.assertEqual(read_review.call_count, 1)
+            self.assertEqual(read_verification.call_count, 1)
+            self.assertEqual(context["selected"], normal)
+            self.assertEqual(audit["suggested_next_action"], normal["suggested_next_action"])
+            self.assertEqual(context["current"]["tasks"][0]["suggested_next_action"],
+                             tasks.current_suggested_next_action(normal["task"]))
+            self.assert_modes_have_same_gates(normal, audit)
+            self.assertEqual(normal["review_evidence"]["gate"]["qualifying_independent_passes"], 2 - missing)
+            hint = normal["suggested_next_action"]
+            if missing:
+                self.assertIn(f"{missing} more independent PASS", hint)
+                self.assertIn("review result add", hint)
+                self.assertIn("#structured-review-results", hint)
+                self.assertNotIn(task_id, hint)
+                # The formatter itself consumes only supplied values, never IO.
+                with mock.patch("sqlite3.connect", side_effect=AssertionError("extra read")), mock.patch(
+                    "subprocess.Popen", side_effect=AssertionError("extra Git/process")
+                ):
+                    self.assertEqual(tasks.suggested_next_action(
+                        audit["task"], review_evidence=audit["review_evidence"],
+                        verification_evidence=audit["verification_evidence"],
+                    ), hint)
+            else:
+                self.assertEqual(hint, generic)
+            self.assertEqual(file_snapshot(self.root), before)
+            if missing:
+                self.review(task_id, f"reviewer-{missing}")
+
+    def test_review_hint_retains_blocking_and_fresh_review_meaning(self):
+        task_id = self.add("--verification", "Focused verification")["task_id"]
+        generation = self.target(task_id)
+        self.verification(task_id, generation)
+        self.success("task", "edit", task_id, "--status", "review_pending")
+        generic = tasks.suggested_next_action({"status": "review_pending"})
+        self.review(task_id, "changes", verdict="changes_requested")
+        self.assertEqual(self.show(task_id)["data"]["suggested_next_action"], generic)
+        generation = self.target(task_id)
+        self.verification(task_id, generation)
+        receipt = self.review(task_id, "current")
+        self.finding(task_id, receipt["review_receipt_id"], "low", "Optional suggestion")
+        self.assertIn("1 more independent PASS", self.show(task_id)["data"]["suggested_next_action"])
+        medium = self.finding(task_id, receipt["review_receipt_id"], "medium", "Required repair")
+        self.assertEqual(self.show(task_id)["data"]["suggested_next_action"], generic)
+        self.resolve(medium["review_finding_id"])
+        self.assertEqual(self.show(task_id)["data"]["suggested_next_action"], generic)
+        generation = self.target(task_id)
+        self.verification(task_id, generation)
+        # Previous-generation PASS is not counted; resolved older finding is clear.
+        self.assertIn("2 more independent PASS", self.show(task_id)["data"]["suggested_next_action"])
+        receipt = self.review(task_id, "new-current")
+        self.finding(task_id, receipt["review_receipt_id"], "high", "Unresolved older blocker")
+        generation = self.target(task_id)
+        self.verification(task_id, generation)
+        self.assertEqual(self.show(task_id)["data"]["suggested_next_action"], generic)
+
+    def test_review_hint_requires_satisfied_required_verification_and_supported_status(self):
+        task_id = self.add("--verification", "Focused verification")["task_id"]
+        self.success("task", "edit", task_id, "--status", "review_pending")
+        generic = tasks.suggested_next_action({"status": "review_pending"})
+        self.assertEqual(self.show(task_id)["data"]["suggested_next_action"], generic)
+        for result, coverage in (("fail", "full"), ("timeout", "full"), ("pass", "partial"), ("pass", "full")):
+            generation = self.target(task_id)
+            self.assertEqual(self.show(task_id)["data"]["suggested_next_action"], generic)
+            self.verification(task_id, generation, result=result, coverage=coverage)
+            shown = self.show(task_id, audit=True)["data"]
+            if result != "pass" or coverage != "full":
+                self.assertEqual(shown["suggested_next_action"], generic)
+        for status in ("ready", "in_progress", "paused", "blocked", "done", "cancelled"):
+            row = {**shown["task"], "status": status}
+            self.assertEqual(tasks.suggested_next_action(
+                row, review_evidence=shown["review_evidence"], verification_evidence=shown["verification_evidence"],
+            ), tasks.suggested_next_action(row))
+        no_verification = self.add()["task_id"]
+        self.target(no_verification)
+        self.success("task", "edit", no_verification, "--status", "review_pending")
+        self.assertEqual(self.show(no_verification)["data"]["suggested_next_action"], generic)
+
+    def test_review_hint_respects_tier_and_accepted_fallback(self):
+        generic = tasks.suggested_next_action({"status": "review_pending"})
+        for tier in (0, 1, 2):
+            task_id = self.add("--verification", "Focused verification", "--review-tier", str(tier))["task_id"]
+            generation = self.target(task_id)
+            self.verification(task_id, generation)
+            self.success("task", "edit", task_id, "--status", "review_pending")
+            hint = self.show(task_id)["data"]["suggested_next_action"]
+            if tier == 0:
+                self.assertEqual(hint, generic)
+                continue
+            self.assertIn(f"{tier} more independent PASS", hint)
+            self.success(
+                "review", "receipt", "add", task_id, "--reviewer", "fallback",
+                "--kind", "self_review_fallback", "--verdict", "pass", "--summary", "Documented self review",
+                "--reviewer-class", "human", "--model-state", "not_applicable",
+                "--skill-state", "not_applicable", "--context-relation", "external_context",
+                *(("--user-approved",) if tier == 2 else ()),
+            )
+            shown = self.show(task_id)["data"]
+            self.assertTrue(shown["review_evidence"]["gate"]["satisfied"])
+            self.assertEqual(shown["suggested_next_action"], generic)
 
     def test_normal_has_fixed_shapes_and_complete_task_contract_checkpoint_and_routes(self):
         scope = "Complete scope 日本語. " * 110

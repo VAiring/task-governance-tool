@@ -468,6 +468,8 @@ class TaskContextRunnerTests(unittest.TestCase):
                 fixture = RunnerServiceFixture(Path(temporary))
                 _prepared, intent = _launch(fixture)
                 _persist_terminal(fixture, intent, branch=branch)
+                pending = run(fixture.db, fixture.repo, "task", "edit", fixture.task_id, "--status", "review_pending")
+                self.assertEqual(pending.returncode, 0, pending.stdout)
                 before = file_snapshot(Path(temporary))
                 with mock.patch.object(selection, "_stored_runner_physical_basis_matches", return_value=True):
                     expected = run(fixture.db, fixture.repo, "task", "show", fixture.task_id)
@@ -480,6 +482,13 @@ class TaskContextRunnerTests(unittest.TestCase):
                 self.assertEqual(json.loads(actual.stdout)["data"]["selected"], json.loads(expected.stdout)["data"])
                 self.assertEqual(select_runner.call_count, 1)
                 self.assertEqual(show.call_count, 1)
+                selected = json.loads(actual.stdout)["data"]["selected"]
+                from task_governance_tool.tasks import suggested_next_action
+                if branch == "pass":
+                    self.assertIsNone(selected["verification_evidence"]["current_receipt"])
+                    self.assertIn("more independent PASS", selected["suggested_next_action"])
+                else:
+                    self.assertEqual(selected["suggested_next_action"], suggested_next_action(selected["task"]))
                 self.assertEqual(file_snapshot(Path(temporary)), before)
 
     def test_context_preserves_global_admission_before_task_local_runner_detail(self):

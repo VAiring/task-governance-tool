@@ -556,6 +556,12 @@ There is no separate history command or pagination. `task context` and default
 `task show` supply the complete fixed working projection; explicit `task show
 --audit` and the automatically maintained Viewer supply bounded history detail.
 
+Review-pending detail now replaces the generic hint only when required current
+verification is satisfied and independent PASS receipts alone are missing. It
+shows the remaining count and existing review-result input route from already-read
+gate evaluations. Other states and compact current/next stay unchanged; no extra
+CLI call, evidence/Git read, permission, or completion-gate change is introduced.
+
 The normal no-finding Tier 2 manual/fallback Task flow uses one batch result
 registration and at most six governance subprocess calls with the default-off
 Effort Advisory, or seven when

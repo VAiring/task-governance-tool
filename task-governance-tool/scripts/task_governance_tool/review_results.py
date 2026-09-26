@@ -131,8 +131,9 @@ def review_result_instructions() -> list[str]:
         f"Input limit: {REVIEW_RESULTS_INPUT_LIMIT} UTF-8 bytes, 1-"
         f"{REVIEW_RESULTS_RECEIPT_LIMIT} Receipts with distinct reviewer keys, "
         f"{REVIEW_RESULTS_FINDING_LIMIT} Findings total. Return one reviewer's "
-        "Receipt; the caller may combine only results with identical identity "
-        "and target. Old results must not be rebound. Use sanitized summaries, "
+        "Receipt as a complete version-1 document. The caller can pass original "
+        "documents together in a JSON array without regenerating their content; "
+        "identity and target must match. Old results must not be rebound. Use sanitized summaries, "
         "never secrets, raw output, prompts, transcripts or raw review reasoning.",
     ]
 
@@ -252,7 +253,11 @@ def _validate_payload(payload: Any) -> None:
 
 
 def decode_review_results(raw: bytes | str) -> dict[str, Any]:
-    """Decode one bounded UTF-8 JSON object; no file or state access."""
+    """Decode an object or array of complete documents into one bounded batch.
+
+    Only receipts are concatenated, after validating each original document.
+    Semantic normalization and the single writer retain their existing owners.
+    """
     try:
         if type(raw) is bytes:
             if len(raw) > REVIEW_RESULTS_INPUT_LIMIT:
@@ -272,6 +277,22 @@ def decode_review_results(raw: bytes | str) -> dict[str, Any]:
         )
     except (ValueError, UnicodeError, RecursionError) as exc:
         raise _invalid_input() from exc
+    if type(payload) is list:
+        if not 1 <= len(payload) <= REVIEW_RESULTS_RECEIPT_LIMIT:
+            raise _invalid_input()
+        for document in payload:
+            _validate_payload(document)
+        first = payload[0]
+        if any(
+            document[key] != first[key]
+            for document in payload[1:]
+            for key in ("version", "task_id", "contract_revision", "review_target")
+        ):
+            raise _basis_mismatch()
+        payload = {
+            **first,
+            "receipts": [receipt for document in payload for receipt in document["receipts"]],
+        }
     _validate_payload(payload)
     return payload
 

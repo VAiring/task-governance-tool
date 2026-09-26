@@ -135,8 +135,9 @@ Receipts; current changes-requested and unselected blockers retain their gates.
 
 ## Structured Review Results
 
-`review result add <task-id>` accepts one version-1 UTF-8 JSON document on
-stdin and atomically records new Receipts and their nested new Findings for
+`review result add <task-id>` accepts one version-1 UTF-8 JSON document or an
+array of complete version-1 documents on stdin and atomically records new
+Receipts and their nested new Findings for
 one Task, Contract revision, and exact review target. The caller attests the
 submitted results; JSON content is neither user approval nor authenticated
 review evidence. Existing single-item operations and all gates remain available
@@ -144,8 +145,11 @@ and unchanged. The operation launches no review and does not merge judgments,
 resolve Findings, or complete a Task.
 
 Instruction guidance chooses this path from actual received version-1 results
-with matching Task/Contract/target, preserving their Receipt declarations;
-one result may also use it. The existing single-Receipt path applies to reviews
+with matching Task/Contract/target, preserving their Receipt declarations.
+Pass original complete documents by reference/bytes, not by regenerating their
+content from rendered or truncated summaries. An array adds only framing around
+the originals; the CLI validates each document and combines only their Receipts
+in document order. One result may also use it. The existing single-Receipt path applies to reviews
 received outside that format when actual required declarations and the exact
 reviewed basis are available, with actual Findings recorded separately through
 the existing command. Missing declarations require correction at their source,
@@ -154,7 +158,7 @@ rejected batches to bypass validation. Unknown registration outcomes require
 saved-evidence inspection before retry. These conditions add no recurring
 comparison, probe, reread, producer adapter, or review-method requirement.
 
-The closed input shape is:
+Each complete document has this closed shape:
 
 ```text
 {version: 1, task_id: string, contract_revision: integer,
@@ -181,8 +185,11 @@ null; the three code arrays are explicit, including when empty. The existing
 apply without inferred values. Receipt/Finding enums and text normalization,
 limits and privacy checks are identical to single-item registration.
 
-Input is at most 262,144 UTF-8 bytes, with 1–8 Receipts and at most 64 Findings
-in total. Version is exactly integer 1, Contract revision is a nonnegative
+The whole stdin input, including array framing and whitespace, is at most
+262,144 UTF-8 bytes. An array has 1–8 complete documents, never nested arrays
+or Receipt fragments. Each document and the combined document retain the same
+byte, 1–8 Receipt and at most 64 Finding limits; these are not per-document
+allowances to enlarge the batch. Version is exactly integer 1, Contract revision is a nonnegative
 signed-64-bit integer, and target generation is a positive signed-64-bit
 integer. Booleans are not integers. Unknown/missing keys, duplicate JSON keys,
 wrong exact JSON types, non-finite numbers, invalid Unicode, or an exceeded
@@ -191,7 +198,10 @@ validation, privacy checks inspect every typed declaration before enum,
 text-limit, duplicate-reviewer and provenance-matrix validation.
 Caller IDs, timestamps, assurance, approval and resolution fields are not accepted.
 
-The command Task ID must match the document. Under one writer, its Contract
+All documents must have identical version, Task ID, Contract revision and
+complete target values, without normalization or rebinding; mismatch fails
+`review_target_mismatch`. Closed-shape and privacy validation of every document
+precedes this comparison. The command Task ID must match the document. Under one writer, its Contract
 revision and complete target tuple must match the selected current Task;
 mismatch fails `review_target_mismatch`. Missing target, done Task and
 capture-version-0 rejection retain their existing single-item errors. No old
@@ -217,6 +227,9 @@ and Finding counts. No input document or new batch ledger is stored.
 `--read-only` rejects the write before consuming stdin. Successful commit and
 connection close precede one existing post-commit maintenance invocation;
 maintenance failure remains a warning and does not undo committed evidence.
+The product accepts stdin only, not file paths. Any source-file allocation,
+permissions, complete read and retention belong to the caller; no filesystem
+reader, automatic cleanup, additional normal-loop call or producer adapter is added.
 
 <a id="git-snapshot-and-target-binding"></a>
 

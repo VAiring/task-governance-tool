@@ -221,7 +221,13 @@ It reuses Receipt/provenance/Finding normalization and the existing individual
 writers; it owns no SQL, schema, batch ledger, or replacement gate.
 
 The CLI reads bounded binary stdin and decodes before opening the initialized
-connection. All entries are normalized before acquiring the writer. The
+connection. The decoder accepts the existing document or an array of 1–8
+complete documents within the same whole-input byte cap. It validates each
+document before comparing exact identity/target values, concatenates only
+`receipts` in input order, and validates the combined capacity. It returns the
+same single-document shape to the unchanged normalizer and writer. It neither
+reads paths nor interprets reviewer messages or merges judgments.
+All entries are normalized before acquiring the writer. The
 service then uses the existing writer-lock/revalidation boundary and compares
 the submitted Task, Contract revision and complete target against the locked
 Task before any insert. A concurrent tier or authority change cannot reuse

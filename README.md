@@ -293,9 +293,14 @@ python .agents/skills/task-governance-tool/scripts/taskgov.py review target set 
 python .agents/skills/task-governance-tool/scripts/taskgov.py verification receipt add <task-id> --result pass --duration-ms <milliseconds> --scope-coverage full --expected-target-generation <generation-from-target-set> --json
 # Use data.review_preparation.packet only when its status is ready.
 # For not_required or runner_pass, use the ready Packet from target setting instead.
-# Obtain the structured reviewer results for this exact Task and target.
+# Obtain complete original reviewer JSON files for this exact Task and target.
 $OutputEncoding = [Console]::InputEncoding = [System.Text.UTF8Encoding]::new($false)
-Get-Content -Raw -Encoding utf8 .\review-results.json |
+$reviewResults = foreach ($reviewResultPath in '.\review-a.json', '.\review-b.json') {
+  $original = Get-Content -LiteralPath $reviewResultPath -Raw -Encoding utf8 -ErrorAction Stop
+  if ([string]::IsNullOrWhiteSpace($original)) { throw 'Review result is empty.' }
+  $original
+}
+'[' + ($reviewResults -join ',') + ']' |
   python .agents/skills/task-governance-tool/scripts/taskgov.py review result add <task-id> --json
 git commit -m "<project-approved message>"
 python .agents/skills/task-governance-tool/scripts/taskgov.py task complete <task-id> --completion-evidence-kind git_commit --completion-revision <hash> --verification-complete --review-complete --json
@@ -328,8 +333,12 @@ commits, branches, pushes, opens a PR, or creates an Issue.
 
 The packet tells each reviewer how to inspect the exact target rather than
 ambient `HEAD` or worktree content. The independent reviewer returns the
-versioned structured result; the trusted parent/orchestrator submits the bounded
-results with the shown batch command. The
+complete versioned structured result. In a shared-file workflow, allocate
+distinct unused ignored paths and have each reviewer save its result once and
+return the path. The parent frames those originals without regenerating their
+contents and retains them until the registration outcome is known. The command
+also continues to accept a single document. It validates each document's exact
+identity and combines only Receipts before the existing atomic writer. The
 [package CLI reference](task-governance-tool/references/cli_contracts.md),
 under Structured Review Results,
 defines the fixed JSON input for one Task, Contract revision, and complete

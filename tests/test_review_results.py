@@ -162,7 +162,11 @@ class ReviewResultsInputTests(unittest.TestCase):
         payload = document(receipts=[receipt(findings=[{"severity": "low", "summary": "所見も保持する 🔍"}])])
         raw = encode(payload)
         with tempfile.TemporaryDirectory() as temporary:
-            (Path(temporary) / "review-results.json").write_bytes(raw)
+            second = document(receipts=[receipt("reviewer-b")])
+            raw_second = encode(second)
+            (Path(temporary) / "review-a.json").write_bytes(raw)
+            (Path(temporary) / "review-b.json").write_bytes(raw_second)
+            framed = b"[" + raw + b"," + raw_second + b"]"
             # PowerShell 5.1 can reuse Console.InputEncoding for native stdin
             # when its code page matches OutputEncoding, including its BOM.
             for encoding_name, input_encoding in (
@@ -186,8 +190,30 @@ class ReviewResultsInputTests(unittest.TestCase):
                     self.assertEqual(transported.returncode, 0, transported.stderr)
                     self.assertEqual(transported.stderr, b"")
                     received = bytes.fromhex(transported.stdout.decode("ascii").strip())
-                    self.assertEqual(received.rstrip(b"\r\n"), raw)
-                    self.assertEqual(json.loads(received.decode("utf-8")), payload)
+                    self.assertEqual(received.rstrip(b"\r\n"), framed)
+                    self.assertEqual(json.loads(received.decode("utf-8")), [payload, second])
+
+            # Every named original must exist and contain data before the native
+            # consumer starts. In particular, Get-Content silently emits no
+            # object for an empty file; joining its multi-path output can drop it.
+            for filename in ("review-a.json", "review-b.json"):
+                for invalid_original in (b"", b" \t\r\n", None):
+                    with self.subTest(filename=filename, original=invalid_original):
+                        (Path(temporary) / "review-a.json").write_bytes(raw)
+                        (Path(temporary) / "review-b.json").write_bytes(raw_second)
+                        selected = Path(temporary) / filename
+                        if invalid_original is None:
+                            selected.unlink()
+                        else:
+                            selected.write_bytes(invalid_original)
+                        rejected = subprocess.run(
+                            [powershell, "-NoProfile", "-NonInteractive", "-Command", pipeline],
+                            cwd=temporary, stdin=subprocess.DEVNULL, capture_output=True,
+                            check=False, timeout=30,
+                        )
+                        self.assertNotEqual(rejected.returncode, 0)
+                        self.assertNotEqual(rejected.stderr, b"")
+                        self.assertEqual(rejected.stdout, b"")
 
     def test_decoder_rejects_duplicate_keys_nonfinite_numbers_invalid_unicode_and_non_documents(self):
         raw = encode(document())
@@ -288,6 +314,8 @@ class ReviewResultsInputTests(unittest.TestCase):
 
 
 class ReviewResultsTests(unittest.TestCase):
+    document_array = False
+
     def setUp(self):
         temporary = tempfile.TemporaryDirectory()
         self.addCleanup(temporary.cleanup)
@@ -312,8 +340,13 @@ class ReviewResultsTests(unittest.TestCase):
     def payload(self, *, receipts=None):
         return document(self.task_id, receipts=receipts)
 
+    def wire_payload(self, payload):
+        if self.document_array and type(payload) is dict and payload.get("receipts"):
+            return [{**payload, "receipts": [entry]} for entry in payload["receipts"]]
+        return payload
+
     def invoke(self, payload=None, *arguments, stdin=None, json_output=True, maintenance_enabled=False):
-        supplied = stdin if stdin is not None else BinaryInput(encode(self.payload() if payload is None else payload))
+        supplied = stdin if stdin is not None else BinaryInput(encode(self.wire_payload(self.payload() if payload is None else payload)))
         stdout, stderr = io.StringIO(), io.StringIO()
         argv = ["--repo", str(self.repo), "review", "result", "add", self.task_id, *arguments]
         if json_output:
@@ -759,7 +792,7 @@ class ReviewResultsTests(unittest.TestCase):
             result = subprocess.run(
                 [sys.executable, "-I", "-S", str(install.entrypoint), "review", "result", "add", task_id,
                  "--repo", str(install.project_root), "--json"],
-                cwd=install.project_root, input=encode(payload), capture_output=True, check=False,
+                cwd=install.project_root, input=encode(self.wire_payload(payload)), capture_output=True, check=False,
             )
             self.assertEqual(result.returncode, 0, result.stdout.decode("utf-8") or result.stderr.decode("utf-8"))
             self.assertEqual(result.stderr, b"")
@@ -767,6 +800,135 @@ class ReviewResultsTests(unittest.TestCase):
             self.assertEqual([row["receipt"]["summary"] for row in result_data["receipts"]], [item["summary"] for item in payload["receipts"]])
             self.assertEqual(file_snapshot(install.project_root, exclude_state=True), before)
             self.assertFalse((install.skill_root / "config" / "verification-runner.json").exists())
+
+
+class ReviewResultsDocumentArrayTests(ReviewResultsTests):
+    # Exercise the same storage, gate, race, privacy, approval, replay and
+    # physical-CLI oracles with one complete original per Receipt as well.
+    document_array = True
+
+    def test_array_and_single_document_have_equal_evidence_and_gate_semantics(self):
+        baseline_db = self.db
+        payload = self.payload(receipts=[
+            receipt("reviewer-a", findings=[{"severity": "medium", "summary": "Same observation"}], verdict="changes_requested"),
+            receipt("reviewer-b", findings=[{"severity": "medium", "summary": "Same observation"}], verdict="changes_requested"),
+        ])
+        observations = []
+        for as_array in (False, True):
+            self.db = self.root / f"comparison-{as_array}.sqlite"
+            shutil.copy2(baseline_db, self.db)
+            self.target = database_target(self.db, self.repo)
+            with mock.patch.object(self, "document_array", as_array):
+                code, stdout, _ = self.invoke(payload)
+            self.assertEqual(code, 0, stdout)
+            with closing(connect_initialized(self.target)) as connection:
+                # Digests include generated IDs: validate them before omitting
+                # those derived hashes from the ID/time-normalized comparison.
+                validate_evidence_ledger_storage(connection)
+                references = [dict(row) for row in connection.execute(
+                    "SELECT * FROM evidence_references WHERE source_kind IN ('review_receipt','review_finding') ORDER BY rowid"
+                )]
+            ids = {}
+
+            def comparable(value):
+                if isinstance(value, dict):
+                    return {key: comparable(item) for key, item in sorted(value.items())
+                            if key not in {"created_at", "updated_at", "digest"}}
+                if isinstance(value, list):
+                    return [comparable(item) for item in value]
+                if isinstance(value, str) and value.startswith("tg_"):
+                    return ids.setdefault(value, f"id-{len(ids)}")
+                return value
+
+            evidence = self.success("task", "show", self.task_id)["review_evidence"]
+            observations.append(comparable([json.loads(stdout)["data"], references, evidence]))
+        self.assertEqual(observations[0], observations[1])
+
+    def test_disagreeing_document_identity_rejects_before_connection(self):
+        first = self.payload()
+        changes = [
+            (("task_id",), "tg_task_ffffffffffffffff"), (("contract_revision",), 0),
+            (("review_target", "kind"), "external_revision"),
+            (("review_target", "value"), "sha256:" + "b" * 64),
+            (("review_target", "base_revision"), "b" * 40),
+            (("review_target", "generation"), 2),
+        ]
+        before = file_snapshot(self.root)
+        for path, value in changes:
+            second = self.payload(receipts=[receipt("reviewer-b")])
+            target = second
+            for key in path[:-1]:
+                target = target[key]
+            target[path[-1]] = value
+            with self.subTest(component=path), mock.patch.object(cli_service, "connect_initialized", side_effect=AssertionError("identity before connection")):
+                self.assert_failure(self.invoke([first, second]), "review_target_mismatch")
+            self.assertEqual(file_snapshot(self.root), before)
+
+    def test_array_second_document_privacy_precedes_identity_comparison(self):
+        second = self.payload(receipts=[receipt("reviewer-b")])
+        second["contract_revision"] = 0
+        second["receipts"][0]["summary"] = "token=private-second-document"
+        before = file_snapshot(self.root)
+        with mock.patch.object(cli_service, "connect_initialized", side_effect=AssertionError("privacy before connection")):
+            result = self.invoke([self.payload(), second])
+        self.assert_failure(result, "privacy_rejected")
+        self.assertNotIn("private-second-document", result[1] + result[2])
+        self.assertEqual(file_snapshot(self.root), before)
+
+
+class ReviewResultDocumentDecodingTests(unittest.TestCase):
+    def test_original_documents_are_merged_without_rewriting_or_deduplication(self):
+        same_finding = {"severity": "low", "summary": " Same finding 日本語 🚀 "}
+        originals = [document(receipts=[receipt(" a ", findings=[same_finding])]),
+                     document(receipts=[receipt("b", findings=[same_finding]), receipt("c")])]
+        before = copy.deepcopy(originals)
+        expected = document(receipts=originals[0]["receipts"] + originals[1]["receipts"])
+        raw = b"[\n" + encode(originals[0]) + b",\n" + encode(originals[1]) + b"\n]"
+        for supplied in (raw, raw.decode("utf-8")):
+            self.assertEqual(result_service.decode_review_results(supplied), expected)
+        self.assertEqual(originals, before)
+        self.assertEqual(result_service.decode_review_results(encode([originals[0]])), originals[0])
+
+    def test_every_original_is_a_closed_document_before_identity_comparison(self):
+        first = document()
+        invalid = [None, [], [document()], {}, first["receipts"][0]]
+        for path, value in (
+            (("version",), True), (("version",), 2), (("contract_revision",), True),
+            (("review_target", "generation"), True), (("receipts",), []),
+            (("receipts", 0, "provenance"), {}), (("receipts", 0, "user_approved"), True),
+        ):
+            candidate = copy.deepcopy(first)
+            target = candidate
+            for key in path[:-1]:
+                target = target[key]
+            target[path[-1]] = value
+            invalid.append(candidate)
+        raws = [encode([first, second]) for second in invalid]
+        raw = encode(first)
+        raws.extend([b"[" + raw + b"," + raw[:-20] + b"]",
+                     b"[" + raw + b"," + raw.replace(b'"version":1', b'"version":1,"version":1') + b"]"])
+        for supplied in raws:
+            with self.subTest(size=len(supplied)), self.assertRaises(review_service.ReviewEvidenceError) as raised:
+                result_service.decode_review_results(supplied)
+            self.assertEqual(raised.exception.code, "invalid_review_evidence")
+
+    def test_array_limits_apply_to_whole_raw_input_and_combined_receipts_and_findings(self):
+        originals = [document(receipts=[receipt(f"reviewer-{i}", findings=[
+            {"severity": "low", "summary": f"Finding {j}"} for j in range(8)
+        ])]) for i in range(8)]
+        raw = encode(originals)
+        expected = document(receipts=[entry for value in originals for entry in value["receipts"]])
+        self.assertEqual(result_service.decode_review_results(raw), expected)
+        boundary = raw + b" " * (result_service.REVIEW_RESULTS_INPUT_LIMIT - len(raw))
+        self.assertEqual(result_service.decode_review_results(boundary), expected)
+        too_many_findings = copy.deepcopy(originals)
+        too_many_findings[-1]["receipts"][0]["findings"].append({"severity": "low", "summary": "Extra"})
+        too_many_receipts = [document(receipts=[receipt(str(i)) for i in range(8)]), document()]
+        for supplied in (boundary + b" ", encode([]), encode(originals + [document()]),
+                         encode(too_many_findings), encode(too_many_receipts)):
+            with self.subTest(size=len(supplied)), self.assertRaises(review_service.ReviewEvidenceError) as raised:
+                result_service.decode_review_results(supplied)
+            self.assertEqual(raised.exception.code, "invalid_review_evidence")
 
 
 if __name__ == "__main__":

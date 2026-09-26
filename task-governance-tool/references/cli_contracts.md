@@ -1614,12 +1614,19 @@ fresh qualifying review; this mode never infers resolution from PASS.
 
 Register the reviewers' concise structured results together, using UTF-8 JSON
 stdin with `review result add <task-id> --json`. There is no input-file argument
-or output destination. For example, an already assembled JSON string can be
-piped in PowerShell with UTF-8 encoding:
+or output destination. Submit one complete version-1 document or an array of
+complete documents, without retyping the original results. For example, frame
+two finalized caller-owned UTF-8 files in PowerShell:
 
 ```powershell
 $OutputEncoding = [Console]::InputEncoding = [System.Text.UTF8Encoding]::new($false)
-$resultJson | python .agents/skills/task-governance-tool/scripts/taskgov.py review result add <task-id> --json
+$reviewResults = foreach ($reviewResultPath in '.\review-a.json', '.\review-b.json') {
+  $original = Get-Content -LiteralPath $reviewResultPath -Raw -Encoding utf8 -ErrorAction Stop
+  if ([string]::IsNullOrWhiteSpace($original)) { throw 'Review result is empty.' }
+  $original
+}
+'[' + ($reviewResults -join ',') + ']' |
+  python .agents/skills/task-governance-tool/scripts/taskgov.py review result add <task-id> --json
 ```
 
 Normally complete the Packet's `result_template` using `result_instructions`.
@@ -1655,8 +1662,11 @@ Use the actual Packet object: `data.review_preparation.packet` after qualifying
 registration/target setting or `data` after standalone preparation. Its template
 already contains `task.task_id`, `contract.revision` and the complete
 `review_target`; keep them unchanged and use its Task ID as command `<task-id>`.
-Combine only reviewers' `receipts` arrays with identical envelope values;
-preserve returned verdicts and provenance rather than filling or retyping them.
+The CLI validates each complete document, requires identical envelope values,
+and combines only `receipts` in document order. Preserve returned verdicts and
+provenance rather than filling or retyping them. Truncated displays are not
+complete originals. File names, permissions, complete reads and retention are
+caller-owned; this command opens no input file and adds no cleanup operation.
 
 All displayed keys are required and no other keys are accepted. Each Finding
 contains exactly `severity` and `summary`. Put exact project-relative file/line
@@ -1666,15 +1676,19 @@ Use the [Receipt/provenance enums, bounds and matrix](#review-provenance) and
 explicit nullable identifiers and arrays; use null only for `not_required`.
 Do not invent model/Skill identity, context, methods, or independence.
 
-The whole input is limited to 262,144 UTF-8 bytes, 1–8 Receipts, and 64 Findings
-total. Version must be integer 1; Contract revision is a nonnegative signed-64-bit
+The whole input, including framing and whitespace, is limited to 262,144 UTF-8
+bytes, 1–8 Receipts, and 64 Findings total. Arrays contain 1–8 complete documents,
+not nested arrays or Receipt fragments. Each document and the combined batch
+retain those same limits. Version must be integer 1; Contract revision is a nonnegative signed-64-bit
 integer and generation a positive one. Exact JSON types are enforced (booleans
 are not integers). Duplicate/unknown/missing keys, non-finite numbers, invalid
 Unicode and exceeded limits fail `invalid_review_evidence`. Existing privacy
 checks inspect every typed declaration before enum, text-limit, duplicate-reviewer
 or provenance-matrix checks and never echo rejected content.
 
-Task ID, Contract revision and the complete target tuple must match the current
+After closed-shape and privacy validation, all document identity/target values
+must match exactly; disagreements fail `review_target_mismatch`. Task ID,
+Contract revision and the complete target tuple must also match the current
 Task under the writer lock; stale or mismatched input fails `review_target_mismatch`
 without rebinding. Existing missing-target, done-Task and capture-version-0
 errors remain. Duplicate normalized reviewer keys within the batch, previously

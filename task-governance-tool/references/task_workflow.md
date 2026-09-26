@@ -468,13 +468,24 @@ This format guidance does not replace exact artifact and authority inspection.
 The [structured result reference](cli_contracts.md#structured-review-results)
 remains available for registration detail; a normal Packet needs no separate
 format lookup.
-Combine only `receipts` arrays whose Task ID, Contract revision, and complete
-target tuple match exactly, preserving returned values. Do not fill missing
-provenance or rewrite judgment. Then send the assembled UTF-8 JSON once:
+Pass each complete original JSON by reference or bytes; do not regenerate its
+content from a summary or fill missing provenance. Where shared files are
+available, allocate distinct unused ignored paths before review, ask each
+reviewer to save its complete result once and return its path, and retain the
+originals until the registration outcome is known. Submit one original document
+or frame the originals as an array. The CLI checks matching Task, Contract and
+complete target and combines only `receipts`, without rewriting judgment.
+For example, frame two finalized UTF-8 files without parsing/re-emitting them:
 
 ```powershell
 $OutputEncoding = [Console]::InputEncoding = [System.Text.UTF8Encoding]::new($false)
-$resultJson | python .agents/skills/task-governance-tool/scripts/taskgov.py review result add <task-id> --json
+$reviewResults = foreach ($reviewResultPath in '.\review-a.json', '.\review-b.json') {
+  $original = Get-Content -LiteralPath $reviewResultPath -Raw -Encoding utf8 -ErrorAction Stop
+  if ([string]::IsNullOrWhiteSpace($original)) { throw 'Review result is empty.' }
+  $original
+}
+'[' + ($reviewResults -join ',') + ']' |
+  python .agents/skills/task-governance-tool/scripts/taskgov.py review result add <task-id> --json
 ```
 
 Invalid input saves no prefix. Obtain corrections from their actual source.

@@ -452,7 +452,8 @@ def build_parser() -> argparse.ArgumentParser:
         "add",
         help="atomically record review receipts and findings from UTF-8 JSON stdin",
         description=(
-            "Record version-1 structured results for one Task, Contract revision, "
+            "Record a version-1 JSON document or an array of complete documents "
+            "for one Task, Contract revision, "
             "and exact review target. Read at most 256 KiB from stdin; "
             "record all receipts and findings or none."
         ),

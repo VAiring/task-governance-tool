@@ -533,7 +533,10 @@ These attestations never authenticate reviewer identity or prove actual
 model/Skill execution, competence, independence, diversity, quality, or truth.
 
 The normal review flow submits versioned structured results with
-`review result add <task-id>`, reading UTF-8 JSON from stdin. It validates one
+`review result add <task-id>`, reading a complete version-1 document or an array
+of complete documents from UTF-8 stdin. The caller can frame original documents
+without parent-LLM regeneration. The whole input retains its 256 KiB cap and
+combined 8-Receipt/64-Finding limits; no file-input API is added. It validates one
 Task, Contract revision, and complete review target and atomically records the
 new Receipts and their Findings under the existing evidence constraints.
 Review Packets now include `result_template` and `result_instructions`: known

@@ -516,7 +516,8 @@ class TestLanePolicyTests(unittest.TestCase):
                 "test_os_runner_process", "test_os_runner_process_failures",
                 "test_setup_state_separation", "test_state_resolver",
                 "test_state_separation",
-                "test_state_transition_primitives", "test_review_handoff", "test_task_validation",
+                "test_state_transition_primitives", "test_review_handoff",
+                "test_review_handoff_preparation", "test_task_validation",
             ),
         )
         expected = tuple(
@@ -601,14 +602,14 @@ class TestLanePolicyTests(unittest.TestCase):
         inventory = discover_tests(ROOT)
         portable = {
             case.id() for case in inventory.cases
-            if case.__class__.__module__ == "test_review_handoff"
+            if case.__class__.__module__ in {"test_review_handoff", "test_review_handoff_preparation"}
         }
         windows = {
             case.id() for case in inventory.cases
             if case.__class__.__module__ == "test_review_handoff_windows"
         }
         self.assertTrue(portable)
-        self.assertEqual(len(windows), 1)
+        self.assertEqual(len(windows), 3)
         self.assertTrue((portable | windows).issubset(inventory.plan.ids_for("fast")))
         for platform in ("linux", "darwin"):
             selected = {

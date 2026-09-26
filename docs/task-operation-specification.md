@@ -198,8 +198,10 @@ The deterministic Skill call graph is:
 - one thin complete call.
 
 The [Review/completion handoff guidance](review-completion-specification.md#structured-review-results)
-uses the bundled fixed helper for caller-owned result saving, confirmation and
-submission. Its submit operation replaces the direct registration invocation,
+uses the bundled fixed helper from before Packet-producing CLI invocation
+through caller-owned Packet/result saving, confirmation and submission. Its
+prepare operation replaces the direct target/Receipt (or bound recovery) call;
+its submit operation replaces the direct registration invocation,
 not an extra governance command or weaker review/registration check. Helper
 invocations are transport operations, not included in the governance-call count.
 

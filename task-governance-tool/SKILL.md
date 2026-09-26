@@ -70,8 +70,10 @@ registration; recover with `task context`, never another add.
 
 When target setting or qualifying Receipt registration returns a ready review
 Packet, reuse it; preparation-only recovery stays in the linked workflow.
-For shared-file review handoff, the bundled `scripts/review_handoff.py` performs
-save/confirmation and original-byte submission. Follow the
+For shared-file review handoff, use bundled `scripts/review_handoff.py prepare`
+before the Packet-producing command; it captures/saves the complete Packet and
+returns exact reviewer save instructions and the original-byte submit command.
+Follow the
 [review workflow](references/task_workflow.md#prepare-and-record-reviews), not
 newly written validation or collector code.
 

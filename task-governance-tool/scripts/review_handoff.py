@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Caller-owned review files: save/confirm or submit through taskgov stdin."""
+"""Caller-owned review handoff: prepare, save/confirm, submit via taskgov stdin."""
 
 import sys
 from pathlib import Path

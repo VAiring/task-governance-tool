@@ -117,12 +117,15 @@ target-project root; optional branches are read only when their condition occurs
 4. Only when `data.selected.effort_advisory_enabled=true`, make one
    [Effort observation](#optional-effort-advisory) at the verification/review boundary.
 5. [Set the exact review target](#set-the-review-target).
-   Keep `data.task.review_target_generation`, `data.verification_route`, and
-   `data.blocking_code` from that same successful response; no post-target
-   show call or inferred route is needed.
+   For shared-file review use the fixed helper below from before target setting.
+   Keep its `source.review_target.generation`, `source.verification_route` and
+   `source.blocking_code`; no post-target show or inferred route is needed.
+   Direct-CLI transport instead uses `data.task.review_target_generation`,
+   `data.verification_route` and `data.blocking_code` from that same response.
 6. Apply that response:
    - `not_required` or `runner_pass`, with null `blocking_code`: use the returned
-     `review_preparation.packet` only when status is `ready`, without another
+     complete Packet only when `handoff.status=ready` (direct CLI:
+     `data.review_preparation.packet` with status `ready`), without another
      prepare, external verification, or Verification Receipt. On failure use
      [bound preparation recovery](cli_contracts.md#review-prepare);
    - `receipt_required`, with null code: run the governed verification against
@@ -134,7 +137,7 @@ target-project root; optional branches are read only when their condition occurs
    duration, coverage, and the returned generation:
 
    ```powershell
-   python .agents/skills/task-governance-tool/scripts/taskgov.py verification receipt add <task-id> --result <pass|fail|timeout> --duration-ms <milliseconds> --scope-coverage <full|partial> --expected-target-generation <generation> --json
+   python .agents/skills/task-governance-tool/scripts/review_handoff.py prepare --repo . --directory reviews/g1 receipt <task-id> --result <pass|fail|timeout> --duration-ms <milliseconds> --scope-coverage <full|partial> --expected-target-generation <generation>
    ```
 
    `full` describes the whole Task verification expectation, not merely success.
@@ -146,8 +149,11 @@ target-project root; optional branches are read only when their condition occurs
    another run can become current; a Receipt cannot override a blocked Runner.
    See [Receipt conditions](cli_contracts.md#verification-receipt) only for their
    exact bounds or a rejected/stale basis.
-   Registration `ok=true` does not mean verification passed. Continue only with
-   `data.review_preparation.status=ready`, using its `packet` directly; do not
+   The helper replaces the direct Receipt command, not an additional call.
+   If direct complete-byte transport is used instead, the existing
+   `verification receipt add` command remains available with the same inputs.
+   Source registration success does not mean verification passed. Continue only
+   with `handoff.status=ready` (direct CLI: `data.review_preparation.status=ready`); do not
    run a second prepare/show/context. `blocked` or `failed` does not permit
    review continuation. For preparation-only failure or an uncertain response,
    follow [same-Receipt retry](cli_contracts.md#verification-receipt); never
@@ -422,9 +428,16 @@ through the project's approved Git workflow. Confirm that staging itself
 succeeded before capturing the staged candidate:
 
 ```powershell
-python .agents/skills/task-governance-tool/scripts/taskgov.py review target set <task-id> --kind git_snapshot --json
+python .agents/skills/task-governance-tool/scripts/review_handoff.py prepare --repo . --directory reviews/g1 target <task-id> --kind git_snapshot
 ```
 
+This shared-file form invokes the existing target command once, captures its
+complete response before display and prepares the handoff only if ready. Choose
+an authorized unused ignored directory; no separate mkdir or path-check call is
+needed. A Receipt-required target creates no directory, so the later Receipt
+form uses the same name. Once created, do not reuse it for another generation.
+For direct complete-byte transport, `taskgov.py review target set <task-id>
+--kind git_snapshot --json` remains available; do not run both forms.
 Use the Task ID from `data.selected.task.task_id` in the context response.
 `git_snapshot` rejects `--revision`; unstaged/untracked material is excluded.
 For already committed or non-Git material, the existing `git_commit`,
@@ -432,8 +445,9 @@ For already committed or non-Git material, the existing `git_commit`,
 See [target input](cli_contracts.md#review-target) for those forms.
 
 Every successful set advances the generation. Retain
-`data.task.review_target_generation` and apply that response's
-`data.verification_route` / `data.blocking_code` in the normal loop.
+`source.review_target.generation` and apply that response's
+`source.verification_route` / `source.blocking_code` in the normal loop
+(the direct CLI's corresponding fields are listed above).
 A migrated capture-version-0 target is read-only lineage: new Verification
 Receipts, Review Receipts, Findings, and completion require a fresh target.
 Preparing its packet and resolving an existing Finding remain allowed;
@@ -441,7 +455,19 @@ the old target is never upgraded in place.
 
 ### Prepare And Record Reviews
 
-Use the actual `data.review_preparation.packet` returned with status `ready`
+For shared-file transport, start with `review_handoff.py prepare` as above.
+Use only its `handoff.status=ready` output. It has already saved and confirmed
+the complete Packet and unused result paths; give each reviewer its returned
+`review_requests[].request` unchanged together with the project's review scope
+and authority. Keep `submit_command` for after all saved acknowledgements.
+Do not extract/serialize a displayed Packet, write preparation/save/validation
+code, issue a routine path check, or re-query the Packet. The full Packet and
+exact save instruction arrive in the same request. Normal successful reviewers
+return the short acknowledgement once, in their final response, without a
+duplicate success message; questions and failure reports remain appropriate.
+
+If using direct complete-byte transport instead, use the actual
+`data.review_preparation.packet` returned with status `ready`
 by Receipt registration, or directly by target setting for `not_required` or
 `runner_pass`. Pass the complete obtained object directly when the review
 transport supports it; do not save and reread a Packet merely to relay it.
@@ -482,11 +508,9 @@ registration command before dispatch. Supply those exact paths with the complete
 Packet in the same review request, so neither side rediscovers or retypes them
 later. Retain originals until the registration outcome is known.
 
-For the shared-file path, use the bundled fixed helper, not handwritten save,
-validation or framing code. Preserve the complete obtained Packet once as an
-ignored project-relative JSON file for this transport; no new Packet query is
-needed. Assign that file, each unused result path, and these invocations before
-dispatch. Paths and errors are defined in the
+For the shared-file path the prepare output already supplies the commands below
+with actual paths. The reviewer and parent execute them without rebuilding
+transport logic. Paths, partial-success fields and bound recovery forms are in the
 [handoff helper reference](cli_contracts.md#caller-owned-review-handoff).
 
 The reviewer supplies only the actual completed JSON on UTF-8 stdin. In
@@ -507,7 +531,8 @@ registration success, PASS evidence, independence proof or completion permission
 On failure or uncertain outcome, retain the original/residue and investigate;
 a corrected result needs a new unused path. Never overwrite or blindly resend.
 
-After all confirmed handoffs, the parent supplies the preassigned paths:
+After all confirmed handoffs, the parent runs the returned `submit_command`,
+which has the following shape:
 
 ```powershell
 python .agents/skills/task-governance-tool/scripts/review_handoff.py submit --repo . --packet reviews/packet.json reviews/review-a.json reviews/review-b.json

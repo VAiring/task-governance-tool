@@ -286,17 +286,17 @@ attestation only for `verification_route=receipt_required`:
 
 ```powershell
 git add <intended-project-paths>
-python .agents/skills/task-governance-tool/scripts/taskgov.py review target set <task-id> --kind git_snapshot --json
-# Inspect verification_route and blocking_code in this response.
+python .agents/skills/task-governance-tool/scripts/review_handoff.py prepare --repo . --directory reviews/g1 target <task-id> --kind git_snapshot
+# Inspect source.verification_route and source.blocking_code in this response.
 # Only for verification_route=receipt_required, run the exact approved verification here.
 # Taskgov never executes it.
-python .agents/skills/task-governance-tool/scripts/taskgov.py verification receipt add <task-id> --result pass --duration-ms <milliseconds> --scope-coverage full --expected-target-generation <generation-from-target-set> --json
-# Use data.review_preparation.packet only when its status is ready.
+python .agents/skills/task-governance-tool/scripts/review_handoff.py prepare --repo . --directory reviews/g1 receipt <task-id> --result pass --duration-ms <milliseconds> --scope-coverage full --expected-target-generation <generation-from-target-set>
+# Use handoff only when its status is ready.
 # For not_required or runner_pass, use the ready Packet from target setting instead.
-# Preserve that complete Packet once at the ignored reviews/packet.json path.
-# Reviewers use the bundled handoff save operation with their distinct unused paths.
-# After confirmed handoffs, submit the originals without writing transport code:
-python .agents/skills/task-governance-tool/scripts/review_handoff.py submit --repo . --packet reviews/packet.json reviews/review-a.json reviews/review-b.json
+# Packet capture, saving and exact commands are already prepared by the helper.
+# Pass each handoff.review_requests[].request to its independent reviewer.
+# After confirmed handoffs, execute the returned handoff.submit_command:
+python .agents/skills/task-governance-tool/scripts/review_handoff.py submit --repo . --packet reviews/g1/packet.json reviews/g1/review-1.json reviews/g1/review-2.json
 git commit -m "<project-approved message>"
 python .agents/skills/task-governance-tool/scripts/taskgov.py task complete <task-id> --completion-evidence-kind git_commit --completion-revision <hash> --verification-complete --review-complete --json
 ```
@@ -328,8 +328,14 @@ commits, branches, pushes, opens a PR, or creates an Issue.
 
 The packet tells each reviewer how to inspect the exact target rather than
 ambient `HEAD` or worktree content. The independent reviewer returns the
-complete versioned structured result. In a shared-file workflow, allocate
-distinct unused ignored paths and the submission method before dispatch.
+complete versioned structured result. In a shared-file workflow, the helper
+captures the complete source response before display, prepares the explicit
+unused ignored area, Packet and distinct result paths, and supplies exact
+reviewer/save and parent/submit instructions before dispatch. No parent-LLM
+extraction or command assembly is needed. Source mutation success is separate
+from handoff failure; only Packet and original results are saved, never raw
+envelopes/logs. Questions/failures may be reported as needed; a normal saved
+acknowledgement is returned once without a duplicate success notification.
 Each reviewer pipes their completed original JSON to the bundled
 `review_handoff.py save` operation, which validates before exclusive creation,
 checks the saved bytes against the Packet, and returns a short acknowledgement.

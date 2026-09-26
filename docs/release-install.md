@@ -539,13 +539,16 @@ without parent-LLM regeneration. The whole input retains its 256 KiB cap and
 combined 8-Receipt/64-Finding limits; no file-input API is added. It validates one
 Task, Contract revision, and complete review target and atomically records the
 new Receipts and their Findings under the existing evidence constraints.
-The shipped `scripts/review_handoff.py save` performs caller-owned saving,
-saved-document confirmation and short acknowledgement with existing validators;
-`submit` passes unchanged originals to the existing stdin writer. Callers fix
-ignored unused paths before dispatch and retain originals, including uncertain
-or failed-write residue. The helper uses an already obtained complete Packet,
-not another normal query. It preserves exceptional recovery and all Findings
-without claiming reduced total LLM tokens. See the
+The shipped `scripts/review_handoff.py prepare` invokes the explicitly selected
+target, Receipt or bound recovery command once and captures its complete
+structured response before LLM display. It saves a ready complete Packet in the
+named unused ignored directory and supplies exact reviewer save instructions
+and a parent submit command. `save` validates, confirms original bytes and
+acknowledges briefly; `submit` passes unchanged originals to the existing stdin
+writer. Source success and preparation/file failure remain separate; uncertain
+residue is retained, without replay or a raw-response file. This removes LLM
+Packet extraction and command assembly, not required review work, and claims
+no measured reduction in total LLM tokens. See the
 [handoff contract](review-completion-specification.md#caller-owned-review-handoff).
 Review Packets now include `result_template` and `result_instructions`: known
 Task/Contract/target values are filled, but all review claims remain unfinished.

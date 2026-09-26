@@ -13,7 +13,8 @@ from pathlib import Path
 
 from tests.m14_test_support import make_physical_install
 from tests.test_review_handoff import packet_for
-from tests.test_review_results import document, encode
+from tests.test_review_results import document, encode, receipt, FINGERPRINT
+from tests.test_review_handoff_preparation import PreparationFixture
 
 
 class WindowsReviewHandoffTests(unittest.TestCase):
@@ -39,3 +40,44 @@ class WindowsReviewHandoffTests(unittest.TestCase):
                                     cwd=root, capture_output=True, check=False)
             self.assertEqual(result.returncode, 0, result.stdout or result.stderr)
             self.assertEqual(json.loads((root / "reviews/a.json").read_bytes()), payload)
+
+
+class WindowsPreparationTests(PreparationFixture):
+    @unittest.skipUnless(sys.platform == "win32", "Windows shell transport")
+    def test_generated_powershell_request_from_source_invocation_to_submit(self):
+        self.check_generated_request("reviews/native")
+
+    @unittest.skipUnless(sys.platform == "win32", "Windows shell transport")
+    def test_generated_powershell_request_accepts_hyphen_leading_directory(self):
+        self.check_generated_request("-reviews/native 日本語's")
+
+    def check_generated_request(self, directory):
+        powershell = shutil.which("powershell.exe")
+        if not powershell:
+            self.skipTest("PowerShell 5.1 is unavailable")
+        def shell(command):
+            return subprocess.run([powershell, "-NoProfile", "-NonInteractive", "-EncodedCommand",
+                base64.b64encode(command.encode("utf-16le")).decode("ascii")],
+                cwd=self.root, capture_output=True, check=False)
+        # The entry is invoked before any Packet exists, including from the native shell.
+        task = self.task()
+        command = ("& '" + sys.executable.replace("'", "''") + "' -I -S '" +
+            str(self.helper).replace("'", "''") + "' prepare --repo . '--directory=" +
+            directory.replace("'", "''") + "' "
+            "--reviewers 1 target " + task + " --kind diff_fingerprint --revision " + FINGERPRINT)
+        completed = shell(command)
+        self.assertEqual(completed.returncode, 0, completed.stdout or completed.stderr)
+        result = json.loads(completed.stdout)["handoff"]
+        packet = json.loads((self.root / result["packet_path"]).read_bytes())
+        payload = packet["result_template"]
+        payload["receipts"] = [receipt("windows-reviewer", findings=[{
+            "severity": "low", "summary": "example.py:1 日本語 🚀"}])]
+        request = result["review_requests"][0]["request"]
+        # Execute the generated literal data carrier, not a second test-owned save command.
+        invocation = request[request.index("$OutputEncoding"):request.index("\nOn saved acknowledgement")]
+        saved = shell(invocation.replace("<completed original JSON>", encode(payload).decode("utf-8")))
+        self.assertEqual(saved.returncode, 0, saved.stdout or saved.stderr)
+        self.assertEqual(json.loads((self.root / result["review_requests"][0]["result_path"]).read_bytes()), payload)
+        submitted = shell(result["submit_command"])
+        self.assertEqual(submitted.returncode, 0, submitted.stdout or submitted.stderr)
+        self.assertEqual(json.loads(submitted.stdout)["data"]["receipts"][0]["findings"][0]["finding"]["severity"], "low")

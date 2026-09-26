@@ -81,8 +81,9 @@ defined below. One explicit `task edit --runner-plan-action` invocation may
 also create or replace only the canonical ignored package-local Runner Plan
 under the current authoring contract.
 The explicit [review handoff helper](review-completion-specification.md#caller-owned-review-handoff)
-may additionally create only the caller's named unused ignored result JSON;
-it checks Git ignore read-only and submits originals through the existing stdin
+may additionally create the caller's named unused ignored Packet directory
+and complete Packet, and named unused result JSON; it checks Git ignore
+read-only and submits originals through the existing stdin
 writer. It never changes source, Git state, permissions or generated-state paths.
 
 ## Package, Runtime, And Generated State
@@ -758,6 +759,13 @@ OS/SQLite exception detail, raw paths in identity metadata, expected/actual
 hash pairs, or rejected values. The sole stream-text exception is the bounded,
 validated manual Task quotation defined below; it is not automatic capture or
 a separate output field.
+
+The explicit handoff helper transiently captures only its three fixed public
+CLI operations' bounded structured JSON responses to extract a complete Packet
+before display. It never retains the response envelope or raw streams/logs;
+only the complete bounded Packet and validated original review documents may
+be saved in the caller's explicit ignored transport area. This is not a general
+command-output capture, logging option or expanded Receipt-retention contract.
 
 A native Verification Receipt stores only the fixed internal compatibility
 label, closed result, duration, coverage, tool-owned identity/time and

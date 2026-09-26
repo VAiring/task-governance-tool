@@ -46,6 +46,7 @@ PLATFORM_SMOKE_MODULES = (
     "test_state_separation",
     "test_state_transition_primitives",
     "test_review_handoff",
+    "test_review_handoff_preparation",
     "test_task_validation",
 )
 PLATFORM_ORDINARY_HOSTS = ("linux", "darwin")
@@ -133,6 +134,7 @@ LANE_MODULES: dict[str, tuple[str, ...]] = {
         "test_relocation",
         "test_review_evidence",
         "test_review_handoff",
+        "test_review_handoff_preparation",
         "test_review_handoff_windows",
         "test_review_packet",
         "test_review_results",

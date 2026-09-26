@@ -241,12 +241,56 @@ helper below performs caller-owned transport without changing this writer.
 
 ### Caller-Owned Review Handoff
 
-The shipped `scripts/review_handoff.py` has `save` and `submit` operations,
-separate from the taskgov command inventory. Both require explicit `--repo`
-and `--packet` (a complete actual Packet JSON object already obtained from
-the current preparation response). The Packet is caller-supplied context, not
-authenticated evidence. Saving it for this file transport does not authorize
-another target/Receipt write or routine Packet query.
+The shipped `scripts/review_handoff.py` has `prepare`, `save` and `submit`
+operations, separate from the taskgov command inventory. All require explicit
+`--repo`. The Packet remains context, not authenticated evidence, and the helper
+never launches a reviewer or replaces current-state registration checks.
+
+`prepare --directory <unused-relative-directory> [--reviewers 1..8]` starts
+before one explicit Packet-producing operation. Its closed actions are
+`target <task-id> --kind ... [--revision ...]`,
+`receipt <task-id>` with the existing four manual Receipt fields or
+`--from-stdin`, and `recover <task-id>` with exactly one of
+`--expected-binding` or `--verification-receipt-id`. They invoke respectively
+the sibling public `review target set`, `verification receipt add`, or bound
+`review prepare` exactly once. These replace the direct invocations; they do
+not add a query. Reviewers default to two; allocated slots are not evidence of
+independence or a changed gate. There is no arbitrary-command input.
+
+Preparation captures the complete structured CLI response before LLM display,
+bounded to 262,144 bytes in memory; excess is drained without retention. No
+envelope, log, stdout/stderr or exception detail is saved or relayed. It checks
+the exit/envelope, preparation status, complete Packet shape and exact
+Task/Contract/target consistency. Captured stored Contract constraints retain
+the existing [read-only privacy compatibility](specification.md#privacy-safety-and-stable-errors),
+unchanged; this is not an exception for new caller input or other fields.
+Only ready success creates the explicitly
+named missing physical directory chain and its exclusive `packet.json`, then
+confirms the complete saved bytes and distinct unused `review-N.json` paths.
+It returns the Packet path, exact per-reviewer save instructions and the parent
+submit command. There is no LLM extraction/serialization, save-path check call,
+second normal Packet query, new prerequisite or response-count limit. Only the
+complete Packet and later reviewer originals are transport files.
+
+Its result separates `operation_status` (`not_started`, `succeeded`, `failed`,
+`unknown`) and `source_exit_code` from `handoff.status`. `source` retains the
+target tuple/route/blocking code and recovery binding, or registered Receipt
+ID/result/coverage/Contract/target. Existing sanitized warnings remain visible.
+The helper's target uses Packet spelling: an absent non-snapshot base is `""`,
+corresponding to the Receipt projection's `null`; no identity or target is rebound.
+`handoff.status=ready` supplies `packet_path`, `review_requests` and
+`submit_command`; `not_applicable` is successful without files or requests
+(for example, a target requiring a manual Receipt). `blocked`, `failed` and
+`unavailable` supply no reviewer requests. `ok`/exit 0 means ready or
+not-applicable, not review PASS. A committed operation followed by preparation
+or transport failure remains `succeeded`; an unusable or lost response after
+launch remains `unknown`, never a claimed rollback. Do not replay a target or
+Receipt write. Retain residue, use the existing public-state investigation and
+bound preparation-only recovery with a new unused directory when appropriate.
+
+`save` and `submit` require `--packet`, the complete actual Packet file. A caller
+that already holds a complete Packet may still use them directly; missing,
+display-truncated or differently bound Packets must not reach reviewers.
 
 `save --output <path>` reads one complete original version-1 document with one
 Receipt from bounded UTF-8 stdin. Existing decoder/normalizer, privacy, tier and
@@ -274,9 +318,13 @@ can continue to use the existing stdin interface but cannot use this ignored-fil
 helper. Absolute/traversal/ADS/device paths, links/reparse points including
 ancestors, nonregular files and multiply linked files are rejected. `.git`,
 `.agents`, `.codex`, `.taskgov` and the repository development package are not
-transport locations. The helper creates no directory, changes no ACL or ignore
-rule, and never overwrites/deletes a file. Explicit invocation authorizes only
-the named result creation (save) or existing Task evidence registration (submit).
+transport locations. Only `prepare` may create its explicitly named missing
+directory chain after ready preparation; preflight validates the ignored area
+before launching the source operation. Existing destination directories are
+not adopted. The helper changes no ACL or ignore rule and never overwrites or
+deletes a file. Explicit invocation authorizes only that source operation and
+bounded Packet preparation, named result creation (save), or existing Task
+evidence registration (submit).
 File ownership, authorized location choice and retention remain with the caller.
 
 Packet reads are capped at the existing 32,768 bytes; originals and the framed
@@ -291,7 +339,7 @@ Invalid input creates no result. A write/readback failure may leave an incomplet
 file, which is retained and never called ready. Correct source data and select
 a new unused result path; do not overwrite residue. Lost save responses require
 inspection of the original; lost submission responses require public recorded
-state inspection before deciding whether any retry is safe. Neither operation
+state inspection before deciding whether any retry is safe. No operation
 automatically retries. Helper failures return `ok:false` with a sanitized code
 and fixed message, no rejected content or exception detail. An uncertain result
 never authorizes a duplicate registration.

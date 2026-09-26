@@ -941,7 +941,8 @@ The same portable selection includes state-separation record/marker
 publication, canonical resolver admission and explicit setup cutover/retry
 regressions. They exercise real temporary physical roots without changing a
 live installation; no mocked Windows result qualifies Linux/macOS behavior.
-Portable review-handoff cases share this selection; the separate Windows
+Portable original-file and source-to-Packet review-handoff cases share this
+selection; the separate Windows
 PowerShell transport module remains in the exhaustive fast lane only.
 The separate `test_os_runner_gate` module exercises public Runner dispatch
 through completion and independent Evidence reading on Linux/macOS. Platform

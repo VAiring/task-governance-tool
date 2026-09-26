@@ -1729,10 +1729,47 @@ or independence. The existing single-item commands remain available.
 ### Caller-Owned Review Handoff
 
 The bundled `scripts/review_handoff.py` is separate from taskgov. Use `python3`
-on Linux/macOS. It needs Python 3.12+, an explicit `--repo`, and an actual complete
-Packet JSON already obtained from a ready preparation response, at `--packet`.
-Save that object mechanically once when using this transport; do not request a
-second Packet merely to create the file. Paths use project-relative `/` spelling.
+on Linux/macOS. It needs Python 3.12+ and explicit `--repo`. Start before the
+Packet-producing call with `prepare --directory <unused-ignored-directory>`;
+paths use project-relative `/` spelling. The three closed source operations are:
+
+```powershell
+python .agents/skills/task-governance-tool/scripts/review_handoff.py prepare --repo . --directory reviews/g1 target <task-id> --kind git_snapshot
+# Only after required verification, using the generation from the prior result:
+python .agents/skills/task-governance-tool/scripts/review_handoff.py prepare --repo . --directory reviews/g1 receipt <task-id> --result pass --duration-ms <milliseconds> --scope-coverage full --expected-target-generation <generation>
+# Only for preparation recovery; choose ONE binding form and a new unused area:
+python .agents/skills/task-governance-tool/scripts/review_handoff.py prepare --repo . --directory reviews/recovery recover <task-id> --expected-binding <binding>
+python .agents/skills/task-governance-tool/scripts/review_handoff.py prepare --repo . --directory reviews/recovery recover <task-id> --verification-receipt-id <recorded-id>
+```
+
+Target accepts the existing kind/revision options; Receipt also accepts the
+unchanged structured verifier bytes on `--from-stdin` instead of four manual
+fields. Preparation invokes that one source CLI once, before LLM display; it
+does not run verification. `--reviewers` allocates 1–8 distinct result paths
+(default two), not a gate or proof. `operation_status` is `not_started`,
+`succeeded`, `failed` or `unknown`, separate from `handoff.status`.
+`source_exit_code` reports the child exit when observed; `source` carries the
+target tuple, route, blocking code and preparation binding, or the recorded
+Receipt ID/result/coverage/Contract/target. Existing sanitized `warnings`
+remain visible. The helper target uses the Packet's empty-string spelling for
+the Receipt's null absent non-snapshot base. `ok=true`/exit 0 means ready or
+not-applicable, not PASS.
+
+Only `handoff.status=ready` supplies a saved complete `packet_path`, per-reviewer
+`review_requests` (distinct result path, exact save command and request), and
+`submit_command`. Pass those requests directly; required independent artifact
+and authority inspection is unchanged. A target requiring a Receipt returns
+`not_applicable` without files, so its later Receipt call may use the same area.
+`blocked`, `failed` or `unavailable` never supplies reviewer requests. After a
+source succeeds, a Packet/file failure does not undo it. Keep the saved binding
+or Receipt ID, use only the appropriate bound recovery above, never repeat the
+write. For unknown/lost outcomes inspect public state first. There is no automatic
+retry, new ledger, reviewer launch or raw-response file. Capture is limited to
+262,144 bytes in memory; malformed, incomplete or oversized output cannot be
+used as a Packet. Packet/result files alone are persisted.
+
+Save/submit take `--packet`; they remain usable with an already obtained complete
+Packet file. They do not authorize rerunning its source command.
 
 ```powershell
 # Reviewer: pipe only the completed original JSON, with UTF-8 shell encoding.
@@ -1761,8 +1798,11 @@ Finding. For an actually approved Tier-2 self-review PASS, explicitly repeat
 JSON nor a saved file transfers approval. Independent reviews do not use it.
 
 All Packet/result paths must be untracked, Git-ignored `.json` files within the
-explicit project and existing physical directories. The helper creates no
-directory, ignore rule, ACL, config, state path or permission. No absolute or
+explicit project and physical directories. Only prepare creates its explicitly
+named missing ignored directory chain and `packet.json`, after a ready source
+result; preflight rejects an existing destination before invoking the source.
+Save/submit require existing directories. No operation changes an ignore rule,
+ACL, config, state path or permission. No absolute or
 traversal path, backslash, ADS, device name, link/junction/reparse ancestor,
 nonregular or multiply linked file is accepted. Package/admin/state roots
 `.agents`, `.codex`, `.git`, `.taskgov`, `task-governance-tool` are excluded.
@@ -1772,7 +1812,7 @@ an ignored-file boundary there. Packet input is bounded to 32,768 bytes.
 Reads check identity and metadata before/after, with final byte rechecks before
 submission. These trusted-local checks do not isolate a hostile peer with the
 same permissions or guarantee future immutability. Save never overwrites, and
-neither operation deletes or retries. A partial write or failed confirmation
+no operation deletes or retries. A partial write or failed confirmation
 leaves its residue and returns no ready acknowledgement. Inspect uncertain
 outcomes first; use a new unused path for a corrected original. After an unknown
 registration outcome, inspect public recorded evidence, not a blind resubmit.

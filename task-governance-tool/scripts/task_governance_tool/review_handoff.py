@@ -76,7 +76,7 @@ def _check_parents(observed):
             _fail("handoff_file_changed")
 
 
-def _path(repo, supplied):
+def _relative_path(repo, supplied):
     # Portable project-relative names only: no ADS, device names, traversal,
     # reserved state/package areas or invisible path spellings.
     reject_private_or_raw_content("review_result_path", supplied)
@@ -90,10 +90,10 @@ def _path(repo, supplied):
         _fail("handoff_path_unsafe")
     if parts[0].lower() in {".git", ".agents", ".codex", ".taskgov", "task-governance-tool"}:
         _fail("handoff_path_unsafe")
-    path = repo.joinpath(*parts)
-    if path.suffix.lower() != ".json":
-        _fail("handoff_path_unsafe")
-    _parents(path)
+    return repo.joinpath(*parts)
+
+
+def _ignored(repo, supplied):
     # --no-index is intentionally absent: tracked paths must not qualify.
     result = subprocess.run(
         [*safe_git_command(repo), "-c", "core.fsmonitor=false", "check-ignore", "--quiet", "--", supplied],
@@ -102,6 +102,14 @@ def _path(repo, supplied):
     )
     if result.returncode != 0:
         _fail("handoff_ignore_required")
+
+
+def _path(repo, supplied):
+    path = _relative_path(repo, supplied)
+    if path.suffix.lower() != ".json":
+        _fail("handoff_path_unsafe")
+    _parents(path)
+    _ignored(repo, supplied)
     return path
 
 
@@ -259,8 +267,10 @@ def _emit(value):
 
 def main(argv=None):
     try:
+        from task_governance_tool.review_handoff_preparation import add_parser, prepare
         parser = _Parser(description=__doc__)
         commands = parser.add_subparsers(dest="operation", required=True)
+        add_parser(commands)
         for operation in ("save", "submit"):
             command = commands.add_parser(operation)
             command.add_argument("--repo", required=True, help="Explicit governed project root")
@@ -272,6 +282,9 @@ def main(argv=None):
                 command.add_argument("originals", nargs="+", help="Ignored project-relative original JSON paths")
         args = parser.parse_args(argv)
         repo = Path(os.path.abspath(args.repo))
+        if args.operation == "prepare":
+            result = prepare(repo, args)
+            return (0 if result["ok"] else 1) if _emit(result) else 1
         if args.operation == "save":
             raw = sys.stdin.buffer.read(REVIEW_RESULTS_INPUT_LIMIT + 1)
             result = save(repo, args.packet, args.output, raw, args.user_approved_reviewer)

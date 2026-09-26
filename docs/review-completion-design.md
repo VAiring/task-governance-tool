@@ -249,6 +249,17 @@ the sibling public CLI through binary stdin. No LLM-built collector, alternate
 writer or producer-specific adapter is required. The registration transaction
 and current-state revalidation stay here and are not replaced by saved-file checks.
 
+`review_handoff_preparation.py` owns the same helper's explicit `prepare`
+operation: three fixed sibling CLI invocations, bounded binary response capture,
+exit/envelope and Packet consistency checks, creation of the named unused
+ignored directory chain and complete Packet, and exact save/submit instructions.
+It reuses transport path/read/write checks and the existing structured Receipt
+input decoder; it owns no SQL, authority inference or arbitrary-command runner.
+Source mutation outcome, sanitized warnings, and transport outcome are separate.
+Non-ready, malformed or uncertain responses produce no reviewer requests;
+post-write failure retains residue. Capture starts before the source call and
+does not add a normal query, log file, retry or reviewer-launch operation.
+
 The transport module owns bounded physical reads, explicit ignored-path checks,
 exclusive creation and retained failed-write residue. Standard-library file
 operations and the existing safe Git environment suffice; no native adapter or
@@ -257,8 +268,10 @@ are compared across lstat/fstat; ctime is compared only within the same API
 because Windows reports different ctime meanings through those APIs. The
 complete Packet's identity/template consistency and tier supply context for
 existing result validation, not a second live Task admission decision.
-`tests/test_review_handoff.py` exercises the shipped installed entry, portable
-filesystem behavior and injected failures; `test_review_handoff_windows.py`
+`tests/test_review_handoff.py` exercises original-file transport;
+`test_review_handoff_preparation.py` starts before actual installed source CLI
+invocation and exercises ready/non-ready and injected capture/file failures.
+Both cover portable filesystem behavior; `test_review_handoff_windows.py`
 owns the native PowerShell transport case outside POSIX platform selection. Existing
 result registration tests retain writer atomicity and concurrent-state checks.
 

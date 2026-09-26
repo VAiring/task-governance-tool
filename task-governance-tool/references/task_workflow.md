@@ -443,8 +443,15 @@ the old target is never upgraded in place.
 
 Use the actual `data.review_preparation.packet` returned with status `ready`
 by Receipt registration, or directly by target setting for `not_required` or
-`runner_pass`. Do not prepare it again. Preparation-only failures and uncertain
-responses use the [bound recovery procedure](cli_contracts.md#review-prepare).
+`runner_pass`. Pass the complete obtained object directly when the review
+transport supports it; do not save and reread a Packet merely to relay it.
+A shared Packet file is optional when the transport needs one: preserve the
+complete obtained object mechanically, without reconstructing it from displayed
+excerpts. A missing, cut-off or differently bound Packet is not delivered;
+recover the complete retained response or use the [bound recovery procedure](cli_contracts.md#review-prepare).
+Do not repeat target setting or Receipt registration. The Packet's bounded
+`changed_paths_truncated` flag is not transport truncation and never narrows
+the exact material to review.
 
 Give that actual packet to the required independent reviewers; do not rebuild
 Task/Contract/target prompts from separate reads. The command launches no
@@ -470,16 +477,46 @@ remains available for registration detail; a normal Packet needs no separate
 format lookup.
 Pass each complete original JSON by reference or bytes; do not regenerate its
 content from a summary or fill missing provenance. Where shared files are
-available, allocate distinct unused ignored paths before review, ask each
-reviewer to save its complete result once and return its path, and retain the
-originals until the registration outcome is known. Submit one original document
-or frame the originals as an array. The CLI checks matching Task, Contract and
-complete target and combines only `receipts`, without rewriting judgment.
-For example, frame two finalized UTF-8 files without parsing/re-emitting them:
+available, fix each reviewer's distinct unused ignored result path and the
+registration command before dispatch. Supply those exact paths with the complete
+Packet in the same review request, so neither side rediscovers or retypes them
+later. Retain originals until the registration outcome is known.
+
+For this shared-file path, bundle the final handoff using available tool composition:
+save the completed original once without overwriting an existing result, then
+check the saved bytes are readable, complete valid result JSON and match the
+Packet's Task, Contract revision and every target field. Perform that necessary
+mechanical confirmation and return the reference plus a short verdict/Finding
+count together, without an LLM turn between each operation or echoing the body.
+Only successful save and confirmation permit this acknowledgement. If the host
+cannot combine operations, finish the checks before acknowledging; do not omit
+them to meet a call count. On failed/uncertain save, missing/empty/partial data,
+invalid format or binding mismatch, report the failure and correct it at its
+source before handoff; do not pass a successful prefix or silently rebind.
+Retain failed originals; a corrected result uses a new unused path, reflected
+in the submission mapping for that correction rather than overwriting old bytes.
+
+For example, include this output instruction with each complete review request:
+
+> Save your completed original to the assigned unused path. In the same tool
+> operation, confirm the actual saved document is complete, valid and bound to
+> this Packet. Return only that path, actual verdict and Finding count after
+> success; otherwise report the failure, not a ready result. Keep all Findings,
+> including low severity, in the original. Do not output the JSON again.
+
+After confirmed handoff, frame the originals and register once using the fixed
+paths; no separate full-body read just to reconfirm the save is needed. Necessary
+inspection remains allowed. Use all returned `data.receipts[].findings` for
+repair decisions, including low severity; a short acknowledgement never replaces
+the Findings. Recover an incomplete response before deciding what to repair.
+The CLI still validates matching Task, Contract and complete target and combines
+only `receipts`. For example, without parsing/re-emitting original bodies:
 
 ```powershell
 $OutputEncoding = [Console]::InputEncoding = [System.Text.UTF8Encoding]::new($false)
-$reviewResults = foreach ($reviewResultPath in '.\review-a.json', '.\review-b.json') {
+# Use the same caller-owned ignored paths assigned before the reviews.
+$reviewResultPaths = @('.\review-a.json', '.\review-b.json')
+$reviewResults = foreach ($reviewResultPath in $reviewResultPaths) {
   $original = Get-Content -LiteralPath $reviewResultPath -Raw -Encoding utf8 -ErrorAction Stop
   if ([string]::IsNullOrWhiteSpace($original)) { throw 'Review result is empty.' }
   $original

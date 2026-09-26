@@ -293,9 +293,12 @@ python .agents/skills/task-governance-tool/scripts/taskgov.py review target set 
 python .agents/skills/task-governance-tool/scripts/taskgov.py verification receipt add <task-id> --result pass --duration-ms <milliseconds> --scope-coverage full --expected-target-generation <generation-from-target-set> --json
 # Use data.review_preparation.packet only when its status is ready.
 # For not_required or runner_pass, use the ready Packet from target setting instead.
-# Obtain complete original reviewer JSON files for this exact Task and target.
+# Give the complete obtained Packet directly where supported; file relay is optional.
+# Fix distinct unused ignored paths in the review requests before dispatch.
+# Each reviewer groups original save, saved-document validation, and short acknowledgement.
 $OutputEncoding = [Console]::InputEncoding = [System.Text.UTF8Encoding]::new($false)
-$reviewResults = foreach ($reviewResultPath in '.\review-a.json', '.\review-b.json') {
+$reviewResultPaths = @('.\review-a.json', '.\review-b.json')
+$reviewResults = foreach ($reviewResultPath in $reviewResultPaths) {
   $original = Get-Content -LiteralPath $reviewResultPath -Raw -Encoding utf8 -ErrorAction Stop
   if ([string]::IsNullOrWhiteSpace($original)) { throw 'Review result is empty.' }
   $original
@@ -334,9 +337,16 @@ commits, branches, pushes, opens a PR, or creates an Issue.
 The packet tells each reviewer how to inspect the exact target rather than
 ambient `HEAD` or worktree content. The independent reviewer returns the
 complete versioned structured result. In a shared-file workflow, allocate
-distinct unused ignored paths and have each reviewer save its result once and
-return the path. The parent frames those originals without regenerating their
-contents and retains them until the registration outcome is known. The command
+distinct unused ignored paths and the submission method before dispatch.
+Each reviewer groups saving, checking the saved complete result against the
+Packet, and returning a short path/verdict/Finding-count acknowledgement.
+Failed or uncertain handoff is not ready; recover before registration. The
+parent frames confirmed originals without regenerating their contents or
+rereading the body solely to confirm the save again. It retains them until the
+registration outcome is known and uses all returned Findings, including low
+severity, for repair. See Prepare And Record Reviews in the
+[workflow reference](task-governance-tool/references/task_workflow.md) for
+complete-Packet delivery and exceptional recovery. The command
 also continues to accept a single document. It validates each document's exact
 identity and combines only Receipts before the existing atomic writer. The
 [package CLI reference](task-governance-tool/references/cli_contracts.md),

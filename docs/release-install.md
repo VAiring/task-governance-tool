@@ -539,6 +539,10 @@ without parent-LLM regeneration. The whole input retains its 256 KiB cap and
 combined 8-Receipt/64-Finding limits; no file-input API is added. It validates one
 Task, Contract revision, and complete review target and atomically records the
 new Receipts and their Findings under the existing evidence constraints.
+The workflow groups caller-side saving, saved-document confirmation and short
+acknowledgement, fixes paths before dispatch, and uses an already obtained
+complete Packet directly where supported. It preserves exceptional recovery
+and all Findings without claiming reduced total LLM tokens.
 Review Packets now include `result_template` and `result_instructions`: known
 Task/Contract/target values are filled, but all review claims remain unfinished.
 The added output fields use the existing Packet cap and registration validator;
@@ -570,10 +574,10 @@ registration and at most six governance subprocess calls with the default-off
 Effort Advisory, or seven when
 an enabled valid profile mechanically adds `task effort`. Doctor, checkpoint,
 and completion check are optional and absent from the standard success path. A
-qualifying Runner pass uses standalone Packet preparation instead of the
-combined Receipt-registration/preparation call and has the same bounds.
-Explicit individual Review Receipt registration has seven/eight bounds on
-either path. Receipt registration success now also reports preparation status,
+qualifying Runner pass reuses the Packet from target setting and skips the
+Receipt-registration call. Individual Review Receipt registration adds one
+call for two Receipts; see the [normal-flow counts](task-operation-specification.md#task-selection-and-read-commands)
+for each route. Receipt registration success now also reports preparation status,
 Packet or sanitized errors; a preparation failure preserves the committed
 Receipt and supports same-Receipt readonly retry without a second write.
 These operation counts do
@@ -600,8 +604,9 @@ fallback, runs the project's exact verification outside Taskgov and records one
 bounded `verification receipt add` attestation for that target generation.
 `not_required` and `runner_pass` proceed without that run or Receipt; `blocked`
 and every unexpected route/code pair stop instead of being overridden by a
-Receipt. Then use the single packet
-from `review prepare`. Unstaged and untracked files remain
+Receipt. Use the ready Packet returned by qualifying Receipt registration or
+Receiptless target setting; `review prepare` remains preparation-only recovery,
+not another normal call. Unstaged and untracked files remain
 outside that target. Taskgov never stores the verification command or its
 arguments. The packet adds one deterministic target-kind instruction so
 reviewers inspect the exact stored index, commit, fingerprint-bound material,

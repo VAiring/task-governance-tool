@@ -1601,10 +1601,15 @@ class ReferenceRetrievalTests(unittest.TestCase):
             source = (SKILL_ROOT / 'references' / name).read_text(encoding='utf-8')
             lines = source.splitlines(keepends=True)
             # The link checker masks inline code (including command headings).
-            # Inspect actual ATX boundaries here so such sections are not skipped.
+            # Keep actual ATX text, but use its structural fence ranges so code
+            # comments are not mistaken for headings. Real sections stay covered.
+            issues = []
+            scan = _scan(name, source, issues)
+            self.assertEqual(issues, [])
+            fenced = {line for _, start, end in scan.fences for line in range(start, end + 1)}
             headings = [(len(match[1]), match[2], index)
                         for index, line in enumerate(lines)
-                        if (match := re.match(r'^(#{1,6}) (.+)', line))]
+                        if index not in fenced and (match := re.match(r'^(#{1,6}) (.+)', line))]
             counts = {}
             for index, (level, heading, position) in enumerate(headings):
                 base = re.sub(r'[^\w\s-]', '', heading.lstrip('#').strip().lower())

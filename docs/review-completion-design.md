@@ -241,6 +241,12 @@ one changed/Viewer-relevant maintenance result. Legacy single-item callers and
 global state admission retain their existing contracts. Replay detection uses
 the existing Task/generation/reviewer uniqueness, without a new durable ID.
 
+Saving an original, confirming the saved bytes against its Packet and returning
+a short acknowledgement are caller-owned operations grouped by the instruction
+layer, not a product file service. Existing pure decoding/normalization can
+support a caller's mechanical check without replacing registration's writer
+revalidation. No producer adapter, filesystem API or alternative gate is added.
+
 <a id="review-packet"></a>
 
 ## Review Packet

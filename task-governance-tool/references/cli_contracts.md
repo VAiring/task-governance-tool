@@ -1620,7 +1620,9 @@ two finalized caller-owned UTF-8 files in PowerShell:
 
 ```powershell
 $OutputEncoding = [Console]::InputEncoding = [System.Text.UTF8Encoding]::new($false)
-$reviewResults = foreach ($reviewResultPath in '.\review-a.json', '.\review-b.json') {
+# Use the same caller-owned ignored paths assigned before the reviews.
+$reviewResultPaths = @('.\review-a.json', '.\review-b.json')
+$reviewResults = foreach ($reviewResultPath in $reviewResultPaths) {
   $original = Get-Content -LiteralPath $reviewResultPath -Raw -Encoding utf8 -ErrorAction Stop
   if ([string]::IsNullOrWhiteSpace($original)) { throw 'Review result is empty.' }
   $original
@@ -1667,6 +1669,10 @@ and combines only `receipts` in document order. Preserve returned verdicts and
 provenance rather than filling or retyping them. Truncated displays are not
 complete originals. File names, permissions, complete reads and retention are
 caller-owned; this command opens no input file and adds no cleanup operation.
+Use the [handoff procedure](task_workflow.md#prepare-and-record-reviews) to group
+save, necessary saved-document confirmation and a short acknowledgement without
+repeated LLM body retrieval. It does not replace the validation below or excuse
+an incomplete Packet, failed save or uncertain registration outcome.
 
 All displayed keys are required and no other keys are accepted. Each Finding
 contains exactly `severity` and `summary`. Put exact project-relative file/line

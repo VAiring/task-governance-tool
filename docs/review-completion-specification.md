@@ -155,8 +155,19 @@ reviewed basis are available, with actual Findings recorded separately through
 the existing command. Missing declarations require correction at their source,
 not fabrication. Neither route may rebind old results, omit Findings, or split
 rejected batches to bypass validation. Unknown registration outcomes require
-saved-evidence inspection before retry. These conditions add no recurring
-comparison, probe, reread, producer adapter, or review-method requirement.
+saved-evidence inspection before retry. In a shared-file handoff, the caller
+fixes distinct unused ignored result paths and the submission operation before
+dispatch. The reviewer groups saving the original, mechanically confirming its
+readability, complete result validity and exact Packet binding, and returning
+a short reference/verdict/Finding-count acknowledgement. A successful save alone
+is not confirmation; unavailable tool composition does not waive checks. Failed
+or uncertain writes and incomplete, invalid or mismatched originals require
+source correction, not a ready acknowledgement or partial submission. Once
+confirmed, normal registration needs no separate LLM full-body read to confirm
+the save again. Necessary inspection and unknown-outcome investigation remain
+allowed. All returned Findings, including low severity, inform repair; a short
+acknowledgement cannot replace them. These are caller instructions, not a new
+file API, adapter, gate or normal-loop command; they claim no measured token saving.
 
 Each complete document has this closed shape:
 
@@ -334,6 +345,14 @@ outside the SQLite writer.
 `review prepare <task-id>` is bounded read-only stdout generation for all four
 target kinds. Missing target returns `review_target_missing` and
 `review target is required before preparing a review packet`.
+
+Instruction guidance directly delivers an already obtained complete ready
+Packet when the transport supports it. An optional transport file preserves
+that actual object, not a reconstruction from a cut-off display. Missing,
+transport-truncated or mismatched material requires the complete retained
+response or existing bound preparation-only recovery before review. A bounded
+changed-path list is distinct from a truncated Packet and does not reduce
+review scope. No routine file save, reread or second preparation is required.
 
 Snapshot targets are recaptured; commit targets resolve the commit and list
 first-parent changes (root against empty tree); diff/external targets perform

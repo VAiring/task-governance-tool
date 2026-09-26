@@ -80,6 +80,10 @@ business mutations may perform the opted-in bounded same-process maintenance
 defined below. One explicit `task edit --runner-plan-action` invocation may
 also create or replace only the canonical ignored package-local Runner Plan
 under the current authoring contract.
+The explicit [review handoff helper](review-completion-specification.md#caller-owned-review-handoff)
+may additionally create only the caller's named unused ignored result JSON;
+it checks Git ignore read-only and submits originals through the existing stdin
+writer. It never changes source, Git state, permissions or generated-state paths.
 
 ## Package, Runtime, And Generated State
 
@@ -145,7 +149,8 @@ The recommended target-local rule is exactly:
 
 An effective enclosing rule is also valid. Broad `*.sqlite`, `*.sqlite3`, or
 `*.db` guidance is prohibited. Public alternate database, backup, Viewer,
-state, export, and output paths do not exist; explicit path injection is an
+state, export, and output paths do not exist in taskgov; the separate caller-owned
+review transport helper accepts only its explicitly bounded JSON paths. Path injection is an
 internal test/service seam only.
 
 The physical package and its three supported local `config/` files stay in

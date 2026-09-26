@@ -707,9 +707,9 @@ checks validate package links, examples, and retained behavior without requiring
 each rule or internal detail to be repeated in every consumer document.
 
 Review handoff orchestration belongs in the workflow's Prepare And Record
-Reviews section under the Review/completion owners. It groups caller-side
-save/confirmation/acknowledgement and avoids optional Packet file round trips;
-it adds no taskgov file API or scheduler. Representative transport tests and
+Reviews section under the Review/completion owners. The bundled fixed handoff
+helper replaces caller-generated save/confirmation/transport code without a
+new taskgov command or scheduler. Representative transport tests and
 semantic review check these instructions rather than matching natural-language
 wording or treating a local call count as measured LLM token savings.
 

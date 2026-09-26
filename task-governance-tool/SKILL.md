@@ -69,7 +69,11 @@ not a newly registered ID by assumption. Failed preparation does not undo
 registration; recover with `task context`, never another add.
 
 When target setting or qualifying Receipt registration returns a ready review
-Packet, use it directly; preparation-only recovery stays in the linked workflow.
+Packet, reuse it; preparation-only recovery stays in the linked workflow.
+For shared-file review handoff, the bundled `scripts/review_handoff.py` performs
+save/confirmation and original-byte submission. Follow the
+[review workflow](references/task_workflow.md#prepare-and-record-reviews), not
+newly written validation or collector code.
 
 Read only the linked responsibility needed for the operation or returned
 condition, including its applicable exceptions and input rules. References

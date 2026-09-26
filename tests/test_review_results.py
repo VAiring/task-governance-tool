@@ -67,30 +67,6 @@ def encode(payload):
     return json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
 
 
-def confirm_saved_original(path, raw, packet, *, save):
-    """Test-only caller composition: save, inspect actual bytes, then acknowledge.
-
-    This illustrates the workflow with existing validators, not a shipped file
-    API or a replacement for the registration writer's current-state checks.
-    """
-    save(path, raw)
-    with path.open("rb") as source:
-        saved = source.read(result_service.REVIEW_RESULTS_INPUT_LIMIT + 1)
-    result = result_service.decode_review_results(saved)
-    result_service.normalize_review_results(result, review_tier=packet["task"]["review_tier"])
-    expected = packet["result_template"]
-    if any(result[key] != expected[key] for key in
-           ("version", "task_id", "contract_revision", "review_target")):
-        raise ValueError("result does not match the supplied Packet")
-    if saved != raw:
-        raise ValueError("saved original changed")
-    return {"path": str(path), "verdict": result["receipts"][0]["verdict"],
-            "finding_count": sum(len(row["findings"]) for row in result["receipts"])}
-
-
-def save_unused_original(path, raw):
-    with path.open("xb") as destination:
-        destination.write(raw)
 
 
 class BinaryInput(io.BytesIO):
@@ -150,7 +126,7 @@ class ReviewResultsInputTests(unittest.TestCase):
         self.assert_invalid(boundary.decode("utf-8") + "界")
 
     @unittest.skipUnless(sys.platform == "win32", "Windows PowerShell transport contract")
-    def test_readme_powershell_pipeline_preserves_utf8_review_results(self):
+    def test_documented_direct_stdin_pipeline_preserves_utf8_review_results(self):
         powershell = shutil.which("powershell.exe")
         if powershell is None:
             self.skipTest("Windows PowerShell 5.1 is unavailable")
@@ -161,7 +137,7 @@ class ReviewResultsInputTests(unittest.TestCase):
         if not version.stdout.strip().startswith(b"5.1."):
             self.skipTest("This regression requires Windows PowerShell 5.1")
 
-        readme = (Path(__file__).resolve().parents[1] / "README.md").read_text(encoding="utf-8")
+        readme = (Path(__file__).resolve().parents[1] / "task-governance-tool/references/cli_contracts.md").read_text(encoding="utf-8")
         examples = []
         for block in readme.split("```")[1::2]:
             language, _, code = block.partition("\n")
@@ -833,92 +809,6 @@ class ReviewResultsDocumentArrayTests(ReviewResultsTests):
     # physical-CLI oracles with one complete original per Receipt as well.
     document_array = True
 
-    def test_composed_handoff_preserves_originals_findings_and_lost_response_recovery(self):
-        # Reuse the already-returned complete Packet; the caller does not need
-        # a second Packet query or a Packet file for this in-memory transport.
-        packet = self.success("review", "prepare", self.task_id)
-        originals = []
-        acknowledgements = []
-        paths = [self.root / "original-a.json", self.root / "original-b.json"]
-        for path, entry in zip(paths, (
-            receipt("reviewer-a", findings=[{"severity": "low", "summary": "src/example.py:12 Clarify wording"}]),
-            receipt("reviewer-b", verdict="changes_requested", findings=[
-                {"severity": "medium", "summary": "src/example.py:18 Correct the boundary"}]),
-        )):
-            original = copy.deepcopy(packet["result_template"])
-            original["receipts"][0].update(entry)
-            raw = encode(original)
-            save = mock.Mock(wraps=save_unused_original)
-            acknowledgements.append(confirm_saved_original(path, raw, packet, save=save))
-            save.assert_called_once_with(path, raw)
-            originals.append(raw)
-        self.assertEqual([row["path"] for row in acknowledgements], [str(path) for path in paths])
-        self.assertEqual([row["finding_count"] for row in acknowledgements], [1, 1])
-        # No regenerated result: the fixed source paths are framed mechanically.
-        framed = b"[" + b",".join(path.read_bytes() for path in paths) + b"]"
-        self.assertEqual(framed, b"[" + b",".join(originals) + b"]")
-        with mock.patch.object(self, "invoke", wraps=self.invoke) as register:
-            code, stdout, _ = register(stdin=BinaryInput(framed))
-            self.assertEqual(code, 0, stdout)
-            saved = json.loads(stdout)["data"]["receipts"]
-            self.assertEqual([row["finding"]["severity"] for item in saved for row in item["findings"]],
-                             ["low", "medium"])
-            for original, item in zip(originals, saved):
-                declared = json.loads(original)["receipts"][0]
-                self.assertEqual(item["receipt"]["summary"], declared["summary"])
-                self.assertEqual(item["receipt"]["verdict"], declared["verdict"])
-                self.assertEqual([{key: row["finding"][key] for key in ("severity", "summary")}
-                                  for row in item["findings"]], declared["findings"])
-                for key, value in declared["provenance"].items():
-                    self.assertEqual(item["receipt"]["review_provenance"][key], value)
-            # If that successful response is lost, inspect public state instead
-            # of replaying. Both severities remain available for repair.
-            observed = self.success("task", "show", self.task_id)["review_evidence"]
-            self.assertEqual(observed["counts"]["receipts_current_generation"], 2)
-            self.assertEqual({row["severity"] for row in observed["current_findings"]}, {"low", "medium"})
-            register.assert_called_once()
-        for path, raw in zip(paths, originals):
-            self.assertEqual(path.read_bytes(), raw)
-
-    def test_composed_handoff_never_acknowledges_failed_incomplete_or_wrong_results(self):
-        packet = self.success("review", "prepare", self.task_id)
-        original = self.payload()
-        raw = encode(original)
-        wrong_target = copy.deepcopy(original)
-        wrong_target["review_target"]["generation"] += 1
-        invalid_claim = copy.deepcopy(original)
-        invalid_claim["receipts"][0]["provenance"]["model_state"] = "declared"
-        before = self.db.read_bytes()
-        candidates = [b"", b" ", raw[:-9], b"{}", encode(wrong_target), encode(invalid_claim),
-                      raw + b" " * result_service.REVIEW_RESULTS_INPUT_LIMIT]
-        for index, candidate in enumerate(candidates):
-            with self.subTest(index=index), self.assertRaises((ValueError, review_service.ReviewEvidenceError)):
-                confirm_saved_original(self.root / f"invalid-{index}.json", candidate, packet,
-                                       save=save_unused_original)
-        for label, save in (
-            ("write_failure", mock.Mock(side_effect=OSError("save failed"))),
-            ("missing", mock.Mock()),
-            ("uncertain_write", mock.Mock(side_effect=TimeoutError("outcome unknown"))),
-        ):
-            with self.subTest(label=label), self.assertRaises(OSError):
-                confirm_saved_original(self.root / f"{label}.json", raw, packet, save=save)
-            save.assert_called_once()
-        changed = copy.deepcopy(original)
-        changed["receipts"][0]["summary"] = "Different saved judgment"
-        for label, persisted in (("partial_write", raw[:-9]), ("changed_write", encode(changed))):
-            def changed_save(path, supplied):
-                save_unused_original(path, persisted)
-            with self.subTest(label=label), self.assertRaises((ValueError, review_service.ReviewEvidenceError)):
-                confirm_saved_original(self.root / f"{label}.json", raw, packet, save=changed_save)
-        with mock.patch.object(Path, "open", side_effect=PermissionError("read unavailable")):
-            with self.assertRaises(PermissionError):
-                confirm_saved_original(self.root / "unreadable.json", raw, packet, save=mock.Mock())
-        existing = self.root / "existing.json"
-        existing.write_bytes(b"retained original")
-        with self.assertRaises(FileExistsError):
-            confirm_saved_original(existing, raw, packet, save=save_unused_original)
-        self.assertEqual(existing.read_bytes(), b"retained original")
-        self.assertEqual(self.db.read_bytes(), before)
 
     def test_array_and_single_document_have_equal_evidence_and_gate_semantics(self):
         baseline_db = self.db

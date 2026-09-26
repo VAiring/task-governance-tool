@@ -293,18 +293,10 @@ python .agents/skills/task-governance-tool/scripts/taskgov.py review target set 
 python .agents/skills/task-governance-tool/scripts/taskgov.py verification receipt add <task-id> --result pass --duration-ms <milliseconds> --scope-coverage full --expected-target-generation <generation-from-target-set> --json
 # Use data.review_preparation.packet only when its status is ready.
 # For not_required or runner_pass, use the ready Packet from target setting instead.
-# Give the complete obtained Packet directly where supported; file relay is optional.
-# Fix distinct unused ignored paths in the review requests before dispatch.
-# Each reviewer groups original save, saved-document validation, and short acknowledgement.
-$OutputEncoding = [Console]::InputEncoding = [System.Text.UTF8Encoding]::new($false)
-$reviewResultPaths = @('.\review-a.json', '.\review-b.json')
-$reviewResults = foreach ($reviewResultPath in $reviewResultPaths) {
-  $original = Get-Content -LiteralPath $reviewResultPath -Raw -Encoding utf8 -ErrorAction Stop
-  if ([string]::IsNullOrWhiteSpace($original)) { throw 'Review result is empty.' }
-  $original
-}
-'[' + ($reviewResults -join ',') + ']' |
-  python .agents/skills/task-governance-tool/scripts/taskgov.py review result add <task-id> --json
+# Preserve that complete Packet once at the ignored reviews/packet.json path.
+# Reviewers use the bundled handoff save operation with their distinct unused paths.
+# After confirmed handoffs, submit the originals without writing transport code:
+python .agents/skills/task-governance-tool/scripts/review_handoff.py submit --repo . --packet reviews/packet.json reviews/review-a.json reviews/review-b.json
 git commit -m "<project-approved message>"
 python .agents/skills/task-governance-tool/scripts/taskgov.py task complete <task-id> --completion-evidence-kind git_commit --completion-revision <hash> --verification-complete --review-complete --json
 ```
@@ -338,11 +330,12 @@ The packet tells each reviewer how to inspect the exact target rather than
 ambient `HEAD` or worktree content. The independent reviewer returns the
 complete versioned structured result. In a shared-file workflow, allocate
 distinct unused ignored paths and the submission method before dispatch.
-Each reviewer groups saving, checking the saved complete result against the
-Packet, and returning a short path/verdict/Finding-count acknowledgement.
+Each reviewer pipes their completed original JSON to the bundled
+`review_handoff.py save` operation, which validates before exclusive creation,
+checks the saved bytes against the Packet, and returns a short acknowledgement.
 Failed or uncertain handoff is not ready; recover before registration. The
-parent frames confirmed originals without regenerating their contents or
-rereading the body solely to confirm the save again. It retains them until the
+parent uses `review_handoff.py submit` without regenerating original contents or
+writing a collector. It retains originals until the
 registration outcome is known and uses all returned Findings, including low
 severity, for repair. See Prepare And Record Reviews in the
 [workflow reference](task-governance-tool/references/task_workflow.md) for

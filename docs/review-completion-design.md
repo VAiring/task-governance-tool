@@ -241,11 +241,26 @@ one changed/Viewer-relevant maintenance result. Legacy single-item callers and
 global state admission retain their existing contracts. Replay detection uses
 the existing Task/generation/reviewer uniqueness, without a new durable ID.
 
-Saving an original, confirming the saved bytes against its Packet and returning
-a short acknowledgement are caller-owned operations grouped by the instruction
-layer, not a product file service. Existing pure decoding/normalization can
-support a caller's mechanical check without replacing registration's writer
-revalidation. No producer adapter, filesystem API or alternative gate is added.
+`scripts/review_handoff.py` delegates to `review_handoff.py` for caller-owned
+original-file transport. It has no storage connection: save reuses the pure
+result decoder/normalizer before exclusive creation and after physical readback;
+submit preserves raw bytes, adds only array framing, and sends them once to
+the sibling public CLI through binary stdin. No LLM-built collector, alternate
+writer or producer-specific adapter is required. The registration transaction
+and current-state revalidation stay here and are not replaced by saved-file checks.
+
+The transport module owns bounded physical reads, explicit ignored-path checks,
+exclusive creation and retained failed-write residue. Standard-library file
+operations and the existing safe Git environment suffice; no native adapter or
+state-path resolver mode is introduced. Identity, type, links, size and mtime
+are compared across lstat/fstat; ctime is compared only within the same API
+because Windows reports different ctime meanings through those APIs. The
+complete Packet's identity/template consistency and tier supply context for
+existing result validation, not a second live Task admission decision.
+`tests/test_review_handoff.py` exercises the shipped installed entry, portable
+filesystem behavior and injected failures; `test_review_handoff_windows.py`
+owns the native PowerShell transport case outside POSIX platform selection. Existing
+result registration tests retain writer atomicity and concurrent-state checks.
 
 <a id="review-packet"></a>
 

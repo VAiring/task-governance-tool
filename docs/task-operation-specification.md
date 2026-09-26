@@ -198,9 +198,10 @@ The deterministic Skill call graph is:
 - one thin complete call.
 
 The [Review/completion handoff guidance](review-completion-specification.md#structured-review-results)
-groups caller-owned result saving, confirmation and acknowledgement, and uses
-the complete obtained Packet without an unnecessary file round trip. It does
-not add a governance subprocess or weaken review/registration checks.
+uses the bundled fixed helper for caller-owned result saving, confirmation and
+submission. Its submit operation replaces the direct registration invocation,
+not an extra governance command or weaker review/registration check. Helper
+invocations are transport operations, not included in the governance-call count.
 
 A default-off no-finding Tier 2 manual/fallback path therefore has at most
 six governance subprocess calls; a profile-enabled path has at most seven.

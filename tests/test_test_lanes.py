@@ -516,7 +516,7 @@ class TestLanePolicyTests(unittest.TestCase):
                 "test_os_runner_process", "test_os_runner_process_failures",
                 "test_setup_state_separation", "test_state_resolver",
                 "test_state_separation",
-                "test_state_transition_primitives", "test_task_validation",
+                "test_state_transition_primitives", "test_review_handoff", "test_task_validation",
             ),
         )
         expected = tuple(
@@ -596,6 +596,28 @@ class TestLanePolicyTests(unittest.TestCase):
                 self, "platform_smoke_invalid", lambda: platform_smoke_suite(inventory)
             )
         self.assertEqual(inventory.plan.ids_for(ALL_LANE), standard_discovery_ids())
+
+    def test_handoff_portable_and_windows_transport_allocation(self):
+        inventory = discover_tests(ROOT)
+        portable = {
+            case.id() for case in inventory.cases
+            if case.__class__.__module__ == "test_review_handoff"
+        }
+        windows = {
+            case.id() for case in inventory.cases
+            if case.__class__.__module__ == "test_review_handoff_windows"
+        }
+        self.assertTrue(portable)
+        self.assertEqual(len(windows), 1)
+        self.assertTrue((portable | windows).issubset(inventory.plan.ids_for("fast")))
+        for platform in ("linux", "darwin"):
+            selected = {
+                case.id() for case in flatten_suite(
+                    platform_smoke_suite(inventory, runtime_platform=platform)
+                )
+            }
+            self.assertTrue(portable.issubset(selected))
+            self.assertTrue(windows.isdisjoint(selected))
 
     def test_platform_cli_runs_selected_suite_and_rejects_applicable_skips(self):
         inventory = discover_tests(ROOT)

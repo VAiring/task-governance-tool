@@ -157,17 +157,13 @@ not fabrication. Neither route may rebind old results, omit Findings, or split
 rejected batches to bypass validation. Unknown registration outcomes require
 saved-evidence inspection before retry. In a shared-file handoff, the caller
 fixes distinct unused ignored result paths and the submission operation before
-dispatch. The reviewer groups saving the original, mechanically confirming its
-readability, complete result validity and exact Packet binding, and returning
-a short reference/verdict/Finding-count acknowledgement. A successful save alone
-is not confirmation; unavailable tool composition does not waive checks. Failed
-or uncertain writes and incomplete, invalid or mismatched originals require
-source correction, not a ready acknowledgement or partial submission. Once
-confirmed, normal registration needs no separate LLM full-body read to confirm
-the save again. Necessary inspection and unknown-outcome investigation remain
-allowed. All returned Findings, including low severity, inform repair; a short
-acknowledgement cannot replace them. These are caller instructions, not a new
-file API, adapter, gate or normal-loop command; they claim no measured token saving.
+dispatch. The bundled [review handoff helper](#caller-owned-review-handoff)
+implements saving, necessary confirmation and short acknowledgement, and passes
+unchanged originals to this stdin registration. The LLM supplies actual review
+data and ordinary arguments, not new validation or transport code. All returned
+Findings, including low severity, inform repair; a short acknowledgement cannot
+replace them. Necessary inspection and unknown-outcome investigation remain
+allowed. This claims no measured token saving.
 
 Each complete document has this closed shape:
 
@@ -238,9 +234,67 @@ and Finding counts. No input document or new batch ledger is stored.
 `--read-only` rejects the write before consuming stdin. Successful commit and
 connection close precede one existing post-commit maintenance invocation;
 maintenance failure remains a warning and does not undo committed evidence.
-The product accepts stdin only, not file paths. Any source-file allocation,
-permissions, complete read and retention belong to the caller; no filesystem
-reader, automatic cleanup, additional normal-loop call or producer adapter is added.
+This registration command accepts stdin only, not file paths. The separate
+helper below performs caller-owned transport without changing this writer.
+
+<a id="caller-owned-review-handoff"></a>
+
+### Caller-Owned Review Handoff
+
+The shipped `scripts/review_handoff.py` has `save` and `submit` operations,
+separate from the taskgov command inventory. Both require explicit `--repo`
+and `--packet` (a complete actual Packet JSON object already obtained from
+the current preparation response). The Packet is caller-supplied context, not
+authenticated evidence. Saving it for this file transport does not authorize
+another target/Receipt write or routine Packet query.
+
+`save --output <path>` reads one complete original version-1 document with one
+Receipt from bounded UTF-8 stdin. Existing decoder/normalizer, privacy, tier and
+external-approval rules run before creating any result file. Version, Task,
+Contract revision and all four target fields must match the Packet exactly.
+The helper then creates the absent file exclusively, writes the original bytes,
+flushes them, reads the physical saved file, revalidates it and compares exact
+bytes and unchanged Packet input. Normalized values never replace original
+bytes. Only all-success returns `{ok:true,status:"saved",path,verdict,finding_count}`.
+This is neither registration success nor a review/completion or independence proof.
+
+`submit <path>...` reads 1-8 original object documents completely, surrounds
+the unchanged bytes with JSON array framing, and uses the same validation and
+aggregate limits before invoking the sibling taskgov entry once through binary
+stdin. It passes explicit `--user-approved-reviewer` values unchanged, never
+infers approval, and exposes the existing registration output/exit status,
+including every Finding. It has no direct DB access or alternate writer.
+Save and submit each require any applicable explicit approval flag; a saved
+file cannot transfer user approval. The writer still rechecks live Task,
+Contract, tier and exact target under its existing lock.
+
+Paths are explicit project-relative `.json` paths using `/`, within existing
+physical directories. Each must be Git-ignored and untracked; non-Git projects
+can continue to use the existing stdin interface but cannot use this ignored-file
+helper. Absolute/traversal/ADS/device paths, links/reparse points including
+ancestors, nonregular files and multiply linked files are rejected. `.git`,
+`.agents`, `.codex`, `.taskgov` and the repository development package are not
+transport locations. The helper creates no directory, changes no ACL or ignore
+rule, and never overwrites/deletes a file. Explicit invocation authorizes only
+the named result creation (save) or existing Task evidence registration (submit).
+File ownership, authorized location choice and retention remain with the caller.
+
+Packet reads are capped at the existing 32,768 bytes; originals and the framed
+batch retain the 262,144-byte registration limit. Reads check physical identity,
+size and timestamps before/after, and submit rechecks originals before delivery.
+These are trusted-local race checks, not isolation against a hostile process
+with the same filesystem permissions. The operation does not lock a namespace
+or claim protection after its final observation. No network, reviewer launch,
+Git write, scheduler, ledger, platform adapter or automatic cleanup is added.
+
+Invalid input creates no result. A write/readback failure may leave an incomplete
+file, which is retained and never called ready. Correct source data and select
+a new unused result path; do not overwrite residue. Lost save responses require
+inspection of the original; lost submission responses require public recorded
+state inspection before deciding whether any retry is safe. Neither operation
+automatically retries. Helper failures return `ok:false` with a sanitized code
+and fixed message, no rejected content or exception detail. An uncertain result
+never authorizes a duplicate registration.
 
 <a id="git-snapshot-and-target-binding"></a>
 

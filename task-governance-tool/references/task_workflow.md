@@ -482,48 +482,45 @@ registration command before dispatch. Supply those exact paths with the complete
 Packet in the same review request, so neither side rediscovers or retypes them
 later. Retain originals until the registration outcome is known.
 
-For this shared-file path, bundle the final handoff using available tool composition:
-save the completed original once without overwriting an existing result, then
-check the saved bytes are readable, complete valid result JSON and match the
-Packet's Task, Contract revision and every target field. Perform that necessary
-mechanical confirmation and return the reference plus a short verdict/Finding
-count together, without an LLM turn between each operation or echoing the body.
-Only successful save and confirmation permit this acknowledgement. If the host
-cannot combine operations, finish the checks before acknowledging; do not omit
-them to meet a call count. On failed/uncertain save, missing/empty/partial data,
-invalid format or binding mismatch, report the failure and correct it at its
-source before handoff; do not pass a successful prefix or silently rebind.
-Retain failed originals; a corrected result uses a new unused path, reflected
-in the submission mapping for that correction rather than overwriting old bytes.
+For the shared-file path, use the bundled fixed helper, not handwritten save,
+validation or framing code. Preserve the complete obtained Packet once as an
+ignored project-relative JSON file for this transport; no new Packet query is
+needed. Assign that file, each unused result path, and these invocations before
+dispatch. Paths and errors are defined in the
+[handoff helper reference](cli_contracts.md#caller-owned-review-handoff).
 
-For example, include this output instruction with each complete review request:
-
-> Save your completed original to the assigned unused path. In the same tool
-> operation, confirm the actual saved document is complete, valid and bound to
-> this Packet. Return only that path, actual verdict and Finding count after
-> success; otherwise report the failure, not a ready result. Keep all Findings,
-> including low severity, in the original. Do not output the JSON again.
-
-After confirmed handoff, frame the originals and register once using the fixed
-paths; no separate full-body read just to reconfirm the save is needed. Necessary
-inspection remains allowed. Use all returned `data.receipts[].findings` for
-repair decisions, including low severity; a short acknowledgement never replaces
-the Findings. Recover an incomplete response before deciding what to repair.
-The CLI still validates matching Task, Contract and complete target and combines
-only `receipts`. For example, without parsing/re-emitting original bodies:
+The reviewer supplies only the actual completed JSON on UTF-8 stdin. In
+PowerShell, a literal here-string carries the data without interpolation:
 
 ```powershell
 $OutputEncoding = [Console]::InputEncoding = [System.Text.UTF8Encoding]::new($false)
-# Use the same caller-owned ignored paths assigned before the reviews.
-$reviewResultPaths = @('.\review-a.json', '.\review-b.json')
-$reviewResults = foreach ($reviewResultPath in $reviewResultPaths) {
-  $original = Get-Content -LiteralPath $reviewResultPath -Raw -Encoding utf8 -ErrorAction Stop
-  if ([string]::IsNullOrWhiteSpace($original)) { throw 'Review result is empty.' }
-  $original
-}
-'[' + ($reviewResults -join ',') + ']' |
-  python .agents/skills/task-governance-tool/scripts/taskgov.py review result add <task-id> --json
+@'
+<complete original version-1 result JSON>
+'@ | python .agents/skills/task-governance-tool/scripts/review_handoff.py save --repo . --packet reviews/packet.json --output reviews/review-a.json
 ```
+
+The fixed operation validates before creation, saves exclusively, confirms the
+actual saved bytes and complete Packet binding, and returns a short
+path/verdict/Finding-count acknowledgement. Return that acknowledgement without
+echoing the body. Only `ok=true,status=saved` is a ready handoff; it is not
+registration success, PASS evidence, independence proof or completion permission.
+On failure or uncertain outcome, retain the original/residue and investigate;
+a corrected result needs a new unused path. Never overwrite or blindly resend.
+
+After all confirmed handoffs, the parent supplies the preassigned paths:
+
+```powershell
+python .agents/skills/task-governance-tool/scripts/review_handoff.py submit --repo . --packet reviews/packet.json reviews/review-a.json reviews/review-b.json
+```
+
+This sends unchanged originals through the existing atomic stdin registration
+once, without model-generated framing code or another normal check/show.
+Use all returned `data.receipts[].findings`, including low severity, for repair
+decisions. A short acknowledgement never replaces Findings. Recover an
+incomplete registration response before deciding what to repair; the helper
+does not weaken current-state revalidation or authorize retries. If shared
+ignored files are unavailable, the [existing stdin interface](cli_contracts.md#structured-review-results)
+still accepts complete originals by bytes; do not infer file permissions.
 
 Invalid input saves no prefix. Obtain corrections from their actual source.
 If a response is lost, inspect recorded state before retrying; committed replay

@@ -1,0 +1,294 @@
+"""Bounded caller-owned transport; no database access or replacement review gate.
+
+Save validates before exclusive creation and retains any failed-write residue.
+Submit frames unchanged originals and delegates to the existing public stdin
+writer, whose current-state checks remain authoritative. Neither operation
+infers approval, repairs input, overwrites, deletes, or retries.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import stat
+import subprocess
+import sys
+from pathlib import Path
+
+from task_governance_tool.completion import safe_git_command, safe_git_environment
+from task_governance_tool.review_results import (
+    REVIEW_RESULTS_INPUT_LIMIT, REVIEW_RESULTS_RECEIPT_LIMIT,
+    decode_review_results, normalize_review_results, review_result_template,
+)
+from task_governance_tool.reviews import ReviewEvidenceError
+from task_governance_tool.task_values import TaskValidationError, reject_private_or_raw_content
+
+
+PACKET_LIMIT = 32768
+_PACKET_KEYS = {
+    "task", "contract", "review_target", "changed_paths_available", "changed_paths",
+    "changed_paths_total", "changed_paths_truncated", "review_focus", "required_output",
+    "result_template", "result_instructions", "receipt_command",
+}
+
+
+class HandoffError(Exception):
+    def __init__(self, code="handoff_invalid_input"):
+        self.code = code
+
+
+def _fail(code="handoff_invalid_input"):
+    raise HandoffError(code)
+
+
+def _identity(details, *, change_time=False):
+    # Windows Python exposes different ctime meanings through lstat/fstat.
+    # Compare ctime only between observations using the same API; cross-API
+    # checks retain object identity, mode, links, size and nanosecond mtime.
+    return (details.st_dev, details.st_ino, details.st_mode, details.st_nlink,
+            details.st_size, details.st_mtime_ns) + ((details.st_ctime_ns,) if change_time else ())
+
+
+def _physical(details, *, directory=False):
+    if (stat.S_ISLNK(details.st_mode)
+            or getattr(details, "st_file_attributes", 0) & getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0)
+            or not (stat.S_ISDIR if directory else stat.S_ISREG)(details.st_mode)
+            or (not directory and details.st_nlink != 1)):
+        _fail("handoff_path_unsafe")
+
+
+def _parents(path):
+    """Observe the whole existing physical ancestor chain, including repo ancestors."""
+    observed = []
+    for parent in reversed(path.parents):
+        details = parent.lstat()
+        _physical(details, directory=True)
+        observed.append((parent, details.st_dev, details.st_ino))
+    return observed
+
+
+def _check_parents(observed):
+    for parent, device, inode in observed:
+        details = parent.lstat()
+        _physical(details, directory=True)
+        if (details.st_dev, details.st_ino) != (device, inode):
+            _fail("handoff_file_changed")
+
+
+def _path(repo, supplied):
+    # Portable project-relative names only: no ADS, device names, traversal,
+    # reserved state/package areas or invisible path spellings.
+    reject_private_or_raw_content("review_result_path", supplied)
+    if (not supplied or len(supplied.encode("utf-8")) > 4096
+            or "\\" in supplied or any(ord(c) < 32 for c in supplied)):
+        _fail("handoff_path_unsafe")
+    parts = supplied.split("/")
+    reserved = {"con", "prn", "aux", "nul", *(f"com{i}" for i in range(10)), *(f"lpt{i}" for i in range(10))}
+    if any(not p or p in {".", ".."} or p.endswith((".", " "))
+           or any(c in p for c in ':*?"<>|') or p.split(".")[0].lower() in reserved for p in parts):
+        _fail("handoff_path_unsafe")
+    if parts[0].lower() in {".git", ".agents", ".codex", ".taskgov", "task-governance-tool"}:
+        _fail("handoff_path_unsafe")
+    path = repo.joinpath(*parts)
+    if path.suffix.lower() != ".json":
+        _fail("handoff_path_unsafe")
+    _parents(path)
+    # --no-index is intentionally absent: tracked paths must not qualify.
+    result = subprocess.run(
+        [*safe_git_command(repo), "-c", "core.fsmonitor=false", "check-ignore", "--quiet", "--", supplied],
+        stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        timeout=2, shell=False, env=safe_git_environment(), check=False,
+    )
+    if result.returncode != 0:
+        _fail("handoff_ignore_required")
+    return path
+
+
+def _read(path, limit):
+    parents = _parents(path)
+    before = path.lstat()
+    _physical(before)
+    if before.st_size > limit:
+        _fail("handoff_input_too_large")
+    flags = os.O_RDONLY | getattr(os, "O_BINARY", 0) | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
+    descriptor = os.open(path, flags)
+    try:
+        opened = os.fstat(descriptor)
+        _physical(opened)
+        if _identity(opened) != _identity(before):
+            _fail("handoff_file_changed")
+        chunks = []
+        size = 0
+        while size <= limit:
+            chunk = os.read(descriptor, min(65536, limit + 1 - size))
+            if not chunk:
+                break
+            chunks.append(chunk)
+            size += len(chunk)
+        after = os.fstat(descriptor)
+        if size != before.st_size or _identity(after, change_time=True) != _identity(opened, change_time=True):
+            _fail("handoff_file_changed")
+    finally:
+        os.close(descriptor)
+    _check_parents(parents)
+    final = path.lstat()
+    _physical(final)
+    if _identity(final, change_time=True) != _identity(before, change_time=True):
+        _fail("handoff_file_changed")
+    return b"".join(chunks)
+
+
+def _unique(pairs):
+    result = {}
+    for key, value in pairs:
+        if key in result:
+            _fail()
+        result[key] = value
+    return result
+
+
+def _packet(raw):
+    packet = json.loads(raw.decode("utf-8"), object_pairs_hook=_unique,
+                        parse_constant=lambda value: _fail())
+    if type(packet) is not dict or set(packet) != _PACKET_KEYS:
+        _fail()
+    task, contract, target = packet["task"], packet["contract"], packet["review_target"]
+    if (type(task) is not dict or type(contract) is not dict or type(target) is not dict
+            or type(task.get("task_id")) is not str or type(task.get("review_tier")) is not int
+            or task["review_tier"] not in (0, 1, 2) or type(contract.get("revision")) is not int
+            or type(target.get("generation")) is not int):
+        _fail()
+    expected = review_result_template(task["task_id"], contract["revision"], target)
+    if json.dumps(packet["result_template"], sort_keys=True) != json.dumps(expected, sort_keys=True):
+        _fail()
+    return packet
+
+
+def _validate(raw, packet, approvals, *, original=False):
+    payload = decode_review_results(raw)
+    normalize_review_results(payload, review_tier=packet["task"]["review_tier"],
+                             user_approved_reviewers=approvals)
+    if original and (not raw.lstrip().startswith(b"{") or len(payload["receipts"]) != 1):
+        _fail()
+    expected = packet["result_template"]
+    if any(payload[key] != expected[key] for key in ("version", "task_id", "contract_revision", "review_target")):
+        _fail("review_target_mismatch")
+    return payload
+
+
+def _write_new(path, raw):
+    parents = _parents(path)
+    flags = os.O_RDWR | os.O_CREAT | os.O_EXCL | getattr(os, "O_BINARY", 0) | getattr(os, "O_NOFOLLOW", 0)
+    descriptor = os.open(path, flags, 0o600)
+    try:
+        _physical(os.fstat(descriptor))
+        _check_parents(parents)
+        offset = 0
+        while offset < len(raw):
+            written = os.write(descriptor, raw[offset:])
+            if written <= 0:
+                _fail("handoff_io_failed")
+            offset += written
+        os.fsync(descriptor)
+        created = os.fstat(descriptor)
+    finally:
+        os.close(descriptor)
+    _check_parents(parents)
+    if _identity(path.lstat()) != _identity(created):
+        _fail("handoff_file_changed")
+    # Never remove incomplete or uncertain originals on failure.
+
+
+def save(repo, packet_path, output, raw, approvals=()):
+    packet_file = _path(repo, packet_path)
+    packet_raw = _read(packet_file, PACKET_LIMIT)
+    packet = _packet(packet_raw)
+    payload = _validate(raw, packet, approvals, original=True)
+    destination = _path(repo, output)
+    _write_new(destination, raw)
+    saved = _read(destination, REVIEW_RESULTS_INPUT_LIMIT)
+    _validate(saved, packet, approvals, original=True)
+    if saved != raw or _read(packet_file, PACKET_LIMIT) != packet_raw:
+        _fail("handoff_file_changed")
+    entry = payload["receipts"][0]
+    return {"ok": True, "status": "saved", "path": output,
+            "verdict": entry["verdict"], "finding_count": len(entry["findings"])}
+
+
+def submission(repo, packet_path, originals, approvals=()):
+    if not 1 <= len(originals) <= REVIEW_RESULTS_RECEIPT_LIMIT:
+        _fail()
+    packet_file = _path(repo, packet_path)
+    packet_raw = _read(packet_file, PACKET_LIMIT)
+    packet = _packet(packet_raw)
+    paths = [_path(repo, item) for item in originals]
+    if len(set(os.path.normcase(str(path)) for path in paths)) != len(paths):
+        _fail()
+    documents = [_read(path, REVIEW_RESULTS_INPUT_LIMIT) for path in paths]
+    if any(not raw.lstrip().startswith(b"{") for raw in documents):
+        _fail()
+    framed = b"[" + b",".join(documents) + b"]"
+    payload = _validate(framed, packet, approvals)
+    if _read(packet_file, PACKET_LIMIT) != packet_raw:
+        _fail("handoff_file_changed")
+    for path, raw in zip(paths, documents):
+        if _read(path, REVIEW_RESULTS_INPUT_LIMIT) != raw:
+            _fail("handoff_file_changed")
+    return payload["task_id"], framed
+
+
+class _Parser(argparse.ArgumentParser):
+    def error(self, message):
+        _fail("handoff_invalid_arguments")
+
+
+def _emit(value):
+    try:
+        print(json.dumps(value, ensure_ascii=True, separators=(",", ":")), flush=True)
+        return True
+    except OSError:
+        # A lost acknowledgement cannot undo the file write. Do not retry it
+        # or raise another traceback while trying to print the error response.
+        try:
+            sys.stdout.close()
+        except OSError:
+            pass
+        return False
+
+
+def main(argv=None):
+    try:
+        parser = _Parser(description=__doc__)
+        commands = parser.add_subparsers(dest="operation", required=True)
+        for operation in ("save", "submit"):
+            command = commands.add_parser(operation)
+            command.add_argument("--repo", required=True, help="Explicit governed project root")
+            command.add_argument("--packet", required=True, help="Ignored project-relative complete Packet JSON")
+            command.add_argument("--user-approved-reviewer", action="append", default=[])
+            if operation == "save":
+                command.add_argument("--output", required=True, help="Unused ignored project-relative JSON path; parent must exist")
+            else:
+                command.add_argument("originals", nargs="+", help="Ignored project-relative original JSON paths")
+        args = parser.parse_args(argv)
+        repo = Path(os.path.abspath(args.repo))
+        if args.operation == "save":
+            raw = sys.stdin.buffer.read(REVIEW_RESULTS_INPUT_LIMIT + 1)
+            result = save(repo, args.packet, args.output, raw, args.user_approved_reviewer)
+            return 0 if _emit(result) else 1
+        task_id, framed = submission(repo, args.packet, args.originals, args.user_approved_reviewer)
+        entrypoint = Path(__file__).parent.parent / "taskgov.py"
+        command = [sys.executable, "-B", str(entrypoint), "review", "result", "add", task_id,
+                   "--repo", str(repo), "--json"]
+        for reviewer in args.user_approved_reviewer:
+            command.append("--user-approved-reviewer=" + reviewer)
+        # No shell pipe, timeout retry, reserialization, alternate writer or SQL.
+        return subprocess.run(command, input=framed, check=False, shell=False).returncode
+    except (HandoffError, ReviewEvidenceError, TaskValidationError) as exc:
+        code = exc.code
+    except (OSError, ValueError, KeyError, TypeError, RecursionError, subprocess.SubprocessError):
+        code = "handoff_io_or_input_failed"
+    except KeyboardInterrupt:
+        code = "handoff_outcome_unknown"
+    _emit({"ok": False, "code": code, "message": "Review handoff failed; preserve originals and inspect the outcome before retry."})
+    return 1

@@ -1615,8 +1615,10 @@ fresh qualifying review; this mode never infers resolution from PASS.
 Register the reviewers' concise structured results together, using UTF-8 JSON
 stdin with `review result add <task-id> --json`. There is no input-file argument
 or output destination. Submit one complete version-1 document or an array of
-complete documents, without retyping the original results. For example, frame
-two finalized caller-owned UTF-8 files in PowerShell:
+complete documents, without retyping the original results. The normal shared-file
+path uses the [fixed handoff helper](#caller-owned-review-handoff), without LLM-built
+transport code. For an existing caller that already owns its stdin transport,
+the following direct PowerShell example remains compatible:
 
 ```powershell
 $OutputEncoding = [Console]::InputEncoding = [System.Text.UTF8Encoding]::new($false)
@@ -1669,9 +1671,9 @@ and combines only `receipts` in document order. Preserve returned verdicts and
 provenance rather than filling or retyping them. Truncated displays are not
 complete originals. File names, permissions, complete reads and retention are
 caller-owned; this command opens no input file and adds no cleanup operation.
-Use the [handoff procedure](task_workflow.md#prepare-and-record-reviews) to group
-save, necessary saved-document confirmation and a short acknowledgement without
-repeated LLM body retrieval. It does not replace the validation below or excuse
+Use the [handoff procedure](task_workflow.md#prepare-and-record-reviews) and fixed
+helper for save, necessary saved-document confirmation and short acknowledgement
+without generated validation code or repeated LLM body retrieval. Neither replaces the validation below or excuses
 an incomplete Packet, failed save or uncertain registration outcome.
 
 All displayed keys are required and no other keys are accepted. Each Finding
@@ -1723,6 +1725,63 @@ The tool stores no result document or batch ledger, launches no reviewer,
 merges no judgment, resolves no Finding, and does not complete the Task.
 Distinct reviewer keys remain caller-attested strings, not proof of identity
 or independence. The existing single-item commands remain available.
+
+### Caller-Owned Review Handoff
+
+The bundled `scripts/review_handoff.py` is separate from taskgov. Use `python3`
+on Linux/macOS. It needs Python 3.12+, an explicit `--repo`, and an actual complete
+Packet JSON already obtained from a ready preparation response, at `--packet`.
+Save that object mechanically once when using this transport; do not request a
+second Packet merely to create the file. Paths use project-relative `/` spelling.
+
+```powershell
+# Reviewer: pipe only the completed original JSON, with UTF-8 shell encoding.
+python .agents/skills/task-governance-tool/scripts/review_handoff.py save --repo . --packet reviews/packet.json --output reviews/review-a.json
+# Parent: the fixed helper frames originals and invokes taskgov stdin once.
+python .agents/skills/task-governance-tool/scripts/review_handoff.py submit --repo . --packet reviews/packet.json reviews/review-a.json reviews/review-b.json
+```
+
+The [workflow example](task_workflow.md#prepare-and-record-reviews) shows the
+PowerShell here-string data input. Shell transport must encode UTF-8, not UTF-16
+or a BOM. The LLM creates review data, not save/check/transport logic.
+
+Save accepts one complete object document with one Receipt. Existing format,
+privacy, tier, provenance and all binding validation happens before any file is
+created. It writes the original bytes exclusively, flushes, reads actual saved
+bytes and revalidates them and the unchanged Packet. Success is compact JSON:
+`{ok:true,status:"saved",path,verdict,finding_count}`. It is only a saved-file
+acknowledgement, not registration, review PASS, independence or completion proof.
+
+Submit accepts 1-8 paths, preserves complete original bytes, and adds only array
+framing. The combined 262,144-byte / 8-Receipt / 64-Finding bounds remain. The
+sibling taskgov stdin command performs its normal atomic registration and live
+revalidation; stdout and exit status are its ordinary response, including every
+Finding. For an actually approved Tier-2 self-review PASS, explicitly repeat
+`--user-approved-reviewer <key>` on the applicable save and submit calls. Neither
+JSON nor a saved file transfers approval. Independent reviews do not use it.
+
+All Packet/result paths must be untracked, Git-ignored `.json` files within the
+explicit project and existing physical directories. The helper creates no
+directory, ignore rule, ACL, config, state path or permission. No absolute or
+traversal path, backslash, ADS, device name, link/junction/reparse ancestor,
+nonregular or multiply linked file is accepted. Package/admin/state roots
+`.agents`, `.codex`, `.git`, `.taskgov`, `task-governance-tool` are excluded.
+Non-Git projects retain direct stdin registration; this helper cannot establish
+an ignored-file boundary there. Packet input is bounded to 32,768 bytes.
+
+Reads check identity and metadata before/after, with final byte rechecks before
+submission. These trusted-local checks do not isolate a hostile peer with the
+same permissions or guarantee future immutability. Save never overwrites, and
+neither operation deletes or retries. A partial write or failed confirmation
+leaves its residue and returns no ready acknowledgement. Inspect uncertain
+outcomes first; use a new unused path for a corrected original. After an unknown
+registration outcome, inspect public recorded evidence, not a blind resubmit.
+
+Helper errors emit `ok:false`, a sanitized code and fixed guidance, without raw
+input/path/exception detail. Path/ignore, file-change, invalid-input, I/O and
+unknown-outcome failures remain distinct from taskgov registration responses.
+File ownership, authorized path allocation and retention remain caller-owned.
+No network, Git write, review launch, alternate gate or database writer is added.
 
 ## Receipt Output For Integration Or Audit
 

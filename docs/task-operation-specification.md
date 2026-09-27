@@ -779,6 +779,14 @@ read replacement, not a normal-loop addition, prerequisite, state operation,
 permission grant, or change to the public taskgov command inventory. Local
 retrieval measurements do not establish total LLM token or elapsed-time savings.
 
+Each independent reviewer may group already-known, mutually independent required
+reads into one supported tool invocation, retaining each source, complete text,
+and outcome. New dependencies are read when discovered; failures, missing text,
+or transport truncation require affected-material recovery before judgment.
+Individual reads remain valid when batching cannot deliver complete material.
+This does not narrow required Skill/project reading, delegate common judgment,
+cap reads, or add a normal-path command; AGENTS/authority reread rules remain.
+
 Normal retrieval keeps commands, required inputs and ID sources, ordering,
 success/stop conditions, and applicable exception routes. Scope-addition,
 registration recovery, review repair, and reopen detail can be sibling sections

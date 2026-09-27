@@ -478,6 +478,26 @@ the old target is never upgraded in place.
 
 ### Prepare And Record Reviews
 
+Each reviewer reads the required common rules, review procedure, and material
+for their focus themselves, and judges the whole target independently. When
+their locations and necessity are already known and no read depends on another
+read's result, retrieve them together in one supported read-tool invocation.
+Keep each source and its individual success/failure visible, with complete
+required text. This combines retrieval, not reviewers' judgments or duties;
+do not substitute a parent's or another reviewer's interpretation.
+
+For example, an already-required project review rule and an already-identified
+API contract can be two separately identified results in one invocation.
+A dependency first discovered in either result is a subsequent read, not a
+guessed input to that first batch. On a failed, missing, or tool-truncated
+result, recover the affected required material in full before judging it;
+successful sibling reads need not be repeated. If batching is unavailable or
+would prevent complete delivery, use individual reads. There is no fixed
+file/line limit, summary substitute, read counter, new reader/collector, or
+extra prerequisite. Project AGENTS/authority reading and reread rules still
+apply. Count outer calls separately from internal reads and delivered bytes;
+fewer calls alone do not establish lower total usage.
+
 For shared-file transport, start with `review_handoff.py prepare` as above.
 Use only its `handoff.status=ready` output. It has already saved and confirmed
 the complete Packet and unused result paths; give each reviewer its returned

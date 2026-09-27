@@ -1578,6 +1578,78 @@ class SkillSelfContainmentTests(unittest.TestCase):
 
 
 class ReferenceRetrievalTests(unittest.TestCase):
+    def grouped_reads(self, package, targets):
+        # Test-only stand-in for a host's multiple-read invocation. It is not
+        # shipped, and makes no routing, completeness, or review decision.
+        code = '''
+import json, sys
+from pathlib import Path
+sys.path.insert(0, str(Path(sys.argv[1]) / "scripts"))
+from read_reference import read_reference
+results = []
+for target in sys.argv[2:]:
+    try:
+        body = read_reference(target, Path(sys.argv[1]))
+    except (OSError, UnicodeError, ValueError):
+        results.append({"source": target, "ok": False, "body": None})
+    else:
+        results.append({"source": target, "ok": True, "body": body})
+print(json.dumps(results, ensure_ascii=False))
+'''
+        environment = {**os.environ, "PYTHONIOENCODING": "utf-8"}
+        result = subprocess.run([sys.executable, "-B", "-c", code, str(package), *targets],
+                                capture_output=True, env=environment, check=False)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        return json.loads(result.stdout)
+
+    def test_known_review_reads_group_without_dropping_sources_or_text(self):
+        targets = ["references/task_workflow.md#prepare-and-record-reviews",
+                   "references/cli_contracts.md#review-target"]
+        separate = [self.grouped_reads(SKILL_ROOT, [target])[0] for target in targets]
+        grouped = self.grouped_reads(SKILL_ROOT, targets)
+        self.assertEqual(grouped, separate)
+        self.assertTrue(all(item["ok"] for item in grouped))
+        for item in grouped:
+            self.assertEqual(item["body"], self.reader().read_reference(item["source"], SKILL_ROOT))
+        size = sum(len(item["body"].encode("utf-8")) for item in grouped)
+        print(f"REVIEW_READ_GROUP outer_calls=2->1; internal_reads=2->2; "
+              f"body_bytes={size}->{size}; total_usage=unmeasured")
+
+    def test_group_failure_and_truncation_recover_only_affected_source(self):
+        targets = ["references/task_workflow.md#prepare-and-record-reviews",
+                   "references/cli_contracts.md#review-target"]
+        with tempfile.TemporaryDirectory() as tmp:
+            package = copy_skill_to(Path(tmp))
+            missing = package / "references/cli_contracts.md"
+            retained = missing.with_suffix(".retained")
+            missing.rename(retained)
+            failed = self.grouped_reads(package, targets)
+            self.assertTrue(failed[0]["ok"])
+            self.assertEqual(failed[1], {"source": targets[1], "ok": False, "body": None})
+            retained.rename(missing)
+            recovered = self.grouped_reads(package, targets[1:])
+            complete = [failed[0], recovered[0]]
+            self.assertEqual(complete, self.grouped_reads(package, targets))
+            # Simulated host output cut-off, not the reader's own behavior.
+            cut = {**recovered[0], "body": recovered[0]["body"][:40], "truncated": True}
+            self.assertNotEqual(cut["body"], recovered[0]["body"])
+            fresh = self.grouped_reads(package, [cut["source"]])
+            self.assertEqual([failed[0], fresh[0]], complete)
+
+    def test_new_required_link_is_read_after_its_source_identifies_it(self):
+        # This review explicitly needs completion-history detail. The first
+        # source identifies the applicable audit sibling but does not include it.
+        first = self.grouped_reads(SKILL_ROOT, ["references/cli_contracts.md#task-show"])
+        target, body = self.linked_output("references/cli_contracts.md", first[0]["body"],
+                                          "task-audit-detail")
+        discovered = target + "#task-audit-detail"
+        self.assertNotIn(discovered, [item["source"] for item in first])
+        self.assertNotIn("completion_cycle_id", first[0]["body"])
+        second = self.grouped_reads(SKILL_ROOT, [discovered])
+        self.assertTrue(second[0]["ok"])
+        self.assertEqual(second[0]["body"], body)
+        self.assertIn("completion_cycle_id", second[0]["body"])
+
     def reader(self):
         import read_reference
         return read_reference

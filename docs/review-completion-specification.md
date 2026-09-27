@@ -448,6 +448,13 @@ outside the SQLite writer.
 
 ## Review Packet
 
+Reviewers may retrieve already-known required sources together, preserving each
+source and its complete successful delivery under the instruction-layer rules
+in [Task operation](task-operation-specification.md#active-instruction-layer-boundary).
+Each reviewer still reads the common and focus-specific material themselves and
+independently judges the whole target. A grouped read never replaces authority
+inspection, exact-target access, or recovery of failed/truncated material.
+
 `review prepare <task-id>` is bounded read-only stdout generation for all four
 target kinds. Missing target returns `review_target_missing` and
 `review target is required before preparing a review packet`.

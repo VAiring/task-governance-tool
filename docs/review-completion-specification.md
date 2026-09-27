@@ -321,8 +321,12 @@ ancestors, nonregular files and multiply linked files are rejected. `.git`,
 transport locations. Only `prepare` may create its explicitly named missing
 directory chain after ready preparation; preflight validates the ignored area
 before launching the source operation. Existing destination directories are
-not adopted. The helper changes no ACL or ignore rule and never overwrites or
-deletes a file. Explicit invocation authorizes only that source operation and
+not adopted. Each missing directory on Windows uses default parent ACL
+inheritance; on POSIX it uses mode `0700`. The selected parent must already
+permit the intended participants; this does not repair insufficient access.
+Existing directory/file permissions and ACLs are not changed. The helper
+changes no ignore rule and never overwrites or deletes a file. Explicit
+invocation authorizes only that source operation and
 bounded Packet preparation, named result creation (save), or existing Task
 evidence registration (submit).
 File ownership, authorized location choice and retention remain with the caller.

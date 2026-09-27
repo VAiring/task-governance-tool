@@ -259,6 +259,9 @@ Source mutation outcome, sanitized warnings, and transport outcome are separate.
 Non-ready, malformed or uncertain responses produce no reviewer requests;
 post-write failure retains residue. Capture starts before the source call and
 does not add a normal query, log file, retry or reviewer-launch operation.
+For every missing directory, `os.name == "nt"` selects default `Path.mkdir()`
+to inherit the parent ACL; POSIX retains `mode=0o700`. No existing permissions
+are rewritten, and no SID policy, native ACL adapter or caller option is added.
 
 The transport module owns bounded physical reads, explicit ignored-path checks,
 exclusive creation and retained failed-write residue. Standard-library file

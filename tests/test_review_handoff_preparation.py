@@ -7,6 +7,7 @@ import io
 import json
 import os
 import shlex
+import stat
 import subprocess
 import sys
 import tempfile
@@ -53,6 +54,20 @@ class PreparationFixture(unittest.TestCase):
 
 
 class InstalledPreparationTests(PreparationFixture):
+    def test_native_directory_modes_preserve_existing_parent(self):
+        parent = self.root / "reviews"
+        parent.mkdir()
+        before = stat.S_IMODE(parent.stat().st_mode)
+        completed, result = self.prepare(self.task(), directory="reviews/new/ancestors/g1")
+        self.assertEqual(completed.returncode, 0, completed.stdout or completed.stderr)
+        self.assertEqual(result["handoff"]["status"], "ready")
+        self.assertEqual(stat.S_IMODE(parent.stat().st_mode), before)
+        if os.name != "nt":
+            for path in (parent / "new", parent / "new/ancestors", parent / "new/ancestors/g1"):
+                self.assertEqual(stat.S_IMODE(path.stat().st_mode), 0o700)
+        # Windows mode bits do not prove DACL inheritance; its native suite
+        # reads the ACL instead. The POSIX mode assertion runs only on POSIX.
+
     def test_padded_task_id_remains_canonical_through_target_receipt_and_recovery(self):
         task = self.task("Focused checks")
         padded = " \t" + task + "\t "
@@ -206,6 +221,29 @@ class PreparationFailureTests(PreparationFixture):
             exit_code = handoff.main(["prepare", "--repo", str(self.root), "--directory", directory,
                 "target", self.task_id, "--kind", "diff_fingerprint", "--revision", FINGERPRINT])
         return exit_code, json.loads(output.getvalue()), capture
+
+    def test_simulated_os_choice_applies_to_every_missing_directory(self):
+        (self.root / "reviews").mkdir()
+        mkdir = Path.mkdir
+        for name in ("nt", "posix"):
+            with self.subTest(os_name=name):
+                variant = mock.Mock(wraps=os)
+                variant.name = name  # Do not change the host os.name used by pathlib.
+                seen = []
+
+                def create(path, *args, **kwargs):
+                    seen.append((path, args, kwargs))
+                    return mkdir(path, *args, **kwargs)
+
+                with mock.patch.object(preparation, "os", variant), \
+                     mock.patch.object(Path, "mkdir", create):
+                    code, result, capture = self.run_injected(directory=f"reviews/{name}/middle/g1")
+                self.assertEqual(code, 0, result)
+                capture.assert_called_once()
+                expected = {} if name == "nt" else {"mode": 0o700}
+                self.assertEqual(seen, [(self.root / path, (), expected) for path in
+                    (f"reviews/{name}", f"reviews/{name}/middle", f"reviews/{name}/middle/g1")])
+        # OS-selection coverage only; not a native POSIX permission observation.
 
     def test_malformed_or_incomplete_capture_has_unknown_outcome_and_no_files(self):
         for raw in (b"", b"{", b"{}", b"\xef\xbb\xbf{}", b'{"ok":true,"ok":false}', b"null"):

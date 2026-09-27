@@ -43,6 +43,61 @@ class WindowsReviewHandoffTests(unittest.TestCase):
 
 
 class WindowsPreparationTests(PreparationFixture):
+    @unittest.skipUnless(sys.platform == "win32", "Windows ACL inheritance")
+    def test_missing_directory_chain_and_transport_files_inherit_parent_acl(self):
+        powershell = shutil.which("powershell.exe")
+        if not powershell:
+            self.skipTest("PowerShell is unavailable")
+
+        def acl(relative):
+            path = str(self.root / relative).replace("'", "''")
+            kind = "Directory" if (self.root / relative).is_dir() else "File"
+            command = ("$a = [System.IO." + kind + "]::GetAccessControl('" + path + "'); "
+                "[pscustomobject]@{Protected=$a.AreAccessRulesProtected; "
+                "Inherited=@($a.Access | Where-Object IsInherited).Count; "
+                "Explicit=@($a.Access | Where-Object { -not $_.IsInherited }).Count; "
+                "Dacl=$a.GetSecurityDescriptorSddlForm("
+                "[System.Security.AccessControl.AccessControlSections]::Access)} | ConvertTo-Json -Compress")
+            observed = subprocess.run([powershell, "-NoProfile", "-NonInteractive", "-EncodedCommand",
+                base64.b64encode(command.encode("utf-16le")).decode("ascii")],
+                cwd=self.root, capture_output=True, check=False)
+            self.assertEqual(observed.returncode, 0, observed.stdout or observed.stderr)
+            return json.loads(observed.stdout)
+
+        (self.root / "reviews").mkdir()
+        existing = self.root / "reviews/existing.json"
+        existing.write_bytes(b"{}")
+        before = {path: acl(path) for path in ("reviews", "reviews/existing.json")}
+        task = self.task()
+        completed, result = self.prepare(task, directory="reviews/new/ancestors/g1")
+        self.assertEqual(completed.returncode, 0, completed.stdout or completed.stderr)
+        context = result["handoff"]
+        packet_path = context["packet_path"]
+        packet_bytes = (self.root / packet_path).read_bytes()
+        payload = json.loads(packet_bytes)["result_template"]
+        payload["receipts"] = [receipt("native-acl-reviewer")]
+        original = b"\n " + encode(payload) + b"\n"
+        result_path = context["review_requests"][0]["result_path"]
+        saved = self.invoke("save", "--repo", str(self.root), "--packet", packet_path,
+                            "--output", result_path, raw=original)
+        self.assertEqual(saved.returncode, 0, saved.stdout or saved.stderr)
+        for path in ("reviews/new", "reviews/new/ancestors", "reviews/new/ancestors/g1",
+                     packet_path, result_path):
+            with self.subTest(path=path):
+                observed = acl(path)
+                self.assertFalse(observed["Protected"])
+                self.assertGreater(observed["Inherited"], 0)
+                self.assertEqual(observed["Explicit"], 0)
+        self.assertEqual({path: acl(path) for path in before}, before)
+        self.assertEqual(existing.read_bytes(), b"{}")
+        self.assertEqual((self.root / packet_path).read_bytes(), packet_bytes)
+        self.assertEqual((self.root / result_path).read_bytes(), original)
+        submitted = self.invoke("submit", "--repo", str(self.root), "--packet", packet_path,
+                                "--", result_path)
+        self.assertEqual(submitted.returncode, 0, submitted.stdout or submitted.stderr)
+        # This is native ACL/transport coverage in one execution context, not
+        # evidence of access by an independent review agent.
+
     @unittest.skipUnless(sys.platform == "win32", "Windows shell transport")
     def test_generated_powershell_request_from_source_invocation_to_submit(self):
         self.check_generated_request("reviews/native")

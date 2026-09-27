@@ -315,7 +315,11 @@ def prepare(repo, args):
         for path in missing:
             parents = files._parents(path)
             files._ignored(repo, path.relative_to(repo).as_posix() + "/")
-            path.mkdir(mode=0o700)
+            # Windows treats 0700 as a protected DACL, blocking parent grants.
+            if os.name == "nt":
+                path.mkdir()
+            else:
+                path.mkdir(mode=0o700)
             files._physical(path.lstat(), directory=True)
             files._check_parents(parents)
         parents = files._parents(destination / "packet.json")

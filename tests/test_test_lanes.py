@@ -609,7 +609,7 @@ class TestLanePolicyTests(unittest.TestCase):
             if case.__class__.__module__ == "test_review_handoff_windows"
         }
         self.assertTrue(portable)
-        self.assertEqual(len(windows), 3)
+        self.assertEqual(len(windows), 4)
         self.assertTrue((portable | windows).issubset(inventory.plan.ids_for("fast")))
         for platform in ("linux", "darwin"):
             selected = {

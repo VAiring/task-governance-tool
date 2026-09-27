@@ -84,7 +84,8 @@ The explicit [review handoff helper](review-completion-specification.md#caller-o
 may additionally create the caller's named unused ignored Packet directory
 and complete Packet, and named unused result JSON; it checks Git ignore
 read-only and submits originals through the existing stdin
-writer. It never changes source, Git state, permissions or generated-state paths.
+writer. It never changes source, Git state, existing permissions or
+generated-state paths.
 
 ## Package, Runtime, And Generated State
 

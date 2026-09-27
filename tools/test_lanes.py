@@ -115,6 +115,7 @@ LANE_MODULES: dict[str, tuple[str, ...]] = {
         "test_evidence_test_support",
         "test_finding_resolutions",
         "test_git_snapshot",
+        "test_git_workflow_examples",
         "test_handoffs",
         "test_m214c_stored_task_validation",
         "test_m214d_contract_pointer_validation",

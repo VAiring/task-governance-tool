@@ -520,6 +520,13 @@ read revalidates Task, Contract, and every target field/generation; drift fails
 
 ## Completion Evidence And Commands
 
+The caller may combine an already authorized commit, full-ID read, and existing
+completion command in a success-only tool invocation. This is not runtime Git
+mutation. A failed completion does not undo a successful commit; recovery uses
+the existing commit and current public state, while the completion command still
+revalidates every binding and gate below. The executable caller examples live
+in the Skill workflow's Complete Work section.
+
 Skill guidance uses `task complete` and typed evidence, omitting the legacy
 hash-input and edit-to-done usage routes. Both legacy inputs remain accepted
 under the contracts below. Their documentation-only removal-pending notes live

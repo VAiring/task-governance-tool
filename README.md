@@ -278,15 +278,17 @@ prioritize, synchronize, or create external Issues.
 
 ## Review And Completion
 
-For a review-before-commit Git workflow, stage exactly the intended project
+For a review-before-commit Git workflow (`--kind git_snapshot`), stage exactly the intended project
 changes through the project's own Git process, capture the staged target, use
 the route returned by that same call, and prepare one bounded review packet.
-Run the exact project verification outside Taskgov and record its bounded
-attestation only for `verification_route=receipt_required`:
+Use Set The Review Target in the [workflow reference](task-governance-tool/references/task_workflow.md)
+to combine already authorized staging and target capture with failure guards.
+Interpret its response before proceeding. Run the exact project verification
+outside Taskgov and record its bounded attestation only for
+`verification_route=receipt_required`. The following are conditional steps,
+not one script to execute without inspecting the intervening results:
 
 ```powershell
-git add <intended-project-paths>
-python .agents/skills/task-governance-tool/scripts/review_handoff.py prepare --repo . --directory reviews/g1 target <task-id> --kind git_snapshot
 # Inspect source.verification_route and source.blocking_code in this response.
 # Only for verification_route=receipt_required, run the exact approved verification here.
 # Taskgov never executes it.
@@ -297,9 +299,16 @@ python .agents/skills/task-governance-tool/scripts/review_handoff.py prepare --r
 # Pass each handoff.review_requests[].request to its independent reviewer.
 # After confirmed handoffs, execute the returned handoff.submit_command:
 python .agents/skills/task-governance-tool/scripts/review_handoff.py submit --repo . --packet reviews/g1/packet.json reviews/g1/review-1.json reviews/g1/review-2.json
-git commit -m "<project-approved message>"
-python .agents/skills/task-governance-tool/scripts/taskgov.py task complete <task-id> --completion-evidence-kind git_commit --completion-revision <hash> --verification-complete --review-complete --json
 ```
+
+After successful verification and reviews, use the executable
+Complete Work example in the [workflow reference](task-governance-tool/references/task_workflow.md)
+for an already authorized commit. It passes the full commit ID to
+`--completion-evidence-kind git_commit --completion-revision` with
+`--verification-complete --review-complete`. A failed completion retains the
+successful commit; recover only the remaining tail after inspecting state.
+Combining caller tool invocations neither grants Git permission nor removes
+internal Git/CLI operations, and is not a measured total-token saving.
 
 The `not_required` and `runner_pass` routes skip the verification and
 Verification Receipt lines above and use the ready Packet from target setting.

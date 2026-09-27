@@ -425,11 +425,34 @@ follow-up work and the [isolated reopen procedure](#reopen).
 
 Only after the exact material is ready, stage precisely the intended Git files
 through the project's approved Git workflow. Confirm that staging itself
-succeeded before capturing the staged candidate:
+succeeded before capturing the staged candidate. When the specific files and
+Git operation are already authorized and no intermediate decision is needed,
+run these in one caller tool invocation (a disposable PowerShell process):
 
 ```powershell
+$ErrorActionPreference = 'Stop'
+git add -- <intended-project-paths>
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 python .agents/skills/task-governance-tool/scripts/review_handoff.py prepare --repo . --directory reviews/g1 target <task-id> --kind git_snapshot
+exit $LASTEXITCODE
 ```
+
+On a POSIX shell, use the same ordering with success-only chaining:
+
+```sh
+git add -- <intended-project-paths> &&
+python3 .agents/skills/task-governance-tool/scripts/review_handoff.py prepare --repo . --directory reviews/g1 target <task-id> --kind git_snapshot
+```
+
+This is caller composition, not a taskgov Git operation or permission grant.
+Resolve repository, file scope, and required approvals before the call. Stop at
+any failed, uncertain, or judgment-dependent step; do not append later commands
+that hide its exit status. Inspect the final JSON `ok`, `operation_status`, and
+`handoff.status` as well as the route below; an outer shell exit of zero alone
+does not establish readiness. A saved target with failed Packet preparation is
+partial success: recover only preparation. If the response is lost, inspect
+existing public state before deciding which tail remains, never blindly set
+another target. See [bound preparation recovery](cli_contracts.md#review-prepare).
 
 This shared-file form invokes the existing target command once, captures its
 complete response before display and prepares the handoff only if ready. Choose
@@ -572,11 +595,39 @@ provenance. Caller declarations do not prove actual model/Skill use or review tr
 For a reviewed `git_snapshot`, create the completion commit through the
 project's approved Git workflow without changing the reviewed staged tree.
 Only after confirming that commit itself succeeded, use its full commit ID
-as `<hash>`:
+for completion. Once the specific commit is authorized and all required
+verification/review judgments are settled, the caller may do this in one
+disposable PowerShell tool invocation:
 
 ```powershell
-python .agents/skills/task-governance-tool/scripts/taskgov.py task complete <task-id> --verification-complete --review-complete --completion-evidence-kind git_commit --completion-revision <hash> --json
+$ErrorActionPreference = 'Stop'
+git commit -m "<project-approved message>"
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+$taskgovCommit = git rev-parse --verify 'HEAD^{commit}'
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+Write-Output $taskgovCommit
+python .agents/skills/task-governance-tool/scripts/taskgov.py task complete <task-id> --verification-complete --review-complete --completion-evidence-kind git_commit --completion-revision $taskgovCommit --json
+exit $LASTEXITCODE
 ```
+
+POSIX equivalent:
+
+```sh
+git commit -m "<project-approved message>" &&
+taskgov_commit=$(git rev-parse --verify 'HEAD^{commit}') &&
+printf '%s\n' "$taskgov_commit" &&
+python3 .agents/skills/task-governance-tool/scripts/taskgov.py task complete <task-id> --verification-complete --review-complete --completion-evidence-kind git_commit --completion-revision "$taskgov_commit" --json
+```
+
+Keep the full commit ID and complete CLI response. A successful commit followed
+by failed completion leaves a real commit, not an entirely failed operation.
+Resolve the returned gate failure and retry only the necessary completion tail;
+never recommit merely to recover registration. After a lost response, inspect
+Git and public Task state first, preserving any successful completion. New
+approval or unresolved judgment ends the combined call. These examples reduce
+outer tool/LLM round trips only: stage/target remains one Git plus one CLI call;
+commit/hash/complete remains two Git plus one CLI call. They do not establish
+total token savings or weaken any current gate.
 
 The commit must have exactly one parent equal to the captured base and the same
 tree; root and merge commits do not satisfy a snapshot target. Taskgov does not

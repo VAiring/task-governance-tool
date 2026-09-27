@@ -742,6 +742,12 @@ successful-commit ordering directly, without routing through a Git permission
 guide. Existing Review/Completion owners retain exact binding behavior. This
 instruction-only boundary adds no permission detector, Git wrapper, or runtime
 change.
+Executable shell examples in the workflow compose those already authorized
+steps with immediate native-exit checks (PowerShell) or success-only chaining
+(POSIX). They retain complete CLI responses and the full completion commit ID;
+the parent still interprets existing JSON success/partial-success and gate
+outcomes. Isolated example tests execute the documented commands against real
+Git and the public CLI, including stopped tails and recovery without replay.
 
 ### Neutral Forward-Test Boundary
 

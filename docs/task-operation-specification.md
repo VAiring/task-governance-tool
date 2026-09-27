@@ -809,6 +809,13 @@ Intended staging must succeed before snapshot target capture, and the intended
 commit before completion registration; a later command's success cannot replace
 either result. These existing operation-order rules add no Git authority,
 normal-path inspection, or restriction on intentional partial staging.
+Already authorized caller operations may share one tool invocation when no
+intermediate judgment is needed: stage then target, or commit then full commit
+ID then completion. Each native failure stops its tail; shell success alone
+does not replace the CLI JSON result or preparation/verification route. Saved
+targets and commits survive downstream failure. Lost responses require existing
+state inspection and tail-only recovery, not blind replay. This changes caller
+round trips, not internal command counts or the runtime Git boundary.
 
 ## Stored Task Read And Privacy Contract
 

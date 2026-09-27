@@ -1,6 +1,6 @@
 """Capture one of three existing CLI operations, then prepare caller-owned handoff.
 
-No arbitrary command runner, live-state reader, reviewer launcher or ledger.
+No arbitrary command runner, direct state access, reviewer launcher or ledger.
 Source mutations and transport failures have separate outcomes; neither is retried.
 Only a complete Packet is persisted, never the captured response or diagnostics.
 """
@@ -12,6 +12,7 @@ import os
 import shlex
 import subprocess
 import sys
+from dataclasses import asdict
 from pathlib import Path
 
 from task_governance_tool import review_handoff as files
@@ -141,6 +142,8 @@ def _messages(value):
 
 
 def _envelope(raw, code, command):
+    if not isinstance(raw, bytes):
+        files._fail("handoff_response_invalid")
     value = _json(raw)
     if (type(value) is not dict or set(value) != {"ok", "command", "project_id", "data", "warnings", "errors"}
             or type(value["ok"]) is not bool or type(value["data"]) is not dict
@@ -242,18 +245,101 @@ def _source(data, args):
     return source, preparation
 
 
+def _material_command(repo, arguments):
+    # Fixed generated Git reads reuse the observer's environment in a child;
+    # the caller does not mutate its shell environment or write wrapper code.
+    program = (
+        "import subprocess,sys;from pathlib import Path;"
+        "sys.path.insert(0,sys.argv[1]);"
+        "from task_governance_tool.completion import safe_git_command,safe_git_environment;"
+        "sys.exit(subprocess.call([*safe_git_command(Path(sys.argv[2])),*sys.argv[3:]],"
+        "env=safe_git_environment()))"
+    )
+    return _shell([sys.executable, "-I", "-S", "-B", "-c", program,
+                   str(Path(__file__).parent.parent), str(repo), *arguments])
+
+
+def _review_material(repo, target):
+    """Reuse target capture to expose immutable objects, not ambient file paths."""
+    from task_governance_tool.artifact_manifest import (
+        ArtifactManifestError, ARTIFACT_MANIFEST_BYTE_LIMIT, build_artifact_entries,
+        observe_git_commit_manifest, observe_staged_git_manifest,
+    )
+    from task_governance_tool.completion import CompletionEvidenceError
+    from task_governance_tool.git_snapshot import GitSnapshotError
+    if target["kind"] not in ("git_snapshot", "git_commit"):
+        return {"status": "requires_supplied_material", "changes": None,
+                "instructions": [
+                    "The saved target cannot retrieve diff/external content. Obtain the complete supplied material and evidence binding it to review_target.value from the caller before PASS; do not substitute Git HEAD or worktree files."]}
+    try:
+        observed = (observe_staged_git_manifest(repo) if target["kind"] == "git_snapshot"
+                    else observe_git_commit_manifest(repo, target["value"]))
+        if (observed.target_value != target["value"]
+                or observed.target_base_revision != target["base_revision"]):
+            files._fail("review_target_mismatch")
+        changes = [asdict(entry) for entry in build_artifact_entries(
+            observed.before_leaves, observed.after_leaves)]
+    except (ArtifactManifestError, GitSnapshotError, CompletionEvidenceError) as exc:
+        files._fail(exc.code)
+    # The existing manifest limit remains a complete-result boundary, not a
+    # shortened list that a reviewer might mistake for the whole target.
+    if len(json.dumps(changes, ensure_ascii=False).encode("utf-8")) > ARTIFACT_MANIFEST_BYTE_LIMIT:
+        files._fail("artifact_manifest_too_large")
+    dependency_revision = (target["base_revision"] if target["kind"] == "git_snapshot"
+                           else target["value"])
+    # The placeholder is inside a shell literal; state the host's exact
+    # substitution rule rather than asking the reviewer to repair quoting.
+    path_quoting = ("When substituting <project-relative-path>, first double each PowerShell single-quote delimiter in the path: U+0027 ('), U+2018 (‘), U+2019 (’), U+201A (‚), U+201B (‛). Use two copies of that same character, never replace a smart quote with ASCII. Keep all other characters unchanged and keep the surrounding command quotes."
+                    if os.name == "nt" else
+                    "When substituting <project-relative-path>, first replace each single quote (') in the path with the five-character sequence '\"'\"'; keep all other characters unchanged and keep the surrounding command quotes.")
+    return {"status": "git_objects_verified", "changes": changes,
+            "comparison_base": observed.comparison_base,
+            "dependency_revision": dependency_revision,
+            "blob_command": _material_command(repo, ["cat-file", "blob", "<object_id>"]),
+            "diff_command": _material_command(repo, ["diff", "--no-ext-diff", "--no-textconv",
+                                                     "<before_object_id>", "<after_object_id>", "--"]),
+            "dependency_command": _material_command(repo, ["show", dependency_revision + ":<project-relative-path>"]),
+            "instructions": [
+                "changes is the complete target delta, even when the Packet's changed_paths is bounded. Inspect every entry and its modes. Replace only placeholders in the supplied Git commands with the listed object IDs or required project-relative path.",
+                path_quoting,
+                "Execute the supplied command templates unchanged apart from placeholders. Their fixed Python invocation applies the existing sanitized Git environment, disabling lazy fetch, replacement refs, optional locks and prompts without changing your shell environment. Missing objects must be reported, not fetched.",
+                "Read before/after blobs by immutable object ID; compare both present blobs with diff_command. Added/deleted entries have one absent side. Mode 120000 is link text, not permission to follow it; mode 160000 names a submodule commit, not a blob: obtain any required unavailable submodule material from the caller.",
+                "For unchanged authority, source, tests and discovered dependencies use dependency_command. For a snapshot, changed paths instead use their listed after object (or are deleted); never substitute mutable index, HEAD or worktree content. Commit dependencies come from that exact commit.",
+                "Inspect project AGENTS.md and its authority routes plus required source/tests and discovered dependencies. Recover missing or tool-truncated output before judgment. These read-only observations are not PASS or an authenticated provenance claim; unavailable required material must be reported to the caller."]}
+
+
 def read_for_reviewer(repo, packet_path):
-    """Read/validate the full saved Packet; return only the independent display."""
+    """Validate saved data, bind exact material, then compare live public context."""
     from task_governance_tool.review_packet import independent_reviewer_view
-    raw = files._read(files._path(repo, packet_path), files.PACKET_LIMIT)
+    path = files._path(repo, packet_path)
+    raw = files._read(path, files.PACKET_LIMIT)
     packet = files._packet(raw)
     _packet(packet, packet["task"]["task_id"])
-    return independent_reviewer_view(packet)
+    material = _review_material(repo, packet["review_target"])
+    # One existing read-only public operation, inside the replacement read;
+    # no extra reviewer check/show, new target, Receipt or direct DB access.
+    entry = Path(__file__).parent.parent / "taskgov.py"
+    command = [sys.executable, "-B", str(entry), "review", "prepare",
+               packet["task"]["task_id"], "--repo", str(repo), "--json"]
+    code, response = _capture(command, None, lambda: None)
+    current = _envelope(response, code, "review.prepare")
+    if not current["ok"]:
+        files._fail(current["errors"][0]["code"])
+    _packet(current["data"], packet["task"]["task_id"])
+    for key in ("task", "contract", "review_target", "changed_paths_available", "changed_paths",
+                "changed_paths_total", "changed_paths_truncated"):
+        if current["data"][key] != packet[key]:
+            files._fail("review_packet_stale")
+    if files._read(path, files.PACKET_LIMIT) != raw:
+        files._fail("handoff_file_changed")
+    return {**independent_reviewer_view(packet), "review_material": material,
+            "context_check": "matched_at_read", "warnings": current["warnings"]}
 
 
 def _shell(arguments):
     if os.name == "nt":
-        return "& " + " ".join("'" + value.replace("'", "''") + "'" for value in arguments)
+        escapes = {ord(quote): quote * 2 for quote in "'‘’‚‛"}
+        return "& " + " ".join("'" + value.translate(escapes) + "'" for value in arguments)
     return shlex.join(arguments)
 
 
@@ -272,16 +358,22 @@ def _requests(repo, args, packet_path):
             invocation = save + " <<'TASKGOV_REVIEW_RESULT'\n<completed original JSON>\nTASKGOV_REVIEW_RESULT"
         reviewers.append({"result_path": path, "read_command": read, "save_command": save, "request": (
             "You are assigned an independent review of the complete exact target under current project authority. "
-            "Read the reviewer view of the complete saved Packet with this fixed operation (instead of reading the raw Packet):\n"
-            + read + "\nDo not omit required source or governing-document inspection. "
-            "Use references/task_workflow.md#independent-reviewer in the shipped Skill for your procedure; "
-            "parent orchestration is not your operation. If this role does not match actual work, ask the caller, "
+            "This request and its read output supply your procedure and result format; no Skill operating guide or internal fingerprint implementation is a prerequisite. "
+            "Obtain the Task/Contract, criteria, exact material access and result template with this read-only operation:\n"
+            + read + "\nIndependently judge the whole target against its scope, acceptance, constraints, project AGENTS/authority and verification expectation. "
+            "Follow review_material to read exact artifacts and required dependencies, not ambient files. "
+            "The helper checks saved versus current Task/Contract/target and Git object identity, not review quality. "
+            "Read Skill files when they are actually governing or reviewed material, not to learn Task management. "
+            "Group already-known independent source reads when complete delivery is possible; follow newly discovered dependencies and recover truncated output. "
+            "If this role does not match actual work, ask the caller, "
             "do not infer independence. Do not judge from missing, truncated or mismatched material. "
-            "Complete the view's result_template with actual judgment, provenance and all Findings. "
+            "Complete the view's result_template using result_instructions, actual judgment and provenance, and all Findings with severity, exact file/line, risks and recommended correction in bounded summaries. "
+            "Unknown model/Skill identity or version stays unknown under the supplied matrix; do not search internals to guess it. Null placeholders are not PASS, independence or no Findings. "
             "Replace only the JSON placeholder below; run this fixed save operation, not new save/validation code.\n"
             + invocation + "\nOn saved acknowledgement return path, verdict and Finding count once in the final response; "
             "do not echo JSON or send a duplicate normal-success notification. Report problems/questions when needed. "
-            "Preserve failed residue; do not overwrite, resubmit or claim unknown outcomes as success."
+            "On read mismatch, missing material, unknown role, save failure or lost acknowledgement, report the problem to the caller; do not claim PASS from incomplete inspection or success from an unknown outcome. "
+            "Preserve failed residue; do not overwrite or blindly repeat a save. Do not manage Tasks, reset targets, register DB evidence, complete work or implement transport/recovery code."
         )})
     return {"status": "ready", "packet_path": packet_path, "review_requests": reviewers,
             "submit_command": _shell([*base, "submit", *common, "--", *paths])}

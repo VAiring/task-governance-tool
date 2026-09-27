@@ -787,11 +787,14 @@ Individual reads remain valid when batching cannot deliver complete material.
 This does not narrow required Skill/project reading, delegate common judgment,
 cap reads, or add a normal-path command; AGENTS/authority reread rules remain.
 
-Assigned independent reviewers enter the separate reviewer procedure, not the
-parent target/registration/completion subtree. The Review/completion-owned
-saved-Packet role display replaces raw Packet reading; its fixed read/save
-request and complete applicable format instructions require no extra normal
-lookup. Unknown/different roles route conditionally to existing full guidance.
+Assigned independent reviewers use the self-contained generated request and
+Review/completion-owned read output, not a Skill procedure or the parent
+target/registration/completion subtree. Its fixed read/save operations, exact
+material access, applicable format and failure instructions require no extra
+normal lookup or taskgov-specific fingerprint implementation study. Unknown
+model/Skill identities remain honestly unknown, not an internal version search.
+The separate reviewer procedure remains fallback/reference guidance;
+unknown/different roles route conditionally to existing full guidance.
 Necessary authority/source/tests and failure recovery are never removed.
 An assigned independent reviewer receiving the complete Packet directly instead
 uses that supplied object and returns the complete original by the existing

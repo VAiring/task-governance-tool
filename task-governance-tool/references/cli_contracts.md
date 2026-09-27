@@ -1778,10 +1778,28 @@ missing/unknown/other values fail. Full saved-Packet validation precedes display
 It retains all fields except the parent's `receipt_command` and substitutes
 independent-only `result_instructions`, preserving applicable vocabulary,
 relations, limits, privacy and unfinished claims. The disk Packet is unchanged.
-No live-state read or write is performed; output is not proof of freshness.
+Within this replacement read, the helper reuses existing Git target capture and
+one read-only public `review prepare`, comparing saved Task/Contract/target and
+path metadata. Mismatch, unavailable state or incomplete response fails without
+a display; no second reviewer check/show, state write or target reset is added.
+`context_check=matched_at_read` is an observation, not a future guarantee.
+`review_material` lists the complete Git delta (not the Packet's bounded list),
+immutable before/after object IDs and modes, comparison/dependency revisions,
+and read/diff command templates. Run their fixed invocation unchanged except
+for placeholders, following the supplied host-specific quote substitution for
+dependency paths. It reuses the sanitized/no-fetch Git environment in a child,
+without changing your shell environment; missing objects remain unavailable.
+Use listed objects for changed snapshot files,
+base-commit paths for unchanged dependencies, and exact commit paths for commit
+targets. Required submodule or unreadable material must be supplied before PASS.
+Diff/external targets return `requires_supplied_material`; no content binding
+is inferred from a saved fingerprint or substituted from Git. Existing manifest
+bounds apply without a partial list. No blob, patch or additional file is saved.
+Sanitized public `warnings` remain visible. Save/submit validation is unchanged.
 The display is compact UTF-8 JSON plus LF, independent of the shell code page.
-Use the [reviewer procedure](task_workflow.md#independent-reviewer), not both it
-and parent orchestration. Different/uncertain roles retain the complete Packet
+The generated request/output supplies the procedure without another guide read;
+the [reviewer procedure](task_workflow.md#independent-reviewer) remains fallback
+guidance. Different/uncertain roles retain the complete Packet
 and applicable alternative instructions; never infer actual independence.
 
 ```powershell

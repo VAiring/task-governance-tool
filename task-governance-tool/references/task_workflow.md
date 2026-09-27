@@ -673,12 +673,23 @@ role is different or uncertain, ask the caller to use the applicable
 [full-Packet route](#prepare-and-record-reviews); do not infer independence.
 That conditional route is not an additional ordinary read.
 
+The generated shared-file request and its output are self-contained; this
+section is fallback/reference guidance, not an additional normal prerequisite.
 When the request supplies shared-file operations, use its fixed
 `review_handoff.py read --role=independent` command in place of reading the raw
 saved Packet. Its output retains Task/Contract/target,
 verification requirements, review tier, changed-path limits, focus, required
 output and the unfinished result template with all applicable format rules.
-It is a display, not a replacement Packet for save/submit or proof of freshness.
+It also returns `context_check=matched_at_read` after comparing the saved
+Task/Contract/target with the existing public read, plus `review_material`.
+For Git, that material lists every changed entry with machine-verified immutable
+before/after object IDs, modes, comparison base and fixed read/diff command
+templates. Use those objects, including renamed/deleted paths, not ambient
+files. Unchanged snapshot dependencies come from the base commit; changed ones
+use their listed after object. Commit dependencies use the exact commit.
+This is not a replacement Packet, future freshness guarantee or review PASS.
+Opaque diff/external targets explicitly require supplied material and binding
+evidence; a successful read does not supply or verify that external content.
 For direct transport without those operations, read the supplied complete
 Packet itself; do not create a file or run a helper to relay it. Its format
 instructions already apply; parent registration and inapplicable format detail
@@ -713,6 +724,8 @@ are different measures; fewer calls alone do not prove lower total usage.
 
 Fill the provided `result_template` using `result_instructions` and your actual
 judgment, provenance and every Finding, including exact file/line references.
+Use honest unknown model/Skill identity/version declarations when unavailable;
+do not search internals merely to fill them.
 Keep the supplied identity unchanged. Null claims and collections are unfinished,
 not defaults for independent, PASS or no Findings. Preserve the complete original
 JSON. For shared-file transport, give it once to the request's fixed UTF-8 save

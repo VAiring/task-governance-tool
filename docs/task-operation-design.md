@@ -722,8 +722,10 @@ outputs, including failure and truncation recovery; semantic scenario review
 checks dependency discovery and judgment boundaries. Outer calls, internal reads,
 and delivered bytes are separate observations, not a total-usage estimate.
 
-The Skill routes assigned reviewers directly to that sibling section outside
-the parent's Review And Completion subtree. Role-specific Packet explanation
+The Skill routes assigned reviewers to the self-contained generated request and
+read output; the sibling reviewer section is fallback/reference guidance, not
+another ordinary read. Actual Skill authority or changed Skill artifacts remain
+required review material. Role-specific Packet explanation
 is owned by Review/completion, not by the Markdown reader. The latter keeps its
 unchanged section/ancestor semantics; tests inspect actual retrieved subtrees.
 Parent operations and alternative review paths remain conditionally reachable

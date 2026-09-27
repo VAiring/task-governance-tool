@@ -273,9 +273,23 @@ The same module owns read-only saved-Packet display: existing transport reads
 and complete preparation validation precede `review_packet.py`'s pure
 independent-role projection. The helper parser requires explicit `--role
 independent`; neither tier nor slots select a role. Generated ordinary review
-requests supply that read command instead of raw-file reading and route to the
-Skill's independent-reviewer section. No live-state read, new file or role
-classifier is added. `review_results.py` renders the applicable independent
+requests supply that read command instead of raw-file reading and contain the
+ordinary procedure themselves. `_review_material` reuses `artifact_manifest.py`
+observers and entry builder, without another fingerprint algorithm, to return
+the complete immutable-object delta and dependency/read command templates.
+Those three fixed templates invoke Python with the existing package and
+`completion.safe_git_command/safe_git_environment`, then the intended Git read;
+no new helper subcommand, configurable runner or stored wrapper is introduced.
+The child inherits no Git overrides and cannot lazily fetch missing material.
+Generated host-specific literal-substitution instructions and fully bound shell
+arguments preserve quotes and shell punctuation, including PowerShell's five
+single-quote delimiter characters, without changing the parent's environment.
+One fixed public `review prepare` capture then compares saved Task/Contract,
+target and path metadata and rechecks original Packet bytes before display.
+That read has no direct storage access or mutation; no reviewer check/show,
+new file or role classifier is added. Opaque targets explicitly require supplied
+material/binding, not inferred Git content. Existing observation limits and
+sanitized failure codes apply without partial material. `review_results.py` renders the applicable independent
 format branch from the existing vocabulary owners; it does not filter prose
 with patterns or change the decoder/normalizer. Default full instructions and
 Packet remain unchanged for existing consumers and alternative review paths.

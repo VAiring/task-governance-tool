@@ -32,12 +32,12 @@ Do not invent aliases, alternate state paths, or administrative commands.
 
 ## Assigned Independent Review
 
-When assigned an independent review, use the
-[reviewer procedure](references/task_workflow.md#independent-reviewer): use fixed
-Packet read/save operations when supplied, or the supplied complete Packet and
-original-byte return path for direct transport. The parent's Task loop below is
-not your workflow. Group your own already-known required reads as it describes;
-unknown or different roles use its conditional route, never an inferred claim.
+When assigned an independent review with generated read/save instructions,
+follow that self-contained request and its output; no additional Skill procedure
+read is needed. Read Skill material when it is actually authority or part of the
+reviewed target. The parent's Task loop below is not your workflow. For direct
+complete-Packet transport or an unclear role, use the conditional
+[reviewer procedure](references/task_workflow.md#independent-reviewer).
 
 ## Start Or Resume
 

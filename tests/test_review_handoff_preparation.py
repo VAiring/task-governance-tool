@@ -16,7 +16,7 @@ from contextlib import closing, redirect_stdout
 from pathlib import Path
 from unittest import mock
 
-from tests.m14_test_support import make_physical_install
+from tests.m14_test_support import file_snapshot, make_physical_install
 from tests.test_review_results import encode, receipt, FINGERPRINT
 from task_governance_tool import review_handoff as handoff
 from task_governance_tool import review_handoff_preparation as preparation
@@ -221,11 +221,12 @@ class ReviewerDisplayTests(PreparationFixture):
         view = json.loads(result.stdout)
         self.assertEqual(result.stdout, encode(view) + b"\n")
         self.assertIn("日本語".encode("utf-8"), result.stdout)
-        self.assertEqual(set(view), set(packet) - {"receipt_command"})
-        for key in view.keys() - {"result_instructions"}:
+        self.assertEqual(set(view), (set(packet) - {"receipt_command"}) |
+                         {"review_material", "context_check", "warnings"})
+        for key in packet.keys() - {"result_instructions", "receipt_command"}:
             self.assertEqual(view[key], packet[key], key)
-        # Assert presentation data, not natural-language phrase matching.
-        self.assertLess(len(encode(view)), len(encode(packet)))
+        self.assertEqual(view["context_check"], "matched_at_read")
+        self.assertEqual(view["review_material"]["status"], "requires_supplied_material")
         self.assertEqual(view["result_template"]["receipts"], packet["result_template"]["receipts"])
         self.assertIsNone(view["result_template"]["receipts"][0]["kind"])
         with self.assertRaises(handoff.ReviewEvidenceError):
@@ -285,19 +286,239 @@ class ReviewerDisplayTests(PreparationFixture):
                        changed_paths_total=2, changed_paths_truncated=True)
         path.write_bytes(encode(bounded))
         view = self.read(relative, "--role", "independent")
-        self.assertEqual(view.returncode, 0, view.stdout)
-        self.assertTrue(json.loads(view.stdout)["changed_paths_truncated"])
-        self.assertEqual(json.loads(view.stdout)["review_focus"], bounded["review_focus"])
+        self.assertNotEqual(view.returncode, 0, view.stdout)
+        self.assertEqual(json.loads(view.stdout)["code"], "review_packet_stale")
         path.write_bytes(raw)
         with mock.patch.object(handoff, "_emit", return_value=False), \
              mock.patch.object(handoff, "_write_new") as write, \
-             mock.patch.object(preparation, "_capture") as source:
+             mock.patch.object(preparation, "_capture", wraps=preparation._capture) as source:
             code = handoff.main(["read", "--repo", str(self.root), "--packet", relative,
                                  "--role", "independent"])
         self.assertEqual(code, 1)
         write.assert_not_called()
-        source.assert_not_called()
+        source.assert_called_once()
+        self.assertEqual(source.call_args.args[0][3:5], ["review", "prepare"])
         self.assertEqual(path.read_bytes(), raw)
+
+
+class ReviewerMaterialTests(PreparationFixture):
+    def git(self, *args):
+        from task_governance_tool.completion import safe_git_command, safe_git_environment
+        result = subprocess.run([*safe_git_command(self.root), *args], capture_output=True,
+                                env=safe_git_environment(), check=False)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        return result.stdout
+
+    def committed_fixture(self):
+        self.git("config", "user.name", "Fixture")
+        self.git("config", "user.email", "fixture@example.invalid")
+        (self.root / "source.py").write_text("value = 1\n", encoding="utf-8")
+        (self.root / "AGENTS.md").write_text("Read SPEC.md.\n", encoding="utf-8")
+        (self.root / "SPEC.md").write_text("The value must be 2.\n", encoding="utf-8")
+        self.git("add", "--", ".gitignore", "source.py", "AGENTS.md", "SPEC.md")
+        self.git("commit", "--quiet", "-m", "Fixture basis")
+        return self.git("rev-parse", "HEAD").decode().strip()
+
+    def displayed(self, packet):
+        return self.invoke("read", "--repo", str(self.root), "--packet", packet,
+                           "--role", "independent")
+
+    def material_read(self, command, *, environment=None, posix=False):
+        if os.name == "nt" and not posix:
+            import base64
+            arguments = ["powershell.exe", "-NoProfile", "-NonInteractive", "-EncodedCommand",
+                         base64.b64encode(command.encode("utf-16le")).decode("ascii")]
+        elif os.name == "nt":
+            # Portable POSIX argv preservation; native /bin/sh runs on POSIX.
+            arguments = shlex.split(command)
+        else:
+            arguments = ["/bin/sh", "-c", command]
+        return subprocess.run(arguments, capture_output=True, env=environment, check=False)
+
+    def test_snapshot_material_uses_immutable_objects_and_excludes_ambient_files(self):
+        base = self.committed_fixture()
+        (self.root / "source.py").write_text("value = 2\n", encoding="utf-8")
+        self.git("add", "--", "source.py")
+        _, prepared = self.prepare(self.task(), options=["--kind", "git_snapshot"])
+        packet = prepared["handoff"]["packet_path"]
+        (self.root / "source.py").write_text("value = 999\n", encoding="utf-8")
+        (self.root / "untracked.py").write_text("not reviewed\n", encoding="utf-8")
+        before = file_snapshot(self.root)
+        result = self.displayed(packet)
+        self.assertEqual(result.returncode, 0, result.stdout)
+        self.assertEqual(file_snapshot(self.root), before)
+        material = json.loads(result.stdout)["review_material"]
+        self.assertEqual(material["status"], "git_objects_verified")
+        self.assertEqual(material["dependency_revision"], base)
+        self.assertEqual(len(material["changes"]), 1)
+        entry = material["changes"][0]
+        self.assertEqual(entry["new_path"], "source.py")
+        self.assertEqual(self.git("cat-file", "blob", entry["after_object_id"]), b"value = 2\n")
+        self.assertEqual(self.git("show", base + ":SPEC.md"), b"The value must be 2.\n")
+        self.assertIn(b"+value = 2", self.git("diff", "--no-ext-diff", "--no-textconv",
+                      entry["before_object_id"], entry["after_object_id"], "--"))
+        # Execute the emitted object command with replacement refs present.
+        self.git("replace", entry["after_object_id"], entry["before_object_id"])
+        command = material["blob_command"].replace("<object_id>", entry["after_object_id"])
+        actual = self.material_read(command)
+        self.assertEqual(actual.returncode, 0, actual.stderr)
+        self.assertEqual(actual.stdout.replace(b"\r\n", b"\n"), b"value = 2\n")
+        # Subsequent mutations cannot silently become the old Packet's target.
+        self.git("add", "--", "source.py")
+        failed = self.displayed(packet)
+        self.assertNotEqual(failed.returncode, 0)
+        self.assertEqual(json.loads(failed.stdout)["code"], "review_target_mismatch")
+
+    def test_material_commands_preserve_path_literals_and_sanitized_environment(self):
+        self.committed_fixture()
+        paths = ("docs/O'Brien; $x & 日本語.md", "docs/x'; echo unintended; '.md",
+                 *(f"docs/O{quote}Brien.md" for quote in "‘’‚‛′＇"))
+        (self.root / "docs").mkdir()
+        for index, path in enumerate(paths):
+            (self.root / path).write_text(f"dependency {index}\n", encoding="utf-8")
+        self.git("add", "--", "docs")
+        self.git("commit", "--quiet", "-m", "Quoted dependencies")
+        revision = self.git("rev-parse", "HEAD").decode().strip()
+        (self.root / "source.py").write_text("value = 2\n", encoding="utf-8")
+        self.git("add", "--", "source.py")
+        _, prepared = self.prepare(self.task(), options=["--kind", "git_snapshot"])
+        material = json.loads(self.displayed(prepared["handoff"]["packet_path"]).stdout)["review_material"]
+        environment = dict(os.environ, GIT_DIR=str(self.root / "absent.git"),
+                           GIT_OBJECT_DIRECTORY=str(self.root / "absent-objects"),
+                           GIT_NO_LAZY_FETCH="0", GIT_OPTIONAL_LOCKS="1",
+                           GIT_NO_REPLACE_OBJECTS="0", GIT_TERMINAL_PROMPT="1")
+        before = file_snapshot(self.root)
+        for index, path in enumerate(paths):
+            escaped = (path.translate({ord(quote): quote * 2 for quote in "'‘’‚‛"})
+                       if os.name == "nt" else path.replace("'", "'\"'\"'"))
+            command = material["dependency_command"].replace("<project-relative-path>", escaped)
+            actual = self.material_read(command, environment=environment)
+            self.assertEqual(actual.returncode, 0, actual.stderr)
+            self.assertEqual(actual.stdout.replace(b"\r\n", b"\n"), f"dependency {index}\n".encode())
+            # Fully bound generated arguments use the same literal rule.
+            actual = self.material_read(preparation._material_command(self.root, ["show", revision + ":" + path]),
+                                        environment=environment)
+            self.assertEqual(actual.returncode, 0, actual.stderr)
+            self.assertEqual(actual.stdout.replace(b"\r\n", b"\n"), f"dependency {index}\n".encode())
+            with mock.patch.object(preparation, "_shell", side_effect=shlex.join):
+                template = preparation._material_command(self.root, ["show", revision + ":<project-relative-path>"])
+            command = template.replace("<project-relative-path>", path.replace("'", "'\"'\"'"))
+            actual = self.material_read(command, environment=environment, posix=True)
+            self.assertEqual(actual.returncode, 0, actual.stderr)
+            self.assertEqual(actual.stdout.replace(b"\r\n", b"\n"), f"dependency {index}\n".encode())
+        entry = material["changes"][0]
+        command = material["diff_command"].replace("<before_object_id>", entry["before_object_id"]).replace(
+            "<after_object_id>", entry["after_object_id"])
+        actual = self.material_read(command, environment=environment)
+        self.assertEqual(actual.returncode, 0, actual.stderr)
+        self.assertIn(b"+value = 2", actual.stdout)
+        self.assertEqual(file_snapshot(self.root), before)
+
+    def test_missing_unchanged_dependency_is_not_lazily_fetched(self):
+        base = self.committed_fixture()
+        missing = self.git("rev-parse", base + ":SPEC.md").decode().strip()
+        (self.root / "source.py").write_text("value = 2\n", encoding="utf-8")
+        self.git("add", "--", "source.py")
+        _, prepared = self.prepare(self.task(), options=["--kind", "git_snapshot"])
+        self.git("config", "remote.fixture.promisor", "true")
+        # An unavailable local-only remote: this test never uses a network URL.
+        self.git("config", "remote.fixture.url", str(self.root / "absent-local-remote"))
+        object_path = self.root / ".git" / "objects" / missing[:2] / missing[2:]
+        object_path.chmod(stat.S_IWRITE | stat.S_IREAD)
+        object_path.unlink()
+        result = self.displayed(prepared["handoff"]["packet_path"])
+        self.assertEqual(result.returncode, 0, result.stdout)
+        material = json.loads(result.stdout)["review_material"]
+        before = file_snapshot(self.root)
+        actual = self.material_read(material["dependency_command"].replace("<project-relative-path>", "SPEC.md"),
+                                    environment=dict(os.environ, GIT_NO_LAZY_FETCH="0"))
+        self.assertNotEqual(actual.returncode, 0)
+        self.assertEqual(actual.stdout, b"")
+        self.assertNotIn(b"promisor", actual.stderr.lower())
+        self.assertNotIn(b"remote", actual.stderr.lower())
+        self.assertEqual(file_snapshot(self.root), before)
+
+    def test_commit_root_and_first_parent_material_ignore_new_head(self):
+        root = self.committed_fixture()
+        for index, revision in enumerate((root,)):
+            _, prepared = self.prepare(self.task(), options=["--kind", "git_commit", "--revision", revision],
+                                       directory=f"reviews/commit{index}")
+            (self.root / "source.py").write_text("value = 2\n", encoding="utf-8")
+            self.git("add", "--", "source.py")
+            self.git("commit", "--quiet", "-m", "Later commit")
+            result = self.displayed(prepared["handoff"]["packet_path"])
+            self.assertEqual(result.returncode, 0, result.stdout)
+            material = json.loads(result.stdout)["review_material"]
+            self.assertEqual(material["dependency_revision"], root)
+            self.assertTrue(all(e["kind"] == "add" for e in material["changes"]))
+        current = self.git("rev-parse", "HEAD").decode().strip()
+        _, prepared = self.prepare(self.task(), options=["--kind", "git_commit", "--revision", current],
+                                   directory="reviews/second")
+        result = self.displayed(prepared["handoff"]["packet_path"])
+        self.assertEqual(result.returncode, 0, result.stdout)
+        self.assertEqual(json.loads(result.stdout)["review_material"]["comparison_base"], root)
+
+    def test_live_contract_and_generation_drift_and_opaque_targets(self):
+        task = self.cli("task", "add", "--title", "Contract drift", "--status", "in_progress",
+                        "--review-tier", "2", "--contract-scope", "Initial scope",
+                        "--contract-acceptance", "Focused acceptance")["task"]["task_id"]
+        _, prepared = self.prepare(task)
+        packet = prepared["handoff"]["packet_path"]
+        self.cli("task", "edit", task, "--contract-scope", "Changed accepted scope",
+                 "--contract-acceptance", "Focused acceptance",
+                 "--contract-authority-ref", f"user_instruction:{task}:2",
+                 "--contract-change-reason", "Fixture authority")
+        failed = self.displayed(packet)
+        self.assertNotEqual(failed.returncode, 0)
+        # A semantic Contract revision clears the live target by contract.
+        self.assertEqual(json.loads(failed.stdout)["code"], "review_target_missing")
+        _, prepared = self.prepare(self.task(), options=["--kind", "external_revision", "--revision", "approved-revision"],
+                                   directory="reviews/external")
+        result = self.displayed(prepared["handoff"]["packet_path"])
+        self.assertEqual(result.returncode, 0, result.stdout)
+        material = json.loads(result.stdout)["review_material"]
+        self.assertEqual(material["status"], "requires_supplied_material")
+        self.assertIsNone(material["changes"])
+        task = json.loads((self.root / prepared["handoff"]["packet_path"]).read_bytes())["task"]["task_id"]
+        self.cli("review", "target", "set", task, "--kind", "external_revision", "--revision", "approved-revision")
+        failed = self.displayed(prepared["handoff"]["packet_path"])
+        self.assertNotEqual(failed.returncode, 0)
+        self.assertEqual(json.loads(failed.stdout)["code"], "review_packet_stale")
+
+    def test_complete_delta_recovers_bounded_packet_paths_and_modes(self):
+        self.committed_fixture()
+        for number in range(101):
+            (self.root / f"added-{number:03}.py").write_text(f"n = {number}\n", encoding="utf-8")
+        self.git("add", "--", *(f"added-{number:03}.py" for number in range(101)))
+        self.git("mv", "--", "source.py", "renamed.py")
+        self.git("update-index", "--chmod=+x", "SPEC.md")
+        _, prepared = self.prepare(self.task(), options=["--kind", "git_snapshot"])
+        result = self.displayed(prepared["handoff"]["packet_path"])
+        self.assertEqual(result.returncode, 0, result.stdout)
+        view = json.loads(result.stdout)
+        self.assertTrue(view["changed_paths_truncated"])
+        self.assertEqual(len(view["review_material"]["changes"]), 103)
+        rename = next(e for e in view["review_material"]["changes"] if e["kind"] == "rename")
+        self.assertEqual((rename["old_path"], rename["new_path"]), ("source.py", "renamed.py"))
+        mode = next(e for e in view["review_material"]["changes"] if e["new_path"] == "SPEC.md")
+        self.assertEqual((mode["before_mode"], mode["after_mode"]), ("100644", "100755"))
+
+    def test_unavailable_response_or_git_material_returns_no_partial_view(self):
+        _, prepared = self.prepare(self.task())
+        packet = prepared["handoff"]["packet_path"]
+        for raw in (None, b"{", b"{}"):
+            with mock.patch.object(preparation, "_capture", return_value=(0, raw)):
+                with self.assertRaises((handoff.HandoffError, ValueError)):
+                    preparation.read_for_reviewer(self.root, packet)
+        self.committed_fixture()
+        (self.root / "source.py").write_text("value = 2\n", encoding="utf-8")
+        self.git("add", "--", "source.py")
+        _, prepared = self.prepare(self.task(), options=["--kind", "git_snapshot"], directory="reviews/git")
+        from task_governance_tool.artifact_manifest import ArtifactManifestError
+        with mock.patch("task_governance_tool.artifact_manifest.observe_staged_git_manifest",
+                        side_effect=ArtifactManifestError("artifact_manifest_stale", "fixture")):
+            with self.assertRaises(handoff.HandoffError):
+                preparation.read_for_reviewer(self.root, prepared["handoff"]["packet_path"])
 
     def test_complete_packet_alternative_routes_keep_explicit_approval_and_tier_zero(self):
         for tier, kind in ((2, "self_review_fallback"), (0, "not_required")):

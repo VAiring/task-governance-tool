@@ -296,16 +296,55 @@ display-truncated or differently bound Packets must not reach reviewers.
 reviewer's raw Packet read with the display defined below. Role is mandatory
 and explicit; unknown/missing/other values fail without a view. It validates
 the complete saved Packet through the same preparation checks before projection,
-using existing physical/ignored-path and bounded-read rules. It reads no live
-state, writes nothing and creates no second Packet. Its display is compact
+using existing physical/ignored-path and bounded-read rules. It then reuses
+existing target-capture Git observation and one read-only public `review prepare`
+inside this replacement read. Before returning, saved Task, Contract, complete
+target and path metadata must equal the current public Packet, and the saved
+file must be unchanged. A stale Contract/generation, mismatched index, missing
+objects, unavailable state or incomplete response returns no view. It has no
+direct storage access, writes nothing and creates no second Packet. Its display is compact
 UTF-8 JSON plus LF, without shell-codepage conversion or
 ASCII escaping of non-ASCII Contract prose. The generated ordinary
 independent-review request supplies `read_command`, `save_command`, result path
-and the reviewer-only procedure route; it never supplies the parent's submit
+and a self-contained procedure; it never supplies the parent's submit
 command. Assignment is not an attestation of actual independence. A different
 or uncertain role requires the existing full-Packet route, not an inferred
 declaration. Direct complete-Packet transport and legitimate fallback/Tier-0
 paths remain available with their existing rules and external approval boundary.
+
+The display adds `context_check=matched_at_read`, sanitized public `warnings`,
+and `review_material`. For Git, the existing manifest observer verifies the
+exact stable index fingerprint/base or canonical commit/first-parent (root:
+empty tree), with its existing object-presence, path, entry and size bounds.
+Material contains the complete delta as existing manifest entry fields, immutable
+before/after object IDs and modes, comparison base, dependency revision, and
+read-only Git blob/diff/path command templates. Their fixed Python invocation
+reuses the observer's sanitized Git environment (including no lazy fetch,
+replacement refs, optional locks or prompts) without mutating the caller's
+environment. Host-specific single-quote substitution guidance preserves the
+actual dependency path inside the template's shell literal. PowerShell doubles
+the same delimiter character for U+0027 and U+2018 through U+201B; it does not
+normalize smart quotes to ASCII or escape unrelated lookalikes. Other path bytes
+remain unchanged. Missing objects are not fetched.
+No raw blob or diff is embedded
+in the Packet or retained. A bounded Packet path list does not bound this delta;
+overflow fails, never silently truncates. Snapshot changed files use the listed
+after objects (or are deleted); unchanged dependencies use the base commit.
+Commit dependencies use that immutable commit, never ambient HEAD/index/worktree.
+Required unavailable submodule/content or tool-truncated output must be recovered
+or reported before PASS. The observation is trusted-local and point-in-time;
+it does not lock state, certify review quality or replace submission revalidation.
+
+Diff-fingerprint/external targets instead return `requires_supplied_material`
+with no Git-derived delta. The caller must provide complete material and evidence
+binding it to the exact value; display success is not that evidence. Generated
+requests explain whole-target judgment, project AGENTS/authority/source/test
+reading, newly discovered dependencies, actual provenance and all Findings,
+fixed save and acknowledgement, and reporting incomplete/uncertain outcomes to
+the caller. Skill guides/internal fingerprint or version code are not normal
+prerequisites; Skill material remains required when actually governing/reviewed.
+Unknown declarations remain unknown. Reviewers do not take over Task management,
+target resets, evidence registration, completion or transport recovery code.
 
 `save --output <path>` reads one complete original version-1 document with one
 Receipt from bounded UTF-8 stdin. Existing decoder/normalizer, privacy, tier and
@@ -525,9 +564,10 @@ details. No null is filled or identity, verdict, method or independence inferred
 The complete Packet on disk and the public `review prepare` JSON/text contracts
 are unchanged. Existing save/submit consume only the full Packet and preserve
 originals, validation, current-state revalidation and atomicity. Display success
-is not freshness or PASS: exact-target/authority inspection and recovery of
+is not PASS or future freshness: the handoff read adds the separately described
+point-in-time context/material observations; exact-target/authority inspection and recovery of
 missing or transport-truncated material remain required. Normal reviewers read
-the role-specific procedure, not both it and the parent operating guide.
+the self-contained request/output, not an additional Skill operating guide.
 
 At most 100 bytewise-ordered changed paths, 240 UTF-8 bytes each and 16,384
 bytes total, are returned. Unsafe paths fail `review_packet_path_unsafe` with

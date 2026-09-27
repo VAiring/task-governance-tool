@@ -251,9 +251,15 @@ class _Parser(argparse.ArgumentParser):
         _fail("handoff_invalid_arguments")
 
 
-def _emit(value):
+def _emit(value, *, utf8=False):
     try:
-        print(json.dumps(value, ensure_ascii=True, separators=(",", ":")), flush=True)
+        if utf8:
+            # The reviewer display replaces a UTF-8 file read. Avoid expanding
+            # non-ASCII Contract prose or depending on the shell code page.
+            sys.stdout.buffer.write(json.dumps(value, ensure_ascii=False, separators=(",", ":")).encode("utf-8") + b"\n")
+            sys.stdout.buffer.flush()
+        else:
+            print(json.dumps(value, ensure_ascii=True, separators=(",", ":")), flush=True)
         return True
     except OSError:
         # A lost acknowledgement cannot undo the file write. Do not retry it
@@ -267,10 +273,14 @@ def _emit(value):
 
 def main(argv=None):
     try:
-        from task_governance_tool.review_handoff_preparation import add_parser, prepare
+        from task_governance_tool.review_handoff_preparation import add_parser, prepare, read_for_reviewer
         parser = _Parser(description=__doc__)
         commands = parser.add_subparsers(dest="operation", required=True)
         add_parser(commands)
+        reader = commands.add_parser("read", help="Display the saved Packet for an explicitly assigned independent reviewer")
+        reader.add_argument("--repo", required=True)
+        reader.add_argument("--packet", required=True)
+        reader.add_argument("--role", choices=("independent",), required=True)
         for operation in ("save", "submit"):
             command = commands.add_parser(operation)
             command.add_argument("--repo", required=True, help="Explicit governed project root")
@@ -285,6 +295,8 @@ def main(argv=None):
         if args.operation == "prepare":
             result = prepare(repo, args)
             return (0 if result["ok"] else 1) if _emit(result) else 1
+        if args.operation == "read":
+            return 0 if _emit(read_for_reviewer(repo, args.packet), utf8=True) else 1
         if args.operation == "save":
             raw = sys.stdin.buffer.read(REVIEW_RESULTS_INPUT_LIMIT + 1)
             result = save(repo, args.packet, args.output, raw, args.user_approved_reviewer)

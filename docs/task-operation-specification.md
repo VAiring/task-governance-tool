@@ -787,6 +787,17 @@ Individual reads remain valid when batching cannot deliver complete material.
 This does not narrow required Skill/project reading, delegate common judgment,
 cap reads, or add a normal-path command; AGENTS/authority reread rules remain.
 
+Assigned independent reviewers enter the separate reviewer procedure, not the
+parent target/registration/completion subtree. The Review/completion-owned
+saved-Packet role display replaces raw Packet reading; its fixed read/save
+request and complete applicable format instructions require no extra normal
+lookup. Unknown/different roles route conditionally to existing full guidance.
+Necessary authority/source/tests and failure recovery are never removed.
+An assigned independent reviewer receiving the complete Packet directly instead
+uses that supplied object and returns the complete original by the existing
+byte/reference transport. No shared file, helper call or parent-guide read is
+required for that route; absent material is reported, never reconstructed.
+
 Normal retrieval keeps commands, required inputs and ID sources, ordering,
 success/stop conditions, and applicable exception routes. Scope-addition,
 registration recovery, review repair, and reopen detail can be sibling sections

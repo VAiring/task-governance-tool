@@ -269,6 +269,17 @@ For every missing directory, `os.name == "nt"` selects default `Path.mkdir()`
 to inherit the parent ACL; POSIX retains `mode=0o700`. No existing permissions
 are rewritten, and no SID policy, native ACL adapter or caller option is added.
 
+The same module owns read-only saved-Packet display: existing transport reads
+and complete preparation validation precede `review_packet.py`'s pure
+independent-role projection. The helper parser requires explicit `--role
+independent`; neither tier nor slots select a role. Generated ordinary review
+requests supply that read command instead of raw-file reading and route to the
+Skill's independent-reviewer section. No live-state read, new file or role
+classifier is added. `review_results.py` renders the applicable independent
+format branch from the existing vocabulary owners; it does not filter prose
+with patterns or change the decoder/normalizer. Default full instructions and
+Packet remain unchanged for existing consumers and alternative review paths.
+
 The transport module owns bounded physical reads, explicit ignored-path checks,
 exclusive creation and retained failed-write residue. Standard-library file
 operations and the existing safe Git environment suffice; no native adapter or
@@ -331,6 +342,14 @@ template as compact ASCII JSON in text output. The unchanged CLI Packet-size
 boundary includes both fields. No DB/Git read or write is added. The builder
 does not launch a reviewer, execute/import a receipt, store a packet, or
 include a diff, transcript, prompt, stdout/stderr, secret, or absolute path.
+
+Its separate pure independent display preserves all Packet material/template
+and required-output fields, omits the parent receipt command and selects only
+the applicable result explanation. It never mutates the original Packet or
+fills claims. Helper tests exercise complete-before-display validation, original
+byte and Finding conservation, stale registration rejection and read/save
+failure paths; retrieval tests check the reviewer route without importing the
+parent operation subtree. Local bytes/call observations are not token savings.
 
 <a id="completion-cycle-history"></a>
 

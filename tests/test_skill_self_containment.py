@@ -1603,7 +1603,7 @@ print(json.dumps(results, ensure_ascii=False))
         return json.loads(result.stdout)
 
     def test_known_review_reads_group_without_dropping_sources_or_text(self):
-        targets = ["references/task_workflow.md#prepare-and-record-reviews",
+        targets = ["references/task_workflow.md#independent-reviewer",
                    "references/cli_contracts.md#review-target"]
         separate = [self.grouped_reads(SKILL_ROOT, [target])[0] for target in targets]
         grouped = self.grouped_reads(SKILL_ROOT, targets)
@@ -1616,7 +1616,7 @@ print(json.dumps(results, ensure_ascii=False))
               f"body_bytes={size}->{size}; total_usage=unmeasured")
 
     def test_group_failure_and_truncation_recover_only_affected_source(self):
-        targets = ["references/task_workflow.md#prepare-and-record-reviews",
+        targets = ["references/task_workflow.md#independent-reviewer",
                    "references/cli_contracts.md#review-target"]
         with tempfile.TemporaryDirectory() as tmp:
             package = copy_skill_to(Path(tmp))
@@ -1649,6 +1649,17 @@ print(json.dumps(results, ensure_ascii=False))
         self.assertTrue(second[0]["ok"])
         self.assertEqual(second[0]["body"], body)
         self.assertIn("completion_cycle_id", second[0]["body"])
+
+    def test_reviewer_entry_is_a_sibling_not_the_parent_operation_subtree(self):
+        body = self.reader().read_reference("references/task_workflow.md#independent-reviewer", SKILL_ROOT)
+        parent = self.reader().read_reference("references/task_workflow.md#prepare-and-record-reviews", SKILL_ROOT)
+        self.assertIn("## Independent Reviewer", body)
+        for heading in ("### Set The Review Target", "### Prepare And Record Reviews", "### Complete Work"):
+            self.assertNotIn(heading, body)
+        target, routed = self.linked_output("references/task_workflow.md", parent, "independent-reviewer")
+        self.assertEqual(routed, body)
+        _, alternative = self.linked_output(target, body, "prepare-and-record-reviews")
+        self.assertEqual(alternative, parent)
 
     def reader(self):
         import read_reference

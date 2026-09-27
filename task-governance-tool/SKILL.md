@@ -30,6 +30,15 @@ change it, and a non-Git project is valid.
 Use only the [public commands and common options](references/cli_contracts.md#invocation-and-public-inventory).
 Do not invent aliases, alternate state paths, or administrative commands.
 
+## Assigned Independent Review
+
+When assigned an independent review, use the
+[reviewer procedure](references/task_workflow.md#independent-reviewer): use fixed
+Packet read/save operations when supplied, or the supplied complete Packet and
+original-byte return path for direct transport. The parent's Task loop below is
+not your workflow. Group your own already-known required reads as it describes;
+unknown or different roles use its conditional route, never an inferred claim.
+
 ## Start Or Resume
 
 Read a linked section directly instead of searching line numbers or loading a
@@ -81,9 +90,6 @@ Read only the linked responsibility needed for the operation or returned
 condition, including its applicable exceptions and input rules. References
 are not whole-file prerequisites. No read log, limit, new question, or extra
 confirmation is required.
-For independent reviews, the [review workflow](references/task_workflow.md#prepare-and-record-reviews)
-also explains how each reviewer can group their own already-known required
-reads without sharing judgments or omitting material.
 
 | Existing operation or condition | Read when applicable |
 |---|---|

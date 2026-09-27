@@ -124,7 +124,12 @@ class WindowsPreparationTests(PreparationFixture):
         self.assertEqual(completed.returncode, 0, completed.stdout or completed.stderr)
         result = json.loads(completed.stdout)["handoff"]
         packet = json.loads((self.root / result["packet_path"]).read_bytes())
-        payload = packet["result_template"]
+        displayed = shell(result["review_requests"][0]["read_command"])
+        self.assertEqual(displayed.returncode, 0, displayed.stdout or displayed.stderr)
+        view = json.loads(displayed.stdout)
+        self.assertEqual(view["result_template"], packet["result_template"])
+        self.assertNotIn("receipt_command", view)
+        payload = view["result_template"]
         payload["receipts"] = [receipt("windows-reviewer", findings=[{
             "severity": "low", "summary": "example.py:1 日本語 🚀"}])]
         request = result["review_requests"][0]["request"]

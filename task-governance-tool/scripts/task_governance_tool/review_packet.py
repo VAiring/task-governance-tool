@@ -119,6 +119,18 @@ REQUIRED_OUTPUT = (
     ),
 )
 
+
+def independent_reviewer_view(packet: dict[str, Any]) -> dict[str, Any]:
+    """Project an already validated full Packet for an explicitly assigned role.
+
+    No inference from tier, no mutation of delivery data or unfinished claims.
+    This is display only; save/submit continue to consume the full Packet.
+    """
+    return {
+        **{key: value for key, value in packet.items() if key != "receipt_command"},
+        "result_instructions": review_result_instructions(independent=True),
+    }
+
 MISSING_TARGET_MESSAGE = (
     "review target is required before preparing a review packet"
 )

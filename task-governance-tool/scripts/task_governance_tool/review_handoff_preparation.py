@@ -242,6 +242,15 @@ def _source(data, args):
     return source, preparation
 
 
+def read_for_reviewer(repo, packet_path):
+    """Read/validate the full saved Packet; return only the independent display."""
+    from task_governance_tool.review_packet import independent_reviewer_view
+    raw = files._read(files._path(repo, packet_path), files.PACKET_LIMIT)
+    packet = files._packet(raw)
+    _packet(packet, packet["task"]["task_id"])
+    return independent_reviewer_view(packet)
+
+
 def _shell(arguments):
     if os.name == "nt":
         return "& " + " ".join("'" + value.replace("'", "''") + "'" for value in arguments)
@@ -252,6 +261,7 @@ def _requests(repo, args, packet_path):
     entry = str(Path(__file__).parent.parent / "review_handoff.py")
     base = [sys.executable, "-B", entry]
     common = ["--repo=" + str(repo), "--packet=" + packet_path]
+    read = _shell([*base, "read", *common, "--role=independent"])
     reviewers = []
     paths = [args.directory + f"/review-{index}.json" for index in range(1, args.reviewers + 1)]
     for path in paths:
@@ -260,10 +270,14 @@ def _requests(repo, args, packet_path):
             invocation = "$OutputEncoding = [Console]::InputEncoding = [System.Text.UTF8Encoding]::new($false)\n@'\n<completed original JSON>\n'@ | " + save
         else:
             invocation = save + " <<'TASKGOV_REVIEW_RESULT'\n<completed original JSON>\nTASKGOV_REVIEW_RESULT"
-        reviewers.append({"result_path": path, "save_command": save, "request": (
-            "Independently review the complete exact target under current project authority. Read the complete Packet at "
-            + str(repo / packet_path) + ". Do not omit required source or governing-document inspection. "
-            "Complete its result_template with actual judgment, provenance and all Findings. "
+        reviewers.append({"result_path": path, "read_command": read, "save_command": save, "request": (
+            "You are assigned an independent review of the complete exact target under current project authority. "
+            "Read the reviewer view of the complete saved Packet with this fixed operation (instead of reading the raw Packet):\n"
+            + read + "\nDo not omit required source or governing-document inspection. "
+            "Use references/task_workflow.md#independent-reviewer in the shipped Skill for your procedure; "
+            "parent orchestration is not your operation. If this role does not match actual work, ask the caller, "
+            "do not infer independence. Do not judge from missing, truncated or mismatched material. "
+            "Complete the view's result_template with actual judgment, provenance and all Findings. "
             "Replace only the JSON placeholder below; run this fixed save operation, not new save/validation code.\n"
             + invocation + "\nOn saved acknowledgement return path, verdict and Finding count once in the final response; "
             "do not echo JSON or send a duplicate normal-success notification. Report problems/questions when needed. "

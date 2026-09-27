@@ -1756,7 +1756,7 @@ the Receipt's null absent non-snapshot base. `ok=true`/exit 0 means ready or
 not-applicable, not PASS.
 
 Only `handoff.status=ready` supplies a saved complete `packet_path`, per-reviewer
-`review_requests` (distinct result path, exact save command and request), and
+`review_requests` (distinct result path, exact read/save commands and request), and
 `submit_command`. Pass those requests directly; required independent artifact
 and authority inspection is unchanged. A target requiring a Receipt returns
 `not_applicable` without files, so its later Receipt call may use the same area.
@@ -1770,6 +1770,19 @@ used as a Packet. Packet/result files alone are persisted.
 
 Save/submit take `--packet`; they remain usable with an already obtained complete
 Packet file. They do not authorize rerunning its source command.
+
+Assigned independent reviewers use the request's `read_command`, whose shape is
+`review_handoff.py read --repo . --packet reviews/packet.json --role independent`.
+This replaces the raw Packet read, not an extra query. Explicit role is required;
+missing/unknown/other values fail. Full saved-Packet validation precedes display.
+It retains all fields except the parent's `receipt_command` and substitutes
+independent-only `result_instructions`, preserving applicable vocabulary,
+relations, limits, privacy and unfinished claims. The disk Packet is unchanged.
+No live-state read or write is performed; output is not proof of freshness.
+The display is compact UTF-8 JSON plus LF, independent of the shell code page.
+Use the [reviewer procedure](task_workflow.md#independent-reviewer), not both it
+and parent orchestration. Different/uncertain roles retain the complete Packet
+and applicable alternative instructions; never infer actual independence.
 
 ```powershell
 # Reviewer: pipe only the completed original JSON, with UTF-8 shell encoding.

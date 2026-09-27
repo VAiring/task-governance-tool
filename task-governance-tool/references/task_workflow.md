@@ -19,6 +19,7 @@ with `python3`. `<task-id>` comes from `task context` at
 - [Pause, Resume, And Block](#pause-resume-and-block)
 - [Scope Control And Local Handoff](#scope-control-and-local-handoff)
 - [Review And Completion](#review-and-completion)
+- [Independent Reviewer](#independent-reviewer)
 - [Repair Findings](#repair-findings)
 - [Reopen](#reopen)
 - [Taskize Or Add Scope](#taskize-or-add-scope)
@@ -478,25 +479,11 @@ the old target is never upgraded in place.
 
 ### Prepare And Record Reviews
 
-Each reviewer reads the required common rules, review procedure, and material
-for their focus themselves, and judges the whole target independently. When
-their locations and necessity are already known and no read depends on another
-read's result, retrieve them together in one supported read-tool invocation.
-Keep each source and its individual success/failure visible, with complete
-required text. This combines retrieval, not reviewers' judgments or duties;
-do not substitute a parent's or another reviewer's interpretation.
-
-For example, an already-required project review rule and an already-identified
-API contract can be two separately identified results in one invocation.
-A dependency first discovered in either result is a subsequent read, not a
-guessed input to that first batch. On a failed, missing, or tool-truncated
-result, recover the affected required material in full before judging it;
-successful sibling reads need not be repeated. If batching is unavailable or
-would prevent complete delivery, use individual reads. There is no fixed
-file/line limit, summary substitute, read counter, new reader/collector, or
-extra prerequisite. Project AGENTS/authority reading and reread rules still
-apply. Count outer calls separately from internal reads and delivered bytes;
-fewer calls alone do not establish lower total usage.
+This is the parent's orchestration procedure. Assigned independent reviewers
+use the separate [reviewer procedure](#independent-reviewer), not this section
+or target-setting/completion instructions. Unknown or different review roles
+retain the full Packet and the applicable existing alternative below; do not
+classify them from a Task tier or allocated reviewer count.
 
 For shared-file transport, start with `review_handoff.py prepare` as above.
 Use only its `handoff.status=ready` output. It has already saved and confirmed
@@ -505,7 +492,12 @@ the complete Packet and unused result paths; give each reviewer its returned
 and authority. Keep `submit_command` for after all saved acknowledgements.
 Do not extract/serialize a displayed Packet, write preparation/save/validation
 code, issue a routine path check, or re-query the Packet. The full Packet and
-exact save instruction arrive in the same request. Normal successful reviewers
+exact read/save instructions arrive in the same request. The read replaces the
+raw Packet read with an independent-role display, preserving required material
+while omitting parent-only registration and inapplicable format explanations.
+Do not additionally deliver the raw Packet or this parent guide to ordinary
+reviewers. Their view is not the complete transport Packet used for save/submit.
+Normal successful reviewers
 return the short acknowledgement once, in their final response, without a
 duplicate success message; questions and failure reports remain appropriate.
 
@@ -671,6 +663,72 @@ command. This is absent from normal success, records no authorization token,
 and never replaces the write's fresh revalidation.
 Maintenance warnings preserve the successful business result; follow
 [continuity warnings](cli_contracts.md#internal-continuity-boundary), not a new retry loop.
+
+## Independent Reviewer
+
+Use this section when explicitly assigned an independent review. You review
+the complete exact target under the project's current authority; you do not
+set targets, register results, commit, or complete the parent's Task. If your
+role is different or uncertain, ask the caller to use the applicable
+[full-Packet route](#prepare-and-record-reviews); do not infer independence.
+That conditional route is not an additional ordinary read.
+
+When the request supplies shared-file operations, use its fixed
+`review_handoff.py read --role=independent` command in place of reading the raw
+saved Packet. Its output retains Task/Contract/target,
+verification requirements, review tier, changed-path limits, focus, required
+output and the unfinished result template with all applicable format rules.
+It is a display, not a replacement Packet for save/submit or proof of freshness.
+For direct transport without those operations, read the supplied complete
+Packet itself; do not create a file or run a helper to relay it. Its format
+instructions already apply; parent registration and inapplicable format detail
+in the full Packet are not your operations. Neither transport requires the
+parent guide or a second format lookup. An absent/incomplete Packet is a failed
+handoff to report, not permission to reconstruct one or select another transport.
+No normal `show`, `doctor`, format lookup or parent-guide read is needed.
+Failure, missing text, output truncation or a target/material mismatch prevents
+judgment until the required material is recovered. A bounded
+`changed_paths_truncated` list never narrows your review to those paths.
+
+Read the applicable project authority and actual whole target according to the
+view's or supplied Packet's target-kind instruction, including necessary source and tests. Do not
+substitute ambient HEAD/worktree content or a prior review. A supplied
+fingerprint/external revision needs demonstrably bound material before PASS.
+Use the provided verification evidence; do not invent unobserved checks.
+
+Each reviewer reads required common rules, procedure, and focus material
+themselves and judges the whole target independently. When locations and
+necessity are already known and no read depends on another read's result,
+retrieve them together in one supported tool invocation. Keep each source,
+complete text and individual outcome visible; no parent's or other reviewer's
+interpretation substitutes for your reading or judgment. For example, an
+already-required review rule and an already-identified API contract can be
+separate results in one invocation. Read newly discovered dependencies later,
+not as guessed inputs. Recover failed, missing or tool-truncated material in
+full; successful siblings need not be repeated. Use individual reads when
+batching cannot deliver complete material. Project AGENTS/authority reread
+rules remain; no fixed file/line cap, summary substitute, reading ledger or
+extra prerequisite is added. Outer calls, internal reads and delivered bytes
+are different measures; fewer calls alone do not prove lower total usage.
+
+Fill the provided `result_template` using `result_instructions` and your actual
+judgment, provenance and every Finding, including exact file/line references.
+Keep the supplied identity unchanged. Null claims and collections are unfinished,
+not defaults for independent, PASS or no Findings. Preserve the complete original
+JSON. For shared-file transport, give it once to the request's fixed UTF-8 save
+operation, without writing save/validation code. For direct transport, return
+the complete original through the caller's existing byte/reference channel;
+do not replace it with a summary or claim a saved-file acknowledgement.
+Neither route authorizes you to invoke the parent's registration command.
+
+For shared files, only `ok=true,status=saved` confirms the saved original; it proves neither review
+truth, independence, registration nor completion. Read that acknowledgement and
+return its path, verdict and Finding count once in the final response, without
+echoing JSON or a duplicate normal-success message. Questions and failure reports
+remain appropriate. On failure or a lost response, preserve the original/residue
+and report the uncertain outcome: do not overwrite or blindly resend. Necessary
+investigation remains allowed; the caller handles registration/recovery through
+the [handoff failure rules](cli_contracts.md#caller-owned-review-handoff).
 
 ## Repair Findings
 

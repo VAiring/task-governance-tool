@@ -714,13 +714,20 @@ new taskgov command or scheduler. Representative transport tests and
 semantic review check these instructions rather than matching natural-language
 wording or treating a local call count as measured LLM token savings.
 
-Known-review-material aggregation is caller instruction guidance in that same
-workflow section, not a reader API, collection service, shared reviewer summary,
+Known-review-material aggregation is caller instruction guidance in the separate
+Independent Reviewer workflow section, not a reader API, collection service, shared reviewer summary,
 or persisted reading ledger. Each reviewer keeps full independent responsibility.
 Transport fixtures compare separately identified complete outputs with grouped
 outputs, including failure and truncation recovery; semantic scenario review
 checks dependency discovery and judgment boundaries. Outer calls, internal reads,
 and delivered bytes are separate observations, not a total-usage estimate.
+
+The Skill routes assigned reviewers directly to that sibling section outside
+the parent's Review And Completion subtree. Role-specific Packet explanation
+is owned by Review/completion, not by the Markdown reader. The latter keeps its
+unchanged section/ancestor semantics; tests inspect actual retrieved subtrees.
+Parent operations and alternative review paths remain conditionally reachable
+without making both guides ordinary reviewer prerequisites.
 
 `scripts/read_reference.py` is a standalone standard-library document reader,
 not a taskgov command or runtime dependency. It resolves an existing

@@ -86,10 +86,11 @@ def review_result_template(
     }
 
 
-def review_result_instructions() -> list[str]:
+def review_result_instructions(*, independent: bool = False) -> list[str]:
     """Explain the existing closed input; enum/grammar owners remain shared."""
     choices = (
-        ("kind", RECEIPT_KINDS), ("verdict", REVIEW_VERDICTS),
+        ("kind", ("independent",) if independent else RECEIPT_KINDS),
+        ("verdict", ("pass", "changes_requested") if independent else REVIEW_VERDICTS),
         ("findings[].severity", FINDING_SEVERITIES),
         ("provenance.reviewer_class", REVIEWER_CLASSES),
         ("provenance.model_state", MODEL_STATES),
@@ -109,13 +110,19 @@ def review_result_instructions() -> list[str]:
         "is nonempty, at most 1000 characters. Use [] only after finding no issues. "
         "Duplicate normalized findings within one Receipt are invalid.",
         *(f"{field}: {' | '.join(values)}" for field, values in choices),
+        ("For an assigned independent review, declare kind=independent only if "
+         "that reflects actual work. Use pass or changes_requested; the latter "
+         "requires a summary. If the role is uncertain or different, stop and "
+         "ask the caller for the applicable full-Packet route, not an inferred declaration."
+         if independent else
         "independent accepts pass or changes_requested, without approval. "
         "self_review_fallback is Tier 1/2 only, accepts pass or changes_requested "
         "and requires a summary; Tier 2 pass additionally requires actual user "
         "approval via --user-approved-reviewer outside JSON. not_required is "
         "Tier 0 only, with verdict not_required, a rationale and provenance=null. "
-        "changes_requested always requires a summary. No other approval is accepted.",
-        "For independent/fallback, provenance has exactly the ten shown fields. "
+        "changes_requested always requires a summary. No other approval is accepted."),
+        ("For independent, " if independent else "For independent/fallback, ") +
+        "provenance has exactly the ten shown fields. "
         "human/deterministic_tool require model_state and skill_state "
         "not_applicable with null identifiers. llm/hybrid require model_state "
         "declared with declared_model_id, or unknown with null ID; skill_state "
@@ -128,12 +135,15 @@ def review_result_instructions() -> list[str]:
         f"ASCII {DECLARED_SKILL_VERSION_PATTERN.pattern}. Code collections are "
         "explicit arrays (including [] when actually empty); duplicate codes "
         "are invalid. Unused identifiers are explicit null.",
+        (f"Save one complete version-1 document with exactly one Receipt, at most "
+         f"{REVIEW_RESULTS_INPUT_LIMIT} UTF-8 bytes and {REVIEW_RESULTS_FINDING_LIMIT} Findings. "
+         if independent else
         f"Input limit: {REVIEW_RESULTS_INPUT_LIMIT} UTF-8 bytes, 1-"
         f"{REVIEW_RESULTS_RECEIPT_LIMIT} Receipts with distinct reviewer keys, "
         f"{REVIEW_RESULTS_FINDING_LIMIT} Findings total. Return one reviewer's "
         "Receipt as a complete version-1 document. The caller can pass original "
         "documents together in a JSON array without regenerating their content; "
-        "identity and target must match. Old results must not be rebound. Use sanitized summaries, "
+        "identity and target must match. ") + "Old results must not be rebound. Use sanitized summaries, "
         "never secrets, raw output, prompts, transcripts or raw review reasoning.",
     ]
 

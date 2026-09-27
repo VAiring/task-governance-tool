@@ -241,7 +241,7 @@ helper below performs caller-owned transport without changing this writer.
 
 ### Caller-Owned Review Handoff
 
-The shipped `scripts/review_handoff.py` has `prepare`, `save` and `submit`
+The shipped `scripts/review_handoff.py` has `prepare`, `read`, `save` and `submit`
 operations, separate from the taskgov command inventory. All require explicit
 `--repo`. The Packet remains context, not authenticated evidence, and the helper
 never launches a reviewer or replaces current-state registration checks.
@@ -267,7 +267,7 @@ unchanged; this is not an exception for new caller input or other fields.
 Only ready success creates the explicitly
 named missing physical directory chain and its exclusive `packet.json`, then
 confirms the complete saved bytes and distinct unused `review-N.json` paths.
-It returns the Packet path, exact per-reviewer save instructions and the parent
+It returns the Packet path, exact per-reviewer read/save instructions and the parent
 submit command. There is no LLM extraction/serialization, save-path check call,
 second normal Packet query, new prerequisite or response-count limit. Only the
 complete Packet and later reviewer originals are transport files.
@@ -291,6 +291,21 @@ bound preparation-only recovery with a new unused directory when appropriate.
 `save` and `submit` require `--packet`, the complete actual Packet file. A caller
 that already holds a complete Packet may still use them directly; missing,
 display-truncated or differently bound Packets must not reach reviewers.
+
+`read --packet <path> --role independent` replaces the assigned independent
+reviewer's raw Packet read with the display defined below. Role is mandatory
+and explicit; unknown/missing/other values fail without a view. It validates
+the complete saved Packet through the same preparation checks before projection,
+using existing physical/ignored-path and bounded-read rules. It reads no live
+state, writes nothing and creates no second Packet. Its display is compact
+UTF-8 JSON plus LF, without shell-codepage conversion or
+ASCII escaping of non-ASCII Contract prose. The generated ordinary
+independent-review request supplies `read_command`, `save_command`, result path
+and the reviewer-only procedure route; it never supplies the parent's submit
+command. Assignment is not an attestation of actual independence. A different
+or uncertain role requires the existing full-Packet route, not an inferred
+declaration. Direct complete-Packet transport and legitimate fallback/Tier-0
+paths remain available with their existing rules and external approval boundary.
 
 `save --output <path>` reads one complete original version-1 document with one
 Receipt from bounded UTF-8 stdin. Existing decoder/normalizer, privacy, tier and
@@ -498,6 +513,21 @@ method, adapter, user decision, external verification fact, or normal-loop
 call. Format guidance does not replace inspection of exact artifacts and
 applicable authority. Template and instructions count toward the unchanged
 Packet cap in both output modes; overflow still fails without a partial Packet.
+
+The independent-reviewer display is a deterministic projection of that complete
+validated Packet, not a replacement delivery format. It retains every field
+unchanged except `receipt_command` (omitted) and `result_instructions` (the
+explicit independent-role explanation). The latter retains exact binding,
+actual claims, independent verdicts, provenance vocabulary/matrix, identifier
+grammars, one-original/one-Receipt capacity, all Finding limits and privacy.
+It omits parent batch-registration and inapplicable fallback/Tier-0/approval
+details. No null is filled or identity, verdict, method or independence inferred.
+The complete Packet on disk and the public `review prepare` JSON/text contracts
+are unchanged. Existing save/submit consume only the full Packet and preserve
+originals, validation, current-state revalidation and atomicity. Display success
+is not freshness or PASS: exact-target/authority inspection and recovery of
+missing or transport-truncated material remain required. Normal reviewers read
+the role-specific procedure, not both it and the parent operating guide.
 
 At most 100 bytewise-ordered changed paths, 240 UTF-8 bytes each and 16,384
 bytes total, are returned. Unsafe paths fail `review_packet_path_unsafe` with

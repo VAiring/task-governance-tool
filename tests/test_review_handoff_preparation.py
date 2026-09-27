@@ -20,6 +20,7 @@ from tests.m14_test_support import make_physical_install
 from tests.test_review_results import encode, receipt, FINGERPRINT
 from task_governance_tool import review_handoff as handoff
 from task_governance_tool import review_handoff_preparation as preparation
+from task_governance_tool.review_results import review_result_instructions
 
 
 class PreparationFixture(unittest.TestCase):
@@ -100,7 +101,8 @@ class InstalledPreparationTests(PreparationFixture):
             generated = preparation._requests(self.root, args, packet_path)
         payload = packet["result_template"]
         payload["receipts"] = [receipt("quoted-path-reviewer")]
-        for command, raw in ((generated["review_requests"][0]["save_command"], encode(payload)),
+        for command, raw in ((generated["review_requests"][0]["read_command"], None),
+                             (generated["review_requests"][0]["save_command"], encode(payload)),
                              (generated["submit_command"], None)):
             invoked = subprocess.run(shlex.split(command), input=raw, capture_output=True,
                                      cwd=self.root, check=False)
@@ -120,9 +122,13 @@ class InstalledPreparationTests(PreparationFixture):
         original_paths = []
         originals = []
         for index, request in enumerate(context["review_requests"]):
-            self.assertIn(str(self.root / context["packet_path"]), request["request"])
+            self.assertIn(request["read_command"], request["request"])
             self.assertIn(request["save_command"], request["request"])
-            payload = copy.deepcopy(packet["result_template"])
+            displayed = self.invoke("read", "--repo", str(self.root), "--packet", context["packet_path"],
+                                    "--role", "independent")
+            self.assertEqual(displayed.returncode, 0, displayed.stdout)
+            payload = json.loads(displayed.stdout)["result_template"]
+            self.assertEqual(payload, packet["result_template"])
             payload["receipts"] = [receipt("reviewer-" + str(index), findings=[{
                 "severity": "low", "summary": "example.py:1 日本語 🚀 retained"}])]
             raw = b"\n " + encode(payload) + b"\n"
@@ -197,6 +203,167 @@ class InstalledPreparationTests(PreparationFixture):
         self.assertEqual(blocked["handoff"]["status"], "blocked")
         self.assertTrue(blocked["source"]["verification_receipt_id"])
         self.assertFalse((self.root / "reviews").exists())
+
+
+class ReviewerDisplayTests(PreparationFixture):
+    def read(self, packet, *options):
+        return self.invoke("read", "--repo", str(self.root), "--packet", packet, *options)
+
+    def test_complete_packet_display_and_original_registration_conserve_meaning(self):
+        from task_governance_tool.review_results import normalize_review_results
+        task = self.task()
+        _, prepared = self.prepare(task)
+        packet_path = prepared["handoff"]["packet_path"]
+        original_packet = (self.root / packet_path).read_bytes()
+        packet = json.loads(original_packet)
+        result = self.read(packet_path, "--role", "independent")
+        self.assertEqual(result.returncode, 0, result.stdout)
+        view = json.loads(result.stdout)
+        self.assertEqual(result.stdout, encode(view) + b"\n")
+        self.assertIn("日本語".encode("utf-8"), result.stdout)
+        self.assertEqual(set(view), set(packet) - {"receipt_command"})
+        for key in view.keys() - {"result_instructions"}:
+            self.assertEqual(view[key], packet[key], key)
+        # Assert presentation data, not natural-language phrase matching.
+        self.assertLess(len(encode(view)), len(encode(packet)))
+        self.assertEqual(view["result_template"]["receipts"], packet["result_template"]["receipts"])
+        self.assertIsNone(view["result_template"]["receipts"][0]["kind"])
+        with self.assertRaises(handoff.ReviewEvidenceError):
+            normalize_review_results(view["result_template"], review_tier=2)
+        original = copy.deepcopy(view["result_template"])
+        original["receipts"] = [receipt("independent-view", verdict="changes_requested", findings=[
+            {"severity": "medium", "summary": "example.py:1 Fix the boundary"},
+            {"severity": "low", "summary": "example.py:2 Preserve this too"}])]
+        raw = b"\n " + encode(original) + b"\n"
+        old_original = copy.deepcopy(packet["result_template"])
+        old_original["receipts"] = copy.deepcopy(original["receipts"])
+        self.assertEqual(raw, b"\n " + encode(old_original) + b"\n")
+        saved = self.invoke("save", "--repo", str(self.root), "--packet", packet_path,
+                            "--output", "reviews/g1/review-1.json", raw=raw)
+        self.assertEqual(saved.returncode, 0, saved.stdout)
+        submitted = self.invoke("submit", "--repo", str(self.root), "--packet", packet_path,
+                                "reviews/g1/review-1.json")
+        self.assertEqual(submitted.returncode, 0, submitted.stdout)
+        registered = json.loads(submitted.stdout)["data"]["receipts"][0]
+        self.assertEqual(registered["receipt"]["verdict"], "changes_requested")
+        self.assertEqual([(f["finding"]["severity"], f["finding"]["summary"]) for f in registered["findings"]],
+                         [(f["severity"], f["summary"]) for f in original["receipts"][0]["findings"]])
+        self.assertEqual((self.root / "reviews/g1/review-1.json").read_bytes(), raw)
+        self.assertEqual((self.root / packet_path).read_bytes(), original_packet)
+        self.assertEqual(sorted(p.name for p in (self.root / "reviews/g1").iterdir()),
+                         ["packet.json", "review-1.json"])
+        print(f"REVIEWER_VIEW packet_bytes={len(encode(packet))}->{len(encode(view))}; "
+              "outer_read/save/submit_calls=1/1/1->1/1/1; "
+              "display_helper_calls=0->1; registration_cli_calls=1->1; tokens=unmeasured")
+
+    def test_unknown_role_incomplete_packet_and_output_loss_never_yield_success(self):
+        _, prepared = self.prepare(self.task())
+        relative = prepared["handoff"]["packet_path"]
+        path = self.root / relative
+        raw = path.read_bytes()
+        for options in ((), ("--role", "unknown"), ("--role", "self_review_fallback")):
+            failed = self.read(relative, *options)
+            self.assertNotEqual(failed.returncode, 0)
+            self.assertFalse(json.loads(failed.stdout)["ok"])
+        invalid = [b"{", raw[:-1], raw + b" " * handoff.PACKET_LIMIT]
+        for change in (lambda p: p["contract"].pop("scope"),
+                       lambda p: p["result_template"]["review_target"].update(generation=8),
+                       lambda p: p["task"].update(review_tier=None),
+                       lambda p: p.update(required_output=[])):
+            packet = json.loads(raw)
+            change(packet)
+            invalid.append(encode(packet))
+        for broken in invalid:
+            path.write_bytes(broken)
+            failed = self.read(relative, "--role", "independent")
+            self.assertNotEqual(failed.returncode, 0)
+            self.assertFalse(json.loads(failed.stdout)["ok"])
+            self.assertNotIn("result_template", json.loads(failed.stdout))
+        path.write_bytes(raw)
+        bounded = json.loads(raw)
+        bounded.update(changed_paths_available=True, changed_paths=["first.py"],
+                       changed_paths_total=2, changed_paths_truncated=True)
+        path.write_bytes(encode(bounded))
+        view = self.read(relative, "--role", "independent")
+        self.assertEqual(view.returncode, 0, view.stdout)
+        self.assertTrue(json.loads(view.stdout)["changed_paths_truncated"])
+        self.assertEqual(json.loads(view.stdout)["review_focus"], bounded["review_focus"])
+        path.write_bytes(raw)
+        with mock.patch.object(handoff, "_emit", return_value=False), \
+             mock.patch.object(handoff, "_write_new") as write, \
+             mock.patch.object(preparation, "_capture") as source:
+            code = handoff.main(["read", "--repo", str(self.root), "--packet", relative,
+                                 "--role", "independent"])
+        self.assertEqual(code, 1)
+        write.assert_not_called()
+        source.assert_not_called()
+        self.assertEqual(path.read_bytes(), raw)
+
+    def test_complete_packet_alternative_routes_keep_explicit_approval_and_tier_zero(self):
+        for tier, kind in ((2, "self_review_fallback"), (0, "not_required")):
+            task = self.cli("task", "add", "--title", "Alternative route", "--review-tier", str(tier),
+                            "--status", "in_progress")["task"]["task_id"]
+            _, prepared = self.prepare(task, directory=f"reviews/tier{tier}")
+            packet_path = prepared["handoff"]["packet_path"]
+            packet = json.loads((self.root / packet_path).read_bytes())
+            self.assertEqual(packet["result_instructions"], review_result_instructions())
+            payload = copy.deepcopy(packet["result_template"])
+            payload["receipts"] = [receipt("alternative", kind=kind)]
+            if tier == 0:
+                payload["receipts"][0].update(verdict="not_required", provenance=None)
+            raw = encode(payload)
+            output = f"reviews/tier{tier}/original.json"
+            approvals = ["--user-approved-reviewer", "alternative"] if tier == 2 else []
+            if tier == 2:
+                failed = self.invoke("save", "--repo", str(self.root), "--packet", packet_path,
+                                     "--output", output, raw=raw)
+                self.assertNotEqual(failed.returncode, 0)
+            saved = self.invoke("save", "--repo", str(self.root), "--packet", packet_path,
+                                "--output", output, *approvals, raw=raw)
+            self.assertEqual(saved.returncode, 0, saved.stdout)
+            submitted = self.invoke("submit", "--repo", str(self.root), "--packet", packet_path,
+                                    *approvals, output)
+            self.assertEqual(submitted.returncode, 0, submitted.stdout)
+            self.assertEqual(json.loads(submitted.stdout)["data"]["receipts"][0]["receipt"]["receipt_kind"], kind)
+
+
+class DirectPacketReviewerTests(unittest.TestCase):
+    def test_package_only_non_git_direct_packet_returns_original_without_shared_files(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            install = make_physical_install(Path(temporary).resolve(), git_managed=False)
+            def cli(*args):
+                completed = install.run(*args, "--json")
+                self.assertEqual(completed.returncode, 0, completed.stdout or completed.stderr)
+                return json.loads(completed.stdout)["data"]
+            cli("setup")
+            task = cli("task", "add", "--title", "Direct independent review", "--review-tier", "2")["task"]["task_id"]
+            packet = cli("review", "target", "set", task, "--kind", "diff_fingerprint",
+                         "--revision", FINGERPRINT)["review_preparation"]["packet"]
+            # Reviewer receives this complete object, not a file or helper commands.
+            # Retrieve only its own packaged procedure. Semantic review checks
+            # the transport condition; no natural-language canary duplicates it.
+            guide = subprocess.run([sys.executable, "-I", "-S",
+                str(install.skill_root / "scripts/read_reference.py"),
+                "references/task_workflow.md#independent-reviewer"],
+                cwd=install.project_root, capture_output=True, check=False)
+            self.assertEqual(guide.returncode, 0, guide.stderr)
+            self.assertIn(b"## Independent Reviewer", guide.stdout)
+            self.assertNotIn(b"### Prepare And Record Reviews", guide.stdout)
+            payload = copy.deepcopy(packet["result_template"])
+            payload["receipts"] = [receipt("direct-reviewer", findings=[
+                {"severity": "low", "summary": "example.py:1 Retain this direct-path Finding"}])]
+            returned_original = b"\n " + encode(payload) + b"\n"
+            # Parent registers those exact bytes through the existing public CLI.
+            submitted = subprocess.run([sys.executable, "-I", "-S", str(install.entrypoint),
+                "review", "result", "add", task, "--json"], cwd=install.project_root,
+                input=returned_original, capture_output=True, check=False)
+            self.assertEqual(submitted.returncode, 0, submitted.stdout or submitted.stderr)
+            row = json.loads(submitted.stdout)["data"]["receipts"][0]
+            self.assertEqual(row["receipt"]["target_value"], packet["review_target"]["value"])
+            self.assertEqual(row["receipt"]["target_generation"], packet["review_target"]["generation"])
+            self.assertEqual(row["findings"][0]["finding"]["summary"], payload["receipts"][0]["findings"][0]["summary"])
+            self.assertFalse((install.project_root / ".git").exists())
+            self.assertFalse((install.project_root / "reviews").exists())
 
 
 class PreparationFailureTests(PreparationFixture):

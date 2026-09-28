@@ -133,7 +133,7 @@ class ReleaseContractCheckerTests(unittest.TestCase):
         self.assertEqual(result.runtime, runtime)
         self.assertEqual(len(runtime.public_commands), 23)
         self.assertEqual(result.ci_python_versions, ("3.12", "3.14"))
-        self.assertEqual(result.manifest_core_count, 103)
+        self.assertEqual(result.manifest_core_count, 105)
         manifest = json.loads(
             (SKILL_ROOT / "release-manifest.json").read_text(encoding="utf-8")
         )
@@ -333,7 +333,7 @@ class ReleaseContractCheckerTests(unittest.TestCase):
                 )
 
         identity_mutations = (
-            ("| SQLite schema | v22 |", "| SQLite schema | v99 |"),
+            ("| SQLite schema | v23 |", "| SQLite schema | v99 |"),
             (
                 "| Supported runtime | Python 3.12 or newer on Windows, Linux, "
                 "and macOS (ordinary functions) |",

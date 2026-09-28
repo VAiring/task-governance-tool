@@ -2,15 +2,15 @@
 
 Status: The immutable published product remains v0.10.0/schema v16/Viewer v4
 sources v5-v16/20 leaves; its identity is fixed in `docs/release-install.md`.
-The current unpublished candidate is v0.13.0 with SQLite schema v22, Viewer
-snapshot v4 accepting source schemas v5-v22, and 23 public command leaves.
+The current unpublished candidate is v0.13.0 with SQLite schema v23, Viewer
+snapshot v4 accepting source schemas v5-v23, and 23 public command leaves.
 Its supported behavior includes tool-owned Verification Receipt subjects,
 versioned Review provenance, immutable Evidence References and completion
 Bundles, deterministic Evidence JSON, and the explicitly opted-in trusted-local
 verification Runner with a closed manual fallback. Schema v20 remains a
 supported migration source and
 audit-only Runner lineage; only fresh gate-eligible evidence under the unchanged
-schema-v21 protocol retained by schema v22 may
+schema-v21 protocol retained by schema v23 may
 satisfy the Runner branch. Select-Split-Merge-Register is active only as
 Skill instruction-layer guidance. Completed execution narrative belongs only in
 indexed history, and
@@ -406,7 +406,9 @@ Current detail is owned by the [Task operation specification](task-operation-spe
 
 <a id="current-schema-v21-verification-ledger-and-bundle-contract"></a>
 
-## Current Schema-v22 Verification, Ledger, And Bundle Contract
+<a id="current-schema-v22-verification-ledger-and-bundle-contract"></a>
+
+## Current Schema-v23 Verification, Ledger, And Bundle Contract
 
 This section defines current post-publication product behavior. It does not
 rewrite the immutable v0.10.0 publication record or claim a later published
@@ -414,9 +416,12 @@ artifact identity. Schema v20 retains schema-v18 capture, the 21st public
 command leaf, schema-v19 completion Bundles and Evidence JSON compatibility, and
 publicly activates the existing migration-20 storage foundation plus the
 Bundle-v2 null-Runner writer and format-v2 Evidence index.
-Schema v22 retains the schema-v21 Runner basis protocol, removes retired
-Analyzer reservations, and writes source-22/v2 native Bundles while retaining
-source-19/20/21 sealed history unchanged.
+Schema v23 retains the schema-v21 Runner basis protocol and schema-v22 Analyzer
+reservation cleanup, adds explicit verification declarations, and writes
+source-23/v2 native Bundles while retaining source-19/20/21/22 sealed history
+unchanged. Empty verification alone no longer authorizes a new completion;
+the [Task declaration](task-operation-specification.md#verification-declaration)
+must be specified or explicitly waived with a reason.
 Receipt readiness, completion linkage, Viewer compatibility, and synchronized
 Skill guidance form one supported candidate boundary.
 
@@ -480,7 +485,7 @@ Current detail is owned by the [Database persistence and migration specification
 <a id="current-schema-v21-persistence-contract"></a>
 <a id="current-schema-v22-persistence-contract"></a>
 
-### Current Schema-v22 Persistence Contract
+### Current Schema-v23 Persistence Contract
 
 Current detail is owned by the [Database persistence and migration specification](database-specification.md#current-schema-v22-persistence-contract).
 
@@ -489,10 +494,10 @@ Current detail is owned by the [Database persistence and migration specification
 ### Schema-v21 Persistence Compatibility And Shared Runner Protocol
 
 The following retains the exact schema-v21 migration/storage contract and the
-structural Runner protocol inherited by current schema v22. Source-21 Bundle
+structural Runner protocol inherited by current schema v23. Source-21 Bundle
 and migration statements describe that supported predecessor, not the current
 setup target or a relabelling of retained evidence. The
-[v22 delta](database-specification.md#current-schema-v22-persistence-contract) owns
+[current delta](database-specification.md#current-schema-v22-persistence-contract) owns
 current source identity, narrowed reservations, and consumer upper bounds.
 
 Migration 21 is exactly `verification_runner_gate_basis`. It adds no table,
@@ -569,6 +574,14 @@ exactly these completion-basis branches:
 | manual verification | Marker `0`, or marker `2` only after its exact-current gate-eligibility-version-`1` Runner result is a closed no-launch `m21_fallback`; the existing exact-current manual Receipt is `pass/full` | `kind=caller_attestation`, the qualifying Receipt ID, and null Runner-observation ID |
 | verification not required | Trimmed-empty verification on a marker-`0` target | `kind=not_required`, and null Receipt and Runner-observation IDs |
 | Runner verification | Marker `2` and one exact-current gate-eligibility-version-`1` observation for the complete selected plan, launched with `route=runner`, `outcome=pass`, null reason, every step completed in order, and all cleanup/privacy proofs satisfied | `kind=runner_observation`, null Receipt ID, and the qualifying Runner-observation ID |
+
+For current schema 23, the not-required branch additionally requires the
+explicit nonempty Task waiver reason. Empty/whitespace verification without
+that reason is `unspecified`, not a fourth qualifying arm: target setting
+returns `blocked` / `verification_requirement_unspecified`, and check and write
+completion reject it. Previously done cycles retain their source-version
+meaning; reopening an old blank Task does not infer a waiver. Runner selection,
+pass/full manual evidence and review requirements otherwise remain unchanged.
 
 The closed no-launch case is only the existing audit-graph terminal shape:
 `route=m21_fallback`, `launch_state=no_launch`, `outcome=blocked_prelaunch`,
@@ -775,7 +788,7 @@ retains its sanitized caller label as explicit legacy data. Neither form stores 
 arguments, exit code, result body, stream, log, environment, exception,
 arbitrary coverage prose, or debug-retention variant.
 
-Current schema-v22 free-form limits not narrowed above are: title 200
+Current schema-v23 free-form limits not narrowed above are: title 200
 characters; description 4,000; stored/read/internal verification and its
 derivatives 1,000; explicit public Task add/edit verification 1,000;
 tags/reviewer/target/external revision/authority ref
@@ -893,6 +906,7 @@ review_changes_requested review_receipts_insufficient
 review_finding_unresolved review_receipt_mismatch
 review_receipt_already_recorded invalid_review_evidence
 verification_required verification_expectation_required
+verification_requirement_unspecified
 verification_basis_stale verification_receipt_required
 verification_receipt_blocking verification_receipt_already_recorded
 invalid_verification_evidence review_required commit_required

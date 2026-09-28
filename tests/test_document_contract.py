@@ -41,6 +41,7 @@ EXPECTED_CANONICAL_DOCS = (
     "docs/database-design.md",
     "plan.md",
     "docs/state-layout-separation-plan.md",
+    "docs/verification-declaration-plan.md",
     "docs/history/README.md",
 )
 EXPECTED_METRIC_DOCS = EXPECTED_CANONICAL_DOCS + (
@@ -219,9 +220,9 @@ class DocumentContractTests(unittest.TestCase):
         self.assertNotIn(secret, serialized)
         self.assertNotIn("Traceback", serialized)
 
-    def test_registry_v16_is_closed(self):
+    def test_registry_v17_is_closed(self):
         expected = {
-            "schema": "taskgov-document-authority-v16",
+            "schema": "taskgov-document-authority-v17",
             "mandatory_start": [
                 "AGENTS.md",
                 "docs/authority.md",
@@ -246,7 +247,7 @@ class DocumentContractTests(unittest.TestCase):
                 "docs/database-design.md",
             ],
             "mixed_execution": [],
-            "conditional": ["docs/state-layout-separation-plan.md"],
+            "conditional": ["docs/state-layout-separation-plan.md", "docs/verification-declaration-plan.md"],
             "history_index": "docs/history/README.md",
         }
         with self.fixture() as root:

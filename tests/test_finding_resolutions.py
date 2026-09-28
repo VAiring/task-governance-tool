@@ -151,7 +151,7 @@ class FindingResolutionCliTests(unittest.TestCase):
         self.db = self.root / "taskgov.sqlite"
         initialize_taskgov_internal(repo=self.repo, db=self.db)
         self.target = review_fixtures.database_target(self.db, self.repo)
-        self.task_id = self.success("task", "add", "--title", "Selected Finding resolution", "--status", "in_progress", "--review-tier", "2")["task"]["task_id"]
+        self.task_id = self.success("task", "add", "--title", "Selected Finding resolution", "--status", "in_progress", "--review-tier", "2", "--verification-not-required", "Finding-resolution fixture")["task"]["task_id"]
         self.set_target()
         self.receipt_id = self.review("reviewer-a")["review_receipt_id"]
         self.review("reviewer-b")

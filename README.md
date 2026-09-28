@@ -5,8 +5,8 @@ keeping long-running work resumable, reviewable, and bounded. It stores local
 task state without replacing the target project's `AGENTS.md`, specifications,
 design documents, tests, or current user decisions.
 
-Release `0.13.0` uses SQLite schema v22 and Viewer snapshot v4 with source
-schemas 5 through 22 as the current unpublished local candidate contract. No
+Release `0.13.0` uses SQLite schema v23 and Viewer snapshot v4 with source
+schemas 5 through 23 as the current unpublished local candidate contract. No
 exact final candidate commit, tag, archive, checksum, or GitHub Release identity
 is fixed. An ordinary push to `main` is CI input, not release publication. The
 immutable published release remains v0.10.0 at its recorded commit, tag, and
@@ -130,11 +130,18 @@ Runner, Analyzer, network/model invocation, Viewer Evidence surface, new public
 leaf, or new normal-loop call.
 
 Schema v21 adds the closed qualifying Runner completion branch without
-promoting schema-v20 audit history. Current schema v22 retains that protocol
+promoting schema-v20 audit history. Schema v22 retains that protocol
 and removes only the retired Analyzer reservations from the shared Evidence
 schema and current enums. Explicit setup migrates complete v21 state to v22;
 new native Bundles use source 22/format 2, while retained source-19/20/21
 Bundle payloads, bytes, and digests remain unchanged.
+
+Current schema v23 adds an explicit verification declaration. Nonempty
+`--verification` requires passing evidence; `--verification-not-required <reason>`
+records an authorized waiver. Omission remains unspecified and blocks new
+completion, even with `--verification-complete`. Existing done history stays
+valid; reopening an old blank Task requires a declaration. Setup alone migrates
+old state, and source-23 native Bundles keep format 2 without rewriting old ones.
 
 The Analyzer runtime is retired. Independent Evidence reading/validation
 remains only in repository tests; no report or model runtime replaces it.
@@ -180,9 +187,9 @@ single bounded effective-ignore preflight may inspect Git. Doctor is optional
 and is not a prerequisite for setup or normal task work.
 
 Candidate validation rehearses the isolated transition from the exact legacy
-v0.1.0/schema-v2 baseline to v0.13.0/schema v22. Paired rollback restores the
+v0.1.0/schema-v2 baseline to v0.13.0/schema v23. Paired rollback restores the
 matched pre-migration package, database, and managed artifacts together; it
-never runs legacy code against schema v22 or treats a Git checkout alone as
+never runs legacy code against schema v23 or treats a Git checkout alone as
 state rollback. The published v0.10.0/schema-v16 and unpublished
 v0.11.0/schema-v17 and v0.12.0/schema-v21 rehearsal records remain immutable
 lineage and do not satisfy the current candidate gate. See
@@ -416,12 +423,12 @@ Taskgov starts no daemon, timer, background process, queue, service, browser,
 or maintenance command. Generated Evidence JSON, Viewer, and managed backups
 remain runtime artifacts under the ignored project `.taskgov/` directory. Evidence
 projection failure keeps the mutation successful and the last-good index,
-leaves work due, and emits only its fixed warning. Viewer snapshot v4 reads source schemas 5 through 22 and includes the same
+leaves work due, and emits only its fixed warning. Viewer snapshot v4 reads source schemas 5 through 23 and includes the same
 bounded newest-first completion history as `task show --audit`. Sources 5-14 are shown
 honestly as empty legacy-incomplete history. The Viewer contains only sanitized
 task/review/audit projections and has no write controls or network dependency.
 It validates schema-v18+ subject/provenance/capture bindings, the schema-v19
-through schema-v22 Bundle discriminators, and the source-appropriate Bundle-v2
+through schema-v23 Bundle discriminators, and the source-appropriate Bundle-v2
 and Runner tagged graph, but adds no provenance/Bundle field, panel, filter, or
 other snapshot-v4 UI surface.
 

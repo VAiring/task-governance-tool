@@ -331,6 +331,7 @@ class ReviewResultsTests(unittest.TestCase):
             "task", "add", "--title", "Structured review results", "--status", "in_progress",
             "--review-tier", "2", "--contract-scope", "Register exact review evidence",
             "--contract-acceptance", "All records commit together",
+            "--verification-not-required", "Review-result fixture",
         )["task"]["task_id"]
         self.success("review", "target", "set", self.task_id, "--kind", "diff_fingerprint", "--revision", FINGERPRINT)
 
@@ -392,7 +393,7 @@ class ReviewResultsTests(unittest.TestCase):
         self.assertEqual(saved["findings"][0]["finding"]["summary"], finding["summary"])
 
     def test_tier_zero_packet_template_accepts_explicit_not_required_declaration(self):
-        self.task_id = self.success("task", "add", "--title", "Mechanical change", "--review-tier", "0")["task"]["task_id"]
+        self.task_id = self.success("task", "add", "--title", "Mechanical change", "--review-tier", "0", "--verification-not-required", "Mechanical review fixture")["task"]["task_id"]
         targeted = self.success("review", "target", "set", self.task_id, "--kind", "external_revision", "--revision", "reviewed-mechanical-change")
         template = targeted["review_preparation"]["packet"]["result_template"]
         self.assertIsNone(template["receipts"][0]["verdict"])

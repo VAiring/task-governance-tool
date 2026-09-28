@@ -61,6 +61,7 @@ def checkpoint_connection(
           pause_reason TEXT NOT NULL,
           review_tier INTEGER NOT NULL,
           verification TEXT NOT NULL,
+          verification_not_required_reason TEXT NOT NULL DEFAULT '',
           tags TEXT NOT NULL,
           created_at TEXT NOT NULL,
           completed_at TEXT,

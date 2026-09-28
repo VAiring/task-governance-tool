@@ -320,7 +320,7 @@ def _validate_selected_schema21_completion_bundle_history(
 
 
     container_schema_version = current_schema_version(connection)
-    if container_schema_version not in {
+    if container_schema_version not in {23,
         PRIVATE_SCHEMA21_VERSION, PRIVATE_SCHEMA22_VERSION,
     } or not any(
         cycle.evidence_basis_version == 1 for cycle in cycles
@@ -1081,7 +1081,7 @@ def _validate_selected_reference_source_chunk(
             elif source_kind == "runner_observation":
                 admitted_eligibility_versions = (
                     {0, 1}
-                    if source_schema_version in {
+                    if source_schema_version in {23,
                         PRIVATE_SCHEMA21_VERSION, PRIVATE_SCHEMA22_VERSION,
                     }
                     else {0}
@@ -1510,7 +1510,7 @@ def _validate_evidence_ledger_rows(
     if type(expected_project_id) is not str or not expected_project_id:
         raise evidence_ledger_inconsistent()
     physical_schema_version = current_schema_version(connection)
-    if physical_schema_version not in {
+    if physical_schema_version not in {23,
         18,
         19,
         PRIVATE_SCHEMA20_VERSION,
@@ -1724,9 +1724,12 @@ def _validate_one_completion_evidence_bundle_row(
     if (
         COMPLETION_EVIDENCE_BUNDLE_ID_PATTERN.fullmatch(bundle_id) is None
         or (
-            row["source_schema_version"] == PRIVATE_SCHEMA22_VERSION
-            and container_schema_version != PRIVATE_SCHEMA22_VERSION
+            row["source_schema_version"] >= PRIVATE_SCHEMA22_VERSION
+            and row["source_schema_version"] > container_schema_version
         )
+        or (cycle is not None and
+            ((row["source_schema_version"] >= 23) !=
+             (cycle.verification_not_required_reason is not None)))
         or cycle is None
         or cycle.evidence_basis_version != 1
         or cycle.completion_evidence_bundle_id != bundle_id
@@ -1819,7 +1822,7 @@ def _validate_one_completion_evidence_bundle_row(
     )
     if (
         runner_eligibility_one
-        and row["source_schema_version"] not in {
+        and row["source_schema_version"] not in {23,
             PRIVATE_SCHEMA21_VERSION, PRIVATE_SCHEMA22_VERSION,
         }
     ):
@@ -2121,7 +2124,7 @@ def _validate_completion_evidence_bundle_rows(
     if (
         _validated_runner_generations is None
         and bundle_rows
-        and container_schema_version in {
+        and container_schema_version in {23,
             PRIVATE_SCHEMA21_VERSION, PRIVATE_SCHEMA22_VERSION,
         }
     ):
@@ -3337,7 +3340,7 @@ def _capture_evidence_projection_basis_rows(
     if type(project_id) is not str or not project_id:
         raise evidence_ledger_inconsistent()
     source_schema_version = current_schema_version(connection)
-    if source_schema_version not in {
+    if source_schema_version not in {23,
         19,
         PRIVATE_SCHEMA20_VERSION,
         PRIVATE_SCHEMA21_VERSION,

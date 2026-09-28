@@ -9,7 +9,7 @@ published v0.10.0 artifact and its exact commit, tag, Release, archive,
 checksum, and Release body remain unchanged. This record also does not
 authorize installing or overwriting a Skill in any project.
 
-The current v0.13.0 candidate uses schema-v22 Evidence storage with the unchanged
+The current v0.13.0 candidate uses schema-v23 Evidence storage with the unchanged
 schema-v21 Runner gate protocol while preserving the published v0.10.0 identity and the fixed v0.13.0
 package boundary described below. Explicit `task edit --runner-plan-action`
 supports `replace`, `rebind`, `detach`, and `disable`; the first absent-Plan
@@ -28,6 +28,15 @@ manual verification path.
 
 ## Current Candidate Identity
 
+Verification declaration is now explicit: omitted/blank verification is
+unspecified and blocks a new completion. Add/edit accept
+`--verification-not-required <reason>` for an authorized waiver. A reason-only
+edit invalidates the target and old evidence; prior done history is preserved,
+but a reopened blank Task must declare its requirement. Setup alone migrates
+v22 to v23, preserving old Bundle bytes/digests. Task JSON adds the reason and
+derived `verification_requirement`; Review Packet adds the reason. Bundle v2,
+Viewer v4, public leaves and normal-loop call count are unchanged.
+
 Receiptless target-set routes (`not_required`/`runner_pass`) now return a
 bound Review Packet directly, removing their separate prepare call. Preparation
 failure preserves the successful target save and supports read-only recovery;
@@ -44,8 +53,8 @@ total LLM token or elapsed-time savings.
 | Item | Value |
 |---|---|
 | Package version | `0.13.0` |
-| SQLite schema | v22 |
-| Viewer snapshot | v4, accepting source schemas v5-v22 (v5 through v22) |
+| SQLite schema | v23 |
+| Viewer snapshot | v4, accepting source schemas v5-v23 (v5 through v23) |
 | Public command leaves | 23 |
 | Supported runtime | Python 3.12 or newer on Windows, Linux, and macOS (ordinary functions) |
 | Verified platform | Windows x86-64; Ubuntu 24.04 x86-64; macOS 15 Apple Silicon |
@@ -222,7 +231,7 @@ to the supported physical project-scoped package. Setup never creates or edits
 the Runner Plan; taskgov-managed authoring requires explicit
 `task edit --runner-plan-action`.
 
-Setup reports `schema_to=22` and `evidence_status` as `not_present`, `current`,
+Setup reports `schema_to=23` and `evidence_status` as `not_present`, `current`,
 `published`, or `repair_required`. Its ordered write vocabulary includes
 `evidence_projection_publish` after maintenance/binding and before
 `viewer_publish`; read-only preview plans it without writing.
@@ -337,14 +346,14 @@ eligibility-version-1 exact-current Runner graph to the completion selector.
 A qualifying complete-plan pass supplies the Runner-observation branch; the
 exact closed no-launch fallback alone delegates to the existing manual Receipt
 branch, and every other selected Runner state blocks. Migration 21 never
-promotes old audit rows. Current schema v22 removes the retired Analyzer
+promotes old audit rows. Schema v22 removes the retired Analyzer
 reservations from the shared Evidence tables and current enums without
 changing that Runner protocol. Setup reaches v22 from complete v1-v21 sources;
 complete v20 continues through migration 21 and then 22, and exact-v22 reentry
 is validation-only. Migration 22 rejects unexpected retired-value rows and
 unowned attachments to its three rebuilt tables rather than deleting or
 converting them. It preserves valid business rows, IDs, and retained
-source-19/20/21 Bundle payloads/bytes/digests. New native Bundles use source
+source-19/20/21 Bundle payloads/bytes/digests. At that boundary, native Bundles use source
 22/format 2; a refreshed index reports source 22 with those unchanged old
 Bundle references. A migrated capture-version-0 target remains read-only lineage and
 must be replaced with a fresh capture-version-1 target before a new Receipt,
@@ -360,7 +369,7 @@ migration.
 The immutable v0.10.0 release acceptance rehearsed the transition from the
 exact legacy v0.1.0/schema-v2 baseline to v0.10.0/schema v16. The current
 v0.13.0 candidate must separately rehearse that isolated baseline through
-schema v22, including schema-v17 Receipt/completion preservation, subject and
+schema v23, including schema-v17 Receipt/completion preservation, subject and
 provenance migration, capture-v0/fresh retargeting, 500/1,000 capacity,
 preserved Bundle-v1 and native Bundle-v2 projection recovery, backup recovery,
 and no-partial-write behavior before it can become a release.
@@ -378,7 +387,7 @@ continue to prove that release artifacts contain no `config/` content.
 
 Rollback restores one matched pre-migration package, database, and managed
 artifact set as a single compatibility point, then proves that the legacy
-package can read that restored state. Running old code against schema v22,
+package can read that restored state. Running old code against schema v23,
 reverse-migrating in place, mixing generations, or treating a Git checkout
 alone as rollback is unsupported. After cutover, a defect is handled by a
 forward fix and new candidate/version, not a force update, history rewrite,
@@ -436,7 +445,7 @@ do not change either projection generation. Setup publishes Evidence then Viewer
 Evidence JSON is generated only at fixed `.taskgov/current/evidence/index.json`
 and `.taskgov/current/evidence/bundles/<completion-evidence-bundle-id>.json`, with
 the zero-wait lock at `.taskgov/current/evidence/taskgov-evidence.lock`. A
-schema-v20-through-v22 publication uses index format 2 and adds `bundle_format_version`:
+schema-v20-through-v23 publication uses index format 2 and adds `bundle_format_version`:
 null for `legacy_unknown`, 1 for a preserved Bundle v1, and 2 for a native
 Bundle v2. Retained source-19/20/21 Bundle bytes and digests remain unchanged.
 The index reports its actual container schema, not a relabelled Bundle source. The index is
@@ -444,7 +453,7 @@ published last, SQLite remains canonical, and JSON is never imported. Failure
 preserves the committed mutation and last-good index with one fixed warning.
 
 The Viewer is a self-contained, read-only `file://` projection under the
-ignored project state. Snapshot v4 accepts source schemas v5-v22 and includes
+ignored project state. Snapshot v4 accepts source schemas v5-v23 and includes
 the same bounded newest-first completion history as `task show --audit`; sources v5-v14
 receive an empty, legacy-incomplete history and sources v15-v22 use stored
 cycles. It omits internal event links,
@@ -560,7 +569,7 @@ provenance and user approval are never inferred from the input. See the
 [package CLI reference](../task-governance-tool/references/cli_contracts.md),
 under Structured Review Results,
 for the exact input and submission example. Individual registration remains an
-explicit option; batching does not change schema v22 or the review gate.
+explicit option; batching does not change the schema or the review gate.
 
 Applicable leaves retain `--repo`, `--json`, and `--read-only`; the root retains
 `--version`. Storage and generated-artifact paths are internal implementation
@@ -751,9 +760,11 @@ post-commit order is Evidence, Viewer, then backup. Schema v21 preserves audit
 history as gate-ineligible. A fresh exact-current eligibility-version-1 Runner
 pass supplies the Runner-observation completion branch; only the exact closed
 no-launch result falls back to the manual Receipt branch, while all other
-selected Runner states block. Current schema v22 removes only the retired
+selected Runner states block. Schema v22 removes only the retired
 Analyzer reservations, preserves source-19/20/21 Bundle bytes/digests, and writes
-source-22/v2 Bundles under the same protocol. Viewer snapshot v4 accepts source schemas v5-v22 while exposing no
+source-22/v2 Bundles under the same protocol. Current schema v23 adds the explicit
+verification declaration and uses source-23/v2 Bundles without resealing history.
+Viewer snapshot v4 accepts source schemas v5-v23 while exposing no
 Evidence UI. That schema activation adds no Analyzer, network/model invocation,
 command leaf, or Skill trigger. The separate read-only `task context` leaf now
 combines ordinary selection and full detail without changing those gates.

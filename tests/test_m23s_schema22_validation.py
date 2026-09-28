@@ -45,7 +45,7 @@ def _schema22_container(source):
             storage._SCHEMA_INDEX_INTRODUCED_VERSION,
             storage._SCHEMA_TRIGGER_INTRODUCED_VERSION,
         )
-        for name in inventory
+        for name, introduced in inventory.items() if introduced <= 21
     }
     objects = {
         str(row["name"]): (str(row["type"]), str(row["sql"]))
@@ -179,7 +179,7 @@ class Schema22StoredValidationTests(unittest.TestCase):
                 )
                 self.assertEqual(retained, original)
             self.assertEqual(logical_database_digest(connection), snapshot)
-            self.assertEqual(storage.SCHEMA_VERSION, 22)
+            self.assertEqual(storage.SCHEMA_VERSION, 23)
             return after
         finally:
             connection.execute("PRAGMA query_only = OFF")

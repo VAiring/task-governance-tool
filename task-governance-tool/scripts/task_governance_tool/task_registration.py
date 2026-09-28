@@ -12,12 +12,15 @@ from task_governance_tool.task_values import (
     validate_text, validation_error,
 )
 from task_governance_tool.tasks import TASK_BATCH_LIMIT, validate_task_input
+from task_governance_tool.verification_declaration import (
+    merge_declaration_fields, normalize_not_required_reason, verification_requirement,
+)
 
 
 TASK_REGISTRATION_INPUT_LIMIT = 262144
 TASK_REGISTRATION_FIELDS = frozenset({
     "title", "description", "kind", "lane", "lane_order", "priority", "status",
-    "blocked_reason", "review_tier", "verification", "tags",
+    "blocked_reason", "review_tier", "verification", "verification_not_required_reason", "tags",
 })
 
 
@@ -56,9 +59,12 @@ def _task_fields(values: dict[str, Any]) -> None:
             validate_choice(key, value, choices, "invalid_" + key)
         elif key == "lane":
             validate_lane(value)
+        elif key == "verification_not_required_reason":
+            normalize_not_required_reason(value)
         else:
             limit = TASK_VERIFICATION_INPUT_LIMIT if key == "verification" else TEXT_LIMITS.get(key)
             validate_text(key, value, required=key == "title", limit=limit)
+    verification_requirement(values.get("verification", ""), values.get("verification_not_required_reason", ""))
 
 
 def _contract_fields(value: Any, *, common: bool) -> dict[str, str]:
@@ -103,11 +109,15 @@ def decode_task_registration(raw: bytes) -> list[dict[str, Any]]:
                     or not {"title", "contract"} <= set(item)):
                 raise _invalid()
             _task_fields(item)
-            merged = {**common, **item}
+            merged = merge_declaration_fields(common, item)
+            if not merged.get("verification_not_required_reason"):
+                merged.pop("verification_not_required_reason", None)
             if "review_tier" not in merged:
                 raise _invalid()
             contract = merged.pop("contract")
             normalized = validate_task_input(**merged)
+            if not normalized["verification_not_required_reason"]:
+                normalized.pop("verification_not_required_reason")
             if contract is not None:
                 explicit = _contract_fields(contract, common=False)
                 normalized.update({"contract_" + key: value

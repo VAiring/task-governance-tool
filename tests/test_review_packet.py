@@ -217,7 +217,7 @@ class ReviewPacketTests(unittest.TestCase):
                 ),
             )
             self.assertEqual(tuple(diff_data["task"]), (
-                "task_id", "title", "status", "verification", "review_tier",
+                "task_id", "title", "status", "verification", "verification_not_required_reason", "review_tier",
             ))
             self.assertEqual(tuple(diff_data["contract"]), (
                 "revision", "scope", "acceptance", "constraints",
@@ -250,6 +250,7 @@ class ReviewPacketTests(unittest.TestCase):
                 f'Task: {task_id} | "Review packet task" | review_tier=2\n'
                 "Status: in_progress\n"
                 'Verification: "python -m unittest"\n'
+                'Verification not required reason: ""\n'
                 "Contract revision: 1\n"
                 'Scope: "Implement the bounded packet"\n'
                 'Acceptance: "All packet checks pass"\n'

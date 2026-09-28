@@ -111,7 +111,9 @@ authority and is never recursively cleaned as part of authoring.
 A Plan action may be the only requested mutation, or it may accompany one
 actual Task basis change in the same public invocation and under the same user
 approval. A basis change is exactly a new Task Contract revision or a changed
-Task `verification` value. Title, description, status, priority, kind,
+Task `verification` value, including clearing it through an explicit
+not-required declaration. Changing only a waiver reason with verification
+already empty does not change the Plan basis. Title, description, status, priority, kind,
 lane/order, tags, notes, review tier, pause/block state, reopen, completion, and
 review-target changes do not independently require or authorize a Plan update.
 

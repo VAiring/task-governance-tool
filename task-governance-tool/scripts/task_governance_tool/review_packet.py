@@ -227,6 +227,10 @@ def _read_basis(
                         current_schema_version(active_connection)
                     ),
                 ),
+                "verification_not_required_reason": validate_text(
+                    "verification_not_required_reason",
+                    stored.get("verification_not_required_reason", ""), limit=1000,
+                ),
                 "review_tier": validate_review_tier(
                     stored["review_tier"],
                 ),
@@ -628,6 +632,7 @@ def format_review_packet_text(data: dict[str, Any]) -> str:
         ),
         f"Status: {task['status']}",
         f"Verification: {_quoted(task['verification'])}",
+        f"Verification not required reason: {_quoted(task['verification_not_required_reason'])}",
         f"Contract revision: {contract['revision']}",
         f"Scope: {_quoted(contract['scope'])}",
         f"Acceptance: {_quoted(contract['acceptance'])}",

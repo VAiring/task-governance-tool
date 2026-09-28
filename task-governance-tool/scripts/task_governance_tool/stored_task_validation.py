@@ -444,12 +444,17 @@ def _validate_stored_task_row(
         minimum=0,
         maximum=2,
     )
-    _, verification_rejection = _stored_text(
+    verification, verification_rejection = _stored_text(
         row,
         "verification",
         verification_limit=capabilities.verification_limit,
         privacy_success_cache=privacy_success_cache,
     )
+    if capabilities.source_schema_version >= 23:
+        reason = _stored_text(row, "verification_not_required_reason", limit=1000,
+                              privacy_success_cache=privacy_success_cache)[0]
+        if reason != reason.strip() or (reason and verification.strip()):
+            raise _stored_task_unreadable()
     _stored_text(
         row,
         "tags",

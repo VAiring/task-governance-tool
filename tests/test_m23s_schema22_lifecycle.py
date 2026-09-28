@@ -16,6 +16,7 @@ from tests.test_m23s_schema22_projection import _source
 from tests.test_m23s_schema22_validation import _bundle_artifacts, storage
 from task_governance_tool import reviews, tasks, verification_receipts
 from task_governance_tool import task_show_projection
+from task_governance_tool import schema_verification_declaration as declaration
 from task_governance_tool import verification_runner_service as service
 from task_governance_tool import verification_runner_selection as runner_selection
 
@@ -87,22 +88,22 @@ def _complete(connection, target, task_id, revision, *, selection=None):
 
 class Schema22LifecycleTests(unittest.TestCase):
     def _assert_new_bundle(self, connection, target, task_id, kind):
-        storage.validate_schema22_storage(connection)
+        declaration.validate_storage(connection)
         basis, artifacts = _bundle_artifacts(connection, target.project.project_id)
         record = max(
             (row for row in basis.native_bundles if row.bundle.task_id == task_id),
             key=lambda row: row.bundle.cycle_ordinal,
         )
         artifact = artifacts[record.bundle.completion_evidence_bundle_id]
-        self.assertEqual((record.bundle.source_schema_version, record.bundle.bundle_version), (22, 2))
-        self.assertEqual((artifact.payload["source_schema_version"], artifact.payload["bundle_version"]), (22, 2))
+        self.assertEqual((record.bundle.source_schema_version, record.bundle.bundle_version), (23, 2))
+        self.assertEqual((artifact.payload["source_schema_version"], artifact.payload["bundle_version"]), (23, 2))
         self.assertEqual(artifact.payload["verification_basis"]["kind"], kind)
         cycle = next(row for row in basis.cycles if row.completion_cycle_id == record.bundle.completion_cycle_id)
         self.assertEqual(cycle.verification_basis_kind, kind)
         self.assertEqual(cycle.verification_receipt_id, record.bundle.verification_receipt_id)
         self.assertEqual(cycle.verification_runner_observation_id, record.bundle.verification_runner_observation_id)
-        self.assertEqual(_source(artifact.envelope).source, artifact.envelope)
-        self.assertEqual(storage.SCHEMA_VERSION, 22)
+        self.assertEqual(_source(artifact.envelope, index_source_version=23).source, artifact.envelope)
+        self.assertEqual(storage.SCHEMA_VERSION, 23)
         return artifact
 
     def test_actual22_manual_receipt_and_not_required_completion(self):
@@ -112,7 +113,15 @@ class Schema22LifecycleTests(unittest.TestCase):
                     self, Path(temporary), record_receipt=False, verification_required=required
                 )
                 with closing(storage.connect(target.db_path)) as connection:
-                    self.assertTrue(storage._migrate_schema22_connection(connection))
+                    self.assertEqual(storage.apply_migrations(connection), ([22, 23], []))
+                    if not required:
+                        with connection:
+                            tasks.edit_task(connection, target.project, task_id,
+                                            verification_not_required_reason="No executable change")
+                        with connection:
+                            reviews.set_review_target(connection, target.project, task_id,
+                                                      kind="git_commit", revision=commit)
+                        _review_receipts(connection, target, task_id)
                     receipt = _receipt(connection, target, task_id) if required else None
                     _complete(connection, target, task_id, commit)
                     artifact = self._assert_new_bundle(connection, target, task_id, kind)
@@ -137,7 +146,7 @@ class Schema22LifecycleTests(unittest.TestCase):
                 runner_fixture._seed_review_receipts(fixture)
                 commit = _matching_commit(fixture)
                 with closing(storage.connect(fixture.db)) as connection:
-                    self.assertEqual(storage.current_schema_version(connection), 22)
+                    self.assertEqual(storage.current_schema_version(connection), 23)
                     selected = _selection(connection, fixture.target, fixture.task_id)
                     before = _logical_snapshot(connection)
                     shown = task_show_projection.show_task(connection, fixture.target.project, fixture.task_id,
@@ -181,7 +190,7 @@ class Schema22LifecycleTests(unittest.TestCase):
                 old_basis, old_artifacts = _bundle_artifacts(connection, project_id)
                 old_cycle = old_basis.cycles[0]
                 old_history = storage.read_completion_history(connection, project_id=project_id, task_id=fixture.task_id)
-                self.assertTrue(storage._migrate_schema22_connection(connection))
+                self.assertEqual(storage.apply_migrations(connection), ([22, 23], []))
                 with connection:
                     tasks.edit_task(connection, fixture.target.project, fixture.task_id,
                                     status="in_progress", reopen_reason="Require fresh schema22 evidence")
@@ -225,7 +234,7 @@ class Schema22LifecycleTests(unittest.TestCase):
             runner_fixture._persist_terminal(fixture, intent, branch="pass")
             runner_fixture._seed_review_receipts(fixture)
             with closing(storage.connect(fixture.db)) as connection:
-                self.assertEqual(storage.current_schema_version(connection), 22)
+                self.assertEqual(storage.current_schema_version(connection), 23)
                 task = tasks.read_internal_task(connection, fixture.target.project.project_id, fixture.task_id)
                 before = _logical_snapshot(connection)
             commit = _matching_commit(fixture)
@@ -259,7 +268,7 @@ class Schema22LifecycleTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             fixture = RunnerServiceFixture(Path(temporary))
             with closing(storage.connect(fixture.db)) as connection:
-                self.assertEqual(storage.current_schema_version(connection), 22)
+                self.assertEqual(storage.current_schema_version(connection), 23)
                 with connection:
                     tasks.edit_task(connection, fixture.target.project, fixture.task_id, status="in_progress")
                 authority = reviews.read_review_target_authority_basis(connection, fixture.target.project, fixture.task_id)
@@ -299,7 +308,7 @@ class Schema22LifecycleTests(unittest.TestCase):
                         connection, observation=observation, evidence_reference=reference,
                         criterion_link=link, cleanup_event=cleanup,
                     ))
-                storage.validate_schema22_storage(connection)
+                declaration.validate_storage(connection)
                 selected = _selection(connection, fixture.target, fixture.task_id)
                 self.assertEqual(selected.mode, "runner_observation")
                 self.assertEqual(observation.gate_eligibility_version, 1)

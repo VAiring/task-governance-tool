@@ -171,12 +171,15 @@ and projection-generation advance. Schema v20 and the marker-zero schema-v21
 baseline instead insert one version-2 Bundle whose basis is
 `caller_attestation` with the qualifying Receipt for nonempty verification or
 `not_required` with no Receipt for trimmed-empty verification, and its Runner
-observation is null. The current schema-v22 writer retains both branches and additionally
+observation is null. The current schema-v23 writer requires an explicit Task
+waiver reason for the not-required branch and additionally
 admits the exact qualifying schema-v21-protocol `runner_observation` branch, reusing its
 existing Runner Reference and criterion link as Bundle members. The sole partial
 legacy reopen bridge stays version 0/null and advances only that generation. A
 Bundle is complete or the completion fails before write; its canonical payload
-is capped at 16 MiB.
+is capped at 16 MiB. Schema 23 changes only the source discriminator, not the
+Bundle-v2 member set or digest domain. The waiver reason is available in Task,
+Review Packet and immutable cycle storage, not in the standalone Bundle.
 
 Bundle v2 adds exactly the root `verification_basis` object and
 `runner_observation` field to the v1 payload. For the caller-attestation and

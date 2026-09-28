@@ -111,6 +111,9 @@ confirmation is required.
 For exact options, fields, bounds, and errors, use the matching command in the
 [CLI contents](references/cli_contracts.md#contents), not unrelated commands.
 Verification without explicit Runner opt-in remains manual.
+At registration or an existing edit, state the required verification or use
+`--verification-not-required` with an authorized short reason. Omission is
+unspecified, not waived, and blocks completion; do not infer a waiver from prose.
 
 ## Keep Scope And Evidence Honest
 

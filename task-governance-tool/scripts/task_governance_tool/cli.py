@@ -519,6 +519,7 @@ def task_add_input(args: argparse.Namespace) -> dict[str, Any]:
         "tags": getattr(args, "tags", ""),
     }
     for field in (
+        "verification_not_required_reason",
         "contract_scope",
         "contract_acceptance",
         "contract_constraints",
@@ -1588,6 +1589,7 @@ EDIT_ARGUMENT_FIELDS = (
     "pause_reason",
     "review_tier",
     "verification",
+    "verification_not_required_reason",
     "tags",
     "add_note",
     "reopen_reason",

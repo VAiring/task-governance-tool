@@ -153,24 +153,25 @@ def _source22_stored_bundle(connection, project_id, task_id):
 
 class Schema22PureProjectionTests(unittest.TestCase):
     def test_three_v2_bases_match_independent_reader_and_unchanged_domains(self):
-        for kind in ("caller_attestation", "not_required", "runner_observation"):
-            with self.subTest(kind=kind):
-                payload = _payload(kind)
+        for source_version, kind in ((v, k) for v in (22, 23)
+                                     for k in ("caller_attestation", "not_required", "runner_observation")):
+            with self.subTest(source=source_version, kind=kind):
+                payload = _payload(kind, source_version=source_version)
                 artifact = projection.build_bundle_artifact(payload)
                 self.assertEqual(artifact.envelope, _reference_envelope(payload))
                 self.assertEqual(artifact.payload_bytes, reference_json_bytes(payload))
                 self.assertEqual(artifact.document, reference_json_bytes(artifact.envelope) + b"\n")
-                self.assertEqual((artifact.payload["source_schema_version"], artifact.envelope["format_version"]), (22, 2))
-                index = projection.build_index_artifact(_index_payload(artifact.envelope))
+                self.assertEqual((artifact.payload["source_schema_version"], artifact.envelope["format_version"]), (source_version, 2))
+                index = projection.build_index_artifact(_index_payload(artifact.envelope, source_version=source_version))
                 self.assertEqual(index.envelope["format_version"], 2)
                 self.assertEqual(index.index_digest, domain_digest(INDEX_V2_DOMAIN, index.payload))
-                source = _source(artifact.envelope)
+                source = _source(artifact.envelope, index_source_version=source_version)
                 self.assertEqual(source.source, artifact.envelope)
                 self.assertEqual(source.source_basis, _basis(index, index.payload["entries"][0]))
                 self.assertEqual(source.source["payload"]["verification_basis"]["kind"], kind)
 
     def test_closed_versions_schema_ceiling_and_bundle_digest_reject(self):
-        future = _payload("not_required", source_version=23)
+        future = _payload("not_required", source_version=24)
         impossible_v1 = valid_native_payload()
         impossible_v1["source_schema_version"] = 22
         for payload in (future, impossible_v1):
@@ -182,13 +183,15 @@ class Schema22PureProjectionTests(unittest.TestCase):
         envelope = _reference_envelope(_payload("caller_attestation"))
         with self.assertRaises(EvidenceConsumerError):
             _source(envelope, index_source_version=21)
+        with self.assertRaises(EvidenceConsumerError):
+            _source(_reference_envelope(_payload("not_required", source_version=23)), index_source_version=22)
         envelope["bundle_digest"] = "sha256:" + "0" * 64
         with self.assertRaises(EvidenceConsumerError):
             _source(envelope)
 
     def test_future_index_and_v1_source22_index_reject_read_only(self):
         envelope = _reference_envelope(_payload("not_required"))
-        future = _index_payload(envelope, source_version=23)
+        future = _index_payload(envelope, source_version=24)
         with self.assertRaises(projection.EvidenceProjectionError):
             projection.build_index_artifact(future)
         for payload, format_version in ((future, 2), (_index_payload(envelope), 1)):

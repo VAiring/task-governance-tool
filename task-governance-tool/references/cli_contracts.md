@@ -261,7 +261,7 @@ Expired or stale context requires a fresh preview and fresh user approval.
     "state_layout_activate"
   ],
   "schema_from": null,
-  "schema_to": 22,
+  "schema_to": 23,
   "maintenance_enabled": true,
   "backup_interval_minutes": 30,
   "backup_generations": 3,
@@ -310,7 +310,7 @@ Preview reports current durable state, not planned state:
 `completed_writes=[]`, and a fresh preview keeps
 `maintenance_enabled=false`. A healthy replay has empty write lists. Every
 error has `status=null`; preflight/policy failures use empty write lists and
-null observed values except `schema_to=22`. A later-stage failure reports only
+null observed values except `schema_to=23`. A later-stage failure reports only
 the durable ordered prefix. Inspect `data.completed_writes` before retrying;
 `setup_incomplete` permits a retry that recomputes from durable state rather
 than repeating an assumed failed stage; it does not guarantee automatic repair
@@ -369,8 +369,8 @@ A ready result has this structure:
     },
     "project_state": {
       "code": "ready",
-      "schema_version": 22,
-      "required_schema_version": 22
+      "schema_version": 23,
+      "required_schema_version": 23
     },
     "task_summary": {
       "code": "ready",
@@ -470,7 +470,7 @@ python .agents/skills/task-governance-tool/scripts/taskgov.py task add --repo <t
 
 Options are `--title`, `--description`, `--kind`, `--lane`, `--order`,
 `--priority`, `--status`, `--blocked-reason`, `--review-tier`,
-`--verification`, `--tags`, and the Contract group
+`--verification`, `--verification-not-required <reason>`, `--tags`, and the Contract group
 `--contract-scope`, `--contract-acceptance`, `--contract-constraints`,
 `--contract-authority-ref`, and `--contract-change-reason`.
 
@@ -492,6 +492,15 @@ at 1,000 characters, with privacy checked before length. A 1,001-character
 value is rejected without a write. Omitting `--verification` from `task edit`
 preserves the existing value; other edits do not require copying it.
 
+Task JSON exposes `verification_requirement=unspecified|required|not_required`
+and `verification_not_required_reason`. Nonempty verification means required;
+empty verification alone is unspecified and cannot complete. An explicit
+sanitized, nonempty reason (at most 1,000 characters) declares not-required.
+An edit of either member clears the old counterpart; both nonempty inputs are
+invalid. `--verification ""` resets to unspecified; omission preserves both.
+Changing the declaration invalidates the current target and evidence. Old done
+history remains valid, but reopening an old blank Task does not infer a waiver.
+
 For a finalized multiple-Task set, use `task add --from-stdin --json` once with
 this UTF-8 JSON shape (no BOM; at most 262,144 bytes and 1 through 64 items):
 
@@ -504,7 +513,9 @@ its own `title` and `contract` (null for revision zero, or required `scope` and
 `acceptance`, optional `constraints` and `authority_ref`). Common Contract values
 may contain only `constraints` and `authority_ref`; they never activate null.
 Common/per-item Task fields are `description`, `kind`, `lane`, `lane_order`,
-`priority`, `status`, `blocked_reason`, `review_tier`, `verification`, and `tags`.
+`priority`, `status`, `blocked_reason`, `review_tier`, `verification`,
+`verification_not_required_reason`, and `tags`. An item supplying either
+declaration member replaces the common pair; otherwise it inherits the pair.
 Each effective review tier must be explicitly supplied; other omitted fields
 use single-add defaults. Individual values override common ones, including empty
 text. Integer fields are JSON integers (lane_order may be null); other scalars
@@ -1080,13 +1091,16 @@ token and never authorizes the later write.
 
 Write success emits `command=task.complete` and data keys `task`,
 `changed_fields`, and `event`. Both check and write require a satisfying current
-verification basis: trimmed-empty verification on marker `0`, an exact-current
+verification basis: an explicit waiver reason with trimmed-empty verification
+on marker `0`, an exact-current
 `pass/full` Verification Receipt for nonempty verification on marker `0` or the
 exact closed no-launch `m21_fallback`, or an exact-current qualifying
 complete-plan Runner pass with no Verification Receipt. A pending, stale, or
 cleanup-only Runner basis fails `evidence_basis_stale`; every other
 exact-current structurally valid terminal Runner result fails
 `verification_receipt_blocking`.
+Unspecified verification fails `verification_requirement_unspecified`, even
+when acceptance mentions tests or `--verification-complete` is supplied.
 They also require a current matching review target, qualifying review receipts,
 no current changes-requested receipt, no unresolved high/medium finding, valid
 typed completion evidence, sequential readiness, and exact Git/snapshot binding
@@ -1406,7 +1420,7 @@ python .agents/skills/task-governance-tool/scripts/taskgov.py review target set 
 generation. Git commits are resolved read-only and stored canonically. A diff
 fingerprint is `sha256:` plus 64 lowercase hexadecimal characters.
 
-At schema v21 or v22, this same target-set operation may use the explicitly opted-in
+At schema v21 through v23, this same target-set operation may use the explicitly opted-in
 trusted-local Runner route. It adds no argument or public Runner command. JSON
 success data is `task`, `changed_fields`, `event`, `verification_route`,
 `blocking_code`, and `review_preparation`; failure
@@ -2026,6 +2040,7 @@ Important task/review/handoff errors include:
 - `contract_activation_forbidden`, `contract_authority_required`,
   `contract_write_conflict`
 - `verification_required`, `review_required`, `commit_required`
+- `verification_requirement_unspecified`
 - `verification_expectation_required`, `verification_basis_stale`,
   `verification_receipt_required`, `verification_receipt_blocking`,
   `verification_receipt_already_recorded`, `invalid_verification_evidence`

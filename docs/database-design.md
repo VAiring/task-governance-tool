@@ -49,6 +49,7 @@ Current sequential migrations are:
 | 20 | verification Runner shadow storage and Bundle-v2 null-Runner tagged union |
 | 21 | verification Runner gate-basis tags using the existing schema-v20 structures |
 | 22 | retired Analyzer reservation cleanup in the existing Evidence/Bundle tables |
+| 23 | `verification_declaration`: Task and completion-cycle waiver reasons |
 
 Every migration is ordered, idempotent on reentry, transactional, and
 rollback-tested. Reentry validates rather than synthesizing missing data.
@@ -61,8 +62,8 @@ checkpoint, maintenance, identity, and completion traces. The sole current
 exception is migration 20's Bundle-rebuild retirement of the
 unsupported attached residue defined below; it changes no other migration.
 
-The fixed-state setup migrator accepts complete source schemas v1-v21 and
-treats v22 as current. Legacy `state/projects` discovery is intentionally
+The fixed-state setup migrator accepts complete source schemas v1-v22 and
+treats v23 as current. Legacy `state/projects` discovery is intentionally
 narrower: v1-v13 plus the explicit schema-v14 legacy-layout transition.
 Viewer compatibility is independent and accepts source schemas v5-v22.
 Incomplete history, a missing required object/row, a later marker, too-new
@@ -490,9 +491,39 @@ and index-last; its other limits and publication behavior are unchanged.
 
 <a id="current-schema-v22-reservation-cleanup-design"></a>
 
-## Current Schema-v22 Reservation Cleanup Design
+## Current Schema-v23 Verification Declaration Design
 
-`storage.py` sets the public schema target to 22 and composes the existing
+`schema_verification_declaration.py` owns migration 23 and exact owned-DDL
+validation. `storage.py::apply_migrations` composes it after complete schema 22.
+Two ALTERs add the bounded reason columns: Task text defaults to empty; cycle
+text remains nullable for old history. A native insert requires a non-NULL exact
+Task reason with the correct required/waived basis. The pre-existing partial
+legacy bridge alone admits a new NULL. Global stored-row validation checks the
+reason's storage type, bounds, privacy and exclusive declaration; native source
+23 Bundle/cycle validation rejects NULL, while old Bundles keep NULL history.
+
+The Bundle table is rebuilt with the unchanged format-2 three-arm union and a
+new source-23 case; the cycle Evidence guard now requires source 23. The sole
+temporary name is `completion_evidence_bundles_v22`. Original-column business
+snapshots and unrelated-object SQL must match before and after the marker; new
+Task reasons must remain empty and old cycle reasons NULL. Existing FK-off /
+legacy-alter-on transaction, marker-last, rollback, connection restoration,
+pre-migration backup and validation-only reentry are retained. The owned
+inventory is 35 tables, 42 indexes and 60 triggers. No general migration or
+admission abstraction is added.
+
+A reason is not part of the authority-snapshot or Bundle digest. Task editing
+invalidates the target explicitly even when the authority snapshot is reused;
+the Packet exposes the reason and each new cycle stores its immutable copy.
+Done/reopen validation compares a non-NULL cycle reason with its Task; a legacy
+NULL is never inferred to mean approval. Recovery, normal resolver/writer and
+doctor retain global admission. Viewer ignores the new reason fields and keeps
+its existing v4 shape. Current capture/index writes source 23, but immutable
+source-19 through source-22 Bundles keep their exact bytes and digests.
+
+### Supported Schema-v22 Reservation Cleanup
+
+The predecessor schema-22 boundary composes the existing
 migration sequence through `_migrate_schema22_connection`. A complete source
 20 runs 21 then 22, source 21 runs 22, and fresh/older construction reaches the
 same final v22 objects and contiguous markers 1 through 22. Exact-v22 reentry

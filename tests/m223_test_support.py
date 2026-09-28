@@ -144,6 +144,49 @@ def logical_database_digest(connection: sqlite3.Connection) -> str:
     return hashlib.sha256(encoded).hexdigest()
 
 
+def remove_v23_declaration_for_test(connection: sqlite3.Connection) -> None:
+    """Construct old fixtures only when no v23 declaration/history would be lost."""
+    from task_governance_tool import storage
+    from task_governance_tool import schema_verification_declaration as declaration
+    if storage.current_schema_version(connection) != 23:
+        return
+    connection.commit()
+    declaration.validate_storage(connection)
+    if (connection.execute("SELECT 1 FROM tasks WHERE verification_not_required_reason != ''").fetchone()
+        or connection.execute("SELECT 1 FROM task_completion_cycles WHERE verification_not_required_reason IS NOT NULL").fetchone()
+        or connection.execute("SELECT 1 FROM completion_evidence_bundles WHERE source_schema_version=23").fetchone()):
+        raise AssertionError("old fixture cannot discard schema23 declarations or completions")
+    foreign_keys = connection.execute("PRAGMA foreign_keys").fetchone()[0]
+    legacy_alter = connection.execute("PRAGMA legacy_alter_table").fetchone()[0]
+    connection.execute("PRAGMA foreign_keys=OFF")
+    connection.execute("PRAGMA legacy_alter_table=ON")
+    try:
+        connection.execute("BEGIN IMMEDIATE")
+        connection.execute("DROP TRIGGER trg_task_completion_cycles_verification_declaration_insert")
+        connection.execute("DROP TRIGGER trg_task_completion_cycles_evidence_basis_insert")
+        connection.execute("ALTER TABLE tasks DROP COLUMN verification_not_required_reason")
+        connection.execute("ALTER TABLE task_completion_cycles DROP COLUMN verification_not_required_reason")
+        connection.execute("ALTER TABLE completion_evidence_bundles RENAME TO completion_evidence_bundles_v23_test")
+        statements = [sql for sql in storage._schema22_replacement_statements()
+                      if storage._schema20_statement_identity(sql)[2] == "completion_evidence_bundles"
+                      or storage._schema20_statement_identity(sql)[1] == "trg_task_completion_cycles_evidence_basis_insert"]
+        connection.execute(next(sql for sql in statements if storage._schema20_statement_identity(sql)[0] == "table"))
+        connection.execute("INSERT INTO completion_evidence_bundles SELECT * FROM completion_evidence_bundles_v23_test")
+        connection.execute("DROP TABLE completion_evidence_bundles_v23_test")
+        for sql in statements:
+            if storage._schema20_statement_identity(sql)[0] != "table":
+                connection.execute(sql)
+        connection.execute("DELETE FROM schema_migrations WHERE version=23")
+        storage.validate_schema22_storage(connection)
+        connection.commit()
+    except Exception:
+        connection.rollback()
+        raise
+    finally:
+        connection.execute(f"PRAGMA legacy_alter_table={legacy_alter}")
+        connection.execute(f"PRAGMA foreign_keys={foreign_keys}")
+
+
 def remove_v21_gate_basis_for_test(connection: sqlite3.Connection) -> None:
     """Reduce an admissible schema-v21/v22 fixture to the exact schema-v20 surface.
 
@@ -166,6 +209,13 @@ def remove_v21_gate_basis_for_test(connection: sqlite3.Connection) -> None:
         _verification_runner_trigger_statements,
     )
 
+    # Historical fixture callers also supply ordinary tuple-row connections.
+    row_factory_before = connection.row_factory
+    try:
+        connection.row_factory = sqlite3.Row
+        remove_v23_declaration_for_test(connection)
+    finally:
+        connection.row_factory = row_factory_before
     marker = connection.execute(
         "SELECT 1 FROM schema_migrations WHERE version = 21"
     ).fetchone()

@@ -173,12 +173,20 @@ def _packet(value, task_id):
     if len(raw) > files.PACKET_LIMIT:
         files._fail("handoff_input_too_large")
     packet = files._packet(raw)
-    if (set(packet["task"]) != {"task_id", "title", "status", "verification", "review_tier"}
+    if (set(packet["task"]) not in (
+            {"task_id", "title", "status", "verification", "review_tier"},
+            {"task_id", "title", "status", "verification", "verification_not_required_reason", "review_tier"})
             or set(packet["contract"]) != {"revision", "scope", "acceptance", "constraints"}
             or set(packet["review_target"]) != {"kind", "value", "base_revision", "generation"}
             or packet["task"]["task_id"] != task_id):
         files._fail("review_target_mismatch")
     _target(packet["review_target"])
+    if "verification_not_required_reason" in packet["task"]:
+        from task_governance_tool.verification_declaration import verification_requirement
+        reason = packet["task"]["verification_not_required_reason"]
+        if type(reason) is not str:
+            files._fail("handoff_response_invalid")
+        validate_text("verification_not_required_reason", reason, limit=1000)
     if not 0 <= packet["contract"]["revision"] <= SQLITE_INT64_MAX:
         files._fail("handoff_response_invalid")
     for owner, names in ((packet["task"], ("title", "status", "verification")),
@@ -193,6 +201,8 @@ def _packet(value, task_id):
                 validator("contract_" + name, owner[name])
             else:
                 validate_text(name, owner[name])
+    if "verification_not_required_reason" in packet["task"]:
+        verification_requirement(packet["task"]["verification"], reason)
     for name in ("review_focus", "required_output", "result_instructions"):
         if (type(packet[name]) is not list or not packet[name]
                 or any(type(item) is not str or not item for item in packet[name])):
@@ -236,7 +246,8 @@ def _source(data, args):
     if action == "target":
         route = source["verification_route"]
         if (route not in ("not_required", "runner_pass", "receipt_required", "blocked")
-                or source["blocking_code"] != ("verification_receipt_blocking" if route == "blocked" else None)
+                or (source["blocking_code"] not in {"verification_receipt_blocking", "verification_requirement_unspecified"}
+                    if route == "blocked" else source["blocking_code"] is not None)
                 or (route in ("not_required", "runner_pass")) != (preparation["status"] in ("ready", "failed"))):
             files._fail("handoff_response_invalid")
     elif ((source["result"] == "pass" and source["scope_coverage"] == "full")

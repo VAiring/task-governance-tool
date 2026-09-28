@@ -36,6 +36,7 @@ COMPLETION_BLOCKING_CODES = (
     "invalid_status_transition",
     "sequential_predecessor_incomplete",
     "verification_required",
+    "verification_requirement_unspecified",
     "review_required",
     "completion_evidence_conflict",
     "external_revision_approval_required",

@@ -27,6 +27,14 @@ verification text, tags, timestamps, completion evidence, current review
 target, current Contract pointer, Effort activity, and completion-history
 coverage. IDs never encode a path.
 
+`verification_declaration.py` owns only the three-state classifier, bounded
+explicit reason validation and grouped common/item replacement. Tasks store
+verification text and `verification_not_required_reason`; public Task converters
+derive `verification_requirement`. No prose parser is used. An explicit edit of
+one declaration member clears the other. A reason-only semantic edit participates
+in existing target invalidation even when the authority snapshot is reused.
+The selected Task/Packet carries the reason; Viewer keeps its existing allow-list.
+
 Statuses are:
 
 ```text

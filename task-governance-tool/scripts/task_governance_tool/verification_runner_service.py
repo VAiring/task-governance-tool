@@ -122,6 +122,7 @@ from task_governance_tool.verification_runner_runtime import (
     observe_fixed_package_runtime,
 )
 from task_governance_tool.verification_runner_selection import _terminal_runner_mode
+from task_governance_tool.verification_declaration import verification_requirement
 
 
 @dataclass
@@ -233,9 +234,10 @@ def _persist_ordinary_target(
     verification = authority.task.get("verification")
     if not isinstance(verification, str):
         raise _state_invalid()
-    verification_route = (
-        "receipt_required" if verification.strip() else "not_required"
+    requirement = verification_requirement(
+        verification, str(authority.task.get("verification_not_required_reason", "")),
     )
+    verification_route = {"required": "receipt_required", "not_required": "not_required", "unspecified": "blocked"}[requirement]
     with closing(connect_initialized(target)) as connection:
         with connection:
             review = persist_prepared_review_target_capture(
@@ -248,6 +250,7 @@ def _persist_ordinary_target(
     return _routed_review_target(
         review,
         verification_route=verification_route,
+        blocking_code="verification_requirement_unspecified" if requirement == "unspecified" else None,
     )
 
 

@@ -843,6 +843,12 @@ explicit scope, acceptance, constraints, and authority reference.
 For initial reference examples and the reserved Task-ID form, see
 [Task Contract](#task-contract).
 
+Set the whole Task's verification expectation, or an explicitly justified
+`--verification-not-required` reason, in that same registration or an existing
+edit. An unknown requirement may remain unspecified during work, but cannot
+complete. Acceptance prose and `--verification-complete` do not declare it.
+Use no extra read or question solely to repeat already-authorized requirements.
+
 When registration **and immediate implementation** are already authorized and
 the Task can start without bypassing existing selection or predecessor order,
 record that decision with `task add --status in_progress` (or the item's

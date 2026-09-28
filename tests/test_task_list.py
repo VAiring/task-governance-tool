@@ -104,6 +104,7 @@ class TaskListTests(unittest.TestCase):
                 db,
                 repo,
                 "Done task",
+                "--verification-not-required", "List-only fixture",
                 "--tags",
                 "archive",
             ),

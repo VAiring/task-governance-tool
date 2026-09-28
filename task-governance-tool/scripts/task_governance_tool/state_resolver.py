@@ -1222,7 +1222,10 @@ def _inspect_database(
         )
         if classify_recovery_content:
             try:
-                if version == 22:
+                if version == 23:
+                    from task_governance_tool.schema_verification_declaration import validate_storage
+                    validate_storage(connection, recovery=True)
+                elif version == 22:
                     validate_schema22_storage_for_recovery(connection)
                 elif version == 21:
                     validate_schema21_storage_for_recovery(connection)

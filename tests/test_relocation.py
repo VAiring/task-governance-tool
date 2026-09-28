@@ -214,8 +214,14 @@ class RelocationTokenCodecTests(unittest.TestCase):
         self.assert_invalid(
             legacy_context,
             source_layout="fixed_current_v1",
-            source_schema_version=23,
+            source_schema_version=24,
         )
+
+    def test_current_schema_context_roundtrip(self):
+        context = legacy_context(source_layout="fixed_current_v1", source_schema_version=23)
+        issued_at = "2026-09-28T00:00:00Z"
+        token = encode_relocation_token(context, issued_at=issued_at)
+        self.assertEqual(decode_relocation_token(token, now=issued_at).context, context)
 
     def test_encode_rejects_invalid_context_time_and_oversized_transport(self):
         for issued_at in (

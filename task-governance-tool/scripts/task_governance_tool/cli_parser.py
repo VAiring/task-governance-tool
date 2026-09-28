@@ -151,6 +151,9 @@ def build_parser() -> argparse.ArgumentParser:
             f"({TASK_VERIFICATION_INPUT_LIMIT:,} characters or fewer)"
         ),
     )
+    task_add_parser.add_argument("--verification-not-required", dest="verification_not_required_reason",
+                                 default=argparse.SUPPRESS, metavar="REASON",
+                                 help="explicitly declare verification unnecessary with a short reason")
     task_add_parser.add_argument("--tags", default=argparse.SUPPRESS)
     task_add_parser.add_argument("--contract-scope", default=argparse.SUPPRESS)
     task_add_parser.add_argument("--contract-acceptance", default=argparse.SUPPRESS)
@@ -245,6 +248,9 @@ def build_parser() -> argparse.ArgumentParser:
             f"({TASK_VERIFICATION_INPUT_LIMIT:,} characters or fewer)"
         ),
     )
+    task_edit_parser.add_argument("--verification-not-required", dest="verification_not_required_reason",
+                                  default=argparse.SUPPRESS, metavar="REASON",
+                                  help="replace verification with an explicit not-required reason")
     task_edit_parser.add_argument("--tags", default=argparse.SUPPRESS)
     task_edit_parser.add_argument("--add-note", default=argparse.SUPPRESS)
     task_edit_parser.add_argument("--reopen-reason", default=argparse.SUPPRESS)

@@ -51,7 +51,10 @@ def init_db(db, repo):
     initialize_taskgov_internal(repo=repo, db=db)
 
 
-def add_task(db, repo, title, *extra):
+def add_task(db, repo, title, *extra, declare_verification=True):
+    declaration = (() if not declare_verification or "--verification" in extra
+                   or "--verification-not-required" in extra else
+                   ("--verification-not-required", "Completion fixture without executable changes"))
     result = run_taskgov(
         "task",
         "add",
@@ -61,6 +64,7 @@ def add_task(db, repo, title, *extra):
         str(db),
         "--title",
         title,
+        *declaration,
         *extra,
         "--json",
     )
@@ -1049,6 +1053,7 @@ class TaskCompleteCliTests(unittest.TestCase):
                 "in_progress",
                 "--review-tier",
                 "2",
+                declare_verification=False,
             )
             target_value = "sha256:" + ("d" * 64)
             with closing(connect(db)) as connection:
@@ -1109,7 +1114,7 @@ class TaskCompleteCliTests(unittest.TestCase):
                 connection.commit()
                 apply_evidence_ledger_capture_migration(connection)
                 apply_completion_evidence_bundle_migration(connection)
-                self.assertEqual(apply_migrations(connection), ([20, 21, 22], []))
+                self.assertEqual(apply_migrations(connection), ([20, 21, 22, 23], []))
                 legacy_provenance = connection.execute(
                     """
                     SELECT COUNT(*)
@@ -1128,6 +1133,8 @@ class TaskCompleteCliTests(unittest.TestCase):
                 script_path=SKILL_ROOT / "scripts" / "taskgov.py",
             )
             with closing(connect(db)) as connection:
+                task_service.edit_task(connection, database_target.project, task["task_id"],
+                    verification_not_required_reason="Completion fixture without executable changes")
                 review_service.set_review_target(
                     connection,
                     database_target.project,

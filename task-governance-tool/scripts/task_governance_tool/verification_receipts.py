@@ -593,8 +593,12 @@ def _gate_from_exact(
     runner_mode: str | None = None,
     runner_observation_id: str | None = None,
     allow_legacy_subject: bool = False,
+    not_required_reason: str = "",
+    legacy_blank: bool = False,
 ) -> VerificationGate:
     if not expectation.strip():
+        if not not_required_reason.strip() and not legacy_blank:
+            return VerificationGate(True, False, "verification_requirement_unspecified", None)
         return VerificationGate(
             False,
             True,
@@ -767,6 +771,9 @@ def _validate_done_cycle(
 ) -> VerificationGate:
     if cycle is None:
         raise completion_history_inconsistent()
+    if (cycle.verification_not_required_reason is not None and
+        cycle.verification_not_required_reason != task.get("verification_not_required_reason")):
+        raise completion_history_inconsistent()
     if cycle.verification_basis_version == 0:
         if (
             cycle.verification_expectation_digest is not None
@@ -885,6 +892,8 @@ def read_verification_evidence(
             else None
         ),
         allow_legacy_subject=done,
+        not_required_reason=str(task.get("verification_not_required_reason", "")),
+        legacy_blank=done or SCHEMA_VERSION < 23,
     )
     if str(task["status"]) == "done":
         gate = _validate_done_cycle(
@@ -969,7 +978,9 @@ def current_verification_gate(
         source_revision=source_revision,
         current_subject=current_subject,
         exact_rows=exact_rows,
+        not_required_reason=str(task.get("verification_not_required_reason", "")),
         runner_basis_version=_task_runner_basis_version(task),
+        legacy_blank=SCHEMA_VERSION < 23,
         runner_mode=_validated_runner_mode(
             connection,
             task=task,
@@ -994,6 +1005,8 @@ def enforce_verification_gate(
         task=task,
         runner_selection=runner_selection,
     )
+    if gate.blocking_code == "verification_requirement_unspecified":
+        raise _error("verification_requirement_unspecified", "declare verification or an explicit not-required reason before completion")
     if gate.blocking_code == "review_target_required":
         raise _error(
             "review_target_required",

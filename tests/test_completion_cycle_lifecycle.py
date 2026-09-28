@@ -67,6 +67,8 @@ def add_task(db: Path, repo: Path, title: str, *, tier: int = 1):
         str(db),
         "--title",
         title,
+        "--verification-not-required",
+        "Completion fixture without executable changes",
         "--status",
         "in_progress",
         "--review-tier",
@@ -522,6 +524,8 @@ class CompletionCycleLifecycleTests(unittest.TestCase):
                     str(db),
                     "--title",
                     "Repeated lifecycle",
+                    "--verification-not-required",
+                    "Completion fixture without executable changes",
                     "--status",
                     "in_progress",
                     "--review-tier",
@@ -1320,7 +1324,7 @@ class CompletionCycleLifecycleTests(unittest.TestCase):
                     "code": "migration_required",
                     "message": (
                         "database schema version 17 does not match supported "
-                        "version 22; run setup to migrate"
+                        "version 23; run setup to migrate"
                     ),
                 }],
             )
@@ -1329,7 +1333,7 @@ class CompletionCycleLifecycleTests(unittest.TestCase):
             with closing(connect(db)) as connection:
                 apply_evidence_ledger_capture_migration(connection)
                 apply_completion_evidence_bundle_migration(connection)
-                self.assertEqual(apply_migrations(connection), ([20, 21, 22], []))
+                self.assertEqual(apply_migrations(connection), ([20, 21, 22, 23], []))
 
             reopened, reopen_payload = run_json(
                 *reopen_args(
@@ -1454,6 +1458,8 @@ class CompletionCycleLifecycleTests(unittest.TestCase):
                 str(db),
                 "--title",
                 "TG-M19.7 legacy read fixture",
+                "--verification-not-required",
+                "Completion fixture without executable changes",
                 "--status",
                 "in_progress",
                 "--review-tier",

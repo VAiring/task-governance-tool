@@ -457,7 +457,7 @@ class TaskShowProjectionTests(unittest.TestCase):
     def test_hidden_completion_bundle_is_still_validated_in_both_modes(self):
         from tests.test_m243c_runner_gate import _corrupt_completion_bundle_digest
 
-        task = self.add("--review-tier", "0")
+        task = self.add("--review-tier", "0", "--verification-not-required", "Projection-only fixture")
         self.target(task["task_id"])
         self.success(
             "review", "receipt", "add", task["task_id"], "--reviewer", "mechanical-review",
@@ -486,7 +486,7 @@ class TaskShowProjectionTests(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stdout or result.stderr)
             return json.loads(result.stdout)
 
-        task_id = physical("task", "add", "--title", "Completed evidence fixture", "--status", "in_progress", "--review-tier", "0")["data"]["task"]["task_id"]
+        task_id = physical("task", "add", "--title", "Completed evidence fixture", "--status", "in_progress", "--review-tier", "0", "--verification-not-required", "Projection-only fixture")["data"]["task"]["task_id"]
         physical("review", "target", "set", task_id, "--kind", "diff_fingerprint", "--revision", "sha256:" + "b" * 64)
         physical("review", "receipt", "add", task_id, "--reviewer", "mechanical-review", "--kind", "not_required", "--verdict", "not_required", "--summary", "Mechanical fixture")
         physical("task", "complete", task_id, "--verification-complete", "--review-complete", "--commit-not-required")

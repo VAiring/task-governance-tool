@@ -40,8 +40,10 @@ class PreparationFixture(unittest.TestCase):
         return json.loads(result.stdout)["data"]
 
     def task(self, verification=""):
+        declaration = (["--verification", verification] if verification else
+                       ["--verification-not-required", "Isolated transport fixture without executable changes"])
         return self.cli("task", "add", "--title", "Full pipeline 日本語", "--review-tier", "2",
-                        "--status", "in_progress", "--verification", verification)["task"]["task_id"]
+                        "--status", "in_progress", *declaration)["task"]["task_id"]
 
     def invoke(self, *args, raw=None):
         return subprocess.run([sys.executable, "-I", "-S", str(self.helper), *args],
@@ -461,6 +463,7 @@ class ReviewerMaterialTests(PreparationFixture):
     def test_live_contract_and_generation_drift_and_opaque_targets(self):
         task = self.cli("task", "add", "--title", "Contract drift", "--status", "in_progress",
                         "--review-tier", "2", "--contract-scope", "Initial scope",
+                        "--verification-not-required", "Isolated transport fixture without executable changes",
                         "--contract-acceptance", "Focused acceptance")["task"]["task_id"]
         _, prepared = self.prepare(task)
         packet = prepared["handoff"]["packet_path"]
@@ -523,7 +526,8 @@ class ReviewerMaterialTests(PreparationFixture):
     def test_complete_packet_alternative_routes_keep_explicit_approval_and_tier_zero(self):
         for tier, kind in ((2, "self_review_fallback"), (0, "not_required")):
             task = self.cli("task", "add", "--title", "Alternative route", "--review-tier", str(tier),
-                            "--status", "in_progress")["task"]["task_id"]
+                            "--status", "in_progress", "--verification-not-required",
+                            "Isolated transport fixture without executable changes")["task"]["task_id"]
             _, prepared = self.prepare(task, directory=f"reviews/tier{tier}")
             packet_path = prepared["handoff"]["packet_path"]
             packet = json.loads((self.root / packet_path).read_bytes())
@@ -557,7 +561,8 @@ class DirectPacketReviewerTests(unittest.TestCase):
                 self.assertEqual(completed.returncode, 0, completed.stdout or completed.stderr)
                 return json.loads(completed.stdout)["data"]
             cli("setup")
-            task = cli("task", "add", "--title", "Direct independent review", "--review-tier", "2")["task"]["task_id"]
+            task = cli("task", "add", "--title", "Direct independent review", "--review-tier", "2",
+                       "--verification-not-required", "Isolated transport fixture without executable changes")["task"]["task_id"]
             packet = cli("review", "target", "set", task, "--kind", "diff_fingerprint",
                          "--revision", FINGERPRINT)["review_preparation"]["packet"]
             # Reviewer receives this complete object, not a file or helper commands.

@@ -108,6 +108,11 @@ RunnerSelectionProvider = Callable[
     VerificationRunnerGateSelection | None,
 ]
 
+from task_governance_tool.verification_declaration import (
+    merge_declaration_fields, normalize_not_required_reason, verification_requirement,
+)
+
+
 PUBLIC_TASK_FIELDS = (
     "task_id",
     "project_id",
@@ -122,6 +127,7 @@ PUBLIC_TASK_FIELDS = (
     "pause_reason",
     "review_tier",
     "verification",
+    "verification_not_required_reason",
     "tags",
     "created_at",
     "updated_at",
@@ -153,7 +159,7 @@ TASK_SHOW_FIELDS = PUBLIC_TASK_FIELDS + (
 VIEWER_TASK_FIELDS = tuple(
     field
     for field in TASK_SHOW_FIELDS
-    if field != "review_target_base_revision"
+    if field not in {"review_target_base_revision", "verification_not_required_reason"}
 )
 
 @dataclass
@@ -240,6 +246,7 @@ def validate_task_input(
     pause_reason: Any = "",
     review_tier: Any = 1,
     verification: Any = "",
+    verification_not_required_reason: Any = None,
     tags: Any = "",
     add_note: Any = None,
 ) -> dict[str, Any]:
@@ -265,6 +272,11 @@ def validate_task_input(
         ),
         "tags": validate_text("tags", tags, limit=TEXT_LIMITS["tags"]),
     }
+    normalized["verification_not_required_reason"] = (
+        normalize_not_required_reason(verification_not_required_reason)
+        if verification_not_required_reason is not None else ""
+    )
+    verification_requirement(normalized["verification"], normalized["verification_not_required_reason"])
     if normalized["status"] == "blocked" and not normalized["blocked_reason"].strip():
         raise validation_error(
             "blocked_reason_required",
@@ -323,7 +335,11 @@ def next_lane_order(connection: sqlite3.Connection, project_id: str, lane: str) 
 
 def row_to_task(row: sqlite3.Row) -> dict[str, Any]:
     row_keys = set(row.keys())
-    return {field: row[field] for field in PUBLIC_TASK_FIELDS if field in row_keys}
+    result = {field: row[field] for field in PUBLIC_TASK_FIELDS if field in row_keys}
+    result["verification_requirement"] = verification_requirement(
+        row["verification"], result.get("verification_not_required_reason", ""),
+    )
+    return result
 
 
 def canonical_lane_order_conflict(
@@ -352,7 +368,9 @@ def canonical_lane_order_conflict(
 
 def row_to_show_task(row: sqlite3.Row) -> dict[str, Any]:
     row_keys = set(row.keys())
-    return {field: row[field] for field in TASK_SHOW_FIELDS if field in row_keys}
+    return {**row_to_task(row), **{
+        field: row[field] for field in TASK_SHOW_FIELDS if field in row_keys
+    }}
 
 
 def row_to_viewer_task(row: sqlite3.Row) -> dict[str, Any]:
@@ -653,6 +671,13 @@ def _add_prepared_task(
     }
     completion_history_column = ""
     completion_history_value = ""
+    declaration_column = declaration_value = ""
+    if schema_version >= 23:
+        row["verification_not_required_reason"] = normalized["verification_not_required_reason"]
+        declaration_column = ", verification_not_required_reason"
+        declaration_value = ", :verification_not_required_reason"
+    elif normalized["verification_not_required_reason"]:
+        raise validation_error("migration_required", "run setup before recording a verification declaration")
     if schema_version >= 15:
         row["completion_history_coverage"] = (
             "complete" if schema_version >= 16 else "legacy_unknown"
@@ -684,6 +709,7 @@ def _add_prepared_task(
               updated_at,
               completed_at
               {completion_history_column}
+              {declaration_column}
             )
             VALUES (
               :task_id,
@@ -704,6 +730,7 @@ def _add_prepared_task(
               :updated_at,
               :completed_at
               {completion_history_value}
+              {declaration_value}
             )
             """,
             row,
@@ -1032,6 +1059,8 @@ def validate_task_edit_input(**edit_input: Any) -> dict[str, Any]:
                 value,
                 limit=TASK_VERIFICATION_INPUT_LIMIT,
             )
+        elif field == "verification_not_required_reason":
+            normalized[field] = normalize_not_required_reason(value)
         elif field == "tags":
             normalized[field] = validate_text(field, value, limit=TEXT_LIMITS["tags"])
         elif field == "add_note":
@@ -1113,6 +1142,10 @@ def validate_task_edit_input(**edit_input: Any) -> dict[str, Any]:
         )
     if not normalized:
         raise validation_error("invalid_argument", "at least one editable field or add_note is required")
+    verification_requirement(
+        normalized.get("verification", ""),
+        normalized.get("verification_not_required_reason", ""),
+    )
     if normalized.get("status") == "blocked" and not str(normalized.get("blocked_reason", "")).strip():
         raise validation_error(
             "blocked_reason_required",
@@ -1724,6 +1757,8 @@ def validate_completion_database_basis(
     )
     from task_governance_tool.reviews import first_review_gate_error
 
+    if basis.verification_gate.blocking_code == "verification_requirement_unspecified":
+        raise validation_error("verification_requirement_unspecified", "declare verification or an explicit not-required reason before completion")
     if basis.verification_gate.blocking_code == "evidence_basis_stale":
         raise validation_error(
             "evidence_basis_stale",
@@ -2847,15 +2882,19 @@ def edit_task(
             "reopen_reason",
         )
 
-    updated = dict(existing)
+    updated = merge_declaration_fields(dict(existing), normalized)
+    if "verification_not_required_reason" not in existing:
+        if updated.get("verification_not_required_reason"):
+            raise validation_error("migration_required", "run setup before recording a verification declaration")
+        updated.pop("verification_not_required_reason", None)
     status_was_provided = "status" in normalized
     lane_was_provided = "lane" in normalized
     order_was_provided = "lane_order" in normalized
     for field, value in normalized.items():
         updated[field] = value
     authority_changed = any(
-        field in normalized and updated[field] != existing[field]
-        for field in ("title", "description", "verification", "review_tier")
+        updated.get(field) != existing.get(field)
+        for field in ("title", "description", "verification", "verification_not_required_reason", "review_tier")
     )
     authority_changed_after_target = (
         authority_changed and int(existing["review_target_generation"]) > 0
@@ -3193,6 +3232,8 @@ def edit_task(
     changed_fields = [
         field for field in comparable_fields if updated[field] != existing[field]
     ]
+    if updated.get("verification_not_required_reason") != existing.get("verification_not_required_reason"):
+        changed_fields.append("verification_not_required_reason")
     recorded_markers = []
     if evidence_marker is not None:
         recorded_markers.append(evidence_marker)

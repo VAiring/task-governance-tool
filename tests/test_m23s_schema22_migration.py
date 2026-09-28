@@ -18,7 +18,7 @@ REBUILT_TABLES = (
 TEMPORARY_TABLES = tuple(f"{table}_v21" for table in REBUILT_TABLES)
 
 
-def _rows(connection, *, include_markers=True):
+def _rows(connection, *, include_markers=True, column_basis=None):
     result = {}
     for row in connection.execute(
         "SELECT name FROM sqlite_master WHERE type='table' "
@@ -27,7 +27,8 @@ def _rows(connection, *, include_markers=True):
         table = str(row[0])
         if not include_markers and table == "schema_migrations":
             continue
-        columns = tuple(str(item[1]) for item in connection.execute(f'PRAGMA table_info("{table}")'))
+        columns = (column_basis[table] if column_basis is not None else
+                   tuple(str(item[1]) for item in connection.execute(f'PRAGMA table_info("{table}")')))
         projection = ", ".join(f'"{column}"' for column in columns)
         values = tuple(sorted(
             (tuple(item) for item in connection.execute(f'SELECT {projection} FROM "{table}"')),
@@ -356,10 +357,11 @@ class Schema22MigrationTests(unittest.TestCase):
             self.assert_restored_connection(connection)
             storage.validate_schema21_storage(connection)
 
-    def test_public_initialization_and_migration_dispatch_activate22(self):
-        with definitions._empty_public_database(schema_version=22) as (initialized, connection):
-            self.assertEqual(storage.SCHEMA_VERSION, 22)
-            self.assertEqual(initialized.schema_version, 22)
+    def test_public_initialization_and_migration_dispatch_continue_through23(self):
+        from task_governance_tool import schema_verification_declaration as declaration
+        with definitions._empty_public_database(schema_version=23) as (initialized, connection):
+            self.assertEqual(storage.SCHEMA_VERSION, 23)
+            self.assertEqual(initialized.schema_version, 23)
             before = _logical_snapshot(connection)
             self.assertEqual(storage.apply_migrations(connection), ([], []))
             self.assertEqual(_logical_snapshot(connection), before)
@@ -368,9 +370,12 @@ class Schema22MigrationTests(unittest.TestCase):
             _basis, artifacts = validation_fixture._bundle_artifacts(
                 connection, self.target.project.project_id
             )
-            self.assertEqual(storage.apply_migrations(connection), ([22], []))
-            storage.validate_schema22_storage(connection)
-            self.assertEqual(_rows(connection, include_markers=False), original)
+            self.assertEqual(storage.apply_migrations(connection), ([22, 23], []))
+            declaration.validate_storage(connection)
+            self.assertEqual(_rows(connection, include_markers=False,
+                column_basis={name: value[0] for name, value in original.items()}), original)
+            self.assertFalse(connection.execute("SELECT 1 FROM tasks WHERE verification_not_required_reason != ''").fetchone())
+            self.assertFalse(connection.execute("SELECT 1 FROM task_completion_cycles WHERE verification_not_required_reason IS NOT NULL").fetchone())
             _basis, preserved = validation_fixture._bundle_artifacts(
                 connection, self.target.project.project_id
             )
@@ -379,8 +384,8 @@ class Schema22MigrationTests(unittest.TestCase):
             self.assertEqual(storage.apply_migrations(connection), ([], []))
             self.assertEqual(_logical_snapshot(connection), before)
         with definitions._empty_public_database(schema_version=20) as (_initialized, connection):
-            self.assertEqual(storage.apply_migrations(connection), ([21, 22], []))
-            storage.validate_schema22_storage(connection)
+            self.assertEqual(storage.apply_migrations(connection), ([21, 22, 23], []))
+            declaration.validate_storage(connection)
 
 
 if __name__ == "__main__":

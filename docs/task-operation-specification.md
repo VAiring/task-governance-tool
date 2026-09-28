@@ -247,7 +247,7 @@ Typed completion storage is exactly `completion_evidence_kind`,
 `review_target_kind`, `review_target_value`,
 `review_target_base_revision`, and generation. Values and their legacy
 projection must satisfy one cross-field matrix before storage or output.
-For a supported schema-v18-through-v22 source, every complete loaded Task row is validated
+For a supported schema-v18-through-v23 source, every complete loaded Task row is validated
 for exact SQLite/Python storage class, bounded text/privacy, closed enums, and
 all Task cross-field matrices before any field can be omitted or exposed.
 Stored values are never coerced, trimmed, repaired, or rewritten by a read.
@@ -305,7 +305,8 @@ acceptance. `contract_change_reason`, IDs, timestamps, and target/evidence field
 are not inputs. Initial Contract status/content/authority rules remain unchanged.
 
 Common and per-item Task fields are `description`, `kind`, `lane`, `lane_order`,
-`priority`, `status`, `blocked_reason`, `review_tier`, `verification`, and `tags`.
+`priority`, `status`, `blocked_reason`, `review_tier`, `verification`,
+`verification_not_required_reason`, and `tags`.
 Only per-item input permits `title`. The optional `common.contract` is an
 object containing only `constraints` and/or `authority_ref`. Per-item explicit
 values override common values, including empty text; missing values otherwise
@@ -356,6 +357,37 @@ rollback. Inspect the exact registered set through existing reads before any
 further write and add only a remainder proven missing under current authority.
 Never blindly replay, delete successful Tasks, or rerun splitting. Existing
 partial-add recovery still applies to a sequence of separate single-add calls.
+
+### Verification Declaration
+
+Task verification has three structural states: `unspecified`, `required`, and
+`not_required`. Nonempty-after-trimming `verification` declares `required`;
+otherwise a nonempty `verification_not_required_reason` declares `not_required`;
+with neither it is `unspecified`. Both nonempty values are invalid. No title,
+acceptance, Contract prose, keyword or prior result supplies this declaration.
+Unspecified Tasks, including revision zero, may be registered and worked on but
+cannot newly complete. `--verification-complete` never replaces the declaration.
+
+The existing single add/edit operations accept `--verification-not-required
+<reason>` as the reason field. A supplied reason must be nonempty, sanitized and
+at most 1,000 characters; it is a trusted-caller justification, not a machine
+proof that verification is unnecessary. Supplying `--verification` in an edit
+clears the old reason; supplying a reason clears old verification text. Supplying
+both nonempty inputs is rejected. Explicit empty/whitespace verification resets
+the declaration to unspecified. Omission on edit preserves it.
+
+Batch common/item inputs accept `verification_not_required_reason`. An item
+that supplies either declaration field replaces the common declaration pair;
+otherwise it inherits that pair. Common fields are still validated even when
+overridden. Whole-batch input and write atomicity are unchanged. Normal Task
+JSON exposes the reason and derived `verification_requirement`, without an extra
+read or new command. The declaration is not inferred from the compact output.
+
+Changes to either verification text or the not-required reason invalidate the
+current target, generation, completion evidence and reviews by the existing
+verification-edit rule. Old evidence is retained as history. Prior blank Tasks
+remain unspecified, including after a prior done Task is explicitly reopened;
+their old completion history is not retroactively reclassified.
 
 ### Task Contract
 

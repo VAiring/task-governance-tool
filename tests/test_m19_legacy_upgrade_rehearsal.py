@@ -350,7 +350,7 @@ class LegacyUpgradeAndRollbackRehearsalTests(unittest.TestCase):
     ) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             install, target, task_id = _seed_completed_m21_fixture(
-                self, Path(tmp), source_schema_version=22
+                self, Path(tmp), source_schema_version=23
             )
             publication = publish_setup_evidence_projection(
                 target, observed_at="2026-09-04T00:00:00Z"
@@ -478,7 +478,7 @@ class LegacyUpgradeAndRollbackRehearsalTests(unittest.TestCase):
                 "--read-only", "--json",
             )
             self.assertEqual(preview["data"]["schema_from"], 2)
-            self.assertEqual(preview["data"]["schema_to"], 22)
+            self.assertEqual(preview["data"]["schema_to"], 23)
             self.assertEqual(preview["data"]["planned_writes"], LEGACY_SETUP_WRITES)
             self.assertEqual(preview["data"]["completed_writes"], [])
             self.assertEqual(preview["data"]["evidence_status"], "not_present")
@@ -561,7 +561,7 @@ class LegacyUpgradeAndRollbackRehearsalTests(unittest.TestCase):
                 "--repo", str(project), "--json",
             )
             self.assertEqual(upgraded["data"]["schema_from"], 2)
-            self.assertEqual(upgraded["data"]["schema_to"], 22)
+            self.assertEqual(upgraded["data"]["schema_to"], 23)
             self.assertEqual(upgraded["data"]["planned_writes"], LEGACY_SETUP_WRITES)
             self.assertEqual(upgraded["data"]["completed_writes"], LEGACY_SETUP_WRITES)
             self.assertEqual(upgraded["data"]["evidence_status"], "published")
@@ -592,7 +592,7 @@ class LegacyUpgradeAndRollbackRehearsalTests(unittest.TestCase):
             )
             retired_package_state = tree_snapshot(legacy_skill / "state")
             retained_source_snapshot = tree_snapshot(retained_source)
-            self.assertEqual(sqlite_version(current_db), 22)
+            self.assertEqual(sqlite_version(current_db), 23)
             self.assertEqual(legacy_projection(current_db), pre_upgrade_projection)
 
             with closing(sqlite3.connect(current_db)) as connection:
@@ -672,7 +672,7 @@ class LegacyUpgradeAndRollbackRehearsalTests(unittest.TestCase):
             )
             self.assertEqual(
                 doctor["data"]["components"]["project_state"]["schema_version"],
-                22,
+                23,
             )
             self.assertEqual(
                 doctor["data"]["components"]["maintenance"]["viewer"]["code"],

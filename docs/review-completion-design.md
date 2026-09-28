@@ -723,8 +723,10 @@ specified expectation + Receipt other than pass/full
   => verification_receipt_blocking
 specified expectation + pass/full
   => satisfied
-unspecified expectation
+empty expectation + explicit nonempty not-required reason
   => receipt gate not required; existing attestation remains required
+empty expectation + no not-required reason
+  => verification_requirement_unspecified; required=true, satisfied=false
 ```
 
 A nonempty capture-version-zero target instead reports
@@ -765,8 +767,14 @@ Runner arm proves the exact selected observation and inserts its Runner pointer
 with a null Receipt link. Both then insert the version-1 cycle with the identical
 expectation digest, Task update, and linked completion event in one transaction.
 A native completion whose verification text is empty
-after trimming inserts version 1 with its exact-byte digest and a null Receipt
-link; the exact empty string uses the empty-text digest. Any ownership,
+after trimming requires an explicit nonempty not-required reason, then inserts
+version 1 with its exact-byte digest and a null Receipt link; the exact empty
+string uses the empty-text digest. Schema 23 stores the reason in Task/Packet
+and immutable cycle, not in the Bundle or authority snapshot. The pure gate
+returns `verification_requirement_unspecified` for an undeclared live Task;
+the completion-check allow-list and actual writer share that rejection.
+Historical done reads retain legacy NULL declarations without weakening a new
+completion; non-NULL cycle reasons must match the Task. Any ownership,
 target, digest, link, or gate drift rolls everything back. Existing
 `verification_attestation=true` remains in the cycle, so the Receipt
 strengthens rather than silently replaces the current explicit assertion.
@@ -810,7 +818,10 @@ their exact v17 link/label rules; reopen clears current capture and requires a
 fresh target.
 
 The read model emits the exact types and nulls fixed by the specification.
-Empty marker-`0` expectation is not required and is satisfied. A nonempty
+Empty marker-`0` expectation is satisfied only for an explicit waiver or
+validated prior done history. An unspecified active Task is required and
+unsatisfied with `verification_requirement_unspecified`; reopening old blank
+history does not supply a waiver. A nonempty
 active Task first reports target-required or stale basis; its selected manual
 arm then reports Receipt-required, Receipt-blocking, or satisfied, while its
 qualifying Runner arm reports satisfied with a null Receipt ID. A done Task

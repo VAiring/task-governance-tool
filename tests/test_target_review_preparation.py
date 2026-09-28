@@ -22,8 +22,10 @@ class TargetReviewPreparationTests(unittest.TestCase):
     def create(self, root, verification=""):
         db, repo = root / "state.sqlite", root / "repo"
         initialize_taskgov_internal(repo=repo, db=db)
+        declaration = (["--verification", verification] if verification else
+                       ["--verification-not-required", "Isolated Packet fixture without executable changes"])
         result, payload = self.invoke(db, repo, "task", "add", "--title", "Packet connection",
-                                     "--status", "in_progress", "--verification", verification,
+                                     "--status", "in_progress", *declaration,
                                      "--contract-scope", "Prepare exactly this target",
                                      "--contract-acceptance", "Bound read-only Packet",
                                      "--contract-authority-ref", "user:packet-preparation")

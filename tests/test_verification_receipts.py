@@ -228,9 +228,9 @@ class VerificationReceiptIntegrationTests(unittest.TestCase):
             self.assertEqual(
                 empty_gate,
                 {
-                    "required": False,
-                    "satisfied": True,
-                    "blocking_code": None,
+                    "required": True,
+                    "satisfied": False,
+                    "blocking_code": "verification_requirement_unspecified",
                     "qualifying_receipt_id": None,
                 },
             )
@@ -279,6 +279,9 @@ class VerificationReceiptIntegrationTests(unittest.TestCase):
                 title="Done task",
                 verification="",
             )
+            declared = run_taskgov("task", "edit", done["task_id"], "--verification-not-required",
+                                   "No executable change", "--repo", str(repo), "--db", str(db), "--json")
+            self.assertEqual(declared.returncode, 0, declared.stdout)
             seed_current_review_evidence(db, repo, done["task_id"])
             completed = completion(db, repo, done["task_id"])
             self.assertEqual(completed.returncode, 0, completed.stdout)

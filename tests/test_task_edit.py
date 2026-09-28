@@ -28,6 +28,8 @@ def init_db(db, repo):
 
 
 def add_task(db, repo, title, *extra):
+    if "--verification" not in extra and "--verification-not-required" not in extra:
+        extra = (*extra, "--verification-not-required", "Task-transition fixture")
     if not db.exists():
         init_db(db, repo)
     result = run_taskgov(

@@ -474,7 +474,7 @@ def _edit_without_action(
     runner_selector: RunnerSelectionProvider | None,
     edit_input: dict[str, Any],
 ) -> TaskRunnerPlanEditResult:
-    might_change_basis = "verification" in edit_input or bool(
+    might_change_basis = bool({"verification", "verification_not_required_reason"}.intersection(edit_input)) or bool(
         set(CONTRACT_INPUT_FIELDS).intersection(edit_input)
     )
     if not might_change_basis:

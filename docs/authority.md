@@ -132,6 +132,13 @@ validation and adoption. It does not activate a production layout change;
 current Setup/state and other product owners remain controlling until the
 reviewed implementation switch.
 
+## Verification Declaration Correction
+
+[Explicit verification declaration correction](verification-declaration-plan.md)
+owns the approved single-unit repair boundary and its verification/review gates.
+Task operation, Review/completion, database and shared Runner owners continue
+to own the durable behavior and implementation contracts.
+
 ## Delegated Repository Operating Guides
 
 - [Artifact authoring](artifact-authoring.md)
@@ -190,11 +197,11 @@ enforced meaning.
 
 ```json
 {
-  "schema": "taskgov-document-authority-v16",
+  "schema": "taskgov-document-authority-v17",
   "mandatory_start": ["AGENTS.md", "docs/authority.md", "live_task_contract"],
   "current": ["docs/specification.md", "docs/design.md", "plan.md", "docs/viewer-specification.md", "docs/viewer-design.md", "docs/runner-plan-authoring-specification.md", "docs/runner-plan-authoring-design.md", "docs/task-operation-specification.md", "docs/task-operation-design.md", "docs/runner-execution-specification.md", "docs/runner-execution-design.md", "docs/evidence-specification.md", "docs/evidence-design.md", "docs/review-completion-specification.md", "docs/review-completion-design.md", "docs/setup-state-specification.md", "docs/setup-state-design.md", "docs/database-specification.md", "docs/database-design.md"],
   "mixed_execution": [],
-  "conditional": ["docs/state-layout-separation-plan.md"],
+  "conditional": ["docs/state-layout-separation-plan.md", "docs/verification-declaration-plan.md"],
   "history_index": "docs/history/README.md"
 }
 ```

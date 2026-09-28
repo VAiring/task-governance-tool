@@ -37,6 +37,7 @@ HISTORY_INDEX = "docs/history/README.md"
 RELEASE_INSTALL = "docs/release-install.md"
 ARTIFACT_AUTHORING = "docs/artifact-authoring.md"
 STATE_LAYOUT_PLAN = "docs/state-layout-separation-plan.md"
+VERIFICATION_DECLARATION_PLAN = "docs/verification-declaration-plan.md"
 
 CANONICAL_DOCS = (
     "AGENTS.md",
@@ -62,6 +63,7 @@ CANONICAL_DOCS = (
     DATABASE_DESIGN,
     "plan.md",
     STATE_LAYOUT_PLAN,
+    VERIFICATION_DECLARATION_PLAN,
     HISTORY_INDEX,
 )
 METRIC_DOCS = CANONICAL_DOCS + (RELEASE_INSTALL, ARTIFACT_AUTHORING)
@@ -69,6 +71,7 @@ METRIC_DOCS = CANONICAL_DOCS + (RELEASE_INSTALL, ARTIFACT_AUTHORING)
 # These sections are closed authority edges. Their prose and link order are not
 # part of the contract; the required destination set is.
 ROUTE_SECTIONS = (
+    (AUTHORITY, "## Verification Declaration Correction", ("verification-declaration-plan.md",)),
     (AUTHORITY, "## Conditional State Separation Plan", ("state-layout-separation-plan.md",)),
     (AUTHORITY, "## Mandatory Start Set", ("../AGENTS.md",)),
     (
@@ -369,7 +372,7 @@ ROUTE_SECTIONS = (
     ),
     (
         "docs/specification.md",
-        "### Current Schema-v22 Persistence Contract",
+        "### Current Schema-v23 Persistence Contract",
         ("database-specification.md#current-schema-v22-persistence-contract",),
     ),
     (
@@ -384,7 +387,7 @@ ROUTE_SECTIONS = (
     ),
     (
         DESIGN,
-        "## Current Schema-v22 Reservation Cleanup Design",
+        "## Current Schema-v23 Verification Declaration Design",
         ("database-design.md#current-schema-v22-reservation-cleanup-design",),
     ),
     (
@@ -573,6 +576,7 @@ FENCE_LIST_PREFIX = re.compile(
 
 ROLE_TITLES = {
     STATE_LAYOUT_PLAN: "# Project State Separation: Design And Execution Plan",
+    VERIFICATION_DECLARATION_PLAN: "# Explicit Verification Declaration Correction",
     "AGENTS.md": "# AGENTS.md",
     "README.md": "# task-governance-tool",
     AUTHORITY: "# Repository Authority Index",
@@ -1239,7 +1243,7 @@ def _section_bounds(scan: Scan, heading: str) -> tuple[int, int] | None:
 
 def _expected_registry() -> dict[str, object]:
     return {
-        "schema": "taskgov-document-authority-v16",
+        "schema": "taskgov-document-authority-v17",
         "mandatory_start": ["AGENTS.md", AUTHORITY, "live_task_contract"],
         "current": [
             "docs/specification.md", "docs/design.md", "plan.md",
@@ -1253,7 +1257,7 @@ def _expected_registry() -> dict[str, object]:
             DATABASE_SPECIFICATION, DATABASE_DESIGN,
         ],
         "mixed_execution": [],
-        "conditional": [STATE_LAYOUT_PLAN],
+        "conditional": [STATE_LAYOUT_PLAN, VERIFICATION_DECLARATION_PLAN],
         "history_index": HISTORY_INDEX,
     }
 

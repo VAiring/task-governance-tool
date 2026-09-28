@@ -703,7 +703,7 @@ class M22VerificationSubjectTests(unittest.TestCase):
                     connection
                 )
                 storage_service.apply_migrations(connection)
-                self.assertEqual(current_schema_version(connection), 22)
+                self.assertEqual(current_schema_version(connection), 23)
 
             shown = show_task(db, repo, task_id, json_output=True, audit=True)
             self.assertEqual(shown.returncode, 0, shown.stdout)
@@ -1150,7 +1150,7 @@ class M22VerificationSubjectTests(unittest.TestCase):
                     generated_at="2026-08-01T00:00:00Z",
                 ).snapshot
             self.assertEqual(valid["snapshot_version"], 4)
-            self.assertEqual(valid["source_schema_version"], 22)
+            self.assertEqual(valid["source_schema_version"], 23)
             projected = next(
                 item for item in valid["tasks"] if item["task_id"] == task_id
             )

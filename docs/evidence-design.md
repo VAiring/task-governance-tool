@@ -261,7 +261,11 @@ proposal; reevaluates all current gates; and computes the complete payload and
 size. Links, snapshots, Bundle, cycle, Task update, event, and source-generation
 advance commit atomically. Drift, invalid binding/class/digest, or the 16-MiB
 cap rolls back the whole savepoint. Historical rows are immutable; reopen and a
-later completion create a fresh target, cycle, and Bundle.
+later completion create a fresh target, cycle, and Bundle. Schema 23 retains
+the exact format-2 encoding and adds only source-23 admission. Source-22
+Bundles remain readable in container 23 without resealing. The waiver reason
+is checked on Task/current gate and immutable cycle, but is deliberately absent
+from the authority snapshot and Bundle payload; the Packet carries it for review.
 
 `CanonicalStatePaths` and `DatabaseTarget` add only `evidence_root`,
 `evidence_index`, `evidence_bundles`, and `evidence_lock` beneath

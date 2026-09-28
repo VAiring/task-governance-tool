@@ -425,11 +425,14 @@ zero-entry `opaque_target` manifest with `artifact_content_not_observed`. No
 blob, patch, raw diff, untracked content, or caller file list is retained.
 On success, the same target-set service returns exactly one closed route for the
 target it just stored. `verification_route` is exactly `not_required` for an
-empty verification expectation, `receipt_required` for the existing marker-`0`
+explicit verification waiver with a reason, `blocked` with
+`verification_requirement_unspecified` for an undeclared expectation,
+`receipt_required` for the existing marker-`0`
 manual path or exact closed no-launch fallback, `runner_pass` for the exact
 qualifying complete-plan Runner pass, or `blocked` for every other stored Runner
-terminal. `blocking_code` is null for the first three routes and is exactly the
-existing `verification_receipt_blocking` code for `blocked`. These fields expose
+terminal. `blocking_code` is null for nonblocked routes; `blocked` reports
+`verification_requirement_unspecified` for an undeclared expectation or
+`verification_receipt_blocking` for blocking Runner evidence. These fields expose
 no Runner ID, observation, gate tuple, Receipt ID, command body, or raw result.
 Target-set and completion success Task
 objects follow the [write acknowledgement projection](specification.md#json-text-limits-and-exit-status),
@@ -530,7 +533,8 @@ Data keys are exactly `task`, `contract`, `review_target`,
 `changed_paths_available`, `changed_paths`, `changed_paths_total`,
 `changed_paths_truncated`, `review_focus`, `required_output`, `result_template`,
 `result_instructions`, and `receipt_command`. Task contains
-ID/title/status/verification/tier; Contract contains revision/scope/acceptance/constraints;
+ID/title/status/verification/verification_not_required_reason/tier;
+Contract contains revision/scope/acceptance/constraints;
 target contains kind/value/base/
 generation. No diff, result, raw output, prompt, conversation, secret, absolute
 path, or caller-authored focus is included. The template is not a review result.
@@ -586,7 +590,7 @@ file/line references, remaining risks and recommended changes, not raw review
 reasoning. Receipt command is the non-executed `review result add` shape; the
 packet itself never imports or records results.
 
-Text order is `Task`, `Status`, `Verification`, `Contract revision`, `Scope`,
+Text order is `Task`, `Status`, `Verification`, `Verification not required reason`, `Contract revision`, `Scope`,
 `Acceptance`, `Constraints`, `Review target`, `Changed paths`, `Review focus`,
 `Required output`, `Result template` (compact ASCII JSON), `Result instructions`,
 `Receipt command`, LF-terminated. After Git, a second short
@@ -660,6 +664,7 @@ order. Allowed readiness codes are `invalid_status_transition`,
 `git_commit_not_found_or_ambiguous`, `invalid_review_evidence`,
 `review_target_required`, `evidence_basis_stale`, `review_target_mismatch`,
 `verification_receipt_required`, `verification_receipt_blocking`,
+`verification_requirement_unspecified`,
 `review_finding_unresolved`, `review_changes_requested`,
 `review_receipts_insufficient`, and `completion_check_stale`. Parse/privacy,
 not-found, project/schema/journal/busy/storage/internal failures remain command
@@ -925,8 +930,12 @@ history and never reactivate.
 The current explicit `--verification-complete` assertion remains required for
 every done transition. This section defines the manual Receipt arm consumed by the
 schema-v21/v22 three-branch selector in the [shared schema-v21/v22 Runner protocol](specification.md#schema-v21-persistence-compatibility-and-shared-runner-protocol).
-When Task `verification` is empty on marker `0`, no Receipt is required and the
-current attestation behavior is preserved. When the selector chooses the manual
+When Task `verification` is empty on marker `0`, only an explicit not-required
+reason permits Receiptless completion. An omitted or whitespace-only
+expectation with no reason blocks both completion readiness and the write with
+`verification_requirement_unspecified`; acceptance prose and the completion
+assertion cannot satisfy it. Prior done history is preserved, but an explicit
+reopen must meet the current declaration rule. When the selector chooses the manual
 arm for nonempty verification, completion additionally requires the unique
 exact-current Receipt to have `result=pass` and `scope_coverage=full`. A missing
 Receipt is `verification_receipt_required`; any other result/coverage
@@ -938,7 +947,7 @@ target already advances generation under the current target contract. Partial
 coverage never aggregates mechanically because taskgov owns no project test
 strategy.
 
-A semantic Task `verification` edit after review targeting begins clears the
+A semantic Task `verification` or `verification_not_required_reason` edit after review targeting begins clears the
 current target and completion evidence, advances target generation, moves
 review-pending back to in-progress, and requires fresh verification and
 review when no status is supplied. In the same edit, an explicit
@@ -995,6 +1004,7 @@ fixed messages:
 
 | Code | Message |
 |---|---|
+| `verification_requirement_unspecified` | `declare verification or an explicit not-required reason before completion` |
 | `verification_receipt_required` | `current verification evidence is required` |
 | `verification_receipt_blocking` | `current verification evidence does not satisfy the required result and coverage` |
 
@@ -1142,7 +1152,7 @@ The projection types and null rules are fixed:
   a nonempty verification criterion; otherwise it is the native subject object;
 - `gate.required` and `gate.satisfied` are Booleans;
   `gate.blocking_code` is null or exactly `review_target_required`,
-  `evidence_basis_stale`, `verification_receipt_required`, or
+  `evidence_basis_stale`, `verification_requirement_unspecified`, `verification_receipt_required`, or
   `verification_receipt_blocking`; and
   `gate.qualifying_receipt_id` is null or one Receipt ID;
 - all four count values are nonnegative integers. Exact-current, qualifying,
@@ -1152,8 +1162,12 @@ The projection types and null rules are fixed:
   Every row has exactly the [public Receipt fields](#receipt-meaning-and-record), including its nested
   `source_revision`; no digest or internal cycle link is exposed.
 
-For an expectation empty after trimming on marker `0`, the gate is
-`required=false`, `satisfied=true`, with both nullable fields null. For a
+For an explicitly waived expectation empty after trimming on marker `0`, the gate is
+`required=false`, `satisfied=true`, with both nullable fields null. An unspecified
+non-done Task instead has `required=true`, `satisfied=false`,
+`blocking_code=verification_requirement_unspecified`, and a null Receipt ID.
+Old done Tasks with validated blank-expectation history retain their historical
+satisfied projection without acquiring a waiver; reopening removes that exemption. For a
 nonempty expectation on a non-done Task, no target yields
 `review_target_required` and a capture-version-0 target yields
 `evidence_basis_stale`. The manual Receipt arm then yields Receipt-required,
@@ -1173,7 +1187,7 @@ modes. Failure data also contains `verification_evidence=null`. Text does not
 summarize Receipt state; agents use the normal JSON projection for the gate.
 
 There is no Receipt list/show/import/export command or arbitrary file reader and no Viewer Receipt
-panel or snapshot field. The Viewer accepts source schemas through v22 while
+panel or snapshot field. The Viewer accepts source schemas through v23 while
 retaining snapshot v4 content. Its existing
 bounded batch completion-history read internally joins only the Receipt fields needed
 to validate version-1 cycle and subject links plus provenance, manifests, and

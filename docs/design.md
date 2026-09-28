@@ -2,14 +2,14 @@
 
 Status: the immutable published product remains v0.10.0/schema v16/Viewer v4
 sources v5-v16/20 leaves; its identity is fixed in `docs/release-install.md`.
-The current unpublished candidate is v0.13.0 with SQLite schema v22, Viewer
-snapshot v4 accepting source schemas v5-v22, and 23 public command leaves. Its
+The current unpublished candidate is v0.13.0 with SQLite schema v23, Viewer
+snapshot v4 accepting source schemas v5-v23, and 23 public command leaves. Its
 active implementation includes tool-owned Verification Receipt subjects,
 versioned Review provenance, immutable Evidence References and completion
 Bundles, deterministic Evidence JSON, and the explicitly opted-in trusted-local
 verification Runner with a closed manual fallback. Schema v20 remains a
 supported migration source and
-audit-only Runner lineage; schema v22 is current persistence and retains the
+audit-only Runner lineage; schema v23 is current persistence and retains the
 schema-v21 Runner gate protocol unchanged.
 Select-Split-Merge-Register is active only in the Skill instruction layer.
 The Task database owns live state and evidence; completed execution narrative
@@ -544,7 +544,9 @@ Current detail is owned by the [Database persistence and migration design](datab
 
 <a id="schema22-reservation-cleanup-design"></a>
 
-## Current Schema-v22 Reservation Cleanup Design
+<a id="current-schema-v22-reservation-cleanup-design"></a>
+
+## Current Schema-v23 Verification Declaration Design
 
 Current detail is owned by the [Database persistence and migration design](database-design.md#current-schema-v22-reservation-cleanup-design).
 
@@ -862,7 +864,7 @@ a real consuming project or Git state. Tests cover:
 - all 23 parser leaves, removed commands/options, help, text/JSON/error/compact
   envelopes, and byte limits;
 - missing/old/too-new/invalid state with no creation or sidecars;
-- every v1-v22 migration, rollback, idempotency, required-object marker,
+- every v1-v23 migration, rollback, idempotency, required-object marker,
   realistic preservation fixture, quick check, and foreign keys;
 - task validation, ordering, pause/block/current/next, done/reopen,
   completion evidence, every review tier/target/receipt/finding, Contract,
@@ -884,8 +886,8 @@ a real consuming project or Git state. Tests cover:
   no-clobber publication, cleanup resume, and preservation of unrelated files;
 - backup publication/reconciliation/retention/recovery and every crash
   boundary;
-- Viewer v4 sources 5-22, completion-history bounds, version-1 Receipt-link,
-  v19-v22 Bundle-discriminator validation, and v20-v22 source-appropriate
+- Viewer v4 sources 5-23, completion-history bounds, version-1 Receipt-link,
+  v19-v23 Bundle-discriminator validation, and v20-v23 source-appropriate
   Runner-graph validation, 500-ID history batching,
   the accepted 500-Task performance fixture, 64-MiB artifact cap,
   generation/last-good behavior, strict config, timer/visibility, one-shot

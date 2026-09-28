@@ -54,21 +54,21 @@ from task_governance_tool.storage import (
 
 
 class CompletionEvidenceBundleStorageTests(unittest.TestCase):
-    def test_old_schema_fixture_reducer_rejects_sealed_source22_without_retagging(self):
+    def test_old_schema_fixture_reducer_rejects_sealed_current_source_without_retagging(self):
         with tempfile.TemporaryDirectory() as directory:
             repo, db_path, task_id = self._representative_completion_fixture(Path(directory))
             completed = complete_task(db_path, repo, task_id)
             self.assertEqual(completed.returncode, 0, completed.stdout)
             with closing(connect(db_path)) as connection:
-                self.assertEqual(current_schema_version(connection), 22)
+                self.assertEqual(current_schema_version(connection), 23)
                 self.assertEqual(connection.execute(
                     "SELECT source_schema_version FROM completion_evidence_bundles"
-                ).fetchone()[0], 22)
+                ).fetchone()[0], 23)
                 before = logical_database_digest(connection)
-                with self.assertRaises(sqlite3.IntegrityError):
+                with self.assertRaisesRegex(AssertionError, "cannot discard schema23"):
                     remove_v21_gate_basis_for_test(connection)
                 self.assertEqual(logical_database_digest(connection), before)
-                self.assertEqual(current_schema_version(connection), 22)
+                self.assertEqual(current_schema_version(connection), 23)
                 self.assertEqual(connection.execute("PRAGMA foreign_keys").fetchone()[0], 1)
                 self.assertEqual(connection.execute("PRAGMA legacy_alter_table").fetchone()[0], 0)
 
@@ -203,7 +203,7 @@ class CompletionEvidenceBundleStorageTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             db_path = self._initialized_database(Path(directory))
             with closing(connect(db_path)) as connection:
-                self.assertEqual(SCHEMA_VERSION, 22)
+                self.assertEqual(SCHEMA_VERSION, 23)
                 remove_v20_runner_shadow_for_test(connection)
                 self.assertEqual(current_schema_version(connection), 19)
                 marker = connection.execute(

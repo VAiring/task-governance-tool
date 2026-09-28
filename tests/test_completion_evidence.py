@@ -74,6 +74,7 @@ def add_task(db, repo, title="Evidence task"):
         str(db),
         "--title",
         title,
+        "--verification-not-required", "Completion-evidence fixture",
         "--json",
     )
     if result.returncode != 0:

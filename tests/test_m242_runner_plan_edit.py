@@ -369,6 +369,35 @@ class RunnerPlanEditTests(unittest.TestCase):
                 (),
             )
 
+    def test_required_to_waived_requires_plan_disposition_but_reason_only_does_not(self):
+        for action in ("detach", "disable"):
+            with self.subTest(action=action), runner_plan_edit_fixture() as fixture:
+                original = fixture.write_exact_plan()
+                before = fixture.database_dump()
+                reason = "Declaration fixture without executable changes"
+                self.assert_error_code("runner_plan_action_required", lambda:
+                    edit_module.edit_task_with_runner_plan(fixture.target, fixture.task_id,
+                        verification_not_required_reason=reason))
+                self.assertEqual(fixture.database_dump(), before)
+                self.assertEqual(fixture.plan_path.read_bytes(), original)
+                result = edit_module.edit_task_with_runner_plan(fixture.target, fixture.task_id,
+                    verification_not_required_reason=reason, runner_plan_action=action)
+                self.assertEqual(result.task_mutation, "committed")
+                self.assertEqual(result.runner_plan_update.status, "updated")
+                self.assertEqual(fixture.task_row()["verification"], "")
+                self.assertEqual(fixture.task_row()["verification_not_required_reason"], reason)
+                plan = decode_verification_runner_plan(fixture.plan_path.read_bytes())
+                if action == "detach":
+                    self.assertEqual(plan.entries, ())
+                else:
+                    self.assertFalse(plan.trusted_local)
+                plan_before = fixture.plan_path.read_bytes()
+                revised = edit_module.edit_task_with_runner_plan(fixture.target, fixture.task_id,
+                    verification_not_required_reason="Revised fixture rationale")
+                self.assertEqual(revised.task_mutation, "committed")
+                self.assertIsNone(revised.runner_plan_update)
+                self.assertEqual(fixture.plan_path.read_bytes(), plan_before)
+
     def test_exact_current_entry_requires_action_but_malformed_plan_does_not_hold_task_edit(self):
         with runner_plan_edit_fixture() as fixture:
             original = fixture.write_exact_plan()

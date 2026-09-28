@@ -88,10 +88,12 @@ def init_git_repo(repo):
     ).stdout.strip()
 
 
-def add_task(db, repo, *, tier=2, title="Review task"):
+def add_task(db, repo, *, tier=2, title="Review task", declare_verification=True):
+    declaration = (("--verification-not-required", "Review-only fixture")
+                   if declare_verification else ())
     result = run_taskgov(
         "task", "add", "--repo", str(repo), "--db", str(db),
-        "--title", title, "--review-tier", str(tier), "--json",
+        "--title", title, "--review-tier", str(tier), *declaration, "--json",
     )
     if result.returncode:
         raise AssertionError(result.stderr or result.stdout)
@@ -654,7 +656,7 @@ class ReviewEvidenceTests(unittest.TestCase):
                     repo, db = root / "repo", root / "tasks.sqlite"
                     repo.mkdir(parents=True)
                     init_db(db, repo)
-                    task = add_task(db, repo)
+                    task = add_task(db, repo, declare_verification=False)
                     task_id = task["task_id"]
                     receipt_id, finding_id = current_changes_and_medium_finding(
                         db,
@@ -740,9 +742,9 @@ class ReviewEvidenceTests(unittest.TestCase):
         repo, db = root / "repo", root / "tasks.sqlite"
         repo.mkdir(parents=True)
         init_db(db, repo)
-        task_id = add_task(db, repo)["task_id"]
+        task_id = add_task(db, repo, declare_verification=False)["task_id"]
         foreign_task_id = (
-            add_task(db, repo, title="Foreign alias task")["task_id"]
+            add_task(db, repo, title="Foreign alias task", declare_verification=False)["task_id"]
             if include_foreign_task
             else None
         )
@@ -1133,7 +1135,7 @@ class ReviewEvidenceTests(unittest.TestCase):
                         repo, db = root / "repo", root / "tasks.sqlite"
                         repo.mkdir(parents=True)
                         init_db(db, repo)
-                        task = add_task(db, repo)
+                        task = add_task(db, repo, declare_verification=source_schema_version != 17)
                         task_id = task["task_id"]
                         targeted = target_set(db, repo, task_id)
                         self.assertEqual(

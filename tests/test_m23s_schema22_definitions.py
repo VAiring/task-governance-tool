@@ -175,7 +175,7 @@ def _construct_private_schema22(connection: sqlite3.Connection) -> None:
 
 class Schema22DefinitionTests(unittest.TestCase):
     def test_public_initialization_is22_and_legacy21_definition_remains_unchanged(self):
-        self.assertEqual(storage.SCHEMA_VERSION, 22)
+        self.assertEqual(storage.SCHEMA_VERSION, 23)
         self.assertEqual(storage.PRIVATE_SCHEMA22_VERSION, 22)
         self.assertEqual(
             storage.PRIVATE_SCHEMA22_MIGRATION_NAME,
@@ -195,7 +195,7 @@ class Schema22DefinitionTests(unittest.TestCase):
             self.assertEqual(initialized.migrations_applied[-2:], [21, 22])
             storage.validate_schema22_storage(connection)
             before = logical_database_digest(connection)
-            self.assertEqual(storage.apply_migrations(connection), ([], []))
+            self.assertFalse(storage._migrate_schema22_connection(connection))
             self.assertEqual(logical_database_digest(connection), before)
 
     def test_private_schema_has_exact_objects_and_unchanged_columns_and_foreign_keys(self):

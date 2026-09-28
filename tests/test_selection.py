@@ -36,6 +36,8 @@ def initialized_target(tmp: str):
 
 def add(connection, project, title, **kwargs):
     initial_status = kwargs.pop("status", "ready")
+    if initial_status == "done":
+        kwargs["verification_not_required_reason"] = "Selection-only fixture"
     task = add_task(
         connection,
         project,
@@ -187,6 +189,7 @@ class SelectionTests(unittest.TestCase):
                         connection,
                         target.project,
                         "First sequential",
+                        verification_not_required_reason="Selection-only fixture",
                         kind="sequential",
                         lane="CORE",
                         lane_order=10,

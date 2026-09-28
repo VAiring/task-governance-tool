@@ -40,6 +40,8 @@ def init_db(db, repo):
 
 
 def add_task(db, repo, title, *extra):
+    if "--verification" not in extra and "--verification-not-required" not in extra:
+        extra = (*extra, "--verification-not-required", "Sequential-transition fixture")
     result = run_taskgov(
         "task", "add", "--repo", str(repo), "--db", str(db), "--title", title, *extra, "--json"
     )

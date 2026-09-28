@@ -91,7 +91,7 @@ def seed_current_states(db, repo):
         "--priority", "urgent",
     )
     add_task(db, repo, "Ready excluded")
-    done = add_task(db, repo, "Done excluded")
+    done = add_task(db, repo, "Done excluded", "--verification-not-required", "Selection-only fixture")
     edit_task(
         db, repo, done["task_id"], "--status", "done", "--verification-complete",
         "--review-complete", "--commit-not-required",

@@ -486,6 +486,7 @@ class CompletionEvidenceBundleStorageTests(unittest.TestCase):
                 repo,
                 verification="",
                 review_tier=0,
+                verification_not_required_reason="Receiptless atomic completion fixture",
             )
             seed_current_review_evidence(db_path, repo, task["task_id"])
             prepare_deltas: list[int] = []
@@ -561,6 +562,7 @@ class CompletionEvidenceBundleStorageTests(unittest.TestCase):
                 repo,
                 verification="",
                 review_tier=0,
+                verification_not_required_reason="Receiptless rollback completion fixture",
             )
             seed_current_review_evidence(db_path, repo, task["task_id"])
             atomic_tables = (

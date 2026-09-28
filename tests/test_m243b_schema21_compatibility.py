@@ -96,6 +96,12 @@ def _schema21_runtime():
     with ExitStack() as stack:
         for target in _SCHEMA20_RUNTIME_PATCH_TARGETS:
             stack.enter_context(mock.patch(target, 21))
+        # Python captures this default at import time. Pin the historical
+        # contract as well as the constants, without bypassing validation.
+        stack.enter_context(mock.patch.object(
+            storage_module.required_schema_objects_missing,
+            "__kwdefaults__", {"schema_version": 21},
+        ))
         yield
 
 

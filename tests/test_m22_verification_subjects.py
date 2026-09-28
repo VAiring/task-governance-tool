@@ -1073,6 +1073,7 @@ class M22VerificationSubjectTests(unittest.TestCase):
                 repo,
                 title="Empty expectation corruption",
                 verification="",
+                verification_not_required_reason="Exercise rejection of an unnecessary Receipt",
             )
             task_id = task["task_id"]
             generation = set_target(db, repo, task_id)
@@ -1195,6 +1196,7 @@ class M22VerificationSubjectTests(unittest.TestCase):
                 repo,
                 title="Empty native verification",
                 verification="",
+                verification_not_required_reason="Exercise native completion without a Receipt",
             )
             task_id = task["task_id"]
             seed_current_review_evidence(db, repo, task_id)
@@ -1243,6 +1245,7 @@ class M22VerificationSubjectTests(unittest.TestCase):
                 repo,
                 title="Whitespace-only verification",
                 verification=exact_verification,
+                verification_not_required_reason="Exercise the exact whitespace digest without a Receipt",
             )
             task_id = task["task_id"]
             seed_current_review_evidence(db, repo, task_id)
@@ -1308,6 +1311,7 @@ class M22VerificationSubjectTests(unittest.TestCase):
                 repo,
                 title="Corrupt empty verification basis",
                 verification="",
+                verification_not_required_reason="Exercise corruption of a Receiptless completion",
             )
             task_id = task["task_id"]
             seed_current_review_evidence(db, repo, task_id)

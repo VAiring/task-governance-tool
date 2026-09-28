@@ -58,6 +58,7 @@ def add_task(
     status: str = "in_progress",
     verification: str = DEFAULT_VERIFICATION,
     review_tier: int = 0,
+    verification_not_required_reason: str | None = None,
 ) -> dict:
     result = run_taskgov(
         "task",
@@ -74,6 +75,8 @@ def add_task(
         str(review_tier),
         "--verification",
         verification,
+        *(("--verification-not-required", verification_not_required_reason)
+          if verification_not_required_reason is not None else ()),
         "--json",
     )
     if result.returncode != 0:

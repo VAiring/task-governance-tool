@@ -355,7 +355,7 @@ class VerificationRunnerServiceTests(unittest.TestCase):
                 },
             )
 
-    def test_public_target_without_verification_returns_not_required(self):
+    def test_public_target_with_explicit_waiver_returns_not_required(self):
         with tempfile.TemporaryDirectory() as temporary:
             fixture = RunnerServiceFixture(Path(temporary))
             added = run_taskgov_internal(
@@ -367,6 +367,8 @@ class VerificationRunnerServiceTests(unittest.TestCase):
                 str(fixture.db),
                 "--title",
                 "No verification target",
+                "--verification-not-required",
+                "Exercise the explicit not-required target route",
                 "--contract-scope",
                 "Capture one target without a verification criterion.",
                 "--contract-acceptance",

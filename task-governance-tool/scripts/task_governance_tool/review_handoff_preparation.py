@@ -26,6 +26,8 @@ from task_governance_tool.verification_results import (
 from task_governance_tool.verification_receipts import VerificationReceiptError
 
 RESPONSE_LIMIT = 262144
+INVENTORY_ENTRY_LIMIT = 128
+INVENTORY_BYTE_LIMIT = 16384
 COMMANDS = {"target": "review.target.set", "receipt": "verification.receipt.add",
             "recover": "review.prepare"}
 
@@ -270,6 +272,39 @@ def _material_command(repo, arguments):
                    str(Path(__file__).parent.parent), str(repo), *arguments])
 
 
+def _dependency_inventory(repo, revision, changes):
+    """Bounded location hints, not inferred relevance or observed blob content."""
+    from task_governance_tool.artifact_manifest import decode_artifact_path
+    from task_governance_tool.git_snapshot import stream_tree_entries
+
+    changed = {entry[key] for entry in changes for key in ("old_path", "new_path")
+               if entry[key] is not None}
+    entries = []
+    total = 0
+    size = 2
+    truncated = False
+
+    def collect(entry):
+        nonlocal total, size, truncated
+        path = decode_artifact_path(entry.path)
+        if path in changed:
+            return
+        total += 1
+        row = {"path": path, "mode": entry.mode.decode("ascii"),
+               "object_id": entry.object_id.decode("ascii")}
+        addition = len(json.dumps(row, ensure_ascii=False, separators=(",", ":")).encode("utf-8")) + bool(entries)
+        if truncated or len(entries) == INVENTORY_ENTRY_LIMIT or size + addition > INVENTORY_BYTE_LIMIT:
+            truncated = True
+            return
+        entries.append(row)
+        size += addition
+
+    stream_tree_entries(repo, revision, object_id_length=len(revision), consume_entry=collect)
+    return {"revision": revision, "entries": entries, "total": total,
+            "returned": len(entries), "truncated": truncated,
+            "entry_limit": INVENTORY_ENTRY_LIMIT, "byte_limit": INVENTORY_BYTE_LIMIT}
+
+
 def _review_material(repo, target):
     """Reuse target capture to expose immutable objects, not ambient file paths."""
     from task_governance_tool.artifact_manifest import (
@@ -290,14 +325,15 @@ def _review_material(repo, target):
             files._fail("review_target_mismatch")
         changes = [asdict(entry) for entry in build_artifact_entries(
             observed.before_leaves, observed.after_leaves)]
+        dependency_revision = (target["base_revision"] if target["kind"] == "git_snapshot"
+                               else target["value"])
+        inventory = _dependency_inventory(repo, dependency_revision, changes)
     except (ArtifactManifestError, GitSnapshotError, CompletionEvidenceError) as exc:
         files._fail(exc.code)
     # The existing manifest limit remains a complete-result boundary, not a
     # shortened list that a reviewer might mistake for the whole target.
     if len(json.dumps(changes, ensure_ascii=False).encode("utf-8")) > ARTIFACT_MANIFEST_BYTE_LIMIT:
         files._fail("artifact_manifest_too_large")
-    dependency_revision = (target["base_revision"] if target["kind"] == "git_snapshot"
-                           else target["value"])
     # The placeholder is inside a shell literal; state the host's exact
     # substitution rule rather than asking the reviewer to repair quoting.
     path_quoting = ("When substituting <project-relative-path>, first double each PowerShell single-quote delimiter in the path: U+0027 ('), U+2018 (‘), U+2019 (’), U+201A (‚), U+201B (‛). Use two copies of that same character, never replace a smart quote with ASCII. Keep all other characters unchanged and keep the surrounding command quotes."
@@ -306,16 +342,23 @@ def _review_material(repo, target):
     return {"status": "git_objects_verified", "changes": changes,
             "comparison_base": observed.comparison_base,
             "dependency_revision": dependency_revision,
+            "unchanged_inventory": inventory,
             "blob_command": _material_command(repo, ["cat-file", "blob", "<object_id>"]),
+            "blob_batch_command": _material_command(repo, ["cat-file", "--batch"]),
             "diff_command": _material_command(repo, ["diff", "--no-ext-diff", "--no-textconv",
                                                      "<before_object_id>", "<after_object_id>", "--"]),
             "dependency_command": _material_command(repo, ["show", dependency_revision + ":<project-relative-path>"]),
+            "directory_command": _material_command(repo, ["-c", "core.quotePath=false", "ls-tree",
+                "--no-abbrev", dependency_revision + ":<project-relative-directory>", "--"]),
             "instructions": [
                 "changes is the complete target delta, even when the Packet's changed_paths is bounded. Inspect every entry and its modes. Replace only placeholders in the supplied Git commands with the listed object IDs or required project-relative path.",
                 path_quoting,
                 "Execute the supplied command templates unchanged apart from placeholders. Their fixed Python invocation applies the existing sanitized Git environment, disabling lazy fetch, replacement refs, optional locks and prompts without changing your shell environment. Missing objects must be reported, not fetched.",
                 "Read before/after blobs by immutable object ID; compare both present blobs with diff_command. Added/deleted entries have one absent side. Mode 120000 is link text, not permission to follow it; mode 160000 names a submodule commit, not a blob: obtain any required unavailable submodule material from the caller.",
                 "For unchanged authority, source, tests and discovered dependencies use dependency_command. For a snapshot, changed paths instead use their listed after object (or are deleted); never substitute mutable index, HEAD or worktree content. Commit dependencies come from that exact commit.",
+                "unchanged_inventory lists locations, modes and IDs from dependency_revision, excluding every old/new path in changes. It does not select relevant tests or certify content availability. Use it and actual authority/import references to choose known independent reads together; follow newly discovered dependencies afterward. A bounded inventory is not the complete repository or a limit on review scope.",
+                "If locations are omitted or more discovery is needed, directory_command lists that exact revision's directory (empty placeholder for root; otherwise path without trailing slash, escaped by the same path rule). Its paths are relative to that directory; mode 040000 entries can be explored with the same command. Apply changes over this base listing: changed snapshot files use after objects, removed/renamed old paths are absent. Recover tool-truncated listings by requesting sufficient output or exploring narrower directories; report unresolved omissions, never use ambient file search as target material.",
+                "For chosen known blobs, blob_batch_command accepts their listed full object IDs, one per stdin line, then EOF. Preserve the ID-to-path/side mapping. Each response is '<id> blob <byte-count>\\n', exactly that many content bytes, then LF, in input order. Check every response and complete delivery, not merely process exit: '<id> missing' or non-blob type is unavailable, not content or PASS. Do not batch mode 160000 as a blob or follow mode 120000 link text. Group only what the tool can return completely; recover truncated material with individual blob_command reads and sufficient output, or report it. No source body is stored in the Packet or Task DB.",
                 "Inspect project AGENTS.md and its authority routes plus required source/tests and discovered dependencies. Recover missing or tool-truncated output before judgment. These read-only observations are not PASS or an authenticated provenance claim; unavailable required material must be reported to the caller."]}
 
 
@@ -375,7 +418,7 @@ def _requests(repo, args, packet_path):
             "Follow review_material to read exact artifacts and required dependencies, not ambient files. "
             "The helper checks saved versus current Task/Contract/target and Git object identity, not review quality. "
             "Read Skill files when they are actually governing or reviewed material, not to learn Task management. "
-            "Group already-known independent source reads when complete delivery is possible; follow newly discovered dependencies and recover truncated output. "
+            "For Git material, use review_material.unchanged_inventory to discover unchanged sources/tests, and its blob_batch_command for chosen known blobs when complete delivery is possible; follow new dependencies and recover omissions/truncated output. "
             "If this role does not match actual work, ask the caller, "
             "do not infer independence. Do not judge from missing, truncated or mismatched material. "
             "Complete the view's result_template using result_instructions, actual judgment and provenance, and all Findings with severity, exact file/line, risks and recommended correction in bounded summaries. "

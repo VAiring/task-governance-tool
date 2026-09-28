@@ -295,7 +295,18 @@ requests supply that read command instead of raw-file reading and contain the
 ordinary procedure themselves. `_review_material` reuses `artifact_manifest.py`
 observers and entry builder, without another fingerprint algorithm, to return
 the complete immutable-object delta and dependency/read command templates.
-Those three fixed templates invoke Python with the existing package and
+The same module streams the immutable dependency revision through the existing
+`git_snapshot.stream_tree_entries`, excluding delta paths and retaining only a
+count/byte-bounded inventory prefix while counting omitted entries. It does not
+infer relevance, scan the worktree or retain blob content. The additional
+directory-list and `cat-file --batch` templates reuse `_material_command`:
+discovery and selected multi-blob reads keep the existing safe-Git program,
+without moving it behind a new helper operation. Batch output keeps Git's
+per-object framing and missing/non-blob outcomes, not a new success assertion.
+Generated guidance preserves path/side identity, bounded-display recovery,
+snapshot overlay and later dependency discovery. Inventory and bodies never
+enter the saved Packet or DB; save/submit and reviewer isolation are unchanged.
+The fixed templates invoke Python with the existing package and
 `completion.safe_git_command/safe_git_environment`, then the intended Git read;
 no new helper subcommand, configurable runner or stored wrapper is introduced.
 The child inherits no Git overrides and cannot lazily fetch missing material.

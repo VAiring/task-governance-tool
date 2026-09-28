@@ -325,7 +325,7 @@ class ReviewerMaterialTests(PreparationFixture):
         return self.invoke("read", "--repo", str(self.root), "--packet", packet,
                            "--role", "independent")
 
-    def material_read(self, command, *, environment=None, posix=False):
+    def material_read(self, command, *, environment=None, posix=False, raw=None):
         if os.name == "nt" and not posix:
             import base64
             arguments = ["powershell.exe", "-NoProfile", "-NonInteractive", "-EncodedCommand",
@@ -335,7 +335,87 @@ class ReviewerMaterialTests(PreparationFixture):
             arguments = shlex.split(command)
         else:
             arguments = ["/bin/sh", "-c", command]
-        return subprocess.run(arguments, capture_output=True, env=environment, check=False)
+        return subprocess.run(arguments, input=raw, capture_output=True, env=environment, check=False)
+
+    def test_inventory_discovers_unchanged_tests_and_batches_selected_exact_blobs(self):
+        self.committed_fixture()
+        sources = {"checks/behavior.py": b"from source import value\nassert value == 2\n",
+                   "support/values.py": b"expected = 2\n"}
+        for path, raw in sources.items():
+            (self.root / path).parent.mkdir(exist_ok=True)
+            (self.root / path).write_bytes(raw)
+        self.git("add", "--", *sources)
+        self.git("commit", "--quiet", "-m", "Unchanged review dependencies")
+        base = self.git("rev-parse", "HEAD").decode().strip()
+        (self.root / "source.py").write_bytes(b"value = 2\n")
+        self.git("add", "--", "source.py")
+        _, prepared = self.prepare(self.task(), options=["--kind", "git_snapshot"])
+        (self.root / "checks/behavior.py").write_bytes(b"unreviewed ambient replacement\n")
+        material = json.loads(self.displayed(prepared["handoff"]["packet_path"]).stdout)["review_material"]
+        inventory = material["unchanged_inventory"]
+        self.assertEqual(inventory["revision"], base)
+        self.assertFalse(inventory["truncated"])
+        self.assertEqual(inventory["total"], inventory["returned"])
+        listed = {row["path"]: row for row in inventory["entries"]}
+        self.assertNotIn("source.py", listed)
+        selected = [material["changes"][0]["after_object_id"],
+                    listed["checks/behavior.py"]["object_id"], listed["support/values.py"]["object_id"]]
+        before = file_snapshot(self.root)
+        actual = self.material_read(material["blob_batch_command"], raw=("\n".join(selected) + "\n").encode())
+        expected = b"".join(oid.encode() + b" blob " + str(len(body)).encode() + b"\n" + body + b"\n"
+                            for oid, body in zip(selected, [b"value = 2\n", *sources.values()]))
+        self.assertEqual(actual.returncode, 0, actual.stderr)
+        self.assertEqual(actual.stdout.replace(b"\r\n", b"\n"), expected)
+        self.assertEqual(file_snapshot(self.root), before)
+
+    def test_bounded_inventory_can_discover_omitted_new_dependency_at_fixed_revision(self):
+        self.committed_fixture()
+        (self.root / "later").mkdir()
+        for index in range(135):
+            (self.root / f"aaa-{index:03}.py").write_text("value = 0\n", encoding="utf-8")
+        (self.root / "later/needed.py").write_text("required = True\n", encoding="utf-8")
+        self.git("add", "--", "later", *(f"aaa-{index:03}.py" for index in range(135)))
+        self.git("commit", "--quiet", "-m", "Larger dependency tree")
+        (self.root / "source.py").write_text("from later.needed import required\n", encoding="utf-8")
+        self.git("add", "--", "source.py")
+        _, prepared = self.prepare(self.task(), options=["--kind", "git_snapshot"])
+        material = json.loads(self.displayed(prepared["handoff"]["packet_path"]).stdout)["review_material"]
+        inventory = material["unchanged_inventory"]
+        self.assertTrue(inventory["truncated"])
+        self.assertLess(inventory["returned"], inventory["total"])
+        self.assertLessEqual(inventory["returned"], preparation.INVENTORY_ENTRY_LIMIT)
+        self.assertLessEqual(len(encode(inventory["entries"])), preparation.INVENTORY_BYTE_LIMIT)
+        self.assertNotIn("later/needed.py", [row["path"] for row in inventory["entries"]])
+        actual = self.material_read(material["directory_command"].replace("<project-relative-directory>", "later"))
+        self.assertEqual(actual.returncode, 0, actual.stderr)
+        self.assertIn(b"needed.py", actual.stdout)
+        expected_id = self.git("rev-parse", material["dependency_revision"] + ":later/needed.py").strip()
+        self.assertIn(expected_id, actual.stdout)
+        actual = self.material_read(material["blob_command"].replace("<object_id>", expected_id.decode()))
+        self.assertEqual(actual.stdout.replace(b"\r\n", b"\n"), b"required = True\n")
+        # Byte bounds are independent of count bounds; no false complete prefix.
+        with mock.patch.object(preparation, "INVENTORY_BYTE_LIMIT", 2):
+            bounded = preparation._dependency_inventory(self.root, material["dependency_revision"], material["changes"])
+        self.assertEqual(bounded["entries"], [])
+        self.assertEqual(bounded["total"], inventory["total"])
+        self.assertTrue(bounded["truncated"])
+
+    def test_inventory_modes_deletions_and_rename_do_not_restore_old_material(self):
+        base = self.committed_fixture()
+        blob = self.git("rev-parse", base + ":SPEC.md").decode().strip()
+        self.git("update-index", "--add", "--cacheinfo", f"120000,{blob},link-text")
+        self.git("update-index", "--add", "--cacheinfo", f"160000,{base},submodule")
+        self.git("commit", "--quiet", "-m", "Special-mode fixture")
+        self.git("mv", "--", "source.py", "renamed.py")
+        self.git("rm", "--", "SPEC.md")
+        self.git("update-index", "--chmod=+x", "AGENTS.md")
+        _, prepared = self.prepare(self.task(), options=["--kind", "git_snapshot"])
+        material = json.loads(self.displayed(prepared["handoff"]["packet_path"]).stdout)["review_material"]
+        rows = {row["path"]: row for row in material["unchanged_inventory"]["entries"]}
+        self.assertEqual(rows["link-text"]["mode"], "120000")
+        self.assertEqual(rows["submodule"]["mode"], "160000")
+        self.assertTrue(set(rows).isdisjoint({"source.py", "renamed.py", "SPEC.md", "AGENTS.md"}))
+        self.assertEqual({entry["kind"] for entry in material["changes"]}, {"delete", "rename", "modify"})
 
     def test_snapshot_material_uses_immutable_objects_and_excludes_ambient_files(self):
         base = self.committed_fixture()
@@ -439,6 +519,9 @@ class ReviewerMaterialTests(PreparationFixture):
         self.assertNotIn(b"promisor", actual.stderr.lower())
         self.assertNotIn(b"remote", actual.stderr.lower())
         self.assertEqual(file_snapshot(self.root), before)
+        # A batch exit zero is deliberately not a content-availability claim.
+        actual = self.material_read(material["blob_batch_command"], raw=(missing + "\n").encode())
+        self.assertIn((missing + " missing").encode(), actual.stdout)
 
     def test_commit_root_and_first_parent_material_ignore_new_head(self):
         root = self.committed_fixture()
@@ -459,6 +542,9 @@ class ReviewerMaterialTests(PreparationFixture):
         result = self.displayed(prepared["handoff"]["packet_path"])
         self.assertEqual(result.returncode, 0, result.stdout)
         self.assertEqual(json.loads(result.stdout)["review_material"]["comparison_base"], root)
+        material = json.loads(result.stdout)["review_material"]
+        self.assertEqual(material["unchanged_inventory"]["revision"], current)
+        self.assertIn("SPEC.md", [row["path"] for row in material["unchanged_inventory"]["entries"]])
 
     def test_live_contract_and_generation_drift_and_opaque_targets(self):
         task = self.cli("task", "add", "--title", "Contract drift", "--status", "in_progress",

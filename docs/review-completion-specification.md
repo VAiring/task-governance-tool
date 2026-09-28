@@ -369,6 +369,30 @@ in the Packet or retained. A bounded Packet path list does not bound this delta;
 overflow fails, never silently truncates. Snapshot changed files use the listed
 after objects (or are deleted); unchanged dependencies use the base commit.
 Commit dependencies use that immutable commit, never ambient HEAD/index/worktree.
+The transient display also includes `unchanged_inventory`: `revision`, bytewise
+ordered `entries` (`path`, `mode`, `object_id`), `total`, `returned`, `truncated`,
+`entry_limit` and `byte_limit`. It streams that dependency revision's tree,
+excludes every old/new delta path, and returns at most 128 entries and 16,384
+UTF-8 bytes of compact entry-array JSON. It counts all remaining paths even
+after the prefix fills. No body, relevance inference, test-name heuristic or
+new persistent index is included. These are location hints, not proof that a
+blob exists or that all required material was selected or read.
+`directory_command` provides nonrecursive discovery at the same dependency
+revision (empty directory means root). Nested tree entries can be explored by
+the same template and path-quoting rule; paths in its result are directory-relative.
+Snapshot changes override that base listing, including deletion and old rename
+paths. Omission or tool truncation is explicit and must be recovered with
+narrower listings/sufficient output, or reported; it never bounds review scope.
+`blob_batch_command` uses the same fixed safe-Git wrapper with `cat-file --batch`.
+Reviewers may send selected full blob IDs from the delta/inventory, one per stdin
+line followed by EOF, retaining each ID's path/side mapping. Its standard Git
+framing is the ID, type and byte count, LF, that many content bytes, then LF,
+in request order. Every response and complete delivery must be checked: a
+missing-object record may accompany exit zero, and a submodule is not a blob.
+Links remain link text, never followed. Output that cannot be delivered fully
+requires smaller/individual existing blob reads or an explicit insufficiency
+report. This aggregates known reads, not relevance selection or PASS judgment;
+new dependencies discovered later still require their own inspection.
 Required unavailable submodule/content or tool-truncated output must be recovered
 or reported before PASS. The observation is trusted-local and point-in-time;
 it does not lock state, certify review quality or replace submission revalidation.

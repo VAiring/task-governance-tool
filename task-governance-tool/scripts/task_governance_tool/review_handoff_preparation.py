@@ -349,7 +349,7 @@ def _review_material(repo, target):
                                                      "<before_object_id>", "<after_object_id>", "--"]),
             "dependency_command": _material_command(repo, ["show", dependency_revision + ":<project-relative-path>"]),
             "directory_command": _material_command(repo, ["-c", "core.quotePath=false", "ls-tree",
-                "--no-abbrev", dependency_revision + ":<project-relative-directory>", "--"]),
+                "--full-tree", "--no-abbrev", dependency_revision + ":<project-relative-directory>", "--"]),
             "instructions": [
                 "changes is the complete target delta, even when the Packet's changed_paths is bounded. Inspect every entry and its modes. Replace only placeholders in the supplied Git commands with the listed object IDs or required project-relative path.",
                 path_quoting,

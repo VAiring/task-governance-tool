@@ -339,12 +339,12 @@ class ReviewerMaterialTests(PreparationFixture):
 
     def test_inventory_discovers_unchanged_tests_and_batches_selected_exact_blobs(self):
         self.committed_fixture()
-        sources = {"checks/behavior.py": b"from source import value\nassert value == 2\n",
-                   "support/values.py": b"expected = 2\n"}
+        sources = {"checks/behavior.py": "# 日本語\r\nfrom source import value\r\nassert value == 2\r\n".encode("utf-8"),
+                   "support/values.py": b"expected = 2"}
         for path, raw in sources.items():
             (self.root / path).parent.mkdir(exist_ok=True)
             (self.root / path).write_bytes(raw)
-        self.git("add", "--", *sources)
+        self.git("-c", "core.autocrlf=false", "add", "--", *sources)
         self.git("commit", "--quiet", "-m", "Unchanged review dependencies")
         base = self.git("rev-parse", "HEAD").decode().strip()
         (self.root / "source.py").write_bytes(b"value = 2\n")
@@ -365,7 +365,41 @@ class ReviewerMaterialTests(PreparationFixture):
         expected = b"".join(oid.encode() + b" blob " + str(len(body)).encode() + b"\n" + body + b"\n"
                             for oid, body in zip(selected, [b"value = 2\n", *sources.values()]))
         self.assertEqual(actual.returncode, 0, actual.stderr)
-        self.assertEqual(actual.stdout.replace(b"\r\n", b"\n"), expected)
+        self.assertEqual(actual.stdout, expected)
+        self.assertEqual(file_snapshot(self.root), before)
+
+    def test_directory_discovery_keeps_tree_coordinates_from_nested_project(self):
+        from task_governance_tool.artifact_manifest import observe_staged_git_manifest
+
+        self.committed_fixture()
+        for path in ("checks/behavior.py", "nested/local.py"):
+            (self.root / path).parent.mkdir()
+            (self.root / path).write_bytes(b"original = True\n")
+        self.git("add", "--", "checks", "nested")
+        self.git("commit", "--quiet", "-m", "Nested project and sibling checks")
+        revision = self.git("rev-parse", "HEAD").decode().strip()
+        (self.root / "source.py").write_bytes(b"value = 2\n")
+        self.git("add", "--", "source.py")
+        snapshot = observe_staged_git_manifest(self.root / "nested")
+        targets = [
+            {"kind": "git_commit", "value": revision, "base_revision": ""},
+            {"kind": "git_snapshot", "value": snapshot.target_value,
+             "base_revision": snapshot.target_base_revision},
+        ]
+        # Neither the caller's nested cwd nor ambient dependency edits select material.
+        (self.root / "checks/behavior.py").write_bytes(b"ambient = False\n")
+        before = file_snapshot(self.root)
+        for target in targets:
+            material = preparation._review_material(self.root / "nested", target)
+            self.assertEqual(material["unchanged_inventory"]["revision"], revision)
+            for directory in ("", "checks"):
+                with self.subTest(kind=target["kind"], directory=directory):
+                    command = material["directory_command"].replace("<project-relative-directory>", directory)
+                    actual = self.material_read(command)
+                    expected = self.git("ls-tree", "--full-tree", "--no-abbrev", revision + ":" + directory, "--")
+                    self.assertTrue(expected)
+                    self.assertEqual(actual.returncode, 0, actual.stderr)
+                    self.assertEqual(actual.stdout, expected)
         self.assertEqual(file_snapshot(self.root), before)
 
     def test_bounded_inventory_can_discover_omitted_new_dependency_at_fixed_revision(self):

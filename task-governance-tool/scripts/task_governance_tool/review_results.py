@@ -29,8 +29,10 @@ from task_governance_tool.reviews import (
     ReviewEvidenceError,
     add_review_finding,
     add_review_receipt,
+    first_review_gate_error,
     lock_and_reread_target_owner,
     normalize_receipt,
+    read_review_evidence,
     reject_concurrent_review_basis_change,
     require_current_capture,
     review_error,
@@ -478,6 +480,36 @@ def add_review_results(
                 severity=entry_finding["severity"], summary=entry_finding["summary"],
                 database_target=database_target,
             )
-            findings.append({"finding": finding.finding, "event": finding.event})
-        receipts.append({"receipt": receipt.receipt, "event": receipt.event, "findings": findings})
-    return {"receipts": receipts}
+            findings.append({"finding": {
+                field: finding.finding[field] for field in (
+                    "review_finding_id", "review_receipt_id", "severity", "summary", "status",
+                )
+            }})
+        receipts.append({
+            "receipt": {field: receipt.receipt[field] for field in (
+                "review_receipt_id", "reviewer_key", "receipt_kind", "verdict",
+                "summary", "user_approved",
+            )},
+            "findings": findings,
+        })
+    # Observe the existing gate on the same locked basis, including Findings
+    # from older generations. This is not completion or a new admission gate.
+    evidence = read_review_evidence(
+        connection, project.project_id, normalized_task_id, validated_task=locked,
+    )
+    blocker = first_review_gate_error(evidence)
+    return {
+        "receipts": receipts,
+        "review_gate": {
+            **evidence["gate"],
+            "blocking_code": blocker.code if blocker is not None else None,
+            "basis": {
+                "task_id": normalized_task_id,
+                "contract_revision": locked["current_contract_revision"],
+                "review_target": dict(expected),
+            },
+        },
+        "omitted_details": [
+            "provenance", "repeated_binding", "events", "timestamps", "resolution_metadata",
+        ],
+    }

@@ -3,6 +3,7 @@ from __future__ import annotations
 import copy
 import io
 import json
+import os
 import shutil
 import sqlite3
 import subprocess
@@ -370,6 +371,169 @@ class ReviewResultsTests(unittest.TestCase):
         self.assertEqual(stderr, "")
         return envelope
 
+    def assert_gate(self, data, blocking_code, *, generation=1):
+        gate = data["review_gate"]
+        self.assertEqual(gate["blocking_code"], blocking_code)
+        self.assertEqual(gate["satisfied"], blocking_code is None)
+        self.assertEqual(gate["basis"], {
+            "task_id": self.task_id, "contract_revision": 1,
+            "review_target": self.payload()["review_target"] | {"generation": generation},
+        })
+        with closing(connect_initialized(self.target)) as connection:
+            evidence = review_service.read_review_evidence(connection, self.target.project.project_id, self.task_id)
+            self.assertEqual({key: gate[key] for key in evidence["gate"]}, evidence["gate"])
+            blocker = review_service.first_review_gate_error(evidence)
+            self.assertEqual(blocker.code if blocker else None, blocking_code)
+        shown = self.success("task", "show", self.task_id)["review_evidence"]["gate"]
+        self.assertEqual({key: gate[key] for key in shown}, shown)
+        checked = self.success("task", "complete", self.task_id, "--verification-complete", "--review-complete", "--commit-not-required", "--check", "--read-only")
+        self.assertEqual(checked["blocking_codes"], [] if blocking_code is None else [blocking_code])
+
+    def test_gate_is_observed_once_inside_writer_without_git(self):
+        reader = result_service.read_review_evidence
+        observations = []
+        def observed(connection, *args, **kwargs):
+            observations.append(connection.in_transaction)
+            return reader(connection, *args, **kwargs)
+        with mock.patch.object(result_service, "read_review_evidence", side_effect=observed) as read, mock.patch("subprocess.run", side_effect=AssertionError("no process under writer")):
+            code, stdout, _ = self.invoke()
+        self.assertEqual(code, 0, stdout)
+        read.assert_called_once()
+        self.assertEqual(observations, [True])
+        self.assert_gate(json.loads(stdout)["data"], "review_receipts_insufficient")
+
+    def test_old_unresolved_finding_blocks_new_generation_passes(self):
+        code, stdout, _ = self.invoke(self.payload(receipts=[receipt(findings=[{"severity": "medium", "summary": "Correct the boundary"}])]))
+        self.assertEqual(code, 0, stdout)
+        finding_id = json.loads(stdout)["data"]["receipts"][0]["findings"][0]["finding"]["review_finding_id"]
+        self.success("review", "target", "set", self.task_id, "--kind", "diff_fingerprint", "--revision", FINGERPRINT)
+        code, stdout, _ = self.invoke(document(self.task_id, generation=2, receipts=[receipt("new-a"), receipt("new-b")]))
+        self.assertEqual(code, 0, stdout)
+        self.assert_gate(json.loads(stdout)["data"], "review_finding_unresolved", generation=2)
+        self.success("review", "finding", "resolve", finding_id, "--resolution", "Boundary corrected")
+        code, stdout, _ = self.invoke(document(self.task_id, generation=2, receipts=[receipt("new-c")]))
+        self.assertEqual(code, 0, stdout)
+        self.assert_gate(json.loads(stdout)["data"], None, generation=2)
+
+    def test_resolved_current_finding_requires_new_generation_and_fresh_passes(self):
+        code, stdout, _ = self.invoke(self.payload(receipts=[receipt(findings=[{"severity": "high", "summary": "Correct current boundary"}])]))
+        self.assertEqual(code, 0, stdout)
+        finding_id = json.loads(stdout)["data"]["receipts"][0]["findings"][0]["finding"]["review_finding_id"]
+        self.success("review", "finding", "resolve", finding_id, "--resolution", "Boundary corrected")
+        code, stdout, _ = self.invoke(self.payload(receipts=[receipt("new-a"), receipt("new-b")]))
+        self.assertEqual(code, 0, stdout)
+        self.assert_gate(json.loads(stdout)["data"], "review_finding_unresolved")
+        self.assertEqual(self.success("task", "show", self.task_id)["review_evidence"]["current_findings"][0]["blocking_reason"], "fresh_review_required")
+        self.success("review", "target", "set", self.task_id, "--kind", "diff_fingerprint", "--revision", FINGERPRINT)
+        code, stdout, _ = self.invoke(document(self.task_id, generation=2, receipts=[receipt("fresh-a")]))
+        self.assertEqual(code, 0, stdout)
+        self.assert_gate(json.loads(stdout)["data"], "review_receipts_insufficient", generation=2)
+        code, stdout, _ = self.invoke(document(self.task_id, generation=2, receipts=[receipt("fresh-b")]))
+        self.assertEqual(code, 0, stdout)
+        self.assert_gate(json.loads(stdout)["data"], None, generation=2)
+
+    def test_changes_requested_without_findings_blocks_even_with_two_passes(self):
+        code, stdout, _ = self.invoke(self.payload(receipts=[receipt("requester", verdict="changes_requested"), receipt("pass-a"), receipt("pass-b")]))
+        self.assertEqual(code, 0, stdout)
+        self.assert_gate(json.loads(stdout)["data"], "review_changes_requested")
+
+    def test_gate_read_failure_before_commit_rolls_back_all_rows(self):
+        before = file_snapshot(self.root)
+        with mock.patch.object(result_service, "read_review_evidence", side_effect=sqlite3.OperationalError("token=private-fault")), mock.patch.object(cli_service, "run_post_commit_maintenance") as maintenance:
+            result = self.invoke(maintenance_enabled=True)
+        self.assert_failure(result, "internal_error", exit_code=2)
+        self.assertNotIn("private-fault", result[1] + result[2])
+        self.assertEqual(file_snapshot(self.root), before)
+        maintenance.assert_not_called()
+
+    def test_post_commit_text_failure_keeps_saved_json_and_warns_without_replay(self):
+        with mock.patch.object(cli_service, "review_text", side_effect=ValueError("token=private-format")):
+            code, stdout, stderr = self.invoke()
+        self.assertEqual((code, stderr), (0, ""), stdout)
+        envelope = json.loads(stdout)
+        self.assertTrue(envelope["ok"])
+        self.assertEqual(envelope["warnings"][0]["code"], "review_result_display_failed")
+        self.assertIn("Do not resubmit", envelope["warnings"][0]["message"])
+        self.assertNotIn("private-format", stdout)
+        self.assert_gate(envelope["data"], "review_receipts_insufficient")
+
+    def test_post_commit_emit_failure_reports_saved_outcome_not_empty_failure(self):
+        for json_output in (False, True):
+            with self.subTest(json_output=json_output), mock.patch.object(cli_service, "emit_result", side_effect=OSError("token=private-output")) as emit:
+                code, stdout, stderr = self.invoke(self.payload(receipts=[receipt(str(json_output))]), json_output=json_output)
+            self.assertEqual((code, stdout), (2, ""))
+            self.assertIn("Review results recorded, but output failed", stderr)
+            self.assertIn("Do not resubmit", stderr)
+            self.assertNotIn("private-output", stderr)
+            emit.assert_called_once()
+        self.assertEqual(self.success("task", "show", self.task_id)["review_evidence"]["counts"]["receipts_current_generation"], 2)
+
+    def test_compact_response_preserves_all_64_findings_and_reduces_wire_bytes(self):
+        legacy = []
+        add_receipt, add_finding = result_service.add_review_receipt, result_service.add_review_finding
+        def capture_receipt(*args, **kwargs):
+            saved = add_receipt(*args, **kwargs)
+            legacy.append({"receipt": saved.receipt, "event": saved.event, "findings": []})
+            return saved
+        def capture_finding(*args, **kwargs):
+            saved = add_finding(*args, **kwargs)
+            legacy[-1]["findings"].append({"finding": saved.finding, "event": saved.event})
+            return saved
+        payload = self.payload(receipts=[receipt(str(i), findings=[{"severity": "low", "summary": f"src/a.py:{j} 日本語 detail {i}"} for j in range(8)]) for i in range(8)])
+        with mock.patch.object(result_service, "add_review_receipt", side_effect=capture_receipt), mock.patch.object(result_service, "add_review_finding", side_effect=capture_finding):
+            code, stdout, _ = self.invoke(payload)
+        self.assertEqual(code, 0, stdout)
+        envelope = json.loads(stdout)
+        rows = envelope["data"]["receipts"]
+        self.assertEqual(len(rows), 8)
+        for original, saved, old in zip(payload["receipts"], rows, legacy):
+            self.assertEqual(saved["receipt"]["review_receipt_id"], old["receipt"]["review_receipt_id"])
+            self.assertEqual([row["finding"]["summary"] for row in saved["findings"]], [row["summary"] for row in original["findings"]])
+            self.assertEqual([row["finding"]["review_finding_id"] for row in saved["findings"]], [row["finding"]["review_finding_id"] for row in old["findings"]])
+        old_envelope = {**envelope, "data": {"receipts": legacy}}
+        old_bytes, new_bytes = len(encode(old_envelope)), len(encode(envelope))
+        self.assertLess(new_bytes, old_bytes)
+        print(f"RG3_RESPONSE_BYTES old={old_bytes} new={new_bytes} receipts=8 findings=64")
+        self.assertEqual(envelope["data"]["omitted_details"], ["provenance", "repeated_binding", "events", "timestamps", "resolution_metadata"])
+
+    def test_buffered_pipe_flush_failure_retains_rows_and_quiets_later_finalization(self):
+        for json_output in (False, True):
+            reader, writer = os.pipe()
+            os.close(reader)
+            # Real OS pipe and real buffering: write initially succeeds in
+            # memory; only flush observes the already closed reader.
+            with io.TextIOWrapper(io.BufferedWriter(io.FileIO(writer, "wb")), encoding="utf-8") as stdout:
+                stderr = io.StringIO()
+                candidate = self.payload(receipts=[receipt(str(json_output))])
+                argv = ["--repo", str(self.repo), "review", "result", "add", self.task_id]
+                if json_output:
+                    argv.append("--json")
+                with mock.patch.object(sys, "stdin", BinaryInput(encode(self.wire_payload(candidate)))), redirect_stdout(stdout), redirect_stderr(stderr):
+                    code = cli_service.main(argv, _target_override=self.target, _maintenance_enabled=False)
+                self.assertEqual(code, 2)
+                self.assertIn("Review results recorded, but output failed", stderr.getvalue())
+                self.assertNotIn("Traceback", stderr.getvalue())
+                stdout.flush()  # Interpreter-style later flush no longer retries the pipe.
+        self.assertEqual(self.success("task", "show", self.task_id)["review_evidence"]["counts"]["receipts_current_generation"], 2)
+
+    def test_two_pass_response_size_and_gate_do_not_complete_task(self):
+        legacy = []
+        add = result_service.add_review_receipt
+        def capture(*args, **kwargs):
+            saved = add(*args, **kwargs)
+            legacy.append({"receipt": saved.receipt, "event": saved.event, "findings": []})
+            return saved
+        with mock.patch.object(result_service, "add_review_receipt", side_effect=capture):
+            code, stdout, _ = self.invoke(self.payload(receipts=[receipt("a"), receipt("b")]))
+        self.assertEqual(code, 0, stdout)
+        envelope = json.loads(stdout)
+        self.assert_gate(envelope["data"], None)
+        self.assertEqual(self.success("task", "show", self.task_id)["task"]["status"], "in_progress")
+        old_bytes = len(encode({**envelope, "data": {"receipts": legacy}}))
+        new_bytes = len(encode(envelope))
+        self.assertLess(new_bytes, old_bytes)
+        print(f"RG3_RESPONSE_BYTES old={old_bytes} new={new_bytes} receipts=2 findings=0")
+
     def test_packet_template_and_each_unfinished_claim_are_rejected_without_writes(self):
         template = self.success("review", "prepare", self.task_id)["result_template"]
         before = file_snapshot(self.root)
@@ -402,7 +566,8 @@ class ReviewResultsTests(unittest.TestCase):
         self.assertEqual(code, 0, stdout)
         saved = json.loads(stdout)["data"]["receipts"][0]["receipt"]
         self.assertEqual(saved["verdict"], "not_required")
-        self.assertIsNone(saved["review_provenance"])
+        self.assertNotIn("review_provenance", saved)
+        self.assertIsNone(self.success("task", "show", self.task_id, "--audit")["review_evidence"]["recent_receipts"][0]["review_provenance"])
 
     def test_completed_packet_template_retains_privacy_and_stale_target_rejection(self):
         template = self.success("review", "prepare", self.task_id)["result_template"]
@@ -426,33 +591,32 @@ class ReviewResultsTests(unittest.TestCase):
         self.assertEqual((code, stderr), (0, ""), stdout)
         result = json.loads(stdout)
         self.assertEqual(set(result), {"ok", "command", "project_id", "data", "warnings", "errors"})
-        self.assertEqual(set(result["data"]), {"receipts"})
+        self.assertEqual(set(result["data"]), {"receipts", "review_gate", "omitted_details"})
         rows = result["data"]["receipts"]
         self.assertEqual([row["receipt"]["reviewer_key"] for row in rows], ["reviewer-b", "reviewer-a"])
-        receipt_ids, finding_ids, event_ids = [], [], []
+        receipt_ids, finding_ids = [], []
+        audit = self.success("task", "show", self.task_id, "--audit")["review_evidence"]
+        audit_receipts = {item["review_receipt_id"]: item for item in audit["recent_receipts"]}
         for row in rows:
-            self.assertEqual(set(row), {"receipt", "event", "findings"})
+            self.assertEqual(set(row), {"receipt", "findings"})
             public = row["receipt"]
-            self.assertEqual(set(public), set(review_service.PUBLIC_RECEIPT_FIELDS))
-            self.assertEqual(public["task_id"], self.task_id)
-            self.assertEqual(public["target_generation"], 1)
+            self.assertEqual(set(public), {"review_receipt_id", "reviewer_key", "receipt_kind", "verdict", "summary", "user_approved"})
+            saved = audit_receipts[public["review_receipt_id"]]
+            self.assertEqual(saved["task_id"], self.task_id)
+            self.assertEqual(saved["target_generation"], 1)
             self.assertEqual(public["summary"], payload["receipts"][0]["summary"])
             self.assertEqual(public["user_approved"], 0)
-            provenance = public["review_provenance"]
+            provenance = saved["review_provenance"]
             for key, value in PROVENANCE.items():
                 self.assertEqual(provenance[key], value)
             self.assertEqual((provenance["provenance_version"], provenance["assurance_class"], provenance["producer_class"], provenance["producer_version"]), (1, "bound_attestation", "trusted_caller", 1))
-            self.assertEqual(row["event"]["event_type"], "review_receipt_added")
             receipt_ids.append(public["review_receipt_id"])
-            event_ids.append(row["event"]["task_event_id"])
             nested = row["findings"][0]
-            self.assertEqual(set(nested), {"finding", "event"})
+            self.assertEqual(set(nested), {"finding"})
             self.assertEqual(nested["finding"]["review_receipt_id"], public["review_receipt_id"])
             self.assertEqual(nested["finding"]["summary"], findings[0]["summary"])
-            self.assertEqual(nested["event"]["event_type"], "review_finding_added")
             finding_ids.append(nested["finding"]["review_finding_id"])
-            event_ids.append(nested["event"]["task_event_id"])
-        self.assertEqual(len(set(receipt_ids + finding_ids + event_ids)), 8)
+        self.assertEqual(len(set(receipt_ids + finding_ids)), 4)
         with closing(connect_initialized(self.target)) as connection:
             validate_evidence_ledger_storage(connection)
             references = [dict(row) for row in connection.execute("SELECT * FROM evidence_references WHERE source_kind IN ('review_receipt','review_finding')")]
@@ -461,13 +625,15 @@ class ReviewResultsTests(unittest.TestCase):
                 self.assertEqual((reference["task_id"], reference["contract_revision"], reference["target_generation"], reference["target_value"]), (self.task_id, 1, 1, FINGERPRINT))
                 self.assertEqual((reference["assurance_class"], reference["producer_class"], reference["producer_version"]), ("bound_attestation", "trusted_caller", 1))
                 self.assertIsNotNone(reference["acceptance_criterion_id"])
-            stored_events = connection.execute("SELECT task_event_id FROM task_events WHERE event_type IN ('review_receipt_added','review_finding_added') ORDER BY rowid").fetchall()
-            self.assertEqual([row[0] for row in stored_events], event_ids)
+            stored_events = connection.execute("SELECT task_event_id, event_type FROM task_events WHERE event_type IN ('review_receipt_added','review_finding_added') ORDER BY rowid").fetchall()
+            self.assertEqual(len({row[0] for row in stored_events}), 4)
+            self.assertEqual([row[1] for row in stored_events], ["review_receipt_added", "review_finding_added"] * 2)
         evidence = self.success("task", "show", self.task_id)["review_evidence"]
         self.assertTrue(evidence["gate"]["satisfied"])
         self.assertEqual(evidence["gate"]["qualifying_independent_passes"], 2)
         self.assertEqual(evidence["counts"]["open_low"], 2)
         self.assertEqual({row["review_finding_id"] for row in evidence["current_findings"]}, set(finding_ids))
+        self.assert_gate(result["data"], None)
 
     def test_changes_requested_and_blocking_findings_remain_individual_gate_blockers(self):
         payload = self.payload(receipts=[
@@ -685,6 +851,7 @@ class ReviewResultsTests(unittest.TestCase):
         code, stdout, _ = self.invoke(fallback, "--user-approved-reviewer", " self-review ")
         self.assertEqual(code, 0, stdout)
         self.assertEqual(json.loads(stdout)["data"]["receipts"][0]["receipt"]["user_approved"], 1)
+        self.assert_gate(json.loads(stdout)["data"], None)
         self.assertTrue(self.success("task", "show", self.task_id)["review_evidence"]["gate"]["satisfied"])
 
     def test_tier_zero_null_provenance_and_tier_one_fallback_keep_existing_meanings(self):
@@ -699,7 +866,9 @@ class ReviewResultsTests(unittest.TestCase):
                 self.assertEqual(code, 0, stdout)
                 public = json.loads(stdout)["data"]["receipts"][0]["receipt"]
                 self.assertEqual(public["user_approved"], 0)
-                self.assertEqual(public["review_provenance"] is None, tier == 0)
+                self.assertNotIn("review_provenance", public)
+                audit = self.success("task", "show", self.task_id, "--audit")["review_evidence"]
+                self.assertEqual(audit["recent_receipts"][0]["review_provenance"] is None, tier == 0)
                 self.assertTrue(self.success("task", "show", self.task_id)["review_evidence"]["gate"]["satisfied"])
 
     def test_privacy_precedes_semantic_error_and_never_echoes_or_persists_input(self):
@@ -733,10 +902,13 @@ class ReviewResultsTests(unittest.TestCase):
                 self.assertEqual(file_snapshot(self.root), before)
         self.assert_failure(self.invoke(stdin=io.StringIO("{}")), "invalid_review_evidence")
 
-    def test_text_reports_only_counts_and_error_is_sanitized(self):
+    def test_text_retains_ids_findings_and_gate_and_error_is_sanitized(self):
         candidate = self.payload(receipts=[receipt("reviewer-a", findings=[{"severity": "low", "summary": "Private work description"}]), receipt("reviewer-b")])
         code, stdout, stderr = self.invoke(candidate, json_output=False)
-        self.assertEqual((code, stdout, stderr), (0, "Review results recorded: 2 receipts, 1 findings\n", ""))
+        self.assertEqual((code, stderr), (0, ""))
+        self.assertIn("Review results recorded: 2 receipts, 1 findings\n", stdout)
+        for text in ("tg_review_receipt_", "tg_review_finding_", "reviewer-a", "Private work description", "satisfied=True", "not Task completion", "Omitted details:"):
+            self.assertIn(text, stdout)
         code, stdout, stderr = self.invoke(stdin=BinaryInput(b"token=private-result"), json_output=False)
         self.assertEqual(code, 1)
         self.assertNotIn("private-result", stdout + stderr)
@@ -803,6 +975,32 @@ class ReviewResultsTests(unittest.TestCase):
             self.assertEqual([row["receipt"]["summary"] for row in result_data["receipts"]], [item["summary"] for item in payload["receipts"]])
             self.assertEqual(file_snapshot(install.project_root, exclude_state=True), before)
             self.assertFalse((install.skill_root / "config" / "verification-runner.json").exists())
+
+
+class ReviewResultOutputProcessTests(unittest.TestCase):
+    def test_installed_closed_stdout_exits_two_without_shutdown_traceback_or_replay(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            install = make_physical_install(Path(temporary).resolve())
+            def cli(*args):
+                result = install.run(*args, "--json")
+                self.assertEqual(result.returncode, 0, result.stdout or result.stderr)
+                return json.loads(result.stdout)["data"]
+            cli("setup")
+            for json_output in (False, True):
+                task = cli("task", "add", "--title", "Broken output", "--review-tier", "2")["task"]["task_id"]
+                cli("review", "target", "set", task, "--kind", "diff_fingerprint", "--revision", FINGERPRINT)
+                reader, writer = os.pipe()
+                os.close(reader)
+                try:
+                    command = [sys.executable, "-I", "-S", str(install.entrypoint), "--repo", str(install.project_root), "review", "result", "add", task]
+                    if json_output:
+                        command.append("--json")
+                    result = subprocess.run(command, input=encode(document(task, revision=0)), stdout=writer, stderr=subprocess.PIPE, cwd=install.project_root, timeout=30, check=False)
+                finally:
+                    os.close(writer)
+                self.assertEqual(result.returncode, 2, result.stderr)
+                self.assertEqual(result.stderr.decode().strip(), "Review results recorded, but output failed. Do not resubmit; inspect recorded evidence before retrying.")
+                self.assertEqual(cli("task", "show", task)["review_evidence"]["counts"]["receipts_current_generation"], 1)
 
 
 class ReviewResultsDocumentArrayTests(ReviewResultsTests):

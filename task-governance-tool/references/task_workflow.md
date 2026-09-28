@@ -576,13 +576,18 @@ python .agents/skills/task-governance-tool/scripts/review_handoff.py submit --re
 This sends unchanged originals through the existing atomic stdin registration
 once, without model-generated framing code or another normal check/show.
 Use all returned `data.receipts[].findings`, including low severity, for repair
-decisions. A short acknowledgement never replaces Findings. Recover an
+decisions. `data.review_gate` observes the existing gate on the saved basis,
+including older blockers; it does not assert verification PASS or authorize
+Task completion. Do not add a routine show/check to confirm it. Repeated
+provenance/events are explicitly omitted from this response, not from storage.
+A short acknowledgement never replaces Findings. Recover an
 incomplete registration response before deciding what to repair; the helper
 does not weaken current-state revalidation or authorize retries. If shared
 ignored files are unavailable, the [existing stdin interface](cli_contracts.md#structured-review-results)
 still accepts complete originals by bytes; do not infer file permissions.
 
 Invalid input saves no prefix. Obtain corrections from their actual source.
+Post-commit display warnings or emission failure do not undo saved results.
 If a response is lost, inspect recorded state before retrying; committed replay
 is not idempotent. JSON grants no approval. Use a named-reviewer approval flag
 only with actual current user approval under the existing fallback rule.

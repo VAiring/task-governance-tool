@@ -322,7 +322,26 @@ def review_text(command: str, data: dict[str, Any]) -> str:
     if command == "review.result.add":
         receipts = data["receipts"]
         findings = sum(len(item["findings"]) for item in receipts)
-        return f"Review results recorded: {len(receipts)} receipts, {findings} findings"
+        lines = [f"Review results recorded: {len(receipts)} receipts, {findings} findings"]
+        for item in receipts:
+            receipt = item["receipt"]
+            lines.append(
+                f"{receipt['review_receipt_id']} {receipt['reviewer_key']} "
+                f"({receipt['receipt_kind']}, {receipt['verdict']}, user_approved={receipt['user_approved']}): {receipt['summary']}"
+            )
+            for nested in item["findings"]:
+                finding = nested["finding"]
+                lines.append(f"  {finding['review_finding_id']} {finding['severity']} ({finding['status']}): {finding['summary']}")
+        gate = data["review_gate"]
+        basis = gate["basis"]
+        lines.append(f"Review basis: {basis['task_id']}, Contract {basis['contract_revision']}, target {basis['review_target']}")
+        lines.append(
+            f"Review gate: satisfied={gate['satisfied']}, "
+            f"independent passes={gate['qualifying_independent_passes']}/{gate['required_independent_passes']}, "
+            f"fallback={gate['fallback_kind']}, blocking_code={gate['blocking_code']} (observation only, not Task completion)"
+        )
+        lines.append("Omitted details: " + ", ".join(data["omitted_details"]))
+        return "\n".join(lines)
     event = data["event"]
     if command == "review.target.set":
         task = data["task"]

@@ -292,7 +292,7 @@ Current success-data projections are:
 | `handoff.withdraw` | `handoff`, `changed_fields` |
 | `review.target.set` | `task`, `changed_fields`, `event`, `verification_route`, `blocking_code`, `review_preparation` |
 | `review.receipt.add` | `receipt`, `event` |
-| `review.result.add` | `receipts`; each item holds `receipt`, `event`, and nested `findings` |
+| `review.result.add` | success: compact `receipts` with nested `findings`, observed `review_gate`, `omitted_details`; failure: empty `receipts`; details in [structured review results](review-completion-specification.md#structured-review-results) |
 | `review.finding.add` | `finding`, `event` |
 | single `review.finding.resolve` | `finding`, `event` |
 | `review.finding.resolve --from-stdin` | `findings`; input-order Finding/event results |

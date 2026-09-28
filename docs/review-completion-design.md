@@ -240,12 +240,30 @@ Task before any insert. A concurrent tier or authority change cannot reuse
 pre-lock normalization. Each Receipt and its Findings use the same connection,
 including their individual References, provenance and events.
 
-The CLI owns the one outer transaction: every exception escapes it before
-conversion to sanitized failure output. There are no per-entry commits or
+After the inserts, the service captures `read_review_evidence` on that same
+connection and validated locked Task, then calls `first_review_gate_error`.
+It does not reproduce predicates, restrict blockers to the recent window,
+enforce this observation as a write gate, or perform Git/external I/O. The
+response selects compact Receipt/Finding fields from the actual saved results,
+keeps their input order and complete new Finding bodies, and carries the locked
+Task/Contract/target basis once in `review_gate`. Explicit omission metadata
+distinguishes presentation from the unchanged storage/audit projections.
+
+The CLI owns the one outer transaction: insert or gate-read exceptions escape
+it before conversion to sanitized failure output. There are no per-entry commits or
 successful-prefix returns. Commit and connection close precede formatting and
 one changed/Viewer-relevant maintenance result. Legacy single-item callers and
 global state admission retain their existing contracts. Replay detection uses
 the existing Task/generation/reviewer uniqueness, without a new durable ID.
+For this command only, a post-commit text rendering exception retains success
+data with a fixed display warning. Successful emission includes stdout flush
+inside the same guard. An emission/flush exception returns a fixed
+saved-outcome stderr diagnostic and exit 2 without another stdout attempt or
+replay. The failed stdout descriptor is redirected to the OS null sink where
+available to prevent a second write during interpreter finalization; custom
+embedded streams without a descriptor retain caller-owned lifecycle. Neither
+path reports rollback of already committed rows. Unavailable
+output still requires existing public-state recovery, not a new receipt ledger.
 
 `scripts/review_handoff.py` delegates to `review_handoff.py` for caller-owned
 original-file transport. It has no storage connection: save reuses the pure

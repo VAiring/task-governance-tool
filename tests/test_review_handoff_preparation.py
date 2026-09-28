@@ -584,9 +584,12 @@ class DirectPacketReviewerTests(unittest.TestCase):
                 "review", "result", "add", task, "--json"], cwd=install.project_root,
                 input=returned_original, capture_output=True, check=False)
             self.assertEqual(submitted.returncode, 0, submitted.stdout or submitted.stderr)
-            row = json.loads(submitted.stdout)["data"]["receipts"][0]
-            self.assertEqual(row["receipt"]["target_value"], packet["review_target"]["value"])
-            self.assertEqual(row["receipt"]["target_generation"], packet["review_target"]["generation"])
+            data = json.loads(submitted.stdout)["data"]
+            row = data["receipts"][0]
+            self.assertEqual(data["review_gate"]["basis"], {
+                "task_id": task, "contract_revision": packet["contract"]["revision"],
+                "review_target": packet["review_target"],
+            })
             self.assertEqual(row["findings"][0]["finding"]["summary"], payload["receipts"][0]["findings"][0]["summary"])
             self.assertFalse((install.project_root / ".git").exists())
             self.assertFalse((install.project_root / "reviews").exists())

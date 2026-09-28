@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 import sqlite3
 import sys
 from collections.abc import Sequence
@@ -2423,8 +2424,16 @@ def handle_review_command(context: CommandContext) -> CommandResult:
             exit_code=EXIT_TOOL_ERROR,
         )
 
-    text = review_text(context.command, data)
     warnings = []
+    try:
+        text = review_text(context.command, data)
+    except Exception:
+        if context.command != "review.result.add":
+            raise
+        # The transaction has already committed; keep the saved results and
+        # never turn a rendering fault into an apparent registration failure.
+        text = "Review results recorded; text display unavailable. Do not resubmit; inspect recorded evidence if needed."
+        warnings.append({"code": "review_result_display_failed", "message": text})
     if context.command == "review.target.set":
         preparation = {"status": "not_applicable", "binding": None, "packet": None, "errors": []}
         if result.verification_route in {"not_required", "runner_pass"}:
@@ -2837,11 +2846,33 @@ def main(
         result = handle_command(context)
         if _maintenance_enabled:
             result = apply_post_commit_maintenance(context, result)
-        return emit_result(
-            result,
-            json_output=context.json_output,
-            max_json_bytes=bounded_json_limit_from_args(args),
-        )
+        try:
+            exit_code = emit_result(
+                result,
+                json_output=context.json_output,
+                max_json_bytes=bounded_json_limit_from_args(args),
+            )
+            if result.command == "review.result.add" and result.ok:
+                sys.stdout.flush()
+            return exit_code
+        except Exception:
+            if result.command != "review.result.add" or not result.ok:
+                raise
+            # Even serialization/stream failure cannot roll back saved rows.
+            # Do not attempt another stdout response or invite blind replay.
+            try:
+                # Keep Python's later buffered-stream finalization from writing
+                # to the failed destination again. Only this failed command's
+                # stdout descriptor changes; stderr retains its diagnostic.
+                with open(os.devnull, "wb") as sink:
+                    os.dup2(sink.fileno(), sys.stdout.fileno())
+            except (OSError, ValueError, AttributeError):
+                pass  # An embedded caller may supply a stream without a fd.
+            try:
+                print("Review results recorded, but output failed. Do not resubmit; inspect recorded evidence before retrying.", file=sys.stderr)
+            except Exception:
+                pass  # Both output channels may be unavailable.
+            return EXIT_TOOL_ERROR
     except CommandLineError as exc:
         json_output = lexical_json_requested(raw_argv)
         if not json_output and exc.code in {"invalid_command", "invalid_option"}:

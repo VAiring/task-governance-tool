@@ -1724,16 +1724,33 @@ fallback has explicit current user approval, add repeatable
 ineligible or missing required approval fails `invalid_review_evidence`.
 
 All entries are new and save atomically with their existing individual
-provenance, References and events. Success data is exactly
-`{receipts: [{receipt, event, findings: [{finding, event}]}]}` in input order.
+provenance, References and events. Success data is
+`{receipts: [{receipt, findings: [{finding}]}], review_gate, omitted_details}`
+in flattened input order, without truncating any new Finding.
 Use `data.receipts[].receipt.review_receipt_id` for the returned Receipt IDs
 and `data.receipts[].findings[].finding.review_finding_id` for Finding IDs;
 no follow-up read is needed to obtain them.
-Each nested object uses the existing public single-item projection. Failure
+Compact Receipts retain reviewer/kind/verdict/summary/approval alongside ID;
+Findings retain parent Receipt ID, severity, summary and status alongside ID.
+`omitted_details` explicitly lists provenance, repeated binding, events,
+timestamps and resolution metadata; storage and the existing audit read retain
+those details. This changes the previous full-item success response.
+`review_gate` returns the existing tier/pass counts/fallback/satisfied fields,
+first `blocking_code` (or null), and the observed Task/Contract/complete-target
+`basis`. It includes old-generation blockers and fresh-review requirements.
+It is only a review-gate observation, not verification or completion permission;
+the final write still revalidates current state. Do not add a routine show/check
+to confirm this response. Failure
 data is `{receipts: []}` with no saved prefix, including after a late failure.
-Text success reports only Receipt/Finding counts. `--read-only` rejects before
+Text retains ordered Receipt/Finding IDs and summaries, review gate/basis and
+an omission notice. `--read-only` rejects before
 stdin is consumed. Successful registration runs existing post-commit maintenance
 once; maintenance warnings do not undo the committed evidence.
+Post-commit text failure retains successful JSON with
+`review_result_display_failed`. Emission failure returns exit 2 with a saved-
+outcome stderr diagnostic if available, never a claimed rollback. Recover
+lost/incomplete output through public state before retrying; do not resubmit
+saved results blindly.
 
 The tool stores no result document or batch ledger, launches no reviewer,
 merges no judgment, resolves no Finding, and does not complete the Task.

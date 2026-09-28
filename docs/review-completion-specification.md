@@ -227,13 +227,51 @@ fallback rule. Missing required approval, unmatched or ineligible flags fail
 
 Any validation, conflict or persistence failure rolls back all Receipts,
 provenance, Findings, Evidence References, events and timestamps from the batch.
-Failure data is exactly `{receipts: []}`; success data is exactly
-`{receipts: [{receipt, event, findings: [{finding, event}]}]}` in input order,
-using the existing individual public projections. Text reports only Receipt
-and Finding counts. No input document or new batch ledger is stored.
+Failure data is exactly `{receipts: []}`. Success data contains exactly
+`receipts`, `review_gate`, and `omitted_details`. `receipts` retains flattened
+input document/Receipt order and each Receipt's Finding order as
+`[{receipt, findings: [{finding}]}]`; no new Receipt or Finding is truncated.
+Receipt fields are `review_receipt_id`, `reviewer_key`, `receipt_kind`,
+`verdict`, `summary`, and `user_approved`. Finding fields are
+`review_finding_id`, `review_receipt_id`, `severity`, `summary`, and `status`.
+Every Finding body and ID, including low severity, remains available without
+another read. The IDs and order map the response to the submitted inputs.
+
+`review_gate` contains the existing `review_tier`,
+`required_independent_passes`, `qualifying_independent_passes`, `fallback_kind`,
+and `satisfied`, plus nullable `blocking_code` from the existing first review
+gate error and `basis: {task_id, contract_revision, review_target}`. The target
+contains `kind`, `value`, `base_revision`, and `generation` (empty-string absent
+base, as in the input). It observes the gate after all inserts on the writer's
+same locked basis. All generations' blocking Findings, current-generation
+changes-requested results, fresh-review requirements and valid fallback retain
+their existing semantics. This observation does not assert verification PASS,
+whole-Task completion, commit success or future authorization. It adds no gate,
+writer-side Git observation, required show/check call or completion bypass;
+the final completion write still revalidates its own current basis.
+
+`omitted_details` is the fixed list `provenance`, `repeated_binding`, `events`,
+`timestamps`, `resolution_metadata`. These describe omitted response details,
+not deleted storage. Full provenance/digests, References, events and audit
+projections remain unchanged. This intentionally changes the prior full-item
+success JSON; consumers of those details must use the existing audit surface.
+Text reports counts, ordered Receipt IDs/reviewer/kind/verdict/summary/approval,
+all nested Finding IDs/severity/status/body, basis and review-gate observation,
+and the omission notice. No input document or new batch ledger is stored.
 `--read-only` rejects the write before consuming stdin. Successful commit and
 connection close precede one existing post-commit maintenance invocation;
 maintenance failure remains a warning and does not undo committed evidence.
+Post-commit text formatting failure keeps successful JSON data and adds
+`review_result_display_failed`; fallback text states that results were saved
+and must not be resubmitted blindly. Emission flushes stdout inside the protected
+boundary. Serialization or stream failure returns
+exit 2, with a sanitized saved-outcome diagnostic on stderr when available,
+not an empty unsuccessful-registration envelope. If both channels are lost,
+the outcome requires public-state investigation before retrying. No automatic
+replay or extra normal-path read is introduced.
+When a failed stdout exposes a descriptor, it is redirected to the null sink
+so interpreter finalization cannot retry that failed destination. Embedded
+caller-owned streams without descriptors remain the caller's lifecycle concern.
 This registration command accepts stdin only, not file paths. The separate
 helper below performs caller-owned transport without changing this writer.
 

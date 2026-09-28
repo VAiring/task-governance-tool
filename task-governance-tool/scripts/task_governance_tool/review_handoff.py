@@ -273,10 +273,13 @@ def _emit(value, *, utf8=False):
 
 def main(argv=None):
     try:
-        from task_governance_tool.review_handoff_preparation import add_parser, prepare, read_for_reviewer
+        from task_governance_tool.review_handoff_preparation import (
+            add_parser, add_material_parser, prepare, read_for_reviewer, read_material,
+        )
         parser = _Parser(description=__doc__)
         commands = parser.add_subparsers(dest="operation", required=True)
         add_parser(commands)
+        add_material_parser(commands)
         reader = commands.add_parser("read", help="Display the saved Packet for an explicitly assigned independent reviewer")
         reader.add_argument("--repo", required=True)
         reader.add_argument("--packet", required=True)
@@ -292,6 +295,8 @@ def main(argv=None):
                 command.add_argument("originals", nargs="+", help="Ignored project-relative original JSON paths")
         args = parser.parse_args(argv)
         repo = Path(os.path.abspath(args.repo))
+        if args.operation == "material":
+            return read_material(repo, args)
         if args.operation == "prepare":
             result = prepare(repo, args)
             return (0 if result["ok"] else 1) if _emit(result) else 1
@@ -315,5 +320,13 @@ def main(argv=None):
         code = "handoff_io_or_input_failed"
     except KeyboardInterrupt:
         code = "handoff_outcome_unknown"
+    if "args" in locals() and args.operation == "material":
+        # A failed stream may have delivered a prefix. Never append a JSON
+        # envelope to raw Git material or label that prefix complete.
+        try:
+            print("Review material failed: " + code, file=sys.stderr, flush=True)
+        except OSError:
+            pass
+        return 1
     _emit({"ok": False, "code": code, "message": "Review handoff failed; preserve originals and inspect the outcome before retry."})
     return 1

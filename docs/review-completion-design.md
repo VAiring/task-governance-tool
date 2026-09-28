@@ -300,15 +300,27 @@ The same module streams the immutable dependency revision through the existing
 count/byte-bounded inventory prefix while counting omitted entries. It does not
 infer relevance, scan the worktree or retain blob content. The additional
 directory-list and `cat-file --batch` templates reuse `_material_command`:
-discovery and selected multi-blob reads keep the existing safe-Git program,
-without moving it behind a new helper operation. Batch output keeps Git's
+it now emits short calls to the existing helper's closed `material` operation.
+Discovery and selected multi-blob reads keep the existing safe-Git environment.
+Batch output keeps Git's
 per-object framing and missing/non-blob outcomes, not a new success assertion.
 Generated guidance preserves path/side identity, bounded-display recovery,
 snapshot overlay and later dependency discovery. Inventory and bodies never
 enter the saved Packet or DB; save/submit and reviewer isolation are unchanged.
-The fixed templates invoke Python with the existing package and
-`completion.safe_git_command/safe_git_environment`, then the intended Git read;
-no new helper subcommand, configurable runner or stored wrapper is introduced.
+The same module's `read_material` owns only five fixed reads: blob, batch,
+diff, dependency and directory. It reuses `completion.FULL_GIT_OBJECT_ID`,
+manifest path validation and `completion.safe_git_command/safe_git_environment`;
+no configurable runner or stored wrapper is introduced. Named `--path=` keeps
+an empty root argument intact on PowerShell 5.1. Batch validates each bounded
+ID line before forwarding it to `cat-file --batch`, streams output directly,
+and closes/reaps the child, terminating it on invalid input or interruption.
+It retains no bodies or ID list and adds no batch-count cap. A stream failure
+returns nonzero with a sanitized diagnostic, never a JSON success envelope
+appended to Git bytes; a previously delivered prefix is not complete. Individual
+reads forward the fixed Git process's raw output and exit. No Task query,
+Packet mutation, storage connection, body persistence or permission change is
+added to material retrieval. The already generated immutable selectors and
+existing read/submit checks remain the binding boundary.
 The child inherits no Git overrides and cannot lazily fetch missing material.
 Generated host-specific literal-substitution instructions and fully bound shell
 arguments preserve quotes and shell punctuation, including PowerShell's five

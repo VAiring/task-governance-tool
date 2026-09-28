@@ -279,7 +279,7 @@ helper below performs caller-owned transport without changing this writer.
 
 ### Caller-Owned Review Handoff
 
-The shipped `scripts/review_handoff.py` has `prepare`, `read`, `save` and `submit`
+The shipped `scripts/review_handoff.py` has `prepare`, `read`, `material`, `save` and `submit`
 operations, separate from the taskgov command inventory. All require explicit
 `--repo`. The Packet remains context, not authenticated evidence, and the helper
 never launches a reviewer or replaces current-state registration checks.
@@ -356,8 +356,8 @@ exact stable index fingerprint/base or canonical commit/first-parent (root:
 empty tree), with its existing object-presence, path, entry and size bounds.
 Material contains the complete delta as existing manifest entry fields, immutable
 before/after object IDs and modes, comparison base, dependency revision, and
-read-only Git blob/diff/path command templates. Their fixed Python invocation
-reuses the observer's sanitized Git environment (including no lazy fetch,
+read-only Git blob/diff/path command templates. Their short `material` invocation
+reuses the observer's sanitized Git environment inside the helper (including no lazy fetch,
 replacement refs, optional locks or prompts) without mutating the caller's
 environment. Host-specific single-quote substitution guidance preserves the
 actual dependency path inside the template's shell literal. PowerShell doubles
@@ -383,7 +383,7 @@ the same template and path-quoting rule; paths in its result are directory-relat
 Snapshot changes override that base listing, including deletion and old rename
 paths. Omission or tool truncation is explicit and must be recovered with
 narrower listings/sufficient output, or reported; it never bounds review scope.
-`blob_batch_command` uses the same fixed safe-Git wrapper with `cat-file --batch`.
+`blob_batch_command` uses the same safe-Git helper with `cat-file --batch`.
 Reviewers may send selected full blob IDs from the delta/inventory, one per stdin
 line followed by EOF, retaining each ID's path/side mapping. Its standard Git
 framing is the ID, type and byte count, LF, that many content bytes, then LF,
@@ -396,6 +396,26 @@ new dependencies discovered later still require their own inspection.
 Required unavailable submodule/content or tool-truncated output must be recovered
 or reported before PASS. The observation is trusted-local and point-in-time;
 it does not lock state, certify review quality or replace submission revalidation.
+
+`material --repo <root>` accepts only `blob <full-object-id>`, `batch`,
+`diff <before-full-id> <after-full-id>`, `dependency <full-revision>
+--path=<project-relative-path>`, or `directory <full-revision>
+--path=<project-relative-directory>`. The emitted commands include the actual
+helper/root/revision; only the displayed placeholders need substitution. No
+additional help/guide read or caller-built Python program is needed. The full
+lowercase SHA-1/SHA-256 selectors come from the material display, not HEAD,
+abbreviations or worktree paths. Dependency paths reuse manifest path safety;
+the directory-only empty path names the root, including on PowerShell 5.1.
+The helper permits no arbitrary Git options or operation. Diff always disables
+external diff and text conversion. It does not reselect or attest a target:
+the existing `read` comparison and final registration checks remain controlling.
+`batch` streams validated full IDs from stdin (LF/CRLF or a final unterminated
+line), without a new count cap or retained body. Invalid selectors, paths or
+input fail nonzero; a failure after a batch prefix does not make that prefix
+complete. Successful Git execution forwards its raw bytes/exit status, not a
+JSON success envelope or a content-availability assertion. Git's batch missing
+and non-blob records still require inspection even on exit zero. No body is
+saved, no parent environment is changed, and no network or Git write is added.
 
 Diff-fingerprint/external targets instead return `requires_supplied_material`
 with no Git-derived delta. The caller must provide complete material and evidence
@@ -460,7 +480,8 @@ file, which is retained and never called ready. Correct source data and select
 a new unused result path; do not overwrite residue. Lost save responses require
 inspection of the original; lost submission responses require public recorded
 state inspection before deciding whether any retry is safe. No operation
-automatically retries. Helper failures return `ok:false` with a sanitized code
+automatically retries. Preparation, Packet display and result-transport failures
+return `ok:false` with a sanitized code
 and fixed message, no rejected content or exception detail. An uncertain result
 never authorizes a duplicate registration.
 

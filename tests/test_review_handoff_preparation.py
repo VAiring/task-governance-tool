@@ -512,12 +512,12 @@ class ReviewerMaterialTests(PreparationFixture):
             self.assertEqual(actual.returncode, 0, actual.stderr)
             self.assertEqual(actual.stdout.replace(b"\r\n", b"\n"), f"dependency {index}\n".encode())
             # Fully bound generated arguments use the same literal rule.
-            actual = self.material_read(preparation._material_command(self.root, ["show", revision + ":" + path]),
+            actual = self.material_read(preparation._material_command(self.root, "dependency", revision, "--path=" + path),
                                         environment=environment)
             self.assertEqual(actual.returncode, 0, actual.stderr)
             self.assertEqual(actual.stdout.replace(b"\r\n", b"\n"), f"dependency {index}\n".encode())
             with mock.patch.object(preparation, "_shell", side_effect=shlex.join):
-                template = preparation._material_command(self.root, ["show", revision + ":<project-relative-path>"])
+                template = preparation._material_command(self.root, "dependency", revision, "--path=<project-relative-path>")
             command = template.replace("<project-relative-path>", path.replace("'", "'\"'\"'"))
             actual = self.material_read(command, environment=environment, posix=True)
             self.assertEqual(actual.returncode, 0, actual.stderr)
@@ -556,6 +556,106 @@ class ReviewerMaterialTests(PreparationFixture):
         # A batch exit zero is deliberately not a content-availability claim.
         actual = self.material_read(material["blob_batch_command"], raw=(missing + "\n").encode())
         self.assertIn((missing + " missing").encode(), actual.stdout)
+
+    def test_short_material_commands_match_previous_fixed_wrapper_bytes_and_failures(self):
+        base = self.committed_fixture()
+        before_id = self.git("rev-parse", base + ":source.py").decode().strip()
+        (self.root / "source.py").write_bytes("# 日本語\r\nvalue = 2".encode("utf-8"))
+        self.git("-c", "core.autocrlf=false", "add", "--", "source.py")
+        after_id = self.git("rev-parse", ":source.py").decode().strip()
+        # These overrides must not enable external diff/text conversion.
+        self.git("config", "diff.external", "missing-external-command")
+        self.git("config", "diff.default.textconv", "missing-textconv-command")
+        program = (
+            "import subprocess,sys;from pathlib import Path;"
+            "sys.path.insert(0,sys.argv[1]);"
+            "from task_governance_tool.completion import safe_git_command,safe_git_environment;"
+            "sys.exit(subprocess.call([*safe_git_command(Path(sys.argv[2])),*sys.argv[3:]],"
+            "env=safe_git_environment()))"
+        )  # Previous fixed wrapper from the Task's input revision, test-only oracle.
+        missing = "f" * 40
+        cases = [
+            (("blob", after_id), ["cat-file", "blob", after_id], None),
+            (("blob", missing), ["cat-file", "blob", missing], None),
+            (("diff", before_id, after_id), ["diff", "--no-ext-diff", "--no-textconv", before_id, after_id, "--"], None),
+            (("dependency", base, "--path=source.py"), ["show", base + ":source.py"], None),
+            (("dependency", base, "--path=absent.py"), ["show", base + ":absent.py"], None),
+            (("directory", base, "--path="), ["-c", "core.quotePath=false", "ls-tree", "--full-tree", "--no-abbrev", base + ":", "--"], None),
+            (("batch",), ["cat-file", "--batch"], (after_id + "\n" + missing + "\n" + base + "\n").encode()),
+        ]
+        snapshot = file_snapshot(self.root)
+        for short, arguments, raw in cases:
+            with self.subTest(operation=short):
+                old_command = preparation._shell([sys.executable, "-I", "-S", "-B", "-c", program,
+                    str(self.helper.parent), str(self.root), *arguments])
+                new_command = preparation._material_command(self.root, *short)
+                self.assertLess(len(new_command.encode("utf-8")), len(old_command.encode("utf-8")))
+                self.assertNotIn("import ", new_command)
+                old = self.material_read(old_command, raw=raw)
+                new = self.material_read(new_command, raw=raw)
+                self.assertEqual((new.returncode, new.stdout, new.stderr),
+                                 (old.returncode, old.stdout, old.stderr))
+        self.assertEqual(file_snapshot(self.root), snapshot)
+
+    def test_material_rejects_ambient_selectors_unsafe_paths_and_arbitrary_commands(self):
+        base = self.committed_fixture()
+        oid = self.git("rev-parse", base + ":SPEC.md").decode().strip()
+        invalid = [
+            ("blob", "HEAD:SPEC.md"), ("blob", oid[:8]), ("blob", "--not-an-object"),
+            ("diff", base, "HEAD"), ("dependency", "HEAD", "--path=SPEC.md"),
+            ("checkout", base), ("blob", oid, "--output=unexpected"),
+            *(("dependency", base, "--path=" + path) for path in
+              ("", "../SPEC.md", "./SPEC.md", "/SPEC.md", "a//b", "C:/SPEC.md", "a\\b", "NUL", "a\nb")),
+            ("directory", base, "--path=../"),
+        ]
+        snapshot = file_snapshot(self.root)
+        help_result = self.invoke("material", "--help")
+        self.assertEqual(help_result.returncode, 0, help_result.stderr)
+        self.assertIn(b"blob,batch,diff,dependency,directory", help_result.stdout)
+        for arguments in invalid:
+            with self.subTest(arguments=arguments):
+                result = self.invoke("material", "--repo", str(self.root), *arguments)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertNotIn(b"The value must be", result.stdout)
+        for raw in (b"HEAD\n", b"--help\n", b"\n", b"\xff\n", b"f" * 100 + b"\n",
+                    (oid + "\nHEAD\n").encode()):
+            with self.subTest(raw=raw):
+                result = self.invoke("material", "--repo", str(self.root), "batch", raw=raw)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertNotIn(b'"ok"', result.stdout)
+                self.assertNotIn(b"Traceback", result.stderr)
+        for raw in (oid.encode(), (oid + "\r\n").encode()):
+            result = self.invoke("material", "--repo", str(self.root), "batch", raw=raw)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn(b"The value must be 2.", result.stdout)
+        self.assertEqual(file_snapshot(self.root), snapshot)
+
+    def test_material_link_is_text_and_child_environment_is_sanitized(self):
+        from task_governance_tool.completion import safe_git_environment
+        from types import SimpleNamespace
+
+        base = self.committed_fixture()
+        oid = self.git("rev-parse", base + ":SPEC.md").decode().strip()
+        self.git("update-index", "--add", "--cacheinfo", f"120000,{oid},link")
+        self.git("commit", "--quiet", "-m", "Immutable link text")
+        revision = self.git("rev-parse", "HEAD").decode().strip()
+        (self.root / "link").write_bytes(b"ambient must not be read")
+        actual = self.invoke("material", "--repo", str(self.root), "dependency", revision, "--path=link")
+        self.assertEqual(actual.returncode, 0, actual.stderr)
+        self.assertEqual(actual.stdout, b"The value must be 2.\n")
+        environment = dict(os.environ, GIT_CONFIG_COUNT="1", GIT_CONFIG_KEY_0="diff.external",
+                           GIT_CONFIG_VALUE_0="unwanted", GIT_NO_LAZY_FETCH="0")
+        with mock.patch.dict(os.environ, environment, clear=True), mock.patch.object(preparation.subprocess, "run") as run:
+            run.return_value.returncode = 0
+            preparation.read_material(self.root, SimpleNamespace(material_operation="diff", before=oid, after=oid))
+            self.assertEqual(dict(os.environ), environment)
+            self.assertEqual(run.call_args.kwargs["env"], safe_git_environment())
+            self.assertEqual({k: v for k, v in run.call_args.kwargs["env"].items() if k.startswith("GIT_")},
+                             {"GIT_OPTIONAL_LOCKS": "0", "GIT_NO_LAZY_FETCH": "1",
+                              "GIT_NO_REPLACE_OBJECTS": "1", "GIT_TERMINAL_PROMPT": "0"})
+            self.assertIn("--no-ext-diff", run.call_args.args[0])
+            self.assertIn("--no-textconv", run.call_args.args[0])
+            self.assertFalse(run.call_args.kwargs["shell"])
 
     def test_commit_root_and_first_parent_material_ignore_new_head(self):
         root = self.committed_fixture()

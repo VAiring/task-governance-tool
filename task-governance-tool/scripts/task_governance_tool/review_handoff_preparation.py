@@ -258,18 +258,71 @@ def _source(data, args):
     return source, preparation
 
 
-def _material_command(repo, arguments):
-    # Fixed generated Git reads reuse the observer's environment in a child;
-    # the caller does not mutate its shell environment or write wrapper code.
-    program = (
-        "import subprocess,sys;from pathlib import Path;"
-        "sys.path.insert(0,sys.argv[1]);"
-        "from task_governance_tool.completion import safe_git_command,safe_git_environment;"
-        "sys.exit(subprocess.call([*safe_git_command(Path(sys.argv[2])),*sys.argv[3:]],"
-        "env=safe_git_environment()))"
-    )
-    return _shell([sys.executable, "-I", "-S", "-B", "-c", program,
-                   str(Path(__file__).parent.parent), str(repo), *arguments])
+def add_material_parser(commands):
+    parser = commands.add_parser("material", help="Read immutable Git review material; no arbitrary Git arguments")
+    parser.add_argument("--repo", required=True)
+    actions = parser.add_subparsers(dest="material_operation", required=True)
+    actions.add_parser("blob").add_argument("object_id")
+    actions.add_parser("batch", help="Full blob IDs on stdin, one per line; raw Git batch framing")
+    diff = actions.add_parser("diff")
+    diff.add_argument("before")
+    diff.add_argument("after")
+    for name in ("dependency", "directory"):
+        action = actions.add_parser(name)
+        action.add_argument("revision")
+        action.add_argument("--path", required=True, help="Project-relative path; directory accepts empty root")
+
+
+def read_material(repo, args):
+    """Closed immutable reads, streaming raw Git bytes without a success envelope."""
+    from task_governance_tool.artifact_manifest import ArtifactManifestError, validate_artifact_path
+    from task_governance_tool.completion import FULL_GIT_OBJECT_ID, safe_git_command, safe_git_environment
+
+    def object_id(value):
+        if not FULL_GIT_OBJECT_ID.fullmatch(value):
+            files._fail("handoff_invalid_arguments")
+        return value
+
+    action = args.material_operation
+    if action == "blob":
+        arguments = ["cat-file", "blob", object_id(args.object_id)]
+    elif action == "diff":
+        arguments = ["diff", "--no-ext-diff", "--no-textconv", object_id(args.before), object_id(args.after), "--"]
+    elif action in ("dependency", "directory"):
+        revision = object_id(args.revision)
+        try:
+            if args.path or action != "directory":
+                validate_artifact_path(args.path)
+        except ArtifactManifestError as exc:
+            files._fail(exc.code)
+        spec = revision + ":" + args.path
+        arguments = (["show", spec] if action == "dependency" else
+                     ["-c", "core.quotePath=false", "ls-tree", "--full-tree", "--no-abbrev", spec, "--"])
+    elif action == "batch":
+        # Validate each short ID before forwarding it, without retaining bodies
+        # or imposing a new batch-count cap. Output keeps Git's missing/type framing.
+        with subprocess.Popen([*safe_git_command(repo), "cat-file", "--batch"], stdin=subprocess.PIPE,
+                              shell=False, env=safe_git_environment()) as process:
+            try:
+                while line := sys.stdin.buffer.readline(67):
+                    value = line.removesuffix(b"\n").removesuffix(b"\r").decode("ascii")
+                    process.stdin.write(object_id(value).encode("ascii") + b"\n")
+                    process.stdin.flush()
+                process.stdin.close()
+                return process.wait()
+            except BaseException:
+                process.terminate()
+                raise
+    else:
+        files._fail("handoff_invalid_arguments")
+    return subprocess.run([*safe_git_command(repo), *arguments], stdin=subprocess.DEVNULL,
+                          shell=False, env=safe_git_environment(), check=False).returncode
+
+
+def _material_command(repo, operation, *arguments):
+    entry = Path(__file__).parent.parent / "review_handoff.py"
+    return _shell([sys.executable, "-I", "-S", "-B", str(entry), "material", "--repo=" + str(repo),
+                   operation, *arguments])
 
 
 def _dependency_inventory(repo, revision, changes):
@@ -343,17 +396,15 @@ def _review_material(repo, target):
             "comparison_base": observed.comparison_base,
             "dependency_revision": dependency_revision,
             "unchanged_inventory": inventory,
-            "blob_command": _material_command(repo, ["cat-file", "blob", "<object_id>"]),
-            "blob_batch_command": _material_command(repo, ["cat-file", "--batch"]),
-            "diff_command": _material_command(repo, ["diff", "--no-ext-diff", "--no-textconv",
-                                                     "<before_object_id>", "<after_object_id>", "--"]),
-            "dependency_command": _material_command(repo, ["show", dependency_revision + ":<project-relative-path>"]),
-            "directory_command": _material_command(repo, ["-c", "core.quotePath=false", "ls-tree",
-                "--full-tree", "--no-abbrev", dependency_revision + ":<project-relative-directory>", "--"]),
+            "blob_command": _material_command(repo, "blob", "<object_id>"),
+            "blob_batch_command": _material_command(repo, "batch"),
+            "diff_command": _material_command(repo, "diff", "<before_object_id>", "<after_object_id>"),
+            "dependency_command": _material_command(repo, "dependency", dependency_revision, "--path=<project-relative-path>"),
+            "directory_command": _material_command(repo, "directory", dependency_revision, "--path=<project-relative-directory>"),
             "instructions": [
                 "changes is the complete target delta, even when the Packet's changed_paths is bounded. Inspect every entry and its modes. Replace only placeholders in the supplied Git commands with the listed object IDs or required project-relative path.",
                 path_quoting,
-                "Execute the supplied command templates unchanged apart from placeholders. Their fixed Python invocation applies the existing sanitized Git environment, disabling lazy fetch, replacement refs, optional locks and prompts without changing your shell environment. Missing objects must be reported, not fetched.",
+                "Execute the supplied helper commands unchanged apart from placeholders; no wrapper code or help lookup is needed. The helper applies the existing sanitized Git environment, disabling lazy fetch, replacement refs, optional locks and prompts without changing your shell environment. Missing objects must be reported, not fetched. A nonzero exit or incomplete delivery is not success, even if a batch prefix was returned.",
                 "Read before/after blobs by immutable object ID; compare both present blobs with diff_command. Added/deleted entries have one absent side. Mode 120000 is link text, not permission to follow it; mode 160000 names a submodule commit, not a blob: obtain any required unavailable submodule material from the caller.",
                 "For unchanged authority, source, tests and discovered dependencies use dependency_command. For a snapshot, changed paths instead use their listed after object (or are deleted); never substitute mutable index, HEAD or worktree content. Commit dependencies come from that exact commit.",
                 "unchanged_inventory lists locations, modes and IDs from dependency_revision, excluding every old/new path in changes. It does not select relevant tests or certify content availability. Use it and actual authority/import references to choose known independent reads together; follow newly discovered dependencies afterward. A bounded inventory is not the complete repository or a limit on review scope.",

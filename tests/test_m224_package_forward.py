@@ -392,7 +392,7 @@ class M224PackageForwardTests(unittest.TestCase):
                     connection.execute(
                         "SELECT MAX(version) FROM schema_migrations"
                     ).fetchone()[0],
-                    22,
+                    23,
                 )
                 self.assertEqual(
                     connection.execute(

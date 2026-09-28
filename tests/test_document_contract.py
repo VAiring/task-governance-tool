@@ -414,6 +414,11 @@ class DocumentContractTests(unittest.TestCase):
             contract.ROUTE_SECTIONS,
             (
                 (
+                    contract.AUTHORITY,
+                    "## Verification Declaration Correction",
+                    ("verification-declaration-plan.md",),
+                ),
+                (
                     "docs/authority.md",
                     "## Conditional State Separation Plan",
                     ("state-layout-separation-plan.md",),
@@ -717,7 +722,7 @@ class DocumentContractTests(unittest.TestCase):
                 ),
                 (
                     "docs/specification.md",
-                    "### Current Schema-v22 Persistence Contract",
+                    "### Current Schema-v23 Persistence Contract",
                     ("database-specification.md#current-schema-v22-persistence-contract",),
                 ),
                 (
@@ -732,7 +737,7 @@ class DocumentContractTests(unittest.TestCase):
                 ),
                 (
                     contract.DESIGN,
-                    "## Current Schema-v22 Reservation Cleanup Design",
+                    "## Current Schema-v23 Verification Declaration Design",
                     ("database-design.md#current-schema-v22-reservation-cleanup-design",),
                 ),
                 (

@@ -65,7 +65,7 @@ unsupported attached residue defined below; it changes no other migration.
 The fixed-state setup migrator accepts complete source schemas v1-v22 and
 treats v23 as current. Legacy `state/projects` discovery is intentionally
 narrower: v1-v13 plus the explicit schema-v14 legacy-layout transition.
-Viewer compatibility is independent and accepts source schemas v5-v22.
+Viewer compatibility is independent and accepts source schemas v5-v23.
 Incomplete history, a missing required object/row, a later marker, too-new
 state, unsupported layout, foreign identity, or corrupt integrity fails closed.
 

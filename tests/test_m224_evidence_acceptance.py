@@ -48,6 +48,8 @@ COMMON_CODE_COUNT = len(REVIEW_PROVENANCE_V1_CASES) + 5
 PROJECTED_CODE_COUNT = len(REVIEW_PROVENANCE_V1_CASES) + 5
 BUNDLE_DOMAIN = b"taskgov-completion-evidence-bundle-v1\0"
 INDEX_DOMAIN = b"taskgov-evidence-index-v1\0"
+BUNDLE_V2_DOMAIN = b"taskgov-completion-evidence-bundle-v2\0"
+INDEX_V2_DOMAIN = b"taskgov-evidence-index-v2\0"
 REVIEW_PROVENANCE_DOMAIN = b"taskgov-review-provenance-v1\0"
 PROVENANCE_DIGEST_FIELDS = (
     "provenance_version",
@@ -112,8 +114,6 @@ def add_contract_task(
         "in_progress",
         "--review-tier",
         str(review_tier),
-        "--verification",
-        verification,
         "--contract-scope",
         "Exercise the focused M22.4 Evidence acceptance boundary.",
         "--contract-acceptance",
@@ -123,6 +123,13 @@ def add_contract_task(
         "--contract-authority-ref",
         "docs/execution-contracts/tg-m22-evidence-ledger.md#tg-m22-sequence",
     ]
+    if verification:
+        arguments.extend(["--verification", verification])
+    else:
+        arguments.extend([
+            "--verification-not-required",
+            "This fixture exercises review provenance without a verification criterion.",
+        ])
     payload = require_cli_json(install, *arguments)
     return str(payload["data"]["task"]["task_id"])
 
@@ -353,7 +360,10 @@ def rewrite_gate_basis(
     else:
         raise AssertionError(f"unsupported test mutation: {mutation}")
 
-    bundle_digest = domain_digest(BUNDLE_DOMAIN, payload)
+    bundle_digest = domain_digest(
+        BUNDLE_DOMAIN if bundle["format_version"] == 1 else BUNDLE_V2_DOMAIN,
+        payload,
+    )
     bundle["bundle_digest"] = bundle_digest
     bundle_document = canonical_json_bytes(bundle) + b"\n"
     bundle_path.write_bytes(bundle_document)
@@ -361,7 +371,10 @@ def rewrite_gate_basis(
     entry["file_digest"] = "sha256:" + hashlib.sha256(
         bundle_document
     ).hexdigest()
-    index["index_digest"] = domain_digest(INDEX_DOMAIN, index["payload"])
+    index["index_digest"] = domain_digest(
+        INDEX_DOMAIN if index["format_version"] == 1 else INDEX_V2_DOMAIN,
+        index["payload"],
+    )
     index_path.write_bytes(canonical_json_bytes(index) + b"\n")
 
 

@@ -392,7 +392,7 @@ class RealisticMigrationAcceptanceTests(unittest.TestCase):
             connection.execute(
                 "SELECT MAX(version) FROM schema_migrations"
             ).fetchone()[0],
-            22,
+            23,
         )
         generations = connection.execute(
             """

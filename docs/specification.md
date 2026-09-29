@@ -134,6 +134,7 @@ content. The fixed generated targets are:
 
 ```text
 <governed-project>/.taskgov/current/taskgov.sqlite
+<governed-project>/.taskgov/current/taskgov-usage.sqlite
 <governed-project>/.taskgov/current/backups/
 <governed-project>/.taskgov/current/evidence/index.json
 <governed-project>/.taskgov/current/evidence/bundles/<completion-evidence-bundle-id>.json
@@ -143,6 +144,10 @@ content. The fixed generated targets are:
 ```
 
 The governed project's `.taskgov/` is the generated-state and Git-ignore boundary.
+The separate numerical store is described in the
+[usage persistence contract](database-specification.md#numerical-usage-store).
+It is not a Task authority, completion gate or currently connected automatic
+Task-cost feature; collection/attribution lifecycle integration remains separate.
 The recommended target-local rule is exactly:
 
 ```gitignore
@@ -781,6 +786,15 @@ bounded recovery reason. It never copies the surrounding environment or a
 conversation. Caller-relative flags are computed for each read and are not
 stored in shared projections. These IDs are coordination metadata, not
 credentials or proof of reviewer independence.
+
+The numerical adapter reads only a registered session's explicit physical log
+segment, verifies its project/thread header and retains allowlisted usage
+metadata. It never scans unrelated chat headers or recursively discovers child
+sessions. Private bodies and unknown fields are neither stored nor hashed;
+source continuity hashes cover only sanitized numerical/context metadata and
+record boundaries. Fixed diagnostics never quote rejected input. The
+[numerical store contract](database-specification.md#numerical-usage-store)
+defines incomplete/unknown results; they do not block valid core Task work.
 
 The explicit handoff helper transiently captures only its three fixed public
 CLI operations' bounded structured JSON responses to extract a complete Packet

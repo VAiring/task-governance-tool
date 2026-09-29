@@ -629,10 +629,23 @@ retention applies only after the next successful backup publication.
 Setup output data is exactly `status`, `planned_writes`, `completed_writes`,
 `schema_from`, `schema_to`, `maintenance_enabled`,
 `backup_interval_minutes`, `backup_generations`, `evidence_status`,
-`viewer_status`, and `relocation`. `schema_to` is always 24. `schema_from` is safely observed source
+`viewer_status`, `relocation`, and `usage`. `schema_to` is always 24. `schema_from` is safely observed source
 schema, selected recovery schema, or null. Policy values are effective
 requested/stored values, not persistence claims. `maintenance_enabled`,
 Evidence status, and Viewer status describe durable post-command state.
+
+`usage` independently contains `status`, `schema_to=1`, `planned_writes`,
+`completed_writes` and `error`. Status is `not_attempted` after core failure,
+`pending_core_setup` when preview cannot yet admit the future core binding,
+`not_present` for an admitted missing-store preview, `initialized` after
+publication, `current` after validation, or `unavailable`. Its only write stage
+is `usage_initialize`; completed writes are empty in preview. `error` is null
+except the fixed `usage_unavailable` for numerical failure. Core `ok`, errors,
+status and write lists remain about core setup: numerical failure does not
+roll back valid core state or require re-running a completed migration.
+An explicit later setup can initialize a still-absent numerical store; corrupt,
+foreign or incompatible files are preserved, never overwritten or rebound.
+This does not install hooks or activate automatic collection/Task attribution.
 
 Evidence and Viewer status are each `not_present`, `current`, `published`, or `repair_required`.
 Successful preview is `setup_preview`; completed writes use `setup_complete`;

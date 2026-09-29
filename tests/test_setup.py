@@ -87,6 +87,7 @@ def _switch_physical_fixture_schema(install, before: int, after: int) -> None:
 
 
 SETUP_DATA_KEYS = {
+    "usage",
     "status",
     "planned_writes",
     "completed_writes",
@@ -115,6 +116,8 @@ EMPTY_RELOCATION = {
     "confirmation_token": None,
     "expires_at": None,
 }
+NO_USAGE_ATTEMPT = {"status": "not_attempted", "schema_to": 1,
+                    "planned_writes": [], "completed_writes": [], "error": None}
 LEGACY_SOURCE_RELOCATION = {
     "required": False,
     "source_layout": "legacy_projects_v1",
@@ -188,6 +191,7 @@ class SetupCommandTests(unittest.TestCase):
                 preview_data,
                 {
                     "status": "setup_preview",
+                    "usage": {**NO_USAGE_ATTEMPT, "status": "pending_core_setup"},
                     "planned_writes": LAYOUT_WRITES,
                     "completed_writes": [],
                     "schema_from": None,
@@ -410,6 +414,7 @@ class SetupCommandTests(unittest.TestCase):
                         "evidence_status": None,
                         "viewer_status": None,
                         "relocation": EMPTY_RELOCATION,
+                        "usage": NO_USAGE_ATTEMPT,
                     },
                 )
                 self.assertFalse((install.skill_root / "state").exists())
@@ -710,6 +715,7 @@ class SetupCommandTests(unittest.TestCase):
                 self.assertEqual(result.error_code, error_code)
                 self.assertEqual(result.data, {
                     "status": None, "planned_writes": LAYOUT_WRITES,
+                    "usage": NO_USAGE_ATTEMPT,
                     "completed_writes": [], "schema_from": schema_from,
                     "schema_to": 24, "maintenance_enabled": False,
                     "backup_interval_minutes": 30, "backup_generations": 3,
@@ -803,6 +809,7 @@ class SetupCommandTests(unittest.TestCase):
                         "evidence_status": None,
                         "viewer_status": None,
                         "relocation": EMPTY_RELOCATION,
+                        "usage": NO_USAGE_ATTEMPT,
                     },
                 )
                 self.assertEqual(file_snapshot(install.project_root), before)

@@ -103,6 +103,12 @@ logs.
 
 ## Runtime Module Boundaries
 
+Numerical collection is separated into `usage_values.py` (closed values),
+`usage_adapter.py` (one approved source), `usage_repository.py` (independent
+SQLite), and `usage_collection.py` (collection/setup composition), as defined
+in [numerical persistence](database-design.md#numerical-collection-persistence).
+Those modules are not part of core admission, gates or automatic Task hooks.
+
 The implementation keeps these narrow ownership boundaries:
 
 - `cli_parser.py` owns public parser construction, common options, and

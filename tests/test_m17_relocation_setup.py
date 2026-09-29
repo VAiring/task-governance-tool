@@ -408,6 +408,8 @@ class M17RelocationSetupTests(unittest.TestCase):
                 preview.data,
                 {
                     "status": "relocation_preview",
+                    "usage": {"status": "pending_core_setup", "schema_to": 1,
+                              "planned_writes": [], "completed_writes": [], "error": None},
                     "planned_writes": FIXED_WRITES,
                     "completed_writes": [],
                     "schema_from": 24,

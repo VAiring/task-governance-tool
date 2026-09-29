@@ -125,6 +125,10 @@ class CanonicalStatePaths:
     verification_runner_root: Path = field(repr=False)
     legacy_projects: Path = field(repr=False)
 
+    @property
+    def usage_database(self) -> Path:
+        return self.fixed_root / "taskgov-usage.sqlite"
+
 
 @dataclass(frozen=True)
 class CurrentRootObservation:

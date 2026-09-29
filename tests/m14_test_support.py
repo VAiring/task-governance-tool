@@ -921,6 +921,7 @@ def canonical_managed_sqlite_files(
     excluded = {path.resolve(strict=False) for path in exclude}
     # Only the selected runtime tree is managed. Retained separation source
     # snapshots are not backups and must not enter backup-count assertions.
+    # The separately versioned numerical store is not a core DB/backup either.
     state_root = install.db_path.parent
     if not state_root.exists():
         return []
@@ -929,6 +930,7 @@ def canonical_managed_sqlite_files(
             path
             for path in state_root.rglob("*")
             if path.is_file()
+            and path != state_root / "taskgov-usage.sqlite"
             and path.resolve(strict=False) not in excluded
             and path.suffix in {".sqlite", ".sqlite3", ".db"}
         ),

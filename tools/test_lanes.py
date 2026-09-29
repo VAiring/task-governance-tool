@@ -162,6 +162,7 @@ LANE_MODULES: dict[str, tuple[str, ...]] = {
         "test_task_show",
         "test_task_show_projection",
         "test_task_validation",
+        "test_usage_collection",
     ),
     "integration": (
         "test_completion_cycle_activation",
@@ -224,6 +225,7 @@ LANE_MODULES: dict[str, tuple[str, ...]] = {
         "test_task_ownership_install",
         "test_task_ownership_migration",
         "test_task_ownership_runner",
+        "test_usage_setup",
         "test_verification_declaration",
         "test_verification_declaration_migration",
         "test_verification_receipts",

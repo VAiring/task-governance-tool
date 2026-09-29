@@ -266,3 +266,71 @@ Bundle fault remains set-fatal. Viewer remains snapshot v4, accepts v5-v22,
 validates and discards Evidence/Runner internals, and changes no public field
 or UI. No CLI shape, Skill trigger/procedure/call, config, Runner runtime, gate,
 or general migration framework is added.
+
+## Numerical Usage Store
+
+Numerical collection uses independent schema 1 in the resolver-owned
+`current/taskgov-usage.sqlite`, not the main schema sequence. Explicit setup
+initializes an absent store and validates an existing one. Normal reads and
+collection never initialize, migrate or repair it. Incompatible structure,
+WAL, corruption, contention or project/binding mismatch produces unavailable
+usage, never a core admission failure or a weakened quality gate. Existing
+core backup/restore does not copy this store or claim a paired numerical
+snapshot. Observations have no Task/execution/cycle association at this stage;
+later attribution must revalidate those core references against restored state.
+
+The internal collector accepts one registered actual caller session and one
+explicit physical segment under its allowed local source root. Header thread,
+project location and provider must match; the project location also matches
+the admitted store binding. There is no public registration command, transcript
+discovery, model call, hook installation or ordinary-loop collection yet.
+Relocation cannot silently rebind numerical state: preserve it and report
+unavailable against a different core binding.
+
+Per-response identity is `(provider, response_id)`, across segments and source
+incarnations. Identical replay is a no-op. A disagreement in owner, turn, model,
+effort or counters marks the key conflicting and excludes it from all totals;
+never replace the first observation or sum both versions. Explicit parent/fork
+history owned by a different thread is not child consumption. Cumulative-only
+records in a turn without per-response observations (including mixed-format
+segments) are gaps, not inferred deltas. Another turn's modern record cannot
+hide that gap; inherited parent context is excluded. Legacy cumulative rows
+in a turn with modern observations add no numerical value or completeness proof.
+Active legacy context follows explicit session/turn context records, not the
+turn of the most recently arriving response; delayed response provenance does
+not move that context backwards. A missing legacy turn identity remains a gap.
+Malformed recognized session/turn context records are fixed invalid-record
+gaps, not silent permission to treat the preceding context as complete.
+The legacy-only gap describes current unresolved turn coverage, not a permanent
+historical fault. Recompute it through the committed complete-record boundary
+on catch-up: delayed modern rows clear only resolved legacy gaps, not another
+unobserved turn or an unrelated diagnostic. Bounded batches can remain pending
+until that coverage is read. The reconciliation shares the observation/cursor
+transaction and rolls back with it.
+
+Input, output and total are nonnegative signed-SQLite-range integers, with
+total = input + output. Cached/cache-write input and reasoning output are
+nullable subsets, never additional terms. Missing breakdown remains null in
+an aggregate containing it. Totals remain separated by provider/model; unknown
+model is null, not inferred from another turn. An empty observation set has no
+numeric model total, not measured zero. Metadata is limited to canonical UUIDs,
+bounded labels/response IDs, counters, source identities, cursor boundaries
+and fixed diagnostics; no conversation, reasoning, raw body or raw-line digest.
+
+Complete JSONL records are parsed outside the writer. The source cursor uses
+physical identity, incarnation, complete-record offset and a sanitized-prefix
+digest. It never trusts mtime or path alone. Changed numerical prefix,
+replacement or truncation creates a new incarnation and deduplicated replay.
+A partial tail remains unread; an oversized complete record creates a fixed
+gap. Source changes during reading commit no observations/cursor. The cursor
+and observations commit together under a short writer after comparing the
+previous cursor. Stale concurrent batches do not regress or advance it and
+require a later fresh collection, never a retry of the user's Task mutation.
+
+Repository summaries report observed per-model totals, registered source
+coverage, conflicts and fixed gaps. Collection alone returns pending,
+incomplete or conflicting, never final complete/billing accuracy. A failed
+collection reports unknown while preserving any readable prior observations.
+Unresolved source loss and replacement remain explicit diagnostics. Partial
+tails and bounded-batch backlog are transient and disappear after catch-up.
+This is the numerical foundation, not implemented Task attribution or hooks.

@@ -1952,12 +1952,15 @@ def run_setup(
         repo_explicit=repo_explicit,
         script_path=script_path,
     )
-    return _run_setup_from_inspection(
+    result = _run_setup_from_inspection(
         inspection=inspection, repo=repo, repo_explicit=repo_explicit,
         script_path=script_path, read_only=read_only,
         backup_interval_minutes=backup_interval_minutes,
         backup_generations=backup_generations, confirmation_token=confirmation_token,
     )
+    from task_governance_tool.usage_collection import setup_usage
+    result.data["usage"] = setup_usage(inspection, result, read_only=read_only)
+    return result
 
 
 def _run_setup_from_inspection(

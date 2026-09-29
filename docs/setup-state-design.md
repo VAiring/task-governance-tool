@@ -27,6 +27,7 @@ state root       <governed-project>/.taskgov
 transition lock  <state-root>/taskgov-state.lock
 fixed root       <state-root>/current
 database         <fixed-root>/taskgov.sqlite
+numerical usage  <fixed-root>/taskgov-usage.sqlite
 managed backups  <fixed-root>/backups
 Evidence index   <fixed-root>/evidence/index.json
 Evidence bundles <fixed-root>/evidence/bundles
@@ -59,6 +60,14 @@ discovery use the deep bounded inventory projection. The caller selects the
 projection mechanically; it is not a CLI or LLM choice. Every DB-backed leaf
 uses the same resolver observation. Feature code may not reconstruct a
 project ID or state path.
+
+`CanonicalStatePaths.usage_database` owns the numerical sibling path. It is not
+part of core admission or core recovery inventory. Only the explicit outer
+`run_setup` entry adds independent usage initialization/validation after the
+core result, never private separation-candidate setup. Its nested `usage`
+result does not alter the core ordered stages, success or rollback boundary.
+Before a preview's core initialization/relocation is admitted, numerical status
+is `pending_core_setup`, not a guessed binding or claim that a file is absent.
 
 `canonical_state_paths(skill_root, repo=...)` takes the validated governed root
 explicitly. `package_state_paths(skill_root)` is limited to the old migration

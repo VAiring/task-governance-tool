@@ -267,6 +267,13 @@ Expired or stale context requires a fresh preview and fresh user approval.
   "backup_generations": 3,
   "evidence_status": "published",
   "viewer_status": "published",
+  "usage": {
+    "status": "initialized",
+    "schema_to": 1,
+    "planned_writes": ["usage_initialize"],
+    "completed_writes": ["usage_initialize"],
+    "error": null
+  },
   "relocation": {
     "required": false,
     "source_layout": "fixed_current_v1",
@@ -298,6 +305,15 @@ retry does not automatically delete, rebuild or accept those uncertain bytes.
 maintenance/binding and precedes Viewer. Ordinary setup preview lists it
 without writing; separation performs it privately before its three public
 durable stages.
+
+`usage` reports separate numerical-store setup, not Task-cost availability.
+Its status is `not_attempted`, `pending_core_setup` (preview before core
+binding is admitted), `not_present`, `initialized`, `current`, or `unavailable`.
+Its only write is `usage_initialize`; preview has no completed write.
+`schema_to` is 1 and `error` is null or fixed `usage_unavailable`. Numerical
+failure never undoes successful core setup or blocks ordinary Task work;
+do not repeat Task writes to recover usage. This adds no normal-loop action,
+session registration step, automatic collection or hook installation.
 
 `relocation` is always present with exactly the six shown keys. `required`
 is boolean. `source_layout` is null, `legacy_projects_v1`, or

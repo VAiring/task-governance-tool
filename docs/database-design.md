@@ -96,6 +96,65 @@ No prompt, response body, environment, cost, session liveness or caller-specific
 flags are retained. This schema does not create the later numerical usage store
 or review-session binding tables.
 
+## Numerical Collection Persistence
+
+`usage_repository.py` owns independent schema 1 (`response_collection`), its
+exact owned DDL, project/binding admission and every numerical SQL operation.
+It contains nine tables: `usage_migrations`, `usage_meta`, `usage_sessions`,
+`usage_sources`, `usage_incarnations`, `usage_responses`, `usage_observations`,
+`usage_conflicts`, and `usage_diagnostics`. Composite primary/foreign keys
+connect source incarnations and response observations. No numerical table is
+attached to the main database or consulted by a core permission/quality gate.
+
+Setup creates a sibling temporary store, commits its complete schema and
+binding, closes/flushes it and uses the existing no-replace publisher. Failure
+before publication leaves the live destination absent and removes only the
+attempt's private temporary. Current-state reentry validates without repair;
+an incompatible or newer store remains intact and unavailable. Ordinary access
+uses existing rollback-journal preflight, query-only read transactions or a
+short `BEGIN IMMEDIATE`; no log reads occur under the writer. Setup quick/FK
+checks and exact schema/binding checks apply independently of main admission.
+
+`usage_values.py` validates the closed numerical representation.
+`usage_adapter.py` implements `codex-response-usage-v1`: an explicit session
+header supplies provider; matching turn context supplies model/effort; each
+`token_usage_record` supplies exact thread/turn/response identity and counts.
+Response arrival never advances or rewinds the explicit session/turn context
+used to associate legacy records, so delayed observations cannot hide a newer
+turn's missing coverage.
+The adapter reads no unrelated files and has no SQLite or discovery code.
+One line is bounded to 8 MiB; oversized complete lines are drained in bounded
+chunks and become gaps. One batch admits at most 4,096 new response records;
+further records remain pending for a later invocation. These are memory/work
+bounds, not acceptance truncation or completeness claims.
+
+To verify append continuity without hashing private content, each invocation
+streams the preceding complete prefix and hashes only normalized allowlisted
+metadata/fixed markers with byte boundaries. It still incurs prefix I/O; this
+is incremental durable collection, not a claim of constant-time tail reading.
+Unknown fields and bodies never affect a digest except their record boundary.
+File-object/size/mtime revalidation rejects an observed concurrent source change.
+Replacement replays from a new incarnation, preserving old observations.
+
+The repository locks, compares the full previous cursor, persists the source
+incarnation, inserts new unique responses or conflict keys and observation
+links, then updates diagnostics and cursor in the same transaction. Any failure
+rolls back the whole batch. Stored cursor types and shape are validated before
+reading the source; corruption returns numerical unavailability. Cursor conflicts
+return a fixed diagnostic; the caller does not loop or rerun a Task operation.
+Internal lifecycle registration
+captures a typed actual caller and binds only its exact source identity.
+The adapter's full sanitized-prefix scan supplies current legacy-only turn
+coverage. The writer replaces only that source's `legacy_usage` diagnostic
+with the recomputed result in the same transaction; other diagnostics and
+historical response observations are retained.
+
+`usage_collection.py` composes those boundaries and returns unknown on numerical
+failure without discarding readable prior observations. Its explicit-setup
+adapter runs after core setup, reports a separate outcome and never changes
+core success. No automatic Task operation, reviewer, attribution, completion,
+hook or host-settings connection is activated by this module.
+
 <a id="schema-v20-physical-foundation"></a>
 
 ## Schema-v20 Physical Foundation

@@ -451,7 +451,8 @@ any failed, uncertain, or judgment-dependent step; do not append later commands
 that hide its exit status. Inspect the final JSON `ok`, `operation_status`, and
 `handoff.status` as well as the route below; an outer shell exit of zero alone
 does not establish readiness. A saved target with failed Packet preparation is
-partial success: recover only preparation. If the response is lost, inspect
+partial success: recover only preparation. If the outcome is `unknown` (including
+a target error after dispatch or a lost response), inspect
 existing public state before deciding which tail remains, never blindly set
 another target. See [bound preparation recovery](cli_contracts.md#review-prepare).
 

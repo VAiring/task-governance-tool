@@ -1794,13 +1794,18 @@ and authority inspection is unchanged. A target requiring a Receipt returns
 `blocked`, `failed` or `unavailable` never supplies reviewer requests. After a
 source succeeds, a Packet/file failure does not undo it. Keep the saved binding
 or Receipt ID, use only the appropriate bound recovery above, never repeat the
-write. For unknown/lost outcomes inspect public state first. There is no automatic
+write. A target failure after dispatch is `unknown`, even with an `ok=false`
+response: target/Runner intent or cleanup may already be saved. Only a confirmed
+pre-dispatch rejection is `failed`; do not infer unsaved state from an error code.
+For unknown/lost outcomes inspect public state first. There is no automatic
 retry, new ledger, reviewer launch or raw-response file. Capture is limited to
 262,144 bytes in memory; malformed, incomplete or oversized output cannot be
 used as a Packet. Packet/result files alone are persisted.
 
 Save/submit take `--packet`; they remain usable with an already obtained complete
 Packet file. They do not authorize rerunning its source command.
+Prepare/read/save/submit share complete-Packet validation, without filling
+missing fields; legacy stored Contract constraints retain read compatibility.
 
 Assigned independent reviewers use the request's `read_command`, whose shape is
 `review_handoff.py read --repo . --packet reviews/packet.json --role independent`.

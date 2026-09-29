@@ -272,6 +272,9 @@ submit preserves raw bytes, adds only array framing, and sends them once to
 the sibling public CLI through binary stdin. No LLM-built collector, alternate
 writer or producer-specific adapter is required. The registration transaction
 and current-state revalidation stay here and are not replaced by saved-file checks.
+This module also owns the pure complete-Packet validator shared by prepare,
+read, save and submit. It retains the existing stored-constraints compatibility,
+without repairing incomplete input or introducing another Packet contract.
 
 `review_handoff_preparation.py` owns the same helper's explicit `prepare`
 operation: three fixed sibling CLI invocations, bounded binary response capture,
@@ -280,6 +283,11 @@ ignored directory chain and complete Packet, and exact save/submit instructions.
 It reuses transport path/read/write checks and the existing structured Receipt
 input decoder; it owns no SQL, authority inference or arbitrary-command runner.
 Source mutation outcome, sanitized warnings, and transport outcome are separate.
+After target dispatch, a valid failure envelope is still persistence-unknown
+unless it is the CLI's pre-dispatch `parse` rejection. The helper retains the
+source exit/error and adds only a fixed state-inspection warning; it does not
+deduce T1 or cleanup commits from error codes or change Runner transactions.
+Receipt rejection and read-only recovery keep their existing classification.
 Non-ready, malformed or uncertain responses produce no reviewer requests;
 post-write failure retains residue. Capture starts before the source call and
 does not add a normal query, log file, retry or reviewer-launch operation.

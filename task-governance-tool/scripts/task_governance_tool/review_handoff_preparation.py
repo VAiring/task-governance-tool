@@ -16,10 +16,7 @@ from dataclasses import asdict
 from pathlib import Path
 
 from task_governance_tool import review_handoff as files
-from task_governance_tool.task_values import (
-    SQLITE_INT64_MAX, validate_legacy_m19_7_stored_text, validate_task_id, validate_text,
-)
-from task_governance_tool.reviews import REVIEW_TARGET_KINDS, validate_stored_review_target
+from task_governance_tool.task_values import validate_task_id
 from task_governance_tool.verification_results import (
     VERIFICATION_RESULT_INPUT_LIMIT, decode_verification_result,
 )
@@ -159,66 +156,9 @@ def _envelope(raw, code, command):
     return value
 
 
-def _target(value):
-    if (type(value) is not dict or set(value) != {"kind", "value", "base_revision", "generation"}
-            or type(value["generation"]) is not int or not 1 <= value["generation"] <= SQLITE_INT64_MAX
-            or any(type(value[name]) is not str for name in ("kind", "value", "base_revision"))
-            or value["kind"] not in REVIEW_TARGET_KINDS):
-        files._fail("handoff_response_invalid")
-    for name in ("kind", "value", "base_revision"):
-        validate_text("review_target_" + name, value[name], required=name != "base_revision", limit=500)
-    validate_stored_review_target({"review_target_" + key: item for key, item in value.items()})
-
-
 def _packet(value, task_id):
     raw = json.dumps(value, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
-    if len(raw) > files.PACKET_LIMIT:
-        files._fail("handoff_input_too_large")
-    packet = files._packet(raw)
-    if (set(packet["task"]) not in (
-            {"task_id", "title", "status", "verification", "review_tier"},
-            {"task_id", "title", "status", "verification", "verification_not_required_reason", "review_tier"})
-            or set(packet["contract"]) != {"revision", "scope", "acceptance", "constraints"}
-            or set(packet["review_target"]) != {"kind", "value", "base_revision", "generation"}
-            or packet["task"]["task_id"] != task_id):
-        files._fail("review_target_mismatch")
-    _target(packet["review_target"])
-    if "verification_not_required_reason" in packet["task"]:
-        from task_governance_tool.verification_declaration import verification_requirement
-        reason = packet["task"]["verification_not_required_reason"]
-        if type(reason) is not str:
-            files._fail("handoff_response_invalid")
-        validate_text("verification_not_required_reason", reason, limit=1000)
-    if not 0 <= packet["contract"]["revision"] <= SQLITE_INT64_MAX:
-        files._fail("handoff_response_invalid")
-    for owner, names in ((packet["task"], ("title", "status", "verification")),
-                         (packet["contract"], ("scope", "acceptance", "constraints"))):
-        for name in names:
-            if type(owner[name]) is not str:
-                files._fail("handoff_response_invalid")
-            if owner is packet["contract"]:
-                # This is the public stored-Contract projection, not new caller
-                # input. Preserve its existing constraints-only compatibility.
-                validator = validate_legacy_m19_7_stored_text if name == "constraints" else validate_text
-                validator("contract_" + name, owner[name])
-            else:
-                validate_text(name, owner[name])
-    if "verification_not_required_reason" in packet["task"]:
-        verification_requirement(packet["task"]["verification"], reason)
-    for name in ("review_focus", "required_output", "result_instructions"):
-        if (type(packet[name]) is not list or not packet[name]
-                or any(type(item) is not str or not item for item in packet[name])):
-            files._fail("handoff_response_invalid")
-    if type(packet["receipt_command"]) is not str or not packet["receipt_command"]:
-        files._fail("handoff_response_invalid")
-    if (type(packet["changed_paths"]) is not list
-            or any(type(item) is not str for item in packet["changed_paths"])
-            or type(packet["changed_paths_available"]) is not bool
-            or type(packet["changed_paths_truncated"]) is not bool
-            or type(packet["changed_paths_total"]) is not int
-            or packet["changed_paths_total"] < len(packet["changed_paths"])
-            or (not packet["changed_paths_truncated"] and packet["changed_paths_total"] != len(packet["changed_paths"]))):
-        files._fail("handoff_response_invalid")
+    files._packet(raw, expected_task_id=task_id)
     return raw
 
 
@@ -244,7 +184,7 @@ def _source(data, args):
             source["review_target"]["base_revision"] = ""
     if source["task_id"] != args.task_id:
         files._fail("review_target_mismatch")
-    _target(source["review_target"])
+    files._packet_target(source["review_target"])
     if action == "target":
         route = source["verification_route"]
         if (route not in ("not_required", "runner_pass", "receipt_required", "blocked")
@@ -419,7 +359,6 @@ def read_for_reviewer(repo, packet_path):
     path = files._path(repo, packet_path)
     raw = files._read(path, files.PACKET_LIMIT)
     packet = files._packet(raw)
-    _packet(packet, packet["task"]["task_id"])
     material = _review_material(repo, packet["review_target"])
     # One existing read-only public operation, inside the replacement read;
     # no extra reviewer check/show, new target, Receipt or direct DB access.
@@ -502,6 +441,15 @@ def prepare(repo, args):
         result.update(operation_status="succeeded" if envelope["ok"] else "failed",
                       warnings=envelope["warnings"], errors=envelope["errors"])
         if not envelope["ok"]:
+            # Target-set errors do not report whether T1 or restart cleanup
+            # committed. A parser rejection precedes dispatch; other target
+            # failures cannot establish no-write from their code or exit value.
+            if args.source_operation == "target" and envelope["command"] != "parse":
+                result["operation_status"] = "unknown"
+                result["warnings"] = [*result["warnings"], {
+                    "code": "handoff_outcome_unknown",
+                    "message": "Source command failed; saved state is unconfirmed. Inspect public state before retry.",
+                }]
             return result
         source, preparation = _source(envelope["data"], args)
         result["source"] = source

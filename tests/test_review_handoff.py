@@ -22,14 +22,17 @@ from task_governance_tool.task_values import TaskValidationError
 
 def packet_for(payload):
     return {
-        "task": {"task_id": payload["task_id"], "review_tier": 2},
-        "contract": {"revision": payload["contract_revision"]},
+        "task": {"task_id": payload["task_id"], "review_tier": 2,
+                 "title": "Transport fixture", "status": "in_progress", "verification": "",
+                 "verification_not_required_reason": "Isolated transport fixture"},
+        "contract": {"revision": payload["contract_revision"], "scope": "Transport",
+                     "acceptance": "Preserve originals", "constraints": ""},
         "review_target": payload["review_target"],
         "result_template": review_results.review_result_template(
             payload["task_id"], payload["contract_revision"], payload["review_target"]),
         "changed_paths_available": False, "changed_paths": [], "changed_paths_total": 0,
-        "changed_paths_truncated": False, "review_focus": [], "required_output": [],
-        "result_instructions": [], "receipt_command": "unused in filesystem unit checks",
+        "changed_paths_truncated": False, "review_focus": ["Transport"], "required_output": ["Verdict"],
+        "result_instructions": ["Inspect artifacts"], "receipt_command": "unused in filesystem unit checks",
     }
 
 
@@ -88,6 +91,25 @@ class ReviewHandoffFilesTests(unittest.TestCase):
             with self.subTest(raw_length=len(raw)), self.assertRaises((HandoffFailure, ReviewEvidenceError, TaskValidationError)):
                 self.save(raw)
             self.assertFalse((self.root / self.output).exists())
+
+    def test_packet_legacy_constraints_compatibility_is_shared_and_field_limited(self):
+        for index, constraints in enumerate(("dispatch_authorization=7", '{"dispatch_authorization":7}')):
+            with self.subTest(constraints=constraints):
+                packet = packet_for(self.payload)
+                packet["contract"]["constraints"] = constraints
+                (self.root / self.packet).write_bytes(encode(packet))
+                output = f"reviews/legacy-{index}.json"
+                self.save(output=output)
+                self.assertEqual(handoff.submission(self.root, self.packet, [output])[1], b"[" + self.raw + b"]")
+                for field in ("scope", "acceptance"):
+                    broken = copy.deepcopy(packet)
+                    broken["contract"][field] = constraints
+                    (self.root / self.packet).write_bytes(encode(broken))
+                    with self.assertRaises(TaskValidationError):
+                        self.save(output="reviews/rejected.json")
+                    with self.assertRaises(TaskValidationError):
+                        handoff.submission(self.root, self.packet, [output])
+                    self.assertFalse((self.root / "reviews/rejected.json").exists())
 
     def test_approval_stays_explicit_and_is_not_inferred_by_save(self):
         raw = encode(document(receipts=[receipt(kind="self_review_fallback")]))

@@ -21,8 +21,14 @@ from task_governance_tool.review_results import (
     REVIEW_RESULTS_INPUT_LIMIT, REVIEW_RESULTS_RECEIPT_LIMIT,
     decode_review_results, normalize_review_results, review_result_template,
 )
-from task_governance_tool.reviews import ReviewEvidenceError
-from task_governance_tool.task_values import TaskValidationError, reject_private_or_raw_content
+from task_governance_tool.reviews import (
+    REVIEW_TARGET_KINDS, ReviewEvidenceError, validate_stored_review_target,
+)
+from task_governance_tool.task_values import (
+    SQLITE_INT64_MAX, TaskValidationError, reject_private_or_raw_content,
+    validate_legacy_m19_7_stored_text, validate_text,
+)
+from task_governance_tool.verification_declaration import verification_requirement
 
 
 PACKET_LIMIT = 32768
@@ -156,7 +162,25 @@ def _unique(pairs):
     return result
 
 
-def _packet(raw):
+def _packet_target(value):
+    if (type(value) is not dict or set(value) != {"kind", "value", "base_revision", "generation"}
+            or type(value["generation"]) is not int or not 1 <= value["generation"] <= SQLITE_INT64_MAX
+            or any(type(value[name]) is not str for name in ("kind", "value", "base_revision"))
+            or value["kind"] not in REVIEW_TARGET_KINDS):
+        _fail("handoff_response_invalid")
+    for name in ("kind", "value", "base_revision"):
+        validate_text("review_target_" + name, value[name], required=name != "base_revision", limit=500)
+    validate_stored_review_target({"review_target_" + key: item for key, item in value.items()})
+
+
+def _packet(raw, expected_task_id=None):
+    """Pure complete-Packet validation shared by every handoff entry point.
+
+    Stored compatibility is constraints-only. This neither repairs input nor
+    checks live state; reviewer read and registration retain those boundaries.
+    """
+    if len(raw) > PACKET_LIMIT:
+        _fail("handoff_input_too_large")
     packet = json.loads(raw.decode("utf-8"), object_pairs_hook=_unique,
                         parse_constant=lambda value: _fail())
     if type(packet) is not dict or set(packet) != _PACKET_KEYS:
@@ -170,6 +194,43 @@ def _packet(raw):
     expected = review_result_template(task["task_id"], contract["revision"], target)
     if json.dumps(packet["result_template"], sort_keys=True) != json.dumps(expected, sort_keys=True):
         _fail()
+    if (set(task) != {
+            "task_id", "title", "status", "verification", "verification_not_required_reason", "review_tier"}
+            or set(contract) != {"revision", "scope", "acceptance", "constraints"}
+            or (expected_task_id is not None and task["task_id"] != expected_task_id)):
+        _fail("review_target_mismatch")
+    _packet_target(target)
+    reason = task["verification_not_required_reason"]
+    if type(reason) is not str:
+        _fail("handoff_response_invalid")
+    validate_text("verification_not_required_reason", reason, limit=1000)
+    if not 0 <= contract["revision"] <= SQLITE_INT64_MAX:
+        _fail("handoff_response_invalid")
+    for owner, names in ((task, ("title", "status", "verification")),
+                         (contract, ("scope", "acceptance", "constraints"))):
+        for name in names:
+            if type(owner[name]) is not str:
+                _fail("handoff_response_invalid")
+            if owner is contract:
+                validator = validate_legacy_m19_7_stored_text if name == "constraints" else validate_text
+                validator("contract_" + name, owner[name])
+            else:
+                validate_text(name, owner[name])
+    verification_requirement(task["verification"], reason)
+    for name in ("review_focus", "required_output", "result_instructions"):
+        if (type(packet[name]) is not list or not packet[name]
+                or any(type(item) is not str or not item for item in packet[name])):
+            _fail("handoff_response_invalid")
+    if type(packet["receipt_command"]) is not str or not packet["receipt_command"]:
+        _fail("handoff_response_invalid")
+    if (type(packet["changed_paths"]) is not list
+            or any(type(item) is not str for item in packet["changed_paths"])
+            or type(packet["changed_paths_available"]) is not bool
+            or type(packet["changed_paths_truncated"]) is not bool
+            or type(packet["changed_paths_total"]) is not int
+            or packet["changed_paths_total"] < len(packet["changed_paths"])
+            or (not packet["changed_paths_truncated"] and packet["changed_paths_total"] != len(packet["changed_paths"]))):
+        _fail("handoff_response_invalid")
     return packet
 
 

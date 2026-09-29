@@ -12,7 +12,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
-from contextlib import closing, redirect_stdout
+from contextlib import ExitStack, closing, redirect_stdout
 from pathlib import Path
 from unittest import mock
 
@@ -194,7 +194,10 @@ class InstalledPreparationTests(PreparationFixture):
         task = self.task("Focused checks")
         completed, failed = self.prepare(task, options=["--kind", "git_snapshot", "--revision", "forbidden"])
         self.assertNotEqual(completed.returncode, 0)
-        self.assertEqual(failed["operation_status"], "failed")
+        # This service rejection actually precedes a write, but its envelope
+        # cannot prove that. Do not infer a phase from the error code.
+        self.assertEqual(failed["operation_status"], "unknown")
+        self.assertEqual(failed["warnings"][-1]["code"], "handoff_outcome_unknown")
         self.assertNotIn("review_requests", failed["handoff"])
         self.assertFalse((self.root / "reviews").exists())
         self.prepare(task)
@@ -205,6 +208,144 @@ class InstalledPreparationTests(PreparationFixture):
         self.assertEqual(blocked["handoff"]["status"], "blocked")
         self.assertTrue(blocked["source"]["verification_receipt_id"])
         self.assertFalse((self.root / "reviews").exists())
+
+    def test_public_parser_rejection_is_failed_without_target_or_runner_write(self):
+        task = self.task()
+        completed, failed = self.prepare(task, options=["--kind", "git_commit"])
+        self.assertNotEqual(completed.returncode, 0)
+        self.assertEqual(failed["operation_status"], "failed")
+        self.assertFalse(failed["ok"])
+        self.assertEqual(failed["source_exit_code"], 1)
+        self.assertEqual(self.cli("task", "show", task)["task"]["review_target_generation"], 0)
+        self.assertFalse((self.root / "reviews").exists())
+
+    def test_complete_public_packet_is_required_before_save_or_registration(self):
+        task = self.task()
+        completed, ready = self.prepare(task)
+        self.assertEqual(completed.returncode, 0, completed.stdout)
+        context = ready["handoff"]
+        packet_path = self.root / context["packet_path"]
+        packet = json.loads(packet_path.read_bytes())
+        original = copy.deepcopy(packet["result_template"])
+        original["receipts"] = [receipt()]
+        result_path = context["review_requests"][0]["result_path"]
+        (self.root / result_path).write_bytes(encode(original))
+        mutations = {
+            "verification_missing": lambda p: p["task"].pop("verification"),
+            "verification_reason_missing": lambda p: p["task"].pop("verification_not_required_reason"),
+            "scope_missing": lambda p: p["contract"].pop("scope"),
+            "acceptance_missing": lambda p: p["contract"].pop("acceptance"),
+            "scope_type": lambda p: p["contract"].update(scope=[]),
+            "conflicting_declaration": lambda p: p["task"].update(verification="Run checks"),
+            "empty_instructions": lambda p: p.update(result_instructions=[]),
+            "target_template_mismatch": lambda p: p["review_target"].update(generation=2),
+        }
+        run = subprocess.run
+        for name, mutate in mutations.items():
+            with self.subTest(case=name):
+                broken = copy.deepcopy(packet)
+                mutate(broken)
+                packet_path.write_bytes(encode(broken))
+                with self.assertRaises((handoff.HandoffError, handoff.TaskValidationError)):
+                    preparation._packet(broken, task)
+                with self.assertRaises((handoff.HandoffError, handoff.TaskValidationError)):
+                    preparation.read_for_reviewer(self.root, context["packet_path"])
+                with self.assertRaises((handoff.HandoffError, handoff.TaskValidationError)):
+                    handoff.save(self.root, context["packet_path"], "reviews/g1/unsaved.json", encode(original), ())
+                self.assertFalse((self.root / "reviews/g1/unsaved.json").exists())
+                output = io.StringIO()
+                with mock.patch.object(handoff.subprocess, "run", wraps=run) as calls, redirect_stdout(output):
+                    code = handoff.main(["submit", "--repo", str(self.root), "--packet",
+                                         context["packet_path"], result_path])
+                self.assertEqual(code, 1, output.getvalue())
+                self.assertFalse(json.loads(output.getvalue())["ok"])
+                self.assertFalse(any("review" in call.args[0] and "result" in call.args[0]
+                                     for call in calls.call_args_list), calls.call_args_list)
+                self.assertEqual((self.root / result_path).read_bytes(), encode(original))
+
+
+class RunnerPreparationOutcomeTests(unittest.TestCase):
+    """Real public parser/service and isolated storage; inject only boundary faults.
+
+    The capture bridge replaces the process boundary to permit fault injection,
+    not the CLI envelope, transactions, or their persisted observations.
+    """
+
+    def invoke(self, fixture, *, lose_response=False):
+        from tests.m14_test_support import run_taskgov_internal
+        envelopes = []
+
+        def captured(command, raw, started):
+            self.assertIsNone(raw)
+            started()
+            completed = run_taskgov_internal(*command[3:], "--db", str(fixture.db),
+                                            maintenance_enabled=False)
+            envelopes.append(json.loads(completed.stdout))
+            return completed.returncode, b"" if lose_response else completed.stdout.encode("utf-8")
+
+        output = io.StringIO()
+        with mock.patch.object(preparation, "_capture", side_effect=captured) as capture, redirect_stdout(output):
+            code = handoff.main(["prepare", "--repo", str(fixture.repo), "--directory", "reviews/g1",
+                                 "target", fixture.task_id, "--kind", "git_snapshot"])
+        capture.assert_called_once()
+        result = json.loads(output.getvalue())
+        self.assertEqual(code, 1, result)
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["operation_status"], "unknown")
+        self.assertNotEqual(result["source_exit_code"], 0)
+        self.assertNotIn("review_requests", result["handoff"])
+        self.assertFalse((fixture.repo / "reviews").exists())
+        self.assertNotIn("private fault", output.getvalue())
+        if not lose_response:
+            self.assertEqual(result["errors"], envelopes[0]["errors"])
+            self.assertEqual(result["warnings"][:-1], envelopes[0]["warnings"])
+            self.assertEqual(result["warnings"][-1]["code"], "handoff_outcome_unknown")
+            self.assertEqual(result["errors"][0]["code"], "runner_state_invalid")
+        return result
+
+    def test_pre_t1_post_t1_cleanup_and_lost_response_match_persisted_state(self):
+        from tests.test_m242_runner_service import RunnerServiceFixture, passing_process_result, row_counts
+        from task_governance_tool import verification_runner_service as service
+
+        for case in ("pre_t1", "post_t1", "cleanup", "lost_response"):
+            with self.subTest(case=case), tempfile.TemporaryDirectory() as temporary:
+                fixture = RunnerServiceFixture(Path(temporary))
+                (fixture.repo / ".gitignore").write_text("/reviews/\n", encoding="utf-8")
+                prepared = fixture.prepared()
+                with ExitStack() as stack:
+                    stack.enter_context(mock.patch.object(service, "_prepare_runner", return_value=prepared))
+                    if case == "pre_t1":
+                        fault = stack.enter_context(mock.patch.object(service, "_revalidate_prepared_runner",
+                                                                      side_effect=service._state_invalid()))
+                    elif case == "cleanup":
+                        for name, options in (
+                            ("materialize_runner_target", {"return_value": None}),
+                            ("_basis_is_current", {"return_value": True}),
+                            ("observe_fixed_package_runtime", {"return_value": Path(sys.executable).resolve()}),
+                            ("run_process_request", {"side_effect": passing_process_result}),
+                            ("cleanup_attempt_tree", {"side_effect": RuntimeError("private fault")}),
+                        ):
+                            fault = stack.enter_context(mock.patch.object(service, name, **options))
+                    else:
+                        fault = stack.enter_context(mock.patch.object(service, "_run_intent_under_lock",
+                                                                      side_effect=RuntimeError("private fault")))
+                    self.invoke(fixture, lose_response=case == "lost_response")
+                    fault.assert_called_once()
+                generation = 0 if case == "pre_t1" else 1
+                self.assertEqual(fixture.authority().task["review_target_generation"], generation)
+                self.assertEqual(row_counts(fixture.db)["verification_runner_attempts"], generation)
+                if generation:
+                    self.assertEqual(fixture.generation(1)["state"], "pending")
+                if case == "post_t1":
+                    # A separately requested target call may persist cleanup,
+                    # then refuse without advancing a generation or launching.
+                    # This explicit test call is not a helper retry.
+                    with mock.patch.object(service, "_prepare_runner", return_value=fixture.prepared()), \
+                         mock.patch.object(service, "_run_intent_under_lock") as launch:
+                        self.invoke(fixture)
+                    launch.assert_not_called()
+                    self.assertEqual(fixture.authority().task["review_target_generation"], 1)
+                    self.assertEqual(fixture.generation(1)["state"], "restart_cleaned")
 
 
 class ReviewerDisplayTests(PreparationFixture):

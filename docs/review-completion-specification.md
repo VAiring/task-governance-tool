@@ -321,14 +321,27 @@ corresponding to the Receipt projection's `null`; no identity or target is rebou
 (for example, a target requiring a manual Receipt). `blocked`, `failed` and
 `unavailable` supply no reviewer requests. `ok`/exit 0 means ready or
 not-applicable, not review PASS. A committed operation followed by preparation
-or transport failure remains `succeeded`; an unusable or lost response after
-launch remains `unknown`, never a claimed rollback. Do not replay a target or
+or transport failure remains `succeeded`. `not_started` means no source launch;
+`failed` covers a confirmed rejection without a state write (including the
+public CLI's `parse` rejection). After target dispatch, an `ok=false` response
+instead remains `unknown`: the response does not prove whether target/Runner
+intent or restart cleanup committed. Preserve `ok=false`, the child exit and
+original errors, with a fixed state-inspection warning; do not infer persistence
+from an error code. Receipt rejection and read-only recovery retain their
+existing `failed` classification. An unusable or lost response after launch
+also remains `unknown`, never a claimed rollback. Do not replay a target or
 Receipt write. Retain residue, use the existing public-state investigation and
 bound preparation-only recovery with a new unused directory when appropriate.
 
 `save` and `submit` require `--packet`, the complete actual Packet file. A caller
 that already holds a complete Packet may still use them directly; missing,
 display-truncated or differently bound Packets must not reach reviewers.
+Prepare, read, save and submit share one pure complete-Packet validator,
+including Task verification declarations, Contract scope/acceptance/constraints,
+target/template consistency and display metadata. No missing field is filled
+in. Incomplete input creates no result file and launches no registration CLI;
+stored-constraints compatibility above remains unchanged. These file checks
+do not replace live registration checks.
 
 `read --packet <path> --role independent` replaces the assigned independent
 reviewer's raw Packet read with the display defined below. Role is mandatory

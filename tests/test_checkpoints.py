@@ -44,6 +44,11 @@ def checkpoint_connection(
     connection.execute("PRAGMA foreign_keys = ON")
     connection.executescript(
         """
+        -- This intentionally miniature repository fixture represents schema 12,
+        -- before ownership and Evidence graphs; public current-schema checks
+        -- are exercised separately against fully initialized databases.
+        CREATE TABLE schema_migrations (version INTEGER PRIMARY KEY, name TEXT, applied_at TEXT);
+        INSERT INTO schema_migrations VALUES (12, 'checkpoint_test_fixture', '2026-07-27T00:00:00Z');
         CREATE TABLE project_meta (
           project_id TEXT PRIMARY KEY
         );

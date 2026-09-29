@@ -13,6 +13,8 @@ from contextlib import closing
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Literal
+from task_governance_tool.session_identity import CallerIdentity
+from task_governance_tool import task_ownership
 
 from task_governance_tool.contract_content import CONTRACT_INPUT_FIELDS
 from task_governance_tool.reviews import (
@@ -21,6 +23,7 @@ from task_governance_tool.reviews import (
 )
 from task_governance_tool.storage import (
     DatabaseTarget,
+    begin_initialized_write,
     connect_initialized,
     connect_initialized_task_readonly,
     contract_criterion_digest,
@@ -196,6 +199,7 @@ def _read_task_preflight_from_connection(
     dict[str, Any],
     dict[str, Any],
     ReviewTargetAuthorityBasis | None,
+    task_ownership.OwnershipBasis | None,
 ]:
     internal = read_internal_task(
         connection,
@@ -225,7 +229,9 @@ def _read_task_preflight_from_connection(
         if authority_required
         else None
     )
-    return internal, public, authority
+    return internal, public, authority, task_ownership.capture_basis(
+        connection, project_id=target.project.project_id, task_id=task_id,
+    )
 
 
 def _read_task_preflight(
@@ -237,6 +243,7 @@ def _read_task_preflight(
     dict[str, Any],
     dict[str, Any],
     ReviewTargetAuthorityBasis | None,
+    task_ownership.OwnershipBasis | None,
 ]:
     with closing(connect_initialized_task_readonly(target)) as connection:
         return _read_task_preflight_from_connection(
@@ -254,26 +261,26 @@ def _read_task_preflight_snapshot(
     task_id: str,
     *,
     authority_required: bool,
+    authority_nonterminal_required: bool = False,
 ) -> tuple[
     dict[str, Any],
     dict[str, Any],
     ReviewTargetAuthorityBasis | None,
+    task_ownership.OwnershipBasis | None,
 ]:
-    if connection.in_transaction:
-        raise TaskRepositoryError(
-            "internal_error",
-            "Task preflight started inside a transaction",
-        )
-    connection.execute("BEGIN")
+    owns_transaction = not connection.in_transaction
+    if owns_transaction:
+        connection.execute("BEGIN")
     try:
         return _read_task_preflight_from_connection(
             connection,
             target,
             task_id,
             authority_required=authority_required,
+            authority_nonterminal_required=authority_nonterminal_required,
         )
     finally:
-        if connection.in_transaction:
+        if owns_transaction and connection.in_transaction:
             connection.rollback()
 
 
@@ -429,6 +436,8 @@ def _edit_on_connection(
     runner_selector: RunnerSelectionProvider | None,
     basis_precommit_validator: TaskEditBasisPrecommitValidator | None = None,
     edit_input: dict[str, Any],
+    caller: CallerIdentity,
+    observed_ownership: task_ownership.OwnershipBasis | None = None,
 ) -> EditTaskResult:
     return edit_task(
         connection,
@@ -438,6 +447,8 @@ def _edit_on_connection(
         database_target=target,
         runner_selector=runner_selector,
         basis_precommit_validator=basis_precommit_validator,
+        caller=caller,
+        observed_ownership=observed_ownership,
         **edit_input,
     )
 
@@ -450,6 +461,7 @@ def _execute_task_edit(
     runner_selector: RunnerSelectionProvider | None,
     basis_precommit_validator: TaskEditBasisPrecommitValidator | None = None,
     edit_input: dict[str, Any],
+    caller: CallerIdentity,
 ) -> EditTaskResult:
     with closing(connect_initialized(target)) as connection:
         with connection:
@@ -461,6 +473,7 @@ def _execute_task_edit(
                 runner_selector=runner_selector,
                 basis_precommit_validator=basis_precommit_validator,
                 edit_input=edit_input,
+                caller=caller,
             )
 
 
@@ -473,6 +486,7 @@ def _edit_without_action(
     effort_profile: Any | None,
     runner_selector: RunnerSelectionProvider | None,
     edit_input: dict[str, Any],
+    caller: CallerIdentity,
 ) -> TaskRunnerPlanEditResult:
     might_change_basis = bool({"verification", "verification_not_required_reason"}.intersection(edit_input)) or bool(
         set(CONTRACT_INPUT_FIELDS).intersection(edit_input)
@@ -484,6 +498,7 @@ def _edit_without_action(
             effort_profile=effort_profile,
             runner_selector=runner_selector,
             edit_input=edit_input,
+            caller=caller,
         )
         return TaskRunnerPlanEditResult(
             edit_result=result,
@@ -492,7 +507,7 @@ def _edit_without_action(
         )
 
     with closing(connect_initialized(target)) as connection:
-        preflight, _public, authority = _read_task_preflight_snapshot(
+        preflight, _public, authority, owner = _read_task_preflight_snapshot(
             connection,
             target,
             task_id,
@@ -538,6 +553,8 @@ def _edit_without_action(
                 runner_selector=runner_selector,
                 basis_precommit_validator=validator,
                 edit_input=edit_input,
+                caller=caller,
+                observed_ownership=owner,
             )
     return TaskRunnerPlanEditResult(
         edit_result=result,
@@ -554,12 +571,13 @@ def _edit_plan_only(
     *,
     action: RunnerPlanAction,
     draft: RunnerPlanDraft | None,
+    caller: CallerIdentity,
 ) -> TaskRunnerPlanEditResult:
-    preflight, public, authority = _read_task_preflight(
-        target,
-        task_id,
-        authority_required=action in {"replace", "rebind"},
-    )
+    with closing(connect_initialized_task_readonly(target)) as connection:
+        preflight, public, authority, owner = _read_task_preflight_snapshot(
+            connection, target, task_id, authority_required=action in {"replace", "rebind"},
+            authority_nonterminal_required=action in {"replace", "rebind"},
+        )
     basis = (
         _basis_from_authority(authority, required=True)
         if authority is not None
@@ -573,6 +591,16 @@ def _edit_plan_only(
         basis=basis,
         draft=draft,
     )
+    if owner is not None:
+        # Authorization is serialized before the existing bounded filesystem publication.
+        # No filesystem work runs while SQLite holds its writer.
+        with closing(connect_initialized(target)) as connection:
+            with connection:
+                begin_initialized_write(connection, target)
+                locked = read_internal_task(connection, target.project.project_id, task_id)
+                task_ownership.require_mutation(connection, owner, caller)
+                reject_concurrent_edit_base_change(preflight, locked)
+                public = task_ownership.project_tasks(connection, [public], caller)[0]
     status = _publish_action(
         repo,
         package_root,
@@ -601,10 +629,11 @@ def _edit_combined(
     effort_profile: Any | None,
     runner_selector: RunnerSelectionProvider | None,
     edit_input: dict[str, Any],
+    caller: CallerIdentity,
 ) -> TaskRunnerPlanEditResult:
     computed: list[RunnerPlanActionResult] = []
     with closing(connect_initialized(target)) as connection:
-        preflight, _public, _authority = _read_task_preflight_snapshot(
+        preflight, _public, _authority, owner = _read_task_preflight_snapshot(
             connection,
             target,
             task_id,
@@ -650,6 +679,8 @@ def _edit_combined(
                 runner_selector=runner_selector,
                 basis_precommit_validator=compute_candidate,
                 edit_input=edit_input,
+                caller=caller,
+                observed_ownership=owner,
             )
     if len(computed) != 1:
         raise TaskRepositoryError(
@@ -681,6 +712,7 @@ def edit_task_with_runner_plan(
     runner_plan_draft_blob: Any | None = None,
     effort_profile: Any | None = None,
     runner_selector: RunnerSelectionProvider | None = None,
+    caller: CallerIdentity = CallerIdentity(None),
     **edit_input: Any,
 ) -> TaskRunnerPlanEditResult:
     """Execute one ordinary, Plan-only, or DB-first combined Task edit."""
@@ -702,6 +734,7 @@ def edit_task_with_runner_plan(
             effort_profile=effort_profile,
             runner_selector=runner_selector,
             edit_input=exact_edit_input,
+            caller=caller,
         )
 
     validate_runner_plan_action_options(exact_edit_input)
@@ -713,6 +746,7 @@ def edit_task_with_runner_plan(
             normalized_task_id,
             action=action,
             draft=draft,
+            caller=caller,
         )
     return _edit_combined(
         target,
@@ -724,4 +758,5 @@ def edit_task_with_runner_plan(
         effort_profile=effort_profile,
         runner_selector=runner_selector,
         edit_input=exact_edit_input,
+        caller=caller,
     )

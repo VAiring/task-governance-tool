@@ -271,7 +271,7 @@ from task_governance_tool.schema_verification_receipts import (
 )
 
 
-SCHEMA_VERSION = 23
+SCHEMA_VERSION = 24
 PRIVATE_SCHEMA20_MIGRATION_NAME = "verification_runner_shadow"
 PRIVATE_SCHEMA21_MIGRATION_NAME = "verification_runner_gate_basis"
 PRIVATE_SCHEMA22_VERSION = 22
@@ -1343,6 +1343,10 @@ _SCHEMA_TABLE_INTRODUCED_VERSION = {
     "verification_runner_attempts": 20,
     "verification_runner_sandbox_events": 20,
     "verification_runner_observations": 20,
+    "task_executions": 24,
+    "task_ownership": 24,
+    "task_owner_transitions": 24,
+    "task_execution_cycles": 24,
 }
 
 _SCHEMA_INDEX_INTRODUCED_VERSION = {
@@ -1388,9 +1392,19 @@ _SCHEMA_INDEX_INTRODUCED_VERSION = {
     "idx_verification_runner_observations_task_generation": 20,
     "idx_verification_runner_observations_resolution": 20,
     "idx_verification_runner_observations_attempt": 20,
+    "idx_task_executions_identity": 24,
+    "idx_task_ownership_active_session": 24,
+    "idx_task_owner_transitions_task": 24,
 }
 
 _SCHEMA_TRIGGER_INTRODUCED_VERSION = {
+    "trg_task_executions_no_update": 24,
+    "trg_task_executions_no_delete": 24,
+    "trg_task_owner_transitions_no_update": 24,
+    "trg_task_owner_transitions_no_delete": 24,
+    "trg_task_execution_cycles_no_update": 24,
+    "trg_task_execution_cycles_no_delete": 24,
+    "trg_task_execution_cycles_owner_insert": 24,
     "trg_task_completion_cycles_verification_declaration_insert": 23,
     "trg_project_maintenance_enabled_at_immutable": 10,
     "trg_task_events_viewer_generation": 13,
@@ -4166,8 +4180,8 @@ def _validate_schema21_owned_contract(connection: sqlite3.Connection) -> None:
     if _schema21_temporary_table_present(connection):
         raise _unreadable_project_state()
     if (
-        len(_SCHEMA_TABLE_INTRODUCED_VERSION) != 35
-        or len(_SCHEMA_INDEX_INTRODUCED_VERSION) != 42
+        sum(version <= 21 for version in _SCHEMA_TABLE_INTRODUCED_VERSION.values()) != 35
+        or sum(version <= 21 for version in _SCHEMA_INDEX_INTRODUCED_VERSION.values()) != 42
         or sum(version <= 21 for version in _SCHEMA_TRIGGER_INTRODUCED_VERSION.values()) != 59
     ):
         raise AssertionError("schema-v21 owned object inventory is incomplete")
@@ -5266,7 +5280,7 @@ def _owned_schema_sql_fingerprint(
     *,
     schema_version: int,
 ) -> str:
-    if schema_version not in {23,
+    if schema_version not in {23, 24,
         PRIVATE_SCHEMA20_VERSION,
         PRIVATE_SCHEMA21_VERSION,
         PRIVATE_SCHEMA22_VERSION,
@@ -5341,6 +5355,10 @@ def _validate_completion_evidence_bundle_schema_contract(
     connection: sqlite3.Connection,
 ) -> None:
     version = current_schema_version(connection)
+    if version == 24:
+        from task_governance_tool.schema_task_ownership import validate_owned_contract
+        validate_owned_contract(connection)
+        return
     if version == 23:
         from task_governance_tool.schema_verification_declaration import validate_owned_contract
         validate_owned_contract(connection)
@@ -5509,7 +5527,7 @@ def _verification_receipt_trigger_definitions(
     }
     definitions: dict[str, str] = {}
     statements = list(verification_receipt_schema_statements())
-    if schema_version in {23, PRIVATE_SCHEMA21_VERSION, PRIVATE_SCHEMA22_VERSION}:
+    if schema_version in {23, 24, PRIVATE_SCHEMA21_VERSION, PRIVATE_SCHEMA22_VERSION}:
         statements = [
             (
                 _task_completion_cycle_verification_basis_v21_trigger_sql()
@@ -8537,7 +8555,7 @@ def _match_current_done_completion_cycle_locked(
     if validate_structure:
         version = current_schema_version(connection)
         if (
-            version not in {23, 15, 16, 17, 18, 19, 20, 21, PRIVATE_SCHEMA22_VERSION}
+            version not in {23, 24, 15, 16, 17, 18, 19, 20, 21, PRIVATE_SCHEMA22_VERSION}
             or missing_migration_versions(connection, version)
             or schema_objects_inconsistent_with_version(connection, version)
         ):
@@ -9828,6 +9846,20 @@ def apply_completion_evidence_bundle_migration(
         raise
 
 
+def _apply_post22_migrations(connection: sqlite3.Connection) -> list[int]:
+    """The current ordered tail; no command other than setup calls migrations."""
+    applied: list[int] = []
+    if SCHEMA_VERSION >= 23 and current_schema_version(connection) <= 23:
+        from task_governance_tool.schema_verification_declaration import migrate
+        if migrate(connection):
+            applied.append(23)
+    if SCHEMA_VERSION >= 24:
+        from task_governance_tool.schema_task_ownership import migrate
+        if migrate(connection):
+            applied.append(24)
+    return applied
+
+
 def apply_migrations(
     connection: sqlite3.Connection,
     *,
@@ -9856,9 +9888,8 @@ def apply_migrations(
             "migration_required",
             "database schema is inconsistent with its declared version",
         )
-    if version in {22, 23} and SCHEMA_VERSION >= 23:
-        from task_governance_tool.schema_verification_declaration import migrate
-        return ([23] if migrate(connection) else []), []
+    if version in {22, 23, 24} and SCHEMA_VERSION >= 23:
+        return _apply_post22_migrations(connection), []
     if version == PRIVATE_SCHEMA22_VERSION:
         _migrate_schema22_connection(connection)
         return [], []
@@ -9866,10 +9897,7 @@ def apply_migrations(
         if SCHEMA_VERSION >= PRIVATE_SCHEMA22_VERSION:
             migrated = _migrate_schema22_connection(connection)
             applied = [PRIVATE_SCHEMA22_VERSION] if migrated else []
-            if SCHEMA_VERSION >= 23:
-                from task_governance_tool.schema_verification_declaration import migrate
-                if migrate(connection):
-                    applied.append(23)
+            applied.extend(_apply_post22_migrations(connection))
             return applied, []
         _migrate_schema21_connection(connection)
         return [], []
@@ -9881,10 +9909,7 @@ def apply_migrations(
             if SCHEMA_VERSION >= PRIVATE_SCHEMA22_VERSION:
                 if _migrate_schema22_connection(connection):
                     applied.append(PRIVATE_SCHEMA22_VERSION)
-            if SCHEMA_VERSION >= 23:
-                from task_governance_tool.schema_verification_declaration import migrate
-                if migrate(connection):
-                    applied.append(23)
+            applied.extend(_apply_post22_migrations(connection))
             return applied, []
         _migrate_schema20_connection(
             connection,
@@ -10011,10 +10036,7 @@ def apply_migrations(
     if SCHEMA_VERSION >= PRIVATE_SCHEMA22_VERSION and version < PRIVATE_SCHEMA22_VERSION:
         if _migrate_schema22_connection(connection):
             applied.append(PRIVATE_SCHEMA22_VERSION)
-    if SCHEMA_VERSION >= 23:
-        from task_governance_tool.schema_verification_declaration import migrate
-        if migrate(connection):
-            applied.append(23)
+    applied.extend(_apply_post22_migrations(connection))
     return applied, warnings
 
 
@@ -10194,7 +10216,7 @@ def _validate_evidence_ledger_schema_contract(
         expected_sql = _normalized_schema_sql(statement)
         if (
             match.group(1) == "evidence_references"
-            and current_schema_version(connection) in {PRIVATE_SCHEMA22_VERSION, 23}
+            and current_schema_version(connection) in {PRIVATE_SCHEMA22_VERSION, 23, 24}
         ):
             expected_sql = dict(_SCHEMA22_EXPECTED_OBJECTS)["evidence_references"][2]
         row = connection.execute(
@@ -11280,13 +11302,13 @@ def _completion_bundle_version_basis_valid(
             and cycle.verification_basis_kind is None
             and cycle.verification_runner_observation_id is None
         )
-    if (source_schema_version, bundle_version) not in {(20, 2), (21, 2), (22, 2), (23, 2)}:
+    if (source_schema_version, bundle_version) not in {(20, 2), (21, 2), (22, 2), (23, 2), (24, 2)}:
         return False
     if verification_basis_kind != cycle.verification_basis_kind:
         return False
     if verification_basis_kind == "runner_observation":
         return (
-            source_schema_version in {23,
+            source_schema_version in {23, 24,
                 PRIVATE_SCHEMA21_VERSION, PRIVATE_SCHEMA22_VERSION,
             }
             and verification_receipt_id is None
@@ -11533,7 +11555,13 @@ def _validate_current_schema_contract(
     if missing_migration_versions(connection, version):
         raise _unreadable_project_state()
 
-    if version == 23:
+    if version == 24:
+        from task_governance_tool.schema_task_ownership import validate_owned_contract, MIGRATION_NAME
+        marker = connection.execute("SELECT name FROM schema_migrations WHERE version = 24").fetchone()
+        if marker is None or marker["name"] != MIGRATION_NAME:
+            raise _unreadable_project_state()
+        validate_owned_contract(connection)
+    elif version == 23:
         from task_governance_tool.schema_verification_declaration import validate_owned_contract, MIGRATION_NAME
         marker = connection.execute("SELECT name FROM schema_migrations WHERE version = 23").fetchone()
         if marker is None or marker["name"] != MIGRATION_NAME:
@@ -11588,8 +11616,11 @@ def _validate_current_schema_structure(
     version = _validate_current_schema_contract(connection)
     if version == PRIVATE_SCHEMA20_VERSION:
         validate_current_schema20_admitted_rows(connection)
-    elif version in {23, PRIVATE_SCHEMA21_VERSION, PRIVATE_SCHEMA22_VERSION}:
+    elif version in {23, 24, PRIVATE_SCHEMA21_VERSION, PRIVATE_SCHEMA22_VERSION}:
         validate_current_schema21_admitted_rows(connection)
+    if version == 24:
+        from task_governance_tool.task_ownership import validate_storage_rows
+        validate_storage_rows(connection)
     return version
 
 
@@ -11891,6 +11922,10 @@ def _validate_snapshot_database_state(
                 raise
             raise _unreadable_project_state() from exc
 
+    if version == 24:
+        from task_governance_tool.task_ownership import validate_storage_rows
+        validate_storage_rows(connection)
+
     required_tables = {
         "schema_migrations",
         "project_meta",
@@ -11982,7 +12017,7 @@ def validate_snapshot_database_for_viewer(
     """Validate a Viewer source and issue one current Evidence Task proof."""
 
     version, task_rows = _validate_snapshot_database_state(connection, target)
-    if version not in {23, 18, 19, 20, 21, PRIVATE_SCHEMA22_VERSION}:
+    if version not in {23, 24, 18, 19, 20, 21, PRIVATE_SCHEMA22_VERSION}:
         return ViewerSnapshotDatabaseValidation(source_schema_version=version)
     if task_rows is None:
         raise _unreadable_project_state()
@@ -12057,7 +12092,7 @@ def _consume_validated_viewer_task_batch(
         or query_only != 1
         or type(data_version) is not int
         or data_version != issuance.data_version
-        or source_schema_version not in {23, 18, 19, 20, 21, PRIVATE_SCHEMA22_VERSION}
+        or source_schema_version not in {23, 24, 18, 19, 20, 21, PRIVATE_SCHEMA22_VERSION}
         or issuance.source_schema_version != source_schema_version
         or type(project_id) is not str
         or not project_id
@@ -12175,6 +12210,9 @@ def read_setup_state(
             validate_schema22_storage(connection)
         elif version == 23:
             from task_governance_tool.schema_verification_declaration import validate_storage
+            validate_storage(connection)
+        elif version == 24:
+            from task_governance_tool.schema_task_ownership import validate_storage
             validate_storage(connection)
         from task_governance_tool.stored_task_validation import validate_stored_task_rows
 
@@ -12350,7 +12388,7 @@ def _is_exact_empty_completion_history_database(db_path: Path) -> bool:
         with closing(connect_readonly(db_path)) as connection:
             version = current_schema_version(connection)
             if (
-                version not in {23, 15, 16, 17, 18, 19, 20, 21, PRIVATE_SCHEMA22_VERSION}
+                version not in {23, 24, 15, 16, 17, 18, 19, 20, 21, PRIVATE_SCHEMA22_VERSION}
                 or missing_migration_versions(connection, version)
                 or schema_objects_inconsistent_with_version(connection, version)
             ):
@@ -12368,6 +12406,8 @@ def _is_exact_empty_completion_history_database(db_path: Path) -> bool:
                 ).fetchall()
             }
             expected_object_counts = (
+                {"index": 45, "table": 39, "trigger": 67}
+                if version == 24 else
                 {
                     "index": 42,
                     "table": 35,

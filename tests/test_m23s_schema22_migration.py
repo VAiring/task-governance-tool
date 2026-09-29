@@ -27,6 +27,8 @@ def _rows(connection, *, include_markers=True, column_basis=None):
         table = str(row[0])
         if not include_markers and table == "schema_migrations":
             continue
+        if column_basis is not None and table not in column_basis:
+            continue
         columns = (column_basis[table] if column_basis is not None else
                    tuple(str(item[1]) for item in connection.execute(f'PRAGMA table_info("{table}")')))
         projection = ", ".join(f'"{column}"' for column in columns)
@@ -35,6 +37,8 @@ def _rows(connection, *, include_markers=True, column_basis=None):
             key=repr,
         ))
         result[table] = (columns, values)
+    if column_basis is not None and set(result) != set(column_basis):
+        raise AssertionError("migration lost a preserved table")
     return result
 
 
@@ -357,11 +361,11 @@ class Schema22MigrationTests(unittest.TestCase):
             self.assert_restored_connection(connection)
             storage.validate_schema21_storage(connection)
 
-    def test_public_initialization_and_migration_dispatch_continue_through23(self):
-        from task_governance_tool import schema_verification_declaration as declaration
-        with definitions._empty_public_database(schema_version=23) as (initialized, connection):
-            self.assertEqual(storage.SCHEMA_VERSION, 23)
-            self.assertEqual(initialized.schema_version, 23)
+    def test_public_initialization_and_migration_dispatch_continue_through24(self):
+        from task_governance_tool import schema_task_ownership as ownership
+        with definitions._empty_public_database(schema_version=24) as (initialized, connection):
+            self.assertEqual(storage.SCHEMA_VERSION, 24)
+            self.assertEqual(initialized.schema_version, 24)
             before = _logical_snapshot(connection)
             self.assertEqual(storage.apply_migrations(connection), ([], []))
             self.assertEqual(_logical_snapshot(connection), before)
@@ -370,10 +374,15 @@ class Schema22MigrationTests(unittest.TestCase):
             _basis, artifacts = validation_fixture._bundle_artifacts(
                 connection, self.target.project.project_id
             )
-            self.assertEqual(storage.apply_migrations(connection), ([22, 23], []))
-            declaration.validate_storage(connection)
+            self.assertEqual(storage.apply_migrations(connection), ([22, 23, 24], []))
+            ownership.validate_storage(connection)
             self.assertEqual(_rows(connection, include_markers=False,
                 column_basis={name: value[0] for name, value in original.items()}), original)
+            self.assertEqual(connection.execute("SELECT count(*) FROM task_ownership").fetchone()[0],
+                             connection.execute("SELECT count(*) FROM tasks").fetchone()[0])
+            self.assertFalse(connection.execute("SELECT 1 FROM task_ownership WHERE generation != 0 OR execution_id IS NOT NULL OR owner_session_id IS NOT NULL OR completion_session_id IS NOT NULL").fetchone())
+            for table in ("task_executions", "task_owner_transitions", "task_execution_cycles"):
+                self.assertFalse(connection.execute(f"SELECT 1 FROM {table}").fetchone())
             self.assertFalse(connection.execute("SELECT 1 FROM tasks WHERE verification_not_required_reason != ''").fetchone())
             self.assertFalse(connection.execute("SELECT 1 FROM task_completion_cycles WHERE verification_not_required_reason IS NOT NULL").fetchone())
             _basis, preserved = validation_fixture._bundle_artifacts(
@@ -384,8 +393,8 @@ class Schema22MigrationTests(unittest.TestCase):
             self.assertEqual(storage.apply_migrations(connection), ([], []))
             self.assertEqual(_logical_snapshot(connection), before)
         with definitions._empty_public_database(schema_version=20) as (_initialized, connection):
-            self.assertEqual(storage.apply_migrations(connection), ([21, 22, 23], []))
-            declaration.validate_storage(connection)
+            self.assertEqual(storage.apply_migrations(connection), ([21, 22, 23, 24], []))
+            ownership.validate_storage(connection)
 
 
 if __name__ == "__main__":

@@ -37,6 +37,7 @@ class GitWorkflowExampleTests(PreparationFixture):
         self.base = self.git("rev-parse", "HEAD").stdout.strip()
         self.file.write_text("review candidate\n", encoding="utf-8")
         self.task_id = self.task()
+        self.cli("task", "edit", self.task_id, "--status", "in_progress")
 
     def git(self, *args):
         return subprocess.run(["git", *args], cwd=self.root, capture_output=True,

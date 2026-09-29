@@ -603,10 +603,14 @@ class M14IntegratedAcceptanceTests(unittest.TestCase):
             self.assertEqual(context["data"]["selection"], "next")
             self.assertEqual(
                 [task["task_id"] for task in context["data"]["current"]["tasks"]],
-                [held["data"]["task"]["task_id"]],
+                [],
             )
+            # Explicit inspection still exposes held work; normal context
+            # selects only the caller's owned/completion-owned current work.
+            inspected, _ = self.run_json(install, "task", "current", "--read-only")
             self.assertEqual(
-                context["data"]["current"]["tasks"][0]["status"], "blocked"
+                [(task["task_id"], task["status"]) for task in inspected["data"]["tasks"]],
+                [(held["data"]["task"]["task_id"], "blocked")],
             )
             self.assertEqual(
                 context["data"]["next"]["tasks"][0]["task_id"], task_id

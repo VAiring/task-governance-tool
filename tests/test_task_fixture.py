@@ -1,8 +1,11 @@
 import json
+import os
 import subprocess
 import sys
 import tempfile
 import unittest
+import uuid
+from unittest import mock
 from pathlib import Path
 
 from tests.review_test_helpers import seed_review_evidence
@@ -74,11 +77,18 @@ class TaskStatusFixtureTests(unittest.TestCase):
 
             seeded = []
             for task in fixture["tasks"]:
+                # Distinct fixture Tasks may represent different working sessions.
+                self.enterContext(mock.patch.dict(os.environ, {"CODEX_THREAD_ID": str(uuid.uuid4())}))
                 initial = dict(task)
                 target_status = initial.get("status", "ready")
-                if target_status == "done":
+                if target_status in ("done", "review_pending"):
                     initial["status"] = "in_progress"
                 stored = add_fixture_task(db, repo, initial)
+                if target_status == "review_pending":
+                    pending = run_taskgov("task", "edit", stored["task_id"], "--repo", str(repo),
+                                          "--db", str(db), "--status", "review_pending", "--json")
+                    self.assertEqual(pending.returncode, 0, pending.stdout)
+                    stored = json.loads(pending.stdout)["data"]["task"]
                 if target_status == "done":
                     seed_review_evidence(db, stored["task_id"])
                     shown = run_taskgov(

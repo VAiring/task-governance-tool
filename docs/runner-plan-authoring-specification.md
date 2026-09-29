@@ -16,8 +16,9 @@ authoring. Plan authoring adds no command leaf and uses only an
 explicit action option to the existing `task edit` leaf. This contract grants no
 config write, Task side effect, process launch, target mutation, or external
 operation without that invocation. `review target set` remains the sole Runner
-dispatch. Schema v22, setup non-generation, current Plan capture/resolution,
-Runner execution, Evidence, Viewer, and completion behavior remain unchanged.
+dispatch. Plan authoring adds no schema change, setup generation or alternate
+Runner, Evidence, Viewer or completion path. Task-associated actions also obey
+the current [session ownership contract](task-operation-specification.md#session-ownership-and-recovery).
 
 ### Closed Draft And Actions
 
@@ -143,6 +144,14 @@ present the combined Task and Plan disposition before invoking it, but no
 mandatory preview command, confirmation token, second approval, or second
 normal-path CLI round trip is added. `--read-only` retains its existing
 write-rejection semantics.
+
+The coordinator captures Task and ownership together before Plan preflight,
+then checks the same generation in a short writer. For a config-only action
+that check is the authorization point; its already-admitted bounded publication
+can finish after a later handover. A new or stale operation is not authorized.
+Combined edits use the same check in their existing Task writer. No SQLite
+writer remains open for filesystem publication, and no new reservation record
+or normal-loop confirmation is added.
 
 ### Ordered Commit And Partial Success
 

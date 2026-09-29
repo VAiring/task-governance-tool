@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+from task_governance_tool.session_identity import CallerIdentity
+from task_governance_tool import task_ownership
+from task_governance_tool.tasks import read_mutation_basis
+
 import json
 import sqlite3
 from collections.abc import Sequence
@@ -408,6 +412,7 @@ def add_review_results(
     *,
     user_approved_reviewers: Sequence[str] = (),
     database_target: DatabaseTarget | None = None,
+    caller: CallerIdentity = CallerIdentity(None),
 ) -> dict[str, Any]:
     """Append the whole batch; caller must commit or roll back on exception.
 
@@ -424,10 +429,12 @@ def add_review_results(
         raise _invalid_input() from exc
     if expected_task_id != normalized_task_id:
         raise _basis_mismatch()
-    observed = read_internal_task(connection, project.project_id, normalized_task_id)
+    observed, ownership = read_mutation_basis(connection, project.project_id, normalized_task_id)
     if observed is None:
         raise TaskRepositoryError("not_found", "task was not found")
     reject_done_task_write(observed)
+    if ownership is not None:
+        task_ownership.require_completion_owner(ownership, caller)
     if (
         int(observed["review_target_generation"]) <= 0
         or not str(observed["review_target_kind"])
@@ -446,6 +453,7 @@ def add_review_results(
     )
     locked = lock_and_reread_target_owner(
         connection, project, normalized_task_id, database_target=database_target,
+        caller=caller, ownership=ownership,
     )
     reject_concurrent_review_basis_change(
         observed, locked,
@@ -471,6 +479,7 @@ def add_review_results(
             user_approved=bool(entry["user_approved"]),
             review_methods=methods, **provenance,
             database_target=database_target,
+            caller=caller,
         )
         findings = []
         for entry_finding in entry["findings"]:
@@ -479,6 +488,7 @@ def add_review_results(
                 receipt_id=receipt.receipt["review_receipt_id"],
                 severity=entry_finding["severity"], summary=entry_finding["summary"],
                 database_target=database_target,
+                caller=caller,
             )
             findings.append({"finding": {
                 field: finding.finding[field] for field in (

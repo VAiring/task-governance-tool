@@ -32,6 +32,7 @@ from task_governance_tool import task_show_projection
 from task_governance_tool import verification_runner_service as service
 from task_governance_tool import verification_runner_selection as selection
 from task_governance_tool.storage import utc_now
+from task_governance_tool.session_identity import capture_caller_identity
 from task_governance_tool.verification_runner import (
     RUNNER_POLICY_DIGEST, RUNNER_POSIX_POLICY_DIGEST,
 )
@@ -54,7 +55,7 @@ def _launch(fixture: RunnerServiceFixture, *, policy: str = RUNNER_POLICY_DIGEST
     if started.returncode != 0:
         raise AssertionError(started.stdout)
     prepared = replace(fixture.prepared(), runner_policy_digest=policy)
-    intent = service._persist_launch_intent(fixture.target, prepared)
+    intent = service._persist_launch_intent(fixture.target, prepared, caller=capture_caller_identity())
     return prepared, intent
 
 
@@ -485,6 +486,12 @@ class M243CRunnerGateTests(unittest.TestCase):
             selected_task_id = fixture.task_id
             _prepared, intent = _launch(fixture)
             _persist_terminal(fixture, intent, branch="pass")
+            waiting = run_taskgov_internal(
+                "task", "edit", selected_task_id,
+                "--status", "review_pending", "--repo", str(fixture.repo),
+                "--db", str(fixture.db), "--json", maintenance_enabled=False,
+            )
+            self.assertEqual(waiting.returncode, 0, waiting.stdout)
 
             unrelated_task_id = _add_runner_task(
                 fixture,
@@ -622,6 +629,7 @@ class M243CRunnerGateTests(unittest.TestCase):
                     fixture.target,
                     fixture.task_id,
                     kind="git_snapshot",
+                    caller=capture_caller_identity(),
                 )
             with closing(sqlite3.connect(fixture.db)) as connection:
                 target_generation = int(
@@ -1308,7 +1316,7 @@ class M243CRunnerGateTests(unittest.TestCase):
             self.assertEqual(cycle["verification_basis_kind"], "runner_observation")
             self.assertIsNone(cycle["verification_receipt_id"])
             self.assertEqual(cycle["verification_runner_observation_id"], observation_id)
-            self.assertEqual(bundle["source_schema_version"], 23)
+            self.assertEqual(bundle["source_schema_version"], 24)
             self.assertEqual(bundle["bundle_version"], 2)
             self.assertEqual(bundle["verification_basis_kind"], "runner_observation")
             self.assertEqual(bundle["verification_runner_observation_id"], observation_id)

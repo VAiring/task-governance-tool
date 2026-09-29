@@ -6,7 +6,7 @@ import tempfile
 import threading
 import unittest
 from concurrent.futures import ThreadPoolExecutor
-from contextlib import closing
+from contextlib import closing, contextmanager
 from pathlib import Path
 from unittest import mock
 
@@ -44,6 +44,7 @@ try:
     )
     from task_governance_tool import cli as cli_module
     from task_governance_tool import tasks as task_service
+    from task_governance_tool.session_identity import capture_caller_identity
     from task_governance_tool import stored_task_validation as stored_tasks_service
     from task_governance_tool import reviews as review_service
     from task_governance_tool import storage as storage_service
@@ -67,6 +68,15 @@ def payload(result):
 
 def init_db(db, repo):
     initialize_taskgov_internal(repo=repo, db=db)
+
+
+@contextmanager
+def historical_review_fixture():
+    # Build only explicitly old v17/v18 reader fixtures before ownership exists;
+    # their callers still migrate/use the current runtime after this scope.
+    from tests.test_task_ownership_migration import schema23_runtime
+    with schema23_runtime():
+        yield
 
 
 def init_git_repo(repo):
@@ -93,11 +103,17 @@ def add_task(db, repo, *, tier=2, title="Review task", declare_verification=True
                    if declare_verification else ())
     result = run_taskgov(
         "task", "add", "--repo", str(repo), "--db", str(db),
-        "--title", title, "--review-tier", str(tier), *declaration, "--json",
+        "--title", title, "--status", "in_progress", "--review-tier", str(tier), *declaration, "--json",
     )
     if result.returncode:
         raise AssertionError(result.stderr or result.stdout)
-    return payload(result)["data"]["task"]
+    task = payload(result)["data"]["task"]
+    # Review fixtures retain completion authority without occupying a work slot.
+    pending = run_taskgov("task", "edit", task["task_id"], "--repo", str(repo),
+                          "--db", str(db), "--status", "review_pending", "--json")
+    if pending.returncode:
+        raise AssertionError(pending.stderr or pending.stdout)
+    return payload(pending)["data"]["task"]
 
 
 def target_set(db, repo, task_id, revision=FINGERPRINT_A):
@@ -167,6 +183,7 @@ def internal_git_snapshot_target(db, repo, task_id):
                 target.project,
                 task_id,
                 database_target=target,
+                caller=capture_caller_identity(),
             )
 
 
@@ -490,7 +507,7 @@ class ReviewEvidenceTests(unittest.TestCase):
                         "SELECT COUNT(*) FROM task_events WHERE task_id = ?",
                         (task["task_id"],),
                     ).fetchone()[0],
-                    1,
+                    2,
                 )
 
     def test_task_git_preflight_rejects_an_existing_database_transaction(self):
@@ -522,6 +539,7 @@ class ReviewEvidenceTests(unittest.TestCase):
                             completion_evidence_kind="git_commit",
                             completion_revision="HEAD",
                             database_target=target,
+                            caller=capture_caller_identity(),
                         )
                 connection.rollback()
 
@@ -541,8 +559,8 @@ class ReviewEvidenceTests(unittest.TestCase):
                     "SELECT COUNT(*) FROM task_events WHERE task_id = ?",
                     (task["task_id"],),
                 ).fetchone()[0]
-            self.assertEqual(stored, ("ready", "none", ""))
-            self.assertEqual(event_count, 1)
+            self.assertEqual(stored, ("review_pending", "none", ""))
+            self.assertEqual(event_count, 2)
 
     def test_git_review_target_is_validated_canonically_without_git_mutation(self):
         with tempfile.TemporaryDirectory() as temp:
@@ -642,6 +660,7 @@ class ReviewEvidenceTests(unittest.TestCase):
                 [1, 1, 1, 1],
             )
 
+    @historical_review_fixture()
     def test_v17_review_inventory_rejects_blob_source_aliases(self):
         private_marker = "Authorization: Bearer legacy-owner-secret"
         cases = (
@@ -733,6 +752,7 @@ class ReviewEvidenceTests(unittest.TestCase):
                         )
                         self.assertEqual(db.read_bytes(), before)
 
+    @historical_review_fixture()
     def _create_v17_legacy_finding_fixture(
         self,
         root,
@@ -804,6 +824,13 @@ class ReviewEvidenceTests(unittest.TestCase):
         )
 
     def _set_current_two_passes(self, db, repo, task_id):
+        # These callers migrate legacy review-pending work: ownership is unknown
+        # until the explicit recovery and separate resume have both succeeded.
+        for options in (("--status", "paused", "--pause-reason", "Recover migrated review fixture"),
+                        ("--status", "in_progress")):
+            recovered = run_taskgov("task", "edit", task_id, "--repo", str(repo),
+                                    "--db", str(db), *options, "--json")
+            self.assertEqual(recovered.returncode, 0, recovered.stdout)
         current_target = target_set(db, repo, task_id, FINGERPRINT_B)
         self.assertEqual(
             current_target.returncode,
@@ -1116,6 +1143,7 @@ class ReviewEvidenceTests(unittest.TestCase):
                         finding_id=finding_id,
                     )
 
+    @historical_review_fixture()
     def test_invalid_finding_domain_values_cannot_escape_source_stream(self):
         cases = (
             ("status", "critical"),
@@ -2502,6 +2530,7 @@ class ReviewEvidenceTests(unittest.TestCase):
                             review_lenses=["correctness"],
                             context_relation="external_context",
                             review_methods=["review_packet_inspection"],
+                            caller=capture_caller_identity(),
                         )
                     self.assertEqual(raised.exception.code, "evidence_basis_stale")
                 finally:
@@ -3132,6 +3161,7 @@ class ReviewEvidenceTests(unittest.TestCase):
                             kind="git_commit",
                             revision=revision[:12],
                             database_target=target,
+                            caller=capture_caller_identity(),
                         )
 
             with mock.patch.object(
@@ -3197,6 +3227,7 @@ class ReviewEvidenceTests(unittest.TestCase):
                             target.project,
                             task_id,
                             database_target=target,
+                            caller=capture_caller_identity(),
                         )
 
             with mock.patch.object(
@@ -3278,6 +3309,7 @@ class ReviewEvidenceTests(unittest.TestCase):
                             review_complete=True,
                             completion_commit_hash=completion_commit,
                             database_target=target,
+                            caller=capture_caller_identity(),
                         )
 
             with mock.patch.object(
@@ -3314,7 +3346,7 @@ class ReviewEvidenceTests(unittest.TestCase):
                         """,
                         (task_id,),
                     ).fetchone()[0],
-                    1,
+                    2,  # Enter review-pending, then complete; no duplicate done event.
                 )
                 self.assertEqual(connection.execute("PRAGMA quick_check").fetchone()[0], "ok")
                 self.assertEqual(connection.execute("PRAGMA foreign_key_check").fetchall(), [])
@@ -3342,7 +3374,8 @@ class ReviewEvidenceTests(unittest.TestCase):
                     try:
                         with connection:
                             result = set_git_snapshot_target(
-                                connection, target.project, task_id
+                                connection, target.project, task_id,
+                                caller=capture_caller_identity(),
                             )
                         return ("ok", result.task["review_target_generation"])
                     except ReviewEvidenceError as exc:
@@ -3829,6 +3862,7 @@ class ReviewEvidenceTests(unittest.TestCase):
                             verification_complete=True,
                             review_complete=True,
                             commit_not_required=True,
+                            caller=capture_caller_identity(),
                         )
                 connection.rollback()
 
@@ -3846,7 +3880,7 @@ class ReviewEvidenceTests(unittest.TestCase):
             self.assertEqual(
                 row,
                 (
-                    "ready",
+                    "review_pending",
                     "none",
                     "external_revision",
                     "concurrent-release",
@@ -3901,6 +3935,7 @@ class ReviewEvidenceTests(unittest.TestCase):
                                 verification_complete=True,
                                 review_complete=True,
                                 commit_not_required=True,
+                                caller=capture_caller_identity(),
                             )
                         return "ok"
                     except task_service.TaskRepositoryError as exc:

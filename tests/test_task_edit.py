@@ -7,7 +7,7 @@ import unittest
 from contextlib import closing
 from pathlib import Path
 
-from tests.review_test_helpers import seed_review_evidence
+from tests.review_test_helpers import seed_review_evidence, start_ready_review_fixture
 from tests.m14_test_support import (
     initialize_taskgov_internal,
     remove_v10_maintenance_for_test,
@@ -28,6 +28,9 @@ def init_db(db, repo):
 
 
 def add_task(db, repo, title, *extra):
+    review_fixture = "--status" in extra and extra[extra.index("--status") + 1] == "review_pending"
+    if review_fixture:
+        extra = tuple("in_progress" if item == "review_pending" else item for item in extra)
     if "--verification" not in extra and "--verification-not-required" not in extra:
         extra = (*extra, "--verification-not-required", "Task-transition fixture")
     if not db.exists():
@@ -46,11 +49,15 @@ def add_task(db, repo, title, *extra):
     )
     if result.returncode != 0:
         raise AssertionError(result.stderr or result.stdout)
-    return json.loads(result.stdout)["data"]["task"]
+    task = json.loads(result.stdout)["data"]["task"]
+    if review_fixture:
+        task = edit_task(db, repo, task["task_id"], "--status", "review_pending")["data"]["task"]
+    return task
 
 
 def edit_task(db, repo, task_id, *extra):
     if "--status" in extra and extra[extra.index("--status") + 1] == "done":
+        start_ready_review_fixture(db, repo, task_id)
         target = {}
         if (
             "--completion-evidence-kind" in extra
@@ -346,7 +353,7 @@ class TaskEditTests(unittest.TestCase):
                 "Resumed from paused; Previous reason: Waiting for a safe continuation window",
             )
 
-    def test_resume_event_prioritizes_historical_pause_reason_over_long_note(self):
+    def test_resume_is_isolated_and_preserves_historical_pause_reason_before_note(self):
         with tempfile.TemporaryDirectory() as tmp:
             db = Path(tmp) / "taskgov.sqlite"
             repo = Path(tmp) / "repo"
@@ -361,15 +368,16 @@ class TaskEditTests(unittest.TestCase):
                 "Critical handoff reason",
             )
 
-            resumed = edit_task(
-                db,
-                repo,
-                task["task_id"],
-                "--status",
-                "in_progress",
-                "--add-note",
-                "x" * 1500,
+            before = db.read_bytes()
+            rejected = run_taskgov(
+                "task", "edit", task["task_id"], "--repo", str(repo), "--db", str(db),
+                "--status", "in_progress", "--add-note", "x" * 1500, "--json",
             )
+            self.assertEqual(json.loads(rejected.stdout)["errors"][0]["code"], "task_not_owned")
+            self.assertEqual(db.read_bytes(), before)
+            resumed = edit_task(db, repo, task["task_id"], "--status", "in_progress")
+            noted = edit_task(db, repo, task["task_id"], "--add-note", "x" * 1500)
+            self.assertEqual(noted["data"]["event"]["event_type"], "note_added")
 
             summary = resumed["data"]["event"]["summary"]
             self.assertTrue(summary.startswith("Resumed from paused; Previous reason: Critical handoff reason"))
@@ -401,7 +409,7 @@ class TaskEditTests(unittest.TestCase):
 
             self.assertEqual(json.loads(invalid_source.stdout)["errors"][0]["code"], "invalid_status_transition")
             self.assertEqual(json.loads(missing_reason.stdout)["errors"][0]["code"], "pause_reason_required")
-            self.assertEqual(json.loads(invalid_resume.stdout)["errors"][0]["code"], "invalid_status_transition")
+            self.assertEqual(json.loads(invalid_resume.stdout)["errors"][0]["code"], "task_not_owned")
             stored = fetch_task(db, ready["task_id"])
             self.assertEqual(stored["status"], "paused")
             self.assertEqual(stored["pause_reason"], "Hold")
@@ -1317,7 +1325,8 @@ class TaskEditTests(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertEqual(result.stderr, "")
             lines = result.stdout.strip().splitlines()
-            self.assertLessEqual(len(lines), 5)
+            self.assertLessEqual(len(lines), 6)
+            self.assertIn("Ownership:", result.stdout)
             self.assertIn(f"Task updated: {task['task_id']}", result.stdout)
             self.assertIn("Changed: priority", result.stdout)
 

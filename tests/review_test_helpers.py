@@ -9,6 +9,27 @@ from pathlib import Path
 FINGERPRINT = "sha256:" + "c" * 64
 
 
+def start_ready_review_fixture(db, repo, task_id):
+    """Give an explicitly selected ready fixture its ordinary execution owner.
+
+    This is fixture setup, separate from evidence seeding. It never recovers
+    held/unknown ownership, changes another Task, or bypasses the public start.
+    """
+    from tests.m14_test_support import run_taskgov_internal
+
+    with closing(sqlite3.connect(db)) as connection:
+        status = connection.execute(
+            "SELECT status FROM tasks WHERE task_id = ?", (task_id,)
+        ).fetchone()[0]
+    if status == "ready":
+        result = run_taskgov_internal(
+            "task", "edit", task_id, "--repo", str(repo), "--db", str(db),
+            "--status", "in_progress", "--json",
+        )
+        if result.returncode:
+            raise AssertionError(result.stdout or result.stderr)
+
+
 @dataclass(frozen=True)
 class ReviewProvenanceCase:
     """One explicit test-owned Review provenance acceptance case.
@@ -289,6 +310,8 @@ def _seed_native_review_evidence(
     repo_path,
 ):
     ProjectIdentity, add_review_receipt, set_review_target = _review_services()
+    from task_governance_tool.session_identity import capture_caller_identity
+    caller = capture_caller_identity()
     original_row_factory = connection.row_factory
     connection.row_factory = sqlite3.Row
     try:
@@ -310,6 +333,7 @@ def _seed_native_review_evidence(
             task_id,
             kind=target_kind,
             revision=target_value,
+            caller=caller,
         )
         tier = int(row["review_tier"])
         receipts = (
@@ -341,6 +365,7 @@ def _seed_native_review_evidence(
                 kind=kind,
                 verdict=verdict,
                 summary=summary,
+                caller=caller,
                 **provenance,
             )
     finally:

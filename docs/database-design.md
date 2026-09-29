@@ -50,6 +50,7 @@ Current sequential migrations are:
 | 21 | verification Runner gate-basis tags using the existing schema-v20 structures |
 | 22 | retired Analyzer reservation cleanup in the existing Evidence/Bundle tables |
 | 23 | `verification_declaration`: Task and completion-cycle waiver reasons |
+| 24 | `task_session_ownership`: current ownership and immutable execution/transition/cycle relations |
 
 Every migration is ordered, idempotent on reentry, transactional, and
 rollback-tested. Reentry validates rather than synthesizing missing data.
@@ -62,12 +63,38 @@ checkpoint, maintenance, identity, and completion traces. The sole current
 exception is migration 20's Bundle-rebuild retirement of the
 unsupported attached residue defined below; it changes no other migration.
 
-The fixed-state setup migrator accepts complete source schemas v1-v22 and
-treats v23 as current. Legacy `state/projects` discovery is intentionally
+The fixed-state setup migrator accepts complete source schemas v1-v23 and
+treats v24 as current. Legacy `state/projects` discovery is intentionally
 narrower: v1-v13 plus the explicit schema-v14 legacy-layout transition.
-Viewer compatibility is independent and accepts source schemas v5-v23.
+Viewer compatibility is independent and accepts source schemas v5-v24.
 Incomplete history, a missing required object/row, a later marker, too-new
 state, unsupported layout, foreign identity, or corrupt integrity fails closed.
+
+<a id="session-ownership-migration"></a>
+
+### Session Ownership Migration
+
+`schema_task_ownership.py` owns the exact v24 DDL and predecessor migration.
+`storage.py` composes the ordered 23→24 tail, later-object recognition, global
+admission, native source version and snapshot proof. Backup, resolver, relocation
+and Viewer use the same supported version, not a separate weaker reader.
+The fixed owned-schema fingerprint is checked together with expected object SQL,
+marker-last preservation, foreign keys and quick check. Migration compares all
+predecessor business columns and unrelated objects before and after marker insert,
+and verifies empty new history and unknown/none ownership without semantic backfill.
+Its Bundle rebuild and temporary-name checks follow the existing transaction and
+PRAGMA restoration protocol; injected copy/marker failures roll back all additions.
+
+`task_ownership` is keyed by Task and references one same-Task execution when known.
+The active partial index is `(project_id, owner_session_id) WHERE state='owned'`.
+`task_executions` stores a random ID and start time. `task_owner_transitions` stores
+only Task/execution/generation, source/destination status, resulting ownership state,
+actor UUID, optional sanitized recovery reason and timestamp. `task_execution_cycles`
+links one exact native cycle to its unique execution; its insert guard checks the
+cycle's project/Task and immutable triggers prevent rewriting the relation.
+No prompt, response body, environment, cost, session liveness or caller-specific
+flags are retained. This schema does not create the later numerical usage store
+or review-session binding tables.
 
 <a id="schema-v20-physical-foundation"></a>
 
@@ -491,7 +518,7 @@ and index-last; its other limits and publication behavior are unchanged.
 
 <a id="current-schema-v22-reservation-cleanup-design"></a>
 
-## Current Schema-v23 Verification Declaration Design
+## Supported Schema-v23 Verification Declaration Design
 
 `schema_verification_declaration.py` owns migration 23 and exact owned-DDL
 validation. `storage.py::apply_migrations` composes it after complete schema 22.
@@ -518,7 +545,7 @@ the Packet exposes the reason and each new cycle stores its immutable copy.
 Done/reopen validation compares a non-NULL cycle reason with its Task; a legacy
 NULL is never inferred to mean approval. Recovery, normal resolver/writer and
 doctor retain global admission. Viewer ignores the new reason fields and keeps
-its existing v4 shape. Current capture/index writes source 23, but immutable
+its existing v4 shape. Schema-23 capture/index writes source 23, but immutable
 source-19 through source-22 Bundles keep their exact bytes and digests.
 
 ### Supported Schema-v22 Reservation Cleanup

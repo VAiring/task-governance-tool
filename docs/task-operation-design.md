@@ -61,6 +61,42 @@ not raw logs.
 
 ### Shared Stored Task Row/Batch Validator
 
+`session_identity.py` captures only the invocation's validated thread UUID.
+`task_ownership.py` owns ownership repositories, the state matrix, generation
+comparison, slot acquisition, immutable execution/transition history and exact
+completion-cycle links. Neither creates a connection or commits. The caller's
+existing writer/savepoint includes ownership and the business mutation; a partial
+unique index serializes active session slots. `read_mutation_basis` captures Task
+content and owner generation in one short snapshot before external preflight,
+and the writer checks that exact generation. It never accepts a displayed self
+flag as authority. Completion includes this basis in its existing semantic token.
+Returning started work to ready/cancelled clears the current execution link in
+that same writer and records the actor/generation; immutable execution history
+remains. An intervening blocked state cannot resurrect the ended execution.
+
+The public converters remain pure. Selected ownership/Task/execution relationships
+are validated by bounded ID batches; `project_tasks` attaches caller-specific
+display on the same read/writer transaction. Normal global admission additionally
+validates the complete immutable ownership history and cycle relations. The
+selected-Task connection stays selected-only; global consumers retain all prior
+Runner/Task/Evidence validation. Shared Viewer/Evidence omit per-caller projection.
+Packet content binding excludes ownership display, while all writes still compare
+its independently captured generation.
+
+`list_current_tasks(for_context=True)` applies caller ownership eligibility in SQL
+before its limit. Explicit current/list/show remain inspection of any owner; next
+keeps its existing ready predicate. The CLI passes one typed caller through all
+components without another normal-loop call. Missing identity remains null and
+produces the fixed context warning; it is never inferred from another Task.
+
+Runner pre-T1/restart admission uses the observed ownership basis; its internal
+post-T1 terminal/cleanup continuation deliberately does not acquire or recheck an
+owner. Plan-only publication has its existing short writer authorization point
+before filesystem publication; already-admitted publication may finish after a
+concurrent takeover. It holds no SQLite writer during filesystem work and gives
+the previous owner no additional publication or Task mutation. Combined Plan edits
+retain their existing database-first/publication outcome contract.
+
 `stored_task_validation.py` owns one source-schema-aware validator for complete stored Task
 rows. Raw fetches, scalar/relationship composition, current authority checks,
 and the single-Task snapshot helper stay together in that repository-facing
@@ -123,7 +159,7 @@ source-capacity failure remains candidate-local; every other Task fault is
 structural and set-fatal.
 
 Viewer supplies the source version returned by snapshot validation. For exact
-schema v18-v22, that validation completes the full Evidence Ledger and Task batch
+schema v18-v24, that validation completes the full Evidence Ledger and Task batch
 checks before issuing one private, one-shot batch proof bound to the same
 query-only connection and transaction, project, source version, exact sorted
 Task IDs/count, issuance data version, and a fixed nested savepoint held only
@@ -216,7 +252,8 @@ the individual command handlers and `handle_task_context`. The aggregate uses
 fixed arguments and selects from the existing validated bounded batch, then
 uses the same batch for compact presentation under its original command label.
 It does not select from a display prefix or reread omitted candidates. Selection
-defaults and compact budgets stay unchanged. It owns only the fixed aggregate
+defaults and compact budgets stay unchanged, with the caller eligibility predicate
+owned by the Task repository. It owns only the fixed aggregate
 envelope, first-candidate routing, warning combination, and no-partial-result
 failure projection, never a second selection predicate, Task validator, or
 state writer. `cli_text.py` combines the selected show text with held-work

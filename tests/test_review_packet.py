@@ -32,6 +32,7 @@ from task_governance_tool.review_packet import (  # noqa: E402
     project_changed_paths,
 )
 from task_governance_tool.reviews import set_review_target  # noqa: E402
+from task_governance_tool.session_identity import capture_caller_identity  # noqa: E402
 from task_governance_tool.storage import (  # noqa: E402
     StorageError,
     connect_initialized,
@@ -111,7 +112,14 @@ def add_task(
     result = run_taskgov_internal(*args, maintenance_enabled=False)
     if result.returncode != 0:
         raise AssertionError(result.stdout or result.stderr)
-    return json_payload(result)["data"]["task"]["task_id"]
+    task_id = json_payload(result)["data"]["task"]["task_id"]
+    pending = run_taskgov_internal(
+        "task", "edit", task_id, "--db", str(db), "--repo", str(repo),
+        "--status", "review_pending", "--json", maintenance_enabled=False,
+    )
+    if pending.returncode:
+        raise AssertionError(pending.stdout or pending.stderr)
+    return task_id
 
 
 def set_target(
@@ -248,7 +256,7 @@ class ReviewPacketTests(unittest.TestCase):
             )
             expected_text = (
                 f'Task: {task_id} | "Review packet task" | review_tier=2\n'
-                "Status: in_progress\n"
+                "Status: review_pending\n"
                 'Verification: "python -m unittest"\n'
                 'Verification not required reason: ""\n'
                 "Contract revision: 1\n"
@@ -707,6 +715,7 @@ class ReviewPacketTests(unittest.TestCase):
                             kind="diff_fingerprint",
                             revision=FINGERPRINT_B,
                             database_target=target,
+                            caller=capture_caller_identity(),
                         )
                 raise ReviewPacketError(
                     "review_packet_path_unsafe",

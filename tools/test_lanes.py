@@ -10,6 +10,7 @@ import argparse
 import json
 import os
 import unittest
+from unittest import mock
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -141,6 +142,7 @@ LANE_MODULES: dict[str, tuple[str, ...]] = {
         "test_review_results",
         "test_selection",
         "test_sequential_transitions",
+        "test_session_identity",
         "test_storage_paths",
         "test_target_review_preparation",
         "test_task_add",
@@ -154,6 +156,8 @@ LANE_MODULES: dict[str, tuple[str, ...]] = {
         "test_task_fixture",
         "test_task_list",
         "test_task_next",
+        "test_task_ownership",
+        "test_task_ownership_cli",
         "test_task_registration_context",
         "test_task_show",
         "test_task_show_projection",
@@ -217,6 +221,9 @@ LANE_MODULES: dict[str, tuple[str, ...]] = {
         "test_state_resolver",
         "test_state_separation",
         "test_state_transition_primitives",
+        "test_task_ownership_install",
+        "test_task_ownership_migration",
+        "test_task_ownership_runner",
         "test_verification_declaration",
         "test_verification_declaration_migration",
         "test_verification_receipts",
@@ -699,7 +706,11 @@ def main(argv: Sequence[str] | None = None) -> int:
             expected_count = len(selected_ids)
             label = f"test lane: {lane} ({expected_count} tests)"
         print(label, file=sys.stderr)
-        result = unittest.TextTestRunner(verbosity=1).run(suite)
+        # Ordinary isolated CLI fixtures model one valid Codex caller, including
+        # child processes on CI hosts. Missing/malformed/cross-session tests
+        # override or remove this value explicitly; product admission is unchanged.
+        with mock.patch.dict(os.environ, {"CODEX_THREAD_ID": "00000000-0000-4000-8000-000000000001"}):
+            result = unittest.TextTestRunner(verbosity=1).run(suite)
         if not result.wasSuccessful():
             return 1
         if result.testsRun != expected_count:

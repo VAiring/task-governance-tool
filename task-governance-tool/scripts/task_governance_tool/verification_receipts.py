@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+from task_governance_tool.session_identity import CallerIdentity
+from task_governance_tool import task_ownership
+
 import re
 import secrets
 import sqlite3
@@ -1204,6 +1207,7 @@ def add_verification_receipt(
     expected_target_generation: Any,
     database_target: DatabaseTarget | None = None,
     runner_selector: RunnerSelectionProvider | None = None,
+    caller: CallerIdentity = CallerIdentity(None),
 ) -> VerificationReceiptResult:
     """Append one immutable aggregate Receipt without changing Task state."""
 
@@ -1228,6 +1232,7 @@ def add_verification_receipt(
         )
         if observed is None:
             raise TaskRepositoryError("not_found", "task was not found")
+        ownership = task_ownership.capture_basis(connection, project_id=project.project_id, task_id=normalized_task_id)
         runner_selection_required = _task_runner_basis_version(observed) == 2
         if runner_selection_required:
             _validate_add_prerequisites(task=observed, values=values)
@@ -1280,6 +1285,8 @@ def add_verification_receipt(
     locked = read_internal_task(connection, project.project_id, normalized_task_id)
     if locked is None:
         raise TaskRepositoryError("not_found", "task was not found")
+    if ownership is not None:
+        task_ownership.require_mutation(connection, ownership, caller)
     (
         _expectation,
         contract_revision,

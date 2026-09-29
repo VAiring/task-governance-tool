@@ -327,6 +327,8 @@ class WriteContentionTests(unittest.TestCase):
             init_db(db, repo)
             task = add_task(db, repo, title="Review contention task")
             task_id = task["task_id"]
+            successful_json("task", "edit", task_id, "--status", "in_progress",
+                            "--repo", str(repo), "--db", str(db))
 
             cases = [
                 (

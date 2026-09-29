@@ -728,7 +728,7 @@ class DocumentContractTests(unittest.TestCase):
                 ),
                 (
                     "docs/specification.md",
-                    "### Current Schema-v23 Persistence Contract",
+                    "### Current Schema-v24 Persistence Contract",
                     ("database-specification.md#current-schema-v22-persistence-contract",),
                 ),
                 (
@@ -743,8 +743,8 @@ class DocumentContractTests(unittest.TestCase):
                 ),
                 (
                     contract.DESIGN,
-                    "## Current Schema-v23 Verification Declaration Design",
-                    ("database-design.md#current-schema-v22-reservation-cleanup-design",),
+                    "## Current Schema-v24 Ownership And Verification Declaration Design",
+                    ("database-design.md#session-ownership-migration", "database-design.md#current-schema-v22-reservation-cleanup-design"),
                 ),
                 (
                     contract.DESIGN,

@@ -58,10 +58,17 @@ class TaskContextTests(unittest.TestCase):
         before = file_snapshot(self.root)
         current_batch = self.success("task", "current")
         current = self.success("task", "current", "--compact")
+        # Explicit current remains an all-owner/held inspection; context uses
+        # the caller-owned subset before its limit. This fixture fits in one batch.
+        eligible = [row for row in current_batch["data"]["tasks"]
+                    if row["ownership"]["is_owner"] or row["ownership"]["is_completion_owner"]]
+        visible = [row for row in current["data"]["tasks"]
+                   if row["ownership"]["is_owner"] or row["ownership"]["is_completion_owner"]]
+        current["data"].update(tasks=visible, total_matching=len(eligible), returned_count=len(visible), truncated=len(visible) < len(eligible))
         warnings = list(current["warnings"])
         chosen = next(
             (row for row in current_batch["data"]["tasks"]
-             if row["status"] in {"in_progress", "review_pending"}),
+             if row["ownership"]["is_owner"] or row["ownership"]["is_completion_owner"]),
             None,
         )
         next_payload = None
@@ -182,7 +189,8 @@ class TaskContextTests(unittest.TestCase):
         self.assertEqual(shown["data"]["task"]["status"], "ready")
 
     def test_current_resumption_uses_first_active_status_and_skips_next(self):
-        review = self.add("Review pending", "--status", "review_pending", "--priority", "urgent")
+        review = self.add("Review pending", "--status", "in_progress", "--priority", "urgent")
+        self.success("task", "edit", review["task_id"], "--status", "review_pending")
         self.add("Urgent ready", "--priority", "urgent")
         for status in ("review_pending", "in_progress"):
             with self.subTest(status=status):
@@ -213,7 +221,8 @@ class TaskContextTests(unittest.TestCase):
 
         self.assertEqual(payload["data"]["selection"], "next")
         self.assertEqual(payload["data"]["selected"]["task"]["task_id"], ready["task_id"])
-        self.assertEqual([row["status"] for row in payload["data"]["current"]["tasks"]], ["paused", "blocked"])
+        self.assertEqual(payload["data"]["current"]["tasks"], [])
+        self.assertEqual([row["status"] for row in self.success("task", "current")["data"]["tasks"]], ["paused", "blocked"])
         self.assertEqual([warning["code"] for warning in payload["warnings"]], ["paused_tasks_present"])
 
     def test_no_tasks_and_only_held_work_are_successful_no_selection(self):
@@ -307,8 +316,9 @@ class TaskContextTests(unittest.TestCase):
                     self.assertEqual(show.call_args.args[0].args.task_id, first["task_id"])
 
     def test_complete_selected_current_batch_is_validated_before_selection(self):
+        corrupt = self.add("Malformed later row", "--status", "in_progress")
+        self.success("task", "edit", corrupt["task_id"], "--status", "review_pending")
         self.add("Valid first", "--status", "in_progress", "--priority", "urgent")
-        corrupt = self.add("Malformed later row", "--status", "review_pending")
         with closing(sqlite3.connect(self.db)) as connection:
             connection.execute("PRAGMA ignore_check_constraints = ON")
             connection.execute("UPDATE tasks SET review_tier = 9 WHERE task_id = ?", (corrupt["task_id"],))
@@ -324,8 +334,9 @@ class TaskContextTests(unittest.TestCase):
         self.assertEqual(file_snapshot(self.root), before)
 
     def test_omitted_later_row_does_not_change_first_current_selection(self):
+        review = self.add("Omitted review", "--status", "in_progress", "--lane", "l" * 30000)
+        self.success("task", "edit", review["task_id"], "--status", "review_pending")
         first = self.add("First active", "--status", "in_progress")
-        self.add("Omitted review", "--status", "review_pending", "--blocked-reason", "r" * 30000)
 
         data = self.assert_matches_selection_and_display()["data"]
 
@@ -417,7 +428,13 @@ class TaskContextCompactSelectionTests(unittest.TestCase):
 
         payload = self.success("task", "context", "--read-only")
 
-        self.assertEqual(payload["data"][component], compact)
+        if component == "current" and selection == "next":
+            self.assertEqual(payload["data"][component], {
+                **compact, "tasks": [], "total_matching": 0,
+                "returned_count": 0, "truncated": False,
+            })
+        else:
+            self.assertEqual(payload["data"][component], compact)
         self.assertEqual(payload["data"]["selection"], selection)
         self.assertEqual(payload["data"]["selected"], shown)
         self.assertEqual(payload["data"]["selected"]["task"]["task_id"], selected["task_id"])
@@ -426,7 +443,9 @@ class TaskContextCompactSelectionTests(unittest.TestCase):
         return payload["data"]
 
     def assert_omitted_current_resumes(self, status):
-        active = self.add("Omitted current", "--status", status, "--blocked-reason", "r" * 30000)
+        active = self.add("Omitted current", "--status", "in_progress", "--lane", "l" * 30000)
+        if status == "review_pending":
+            active = self.success("task", "edit", active["task_id"], "--status", status)["data"]["task"]
         self.add("Other ready work", "--priority", "urgent")
 
         data = self.assert_empty_compact_preserves_selection("current", active, "current")
@@ -502,6 +521,8 @@ class TaskContextRunnerTests(unittest.TestCase):
             selected_id = fixture.task_id
             _prepared, intent = _launch(fixture)
             _persist_terminal(fixture, intent, branch="pass")
+            released = run(fixture.db, fixture.repo, "task", "edit", selected_id, "--status", "review_pending")
+            self.assertEqual(released.returncode, 0, released.stdout)
             unrelated_id = _add_runner_task(fixture, title="Unrelated corrupt Runner graph")
             fixture.task_id = unrelated_id
             _prepared, unrelated_intent = _launch(fixture)

@@ -6,6 +6,9 @@ import sqlite3
 from dataclasses import dataclass, field
 from typing import Any
 
+from task_governance_tool.session_identity import CallerIdentity
+from task_governance_tool.task_ownership import project_tasks
+
 from task_governance_tool.review_packet_binding import review_packet_binding
 
 from task_governance_tool.completion_history_projection import (
@@ -147,6 +150,7 @@ def show_task(
     event_limit: int = 10,
     runner_selection: VerificationRunnerGateSelection | None = None,
     include_current_context: bool = False,
+    caller: CallerIdentity = CallerIdentity(None),
 ) -> TaskShowResult:
     normalized_task_id = validate_task_id(task_id)
     source_schema_version = current_schema_version(connection)
@@ -157,7 +161,7 @@ def show_task(
     )
     if task_row is None:
         raise TaskRepositoryError("not_found", "task was not found")
-    task = row_to_show_task(task_row)
+    task = project_tasks(connection, [row_to_show_task(task_row)], caller)[0]
     internal_task = row_to_internal_task(task_row)
     if include_current_context:
         # Keep the old audit window and all typed resume context in one read.

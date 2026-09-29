@@ -40,6 +40,7 @@ from task_governance_tool.storage import (  # noqa: E402
     verification_expectation_digest,
 )
 from task_governance_tool.tasks import add_task  # noqa: E402
+from task_governance_tool.session_identity import capture_caller_identity  # noqa: E402
 from task_governance_tool.reviews import (  # noqa: E402
     add_review_receipt,
     set_review_target,
@@ -332,7 +333,7 @@ class CompletionCycleActivationTests(unittest.TestCase):
                 apply_completion_evidence_bundle_migration(connection)
                 self.assertEqual(
                     storage_service.apply_migrations(connection),
-                    ([20, 21, 22, 23], []),
+                    ([20, 21, 22, 23, 24], []),
                 )
                 task_id = str(
                     add_task(
@@ -340,6 +341,8 @@ class CompletionCycleActivationTests(unittest.TestCase):
                         target.project,
                         title="Native capture",
                         review_tier=2,
+                        status="in_progress",
+                        caller=capture_caller_identity(),
                     ).task["task_id"]
                 )
                 fingerprint = "sha256:" + ("a" * 64)
@@ -349,6 +352,7 @@ class CompletionCycleActivationTests(unittest.TestCase):
                     task_id,
                     kind="diff_fingerprint",
                     revision=fingerprint,
+                    caller=capture_caller_identity(),
                 )
                 receipt_ids = {}
                 for receipt in (
@@ -373,6 +377,7 @@ class CompletionCycleActivationTests(unittest.TestCase):
                         kind=receipt[2],
                         verdict=receipt[3],
                         summary="Accepted.",
+                        caller=capture_caller_identity(),
                         user_approved=(
                             receipt[2] == "self_review_fallback"
                         ),
@@ -469,7 +474,7 @@ class CompletionCycleActivationTests(unittest.TestCase):
                     generated_at="2026-07-30T05:40:00Z",
                 ).snapshot
             self.assertEqual(snapshot["snapshot_version"], 4)
-            self.assertEqual(snapshot["source_schema_version"], 23)
+            self.assertEqual(snapshot["source_schema_version"], 24)
             self.assertEqual(
                 snapshot["tasks"][0]["completion_history"],
                 {
@@ -562,10 +567,10 @@ class CompletionCycleActivationTests(unittest.TestCase):
                 15,
             )
             result = initialize_database(target)
-            self.assertEqual(result.migrations_applied, [16, 17, 18, 19, 20, 21, 22, 23])
-            self.assertEqual(result.schema_version, 23)
+            self.assertEqual(result.migrations_applied, [16, 17, 18, 19, 20, 21, 22, 23, 24])
+            self.assertEqual(result.schema_version, 24)
             with closing(connect_readonly(target.db_path)) as connection:
-                self.assertEqual(current_schema_version(connection), 23)
+                self.assertEqual(current_schema_version(connection), 24)
                 self.assertEqual(
                     connection.execute(
                         """

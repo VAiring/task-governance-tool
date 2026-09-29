@@ -111,6 +111,8 @@ RunnerSelectionProvider = Callable[
 from task_governance_tool.verification_declaration import (
     merge_declaration_fields, normalize_not_required_reason, verification_requirement,
 )
+from task_governance_tool.session_identity import CallerIdentity
+from task_governance_tool import task_ownership
 
 
 PUBLIC_TASK_FIELDS = (
@@ -224,6 +226,7 @@ class CompletionBasis:
     predecessor_incomplete: bool
     lane_order_conflict: bool
     semantic_token: str
+    ownership: task_ownership.OwnershipBasis | None = field(default=None, repr=False)
 
 
 @dataclass(frozen=True)
@@ -584,11 +587,12 @@ def add_task(
     *,
     effort_profile: Any | None = None,
     database_target: DatabaseTarget | None = None,
+    caller: CallerIdentity = CallerIdentity(None),
     **task_input: Any,
 ) -> AddTaskResult:
     prepared = _prepare_task_add(connection, project, effort_profile=effort_profile, **task_input)
     return _add_prepared_task(connection, project, prepared, effort_profile=effort_profile,
-                              database_target=database_target)
+                              database_target=database_target, caller=caller)
 
 
 def add_tasks(
@@ -598,6 +602,7 @@ def add_tasks(
     task_inputs: list[dict[str, Any]],
     effort_profile: Any | None = None,
     database_target: DatabaseTarget | None = None,
+    caller: CallerIdentity = CallerIdentity(None),
 ) -> list[AddTaskResult]:
     if not 1 <= len(task_inputs) <= TASK_BATCH_LIMIT:
         raise validation_error("invalid_argument", "Task batch requires 1 through 64 inputs")
@@ -612,7 +617,7 @@ def add_tasks(
     try:
         results = [
             _add_prepared_task(connection, project, item, effort_profile=effort_profile,
-                               database_target=database_target)
+                               database_target=database_target, caller=caller)
             for item in prepared
         ]
     except Exception:
@@ -630,6 +635,7 @@ def _add_prepared_task(
     *,
     effort_profile: Any | None,
     database_target: DatabaseTarget | None,
+    caller: CallerIdentity,
 ) -> AddTaskResult:
     from task_governance_tool.contracts import add_initial_contract
     from task_governance_tool.effort import record_task_transition
@@ -735,6 +741,11 @@ def _add_prepared_task(
             """,
             row,
         )
+        if schema_version >= 24:
+            task_ownership.initialize_task(
+                connection, project_id=project.project_id, task_id=task_id,
+                status=str(row["status"]), caller=caller, now=now,
+            )
         if row["kind"] == "sequential":
             if canonical_lane_order_conflict(
                 connection,
@@ -822,7 +833,7 @@ def _add_prepared_task(
         connection.execute(f"RELEASE SAVEPOINT {savepoint}")
 
     return AddTaskResult(
-        task=row_to_task(task),
+        task=task_ownership.project_tasks(connection, [row_to_task(task)], caller)[0],
         event=event,
         contract_write=contract_write,
     )
@@ -839,6 +850,7 @@ def list_tasks(
     tag: Any = None,
     limit: Any = None,
     include_done: bool = False,
+    caller: CallerIdentity = CallerIdentity(None),
 ) -> TaskListResult:
     filters: list[str] = ["project_id = ?"]
     values: list[Any] = [project.project_id]
@@ -891,7 +903,7 @@ def list_tasks(
     rows = [row_to_task(row) for row in stored_rows]
     if requested_tag is not None:
         rows = [row for row in rows if task_matches_tag(str(row["tags"]), requested_tag)]
-    tasks = rows[:row_limit]
+    tasks = task_ownership.project_tasks(connection, rows[:row_limit], caller)
     return TaskListResult(tasks=tasks, count=len(tasks), limit=row_limit)
 
 
@@ -1394,6 +1406,8 @@ def list_current_tasks(
     *,
     limit: Any = None,
     status: Any = None,
+    caller: CallerIdentity = CallerIdentity(None),
+    for_context: bool = False,
 ) -> CurrentTaskResult:
     row_limit = validate_limit(limit, default=20)
     status_filter = validate_current_status_filter(status)
@@ -1407,6 +1421,14 @@ def list_current_tasks(
         status_predicate = "task.status = ?"
         parameters = (project.project_id, status_filter, row_limit)
         result_statuses = (status_filter,)
+    if for_context and current_schema_version(connection) >= 24:
+        status_predicate += (
+            " AND EXISTS (SELECT 1 FROM task_ownership AS owner WHERE owner.task_id=task.task_id "
+            "AND owner.project_id=task.project_id AND "
+            "((owner.state='owned' AND owner.owner_session_id=?) OR "
+            "(owner.state='completion_only' AND owner.completion_session_id=?)))"
+        )
+        parameters = (*parameters[:-1], caller.session_id, caller.session_id, parameters[-1])
     rows = fetch_stored_task_rows(
         connection,
         f"""
@@ -1477,7 +1499,7 @@ def list_current_tasks(
         task["suggested_next_action"] = current_suggested_next_action(task)
         tasks.append(task)
     return CurrentTaskResult(
-        tasks=tasks,
+        tasks=task_ownership.project_tasks(connection, tasks, caller),
         count=len(tasks),
         total_matching=(int(rows[0]["total_matching"]) if rows else 0),
         limit=row_limit,
@@ -1485,15 +1507,15 @@ def list_current_tasks(
     )
 
 
-def read_task(connection: sqlite3.Connection, project_id: str, task_id: str) -> dict[str, Any] | None:
-    row = fetch_validated_current_task_row(
-        connection,
-        project_id=project_id,
-        task_id=task_id,
-    )
+def read_task(connection: sqlite3.Connection, project_id: str, task_id: str,
+              *, caller: CallerIdentity = CallerIdentity(None)) -> dict[str, Any] | None:
+    row, owner = read_mutation_basis(connection, project_id, task_id)
     if row is None:
         return None
-    return row_to_task(row)
+    task = row_to_task(row)
+    if owner is not None:
+        task["ownership"] = owner.projection(caller)
+    return task
 
 
 def read_internal_task(connection: sqlite3.Connection, project_id: str, task_id: str) -> dict[str, Any] | None:
@@ -1505,6 +1527,21 @@ def read_internal_task(connection: sqlite3.Connection, project_id: str, task_id:
     if row is None:
         return None
     return row_to_internal_task(row)
+
+
+def read_mutation_basis(connection: sqlite3.Connection, project_id: str, task_id: str):
+    """Capture Task content and its owner generation in the same short snapshot."""
+    owns_read = not connection.in_transaction
+    try:
+        if owns_read:
+            connection.execute("BEGIN")
+        task = read_internal_task(connection, project_id, task_id)
+        owner = (task_ownership.capture_basis(connection, project_id=project_id, task_id=task_id)
+                 if task is not None else None)
+        return task, owner
+    finally:
+        if owns_read and connection.in_transaction:
+            connection.rollback()
 
 
 def _completion_semantic_token(payload: dict[str, Any]) -> str:
@@ -1601,6 +1638,9 @@ def capture_completion_basis(
         runner_selection=runner_selection,
     )
 
+    ownership = task_ownership.capture_basis(
+        connection, project_id=project.project_id, task_id=normalized_task_id,
+    )
     semantic_token = _completion_semantic_token(
         {
             "task": task,
@@ -1610,6 +1650,7 @@ def capture_completion_basis(
             "review_evidence": review_evidence,
             "review_error": review_error,
             "verification_gate": verification_gate.to_public(),
+            "ownership": ownership.projection(CallerIdentity(None)) if ownership is not None else None,
             "runner_selection": (
                 runner_selection.semantic_value()
                 if runner_selection is not None
@@ -1626,6 +1667,7 @@ def capture_completion_basis(
         predecessor_incomplete=predecessor_incomplete,
         lane_order_conflict=lane_order_conflict,
         semantic_token=semantic_token,
+        ownership=ownership,
     )
 
 
@@ -1870,6 +1912,8 @@ def validate_completion_plan_basis(
     stale_code: str | None = None,
 ) -> dict[str, Any]:
     """Revalidate a cached outside-Git observation against current DB facts."""
+    if basis.ownership != plan.basis.ownership:
+        raise validation_error("task_ownership_changed", "task ownership changed; inspect current task state")
     if basis.semantic_token != plan.basis.semantic_token:
         if stale_code is not None:
             raise validation_error(
@@ -2186,6 +2230,8 @@ def reopen_done_task(
     effort_profile: Any | None = None,
     effort_preflight: Any | None = None,
     database_target: DatabaseTarget | None = None,
+    caller: CallerIdentity = CallerIdentity(None),
+    ownership_basis: task_ownership.OwnershipBasis | None = None,
 ) -> EditTaskResult:
     locked_existing = lock_and_reread_edit_owner(
         connection,
@@ -2315,6 +2361,8 @@ def reopen_done_task(
                 task_id=str(existing["task_id"]),
                 recorded_at=now,
             )
+        if ownership_basis is not None:
+            task_ownership.transition(connection, ownership_basis, caller, status="in_progress", now=now)
         update_task_row(
             connection,
             task_id=str(existing["task_id"]),
@@ -2340,7 +2388,7 @@ def reopen_done_task(
             created_at=now,
             completion_cycle_id=latest_cycle.completion_cycle_id,
         )
-        task = read_task(connection, project.project_id, str(existing["task_id"]))
+        task = read_task(connection, project.project_id, str(existing["task_id"]), caller=caller)
         if task is None:
             raise TaskRepositoryError(
                 "internal_error",
@@ -2744,6 +2792,8 @@ def edit_task(
     completion_plan: CompletionPlan | None = None,
     runner_selector: RunnerSelectionProvider | None = None,
     basis_precommit_validator: TaskEditBasisPrecommitValidator | None = None,
+    caller: CallerIdentity = CallerIdentity(None),
+    observed_ownership: task_ownership.OwnershipBasis | None = None,
     **edit_input: Any,
 ) -> EditTaskResult:
     from task_governance_tool.effort import (
@@ -2752,9 +2802,17 @@ def edit_task(
     )
 
     normalized_task_id = validate_task_id(task_id)
-    existing = read_internal_task(connection, project.project_id, normalized_task_id)
+    existing, ownership_basis = read_mutation_basis(connection, project.project_id, normalized_task_id)
     if existing is None:
         raise TaskRepositoryError("not_found", "task was not found")
+    if observed_ownership is not None and observed_ownership != ownership_basis:
+        raise validation_error("task_ownership_changed", "task ownership changed; inspect current task state")
+    if completion_plan is not None and completion_plan.basis.ownership != ownership_basis:
+        raise validation_error("task_ownership_changed", "task ownership changed; inspect current task state")
+    if (ownership_basis is not None and existing["status"] == "paused"
+        and not (set(edit_input) == {"status"} and str(edit_input["status"]).strip() == "in_progress")):
+        caller.require()
+        raise validation_error("task_not_owned", "resume the task before changing it")
     if existing["status"] == "done":
         raw_status = edit_input.get("status")
         exact_reopen_candidate = (
@@ -2780,6 +2838,8 @@ def edit_task(
                 effort_profile=effort_profile,
                 effort_preflight=effort_preflight,
                 database_target=database_target,
+                caller=caller,
+                ownership_basis=ownership_basis,
             )
             return reopened
         reject_done_task_write(existing)
@@ -2842,6 +2902,8 @@ def edit_task(
             caller_edit_input=edit_input,
             contract_input=contract_input,
             basis_precommit_validator=basis_precommit_validator,
+            caller=caller,
+            ownership_basis=ownership_basis,
         )
         if result.event is not None:
             record_task_transition(
@@ -3244,6 +3306,12 @@ def edit_task(
     if basis_precommit_validator is not None:
         basis_precommit_validator(locked_existing, updated)
     if not changed_fields and add_note is None and not recorded_markers:
+        if ownership_basis is not None and set(edit_input) == {"status"} and existing["status"] == updated["status"] == "review_pending":
+            task_ownership.require_mutation(connection, ownership_basis, caller)
+            return EditTaskResult(
+                task=task_ownership.project_tasks(connection, [row_to_task(locked_existing)], caller)[0],
+                changed_fields=[], event=None,
+            )
         raise validation_error("invalid_argument", "task edit did not change any fields")
 
     pause_changed = updated["pause_reason"] != existing["pause_reason"]
@@ -3286,6 +3354,8 @@ def edit_task(
     connection.execute(f"SAVEPOINT {savepoint}")
     try:
         completion_cycle_id: str | None = None
+        if ownership_basis is not None and completing:
+            task_ownership.require_mutation(connection, ownership_basis, caller)
         if completing:
             proposed_done = dict(updated)
             proposed_done["updated_at"] = now
@@ -3310,6 +3380,17 @@ def edit_task(
                 ),
             )
 
+        if ownership_basis is not None:
+            task_ownership.transition(
+                connection, ownership_basis, caller, status=str(updated["status"]), now=now,
+                recovery_reason=(str(updated["pause_reason"])
+                                 if updated["status"] == "paused" and set(edit_input) == {"status", "pause_reason"}
+                                 else None),
+            )
+            if completion_cycle_id is not None:
+                task_ownership.link_completion_cycle(
+                    connection, ownership_basis, completion_cycle_id=completion_cycle_id,
+                )
         update_task_row(
             connection,
             task_id=normalized_task_id,
@@ -3362,6 +3443,7 @@ def edit_task(
                 connection,
                 project.project_id,
                 normalized_task_id,
+                caller=caller,
             )
             if task is None:
                 raise TaskRepositoryError(
@@ -3401,7 +3483,7 @@ def edit_task(
             summary=summary,
             created_at=now,
         )
-        task = read_task(connection, project.project_id, normalized_task_id)
+        task = read_task(connection, project.project_id, normalized_task_id, caller=caller)
         if task is None:
             raise TaskRepositoryError(
                 "internal_error",
@@ -3432,6 +3514,7 @@ def complete_task(
     *,
     effort_profile: Any | None = None,
     database_target: DatabaseTarget | None = None,
+    caller: CallerIdentity = CallerIdentity(None),
 ) -> EditTaskResult:
     """Delegate thin completion to the existing task-edit transition."""
     request = plan.request
@@ -3457,5 +3540,6 @@ def complete_task(
         effort_profile=effort_profile,
         database_target=database_target,
         completion_plan=plan,
+        caller=caller,
         **edit_input,
     )

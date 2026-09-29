@@ -42,6 +42,7 @@ from task_governance_tool.storage import (
     verification_expectation_digest,
 )
 from task_governance_tool.tasks import read_internal_task
+from task_governance_tool.session_identity import capture_caller_identity
 from task_governance_tool.verification_receipts import (
     PUBLIC_VERIFICATION_RECEIPT_FIELDS,
     VerificationReceiptError,
@@ -74,6 +75,7 @@ class M22VerificationSubjectTests(unittest.TestCase):
                         connection,
                         target.project,
                         task["task_id"],
+                        caller=capture_caller_identity(),
                         result="pass",
                         duration_ms=0,
                         scope_coverage="full",
@@ -703,7 +705,7 @@ class M22VerificationSubjectTests(unittest.TestCase):
                     connection
                 )
                 storage_service.apply_migrations(connection)
-                self.assertEqual(current_schema_version(connection), 23)
+                self.assertEqual(current_schema_version(connection), 24)
 
             shown = show_task(db, repo, task_id, json_output=True, audit=True)
             self.assertEqual(shown.returncode, 0, shown.stdout)
@@ -752,6 +754,7 @@ class M22VerificationSubjectTests(unittest.TestCase):
                                 connection,
                                 target.project,
                                 task_id,
+                                caller=capture_caller_identity(),
                                 result="pass",
                                 duration_ms=10,
                                 scope_coverage="full",
@@ -844,6 +847,7 @@ class M22VerificationSubjectTests(unittest.TestCase):
                                     connection,
                                     target.project,
                                     task_id,
+                                    caller=capture_caller_identity(),
                                     result="pass",
                                     duration_ms=10,
                                     scope_coverage="full",
@@ -1151,7 +1155,7 @@ class M22VerificationSubjectTests(unittest.TestCase):
                     generated_at="2026-08-01T00:00:00Z",
                 ).snapshot
             self.assertEqual(valid["snapshot_version"], 4)
-            self.assertEqual(valid["source_schema_version"], 23)
+            self.assertEqual(valid["source_schema_version"], 24)
             projected = next(
                 item for item in valid["tasks"] if item["task_id"] == task_id
             )

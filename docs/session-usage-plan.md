@@ -11,8 +11,8 @@ Live progress and evidence belong only to the public Task CLI.
 
 The current [authority index](authority.md) remains controlling. Each implementing
 unit must update its durable behavior/structure owners in the same reviewed
-change; until then those owners describe the existing product. In particular,
-current schema 23 and the existing completion/review gates remain active.
+change; until then those owners describe the existing product. The existing
+completion/review gates remain required throughout the staged implementation.
 The earlier discussion memo is input, not an additional current authority.
 No token A/B run, pricing conversion, external service, daemon, automatic Task
 completion, repository edit, or general session-management framework is added.
@@ -94,15 +94,18 @@ usage-response identity distinct. An execution begins with a successful start
 of ready work; resume from pause/block continues that execution. Each owner
 acquisition advances its generation, even for the previous caller. Reopening
 a completed Task starts a new execution and retains the old cycle/execution.
-Returning started work to ready or cancelling it ends its execution; a later
-start is a new one. No time-based expiration or automatic takeover exists.
+Returning started work to ready or cancelling it ends its execution and clears
+the current execution link, recording the automatically identified caller
+without acquiring a slot. A later start is a new one, even through another
+blocked state. No time-based expiration or automatic takeover exists.
 
 | State | Fixed owner / occupied slot | Completion authority | Ordinary mutation |
 |---|---|---|---|
 | ready, never started | none | none | Existing authorized organization; start acquires caller |
 | in_progress | one caller; one such Task per caller/project | same caller and current generation | owner only |
 | review_pending | no slot | immediately preceding owner and execution generation | completion owner; a write that returns to in_progress must reacquire a free slot |
-| paused or blocked after start | none | none | Read or isolated resume; acquire caller and advance generation before further work |
+| paused | none | none | Read or isolated resume; acquire caller and advance generation before further work |
+| blocked, including after start | none | none | Existing non-executing organization without resume; execution resume acquires caller and advances generation |
 | done | none | none | Existing exact reopen only; fresh execution plus existing fresh gates |
 | cancelled | none | none | Existing permitted organization/restart rules, never reuse the ended execution |
 | migrated active with unknown owner | unknown, not an invented owner | unknown, so none can complete | explicit recovery to paused, then ordinary resume |
@@ -135,6 +138,13 @@ does not allocate existing active Tasks to the migrating caller, change their
 statuses or delete duplicate active work. Mark active/review-pending ownership
 as `unknown`; retain all old rows/cycles and allow explicit recovery one Task
 at a time. Historical ownership and usage are unknown, not measured zero.
+
+The user's implementation-time correction removes the design's blanket resume
+requirement for started blocked work. Existing reason/metadata edits, ready
+return and cancellation require no active slot, including while the caller
+executes another Task. This does not authorize completion or bypass existing
+status/lane/evidence gates. Concurrent acquisition still invalidates a stale
+organization write; paused and explicit cross-session recovery rules remain.
 
 The cross-session recovery exception is exactly an existing edit to `paused`
 with a nonempty reason, from in_progress or review_pending. Permit it with a

@@ -16,8 +16,8 @@ Plan authoring adds no CLI leaf and exposes the one explicit action option on
 `task edit`; reading this section alone authorizes no config write, Task edit,
 process launch, target mutation, or external operation. Setup never creates the
 config, and the existing `review target set` parent service remains the sole
-Runner dispatch. Schema v22 and the current Runner, Evidence, Viewer, and
-completion graphs do not change.
+Runner dispatch. Authoring adds no schema or alternate Runner, Evidence, Viewer
+or completion graph; current Task ownership admission also applies.
 
 ### Separate Authoring Control Boundary
 
@@ -37,6 +37,7 @@ The new control-edge set is exactly:
 ```text
 cli -> verification_runner_plan_edit
 verification_runner_plan_edit -> tasks/contracts/reviews
+verification_runner_plan_edit -> task_ownership/session_identity
 verification_runner_plan_edit -> verification_runner_plan_authoring
 verification_runner_plan_edit -> verification_runner_plan_publisher
 verification_runner_plan_publisher -> verification_runner_plan
@@ -52,6 +53,15 @@ edge into `verification_runner_service`, `verification_runner_process`,
 completion, Evidence, or Viewer. The execution reader continues to capture and
 resolve the same supported Plan bytes; it neither imports nor invokes authoring or its
 publisher.
+
+The Task preflight snapshot carries the typed ownership basis alongside Task
+and Contract. It reuses an existing read transaction or opens/closes its own,
+never abandoning the caller's transaction. Config-only publication rechecks
+that exact generation and caller in a short writer before closing for the
+publisher. Task-only basis changes and combined edits pass the observed basis
+to `edit_task`, whose ordinary writer guard detects handover, including
+same-session reacquisition. Already-admitted publication retains the existing
+filesystem source check, not a new database/filesystem transaction.
 
 `verification_runner_plan.py` may expose immutable Plan/Entry value objects and
 pure canonical decode/encode helpers instead of duplicating its existing

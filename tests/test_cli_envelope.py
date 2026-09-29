@@ -287,6 +287,8 @@ class CliEnvelopeTests(unittest.TestCase):
                 self.assertEqual(listed.stdout, (
                     "Tasks: 1 (limit 1)\n"
                     f"{task['task_id']} [ready] normal optional - {title}\n"
+                    "Ownership: none owner_session_id=unknown completion_session_id=unknown "
+                    "execution_id=unknown generation=0 is_owner=false is_completion_owner=false\n"
                 ))
 
     def test_success_result_json_object_contains_only_m14_envelope_keys(self):

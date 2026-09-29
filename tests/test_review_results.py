@@ -26,6 +26,7 @@ from task_governance_tool import reviews as review_service
 from task_governance_tool import tasks as task_service
 from task_governance_tool.maintenance import MutationOutcome
 from task_governance_tool.storage import connect_initialized, validate_evidence_ledger_storage
+from task_governance_tool.session_identity import capture_caller_identity
 
 
 FINGERPRINT = "sha256:" + "a" * 64
@@ -344,6 +345,10 @@ class ReviewResultsTests(unittest.TestCase):
     def payload(self, *, receipts=None):
         return document(self.task_id, receipts=receipts)
 
+    def add_review_task(self, *arguments):
+        self.success("task", "edit", self.task_id, "--status", "review_pending")
+        return self.success("task", "add", *arguments, "--status", "in_progress")["task"]["task_id"]
+
     def wire_payload(self, payload):
         if self.document_array and type(payload) is dict and payload.get("receipts"):
             return [{**payload, "receipts": [entry]} for entry in payload["receipts"]]
@@ -557,7 +562,7 @@ class ReviewResultsTests(unittest.TestCase):
         self.assertEqual(saved["findings"][0]["finding"]["summary"], finding["summary"])
 
     def test_tier_zero_packet_template_accepts_explicit_not_required_declaration(self):
-        self.task_id = self.success("task", "add", "--title", "Mechanical change", "--review-tier", "0", "--verification-not-required", "Mechanical review fixture")["task"]["task_id"]
+        self.task_id = self.add_review_task("--title", "Mechanical change", "--review-tier", "0", "--verification-not-required", "Mechanical review fixture")
         targeted = self.success("review", "target", "set", self.task_id, "--kind", "external_revision", "--revision", "reviewed-mechanical-change")
         template = targeted["review_preparation"]["packet"]["result_template"]
         self.assertIsNone(template["receipts"][0]["verdict"])
@@ -734,7 +739,7 @@ class ReviewResultsTests(unittest.TestCase):
         def advance_then_lock(connection, project, task_id, **kwargs):
             self.assertFalse(connection.in_transaction)
             with closing(connect_initialized(self.target)) as writer, writer:
-                review_service.set_review_target(writer, project, task_id, kind="diff_fingerprint", revision=FINGERPRINT, database_target=self.target)
+                review_service.set_review_target(writer, project, task_id, kind="diff_fingerprint", revision=FINGERPRINT, database_target=self.target, caller=capture_caller_identity())
             after_concurrent_change.append(file_snapshot(self.root))
             return lock(connection, project, task_id, **kwargs)
 
@@ -745,9 +750,7 @@ class ReviewResultsTests(unittest.TestCase):
         self.assertEqual(self.success("task", "show", self.task_id)["task"]["review_target_generation"], 2)
 
     def test_concurrent_tier_change_cannot_reuse_prelock_fallback_normalization(self):
-        self.task_id = self.success(
-            "task", "add", "--title", "Tier-sensitive fallback", "--review-tier", "1",
-        )["task"]["task_id"]
+        self.task_id = self.add_review_task("--title", "Tier-sensitive fallback", "--review-tier", "1")
         self.success("review", "target", "set", self.task_id, "--kind", "diff_fingerprint", "--revision", FINGERPRINT)
         candidate = document(self.task_id, revision=0, receipts=[receipt(kind="self_review_fallback")])
         lock = result_service.lock_and_reread_target_owner
@@ -756,7 +759,7 @@ class ReviewResultsTests(unittest.TestCase):
         def raise_tier_then_lock(connection, project, task_id, **kwargs):
             self.assertFalse(connection.in_transaction)
             with closing(connect_initialized(self.target)) as writer, writer:
-                task_service.edit_task(writer, project, task_id, review_tier=2, database_target=self.target)
+                task_service.edit_task(writer, project, task_id, review_tier=2, database_target=self.target, caller=capture_caller_identity())
             concurrent_snapshot.append(file_snapshot(self.root))
             return lock(connection, project, task_id, **kwargs)
 
@@ -768,7 +771,7 @@ class ReviewResultsTests(unittest.TestCase):
 
     def test_missing_target_and_done_task_retain_single_receipt_errors(self):
         original_task_id = self.task_id
-        self.task_id = self.success("task", "add", "--title", "No target", "--review-tier", "2")["task"]["task_id"]
+        self.task_id = self.add_review_task("--title", "No target", "--review-tier", "2")
         before = file_snapshot(self.root)
         self.assert_failure(self.invoke(document(self.task_id, revision=0)), "review_target_required")
         self.assertEqual(file_snapshot(self.root), before)
@@ -801,6 +804,7 @@ class ReviewResultsTests(unittest.TestCase):
                 with self.assertRaises(review_service.ReviewEvidenceError) as raised:
                     result_service.add_review_results(
                         connection, self.target.project, self.task_id, self.payload(),
+                        caller=capture_caller_identity(),
                     )
                 self.assertEqual(raised.exception.code, "evidence_basis_stale")
                 self.assertEqual(connection.execute("SELECT COUNT(*) FROM review_receipts").fetchone()[0], 0)
@@ -857,7 +861,7 @@ class ReviewResultsTests(unittest.TestCase):
     def test_tier_zero_null_provenance_and_tier_one_fallback_keep_existing_meanings(self):
         for tier in (0, 1):
             with self.subTest(tier=tier):
-                self.task_id = self.success("task", "add", "--title", f"Tier {tier} result", "--review-tier", str(tier))["task"]["task_id"]
+                self.task_id = self.add_review_task("--title", f"Tier {tier} result", "--review-tier", str(tier))
                 self.success("review", "target", "set", self.task_id, "--kind", "diff_fingerprint", "--revision", FINGERPRINT)
                 kind = "not_required" if tier == 0 else "self_review_fallback"
                 verdict = "not_required" if tier == 0 else "pass"
@@ -957,7 +961,7 @@ class ReviewResultsTests(unittest.TestCase):
             install = make_physical_install(Path(temporary).resolve())
             setup = install.run("setup", "--json")
             self.assertEqual(setup.returncode, 0, setup.stdout or setup.stderr)
-            added = install.run("task", "add", "--title", "Physical structured results", "--review-tier", "2", "--json")
+            added = install.run("task", "add", "--title", "Physical structured results", "--review-tier", "2", "--status", "in_progress", "--json")
             self.assertEqual(added.returncode, 0, added.stdout or added.stderr)
             task_id = json.loads(added.stdout)["data"]["task"]["task_id"]
             target = install.run("review", "target", "set", task_id, "--kind", "diff_fingerprint", "--revision", FINGERPRINT, "--json")
@@ -987,7 +991,7 @@ class ReviewResultOutputProcessTests(unittest.TestCase):
                 return json.loads(result.stdout)["data"]
             cli("setup")
             for json_output in (False, True):
-                task = cli("task", "add", "--title", "Broken output", "--review-tier", "2")["task"]["task_id"]
+                task = cli("task", "add", "--title", "Broken output", "--review-tier", "2", "--status", "in_progress")["task"]["task_id"]
                 cli("review", "target", "set", task, "--kind", "diff_fingerprint", "--revision", FINGERPRINT)
                 reader, writer = os.pipe()
                 os.close(reader)
@@ -1001,6 +1005,7 @@ class ReviewResultOutputProcessTests(unittest.TestCase):
                 self.assertEqual(result.returncode, 2, result.stderr)
                 self.assertEqual(result.stderr.decode().strip(), "Review results recorded, but output failed. Do not resubmit; inspect recorded evidence before retrying.")
                 self.assertEqual(cli("task", "show", task)["review_evidence"]["counts"]["receipts_current_generation"], 1)
+                cli("task", "edit", task, "--status", "review_pending")
 
 
 class ReviewResultsDocumentArrayTests(ReviewResultsTests):

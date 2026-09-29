@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any
 
 from task_governance_tool import cli_parser
+from task_governance_tool.session_identity import CallerIdentity, capture_caller_identity
 from task_governance_tool.cli_handoff import (
     handoff_empty_data,
     handle_handoff_command,
@@ -192,6 +193,7 @@ class CommandContext:
     json_output: bool
     read_only: bool
     args: argparse.Namespace
+    caller: CallerIdentity = field(default=CallerIdentity(None), repr=False)
     target_override: DatabaseTarget | None = None
     read_connection_override: sqlite3.Connection | None = field(
         default=None,
@@ -233,6 +235,7 @@ def make_context(
         json_output=bool(getattr(args, "json", False)),
         read_only=bool(getattr(args, "read_only", False)),
         args=args,
+        caller=capture_caller_identity(),
         target_override=target_override,
     )
 
@@ -580,13 +583,14 @@ def handle_task_add(context: CommandContext) -> CommandResult:
             with connection:
                 if batch:
                     results = add_tasks(connection, target.project, task_inputs=task_inputs,
-                                        effort_profile=effort_profile, database_target=target)
+                                        effort_profile=effort_profile, database_target=target, caller=context.caller)
                 else:
                     result = add_task(
                         connection,
                         target.project,
                         effort_profile=effort_profile,
                         database_target=target,
+                        caller=context.caller,
                         **task_input,
                     )
     except TaskValidationError as exc:
@@ -705,7 +709,7 @@ def handle_task_list(context: CommandContext) -> CommandResult:
     target = resolve_context_target(context)
     try:
         with context_read_connection(context, target) as connection:
-            result = list_tasks(connection, target.project, **task_list_input(context.args))
+            result = list_tasks(connection, target.project, caller=context.caller, **task_list_input(context.args))
     except TaskValidationError as exc:
         return validation_failure_result(
             context,
@@ -798,7 +802,7 @@ def _read_task_next(
     target = resolve_context_target(context)
     try:
         with context_read_connection(context, target) as connection:
-            result = select_next_tasks(connection, target.project, **task_next_input(context.args))
+            result = select_next_tasks(connection, target.project, caller=context.caller, **task_next_input(context.args))
             paused_count = count_tasks(
                 connection,
                 target.project.project_id,
@@ -960,6 +964,8 @@ def _read_task_current(
                 target.project,
                 limit=getattr(context.args, "limit", None),
                 status=status_filter,
+                caller=context.caller,
+                for_context=bool(getattr(context.args, "for_context", False)),
             )
     except TaskValidationError as exc:
         return CommandResult(
@@ -1233,6 +1239,7 @@ def handle_task_show(context: CommandContext) -> CommandResult:
                         target.project,
                         task_id,
                         include_current_context=not audit,
+                        caller=context.caller,
                     )
         finally:
             if context.read_connection_override is not None:
@@ -1257,6 +1264,7 @@ def handle_task_show(context: CommandContext) -> CommandResult:
                         runner_selection if current_task == observed_task else None
                     ),
                     include_current_context=not audit,
+                    caller=context.caller,
                 )
     except TaskValidationError as exc:
         return task_show_failure_result(
@@ -1389,7 +1397,7 @@ def handle_task_context(context: CommandContext) -> CommandResult:
     current_context = replace(
         context,
         command="task.current",
-        args=argparse.Namespace(compact=True),
+        args=argparse.Namespace(compact=True, for_context=True),
     )
     current_read = _read_task_current(current_context)
     if isinstance(current_read, CommandResult):
@@ -1444,6 +1452,8 @@ def handle_task_context(context: CommandContext) -> CommandResult:
             for warning in result.warnings:
                 if warning not in warnings:
                     warnings.append(warning)
+    if context.caller.session_id is None:
+        warnings.append({"code": "session_identity_required", "message": "caller identity is unavailable; owned work cannot be selected"})
     return CommandResult(
         ok=True,
         command=context.command,
@@ -1522,6 +1532,7 @@ def handle_task_checkpoint(context: CommandContext) -> CommandResult:
                         None,
                     ),
                     database_target=target,
+                    caller=context.caller,
                 )
     except (TaskValidationError, TaskRepositoryError) as exc:
         return task_checkpoint_failure_result(
@@ -1718,6 +1729,7 @@ def handle_task_edit(context: CommandContext) -> CommandResult:
                         effort_profile=effort_profile,
                         database_target=target,
                         runner_selector=runner_selector,
+                        caller=context.caller,
                         **edit_input,
                     )
             runner_plan_update = None
@@ -1730,6 +1742,7 @@ def handle_task_edit(context: CommandContext) -> CommandResult:
                 runner_plan_draft_blob=runner_plan_draft_blob,
                 effort_profile=effort_profile,
                 runner_selector=runner_selector,
+                caller=context.caller,
                 **edit_input,
             )
             result = coordinated.edit_result
@@ -2014,6 +2027,7 @@ def handle_task_complete(context: CommandContext) -> CommandResult:
                 request,
                 input_error=input_preflight_error,
                 initial_connection=context.read_connection_override,
+                caller=context.caller,
                 runner_selector=lambda task, completion_revision: (
                     select_current_verification_runner_basis(
                         target,
@@ -2046,6 +2060,7 @@ def handle_task_complete(context: CommandContext) -> CommandResult:
             request,
             effort_profile=effort_profile,
             input_error=input_preflight_error,
+            caller=context.caller,
             runner_selector=lambda task, completion_revision: (
                 select_current_verification_runner_basis(
                     target,
@@ -2276,6 +2291,7 @@ def handle_review_command(context: CommandContext) -> CommandResult:
                 getattr(context.args, "task_id", ""),
                 kind=getattr(context.args, "kind", ""),
                 revision=getattr(context.args, "revision", None),
+                caller=context.caller,
             )
             data = {
                 "task": write_task_projection(result.task, result.changed_fields),
@@ -2295,6 +2311,7 @@ def handle_review_command(context: CommandContext) -> CommandResult:
                             payload,
                             user_approved_reviewers=context.args.user_approved_reviewers,
                             database_target=target,
+                            caller=context.caller,
                         )
                     elif context.command == "review.receipt.add":
                         result = add_review_receipt(
@@ -2351,6 +2368,7 @@ def handle_review_command(context: CommandContext) -> CommandResult:
                                 None,
                             ),
                             database_target=target,
+                            caller=context.caller,
                         )
                         data = {"receipt": result.receipt, "event": result.event}
                     elif context.command == "review.finding.add":
@@ -2362,12 +2380,14 @@ def handle_review_command(context: CommandContext) -> CommandResult:
                             severity=getattr(context.args, "severity", ""),
                             summary=getattr(context.args, "summary", ""),
                             database_target=target,
+                            caller=context.caller,
                         )
                         data = {"finding": result.finding, "event": result.event}
                     elif finding_batch:
                         results = resolve_review_findings(
                             connection, target.project, payload["task_id"],
                             resolutions=payload["resolutions"], database_target=target,
+                            caller=context.caller,
                         )
                         data = {"findings": [{"finding": item.finding, "event": item.event} for item in results]}
                     else:
@@ -2377,6 +2397,7 @@ def handle_review_command(context: CommandContext) -> CommandResult:
                             getattr(context.args, "finding_id", ""),
                             resolution=getattr(context.args, "resolution", ""),
                             database_target=target,
+                            caller=context.caller,
                         )
                         data = {"finding": result.finding, "event": result.event}
     except (TaskValidationError, ReviewEvidenceError) as exc:
@@ -2547,6 +2568,7 @@ def handle_verification_receipt_add(context: CommandContext) -> CommandResult:
                     getattr(context.args, "task_id", ""),
                     **values,
                     database_target=target,
+                    caller=context.caller,
                     runner_selector=lambda task: (
                         select_current_verification_runner_basis(
                             target,

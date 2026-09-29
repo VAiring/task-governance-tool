@@ -20,6 +20,8 @@ from task_governance_tool.storage import (  # noqa: E402
     resolve_database_target,
 )
 from task_governance_tool.tasks import add_task, edit_task  # noqa: E402
+from task_governance_tool.session_identity import capture_caller_identity  # noqa: E402
+from task_governance_tool.task_ownership import initialize_task  # noqa: E402
 from tests.review_test_helpers import seed_review_evidence_connection  # noqa: E402
 
 
@@ -42,7 +44,8 @@ def add(connection, project, title, **kwargs):
         connection,
         project,
         title=title,
-        status=("ready" if initial_status == "done" else initial_status),
+        status=("in_progress" if initial_status == "done" else initial_status),
+        caller=capture_caller_identity(),
         **kwargs,
     ).task
     if initial_status == "done":
@@ -55,6 +58,7 @@ def add(connection, project, title, **kwargs):
             verification_complete=True,
             review_complete=True,
             commit_not_required=True,
+            caller=capture_caller_identity(),
         ).task
     return task
 
@@ -125,6 +129,9 @@ def insert_task(connection, project_id, **overrides):
         """,
         row,
     )
+    initialize_task(connection, project_id=project_id, task_id=row["task_id"],
+                    status=row["status"], caller=capture_caller_identity(),
+                    now=row["created_at"])
     capture_or_reuse_current_authority_snapshot_locked(
         connection,
         project_id=project_id,
@@ -223,6 +230,8 @@ class SelectionTests(unittest.TestCase):
                 before_done = select_next_tasks(connection, target.project, limit=10)
 
                 with connection:
+                    edit_task(connection, target.project, first["task_id"],
+                              status="in_progress", caller=capture_caller_identity())
                     seed_review_evidence_connection(connection, first["task_id"])
                     edit_task(
                         connection,
@@ -232,6 +241,7 @@ class SelectionTests(unittest.TestCase):
                         verification_complete=True,
                         review_complete=True,
                         commit_not_required=True,
+                        caller=capture_caller_identity(),
                     )
 
                 after_done = select_next_tasks(connection, target.project, limit=10)

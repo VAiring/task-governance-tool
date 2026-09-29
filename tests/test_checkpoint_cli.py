@@ -307,7 +307,7 @@ class CheckpointCliTests(unittest.TestCase):
             current_task = json.loads(current_result.stdout)["data"]["tasks"][0]
             self.assertEqual(current_task["latest_checkpoint"], checkpoint)
             compact_task = json.loads(compact_result.stdout)["data"]["tasks"][0]
-            self.assertEqual(set(compact_task), set(COMPACT_CURRENT_TASK_FIELDS))
+            self.assertEqual(set(compact_task), set(COMPACT_CURRENT_TASK_FIELDS) | {"ownership"})
             self.assertNotIn("latest_checkpoint", compact_task)
             for private_checkpoint_content in (
                 checkpoint["summary"],

@@ -144,10 +144,55 @@ def logical_database_digest(connection: sqlite3.Connection) -> str:
     return hashlib.sha256(encoded).hexdigest()
 
 
+def remove_v24_ownership_for_test(connection: sqlite3.Connection) -> None:
+    """Build an old isolated fixture only before any ownership history exists."""
+    from task_governance_tool import storage
+    from task_governance_tool import schema_task_ownership as ownership
+    from task_governance_tool import schema_verification_declaration as declaration
+    if storage.current_schema_version(connection) != 24:
+        return
+    connection.commit()
+    ownership.validate_storage(connection)
+    if (any(connection.execute(f"SELECT 1 FROM {table} LIMIT 1").fetchone()
+            for table in ("task_executions", "task_owner_transitions", "task_execution_cycles"))
+        or connection.execute("SELECT 1 FROM task_ownership WHERE generation != 0 LIMIT 1").fetchone()
+        or connection.execute("SELECT 1 FROM completion_evidence_bundles WHERE source_schema_version=24").fetchone()):
+        raise AssertionError("old fixture cannot discard ownership or completion history")
+    foreign_keys = connection.execute("PRAGMA foreign_keys").fetchone()[0]
+    legacy_alter = connection.execute("PRAGMA legacy_alter_table").fetchone()[0]
+    connection.execute("PRAGMA foreign_keys=OFF")
+    connection.execute("PRAGMA legacy_alter_table=ON")
+    try:
+        connection.execute("BEGIN IMMEDIATE")
+        for table in ("task_execution_cycles", "task_owner_transitions", "task_ownership", "task_executions"):
+            connection.execute(f"DROP TABLE {table}")
+        connection.execute("DROP TRIGGER trg_task_completion_cycles_evidence_basis_insert")
+        connection.execute("ALTER TABLE completion_evidence_bundles RENAME TO completion_evidence_bundles_v24_test")
+        statements = [sql for sql in declaration.replacement_statements()
+                      if storage._schema20_statement_identity(sql)[2] == "completion_evidence_bundles"
+                      or storage._schema20_statement_identity(sql)[1] == "trg_task_completion_cycles_evidence_basis_insert"]
+        connection.execute(next(sql for sql in statements if storage._schema20_statement_identity(sql)[0] == "table"))
+        connection.execute("INSERT INTO completion_evidence_bundles SELECT * FROM completion_evidence_bundles_v24_test")
+        connection.execute("DROP TABLE completion_evidence_bundles_v24_test")
+        for sql in statements:
+            if storage._schema20_statement_identity(sql)[0] != "table":
+                connection.execute(sql)
+        connection.execute("DELETE FROM schema_migrations WHERE version=24")
+        declaration.validate_storage(connection)
+        connection.commit()
+    except Exception:
+        connection.rollback()
+        raise
+    finally:
+        connection.execute(f"PRAGMA legacy_alter_table={legacy_alter}")
+        connection.execute(f"PRAGMA foreign_keys={foreign_keys}")
+
+
 def remove_v23_declaration_for_test(connection: sqlite3.Connection) -> None:
     """Construct old fixtures only when no v23 declaration/history would be lost."""
     from task_governance_tool import storage
     from task_governance_tool import schema_verification_declaration as declaration
+    remove_v24_ownership_for_test(connection)
     if storage.current_schema_version(connection) != 23:
         return
     connection.commit()

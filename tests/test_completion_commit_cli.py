@@ -7,7 +7,7 @@ import unittest
 from contextlib import closing
 from pathlib import Path
 
-from tests.review_test_helpers import seed_review_evidence
+from tests.review_test_helpers import seed_review_evidence, start_ready_review_fixture
 from tests.m14_test_support import (
     initialize_taskgov_internal,
     run_taskgov_internal,
@@ -78,6 +78,7 @@ def add_task(db, repo, title, *extra):
 
 def edit_task(db, repo, task_id, *extra):
     if "--status" in extra and extra[extra.index("--status") + 1] == "done":
+        start_ready_review_fixture(db, repo, task_id)
         with closing(sqlite3.connect(db)) as connection:
             row = connection.execute(
                 """

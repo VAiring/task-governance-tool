@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import tempfile
 import time
@@ -42,6 +43,8 @@ from task_governance_tool.storage import (
     validate_evidence_ledger_storage,
 )
 from task_governance_tool.viewer_maintenance import ViewerRefreshResult
+from task_governance_tool.session_identity import CallerIdentity
+from task_governance_tool.task_ownership import initialize_task
 
 
 SCRIPT_PATH = SOURCE_SKILL_ROOT / "scripts" / "taskgov.py"
@@ -52,6 +55,7 @@ MIGRATION_FIXTURE = (
     / "tasks.json"
 )
 BASE_TIME = datetime(2026, 7, 27, tzinfo=UTC)
+PERFORMANCE_CALLER = CallerIdentity("00000000-0000-4000-8000-000000000001")
 WRITE_OFFSETS = (0, 1, 5, 29, 30, 31, 59, 60)
 EXPECTED_BACKUP_OFFSETS = (0, 30, 60)
 QUALIFICATION_WARMUP_ROUNDS = 1
@@ -208,6 +212,9 @@ def seed_fixture(
             ],
         )
         for task_row in task_rows:
+            initialize_task(connection, project_id=target.project.project_id,
+                            task_id=str(task_row[0]), status=str(task_row[7]),
+                            caller=PERFORMANCE_CALLER, now=timestamp(0))
             capture_or_reuse_current_authority_snapshot_locked(
                 connection,
                 project_id=target.project.project_id,
@@ -305,7 +312,7 @@ def run_write_sequence(
             256,
         )
         started = time.perf_counter()
-        with mock.patch.object(
+        with mock.patch.dict(os.environ, {"CODEX_THREAD_ID": PERFORMANCE_CALLER.session_id}), mock.patch.object(
             maintenance_service,
             "utc_now",
             return_value=timestamp(minute),

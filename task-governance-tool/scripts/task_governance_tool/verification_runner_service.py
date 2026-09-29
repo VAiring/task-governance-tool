@@ -16,6 +16,9 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any, Callable
 
+from task_governance_tool.session_identity import CallerIdentity
+from task_governance_tool import task_ownership
+
 from task_governance_tool.artifact_manifest import (
     ArtifactManifestError,
     ArtifactObservation,
@@ -230,6 +233,7 @@ def _persist_ordinary_target(
     target: DatabaseTarget,
     authority: ReviewTargetAuthorityBasis,
     observation: ArtifactObservation,
+    caller: CallerIdentity = CallerIdentity(None),
 ) -> _ReviewTargetRouteResult:
     verification = authority.task.get("verification")
     if not isinstance(verification, str):
@@ -246,6 +250,7 @@ def _persist_ordinary_target(
                 authority.task,
                 observation=observation,
                 database_target=target,
+                caller=caller, ownership=authority.ownership,
             )
     return _routed_review_target(
         review,
@@ -450,6 +455,7 @@ def _attempt_row(
 def _persist_launch_intent(
     target: DatabaseTarget,
     prepared: _PreparedRunner,
+    caller: CallerIdentity = CallerIdentity(None),
 ) -> _LaunchIntent:
     created_at = utc_now()
     with closing(connect_initialized(target)) as connection:
@@ -462,6 +468,7 @@ def _persist_launch_intent(
                 database_target=target,
                 now=created_at,
                 runner_basis_version=2,
+                caller=caller, ownership=prepared.authority.ownership,
             )
             current = read_current_verification_runner_target_basis(
                 connection,
@@ -1172,6 +1179,7 @@ def set_review_target_with_optional_runner(
     *,
     kind: Any,
     revision: Any = None,
+    caller: CallerIdentity = CallerIdentity(None),
     _cancel_requested: Callable[[], bool] = lambda: False,
 ) -> _ReviewTargetRouteResult:
     """Set one exact review target and optionally consume the local Runner plan."""
@@ -1222,8 +1230,17 @@ def set_review_target_with_optional_runner(
                 kind=target_kind,
                 revision=normalized_revision,
             ),
+            caller,
         )
 
+    # Admit this explicit restart before its lock/inventory/cleanup side effects.
+    # T1 revalidates the same observed generation; terminal/cleanup after an
+    # admitted T1 deliberately has no new owner check.
+    if authority.ownership is not None:
+        with closing(connect_initialized(target)) as connection:
+            with connection:
+                begin_initialized_write(connection, target)
+                task_ownership.require_mutation(connection, authority.ownership, caller)
     paths = _runner_paths(target)
     try:
         with zero_wait_runner_lock(paths) as inventory:
@@ -1243,8 +1260,9 @@ def set_review_target_with_optional_runner(
                         kind=target_kind,
                         revision=normalized_revision,
                     ),
+                    caller,
                 )
-            intent = _persist_launch_intent(target, current_prepared)
+            intent = _persist_launch_intent(target, current_prepared, caller)
             try:
                 return _run_intent_under_lock(
                     target,

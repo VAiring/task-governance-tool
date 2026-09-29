@@ -27,6 +27,7 @@ from task_governance_tool import completion_workflow  # noqa: E402
 from task_governance_tool import cli as cli_module  # noqa: E402
 from task_governance_tool import reviews as review_service  # noqa: E402
 from task_governance_tool import tasks as task_service  # noqa: E402
+from task_governance_tool.session_identity import capture_caller_identity  # noqa: E402
 from task_governance_tool.completion import (  # noqa: E402
     COMPLETION_CHECK_MAX_BYTES,
 )
@@ -799,8 +800,6 @@ class TaskCompleteCliTests(unittest.TestCase):
                 "--order",
                 "2",
             )
-            seed_review_evidence(db, second["task_id"])
-
             predecessor = run_taskgov(
                 *complete_args(
                     db,
@@ -1016,6 +1015,9 @@ class TaskCompleteCliTests(unittest.TestCase):
                     self.observations.append((normalized, len(rows)))
                 return rows
 
+            def __iter__(self):
+                return iter(self.fetchall())
+
             def __getattr__(self, name):
                 return getattr(self.cursor, name)
 
@@ -1050,7 +1052,7 @@ class TaskCompleteCliTests(unittest.TestCase):
                 repo,
                 "Bounded history completion",
                 "--status",
-                "in_progress",
+                "ready",
                 "--review-tier",
                 "2",
                 declare_verification=False,
@@ -1114,7 +1116,7 @@ class TaskCompleteCliTests(unittest.TestCase):
                 connection.commit()
                 apply_evidence_ledger_capture_migration(connection)
                 apply_completion_evidence_bundle_migration(connection)
-                self.assertEqual(apply_migrations(connection), ([20, 21, 22, 23], []))
+                self.assertEqual(apply_migrations(connection), ([20, 21, 22, 23, 24], []))
                 legacy_provenance = connection.execute(
                     """
                     SELECT COUNT(*)
@@ -1134,6 +1136,7 @@ class TaskCompleteCliTests(unittest.TestCase):
             )
             with closing(connect(db)) as connection:
                 task_service.edit_task(connection, database_target.project, task["task_id"],
+                    status="in_progress", caller=capture_caller_identity(),
                     verification_not_required_reason="Completion fixture without executable changes")
                 review_service.set_review_target(
                     connection,
@@ -1141,6 +1144,7 @@ class TaskCompleteCliTests(unittest.TestCase):
                     task["task_id"],
                     kind="diff_fingerprint",
                     revision=target_value,
+                    caller=capture_caller_identity(),
                 )
                 for reviewer in (
                     "current-reviewer-a",
@@ -1160,6 +1164,7 @@ class TaskCompleteCliTests(unittest.TestCase):
                         review_lenses=["correctness"],
                         context_relation="external_context",
                         review_methods=["review_packet_inspection"],
+                        caller=capture_caller_identity(),
                     )
                 connection.commit()
 

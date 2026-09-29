@@ -49,8 +49,8 @@ Missing state is `db_not_initialized`; supported older state is
 `migration_required`; a newer schema is `schema_too_new`. Old binaries reject
 newer state and never downgrade/write it.
 
-Fresh setup creates schema v23. Structurally complete contiguous source schemas
-v1-v22 are setup-only migration inputs; v23 is idempotent current state.
+Fresh setup creates schema v24. Structurally complete contiguous source schemas
+v1-v23 are setup-only migration inputs; v24 is idempotent current state.
 Schema sequence is:
 
 | Version | Durable addition |
@@ -75,6 +75,7 @@ Schema sequence is:
 | v21 | verification Runner gate-basis tags using the existing schema-v20 structures |
 | v22 | retired Analyzer reservation cleanup in the existing Evidence/Bundle tables |
 | v23 | explicit verification-not-required reasons on Tasks and immutable completion cycles |
+| v24 | session ownership, immutable executions/transitions and execution-to-cycle links |
 
 Each migration is transactional, idempotent, rollback-tested, validates
 contiguous history and required objects/rows, preserves project/business IDs
@@ -141,8 +142,8 @@ every cycle/Bundle Runner-observation pointer remains null; native Bundle-v2
 This check occurs before any database or sidecar write, migration backup,
 recovery copy/publication, Viewer publication, or managed-backup write. A complete v19 source alone may invoke migration
 20; a complete v20 source continues through migrations 21 and 22, and a complete
-v21 source invokes migration 22, followed by 23. Complete v22 invokes 23;
-exact v23 receives validation-only reentry. Unrelated extra
+v21 source invokes migration 22, followed by 23 and 24. Complete v22 invokes 23
+and 24; complete v23 invokes 24, and exact v24 receives validation-only reentry. Unrelated extra
 objects retain the existing policy, including deliberate removal of
 unsupported unowned indexes/triggers attached to the rebuilt Bundle table and
 preservation of unrelated standalone objects.
@@ -154,9 +155,37 @@ qualifying Runner protocol with explicit manual fallback.
 <a id="current-schema-v21-persistence-contract"></a>
 <a id="current-schema-v22-persistence-contract"></a>
 
-## Current Schema-v23 Persistence Contract
+## Current Schema-v24 Persistence Contract
 
-Schema v23 is the public setup target. Migration `23/verification_declaration`
+Schema v24 is the public setup target. Migration `24/task_session_ownership`
+adds `task_executions`, `task_ownership`, `task_owner_transitions` and
+`task_execution_cycles` (39 tables, 45 explicit indexes, 67 triggers).
+Execution/transition/cycle links are append-only. The one current ownership row
+per Task has a partial unique session/project index for `state='owned'`.
+States, full UUIDs, generations, same-Task execution relations and cycle relations
+are validated on read under the existing global/selected boundary.
+
+Migration preserves all existing business rows and sealed Bundle bytes. It creates
+only ownership rows: active/review-pending are unknown, all others none; generation
+is zero and IDs null. It invents no execution, owner, transition, usage or cycle link,
+and does not change Task status or assign the migrating caller. Existing history
+remains unknown, not zero usage. Explicit recovery is owned by the
+[session state contract](task-operation-specification.md#session-ownership-and-recovery).
+
+Only the Bundle table and its coupled native-cycle guard are rebuilt to admit
+source 24/format 2. New native completion must link its execution to its exact cycle
+within the same transaction. Older Bundles/cycles remain unlinked and unchanged;
+format 2 is retained and the index reports container 24. No per-caller display or
+usage fields are added to sealed Evidence or Viewer v4. Viewer accepts v5-v24.
+Reentry validates exact DDL, markers, retained graph and integrity without repair.
+Setup retains its existing backup/rollback protocol; no normal command migrates.
+Unsupported attached residue/hybrid state fails closed before writes. Global
+consumers retain full admitted-row validation and recovery retains only its
+existing verification-field-local exception.
+
+### Supported Schema-v23 Declaration Delta
+
+Migration `23/verification_declaration`
 adds `tasks.verification_not_required_reason` (bounded text, default empty) and
 the nullable same-named immutable completion-cycle column. Existing Tasks remain
 empty and existing cycles remain NULL; migration invents no intent and changes
@@ -170,7 +199,7 @@ Migration 23 retains complete v22 admission and its global Task/Runner/Bundle
 validation, adds one cycle insert guard (35 tables, 42 indexes, 60 triggers),
 and rebuilds only the Bundle table and coupled owned guards to admit source
 23/format 2. Source 19/20/21/22 Bundle bytes and digests remain unchanged; native
-completion now requires source 23. The format-2 index reports container 23.
+completion at that source requires source 23. The format-2 index reports its container.
 Reason text is retained in Task, Review Packet and completion-cycle storage,
 not added to authority snapshots, Bundle payloads or Viewer v4. A standalone
 Bundle therefore does not carry the waiver justification.
@@ -182,14 +211,14 @@ residue fail closed without repair. Setup keeps its existing pre-migration
 backup and matched rollback; ordinary commands require migration and old code
 rejects v23. All global consumers retain global admission, and recovery's
 verification-only candidate-local exception does not include an invalid waiver
-reason. Viewer v4 accepts sources v5-v23 without adding fields or calls.
+reason. Its supported Viewer projection adds no fields or calls.
 
 ### Supported Schema-v22 Delta
 
 Schema v22 is a supported predecessor. Setup reaches it
 through the existing ordered migrations from complete v1-v21 sources; v20
 continues through 21 and then 22 rather than returning early. Exact-v22
-storage-helper reentry is validation-only; public setup continues through 23.
+storage-helper reentry is validation-only; public setup continues through 23 and 24.
 Ordinary commands never migrate or repair state.
 
 Migration 22 is exactly `evidence_reservation_cleanup`. It rebuilds only

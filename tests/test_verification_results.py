@@ -355,6 +355,8 @@ class VerificationResultCliTests(unittest.TestCase):
                 before = file_snapshot(self.root)
                 self.assert_failure(self.invoke(), error)
                 self.assertEqual(file_snapshot(self.root), before)
+                if options.get("status") != "ready":
+                    self.success("task", "edit", self.task_id, "--status", "review_pending")
 
     def test_done_requires_reopen_and_historical_receipts_cannot_satisfy_it(self):
         self.generation = seed_current_review_evidence(self.db, self.repo, self.task_id)
@@ -372,7 +374,7 @@ class VerificationResultCliTests(unittest.TestCase):
 
     def test_writer_reread_rejects_concurrent_target_and_status_changes(self):
         actual_begin = receipt_service.begin_initialized_write
-        for change, expected in (("target", "verification_basis_stale"), ("status", "invalid_status_transition")):
+        for change, expected in (("target", "verification_basis_stale"), ("status", "task_ownership_changed")):
             with self.subTest(change=change):
                 current = self.success("task", "show", self.task_id)["task"]
                 self.generation = current["review_target_generation"]

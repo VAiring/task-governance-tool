@@ -69,6 +69,12 @@ gates. Do not add current/next/show reads to reconstruct it. `task current`
 remains available for explicit held-work inspection. `paused_tasks_present`
 is an advisory, not another normal read.
 
+Caller ownership is automatic; do not obtain or supply session IDs. Context
+resumes only this caller's owned work, then selects ready work. For an unknown
+owner or an ownership rejection, use the conditional
+[pause/recovery guidance](references/task_workflow.md#pause-resume-and-block);
+never bypass it by changing environment values or replaying a stale write.
+
 Edit, completion, and target-set acknowledgements omit unchanged description
 and verification prose. Retain it from this context; no extra read is needed.
 

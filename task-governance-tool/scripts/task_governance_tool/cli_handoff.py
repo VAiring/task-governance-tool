@@ -93,6 +93,7 @@ def _handle_handoff_record(
                     summary=getattr(context.args, "summary", ""),
                     rationale=getattr(context.args, "rationale", ""),
                     occurrence_id=getattr(context.args, "occurrence_id", ""),
+                    caller=context.caller,
                 )
                 connection.commit()
             break
@@ -264,6 +265,7 @@ def handle_handoff_command(context: CommandContext) -> CommandResult:
                     target.project,
                     getattr(context.args, "handoff_id", ""),
                     reason=getattr(context.args, "reason", ""),
+                    caller=context.caller,
                 )
                 connection.commit()
             data = {

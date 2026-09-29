@@ -26,7 +26,9 @@ priority, initial status, blocker reason, review tier, verification, tags, and
 the optional complete Task Contract group. Defaults are optional kind, normal
 priority, ready status, and Tier 1. A sequential Task may receive a
 deterministic default lane and append order; output exposes the stored values.
-Initial blocked requires a reason. Initial done and paused fail respectively
+Initial blocked requires a reason. Initial review_pending requires a previous
+owned execution and is therefore rejected with `invalid_status_transition`.
+Initial done and paused fail respectively
 with `initial_done_forbidden` and `initial_paused_forbidden`.
 The exact editable Task arguments are title, description, kind, lane, order,
 priority, status, blocked/pause reason, review tier, verification, tags, note,
@@ -78,13 +80,13 @@ Compact current data is exactly `tasks`, `total_matching`, `returned_count`,
 `limit`, `statuses`, and `truncated`; each Task contains `task_id`, `title`,
 `status`, `kind`, `lane`, `lane_order`, `priority`, `review_tier`,
 `blocked_reason`, `pause_reason`, `latest_event`, and
-`suggested_next_action`. A compact event contains `event_type`, `summary`,
+`suggested_next_action`, and `ownership`. A compact event contains `event_type`, `summary`,
 `created_at`, and `summary_truncated`.
 
 Compact next data is exactly `tasks`, `total_matching`, `returned_count`,
 `limit`, and `truncated`; each Task contains `task_id`, `title`, `kind`,
 `lane`, `lane_order`, `priority`, `review_tier`, `tags`, and
-`suggested_next_action`.
+`suggested_next_action`, and `ownership`.
 
 `task show` defaults to one fixed working-context projection. It retains the
 complete Task and current Contract, latest checkpoint, handoff counts, current
@@ -139,11 +141,14 @@ replace the complete JSON Contract or gate information.
 
 `task context` is the fixed read-only start/resume operation; it accepts only
 the common CLI options. It uses the existing validated current batch (limit
-20), resumes its first `in_progress` or `review_pending` row in existing
+20), filtered to the caller's owned/completion-owned work before the SQL limit,
+resumes its first `in_progress` or `review_pending` row in existing
 order, or otherwise uses the existing validated next batch (limit 5) and picks
 its first candidate. Selection uses these bounded batches before display
-omission, not the compact prefixes. Held rows remain recalled and do not
-suppress unrelated ready work. It returns the selected Task's complete normal `task show` data, including
+omission, not the compact prefixes. Explicit `task current` retains held and
+other-owner inspection. Missing caller identity selects no owned work and adds
+`session_identity_required`; ready fallback remains read-only inspection, not
+start permission. It returns the selected Task's complete normal `task show` data, including
 Contract, latest checkpoint, current constraints/blockers, gates, and routing.
 It never starts a Task or changes state, evidence, or gate requirements.
 
@@ -247,7 +252,7 @@ Typed completion storage is exactly `completion_evidence_kind`,
 `review_target_kind`, `review_target_value`,
 `review_target_base_revision`, and generation. Values and their legacy
 projection must satisfy one cross-field matrix before storage or output.
-For a supported schema-v18-through-v23 source, every complete loaded Task row is validated
+For a supported schema-v18-through-v24 source, every complete loaded Task row is validated
 for exact SQLite/Python storage class, bounded text/privacy, closed enums, and
 all Task cross-field matrices before any field can be omitted or exposed.
 Stored values are never coerced, trimmed, repaired, or rewritten by a read.
@@ -283,6 +288,70 @@ reason, and without completion evidence, gate confirmation, or transition to
 review-pending/done. Once review begins, including after reopen, tier may only
 stay or rise. Invalid downgrade is `review_tier_downgrade_forbidden`.
 Successful change appends `review_tier_changed` with old/new tier and reason.
+
+### Session Ownership And Recovery
+
+The CLI reads and validates canonical UUID `CODEX_THREAD_ID` once per invocation
+and passes that caller through services. It never falls back to `CODEX_SESSION_ID`,
+which may be shared by parent and reviewer. There is no session flag, registration
+command, manual ID comparison or role declaration. Missing/malformed identity
+allows reads, help, setup and existing explicit configuration, but acquisition,
+owner-only writes and completion fail `session_identity_required`. IDs are not
+credentials and do not defend against direct DB/environment tampering.
+
+Only `in_progress` occupies one session/project slot and has a fixed owner.
+Start of ready work creates an execution and advances its owner generation.
+Pause/block releases the slot; resume to in_progress reuses the execution,
+acquires the caller and advances generation. Paused work requires isolated
+resume before other updates. Blocked work, whether previously started or not,
+keeps existing non-executing organization permissions: reason/metadata edits,
+return to ready and cancellation do not acquire a slot or require resume.
+Existing status, lane, evidence and completion gates still apply, and a writer
+rejects a basis made stale by concurrent acquisition. Returning to ready or
+cancelling ends that execution and clears its current link, while preserving
+history. That execution-ending transition records the automatically identified
+caller but acquires no slot. A later start, including through another blocked
+state, or the existing exact reopen of done, creates a new execution.
+
+Entry into `review_pending` requires the caller's existing in-progress execution.
+It releases the slot but retains that caller as completion owner at the same
+execution/generation. Direct entry from ready/blocked/cancelled/paused or initial
+single/batch registration is rejected; a free slot does not make it valid.
+Repeating known review_pending is an owner-only no-op with no slot acquisition.
+The completion owner can complete A while executing B under the same existing
+quality gates. A Contract revision or other return of A to in_progress must
+reacquire a free slot or roll back the entire mutation. Two simultaneous starts
+cannot claim one Task or one caller slot. A second active Task fails
+`session_task_in_progress`; a different owner fails `task_not_owned`.
+
+Explicit cross-session recovery is exactly a status edit from active/review-pending
+to paused with a nonempty pause reason and a valid caller. It may not include
+metadata, note, Contract, evidence or completion inputs. It records the recovery
+actor/reason and advances owner generation, then ordinary isolated resume acquires
+ownership. No expiration, silent takeover or guessed legacy owner exists. Migration
+leaves existing active/review-pending Tasks unknown; use this same recovery. A
+takeover between preflight and writer rejects stale generation with
+`task_ownership_changed`, even if the same caller later reacquires the Task.
+
+The guard applies to all Task-scoped writes: active registration/batches, edits,
+notes, Contracts, checkpoints, Effort bookkeeping, local handoff mutations, Runner
+Plan publication, target/restart, Verification/Review Receipts, results and Findings,
+and both completion forms. Existing done locks and handoff outbox rules remain.
+Review registration currently requires the execution owner/completion owner;
+direct bound-reviewer submission is not yet implemented. Read-only completion
+check reports ownership blockers without acquiring anything. Runner admission
+checks before T1; mandatory cleanup/terminal audit for the admitted attempt still
+finishes after an owner change and grants no new launch or Task mutation.
+
+Every public Task record in list/current/next/show/context and write acknowledgements
+has `ownership={state,owner_session_id,completion_session_id,execution_id,generation,
+is_owner,is_completion_owner}`. State is `none|owned|completion_only|unknown`; IDs
+are full or null. Unknown ownership or caller means null self flags; known none
+means false. These fields describe authority, not process liveness. Self flags
+are calculated per invocation and never saved to SQLite, Evidence or shared Viewer.
+They do not invalidate otherwise valid quality evidence or change the Packet
+content binding; the writer separately checks owner generation. Compact budgets
+and no-partial-result failures remain unchanged.
 
 ### Structured Task Registration
 

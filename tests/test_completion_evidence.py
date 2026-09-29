@@ -75,6 +75,7 @@ def add_task(db, repo, title="Evidence task"):
         "--title",
         title,
         "--verification-not-required", "Completion-evidence fixture",
+        "--status", "in_progress",
         "--json",
     )
     if result.returncode != 0:
@@ -426,8 +427,6 @@ class CompletionEvidenceTests(unittest.TestCase):
             init_git_repo(repo)
             init_db(db, repo)
             task = add_task(db, repo)
-            started = edit(db, repo, task["task_id"], "--status", "in_progress")
-            self.assertEqual(started.returncode, 0, started.stdout)
 
             paused = edit(
                 db,

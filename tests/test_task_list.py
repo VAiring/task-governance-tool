@@ -7,7 +7,7 @@ import unittest
 from contextlib import closing
 from pathlib import Path
 
-from tests.review_test_helpers import seed_review_evidence
+from tests.review_test_helpers import seed_review_evidence, start_ready_review_fixture
 from tests.m14_test_support import (
     initialize_taskgov_internal,
     run_taskgov_internal,
@@ -118,6 +118,7 @@ class TaskListTests(unittest.TestCase):
                 "archive",
             ),
         }
+        start_ready_review_fixture(db, repo, seeded["done"]["task_id"])
         seed_review_evidence(db, seeded["done"]["task_id"])
         done_result = run_taskgov(
             "task",
@@ -306,7 +307,8 @@ class TaskListTests(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertEqual(result.stderr, "")
             lines = result.stdout.strip().splitlines()
-            self.assertLessEqual(len(lines), 2)
+            self.assertLessEqual(len(lines), 3)
+            self.assertIn("Ownership:", result.stdout)
             self.assertIn("Tasks: 1 (limit 20)", result.stdout)
             self.assertIn("Ready optional", result.stdout)
             self.assertIn("optional side - Ready optional", result.stdout)

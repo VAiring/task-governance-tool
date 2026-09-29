@@ -326,7 +326,7 @@ class InstalledReviewHandoffTests(unittest.TestCase):
                 self.assertEqual(result.returncode, 0, result.stdout or result.stderr)
                 return json.loads(result.stdout)["data"]
             cli("setup")
-            task = cli("task", "add", "--title", "Installed handoff", "--review-tier", "2")["task"]["task_id"]
+            task = cli("task", "add", "--title", "Installed handoff", "--status", "in_progress", "--review-tier", "2")["task"]["task_id"]
             cli("review", "target", "set", task, "--kind", "diff_fingerprint", "--revision", FINGERPRINT)
             packet = cli("review", "prepare", task)
             (root / "reviews/packet.json").write_bytes(encode(packet))
@@ -374,7 +374,7 @@ class InstalledReviewHandoffTests(unittest.TestCase):
                 self.assertEqual(result.returncode, 0, result.stdout or result.stderr)
                 return json.loads(result.stdout)["data"]
             cli("setup")
-            task = cli("task", "add", "--title", "Explicit approval transport", "--review-tier", "2")["task"]["task_id"]
+            task = cli("task", "add", "--title", "Explicit approval transport", "--status", "in_progress", "--review-tier", "2")["task"]["task_id"]
             cli("review", "target", "set", task, "--kind", "diff_fingerprint", "--revision", FINGERPRINT)
             packet = cli("review", "prepare", task)
             (root / "reviews/packet.json").write_bytes(encode(packet))

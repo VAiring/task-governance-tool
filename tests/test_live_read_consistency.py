@@ -28,6 +28,8 @@ from task_governance_tool.storage import (  # noqa: E402
     validate_operational_journal_state,
 )
 from task_governance_tool import sqlite_connection  # noqa: E402
+from task_governance_tool.session_identity import CallerIdentity
+from task_governance_tool.task_ownership import initialize_task
 
 
 SCRIPT_PATH = SCRIPTS_ROOT / "taskgov.py"
@@ -90,6 +92,9 @@ def insert_spill_tasks(
         """,
         rows,
     )
+    for row in rows:
+        initialize_task(connection, project_id=project_id, task_id=row[0],
+                        status="ready", caller=CallerIdentity(None), now=timestamp)
 
 
 class LiveReadConsistencyTests(unittest.TestCase):

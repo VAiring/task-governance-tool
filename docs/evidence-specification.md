@@ -155,7 +155,7 @@ completion cycle, and closed assurance/producer/version. Git observation is
 `external_reference/external_system/1`. Callers cannot select or upgrade those
 classes. Migration synthesizes no historical Reference. Schema-v19 and
 schema-v20 criterion links, native Bundles, and Evidence JSON are active;
-the retired `derived_analysis` source is not admitted by current schema v22.
+the retired `derived_analysis` source is not admitted by schema v22 and later.
 The schema-v20 Runner writer
 is active only for the [Runner audit graph](runner-execution-specification.md#parent-service-and-audit-graph) and remains
 ineligible for every verification and completion gate.
@@ -171,15 +171,18 @@ and projection-generation advance. Schema v20 and the marker-zero schema-v21
 baseline instead insert one version-2 Bundle whose basis is
 `caller_attestation` with the qualifying Receipt for nonempty verification or
 `not_required` with no Receipt for trimmed-empty verification, and its Runner
-observation is null. The current schema-v23 writer requires an explicit Task
+observation is null. The current schema-v24 writer requires an explicit Task
 waiver reason for the not-required branch and additionally
 admits the exact qualifying schema-v21-protocol `runner_observation` branch, reusing its
 existing Runner Reference and criterion link as Bundle members. The sole partial
 legacy reopen bridge stays version 0/null and advances only that generation. A
 Bundle is complete or the completion fails before write; its canonical payload
-is capped at 16 MiB. Schema 23 changes only the source discriminator, not the
+is capped at 16 MiB. Schemas 23 and 24 change only the source discriminator, not the
 Bundle-v2 member set or digest domain. The waiver reason is available in Task,
 Review Packet and immutable cycle storage, not in the standalone Bundle.
+Schema 24 links each new native completion cycle to its Task execution in a
+separate immutable table. Ownership and caller-relative flags are not added to
+the sealed Bundle; historical payloads and links are not reconstructed.
 
 Bundle v2 adds exactly the root `verification_basis` object and
 `runner_observation` field to the v1 payload. For the caller-attestation and
@@ -191,9 +194,9 @@ matching nullable `verification_receipt_id`, and
 `taskgov-completion-evidence-bundle-v2\0`. The preserved v1 envelope, payload,
 domain, bytes, and digest are unchanged.
 
-Evidence JSON is a deterministic one-way SQLite projection. Canonical sorted-key compact UTF-8 JSON uses integer-only JSON values where numeric, preserves valid Unicode without normalization, and ends each file with one LF. A schema-v20-through-v22 index uses envelope `format_version=2`, digest domain `taskgov-evidence-index-v2\0`, and adds exactly nullable `bundle_format_version` to each entry: null for `legacy_unknown`, 1 for a preserved v1 Bundle, and 2 for a native v2 Bundle. Native entries reference `bundles/<completion-evidence-bundle-id>.json`; the projection may therefore reference preserved source-19/v1 and source-20/21/v2 Bundles alongside new source-22/v2 Bundles without rewriting existing payload bytes or digests. The index reports its actual database source schema. Pre-v19 entries are `legacy_unknown` with null Bundle/file fields.
+Evidence JSON is a deterministic one-way SQLite projection. Canonical sorted-key compact UTF-8 JSON uses integer-only JSON values where numeric, preserves valid Unicode without normalization, and ends each file with one LF. A schema-v20-through-v24 index uses envelope `format_version=2`, digest domain `taskgov-evidence-index-v2\0`, and adds exactly nullable `bundle_format_version` to each entry: null for `legacy_unknown`, 1 for a preserved v1 Bundle, and 2 for a native v2 Bundle. Native entries reference `bundles/<completion-evidence-bundle-id>.json`; the projection may therefore reference preserved source-19/v1 and source-20/21/22/23/v2 Bundles alongside new source-24/v2 Bundles without rewriting existing payload bytes or digests. The index reports its actual database source schema. Pre-v19 entries are `legacy_unknown` with null Bundle/file fields.
 The index includes every cycle, is ordered by Task ID, ordinal, and cycle ID, and is capped at 100,000 entries and 64 MiB without truncation. Publication flushes immutable Bundle files and atomically replaces `index.json` last; SQLite remains canonical, unreferenced files are ignored, and JSON is never imported or used to repair the database.
-Contention or failure preserves the last-good index and committed Task result, leaves projection due, and adds only `evidence_projection_deferred` or `evidence_projection_failed`. Setup is the sole explicit repair; doctor only reports stored projection facts. Evidence JSON exposes no Evidence command, custom path, Viewer field/UI, browser launch, server, watcher, or network action and invokes neither Analyzer nor Runner. A current schema-v22 Runner-backed Bundle projects only the already-sanitized stored observation under the [shared Runner protocol](specification.md#schema-v21-persistence-compatibility-and-shared-runner-protocol); publication adds no normal-loop call.
+Contention or failure preserves the last-good index and committed Task result, leaves projection due, and adds only `evidence_projection_deferred` or `evidence_projection_failed`. Setup is the sole explicit repair; doctor only reports stored projection facts. Evidence JSON exposes no Evidence command, custom path, Viewer field/UI, browser launch, server, watcher, or network action and invokes neither Analyzer nor Runner. A current schema-v24 Runner-backed Bundle projects only the already-sanitized stored observation under the [shared Runner protocol](specification.md#schema-v21-persistence-compatibility-and-shared-runner-protocol); publication adds no normal-loop call.
 
 <a id="assurance-evidence-references-and-finding-snapshots"></a>
 

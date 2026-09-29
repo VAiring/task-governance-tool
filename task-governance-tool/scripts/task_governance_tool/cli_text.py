@@ -12,6 +12,20 @@ from typing import Any
 from task_governance_tool.effort import METRIC_ORDER
 
 
+def ownership_text(task: dict[str, Any]) -> list[str]:
+    owner = task.get("ownership")
+    if owner is None:
+        return []
+    def value(item):
+        return "unknown" if item is None else str(item).lower() if isinstance(item, bool) else str(item)
+    return ["Ownership: " + owner["state"] + " " + " ".join(
+        f"{key}={value(owner[key])}" for key in (
+            "owner_session_id", "completion_session_id", "execution_id", "generation",
+            "is_owner", "is_completion_owner",
+        )
+    )]
+
+
 def task_add_text(
     task: dict[str, Any],
     event: dict[str, Any],
@@ -26,6 +40,7 @@ def task_add_text(
     ]
     if task["kind"] == "sequential":
         lines.insert(3, f"Lane: {task['lane']}  Order: {task['lane_order']}")
+    lines.extend(ownership_text(task))
     if contract_write is not None:
         lines.append(
             "Contract: "
@@ -46,6 +61,7 @@ def task_list_text(tasks: list[dict[str, Any]], count: int, limit: int) -> str:
         lines.append(
             f"{task['task_id']} [{task['status']}] {task['priority']} {task['kind']}{lane} - {task['title']}"
         )
+        lines.extend(ownership_text(task))
     return "\n".join(lines)
 
 
@@ -65,6 +81,7 @@ def task_next_text(
         lines.append(
             f"{task['task_id']} [{task['status']}] {task['priority']} {task['kind']}{lane} - {task['title']}"
         )
+        lines.extend(ownership_text(task))
     lines.extend(f"Warning: {warning['message']}" for warning in warnings)
     return "\n".join(lines)
 
@@ -76,6 +93,7 @@ def task_current_text(tasks: list[dict[str, Any]], count: int, limit: int) -> st
             f"{task['task_id']} [{task['status']}] {task['priority']} - "
             f"{task['title']} | {task['suggested_next_action']}"
         )
+        lines.extend(ownership_text(task))
     return "\n".join(lines)
 
 
@@ -161,6 +179,7 @@ def task_show_text(
             lane += f"  Order: {task['lane_order']}"
         lines.append(lane)
     lines.append(f"Review tier: {task['review_tier']}")
+    lines.extend(ownership_text(task))
     lines.append(f"Contract revision: {contract['revision']}")
     review_target = review_evidence["target"]
     review_gate = review_evidence["gate"]
@@ -250,6 +269,7 @@ def task_edit_text(
     ]
     if event is not None:
         lines.append(f"Event: {event['event_type']} - {event['summary']}")
+    lines.extend(ownership_text(task))
     if contract_write is not None:
         lines.append(
             "Contract: "
@@ -355,7 +375,7 @@ def review_text(command: str, data: dict[str, Any]) -> str:
             f"Target: {task['review_target_kind']} generation "
             f"{task['review_target_generation']}{base}\n"
             f"Event: {event['event_type']} - {event['summary']}"
-        )
+        ) + ("\n" + "\n".join(ownership_text(task)) if "ownership" in task else "")
     if command == "review.receipt.add":
         receipt = data["receipt"]
         return (

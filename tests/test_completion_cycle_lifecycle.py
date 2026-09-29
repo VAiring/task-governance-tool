@@ -25,6 +25,7 @@ if str(SCRIPTS_ROOT) not in sys.path:
 from task_governance_tool import completion_workflow  # noqa: E402
 from task_governance_tool import tasks as task_service  # noqa: E402
 from task_governance_tool.completion import CompletionRequest  # noqa: E402
+from task_governance_tool.session_identity import capture_caller_identity  # noqa: E402
 from task_governance_tool.reviews import (  # noqa: E402
     add_review_receipt,
     set_review_target,
@@ -176,6 +177,7 @@ def insert_receipt(
             verdict=verdict,
             summary=summary,
             user_approved=bool(user_approved),
+            caller=capture_caller_identity(),
             **provenance,
         )
         connection.commit()
@@ -191,6 +193,7 @@ def set_diff_target_with_fallback(db: Path, task_id: str):
             task_id,
             kind="diff_fingerprint",
             revision=FINGERPRINT,
+            caller=capture_caller_identity(),
         )
         add_review_receipt(
             connection,
@@ -200,6 +203,7 @@ def set_diff_target_with_fallback(db: Path, task_id: str):
             kind="self_review_fallback",
             verdict="pass",
             summary="approved fallback",
+            caller=capture_caller_identity(),
             user_approved=True,
             reviewer_class="human",
             model_state="not_applicable",
@@ -730,6 +734,9 @@ class CompletionCycleLifecycleTests(unittest.TestCase):
 
             missing = add_task(db, repo, "Missing cycle", tier=0)
             seed_review_evidence(db, missing["task_id"])
+            released, _ = run_json("task", "edit", missing["task_id"], "--repo", str(repo),
+                                   "--db", str(db), "--status", "ready", "--json")
+            self.assertEqual(released.returncode, 0, released.stdout)
             with closing(sqlite3.connect(db)) as connection:
                 connection.execute(
                     """
@@ -816,6 +823,9 @@ class CompletionCycleLifecycleTests(unittest.TestCase):
                 )
                 connection.commit()
 
+            released, _ = run_json("task", "edit", overflow["task_id"], "--repo", str(repo),
+                                   "--db", str(db), "--status", "ready", "--json")
+            self.assertEqual(released.returncode, 0, released.stdout)
             reused = add_task(db, repo, "Reused cycle", tier=0)
             seed_review_evidence(db, reused["task_id"])
             completed, _ = run_json(
@@ -842,6 +852,9 @@ class CompletionCycleLifecycleTests(unittest.TestCase):
                 "--json",
             )
             self.assertEqual(reopened.returncode, 0, reopened.stdout)
+            released, _ = run_json("task", "edit", reused["task_id"], "--repo", str(repo),
+                                   "--db", str(db), "--status", "ready", "--json")
+            self.assertEqual(released.returncode, 0, released.stdout)
             with closing(sqlite3.connect(db)) as connection:
                 cycle = connection.execute(
                     """
@@ -1324,7 +1337,7 @@ class CompletionCycleLifecycleTests(unittest.TestCase):
                     "code": "migration_required",
                     "message": (
                         "database schema version 17 does not match supported "
-                        "version 23; run setup to migrate"
+                        "version 24; run setup to migrate"
                     ),
                 }],
             )
@@ -1333,7 +1346,7 @@ class CompletionCycleLifecycleTests(unittest.TestCase):
             with closing(connect(db)) as connection:
                 apply_evidence_ledger_capture_migration(connection)
                 apply_completion_evidence_bundle_migration(connection)
-                self.assertEqual(apply_migrations(connection), ([20, 21, 22, 23], []))
+                self.assertEqual(apply_migrations(connection), ([20, 21, 22, 23, 24], []))
 
             reopened, reopen_payload = run_json(
                 *reopen_args(
@@ -1396,6 +1409,9 @@ class CompletionCycleLifecycleTests(unittest.TestCase):
                 with closing(sqlite3.connect(db)) as connection:
                     return "\n".join(connection.iterdump())
 
+            released, _ = run_json("task", "edit", successful["task_id"], "--repo", str(repo),
+                                   "--db", str(db), "--status", "review_pending", "--json")
+            self.assertEqual(released.returncode, 0, released.stdout)
             before_failure = database_dump()
             with mock.patch(
                 "task_governance_tool.effort.record_task_transition",
@@ -1671,6 +1687,7 @@ class CompletionCycleLifecycleTests(unittest.TestCase):
                     completion_workflow.execute_completion_request(
                         target,
                         request,
+                        caller=capture_caller_identity(),
                     )
 
             with closing(sqlite3.connect(db)) as connection:

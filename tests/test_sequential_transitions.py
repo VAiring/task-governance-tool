@@ -1,4 +1,5 @@
 import json
+import os
 import sqlite3
 import subprocess
 import sys
@@ -6,10 +7,11 @@ import tempfile
 import threading
 import time
 import unittest
+from unittest import mock
 from contextlib import closing
 from pathlib import Path
 
-from tests.review_test_helpers import seed_review_evidence
+from tests.review_test_helpers import seed_review_evidence, start_ready_review_fixture
 from tests.m14_test_support import (
     initialize_taskgov_internal,
     run_taskgov_internal,
@@ -27,6 +29,7 @@ try:
         edit_task,
     )
     from task_governance_tool.task_values import TaskValidationError
+    from task_governance_tool.session_identity import CallerIdentity, capture_caller_identity
 finally:
     sys.path.pop(0)
 
@@ -82,7 +85,8 @@ class SequentialTransitionTests(unittest.TestCase):
                 self.assertEqual(result.returncode, 1)
                 self.assertEqual(
                     json.loads(result.stdout)["errors"][0]["code"],
-                    "sequential_predecessor_incomplete",
+                    ("invalid_status_transition" if status == "review_pending"
+                     else "sequential_predecessor_incomplete"),
                 )
                 self.assertEqual(task_state(db, "tg_task_missing")[1], 1)
 
@@ -155,7 +159,8 @@ class SequentialTransitionTests(unittest.TestCase):
 
             blocked = edit_result(db, repo, later["task_id"], "--status", "in_progress")
             other_started = edit_result(db, repo, other["task_id"], "--status", "in_progress")
-            optional_started = edit_result(db, repo, optional["task_id"], "--status", "in_progress")
+            with mock.patch.dict(os.environ, {"CODEX_THREAD_ID": "22222222-2222-4222-8222-222222222222"}):
+                optional_started = edit_result(db, repo, optional["task_id"], "--status", "in_progress")
 
             self.assertEqual(paused.returncode, 0, paused.stderr)
             self.assertEqual(
@@ -191,10 +196,11 @@ class SequentialTransitionTests(unittest.TestCase):
             self.assertEqual(json.loads(reordered.stdout)["errors"][0]["code"], "sequential_predecessor_incomplete")
             self.assertEqual(task_state(db, later["task_id"])[0][1], 30)
 
-            optional_active = add_task(db, repo, "Optional active", "--status", "in_progress")
-            combined = edit_result(
-                db, repo, optional_active["task_id"], "--kind", "sequential", "--lane", "ADD", "--order", "40"
-            )
+            with mock.patch.dict(os.environ, {"CODEX_THREAD_ID": "22222222-2222-4222-8222-222222222222"}):
+                optional_active = add_task(db, repo, "Optional active", "--status", "in_progress")
+                combined = edit_result(
+                    db, repo, optional_active["task_id"], "--kind", "sequential", "--lane", "ADD", "--order", "40"
+                )
             self.assertEqual(combined.returncode, 1)
             self.assertEqual(json.loads(combined.stdout)["errors"][0]["code"], "sequential_predecessor_incomplete")
             self.assertEqual(task_state(db, active["task_id"])[0][0], "in_progress")
@@ -218,14 +224,14 @@ class SequentialTransitionTests(unittest.TestCase):
                 try:
                     with closing(connect_initialized(target)) as connection:
                         with connection:
-                            edit_task(connection, target.project, second["task_id"], status="in_progress")
+                            edit_task(connection, target.project, second["task_id"], status="in_progress", caller=CallerIdentity("22222222-2222-4222-8222-222222222222"))
                 except TaskRepositoryError as exc:
                     outcome["code"] = exc.code
                 finally:
                     finished.set()
 
             with closing(connect_initialized(target)) as first_connection:
-                edit_task(first_connection, target.project, first["task_id"], status="in_progress")
+                edit_task(first_connection, target.project, first["task_id"], status="in_progress", caller=capture_caller_identity())
                 thread = threading.Thread(target=second_writer)
                 thread.start()
                 self.assertTrue(started.wait(1))
@@ -252,6 +258,7 @@ class SequentialTransitionTests(unittest.TestCase):
                 "--order", "20",
             )
             for task in (first, second):
+                start_ready_review_fixture(db, repo, task["task_id"])
                 seed_review_evidence(db, task["task_id"])
                 completed = edit_result(
                     db,
@@ -315,6 +322,7 @@ class SequentialTransitionTests(unittest.TestCase):
             repo = Path(tmp) / "repo"
             init_db(db, repo)
             task = add_task(db, repo, "Concurrent reopen")
+            start_ready_review_fixture(db, repo, task["task_id"])
             seed_review_evidence(db, task["task_id"])
             completed = edit_result(
                 db,
@@ -352,6 +360,7 @@ class SequentialTransitionTests(unittest.TestCase):
                                 task["task_id"],
                                 status="in_progress",
                                 reopen_reason="Concurrent correction",
+                                caller=capture_caller_identity(),
                             )
                     code = "ok"
                 except (TaskRepositoryError, TaskValidationError) as exc:

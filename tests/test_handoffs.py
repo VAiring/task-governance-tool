@@ -852,6 +852,7 @@ class HandoffCommandTests(unittest.TestCase):
                 str(db),
                 "--title",
                 "Finish accepted scope",
+                "--status", "in_progress",
                 "--verification-not-required", "Handoff-only fixture",
                 "--review-tier",
                 "0",
@@ -1097,6 +1098,7 @@ class HandoffMigrationTests(unittest.TestCase):
                         21,
                         22,
                         23,
+                        24,
                     ],
                 )
                 remove_v10_maintenance_for_test(connection)

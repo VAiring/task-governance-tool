@@ -61,6 +61,7 @@ from task_governance_tool.tasks import (  # noqa: E402
     list_tasks_for_viewer,
 )
 from task_governance_tool.task_values import STATUSES  # noqa: E402
+from task_governance_tool.session_identity import CallerIdentity  # noqa: E402
 from task_governance_tool.reviews import (  # noqa: E402
     add_review_finding,
     add_review_receipt,
@@ -856,12 +857,16 @@ class ViewerSnapshotTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             target = initialized_target(tmp)
             tasks = {}
+            callers = {
+                status: CallerIdentity(f"00000000-0000-4000-8000-{index + 1:012x}")
+                for index, status in enumerate(STATUSES)
+            }
             with closing(connect(target.db_path)) as connection:
                 with connection:
                     for index, status in enumerate(STATUSES):
                         initial_status = (
                             "ready" if status == "done" else
-                            "in_progress" if status == "paused" else
+                            "in_progress" if status in {"ready", "paused", "review_pending"} else
                             status
                         )
                         contract_input = (
@@ -876,6 +881,7 @@ class ViewerSnapshotTests(unittest.TestCase):
                             connection,
                             target.project,
                             title=f"{status} task",
+                            caller=callers[status],
                             status=initial_status,
                             blocked_reason=("Waiting for input" if status == "blocked" else ""),
                             priority=("urgent" if index == 0 else "normal"),
@@ -900,24 +906,21 @@ class ViewerSnapshotTests(unittest.TestCase):
                             )
                             tasks[status]["status"] = "done"
                             tasks[status]["completed_at"] = "2026-07-17T00:00:00Z"
-                        elif status == "paused":
-                            connection.execute(
-                                """
-                                UPDATE tasks
-                                   SET status = 'paused',
-                                       pause_reason = 'Viewer pause reason'
-                                 WHERE task_id = ?
-                                """,
-                                (tasks[status]["task_id"],),
-                            )
-                            tasks[status]["status"] = "paused"
-                            tasks[status]["pause_reason"] = "Viewer pause reason"
+                        elif status in {"paused", "review_pending"}:
+                            transition = {"status": status}
+                            if status == "paused":
+                                transition["pause_reason"] = "Viewer pause reason"
+                            tasks[status] = tasks_module.edit_task(
+                                connection, target.project, tasks[status]["task_id"],
+                                caller=callers[status], **transition,
+                            ).task
                     selected = tasks["ready"]
                     verification_task = tasks["in_progress"]
                     set_review_target(
                         connection,
                         target.project,
                         verification_task["task_id"],
+                        caller=callers["in_progress"],
                         kind="diff_fingerprint",
                         revision="sha256:" + ("b" * 64),
                     )
@@ -935,6 +938,7 @@ class ViewerSnapshotTests(unittest.TestCase):
                         connection,
                         target.project,
                         selected["task_id"],
+                        caller=callers["ready"],
                         kind="diff_fingerprint",
                         revision="sha256:" + ("a" * 64),
                     )
@@ -942,6 +946,7 @@ class ViewerSnapshotTests(unittest.TestCase):
                         connection,
                         target.project,
                         selected["task_id"],
+                        caller=callers["ready"],
                         reviewer="viewer-reviewer",
                         kind="independent",
                         verdict="pass",
@@ -958,9 +963,14 @@ class ViewerSnapshotTests(unittest.TestCase):
                         connection,
                         target.project,
                         selected["task_id"],
+                        caller=callers["ready"],
                         receipt_id=receipt.receipt["review_receipt_id"],
                         severity="low",
                         summary="Non-blocking presentation note",
+                    )
+                    tasks_module.edit_task(
+                        connection, target.project, selected["task_id"],
+                        status="ready", caller=callers["ready"],
                     )
                     for index in range(12):
                         connection.execute(
@@ -986,6 +996,7 @@ class ViewerSnapshotTests(unittest.TestCase):
                     connection,
                     target.project,
                     verification_task["task_id"],
+                    caller=callers["in_progress"],
                     result="pass",
                     duration_ms=25,
                     scope_coverage="full",
@@ -1016,7 +1027,7 @@ class ViewerSnapshotTests(unittest.TestCase):
                 },
             )
             self.assertEqual(snapshot["snapshot_version"], 4)
-            self.assertEqual(snapshot["source_schema_version"], 23)
+            self.assertEqual(snapshot["source_schema_version"], 24)
             self.assertEqual(snapshot["generated_at"], generated_at)
             self.assertEqual(snapshot["source_schema_version"], SCHEMA_VERSION)
             self.assertEqual(snapshot["project"], {
@@ -1068,7 +1079,8 @@ class ViewerSnapshotTests(unittest.TestCase):
                 [event["summary"] for event in ready["events"]],
                 [f"Viewer event {index:02d}" for index in range(11, 1, -1)],
             )
-            self.assertEqual(result.event_count, 17)
+            # Paused/review-pending setup now includes their real transitions.
+            self.assertEqual(result.event_count, 19)
             self.assertEqual(snapshot["tasks"][0]["priority"], "urgent")
 
             serialized = json.dumps(snapshot)

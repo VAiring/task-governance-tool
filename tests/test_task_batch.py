@@ -306,11 +306,21 @@ class TaskBatchCliTests(unittest.TestCase):
         candidate = document(common={"review_tier": 1, "status": "in_progress"}, tasks=[{"title": title, "contract": None} for title in ("First", "Second")])
         with mock.patch.object(cli_service, "load_effort_profile", return_value=profile), mock.patch.object(cli_service, "connect_initialized", side_effect=connect), mock.patch.object(effort_service, "capture_git_basis", side_effect=capture):
             code, stdout, stderr = self.invoke(candidate)
-        self.assertEqual((code, stderr), (0, ""), stdout)
+        self.assert_failure((code, stdout, stderr), "session_task_in_progress")
         self.assertEqual(observed, [0, 0])
         with closing(sqlite3.connect(self.db)) as reader:
             rows = reader.execute("SELECT task_id,basis_head FROM task_effort_bases").fetchall()
-        self.assertEqual(len(rows), 2)
+            self.assertEqual(reader.execute("SELECT COUNT(*) FROM tasks").fetchone()[0], 0)
+        self.assertEqual(rows, [])
+        opened.clear()
+        candidate["tasks"] = candidate["tasks"][:1]
+        with mock.patch.object(cli_service, "load_effort_profile", return_value=profile), mock.patch.object(cli_service, "connect_initialized", side_effect=connect), mock.patch.object(effort_service, "capture_git_basis", side_effect=capture):
+            code, stdout, stderr = self.invoke(candidate)
+        self.assertEqual((code, stderr), (0, ""), stdout)
+        self.assertEqual(observed, [0, 0, 0])
+        with closing(sqlite3.connect(self.db)) as reader:
+            rows = reader.execute("SELECT task_id,basis_head FROM task_effort_bases").fetchall()
+        self.assertEqual(len(rows), 1)
         self.assertEqual({row[0] for row in rows}, {row["task"]["task_id"] for row in json.loads(stdout)["data"]["tasks"]})
         self.assertEqual({row[1] for row in rows}, {"a" * 40})
 

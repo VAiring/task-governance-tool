@@ -768,7 +768,7 @@ class CompactTaskCliTests(unittest.TestCase):
             self.assertFalse(next_data["truncated"])
             self.assertEqual(
                 set(next_data["tasks"][0]),
-                set(COMPACT_NEXT_TASK_FIELDS),
+                set(COMPACT_NEXT_TASK_FIELDS) | {"ownership"},
             )
             self.assertEqual(
                 tuple(current_data),
@@ -778,7 +778,7 @@ class CompactTaskCliTests(unittest.TestCase):
             self.assertEqual(current_data["returned_count"], 1)
             self.assertEqual(
                 set(current_data["tasks"][0]),
-                set(COMPACT_CURRENT_TASK_FIELDS),
+                set(COMPACT_CURRENT_TASK_FIELDS) | {"ownership"},
             )
             self.assertLessEqual(
                 len(next_result.stdout.encode("utf-8")),

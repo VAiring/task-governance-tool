@@ -53,6 +53,7 @@ from task_governance_tool.storage import (  # noqa: E402
     resolve_database_target,
 )
 from task_governance_tool.tasks import add_task, edit_task  # noqa: E402
+from task_governance_tool.session_identity import CallerIdentity, capture_caller_identity
 
 
 def run(*args, cwd):
@@ -221,7 +222,7 @@ class EffortMigrationTests(unittest.TestCase):
             project = self._create_v8(db, repo)
             with closing(connect(db)) as connection:
                 with connection:
-                    add_task(connection, project, title="Preserved task")
+                    add_task(connection, project, title="Preserved task", caller=capture_caller_identity())
                 before = {
                     "tasks": int(connection.execute("SELECT COUNT(*) FROM tasks").fetchone()[0]),
                     "events": int(
@@ -297,7 +298,7 @@ class EffortMigrationTests(unittest.TestCase):
                 )
                 self.assertEqual(connection.execute("PRAGMA quick_check").fetchone()[0], "ok")
                 self.assertEqual(connection.execute("PRAGMA foreign_key_check").fetchall(), [])
-            self.assertEqual(SCHEMA_VERSION, 23)
+            self.assertEqual(SCHEMA_VERSION, 24)
 
 
 class EffortAdvisoryServiceTests(unittest.TestCase):
@@ -313,13 +314,14 @@ class EffortAdvisoryServiceTests(unittest.TestCase):
             ):
                 with closing(connect_initialized(target)) as connection:
                     with connection:
-                        added = add_task(connection, target.project, title="Disabled")
+                        added = add_task(connection, target.project, title="Disabled", caller=capture_caller_identity())
                     with connection:
                         edit_task(
                             connection,
                             target.project,
                             added.task["task_id"],
                             status="in_progress",
+                            caller=capture_caller_identity(),
                         )
             with closing(connect_readonly(db)) as connection:
                 result = build_effort_advisory(
@@ -361,9 +363,10 @@ class EffortAdvisoryServiceTests(unittest.TestCase):
                         title="Initial active",
                         status="in_progress",
                         effort_profile=profile,
+                        caller=CallerIdentity("22222222-2222-4222-8222-222222222222"),
                     )
                 with connection:
-                    ready = add_task(connection, target.project, title="Ready")
+                    ready = add_task(connection, target.project, title="Ready", caller=capture_caller_identity())
                 with connection:
                     started = edit_task(
                         connection,
@@ -371,6 +374,7 @@ class EffortAdvisoryServiceTests(unittest.TestCase):
                         ready.task["task_id"],
                         status="in_progress",
                         effort_profile=profile,
+                        caller=capture_caller_identity(),
                     )
                 with connection:
                     edit_task(
@@ -379,6 +383,7 @@ class EffortAdvisoryServiceTests(unittest.TestCase):
                         ready.task["task_id"],
                         add_note="A later edit must not replace the basis.",
                         effort_profile=profile,
+                        caller=capture_caller_identity(),
                     )
 
             with closing(sqlite3.connect(db)) as connection:
@@ -406,6 +411,7 @@ class EffortAdvisoryServiceTests(unittest.TestCase):
                             title="Capture unavailable",
                             status="in_progress",
                             effort_profile=profile,
+                            caller=CallerIdentity("33333333-3333-4333-8333-333333333333"),
                         )
             self.assertEqual(failed_capture.task["status"], "in_progress")
             with closing(sqlite3.connect(db)) as connection:
@@ -438,6 +444,7 @@ class EffortAdvisoryServiceTests(unittest.TestCase):
                         target.project,
                         title="Subject",
                         database_target=target,
+                        caller=capture_caller_identity(),
                     )
                 with connection:
                     unrelated = add_task(
@@ -445,6 +452,7 @@ class EffortAdvisoryServiceTests(unittest.TestCase):
                         target.project,
                         title="Unrelated",
                         database_target=target,
+                        caller=capture_caller_identity(),
                     )
 
             started = threading.Event()
@@ -468,6 +476,7 @@ class EffortAdvisoryServiceTests(unittest.TestCase):
                             status="in_progress",
                             effort_profile=profile,
                             database_target=target,
+                            caller=capture_caller_identity(),
                         )
 
             with mock.patch.object(
@@ -486,6 +495,7 @@ class EffortAdvisoryServiceTests(unittest.TestCase):
                                 unrelated.task["task_id"],
                                 add_note="Progress while Effort observes Git",
                                 database_target=target,
+                                caller=capture_caller_identity(),
                             )
                     release.set()
                     subject_result = future.result(timeout=10)
@@ -530,6 +540,7 @@ class EffortAdvisoryServiceTests(unittest.TestCase):
                         target.project,
                         title="Subject",
                         database_target=target,
+                        caller=capture_caller_identity(),
                     )
                 with connection:
                     other = add_task(
@@ -537,6 +548,7 @@ class EffortAdvisoryServiceTests(unittest.TestCase):
                         target.project,
                         title="Other",
                         database_target=target,
+                        caller=capture_caller_identity(),
                     )
 
             original_capture = effort_service.capture_git_basis
@@ -556,6 +568,7 @@ class EffortAdvisoryServiceTests(unittest.TestCase):
                             status="in_progress",
                             effort_profile=profile,
                             database_target=target,
+                            caller=capture_caller_identity(),
                         )
                     with writer:
                         edit_task(
@@ -566,6 +579,7 @@ class EffortAdvisoryServiceTests(unittest.TestCase):
                             blocked_reason="Activity completed during capture",
                             effort_profile=profile,
                             database_target=target,
+                            caller=capture_caller_identity(),
                         )
                 return original_capture(repo_path)
 
@@ -583,6 +597,7 @@ class EffortAdvisoryServiceTests(unittest.TestCase):
                             status="in_progress",
                             effort_profile=profile,
                             database_target=target,
+                            caller=capture_caller_identity(),
                         )
 
             self.assertEqual(result.task["status"], "in_progress")
@@ -631,6 +646,7 @@ class EffortAdvisoryServiceTests(unittest.TestCase):
                         lane="serial",
                         lane_order=10,
                         database_target=target,
+                        caller=capture_caller_identity(),
                     )
                 with connection:
                     subject = add_task(
@@ -638,6 +654,7 @@ class EffortAdvisoryServiceTests(unittest.TestCase):
                         target.project,
                         title="Move after capture",
                         database_target=target,
+                        caller=capture_caller_identity(),
                     )
 
             original_resolve = completion_service.resolve_git_commit
@@ -657,6 +674,7 @@ class EffortAdvisoryServiceTests(unittest.TestCase):
                                 lane="serial",
                                 lane_order=20,
                                 database_target=target,
+                                caller=capture_caller_identity(),
                             )
                 return original_resolve(repo_path, revision)
 
@@ -677,6 +695,7 @@ class EffortAdvisoryServiceTests(unittest.TestCase):
                             completion_revision="HEAD",
                             effort_profile=profile,
                             database_target=target,
+                            caller=capture_caller_identity(),
                         )
 
             self.assertEqual(result.task["lane_order"], 21)
@@ -729,6 +748,7 @@ class EffortAdvisoryServiceTests(unittest.TestCase):
                         title="Measured task",
                         status="in_progress",
                         effort_profile=profile,
+                        caller=capture_caller_identity(),
                     )
             self.assertFalse(fsmonitor_marker.exists())
             (repo / "feature.txt").write_text("one\ntwo\n", encoding="utf-8")
@@ -816,6 +836,7 @@ class EffortAdvisoryServiceTests(unittest.TestCase):
                         title="Subject",
                         status="in_progress",
                         effort_profile=profile,
+                        caller=capture_caller_identity(),
                     )
                 with connection:
                     edit_task(
@@ -824,6 +845,7 @@ class EffortAdvisoryServiceTests(unittest.TestCase):
                         subject.task["task_id"],
                         status="review_pending",
                         effort_profile=profile,
+                        caller=capture_caller_identity(),
                     )
                 with connection:
                     edit_task(
@@ -833,6 +855,7 @@ class EffortAdvisoryServiceTests(unittest.TestCase):
                         status="paused",
                         pause_reason="Short hold",
                         effort_profile=profile,
+                        caller=capture_caller_identity(),
                     )
                 with connection:
                     edit_task(
@@ -841,6 +864,7 @@ class EffortAdvisoryServiceTests(unittest.TestCase):
                         subject.task["task_id"],
                         status="in_progress",
                         effort_profile=profile,
+                        caller=capture_caller_identity(),
                     )
                 with closing(connect_readonly(db)) as readonly:
                     own_only = build_effort_advisory(
@@ -859,6 +883,7 @@ class EffortAdvisoryServiceTests(unittest.TestCase):
                         title="Other",
                         status="in_progress",
                         effort_profile=disabled_profile(),
+                        caller=CallerIdentity("22222222-2222-4222-8222-222222222222"),
                     )
                 with connection:
                     edit_task(
@@ -868,6 +893,7 @@ class EffortAdvisoryServiceTests(unittest.TestCase):
                         status="blocked",
                         blocked_reason="Synthetic hold",
                         effort_profile=disabled_profile(),
+                        caller=CallerIdentity("22222222-2222-4222-8222-222222222222"),
                     )
             (repo / "overlap.txt").write_text("overlap\n", encoding="utf-8")
             git(repo, "add", "overlap.txt")
@@ -917,6 +943,7 @@ class EffortAdvisoryServiceTests(unittest.TestCase):
                         title="Observed subject",
                         status="in_progress",
                         effort_profile=profile,
+                        caller=capture_caller_identity(),
                     )
 
             def observe_after_other_task_starts(repo_path, basis_revision):
@@ -928,6 +955,7 @@ class EffortAdvisoryServiceTests(unittest.TestCase):
                             title="Concurrent task",
                             status="in_progress",
                             effort_profile=profile,
+                            caller=CallerIdentity("22222222-2222-4222-8222-222222222222"),
                         )
                     with writer:
                         edit_task(
@@ -937,6 +965,7 @@ class EffortAdvisoryServiceTests(unittest.TestCase):
                             status="blocked",
                             blocked_reason="Synthetic completion of overlap",
                             effort_profile=profile,
+                            caller=CallerIdentity("22222222-2222-4222-8222-222222222222"),
                         )
                 return observe_git_measurements(repo_path, basis_revision)
 
@@ -974,6 +1003,7 @@ class EffortAdvisoryServiceTests(unittest.TestCase):
                         title="Corrupt basis test",
                         status="in_progress",
                         effort_profile=profile,
+                        caller=capture_caller_identity(),
                     )
                 with connection:
                     connection.execute(
@@ -1025,6 +1055,7 @@ class EffortAdvisoryServiceTests(unittest.TestCase):
                         title="Non Git",
                         status="in_progress",
                         effort_profile=profile,
+                        caller=capture_caller_identity(),
                     )
             with closing(connect_readonly(non_git_db)) as connection:
                 non_git = build_effort_advisory(
@@ -1051,6 +1082,7 @@ class EffortAdvisoryServiceTests(unittest.TestCase):
                         title="Dirty basis",
                         status="in_progress",
                         effort_profile=profile,
+                        caller=capture_caller_identity(),
                     )
             with closing(connect_readonly(dirty_db)) as connection:
                 dirty = build_effort_advisory(
@@ -1083,6 +1115,7 @@ class EffortAdvisoryServiceTests(unittest.TestCase):
                         title="Busy activity",
                         status="ready",
                         effort_profile=profile,
+                        caller=capture_caller_identity(),
                     )
 
                 busy = sqlite3.OperationalError("sensitive lock detail")
@@ -1101,6 +1134,7 @@ class EffortAdvisoryServiceTests(unittest.TestCase):
                                 status="in_progress",
                                 effort_profile=profile,
                                 database_target=target,
+                                caller=capture_caller_identity(),
                             )
 
             self.assertEqual(raised.exception.code, "database_busy")
@@ -1158,6 +1192,7 @@ class EffortAdvisoryServiceTests(unittest.TestCase):
                         title="Busy basis",
                         status="ready",
                         effort_profile=profile,
+                        caller=capture_caller_identity(),
                     )
 
                 wrapped = BusyBasisConnection(connection)
@@ -1170,6 +1205,7 @@ class EffortAdvisoryServiceTests(unittest.TestCase):
                             status="in_progress",
                             effort_profile=profile,
                             database_target=target,
+                            caller=capture_caller_identity(),
                         )
                     finally:
                         connection.rollback()

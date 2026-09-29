@@ -349,8 +349,7 @@ Pause only `in_progress` or `review_pending` work with a concise reason:
 python .agents/skills/task-governance-tool/scripts/taskgov.py task edit --repo <target-project> <task-id> --status paused --pause-reason "Waiting for a safe continuation window" --json
 ```
 
-Use held-work recall already returned in `task context`; only for explicit
-held-work inspection use `task current --status paused`. Resume the known Task
+For explicit held-work inspection use `task current --status paused`. Resume the known Task
 explicitly:
 
 ```powershell
@@ -365,6 +364,23 @@ python .agents/skills/task-governance-tool/scripts/taskgov.py task edit --repo <
 
 After blocking one lane, return to `task context` to resume another active Task
 or select unrelated ready work with its complete context.
+
+Only in-progress occupies the caller's slot. Review-pending retains completion
+responsibility while freeing the slot, so that caller may complete A while
+working on B. It is not an initial status: start before entering review-pending.
+Paused work requires an isolated resume before other updates. Blocked reason
+or metadata edits, return to ready and cancellation need no resume or active
+slot; existing state/lane gates remain. Caller identity and ownership comparison
+are automatic.
+
+For explicitly authorized takeover, including migrated unknown ownership, use
+only the isolated pause command above with the concrete reason, then resume.
+Do not combine takeover with notes, metadata or Contract edits. No inactivity
+timeout authorizes takeover. `task_ownership_changed` means the earlier write
+basis is stale; inspect current state rather than replay it. Missing identity
+permits reads but cannot acquire/complete work: report the host identity issue,
+never invent an ID or substitute another session. Review registration remains
+with the parent owner/completion owner; do not ask reviewers to register directly.
 
 ## Scope Control And Local Handoff
 

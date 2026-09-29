@@ -261,7 +261,7 @@ Expired or stale context requires a fresh preview and fresh user approval.
     "state_layout_activate"
   ],
   "schema_from": null,
-  "schema_to": 23,
+  "schema_to": 24,
   "maintenance_enabled": true,
   "backup_interval_minutes": 30,
   "backup_generations": 3,
@@ -310,7 +310,7 @@ Preview reports current durable state, not planned state:
 `completed_writes=[]`, and a fresh preview keeps
 `maintenance_enabled=false`. A healthy replay has empty write lists. Every
 error has `status=null`; preflight/policy failures use empty write lists and
-null observed values except `schema_to=23`. A later-stage failure reports only
+null observed values except `schema_to=24`. A later-stage failure reports only
 the durable ordered prefix. Inspect `data.completed_writes` before retrying;
 `setup_incomplete` permits a retry that recomputes from durable state rather
 than repeating an assumed failed stage; it does not guarantee automatic repair
@@ -369,8 +369,8 @@ A ready result has this structure:
     },
     "project_state": {
       "code": "ready",
-      "schema_version": 23,
-      "required_schema_version": 23
+      "schema_version": 24,
+      "required_schema_version": 24
     },
     "task_summary": {
       "code": "ready",
@@ -452,6 +452,15 @@ content, exception, or raw state.
 
 ## Task Commands
 
+All returned Task records, including compact and write results, carry
+`ownership={state,owner_session_id,completion_session_id,execution_id,generation,
+is_owner,is_completion_owner}`. State is `none|owned|completion_only|unknown`;
+IDs are full or null. Unknown caller/owner yields null self flags; known none
+yields false. The CLI identifies its caller automatically from `CODEX_THREAD_ID`;
+no session input, extra read or manual ID comparison is needed. These values are
+not credentials and flags are not saved to shared Viewer/Evidence. For held or
+unknown work use [explicit recovery](task_workflow.md#pause-resume-and-block).
+
 Invalid stored Task or current Contract data returns exit 2, code
 `project_state_unreadable`, and message
 `project state could not be read safely`. The command keeps its existing empty
@@ -483,7 +492,9 @@ Success data contains `task`, `event`, and `context_preparation`, plus
 
 Initial `done` returns `initial_done_forbidden`; specifically,
 `task add --status done` never stores a task or event. Initial `paused` returns
-`initial_paused_forbidden`. Initial `blocked` requires `--blocked-reason`.
+`initial_paused_forbidden`. Initial `review_pending` returns `invalid_status_transition`.
+Initial `in_progress` acquires the caller's single active slot; batches retain
+all-or-nothing behavior. Initial `blocked` requires `--blocked-reason`.
 Sequential adds preserve the same predecessor rule used for selection and
 transitions.
 
@@ -585,7 +596,7 @@ Default data keys are `tasks`, `count`, `limit`, and `selection_rules`.
 Compact data keys are exactly `tasks`, `total_matching`, `returned_count`,
 `limit`, and `truncated`. A compact task has only `task_id`, `title`, `kind`,
 `lane`, `lane_order`, `priority`, `review_tier`, `tags`, and
-`suggested_next_action`.
+`suggested_next_action`, and `ownership`.
 
 Complete compact JSON stdout is capped at 16,384 UTF-8 bytes. Truncation keeps
 only a complete-row prefix in existing order. `--compact` requires `--json`;
@@ -617,7 +628,7 @@ Compact rows contain only:
 
 ```text
 task_id, title, status, kind, lane, lane_order, priority, review_tier,
-blocked_reason, pause_reason, latest_event, suggested_next_action
+blocked_reason, pause_reason, latest_event, suggested_next_action, ownership
 ```
 
 A compact latest event contains only `event_type`, `summary`, `created_at`,
@@ -636,7 +647,7 @@ python .agents/skills/task-governance-tool/scripts/taskgov.py task context --rep
 ```
 
 Only common options are accepted; there is no Task ID, filter, display-mode,
-or automatic start option. The tool resumes active/review-pending work first,
+or automatic start option. The tool resumes the caller's active/review-pending work first,
 otherwise selects ready work using its existing order. Selection precedes
 display omission, so a Task absent from the compact lists may still be selected.
 Use the returned selection; do not reconstruct or re-rank it.
@@ -647,8 +658,10 @@ Success data is exactly `selection`, `current`, `next`, and `selected`.
 is the complete [normal Task detail](#task-show), or null when no candidate exists.
 It includes complete Contract, latest checkpoint, current blockers/gates, and
 `effort_advisory_enabled`. Use that detail directly without another
-current/next/show call. Held work remains recalled; successful component
-warnings are retained once.
+current/next/show call. Owner eligibility is applied before the bounded SQL limit;
+explicit current/show still inspect held and other-owner Tasks. Missing identity
+adds `session_identity_required` and permits only ready fallback inspection.
+Successful component warnings are retained once.
 
 For `selection=current|next`, use `data.selected.task.task_id` as `<task-id>` in
 the next Task-specific command. `selection=next` does not start the Task; start
@@ -658,7 +671,7 @@ the `task context` call itself.
 Any read failure returns its sanitized error with no partial working context;
 it never skips the failure to select another Task. `ok=true` with
 `selection=none` is successful absence, distinct from `ok=false`. Text gives
-the selection, existing selected-Task detail, held-work recall, and warnings.
+the selection, existing selected-Task detail, caller-owned current work, and warnings.
 No state, evidence, or gate is changed. The public operation reuses the
 existing selection and gate rules.
 
@@ -1420,7 +1433,7 @@ python .agents/skills/task-governance-tool/scripts/taskgov.py review target set 
 generation. Git commits are resolved read-only and stored canonically. A diff
 fingerprint is `sha256:` plus 64 lowercase hexadecimal characters.
 
-At schema v21 through v23, this same target-set operation may use the explicitly opted-in
+At schema v21 through v24, this same target-set operation may use the explicitly opted-in
 trusted-local Runner route. It adds no argument or public Runner command. JSON
 success data is `task`, `changed_fields`, `event`, `verification_route`,
 `blocking_code`, and `review_preparation`; failure
@@ -2058,6 +2071,8 @@ Important task/review/handoff errors include:
 - `initial_done_forbidden`, `initial_paused_forbidden`
 - `blocked_reason_required`, `pause_reason_required`
 - `sequential_predecessor_incomplete`, `done_task_requires_reopen`
+- `session_identity_required`, `session_task_in_progress`, `task_not_owned`,
+  `task_ownership_changed`
 - `completion_history_inconsistent`
 - `contract_activation_forbidden`, `contract_authority_required`,
   `contract_write_conflict`

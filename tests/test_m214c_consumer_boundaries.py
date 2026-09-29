@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import json
+import os
 import sqlite3
 import sys
 import tempfile
 import unittest
 from contextlib import closing
 from pathlib import Path
+from unittest import mock
 
 from tests.m14_test_support import (
     create_v14_target,
@@ -44,6 +46,7 @@ from task_governance_tool.storage import (  # noqa: E402
     apply_completion_cycle_history_migration,
     connect,
     connect_initialized_readonly,
+    connect_readonly,
     current_schema_version,
     resolve_database_target,
 )
@@ -164,13 +167,16 @@ class StoredTaskConsumerBoundaryTests(unittest.TestCase):
                     title="First selected Task",
                     priority="urgent",
                 )
-                second = add_another_task(
-                    repo,
-                    db,
-                    title="Unselected invalid Task",
-                    status=status,
-                    priority="low",
-                )
+                with mock.patch.dict(os.environ, {
+                    "CODEX_THREAD_ID": "00000000-0000-4000-8000-000000000002",
+                }):
+                    second = add_another_task(
+                        repo,
+                        db,
+                        title="Unselected invalid Task",
+                        status=status,
+                        priority="low",
+                    )
                 inject_task_fault(
                     db,
                     second["task_id"],
@@ -357,7 +363,11 @@ class StoredTaskConsumerBoundaryTests(unittest.TestCase):
                 script_path=SCRIPT_PATH,
             )
 
-            with closing(connect_initialized_readonly(target)) as connection:
+            with self.assertRaises(StorageError) as global_failure:
+                connect_initialized_readonly(target)
+            self.assertEqual(global_failure.exception.code, FIXED_CODE)
+            self.assertEqual(global_failure.exception.message, FIXED_MESSAGE)
+            with closing(connect_readonly(db)) as connection:
                 with self.assertRaises(StorageError) as caught:
                     build_viewer_snapshot(connection, target)
 

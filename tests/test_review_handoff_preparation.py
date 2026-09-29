@@ -42,8 +42,10 @@ class PreparationFixture(unittest.TestCase):
     def task(self, verification=""):
         declaration = (["--verification", verification] if verification else
                        ["--verification-not-required", "Isolated transport fixture without executable changes"])
-        return self.cli("task", "add", "--title", "Full pipeline 日本語", "--review-tier", "2",
-                        "--status", "in_progress", *declaration)["task"]["task_id"]
+        task_id = self.cli("task", "add", "--title", "Full pipeline 日本語", "--review-tier", "2",
+                           "--status", "in_progress", *declaration)["task"]["task_id"]
+        self.cli("task", "edit", task_id, "--status", "review_pending")
+        return task_id
 
     def invoke(self, *args, raw=None):
         return subprocess.run([sys.executable, "-I", "-S", str(self.helper), *args],
@@ -836,6 +838,7 @@ class ReviewerMaterialTests(PreparationFixture):
         self.assertNotEqual(failed.returncode, 0)
         # A semantic Contract revision clears the live target by contract.
         self.assertEqual(json.loads(failed.stdout)["code"], "review_target_missing")
+        self.cli("task", "edit", task, "--status", "review_pending")
         _, prepared = self.prepare(self.task(), options=["--kind", "external_revision", "--revision", "approved-revision"],
                                    directory="reviews/external")
         result = self.displayed(prepared["handoff"]["packet_path"])
@@ -911,6 +914,7 @@ class ReviewerMaterialTests(PreparationFixture):
                                     *approvals, output)
             self.assertEqual(submitted.returncode, 0, submitted.stdout)
             self.assertEqual(json.loads(submitted.stdout)["data"]["receipts"][0]["receipt"]["receipt_kind"], kind)
+            self.cli("task", "edit", task, "--status", "review_pending")
 
 
 class DirectPacketReviewerTests(unittest.TestCase):
@@ -923,7 +927,7 @@ class DirectPacketReviewerTests(unittest.TestCase):
                 return json.loads(completed.stdout)["data"]
             cli("setup")
             task = cli("task", "add", "--title", "Direct independent review", "--review-tier", "2",
-                       "--verification-not-required", "Isolated transport fixture without executable changes")["task"]["task_id"]
+                       "--status", "in_progress", "--verification-not-required", "Isolated transport fixture without executable changes")["task"]["task_id"]
             packet = cli("review", "target", "set", task, "--kind", "diff_fingerprint",
                          "--revision", FINGERPRINT)["review_preparation"]["packet"]
             # Reviewer receives this complete object, not a file or helper commands.

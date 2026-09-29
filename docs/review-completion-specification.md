@@ -31,6 +31,14 @@ Every target set, including identical or A-to-B-to-A values, increments a
 positive signed-64-bit generation. Historical receipts never reactivate.
 Target setting is forbidden on done Tasks.
 
+Task-scoped writes also obey the [session ownership boundary](task-operation-specification.md#session-ownership-and-recovery).
+Target/Runner admission and Verification/Review/Finding writes recheck the
+observed ownership generation under the writer. Review Receipt and structured
+result registration require the current Task owner or retained completion owner;
+direct reviewer-session registration is not enabled by this unit. An already
+admitted Runner still performs mandatory cleanup and terminal audit after a
+handover; that continuation authorizes no new launch or target.
+
 `review receipt add` binds a sanitized reviewer key, independent/fallback/
 not-required kind, PASS or changes-requested verdict, summary, user-approval
 flag when required, and timestamps to the exact current target/generation.
@@ -739,6 +747,12 @@ blocking finding/receipt. The manual arm uses the current Verification Receipt;
 the Runner-pass arm uses its qualifying observation with a null Receipt link.
 They use the same transition service.
 
+The caller must own the active Task or its retained `review_pending` completion
+responsibility. Completing review-pending A does not acquire an active slot, so
+the same caller may already be executing B. Ownership generation is part of the
+optimistic completion basis; a delayed operation cannot complete after handover,
+even if the same session subsequently reacquires the Task.
+
 Thin completion emits `command="task.complete"` and data exactly `task`,
 `changed_fields`, and `event`; text starts
 `Task completed: <task-id>`. It accepts no non-completion edit.
@@ -762,7 +776,8 @@ order. Allowed readiness codes are `invalid_status_transition`,
 `verification_receipt_required`, `verification_receipt_blocking`,
 `verification_requirement_unspecified`,
 `review_finding_unresolved`, `review_changes_requested`,
-`review_receipts_insufficient`, and `completion_check_stale`. Parse/privacy,
+`review_receipts_insufficient`, `session_identity_required`, `task_not_owned`,
+`task_ownership_changed`, and `completion_check_stale`. Parse/privacy,
 not-found, project/schema/journal/busy/storage/internal failures remain command
 errors.
 
@@ -794,6 +809,13 @@ target; and versioned accepted gate-basis counts plus up to two qualifying
 review-receipt IDs. Schema v17 additionally stores internal
 `verification_basis_version`, `verification_expectation_digest`, and
 `verification_receipt_id` fields without changing the public cycle shape.
+
+Schema 24 atomically links each new native cycle to its current execution in
+`task_execution_cycles`, then releases Task ownership. Reopen acquires a new
+execution and active slot; it preserves the earlier cycle and link. Migration
+creates no execution or association for historical cycles, and the existing
+partial legacy bridge remains unlinked. The public history and sealed Bundle
+shapes do not gain caller-relative flags or an execution field.
 
 The migration is named `completion_cycle_history`. Internal cycle fields
 include `recorded_at`, `gate_basis_version`, and `review_basis_kind`; these are

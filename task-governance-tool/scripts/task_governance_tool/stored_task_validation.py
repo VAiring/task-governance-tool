@@ -670,6 +670,11 @@ def validate_stored_task_rows(
         )
     if rejection is not None and not verification_rejection_is_local:
         raise _stored_task_unreadable()
+    if source_schema_version >= 24:
+        from task_governance_tool.task_ownership import read_bases
+        if connection is None:
+            raise _stored_task_unreadable()
+        read_bases(connection, project_id=expected_project_id, task_ids=[row["task_id"] for row in rows])
     return StoredTaskValidationResult(
         verification_rejection=rejection,
         verification_rejected_task_ids=frozenset(rejected_task_ids),

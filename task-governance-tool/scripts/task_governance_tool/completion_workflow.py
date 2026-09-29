@@ -7,6 +7,9 @@ from contextlib import closing, nullcontext
 from dataclasses import dataclass, field, replace
 
 from task_governance_tool.completion import CompletionRequest
+from task_governance_tool.session_identity import CallerIdentity
+from task_governance_tool.task_ownership import require_completion_owner
+from task_governance_tool.task_values import validation_error
 from task_governance_tool.effort import EffortProfile
 from task_governance_tool.storage import (
     DatabaseTarget,
@@ -52,6 +55,9 @@ COMPLETION_BLOCKING_CODES = (
     "review_changes_requested",
     "review_receipts_insufficient",
     "completion_check_stale",
+    "task_not_owned",
+    "session_identity_required",
+    "task_ownership_changed",
 )
 
 
@@ -134,6 +140,7 @@ def check_completion_request(
     input_error: TaskValidationError | TaskRepositoryError | None = None,
     initial_connection: sqlite3.Connection | None = None,
     runner_selector: RunnerSelectionProvider | None = None,
+    caller: CallerIdentity = CallerIdentity(None),
 ) -> CompletionCheckOutcome:
     """Check one request with read/close/Git/read and no stored authority."""
     manager = (
@@ -155,6 +162,11 @@ def check_completion_request(
         initial_connection.close()
 
     plan: CompletionPlan | None = None
+    if preflight_error is None and first_preselector_basis.ownership is not None:
+        try:
+            require_completion_owner(first_preselector_basis.ownership, caller)
+        except TaskValidationError as exc:
+            preflight_error = exc
     if preflight_error is None:
         try:
             plan = prepare_request_against_basis(
@@ -283,6 +295,7 @@ def execute_completion_request(
     effort_profile: EffortProfile | None = None,
     input_error: TaskValidationError | TaskRepositoryError | None = None,
     runner_selector: RunnerSelectionProvider | None = None,
+    caller: CallerIdentity = CallerIdentity(None),
 ) -> EditTaskResult:
     """Observe outside the lock, then delegate one locked existing transition."""
     with closing(connect_initialized_readonly(target)) as connection:
@@ -297,6 +310,11 @@ def execute_completion_request(
         )
     if preflight_error is not None:
         raise preflight_error
+    if preselector_basis.ownership is not None:
+        actor = caller.require()
+        if actor not in (preselector_basis.ownership.owner_session_id,
+                         preselector_basis.ownership.completion_session_id):
+            raise validation_error("task_not_owned", "the caller does not own this task")
     plan = prepare_request_against_basis(
         preselector_basis,
         target,
@@ -320,6 +338,8 @@ def execute_completion_request(
             )
         if current_preflight_error is not None:
             raise current_preflight_error
+        if current_preselector_basis.ownership != preselector_basis.ownership:
+            raise validation_error("task_ownership_changed", "task ownership changed; inspect current task state")
         if (
             current_preselector_basis.semantic_token
             != preselector_basis.semantic_token
@@ -349,6 +369,8 @@ def execute_completion_request(
             )
             if final_preflight_error is not None:
                 raise final_preflight_error
+            if final_preselector_basis.ownership != preselector_basis.ownership:
+                raise validation_error("task_ownership_changed", "task ownership changed; inspect current task state")
             if (
                 final_preselector_basis.semantic_token
                 != current_preselector_basis.semantic_token
@@ -364,6 +386,8 @@ def execute_completion_request(
                 request,
                 runner_selection,
             )
+        if current_basis.ownership != preselector_basis.ownership:
+            raise validation_error("task_ownership_changed", "task ownership changed; inspect current task state")
         plan = replace(plan, basis=current_basis)
         validate_completion_plan_basis(plan, current_basis)
     with closing(connect_initialized(target)) as connection:
@@ -374,4 +398,5 @@ def execute_completion_request(
                 plan,
                 effort_profile=effort_profile,
                 database_target=target,
+                caller=caller,
             )

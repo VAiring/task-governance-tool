@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import io
 import json
+import os
 import sqlite3
 import subprocess
 import sys
@@ -23,6 +24,7 @@ from task_governance_tool import reviews as review_service
 from task_governance_tool import storage as storage_service
 from task_governance_tool.maintenance import MutationOutcome
 from task_governance_tool.task_values import TaskValidationError
+from task_governance_tool.session_identity import capture_caller_identity
 
 
 TASK_ID = "tg_task_0123456789abcdef"
@@ -278,11 +280,12 @@ class FindingResolutionCliTests(unittest.TestCase):
 
     def test_missing_and_wrong_task_finding_leave_all_selected_rows_unchanged(self):
         selected = self.finding("Selected local issue")
-        other_id = self.success("task", "add", "--title", "Another owner", "--review-tier", "2")["task"]["task_id"]
-        self.success("review", "target", "set", other_id, "--kind", "diff_fingerprint", "--revision", FINGERPRINT)
-        receipt = review_fixtures.receipt_add(self.db, self.repo, other_id, "other-reviewer")
-        self.assertEqual(receipt.returncode, 0, receipt.stdout)
-        foreign = self.finding("Other Task issue", task_id=other_id, receipt_id=json.loads(receipt.stdout)["data"]["receipt"]["review_receipt_id"])
+        with mock.patch.dict(os.environ, {"CODEX_THREAD_ID": "22222222-2222-4222-8222-222222222222"}):
+            other_id = self.success("task", "add", "--title", "Another owner", "--status", "in_progress", "--review-tier", "2")["task"]["task_id"]
+            self.success("review", "target", "set", other_id, "--kind", "diff_fingerprint", "--revision", FINGERPRINT)
+            receipt = review_fixtures.receipt_add(self.db, self.repo, other_id, "other-reviewer")
+            self.assertEqual(receipt.returncode, 0, receipt.stdout)
+            foreign = self.finding("Other Task issue", task_id=other_id, receipt_id=json.loads(receipt.stdout)["data"]["receipt"]["review_receipt_id"])
         for finding_id, error in (("finding-missing", "not_found"), (foreign["review_finding_id"], "invalid_review_evidence")):
             before = file_snapshot(self.root)
             groups = [{"finding_ids": [selected["review_finding_id"], finding_id], "resolution": "Checked correction"}]
@@ -329,6 +332,7 @@ class FindingResolutionCliTests(unittest.TestCase):
             earlier = review_service.resolve_review_finding(
                 connection, self.target.project, prior["review_finding_id"],
                 resolution="Preserve earlier caller work", database_target=self.target,
+                caller=capture_caller_identity(),
             )
             self.assertTrue(connection.in_transaction)
             with self.assertRaises(review_service.TaskRepositoryError) as raised:
@@ -338,6 +342,7 @@ class FindingResolutionCliTests(unittest.TestCase):
                         {"finding_id": selected["review_finding_id"], "resolution": "Batch prefix must roll back"},
                         {"finding_id": "missing-later-finding", "resolution": "Later failure"},
                     ], database_target=self.target,
+                    caller=capture_caller_identity(),
                 )
             self.assertEqual(raised.exception.code, "not_found")
             self.assertTrue(connection.in_transaction)
@@ -386,6 +391,9 @@ class FindingResolutionCliTests(unittest.TestCase):
                 storage_service.apply_completion_evidence_bundle_migration(connection)
                 storage_service.apply_migrations(connection)
             self.repo, self.db, self.target, self.task_id = repo, db, target, task_id
+            self.success("task", "edit", task_id, "--status", "paused",
+                         "--pause-reason", "Recover migrated finding fixture")
+            self.success("task", "edit", task_id, "--status", "in_progress")
             with closing(sqlite3.connect(db)) as connection:
                 before_capture = connection.execute("SELECT review_target_capture_version,review_target_generation FROM tasks WHERE task_id=?", (task_id,)).fetchone()
             self.assertEqual(before_capture[0], 0)
@@ -466,7 +474,7 @@ class FindingResolutionCliTests(unittest.TestCase):
                 return json.loads(result.stdout)["data"]
 
             successful("setup")
-            task_id = successful("task", "add", "--title", "Physical Finding batch", "--review-tier", "1")["task"]["task_id"]
+            task_id = successful("task", "add", "--title", "Physical Finding batch", "--status", "in_progress", "--review-tier", "1")["task"]["task_id"]
             successful("review", "target", "set", task_id, "--kind", "diff_fingerprint", "--revision", FINGERPRINT)
             receipt_id = successful("review", "receipt", "add", task_id, "--reviewer", "physical-reviewer", "--kind", "independent", "--verdict", "pass", "--reviewer-class", "human", "--model-state", "not_applicable", "--skill-state", "not_applicable", "--context-relation", "external_context")["receipt"]["review_receipt_id"]
             ids = [successful("review", "finding", "add", task_id, "--receipt-id", receipt_id, "--severity", "low", "--summary", title)["finding"]["review_finding_id"] for title in ("First issue", "Second issue")]

@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+from task_governance_tool.session_identity import CallerIdentity
+from task_governance_tool import task_ownership
+
 import hashlib
 import json
 import secrets
@@ -321,6 +324,7 @@ def record_handoff(
     summary: Any,
     rationale: Any = "",
     occurrence_id: Any = None,
+    caller: CallerIdentity = CallerIdentity(None),
 ) -> RecordHandoffResult:
     """Insert or replay one sanitized local handoff inside the caller transaction."""
     normalized_task_id = validate_task_id(source_task_id)
@@ -360,6 +364,9 @@ def record_handoff(
     )
     if task_row is None:
         raise HandoffError("not_found", "source task was not found")
+    ownership = task_ownership.capture_basis(connection, project_id=project.project_id, task_id=normalized_task_id)
+    if ownership is not None:
+        task_ownership.require_mutation(connection, ownership, caller)
 
     source_contract_revision = _stored_nonnegative_int(
         task_row,
@@ -525,6 +532,7 @@ def withdraw_handoff(
     handoff_id: Any,
     *,
     reason: Any,
+    caller: CallerIdentity = CallerIdentity(None),
 ) -> WithdrawHandoffResult:
     normalized_id = _validate_handoff_id(handoff_id)
     normalized_reason = _canonical_text(
@@ -545,6 +553,9 @@ def withdraw_handoff(
     if existing is None:
         raise HandoffError("not_found", "handoff was not found")
     _validate_stored_handoff(existing)
+    ownership = task_ownership.capture_basis(connection, project_id=project.project_id, task_id=existing["source_task_id"])
+    if ownership is not None:
+        task_ownership.require_mutation(connection, ownership, caller)
     if (
         str(existing["state"]) != "pending_handoff"
         or _stored_nonnegative_int(existing, "delivery_attempts") != 0

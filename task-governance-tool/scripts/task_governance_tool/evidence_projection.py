@@ -573,7 +573,7 @@ def _validate_bundle_payload(
     source_schema_version = _integer(payload["source_schema_version"])
     bundle_version = _integer(payload["bundle_version"])
     version_pair = (source_schema_version, bundle_version)
-    if version_pair not in {(19, 1), (20, 2), (21, 2), (22, 2), (23, 2)}:
+    if version_pair not in {(19, 1), (20, 2), (21, 2), (22, 2), (23, 2), (24, 2)}:
         raise _inconsistent()
     is_v2 = bundle_version == 2
     _utf8(payload["project_id"])
@@ -823,7 +823,7 @@ def _validate_bundle_payload(
             runner = _runner_observation(payload["runner_observation"])
             runner_id = verification_basis["runner_observation_id"]
             if (
-                source_schema_version not in {23, 21, 22}
+                source_schema_version not in {23, 24, 21, 22}
                 or verification is not None
                 or verification_basis["verification_receipt_id"] is not None
                 or type(runner_id) is not str
@@ -866,7 +866,7 @@ def assemble_bundle_payload(
     )
     keys = (
         _PAYLOAD_V2_KEYS
-        if version_pair in {(20, 2), (21, 2), (22, 2), (23, 2)}
+        if version_pair in {(20, 2), (21, 2), (22, 2), (23, 2), (24, 2)}
         else _PAYLOAD_KEYS
     )
     payload = _mapping(basis, keys)
@@ -882,7 +882,7 @@ def _bundle_domain_and_format(payload: Mapping[str, Any]) -> tuple[bytes, int]:
     if (
         payload["source_schema_version"],
         payload["bundle_version"],
-    ) in {(20, 2), (21, 2), (22, 2), (23, 2)}:
+    ) in {(20, 2), (21, 2), (22, 2), (23, 2), (24, 2)}:
         return BUNDLE_V2_DOMAIN, 2
     raise _inconsistent()
 
@@ -1448,7 +1448,7 @@ def assemble_index_payload(
 ) -> dict[str, Any]:
     payload = _mapping(basis, _INDEX_PAYLOAD_KEYS)
     source_schema_version = _integer(payload["source_schema_version"])
-    if source_schema_version not in {23, 19, 20, 21, 22}:
+    if source_schema_version not in {23, 24, 19, 20, 21, 22}:
         raise _inconsistent()
     index_format_version = 1 if source_schema_version == 19 else 2
     _utf8(payload["project_id"])
@@ -1727,7 +1727,7 @@ def _build_projection_bundle_artifact(
         ),
     }
     version_pair = (bundle.source_schema_version, bundle.bundle_version)
-    if version_pair in {(20, 2), (21, 2), (22, 2), (23, 2)}:
+    if version_pair in {(20, 2), (21, 2), (22, 2), (23, 2), (24, 2)}:
         payload["verification_basis"] = {
             "basis_version": 1,
             "kind": bundle.verification_basis_kind,

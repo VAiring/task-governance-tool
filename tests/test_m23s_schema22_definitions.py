@@ -175,7 +175,7 @@ def _construct_private_schema22(connection: sqlite3.Connection) -> None:
 
 class Schema22DefinitionTests(unittest.TestCase):
     def test_public_initialization_is22_and_legacy21_definition_remains_unchanged(self):
-        self.assertEqual(storage.SCHEMA_VERSION, 23)
+        self.assertEqual(storage.SCHEMA_VERSION, 24)
         self.assertEqual(storage.PRIVATE_SCHEMA22_VERSION, 22)
         self.assertEqual(
             storage.PRIVATE_SCHEMA22_MIGRATION_NAME,

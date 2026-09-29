@@ -6,6 +6,9 @@ import sqlite3
 from dataclasses import dataclass
 from typing import Any
 
+from task_governance_tool.session_identity import CallerIdentity
+from task_governance_tool.task_ownership import project_tasks
+
 from task_governance_tool.ordering import (
     canonical_lane_sql,
     duplicate_lane_order_sql,
@@ -103,6 +106,7 @@ def select_next_tasks(
     lane: Any = None,
     priority: Any = None,
     limit: Any = None,
+    caller: CallerIdentity = CallerIdentity(None),
 ) -> TaskNextResult:
     filters, values = next_task_filters(project, kind=kind, lane=lane, priority=priority)
     row_limit = validate_limit(limit, default=5)
@@ -135,7 +139,7 @@ def select_next_tasks(
         rows,
         expected_project_id=project.project_id,
     )
-    tasks = [row_to_task(row) for row in rows]
+    tasks = project_tasks(connection, [row_to_task(row) for row in rows], caller)
     return TaskNextResult(
         tasks=tasks,
         count=len(tasks),

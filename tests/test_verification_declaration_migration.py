@@ -18,11 +18,11 @@ from task_governance_tool import schema_verification_declaration as declaration
 
 
 @contextmanager
-def schema22_runtime():
-    # Historical runtime oracle only; normal production admission still requires 23.
+def schema22_runtime(version=22):
+    # Historical runtime oracle only; production admission requires current schema.
     with ExitStack() as stack:
         for target in _SCHEMA20_RUNTIME_PATCH_TARGETS:
-            stack.enter_context(mock.patch(target, 22))
+            stack.enter_context(mock.patch(target, version))
         yield
 
 
@@ -35,6 +35,7 @@ class FailingCopy(sqlite3.Connection):
 
 class VerificationDeclarationMigrationTests(unittest.TestCase):
     def setUp(self):
+        self.enterContext(schema22_runtime(version=23))
         self.temporary = tempfile.TemporaryDirectory()
         self.addCleanup(self.temporary.cleanup)
         with schema22_runtime():

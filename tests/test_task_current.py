@@ -1,13 +1,16 @@
 import json
+import os
 import sqlite3
 import subprocess
 import sys
 import tempfile
 import unittest
+import uuid
+from unittest import mock
 from contextlib import closing
 from pathlib import Path
 
-from tests.review_test_helpers import seed_review_evidence
+from tests.review_test_helpers import seed_review_evidence, start_ready_review_fixture
 from tests.m14_test_support import (
     initialize_taskgov_internal,
     run_taskgov_internal,
@@ -37,6 +40,7 @@ def add_task(db, repo, title, *extra):
 
 def edit_task(db, repo, task_id, *extra):
     if "--status" in extra and extra[extra.index("--status") + 1] == "done":
+        start_ready_review_fixture(db, repo, task_id)
         seed_review_evidence(db, task_id)
     result = run_taskgov(
         "task", "edit", "--repo", str(repo), "--db", str(db), task_id, *extra, "--json"
@@ -69,23 +73,26 @@ def insert_current_row(connection, project_id, task_id, title, *, priority="norm
     original_row_factory = connection.row_factory
     connection.row_factory = sqlite3.Row
     try:
+        from task_governance_tool.session_identity import CallerIdentity
+        from task_governance_tool.task_ownership import initialize_task
+        initialize_task(
+            connection, project_id=project_id, task_id=task_id, status="in_progress",
+            caller=CallerIdentity(str(uuid.uuid5(uuid.NAMESPACE_URL, task_id))), now=updated_at,
+        )
         capture_or_reuse_current_authority_snapshot_locked(
-            connection,
-            project_id=project_id,
-            task_id=task_id,
-            created_at=updated_at,
+            connection, project_id=project_id, task_id=task_id, created_at=updated_at,
         )
     finally:
         connection.row_factory = original_row_factory
 
 
 def seed_current_states(db, repo):
-    in_progress = add_task(db, repo, "Implement feature", "--status", "in_progress", "--priority", "low")
-    review = add_task(db, repo, "Review feature", "--status", "review_pending", "--priority", "urgent")
     paused = add_task(db, repo, "Paused feature", "--status", "in_progress", "--priority", "high")
     paused = edit_task(
         db, repo, paused["task_id"], "--status", "paused", "--pause-reason", "Waiting for a safe window"
     )
+    review = add_task(db, repo, "Review feature", "--status", "in_progress", "--priority", "urgent")
+    review = edit_task(db, repo, review["task_id"], "--status", "review_pending")
     blocked = add_task(
         db, repo, "Blocked feature", "--status", "blocked", "--blocked-reason", "User decision needed",
         "--priority", "urgent",
@@ -97,6 +104,7 @@ def seed_current_states(db, repo):
         "--review-complete", "--commit-not-required",
     )
     add_task(db, repo, "Cancelled excluded", "--status", "cancelled")
+    in_progress = add_task(db, repo, "Implement feature", "--status", "in_progress", "--priority", "low")
     return in_progress, review, paused, blocked
 
 
@@ -272,7 +280,8 @@ class TaskCurrentTests(unittest.TestCase):
             repo = Path(tmp) / "repo"
             init_db(db, repo)
             task = add_task(db, repo, "Event task", "--status", "in_progress")
-            eventless = add_task(db, repo, "Eventless task", "--status", "in_progress")
+            with mock.patch.dict(os.environ, {"CODEX_THREAD_ID": "22222222-2222-4222-8222-222222222222"}):
+                eventless = add_task(db, repo, "Eventless task", "--status", "in_progress")
             with closing(sqlite3.connect(db)) as connection:
                 project_id = connection.execute(
                     "SELECT project_id FROM tasks WHERE task_id = ?", (task["task_id"],)
@@ -310,7 +319,8 @@ class TaskCurrentTests(unittest.TestCase):
             result = run_taskgov("task", "current", "--repo", str(repo), "--db", str(db))
 
             self.assertEqual(result.returncode, 0, result.stderr)
-            self.assertLessEqual(len(result.stdout.strip().splitlines()), 2)
+            self.assertLessEqual(len(result.stdout.strip().splitlines()), 3)
+            self.assertIn("Ownership:", result.stdout)
             self.assertIn("Current tasks: 1 (limit 20)", result.stdout)
             self.assertIn("continue the task and inspect its latest event", result.stdout)
 

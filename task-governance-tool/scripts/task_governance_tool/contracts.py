@@ -6,6 +6,8 @@ import secrets
 import sqlite3
 from dataclasses import dataclass
 from typing import Any
+from task_governance_tool.session_identity import CallerIdentity
+from task_governance_tool import task_ownership
 
 from task_governance_tool.contract_content import (
     _validate_stored_contract,
@@ -269,6 +271,8 @@ def _activate_revision_zero(
     caller_edit_input: dict[str, Any],
     contract_input: dict[str, Any],
     basis_precommit_validator: TaskEditBasisPrecommitValidator | None,
+    caller: CallerIdentity,
+    ownership_basis: task_ownership.OwnershipBasis | None,
 ) -> ContractEditResult:
     raw_status = caller_edit_input.get("status")
     if (
@@ -315,6 +319,8 @@ def _activate_revision_zero(
                 "contract_write_conflict",
                 "task changed concurrently; retry the Contract write",
             )
+        if ownership_basis is not None:
+            task_ownership.transition(connection, ownership_basis, caller, status="in_progress", now=now)
         _insert_contract_revision(
             connection,
             project_id=project.project_id,
@@ -401,7 +407,7 @@ def _activate_revision_zero(
     if existing["blocked_reason"]:
         changed_fields.append("blocked_reason")
     return ContractEditResult(
-        task=row_to_task(stored),
+        task=task_ownership.project_tasks(connection, [row_to_task(stored)], caller)[0],
         changed_fields=changed_fields,
         event=event,
         contract_write=ContractWriteResult(recorded=True, revision=1),
@@ -416,6 +422,8 @@ def _later_revision(
     caller_edit_input: dict[str, Any],
     contract_input: dict[str, Any],
     basis_precommit_validator: TaskEditBasisPrecommitValidator | None,
+    caller: CallerIdentity,
+    ownership_basis: task_ownership.OwnershipBasis | None,
 ) -> ContractEditResult:
     if caller_edit_input:
         raise validation_error(
@@ -471,7 +479,7 @@ def _later_revision(
             task_id=str(existing["task_id"]),
         )
         return ContractEditResult(
-            task=row_to_task(row),
+            task=task_ownership.project_tasks(connection, [row_to_task(row)], caller)[0],
             changed_fields=[],
             event=None,
             contract_write=ContractWriteResult(
@@ -590,6 +598,8 @@ def _later_revision(
                 "contract_write_conflict",
                 "task changed concurrently; retry the Contract write",
             )
+        if ownership_basis is not None:
+            task_ownership.transition(connection, ownership_basis, caller, status=next_status, now=now)
         _insert_contract_revision(
             connection,
             project_id=project.project_id,
@@ -682,7 +692,7 @@ def _later_revision(
     else:
         connection.execute(f"RELEASE SAVEPOINT {savepoint}")
     return ContractEditResult(
-        task=row_to_task(stored),
+        task=task_ownership.project_tasks(connection, [row_to_task(stored)], caller)[0],
         changed_fields=changed_fields,
         event=event,
         contract_write=ContractWriteResult(
@@ -700,11 +710,19 @@ def edit_contract(
     caller_edit_input: dict[str, Any],
     contract_input: dict[str, Any],
     basis_precommit_validator: TaskEditBasisPrecommitValidator | None = None,
+    caller: CallerIdentity = CallerIdentity(None),
+    ownership_basis: task_ownership.OwnershipBasis | None = None,
 ) -> ContractEditResult:
     current_revision = validate_sqlite_int64(
         existing["current_contract_revision"],
         field="current_contract_revision",
     )
+    if ownership_basis is None:
+        ownership_basis = task_ownership.capture_basis(
+            connection, project_id=project.project_id, task_id=str(existing["task_id"]),
+        )
+    if ownership_basis is not None and current_revision > 0:
+        task_ownership.require_mutation(connection, ownership_basis, caller)
     if current_revision == 0:
         return _activate_revision_zero(
             connection,
@@ -713,6 +731,8 @@ def edit_contract(
             caller_edit_input=caller_edit_input,
             contract_input=contract_input,
             basis_precommit_validator=basis_precommit_validator,
+            caller=caller,
+            ownership_basis=ownership_basis,
         )
     return _later_revision(
         connection,
@@ -721,4 +741,6 @@ def edit_contract(
         caller_edit_input=caller_edit_input,
         contract_input=contract_input,
         basis_precommit_validator=basis_precommit_validator,
+        caller=caller,
+        ownership_basis=ownership_basis,
     )

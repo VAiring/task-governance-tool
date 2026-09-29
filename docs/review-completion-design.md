@@ -515,7 +515,15 @@ transaction. `edit_task` retains the outer savepoint, ordering checks, Task
 update, lane recheck, event and rollback; `completion_workflow` retains
 preflight orchestration outside the writer.
 
-1. validate schema v22, identity/binding, optimistic Task/authority/target
+`task_ownership.py` supplies the captured ownership basis and same-writer
+generation check. The completion basis carries it separately from quality
+evidence. Both completion paths require the owner/completion owner; `--check`
+uses the same rule without acquiring a slot. Runner target admission checks
+ownership before T1, but committed execution cleanup and terminal audit never
+depend on later caller ownership. Packet preparation bindings omit the
+caller-relative ownership projection; ownership freshness is checked separately.
+
+1. validate schema v24, identity/binding, optimistic ownership/Task/authority/target
    capture basis, Contract, sequential ordering, and evidence;
 2. reread Verification Receipts and review receipts/findings, evaluate the
    current verification and review gates, and select their deterministic
@@ -524,7 +532,8 @@ preflight orchestration outside the writer.
 4. insert links, Finding snapshots, one immutable Bundle-v2 row carrying the
    selected caller-attestation, not-required, or Runner-observation basis, and
    one complete verification/subject/evidence-basis-v1 `native_done` cycle;
-5. update the current Task to done with identical evidence;
+5. link the current execution to that cycle, release ownership and update the
+   current Task to done with identical evidence;
 6. rerun lane invariants;
 7. insert the existing completion event with the internal cycle link; and
 8. advance Evidence and Viewer source generations and commit.
@@ -541,7 +550,9 @@ any existing-cycle mismatch, or an already linked reopen returns
 coverage and cycles, inserts `task_reopened` linked to the validated cycle, and
 advances Evidence generation only when it inserts the legacy bridge. It never revalidates historical Git material, uses historical
 receipts as current eligibility, changes a cycle, or creates a bridge when a
-cycle already exists. A later done uses fresh gates and the next ordinal.
+cycle already exists. It acquires a new execution and checks the session's active
+slot in the same writer; failure rolls back the reopen as a whole. A later done
+uses fresh gates and the next ordinal.
 
 ### Public History Projection
 

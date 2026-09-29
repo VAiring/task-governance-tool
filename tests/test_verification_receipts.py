@@ -245,6 +245,11 @@ class VerificationReceiptIntegrationTests(unittest.TestCase):
                 "verification_expectation_required",
             )
 
+            waiting = run_taskgov(
+                "task", "edit", empty["task_id"], "--status", "review_pending",
+                "--repo", str(repo), "--db", str(db), "--json",
+            )
+            self.assertEqual(waiting.returncode, 0, waiting.stdout)
             targetless = add_task(
                 db,
                 repo,
@@ -273,6 +278,11 @@ class VerificationReceiptIntegrationTests(unittest.TestCase):
                 "review_target_required",
             )
 
+            waiting = run_taskgov(
+                "task", "edit", targetless["task_id"], "--status", "review_pending",
+                "--repo", str(repo), "--db", str(db), "--json",
+            )
+            self.assertEqual(waiting.returncode, 0, waiting.stdout)
             done = add_task(
                 db,
                 repo,
@@ -601,7 +611,7 @@ class ReceiptPacketConnectionTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp:
             repo, db = initialize(Path(temp))
             task_id = add_task(db, repo)["task_id"]
-            other_id = add_task(db, repo, title="Other task")["task_id"]
+            other_id = add_task(db, repo, title="Other task", status="ready")["task_id"]
             set_target(db, repo, other_id)
             generation = set_target(db, repo, task_id)
             receipt = payload(add_receipt(db, repo, task_id, generation))["data"]["receipt"]

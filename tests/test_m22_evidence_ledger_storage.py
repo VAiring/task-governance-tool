@@ -965,7 +965,7 @@ class EvidenceLedgerStorageTests(unittest.TestCase):
         )
 
     def test_schema_version_and_verification_capacity_are_layered(self):
-        self.assertEqual(SCHEMA_VERSION, 23)
+        self.assertEqual(SCHEMA_VERSION, 24)
         self.assertEqual(stored_task_verification_limit(17), 500)
         self.assertEqual(stored_task_verification_limit(18), 1_000)
         self.assertEqual(stored_task_verification_limit(19), 1_000)
@@ -1197,9 +1197,9 @@ class EvidenceLedgerStorageTests(unittest.TestCase):
                         validate_evidence_ledger_storage(connection)
 
                         applied, warnings = apply_migrations(connection)
-                        self.assertEqual(applied, [19, 20, 21, 22, 23])
+                        self.assertEqual(applied, [19, 20, 21, 22, 23, 24])
                         self.assertEqual(warnings, [])
-                        self.assertEqual(current_schema_version(connection), 23)
+                        self.assertEqual(current_schema_version(connection), 24)
                         self.assertEqual(
                             connection.execute(
                                 "SELECT constraints_text "
@@ -3327,7 +3327,7 @@ class EvidenceLedgerStorageTests(unittest.TestCase):
                             apply_completion_evidence_bundle_migration(connection)
                             self.assertEqual(
                                 apply_migrations(connection),
-                                ([20, 21, 22, 23], []),
+                                ([20, 21, 22, 23, 24], []),
                             )
 
                     corrupt_owner = "corrupt-verification-project-owner"
@@ -3381,7 +3381,7 @@ class EvidenceLedgerStorageTests(unittest.TestCase):
                             apply_completion_evidence_bundle_migration(connection)
                             self.assertEqual(
                                 apply_migrations(connection),
-                                ([20, 21, 22, 23], []),
+                                ([20, 21, 22, 23, 24], []),
                             )
 
                     with closing(connect(db)) as connection:
@@ -3540,6 +3540,7 @@ class EvidenceLedgerStorageTests(unittest.TestCase):
                             db,
                             repo,
                             title="Other Verification Reference owner",
+                            status="ready",
                         )
                         set_target(
                             db,
@@ -3979,7 +3980,7 @@ class EvidenceLedgerStorageTests(unittest.TestCase):
                             apply_completion_evidence_bundle_migration(connection)
                             self.assertEqual(
                                 apply_migrations(connection),
-                                ([20, 21, 22, 23], []),
+                                ([20, 21, 22, 23, 24], []),
                             )
 
                     with closing(connect(target.db_path)) as connection:
@@ -4226,6 +4227,7 @@ class EvidenceLedgerStorageTests(unittest.TestCase):
                 repo,
                 title="Stored source owner",
                 verification="",
+                status="ready",
             )
             set_target(db, repo, selected_task["task_id"])
             set_target(db, repo, source_task["task_id"])
@@ -4275,7 +4277,8 @@ class EvidenceLedgerStorageTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp:
             repo, db = initialize(Path(temp))
             tasks = [
-                add_task(db, repo, title=f"Reference batch {index}", verification="")
+                add_task(db, repo, title=f"Reference batch {index}",
+                         verification="", status="ready")
                 for index in range(2)
             ]
             for task in tasks:
@@ -4330,6 +4333,12 @@ class EvidenceLedgerStorageTests(unittest.TestCase):
                 review_tier=1,
                 verification="",
             )
+            waiting = run_taskgov(
+                "task", "edit", source_task["task_id"],
+                "--status", "review_pending", "--repo", str(repo),
+                "--db", str(db), "--json",
+            )
+            self.assertEqual(waiting.returncode, 0, waiting.stdout)
             other_task = add_task(
                 db,
                 repo,
@@ -4703,6 +4712,12 @@ class EvidenceLedgerStorageTests(unittest.TestCase):
                         review_tier=1,
                     )
                     seed_current_review_evidence(db, repo, task["task_id"])
+                    waiting = run_taskgov(
+                        "task", "edit", task["task_id"],
+                        "--status", "review_pending", "--repo", str(repo),
+                        "--db", str(db), "--json",
+                    )
+                    self.assertEqual(waiting.returncode, 0, waiting.stdout)
                 with closing(connect(db)) as connection:
                     statements: list[str] = []
                     connection.set_trace_callback(statements.append)

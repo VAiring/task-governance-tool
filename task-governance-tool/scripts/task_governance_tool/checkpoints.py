@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+from task_governance_tool.session_identity import CallerIdentity
+from task_governance_tool import task_ownership
+
 import json
 import sqlite3
 from dataclasses import dataclass
@@ -238,6 +241,7 @@ def record_checkpoint(
     next_action: Any,
     unresolved_risks: Sequence[Any] | None = None,
     database_target: DatabaseTarget | None = None,
+    caller: CallerIdentity = CallerIdentity(None),
 ) -> RecordCheckpointResult:
     """Record or exactly replay one checkpoint inside the caller transaction."""
     normalized_task_id = validate_task_id(task_id)
@@ -256,6 +260,9 @@ def record_checkpoint(
     if task is None:
         raise TaskRepositoryError("not_found", "task was not found")
     reject_done_task_write(task)
+    ownership = task_ownership.capture_basis(connection, project_id=project.project_id, task_id=normalized_task_id)
+    if ownership is not None:
+        task_ownership.require_mutation(connection, ownership, caller)
 
     contract = read_current_contract(
         connection,

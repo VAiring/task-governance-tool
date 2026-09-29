@@ -8,6 +8,9 @@ import sqlite3
 from dataclasses import dataclass, field
 from typing import Any
 
+from task_governance_tool.session_identity import CallerIdentity
+from task_governance_tool import task_ownership
+
 from task_governance_tool.review_packet_binding import review_packet_binding
 
 from task_governance_tool.artifact_manifest import (
@@ -69,6 +72,7 @@ from task_governance_tool.tasks import (
     create_task_event,
     ensure_git_preflight_outside_transaction,
     read_internal_task,
+    read_mutation_basis,
     reject_done_task_write,
     row_to_show_task,
 )
@@ -133,6 +137,7 @@ class ReviewTargetAuthorityBasis:
     verification_criterion_id: str | None
     verification_expectation_digest: str
     verification_criterion_digest: str | None
+    ownership: task_ownership.OwnershipBasis | None = field(default=None, repr=False)
 
 
 @dataclass(frozen=True)
@@ -188,6 +193,8 @@ def lock_and_reread_target_owner(
     task_id: str,
     *,
     database_target: DatabaseTarget | None = None,
+    caller: CallerIdentity = CallerIdentity(None),
+    ownership: task_ownership.OwnershipBasis | None = None,
 ) -> dict[str, Any]:
     if not connection.in_transaction:
         if database_target is not None:
@@ -198,6 +205,10 @@ def lock_and_reread_target_owner(
     if task is None:
         raise TaskRepositoryError("not_found", "task was not found")
     reject_done_task_write(task)
+    if ownership is None:
+        ownership = task_ownership.capture_basis(connection, project_id=project.project_id, task_id=task_id)
+    if ownership is not None:
+        task_ownership.require_mutation(connection, ownership, caller)
     return task
 
 
@@ -383,6 +394,7 @@ def read_review_target_authority_basis(
         verification_criterion_digest=(
             None if verification is None else verification[1]
         ),
+        ownership=task_ownership.capture_basis(connection, project_id=project.project_id, task_id=normalized_task_id),
     )
 
 
@@ -395,6 +407,8 @@ def persist_prepared_review_target_capture(
     database_target: DatabaseTarget | None = None,
     now: str | None = None,
     runner_basis_version: int = 0,
+    caller: CallerIdentity = CallerIdentity(None),
+    ownership: task_ownership.OwnershipBasis | None = None,
 ) -> ReviewTargetResult:
     """Persist a caller-observed target after one locked freshness reread."""
 
@@ -404,6 +418,7 @@ def persist_prepared_review_target_capture(
         project,
         task_id,
         database_target=database_target,
+        caller=caller, ownership=ownership,
     )
     reject_concurrent_review_basis_change(observed_task, task)
     return _persist_review_target_capture(
@@ -414,6 +429,7 @@ def persist_prepared_review_target_capture(
         generation=next_review_target_generation(task),
         now=now or utc_now(),
         runner_basis_version=runner_basis_version,
+        caller=caller,
     )
 
 
@@ -426,6 +442,7 @@ def _persist_review_target_capture(
     generation: int,
     now: str,
     runner_basis_version: int = 0,
+    caller: CallerIdentity = CallerIdentity(None),
 ) -> ReviewTargetResult:
     """Persist one complete schema-v18 target capture in the active writer."""
 
@@ -635,7 +652,7 @@ def _persist_review_target_capture(
             "task was not readable after review target update",
         )
     return ReviewTargetResult(
-        task=row_to_show_task(updated_row),
+        task=task_ownership.project_tasks(connection, [row_to_show_task(updated_row)], caller)[0],
         preparation_binding=review_packet_binding(
             row_to_show_task(updated_row), updated_row["current_contract_revision"],
         ),
@@ -657,9 +674,10 @@ def set_review_target(
     kind: Any,
     revision: Any,
     database_target: DatabaseTarget | None = None,
+    caller: CallerIdentity = CallerIdentity(None),
 ) -> ReviewTargetResult:
     normalized_task_id = validate_task_id(task_id)
-    observed_task = read_internal_task(connection, project.project_id, normalized_task_id)
+    observed_task, ownership = read_mutation_basis(connection, project.project_id, normalized_task_id)
     if observed_task is None:
         raise TaskRepositoryError("not_found", "task was not found")
     reject_done_task_write(observed_task)
@@ -689,6 +707,7 @@ def set_review_target(
         project,
         normalized_task_id,
         database_target=database_target,
+        caller=caller, ownership=ownership,
     )
     reject_concurrent_review_basis_change(observed_task, task)
 
@@ -701,6 +720,7 @@ def set_review_target(
         observation=observation,
         generation=generation,
         now=now,
+        caller=caller,
     )
 
 
@@ -710,9 +730,10 @@ def set_git_snapshot_target(
     task_id: Any,
     *,
     database_target: DatabaseTarget | None = None,
+    caller: CallerIdentity = CallerIdentity(None),
 ) -> ReviewTargetResult:
     normalized_task_id = validate_task_id(task_id)
-    observed_task = read_internal_task(connection, project.project_id, normalized_task_id)
+    observed_task, ownership = read_mutation_basis(connection, project.project_id, normalized_task_id)
     if observed_task is None:
         raise TaskRepositoryError("not_found", "task was not found")
     reject_done_task_write(observed_task)
@@ -728,6 +749,7 @@ def set_git_snapshot_target(
         project,
         normalized_task_id,
         database_target=database_target,
+        caller=caller, ownership=ownership,
     )
     reject_concurrent_review_basis_change(observed_task, task)
     generation = next_review_target_generation(task)
@@ -739,6 +761,7 @@ def set_git_snapshot_target(
         observation=observation,
         generation=generation,
         now=now,
+        caller=caller,
     )
 
 
@@ -750,6 +773,7 @@ def set_requested_review_target(
     kind: Any,
     revision: Any = None,
     database_target: DatabaseTarget | None = None,
+    caller: CallerIdentity = CallerIdentity(None),
 ) -> ReviewTargetResult:
     """Dispatch the public target request without accepting a snapshot revision."""
     normalized_task_id = validate_task_id(task_id)
@@ -775,6 +799,7 @@ def set_requested_review_target(
             project,
             normalized_task_id,
             database_target=database_target,
+            caller=caller,
         )
     return set_review_target(
         connection,
@@ -783,6 +808,7 @@ def set_requested_review_target(
         kind=target_kind,
         revision=revision,
         database_target=database_target,
+        caller=caller,
     )
 
 
@@ -882,12 +908,15 @@ def add_review_receipt(
     context_relation: Any = None,
     review_methods: Any = None,
     database_target: DatabaseTarget | None = None,
+    caller: CallerIdentity = CallerIdentity(None),
 ) -> ReviewReceiptResult:
     normalized_task_id = validate_task_id(task_id)
-    observed_task = read_internal_task(connection, project.project_id, normalized_task_id)
+    observed_task, ownership = read_mutation_basis(connection, project.project_id, normalized_task_id)
     if observed_task is None:
         raise TaskRepositoryError("not_found", "task was not found")
     reject_done_task_write(observed_task)
+    if ownership is not None:
+        task_ownership.require_completion_owner(ownership, caller)
     if (
         int(observed_task["review_target_generation"]) <= 0
         or not str(observed_task["review_target_kind"])
@@ -928,6 +957,7 @@ def add_review_receipt(
         project,
         normalized_task_id,
         database_target=database_target,
+        caller=caller, ownership=ownership,
     )
     reject_concurrent_review_basis_change(
         observed_task,
@@ -1175,9 +1205,10 @@ def add_review_finding(
     severity: Any,
     summary: Any,
     database_target: DatabaseTarget | None = None,
+    caller: CallerIdentity = CallerIdentity(None),
 ) -> ReviewFindingResult:
     normalized_task_id = validate_task_id(task_id)
-    observed_task = read_internal_task(connection, project.project_id, normalized_task_id)
+    observed_task, ownership = read_mutation_basis(connection, project.project_id, normalized_task_id)
     if observed_task is None:
         raise TaskRepositoryError("not_found", "task was not found")
     reject_done_task_write(observed_task)
@@ -1228,6 +1259,7 @@ def add_review_finding(
         project,
         normalized_task_id,
         database_target=database_target,
+        caller=caller, ownership=ownership,
     )
     reject_concurrent_review_basis_change(
         observed_task,
@@ -1494,6 +1526,7 @@ def resolve_review_findings(
     *,
     resolutions: list[dict[str, Any]],
     database_target: DatabaseTarget | None = None,
+    caller: CallerIdentity = CallerIdentity(None),
 ) -> list[ReviewFindingResult]:
     normalized_task_id = validate_task_id(task_id)
     if not 1 <= len(resolutions) <= FINDING_RESOLUTION_BATCH_LIMIT:
@@ -1508,7 +1541,7 @@ def resolve_review_findings(
         seen.add(finding_id)
         items.append((finding_id, resolution))
 
-    lock_and_reread_target_owner(connection, project, normalized_task_id, database_target=database_target)
+    lock_and_reread_target_owner(connection, project, normalized_task_id, database_target=database_target, caller=caller)
     savepoint = f"taskgov_finding_batch_{secrets.token_hex(4)}"
     connection.execute(f"SAVEPOINT {savepoint}")
     results = []
@@ -1521,6 +1554,7 @@ def resolve_review_findings(
                 raise review_error("invalid_review_evidence", "review finding belongs to a different Task")
             results.append(resolve_review_finding(
                 connection, project, finding_id, resolution=resolution, database_target=database_target,
+                caller=caller,
             ))
     except Exception:
         connection.execute(f"ROLLBACK TO SAVEPOINT {savepoint}")
@@ -1537,6 +1571,7 @@ def resolve_review_finding(
     *,
     resolution: Any,
     database_target: DatabaseTarget | None = None,
+    caller: CallerIdentity = CallerIdentity(None),
 ) -> ReviewFindingResult:
     normalized_finding_id = validate_text(
         "review_finding_id", finding_id, required=True, limit=128
@@ -1556,7 +1591,7 @@ def resolve_review_finding(
         review_finding_ids={normalized_finding_id},
         verification_receipt_ids=set(),
     )
-    observed_task = read_internal_task(connection, project.project_id, str(row["task_id"]))
+    observed_task, ownership = read_mutation_basis(connection, project.project_id, str(row["task_id"]))
     if observed_task is None:
         raise TaskRepositoryError(
             "internal_error",
@@ -1577,6 +1612,7 @@ def resolve_review_finding(
         project,
         str(row["task_id"]),
         database_target=database_target,
+        caller=caller, ownership=ownership,
     )
     reject_concurrent_review_basis_change(
         observed_task,

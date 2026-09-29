@@ -125,10 +125,13 @@ def project_compact_current_task(task: Mapping[str, Any]) -> dict[str, Any]:
             event["summary"]
         )
         projected["latest_event"] = event
-    return {
+    result = {
         field: projected[field]
         for field in COMPACT_CURRENT_TASK_FIELDS
     }
+    if "ownership" in task:
+        result["ownership"] = task["ownership"]
+    return result
 
 
 def project_compact_next_task(task: Mapping[str, Any]) -> dict[str, Any]:
@@ -143,10 +146,13 @@ def project_compact_next_task(task: Mapping[str, Any]) -> dict[str, Any]:
         object_name="next task",
     )
     projected["suggested_next_action"] = suggested_next_action(dict(task))
-    return {
+    result = {
         field: projected[field]
         for field in COMPACT_NEXT_TASK_FIELDS
     }
+    if "ownership" in task:
+        result["ownership"] = task["ownership"]
+    return result
 
 
 def compact_current_empty_data(

@@ -17,6 +17,7 @@ if str(SCRIPTS_ROOT) not in sys.path:
     sys.path.insert(0, str(SCRIPTS_ROOT))
 
 from task_governance_tool import verification_runner_plan_edit as edit_module  # noqa: E402
+from task_governance_tool.session_identity import capture_caller_identity
 from task_governance_tool.reviews import (  # noqa: E402
     read_review_target_authority_basis,
 )
@@ -238,6 +239,7 @@ def runner_plan_edit_fixture():
                     verification=CURRENT_VERIFICATION,
                     contract_scope="Coordinate one Task and Plan action",
                     contract_acceptance="Preserve ordered commit semantics",
+                    caller=capture_caller_identity(),
                 )
         yield RunnerPlanEditFixture(
             repo=repo,
@@ -290,6 +292,7 @@ class RunnerPlanEditTests(unittest.TestCase):
                 fixture.task_id,
                 runner_plan_action="replace",
                 runner_plan_draft_blob=draft_blob(),
+                caller=capture_caller_identity(),
             )
 
             self.assertEqual(first.task_mutation, "none")
@@ -312,6 +315,7 @@ class RunnerPlanEditTests(unittest.TestCase):
                     fixture.task_id,
                     runner_plan_action="replace",
                     runner_plan_draft_blob=draft_blob(),
+                    caller=capture_caller_identity(),
                 )
             self.assertEqual(replay.task_mutation, "none")
             self.assertEqual(replay.runner_plan_update.status, "unchanged")
@@ -326,6 +330,7 @@ class RunnerPlanEditTests(unittest.TestCase):
                 fixture.target,
                 fixture.task_id,
                 status="cancelled",
+                caller=capture_caller_identity(),
             )
             self.assertEqual(cancelled.task_mutation, "committed")
             terminal_database = fixture.database_dump()
@@ -343,6 +348,7 @@ class RunnerPlanEditTests(unittest.TestCase):
                                 fixture.task_id,
                                 runner_plan_action=action,
                                 runner_plan_draft_blob=draft,
+                                caller=capture_caller_identity(),
                             )
                         ),
                     )
@@ -358,6 +364,7 @@ class RunnerPlanEditTests(unittest.TestCase):
                 fixture.target,
                 fixture.task_id,
                 runner_plan_action="detach",
+                caller=capture_caller_identity(),
             )
             self.assertEqual(detached.task_mutation, "none")
             self.assertEqual(detached.runner_plan_update.status, "updated")
@@ -369,6 +376,28 @@ class RunnerPlanEditTests(unittest.TestCase):
                 (),
             )
 
+    def test_cancelled_task_without_plan_keeps_ordinary_verification_edits(self):
+        with runner_plan_edit_fixture() as fixture:
+            edit_module.edit_task_with_runner_plan(
+                fixture.target, fixture.task_id, status="cancelled",
+                caller=capture_caller_identity(),
+            )
+            for declaration in (
+                {"verification": FUTURE_VERIFICATION},
+                {"verification_not_required_reason": "No executable change remains"},
+            ):
+                with self.subTest(declaration=declaration):
+                    result = edit_module.edit_task_with_runner_plan(
+                        fixture.target, fixture.task_id,
+                        caller=capture_caller_identity(), **declaration,
+                    )
+                    self.assertEqual(result.task_mutation, "committed")
+                    self.assertIsNone(result.runner_plan_update)
+                    self.assertEqual(fixture.task_row()["status"], "cancelled")
+                    self.assertFalse(fixture.plan_path.exists())
+                    for field, value in declaration.items():
+                        self.assertEqual(fixture.task_row()[field], value)
+
     def test_required_to_waived_requires_plan_disposition_but_reason_only_does_not(self):
         for action in ("detach", "disable"):
             with self.subTest(action=action), runner_plan_edit_fixture() as fixture:
@@ -377,11 +406,11 @@ class RunnerPlanEditTests(unittest.TestCase):
                 reason = "Declaration fixture without executable changes"
                 self.assert_error_code("runner_plan_action_required", lambda:
                     edit_module.edit_task_with_runner_plan(fixture.target, fixture.task_id,
-                        verification_not_required_reason=reason))
+                        verification_not_required_reason=reason, caller=capture_caller_identity()))
                 self.assertEqual(fixture.database_dump(), before)
                 self.assertEqual(fixture.plan_path.read_bytes(), original)
                 result = edit_module.edit_task_with_runner_plan(fixture.target, fixture.task_id,
-                    verification_not_required_reason=reason, runner_plan_action=action)
+                    verification_not_required_reason=reason, runner_plan_action=action, caller=capture_caller_identity())
                 self.assertEqual(result.task_mutation, "committed")
                 self.assertEqual(result.runner_plan_update.status, "updated")
                 self.assertEqual(fixture.task_row()["verification"], "")
@@ -393,7 +422,7 @@ class RunnerPlanEditTests(unittest.TestCase):
                     self.assertFalse(plan.trusted_local)
                 plan_before = fixture.plan_path.read_bytes()
                 revised = edit_module.edit_task_with_runner_plan(fixture.target, fixture.task_id,
-                    verification_not_required_reason="Revised fixture rationale")
+                    verification_not_required_reason="Revised fixture rationale", caller=capture_caller_identity())
                 self.assertEqual(revised.task_mutation, "committed")
                 self.assertIsNone(revised.runner_plan_update)
                 self.assertEqual(fixture.plan_path.read_bytes(), plan_before)
@@ -408,6 +437,7 @@ class RunnerPlanEditTests(unittest.TestCase):
                     fixture.target,
                     fixture.task_id,
                     verification=FUTURE_VERIFICATION,
+                    caller=capture_caller_identity(),
                 ),
             )
             self.assertEqual(
@@ -427,6 +457,7 @@ class RunnerPlanEditTests(unittest.TestCase):
                     fixture.target,
                     fixture.task_id,
                     verification=FUTURE_VERIFICATION,
+                    caller=capture_caller_identity(),
                 )
             self.assertEqual(result.task_mutation, "committed")
             self.assertIsNone(result.runner_plan_update)
@@ -498,6 +529,7 @@ class RunnerPlanEditTests(unittest.TestCase):
                         fixture.task_id,
                         runner_plan_action=action,
                         verification=FUTURE_VERIFICATION,
+                        caller=capture_caller_identity(),
                     )
 
                 self.assertEqual(result.task_mutation, "committed")
@@ -523,6 +555,7 @@ class RunnerPlanEditTests(unittest.TestCase):
                     f"user_instruction:{fixture.task_id}:2"
                 ),
                 contract_change_reason="Exercise future Contract basis",
+                caller=capture_caller_identity(),
             )
             self.assertEqual(revised.task_mutation, "committed")
             self.assertEqual(revised.runner_plan_update.status, "updated")
@@ -546,6 +579,7 @@ class RunnerPlanEditTests(unittest.TestCase):
                         f"user_instruction:{fixture.task_id}:2"
                     ),
                     contract_change_reason="Exercise future Contract basis",
+                    caller=capture_caller_identity(),
                 ),
             )
             self.assertEqual(fixture.database_dump(), database)
@@ -555,6 +589,7 @@ class RunnerPlanEditTests(unittest.TestCase):
                 fixture.target,
                 fixture.task_id,
                 runner_plan_action="rebind",
+                caller=capture_caller_identity(),
             )
             self.assertEqual(replay.task_mutation, "none")
             self.assertEqual(replay.runner_plan_update.status, "unchanged")
@@ -591,6 +626,7 @@ class RunnerPlanEditTests(unittest.TestCase):
                         fixture.task_id,
                         runner_plan_action="rebind",
                         verification=FUTURE_VERIFICATION,
+                        caller=capture_caller_identity(),
                     ),
                 )
             publish.assert_not_called()
@@ -628,6 +664,7 @@ class RunnerPlanEditTests(unittest.TestCase):
                             fixture.target,
                             fixture.task_id,
                             runner_plan_action=action,
+                            caller=capture_caller_identity(),
                         ),
                     )
                 self.assertEqual(str(error), message)
@@ -652,6 +689,7 @@ class RunnerPlanEditTests(unittest.TestCase):
                         fixture.task_id,
                         runner_plan_action="rebind",
                         verification=FUTURE_VERIFICATION,
+                        caller=capture_caller_identity(),
                     )
 
                 self.assertEqual(partial.task_mutation, "committed")
@@ -672,6 +710,7 @@ class RunnerPlanEditTests(unittest.TestCase):
                     fixture.target,
                     fixture.task_id,
                     runner_plan_action="rebind",
+                    caller=capture_caller_identity(),
                 )
                 self.assertEqual(repaired.task_mutation, "none")
                 self.assertEqual(
@@ -711,6 +750,7 @@ class RunnerPlanEditTests(unittest.TestCase):
                     fixture.task_id,
                     runner_plan_action="rebind",
                     verification=FUTURE_VERIFICATION,
+                    caller=capture_caller_identity(),
                 )
 
             publish.assert_called_once()
@@ -746,6 +786,7 @@ class RunnerPlanEditTests(unittest.TestCase):
                         runner_plan_draft_blob=draft_blob(
                             argv=["token=private-value"]
                         ),
+                        caller=capture_caller_identity(),
                     ),
                 )
                 self.assertNotIn("private-value", str(private))
@@ -761,6 +802,7 @@ class RunnerPlanEditTests(unittest.TestCase):
                         verification_complete=True,
                         review_complete=True,
                         commit_not_required=True,
+                        caller=capture_caller_identity(),
                     ),
                 )
                 task_edit.assert_not_called()

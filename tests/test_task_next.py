@@ -1,13 +1,15 @@
 import json
+import os
 import sqlite3
 import subprocess
 import sys
 import tempfile
 import unittest
+from unittest import mock
 from contextlib import closing
 from pathlib import Path
 
-from tests.review_test_helpers import seed_review_evidence
+from tests.review_test_helpers import seed_review_evidence, start_ready_review_fixture
 from tests.m14_test_support import (
     initialize_taskgov_internal,
     run_taskgov_internal,
@@ -32,6 +34,9 @@ def init_db(db, repo):
 
 
 def add_task(db, repo, title, *extra):
+    review_fixture = "--status" in extra and extra[extra.index("--status") + 1] == "review_pending"
+    if review_fixture:
+        extra = tuple("in_progress" if item == "review_pending" else item for item in extra)
     if "--verification" not in extra and "--verification-not-required" not in extra:
         extra = (*extra, "--verification-not-required", "Selection-only fixture")
     result = run_taskgov(
@@ -48,11 +53,15 @@ def add_task(db, repo, title, *extra):
     )
     if result.returncode != 0:
         raise AssertionError(result.stderr or result.stdout)
-    return json.loads(result.stdout)["data"]["task"]
+    task = json.loads(result.stdout)["data"]["task"]
+    if review_fixture:
+        task = edit_task(db, repo, task["task_id"], "--status", "review_pending")["data"]["task"]
+    return task
 
 
 def edit_task(db, repo, task_id, *extra):
     if "--status" in extra and extra[extra.index("--status") + 1] == "done":
+        start_ready_review_fixture(db, repo, task_id)
         seed_review_evidence(db, task_id)
     result = run_taskgov(
         "task",
@@ -246,19 +255,9 @@ class TaskNextTests(unittest.TestCase):
             repo = Path(tmp) / "repo"
             init_db(db, repo)
             add_task(db, repo, "Optional ready")
-            add_task(
-                db,
-                repo,
-                "In progress earlier",
-                "--kind",
-                "sequential",
-                "--lane",
-                "BUILD",
-                "--order",
-                "10",
-                "--status",
-                "in_progress",
-            )
+            with mock.patch.dict(os.environ, {"CODEX_THREAD_ID": "22222222-2222-4222-8222-222222222222"}):
+                add_task(db, repo, "In progress earlier", "--kind", "sequential",
+                         "--lane", "BUILD", "--order", "10", "--status", "in_progress")
             add_task(
                 db,
                 repo,
@@ -580,7 +579,8 @@ class TaskNextTests(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertEqual(result.stderr, "")
             lines = result.stdout.strip().splitlines()
-            self.assertLessEqual(len(lines), 2)
+            self.assertLessEqual(len(lines), 3)
+            self.assertIn("Ownership:", result.stdout)
             self.assertIn("Next tasks: 1 (limit 5)", result.stdout)
             self.assertIn("Ready optional", result.stdout)
 

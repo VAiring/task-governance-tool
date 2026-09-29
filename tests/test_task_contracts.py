@@ -29,6 +29,7 @@ from task_governance_tool.storage import (  # noqa: E402
     resolve_database_target,
 )
 from task_governance_tool.tasks import edit_task  # noqa: E402
+from task_governance_tool.session_identity import capture_caller_identity  # noqa: E402
 from task_governance_tool.contract_content import normalize_contract_input  # noqa: E402
 
 
@@ -192,7 +193,7 @@ class TaskContractCliTests(unittest.TestCase):
             db = root / "taskgov.sqlite"
             repo = root / "repo"
             init_db(db, repo)
-            allowed = ("ready", "in_progress", "blocked", "review_pending")
+            allowed = ("ready", "in_progress", "blocked")
             for status in allowed:
                 extra = [
                     "--status",
@@ -230,7 +231,7 @@ class TaskContractCliTests(unittest.TestCase):
                 )
                 self.assertEqual(shown["data"]["contract"]["revision"], 1)
 
-            for status in ("paused", "done", "cancelled"):
+            for status in ("paused", "done", "cancelled", "review_pending"):
                 result, payload = add_task(
                     db,
                     repo,
@@ -245,7 +246,7 @@ class TaskContractCliTests(unittest.TestCase):
                 self.assertEqual(result.returncode, 1)
                 self.assertEqual(
                     payload["errors"][0]["code"],
-                    "contract_activation_forbidden",
+                    "invalid_status_transition" if status == "review_pending" else "contract_activation_forbidden",
                 )
 
     def test_contract_group_validation_and_privacy_precede_storage(self):
@@ -431,6 +432,10 @@ class TaskContractCliTests(unittest.TestCase):
                     payload["data"]["contract_write"],
                     {"recorded": True, "revision": 1},
                 )
+
+                released, _ = json_command("task", "edit", task_id, "--repo", str(repo), "--db", str(db),
+                                           "--status", "review_pending")
+                self.assertEqual(released.returncode, 0, released.stdout)
 
             _, added = add_task(db, repo, "Companion rejection")
             task_id = added["data"]["task"]["task_id"]
@@ -1023,6 +1028,7 @@ class TaskContractCliTests(unittest.TestCase):
                             contract_acceptance="Initial acceptance",
                             contract_authority_ref="roadmap:concurrent",
                             contract_change_reason="One deterministic revision",
+                            caller=capture_caller_identity(),
                         ).contract_write
 
             with ThreadPoolExecutor(max_workers=2) as pool:
@@ -1074,6 +1080,7 @@ class TaskContractCliTests(unittest.TestCase):
                             contract_acceptance="Initial acceptance",
                             contract_authority_ref=f"user_instruction:{task_id}:2",
                             contract_change_reason="Concurrent explicit instruction",
+                            caller=capture_caller_identity(),
                         ).contract_write
 
             with ThreadPoolExecutor(max_workers=2) as pool:

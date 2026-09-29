@@ -5,8 +5,8 @@ keeping long-running work resumable, reviewable, and bounded. It stores local
 task state without replacing the target project's `AGENTS.md`, specifications,
 design documents, tests, or current user decisions.
 
-Release `0.13.0` uses SQLite schema v23 and Viewer snapshot v4 with source
-schemas 5 through 23 as the current unpublished local candidate contract. No
+Release `0.13.0` uses SQLite schema v24 and Viewer snapshot v4 with source
+schemas 5 through 24 as the current unpublished local candidate contract. No
 exact final candidate commit, tag, archive, checksum, or GitHub Release identity
 is fixed. An ordinary push to `main` is CI input, not release publication. The
 immutable published release remains v0.10.0 at its recorded commit, tag, and
@@ -136,12 +136,21 @@ schema and current enums. Explicit setup migrates complete v21 state to v22;
 new native Bundles use source 22/format 2, while retained source-19/20/21
 Bundle payloads, bytes, and digests remain unchanged.
 
-Current schema v23 adds an explicit verification declaration. Nonempty
+Schema v23 adds an explicit verification declaration. Nonempty
 `--verification` requires passing evidence; `--verification-not-required <reason>`
 records an authorized waiver. Omission remains unspecified and blocks new
 completion, even with `--verification-complete`. Existing done history stays
 valid; reopening an old blank Task requires a declaration. Setup alone migrates
 old state, and source-23 native Bundles keep format 2 without rewriting old ones.
+
+Current schema v24 adds automatic session ownership and one active Task slot per
+session in this project. `review_pending` releases that slot but retains the
+last owner's completion responsibility. Public Task reads include full owner
+IDs and caller-relative flags; they do not authenticate a user or reviewer.
+Migrated active work has an explicitly unknown owner and needs reasoned pause
+and resume recovery, not a guessed assignment. New native Bundles use source
+24/format 2 and keep a separate immutable execution-to-cycle link; old history
+is unchanged. No ID-discovery command, host hook or usage collector is enabled.
 
 The Analyzer runtime is retired. Independent Evidence reading/validation
 remains only in repository tests; no report or model runtime replaces it.
@@ -187,9 +196,9 @@ single bounded effective-ignore preflight may inspect Git. Doctor is optional
 and is not a prerequisite for setup or normal task work.
 
 Candidate validation rehearses the isolated transition from the exact legacy
-v0.1.0/schema-v2 baseline to v0.13.0/schema v23. Paired rollback restores the
+v0.1.0/schema-v2 baseline to v0.13.0/schema v24. Paired rollback restores the
 matched pre-migration package, database, and managed artifacts together; it
-never runs legacy code against schema v23 or treats a Git checkout alone as
+never runs legacy code against schema v24 or treats a Git checkout alone as
 state rollback. The published v0.10.0/schema-v16 and unpublished
 v0.11.0/schema-v17 and v0.12.0/schema-v21 rehearsal records remain immutable
 lineage and do not satisfy the current candidate gate. See
@@ -211,10 +220,13 @@ At a start or resume boundary, read the selected Task and its context once:
 python .agents/skills/task-governance-tool/scripts/taskgov.py task context --json
 ```
 
-The tool resumes the first `in_progress` or `review_pending` Task, otherwise
+The tool resumes the caller's first `in_progress` or `review_pending` Task, otherwise
 selects the first ready candidate under the existing ordering. `data.selected`
 contains complete Task detail, Contract, latest checkpoint, and current gates;
-use it directly without a follow-up read. `data.current` keeps held-work recall.
+use it directly without a follow-up read. Other owners and released held work
+remain available through explicit current/list/show inspection, not automatic
+resumption. The CLI obtains the caller ID automatically. If it is unavailable,
+reads remain possible but acquisition and owner-only writes are refused.
 `selection=none` means no actionable Task; `ok=false` is a read failure, not
 permission to skip to another candidate. Individual current/next/show commands
 remain available for explicit inspection.
@@ -423,12 +435,12 @@ Taskgov starts no daemon, timer, background process, queue, service, browser,
 or maintenance command. Generated Evidence JSON, Viewer, and managed backups
 remain runtime artifacts under the ignored project `.taskgov/` directory. Evidence
 projection failure keeps the mutation successful and the last-good index,
-leaves work due, and emits only its fixed warning. Viewer snapshot v4 reads source schemas 5 through 23 and includes the same
+leaves work due, and emits only its fixed warning. Viewer snapshot v4 reads source schemas 5 through 24 and includes the same
 bounded newest-first completion history as `task show --audit`. Sources 5-14 are shown
 honestly as empty legacy-incomplete history. The Viewer contains only sanitized
 task/review/audit projections and has no write controls or network dependency.
 It validates schema-v18+ subject/provenance/capture bindings, the schema-v19
-through schema-v23 Bundle discriminators, and the source-appropriate Bundle-v2
+through schema-v24 Bundle discriminators, and the source-appropriate Bundle-v2
 and Runner tagged graph, but adds no provenance/Bundle field, panel, filter, or
 other snapshot-v4 UI surface.
 

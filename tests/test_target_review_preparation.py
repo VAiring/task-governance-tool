@@ -125,8 +125,10 @@ class TargetReviewPreparationTests(unittest.TestCase):
 
                     def mutate():
                         if change == "target":
+                            from task_governance_tool.session_identity import capture_caller_identity
                             service.set_review_target_with_optional_runner(
-                                target, task_id, kind="diff_fingerprint", revision=FINGERPRINT_B)
+                                target, task_id, kind="diff_fingerprint", revision=FINGERPRINT_B,
+                                caller=capture_caller_identity())
                         else:
                             args = ("--priority", "high") if change == "task" else (
                                 "--contract-scope", "Revised scope", "--contract-acceptance", "Revised acceptance",

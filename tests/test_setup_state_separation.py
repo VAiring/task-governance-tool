@@ -499,7 +499,7 @@ class SetupStateSeparationTests(unittest.TestCase):
                     self.assertEqual(result.error_code, "project_state_unreadable")
                     self.assertEqual(result.data, {
                         "status": None, "planned_writes": [], "completed_writes": [],
-                        "usage": {"status": "not_attempted", "schema_to": 2,
+                        "usage": {"status": "not_attempted", "schema_to": 3,
                                   "planned_writes": [], "completed_writes": [], "error": None},
                         "schema_from": None, "schema_to": 25,
                         "maintenance_enabled": None, "backup_interval_minutes": None,

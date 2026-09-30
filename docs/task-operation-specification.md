@@ -139,6 +139,23 @@ The read is query-only. Both modes return exactly one routing Boolean
 the existing continuation warning. Human text remains concise and does not
 replace the complete JSON Contract or gate information.
 
+Successful detail additionally contains `usage`: a numerical-only read with
+`status`, `coverage=registered_only`, `periods`, and `cycle_links`. It never
+initializes or refreshes usage. Unknown/missing/corrupt/busy/incompatible usage
+returns `status=unknown`, empty lists and fixed `diagnostics=[usage_unavailable]`
+without failing the Task read. Admitted captures return `status=pending`; no
+final coverage is inferred. Normal detail selects the current execution period
+or latest completed period; audit selects the latest ten periods in core order.
+Each period has `completion_cycle_id`, current `snapshot_ids`, `own_executions`,
+`shared_executions`, `models`, `response_count`, `quality`, and fixed `gaps`.
+Links contain `snapshot_id`, `completion_cycle_id`, and `task_id`. Model counters
+and immutable adoption follow the
+[usage evidence contract](database-specification.md#immutable-usage-evidence).
+Reopened ready work has an empty pending period, not the preceding cycle's cost.
+Numbers describe the last captured registered shared work, not Task-exclusive
+cost or a complete session total. Existing context inherits the same field;
+selection, gate checks, text output and read failure projections stay unchanged.
+
 `task context` is the fixed read-only start/resume operation; it accepts only
 the common CLI options. It uses the existing validated current batch (limit
 20), filtered to the caller's owned/completion-owned work before the SQL limit,

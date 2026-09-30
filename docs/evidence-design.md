@@ -1,5 +1,12 @@
 # Evidence Implementation Design
 
+Numerical usage publication is independent of the sealed Evidence publisher
+and its core ledger. Its store, replay and physical publication responsibilities
+belong to [immutable usage persistence](database-design.md#immutable-usage-persistence).
+It reuses low-level physical-file primitives, not Bundle mutation or Viewer
+maintenance; the existing Evidence schema, bytes and publication protocol stay
+unchanged.
+
 This document owns provenance, Evidence Ledger capture, Bundle construction and
 projection, publication, and the test-only independent reader delegated by the
 [implementation design](design.md#provenance-evidence-ledger-and-bundle-structure),

@@ -125,7 +125,7 @@ reject schema 25 rather than dropping its registration constraints.
 ## Numerical Collection Persistence
 
 `usage_repository.py` owns independent schema 1 (`response_collection`), its
-exact owned DDL, project/binding admission and every numerical SQL operation.
+exact owned DDL and shared numerical connection/project/binding admission.
 It contains nine tables: `usage_migrations`, `usage_meta`, `usage_sessions`,
 `usage_sources`, `usage_incarnations`, `usage_responses`, `usage_observations`,
 `usage_conflicts`, and `usage_diagnostics`. Composite primary/foreign keys
@@ -199,9 +199,9 @@ Turn observations, response observations and source cursor commit atomically.
 `usage_review_boundaries` and `usage_review_receipt_turns`
 to numerical schema 1. Explicit initialization migrates the migration-marker
 table and adds the new relations in one short transaction, recording version 2
-last. No ordinary read or collector migrates. The setup factory selects schema 2
+last. No ordinary read or collector migrates. The setup factory selects schema 3
 for the current schema-25 package. Preview returns `migration_required` and planned `usage_migrate` for
-an exact schema-1 store; explicit setup returns `migrated` and that completed
+an exact schema-1 or schema-2 store; explicit setup returns `migrated` and that completed
 write on success. Fresh-store creation keeps `usage_initialize`. Failure remains
 a separate numerical outcome, not rollback or rejection of core setup.
 
@@ -216,14 +216,47 @@ core transitions. It unions turn and response membership before summing, builds
 components over ownership executions, and separately projects cumulative Task
 completion periods. It preserves a Task's pre-completion intervals across
 execution changes without treating permanent Task IDs as graph edges. Its
-current output is observed/pending; immutable cycle-linked publication and
-lifecycle integration retain their separately routed implementation scope.
+current output is observed/pending; immutable cycle-linked publication uses
+the repository below. Lifecycle integration remains separately scoped.
 `usage_review_attribution.py` attaches reviewer intervals only to committed
 core identity/target evidence. A reviewed execution and the reviewer's own
 active execution can share the same turn; an unrelated parent's submission
 turn cannot stand in for the reviewer's read/save boundary. Legacy unbound
 Receipts add no inferred participation. Missing start history counts only a
 known save/direct-registration turn with explicit partial coverage.
+
+### Immutable Usage Persistence
+
+`usage_evidence.py` owns the closed metadata-only snapshot format and validation.
+`usage_evidence_repository.py` owns numerical schema 3 and its setup-only atomic
+schema-1/2 migration. It preserves all original observations and cursors and adds
+`usage_snapshots`, `usage_snapshot_members`, `usage_cycle_links`,
+`usage_supersessions`, and the mutable singleton `usage_capture`. Update/delete
+triggers protect the first four tables. The capture fingerprint contains only
+core transition identities/structural fields, exact execution-cycle links and
+reviewer bindings; it is a read-basis check, never Task authority or a gate.
+
+One numerical writer precedes a fresh admitted core read. Attribution reuses
+that numerical connection, eliminating a second inconsistent numerical read.
+It derives completion periods from ordered core transitions and links every
+pre-completion execution to the immutable cycle selected by its final execution.
+Snapshots, original-key membership, supersession, cycle links and capture basis
+commit together. An unchanged current component is reused. A changed component
+includes predecessors in its hashed identity, so later counter/conflict changes
+cannot revive an already superseded snapshot or form a successor cycle.
+No callback touches the core writer; late replay requires no ownership takeover.
+
+`usage_evidence_service.py` supplies safe existing-Task JSON projection and a
+replayable internal publication worker. This is not a public command or an
+installed hook. It uses the resolver's usage paths and the existing physical
+path, durable-file, no-replace and atomic-replace primitives. A zero-wait usage
+lock serializes capture/publication; snapshots are durable before index replace.
+Files are separately capped at 16 MiB; overflow/failure retains last-good index
+and pending publication, not a truncated or complete claim. Immutable bytes
+are matched, never repaired in place. Reads validate closed stored snapshot
+shape, digest, members and counters before output; errors become fixed unknown
+usage, not private diagnostics or a failed Task read. Only explicit setup
+migrates; ordinary completion does not even open the numerical store.
 
 <a id="schema-v20-physical-foundation"></a>
 

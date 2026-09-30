@@ -588,7 +588,7 @@ class TaskCompleteCliTests(unittest.TestCase):
             self.assertEqual(payload["command"], "task.complete")
             self.assertEqual(
                 set(payload["data"]),
-                {"task", "changed_fields", "event"},
+                {"task", "changed_fields", "event", "usage"},
             )
             self.assertEqual(payload["data"]["task"]["status"], "done")
             with closing(sqlite3.connect(db)) as connection:

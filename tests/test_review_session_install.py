@@ -25,19 +25,19 @@ class ReviewSessionInstallTests(unittest.TestCase):
     def test_candidate_setup_previews_and_migrates_numerical_store_separately(self):
         from task_governance_tool.state_resolver import observe_current_root
         from task_governance_tool.usage_repository import UsageRepository
-        from task_governance_tool.usage_attribution_repository import UsageAttributionRepository
+        from task_governance_tool.usage_evidence_repository import UsageEvidenceRepository
 
         path = self.install.db_path.parent / "taskgov-usage.sqlite"
         basis = (self.packet["review_session_context"]["project_id"],
                  observe_current_root(self.root).canonical_path_hash, 1)
-        self.assertEqual(UsageAttributionRepository(path, *basis).inspect(), "current")
+        self.assertEqual(UsageEvidenceRepository(path, *basis).inspect(), "current")
         # Only this test's disposable numerical store is replaced with v1.
         path.unlink()
         old = UsageRepository(path, *basis)
         old.initialize()
         original = path.read_bytes()
         preview = self.cli("setup", "--read-only")["data"]["usage"]
-        self.assertEqual(preview["schema_to"], 2)
+        self.assertEqual(preview["schema_to"], 3)
         self.assertEqual(preview["status"], "migration_required")
         self.assertEqual(preview["planned_writes"], ["usage_migrate"])
         self.assertEqual(path.read_bytes(), original)

@@ -1206,6 +1206,7 @@ def task_show_failure_result(
 
 
 def handle_task_show(context: CommandContext) -> CommandResult:
+    from task_governance_tool.usage_evidence_service import read_task_usage
     target = resolve_context_target(context)
     audit = bool(getattr(context.args, "audit", False))
     try:
@@ -1240,6 +1241,7 @@ def handle_task_show(context: CommandContext) -> CommandResult:
                         include_current_context=not audit,
                         caller=context.caller,
                     )
+                    usage = read_task_usage(target, connection, task_id, audit=audit)
         finally:
             if context.read_connection_override is not None:
                 context.read_connection_override.close()
@@ -1265,6 +1267,7 @@ def handle_task_show(context: CommandContext) -> CommandResult:
                     include_current_context=not audit,
                     caller=context.caller,
                 )
+                usage = read_task_usage(target, connection, task_id, audit=audit)
     except TaskValidationError as exc:
         return task_show_failure_result(
             context,
@@ -1334,6 +1337,7 @@ def handle_task_show(context: CommandContext) -> CommandResult:
         )
 
     data = build_task_show_data(result, audit=audit)
+    data["usage"] = usage
     effort_profile = load_effort_profile(skill_root_from_script(cli_script_path()))
     data["effort_advisory_enabled"] = bool(
         effort_profile.valid and effort_profile.enabled
@@ -1814,6 +1818,8 @@ def handle_task_edit(context: CommandContext) -> CommandResult:
         )
 
     data = {"task": write_task_projection(result.task, result.changed_fields), "changed_fields": result.changed_fields, "event": result.event}
+    if result.task["status"] == "done":
+        data["usage"] = {"status": "pending", "coverage": "registered_only"}
     if result.contract_write is not None:
         data["contract_write"] = result.contract_write
     warnings: list[dict[str, str]] = []
@@ -2119,6 +2125,7 @@ def handle_task_complete(context: CommandContext) -> CommandResult:
         "task": write_task_projection(result.task, result.changed_fields),
         "changed_fields": result.changed_fields,
         "event": result.event,
+        "usage": {"status": "pending", "coverage": "registered_only"},
     }
     return CommandResult(
         ok=True,

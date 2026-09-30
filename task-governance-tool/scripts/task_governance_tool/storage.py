@@ -452,6 +452,8 @@ class DatabaseTarget:
     backups_path: Path | None = field(default=None, repr=False, compare=False)
     viewer_path: Path | None = field(default=None, repr=False, compare=False)
     canonical_fixed: bool = False
+    usage_database: Path | None = field(default=None, repr=False, compare=False)
+    usage_root: Path | None = field(default=None, repr=False, compare=False)
     evidence_root: Path | None = field(default=None, repr=False, compare=False)
     evidence_index: Path | None = field(default=None, repr=False, compare=False)
     evidence_bundles: Path | None = field(default=None, repr=False, compare=False)
@@ -461,6 +463,26 @@ class DatabaseTarget:
         repr=False,
         compare=False,
     )
+
+    @property
+    def resolved_usage_database(self) -> Path:
+        return self.usage_database or (self.db_path.parent / "taskgov-usage.sqlite")
+
+    @property
+    def resolved_usage_root(self) -> Path:
+        return self.usage_root or (self.db_path.parent / "usage")
+
+    @property
+    def resolved_usage_index(self) -> Path:
+        return self.resolved_usage_root / "index.json"
+
+    @property
+    def resolved_usage_snapshots(self) -> Path:
+        return self.resolved_usage_root / "snapshots"
+
+    @property
+    def resolved_usage_lock(self) -> Path:
+        return self.resolved_usage_root / "taskgov-usage.lock"
 
     @property
     def resolved_backups_path(self) -> Path:

@@ -269,7 +269,7 @@ Expired or stale context requires a fresh preview and fresh user approval.
   "viewer_status": "published",
   "usage": {
     "status": "initialized",
-    "schema_to": 2,
+    "schema_to": 3,
     "planned_writes": ["usage_initialize"],
     "completed_writes": ["usage_initialize"],
     "error": null
@@ -310,8 +310,8 @@ durable stages.
 Its status is `not_attempted`, `pending_core_setup` (preview before core
 binding is admitted), `not_present`, `initialized`, `migration_required`,
 `migrated`, `current`, or `unavailable`. Writes are `usage_initialize` and
-`usage_migrate` (exact schema 1 to 2); preview has no completed write.
-`schema_to` is 2 and `error` is null or fixed `usage_unavailable`. Numerical
+`usage_migrate` (exact schema 1 or 2 to 3); preview has no completed write.
+`schema_to` is 3 and `error` is null or fixed `usage_unavailable`. Numerical
 failure never undoes successful core setup or blocks ordinary Task work;
 do not repeat Task writes to recover usage. This adds no normal-loop action,
 session registration step, automatic collection or hook installation.
@@ -750,6 +750,7 @@ under `task context`'s `data.selected`; no follow-up read is needed:
 | `handoff_summary` | Counts for `pending_handoff`, `handed_off`, and `handoff_withdrawn_by_user`; these do not expand Task scope. |
 | `completion_history` | `total` and `legacy_history_incomplete`, not current completion evidence. |
 | `effort_advisory_enabled` | Whether the normal loop uses the optional Effort observation. Invalid configuration returns false with a continuation warning. |
+| `usage` | Last captured registered shared-work summary and cycle links, or explicit unknown. Numerical gaps never change Task gates. Automatic lifecycle collection is not yet activated; no extra normal-loop command is required. |
 | `suggested_next_action` | A next-action hint, not authority or proof of completion. In review-pending detail, satisfied required verification and only missing independent PASS reviews yield a remaining count and the existing result-input route; otherwise the status-based hint remains. Obtain any unperformed reviews before registering actual returned results. |
 
 Use `review_evidence.gate.satisfied` and its required/qualifying independent
@@ -924,7 +925,7 @@ Editable arguments are:
 ```
 
 Success data contains `task`, `changed_fields`, and `event`, plus
-`contract_write` for Contract operations.
+`contract_write` for Contract operations and pending `usage` for successful done.
 
 Task Contract activation is allowed only on an exact revision-zero
 `ready|blocked -> in_progress` transition. Later semantic revisions are
@@ -1120,7 +1121,10 @@ observation returns `completion_check_stale`. A successful check stores no
 token and never authorizes the later write.
 
 Write success emits `command=task.complete` and data keys `task`,
-`changed_fields`, and `event`. Both check and write require a satisfying current
+`changed_fields`, `event`, and `usage={status:pending,coverage:registered_only}`.
+Numerical collection/append is separate; unknown or missing usage is not a
+completion failure or a reason to repeat completion.
+Both check and write require a satisfying current
 verification basis: an explicit waiver reason with trimmed-empty verification
 on marker `0`, an exact-current
 `pass/full` Verification Receipt for nonempty verification on marker `0` or the

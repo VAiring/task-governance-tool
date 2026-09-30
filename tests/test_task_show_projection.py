@@ -28,7 +28,7 @@ VERIFICATION_RECEIPT_FIELDS = {
 SHOW_KEYS = {
     "task", "events", "suggested_next_action", "review_evidence", "handoff_summary",
     "contract", "latest_checkpoint", "completion_history", "verification_evidence",
-    "effort_advisory_enabled",
+    "effort_advisory_enabled", "usage",
 }
 
 

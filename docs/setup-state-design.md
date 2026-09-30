@@ -28,6 +28,9 @@ transition lock  <state-root>/taskgov-state.lock
 fixed root       <state-root>/current
 database         <fixed-root>/taskgov.sqlite
 numerical usage  <fixed-root>/taskgov-usage.sqlite
+usage index      <fixed-root>/usage/index.json
+usage snapshots  <fixed-root>/usage/snapshots
+usage lock       <fixed-root>/usage/taskgov-usage.lock
 managed backups  <fixed-root>/backups
 Evidence index   <fixed-root>/evidence/index.json
 Evidence bundles <fixed-root>/evidence/bundles

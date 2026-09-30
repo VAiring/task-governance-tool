@@ -634,12 +634,12 @@ schema, selected recovery schema, or null. Policy values are effective
 requested/stored values, not persistence claims. `maintenance_enabled`,
 Evidence status, and Viewer status describe durable post-command state.
 
-`usage` independently contains `status`, `schema_to=2`, `planned_writes`,
+`usage` independently contains `status`, `schema_to=3`, `planned_writes`,
 `completed_writes` and `error`. Status is `not_attempted` after core failure,
 `pending_core_setup` when preview cannot yet admit the future core binding,
 `not_present` for an admitted missing-store preview, `initialized` after
-publication, `migration_required` for exact schema 1 in preview, `migrated`
-after the schema-1-to-2 transaction, `current` after validation, or `unavailable`.
+publication, `migration_required` for exact schema 1 or 2 in preview, `migrated`
+after the atomic schema-1/2-to-3 transaction, `current` after validation, or `unavailable`.
 Write stages are `usage_initialize` and `usage_migrate`; completed writes are empty in preview. `error` is null
 except the fixed `usage_unavailable` for numerical failure. Core `ok`, errors,
 status and write lists remain about core setup: numerical failure does not

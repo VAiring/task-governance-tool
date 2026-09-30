@@ -287,10 +287,10 @@ Current success-data projections are:
 | default `task.next` | `tasks`, `count`, `limit`, `selection_rules` |
 | default `task.current` | `tasks`, `count`, `limit`, `statuses` |
 | `task.effort` enabled | `task_id`, `enabled`, `profile`, `measurements`, `thresholds`, `exceeded`, `basis`, `observation`, `coverage`, `attribution`, `unknown_reasons`, `warning_key`, `suggested_action` |
-| `task.show` | exactly `task`, `events`, `suggested_next_action`, `review_evidence`, `handoff_summary`, `contract`, `latest_checkpoint`, `effort_advisory_enabled`, `completion_history`, `verification_evidence` |
+| `task.show` | exactly `task`, `events`, `suggested_next_action`, `review_evidence`, `handoff_summary`, `contract`, `latest_checkpoint`, `effort_advisory_enabled`, `completion_history`, `verification_evidence`, `usage` on success; the existing empty failure projection is unchanged |
 | `task.context` | `selection`, `current`, `next`, `selected`; fixed composition of compact recall/selection and complete show data |
-| `task.edit` | `task`, `changed_fields`, `event`, plus `contract_write` only for Contract input and `runner_plan_update` only when a Runner Plan action was supplied |
-| `task.complete` | `task`, `changed_fields`, `event` |
+| `task.edit` | `task`, `changed_fields`, `event`, plus `contract_write` only for Contract input, `runner_plan_update` only when a Runner Plan action was supplied, and `usage` on successful done acknowledgement |
+| `task.complete` | `task`, `changed_fields`, `event`, `usage` on write success; failure/check projections are unchanged |
 | `handoff.record` | `handoff`, `local_record` |
 | `handoff.list` | `handoffs`, `count`, `total_matching`, `limit`, `states` |
 | `handoff.show` | `handoff` |

@@ -385,6 +385,20 @@ captured measurements using the current OS. The exact POSIX policy identity
 selects its explicit unmeasured-auxiliary shape; this changes no envelope,
 member set, domain, assurance, or previously sealed bytes.
 
+Numerical Task usage is separate from qualifying Evidence. The
+[immutable usage store](database-specification.md#immutable-usage-evidence)
+owns usage snapshots and exact-cycle links; neither late observations nor
+shared-component merges rewrite a sealed Bundle or insert a qualifying
+Reference into it. Separate resolver-owned `usage/snapshots/<snapshot-id>.json`
+files preserve snapshot bytes; `usage/index.json` format
+`taskgov-usage-index-v1` contains project ID, structural core digest, all snapshot
+IDs, current non-superseded IDs, and currently revalidated immutable cycle links.
+Restored-away references remain stored history but are omitted from active
+associations, never rebound to another cycle. The publisher writes
+snapshots first and replaces index last under its own zero-wait lock. Failure
+keeps the last-good index and pending publication. Index files are a projection,
+not core state, authorization, current review evidence or a completeness proof.
+
 Standalone Evidence validation preserves the earlier admission of any
 well-formed SHA-256 policy label with the legacy accounting shape. In
 particular, a legacy qualifying PASS still has all three measured values;

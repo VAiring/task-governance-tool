@@ -294,15 +294,15 @@ or general migration framework is added.
 
 ## Numerical Usage Store
 
-Numerical collection uses independent schema 2 in the resolver-owned
+Numerical collection uses independent schema 3 in the resolver-owned
 `current/taskgov-usage.sqlite`, not the main schema sequence. Explicit setup
-initializes an absent store, migrates exact schema 1, and validates current state. Normal reads and
+initializes an absent store, migrates exact schema 1 or 2, and validates current state. Normal reads and
 collection never initialize, migrate or repair it. Incompatible structure,
 WAL, corruption, contention or project/binding mismatch produces unavailable
 usage, never a core admission failure or a weakened quality gate. Existing
 core backup/restore does not copy this store or claim a paired numerical
 snapshot. Attribution revalidates Task/execution references against restored
-core state; immutable cycle-linked snapshots remain a later execution unit.
+core state; immutable cycle-linked snapshots follow the contract below.
 
 The internal collector accepts one registered actual caller session and one
 explicit physical segment under its allowed local source root. Header thread,
@@ -398,3 +398,38 @@ hashing or storage. Turn order comes from explicit host `task_started` records
 for known turn IDs, not an estimated Task-time interval. Conflicting identities
 are not last-writer-wins. A lost/cross-thread endpoint retains only a definite
 observed endpoint with an unknown boundary, never unbounded future-session usage.
+
+### Immutable Usage Evidence
+
+Numerical schema 3 adds immutable aggregate snapshots, original response-key
+membership, exact completion-cycle links and predecessor/successor edges.
+Capture unions original keys, never sums overlapping aggregate totals. Each
+Task period includes all its executions since its preceding completion,
+including ready/cancelled restarts; a reopened period is separate. A snapshot
+can link to every completed period containing a member execution, including
+earlier completed Tasks whose shared component grows later. Repeated capture
+and links are idempotent. Changed components supersede overlapping current
+components; original snapshots and links remain immutable. Only non-superseded
+components contribute to a current total, including after a split or merge.
+
+Snapshot format `taskgov-usage-snapshot-v1` and algorithm
+`inclusive-turn-components-v1` contain only project ID, execution IDs,
+response-set digest/cardinality, per-provider/model counters, registered-only
+coverage, quality, fixed gaps and predecessor IDs. The snapshot ID is the
+SHA-256 of canonical sorted-key compact UTF-8 JSON without that ID. The response
+set digest hashes sorted `(provider,response_id)` pairs using the same encoding;
+full membership stays queryable in the numerical repository. An empty model
+list means no measured total, not measured zero. Nullable breakdowns stay null.
+Current adapters emit `pending`, `incomplete`, or `conflicting`, never `complete`:
+no verified end-of-coverage proof exists yet. Silence, Stop, elapsed time and
+stable file size cannot supply it. Totals describe registered shared work,
+not exclusive Task cost, all intervention or billing accuracy.
+
+Capture reads an admitted core snapshot after acquiring the numerical writer;
+it performs no core write, log I/O or file publication under that writer.
+Capture and display revalidate immutable execution/cycle/reviewer identities.
+A core-basis mismatch after restore or later transitions returns unavailable
+until replay; missing references are never rebound to the newest Task cycle.
+Restored numerical state with a different project/path binding stays unavailable.
+The main schema remains 25; no numerical table joins a core transaction or gate.
+Automatic lifecycle invocation remains the separate integration unit.

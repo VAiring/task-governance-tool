@@ -820,8 +820,19 @@ optimistic completion basis; a delayed operation cannot complete after handover,
 even if the same session subsequently reacquires the Task.
 
 Thin completion emits `command="task.complete"` and data exactly `task`,
-`changed_fields`, and `event`; text starts
+`changed_fields`, `event`, and `usage`; text starts
 `Task completed: <task-id>`. It accepts no non-completion edit.
+
+Successful thin and compatibility done acknowledgements report
+`usage={status:pending,coverage:registered_only}` without reading or writing the
+numerical store. Usage availability, collector failure, late endpoint records,
+and another participant's unfinished work are never completion prerequisites.
+Core transaction/write failure still fails normally. Existing execution/cycle
+association is committed atomically with completion; a later numerical worker
+may append snapshot links to that original cycle without changing the Task,
+ownership, gates, original cycle or sealed Bundle. Do not retry completion to
+recover numerical evidence. Automatic lifecycle collection is not activated by
+this internal replay facility.
 
 `task complete --check` accepts the same proposed evidence and confirmations,
 is read-only, invokes the exact shared fail-fast validator, and is not an

@@ -116,7 +116,7 @@ EMPTY_RELOCATION = {
     "confirmation_token": None,
     "expires_at": None,
 }
-NO_USAGE_ATTEMPT = {"status": "not_attempted", "schema_to": 2,
+NO_USAGE_ATTEMPT = {"status": "not_attempted", "schema_to": 3,
                     "planned_writes": [], "completed_writes": [], "error": None}
 LEGACY_SOURCE_RELOCATION = {
     "required": False,

@@ -129,6 +129,10 @@ class CanonicalStatePaths:
     def usage_database(self) -> Path:
         return self.fixed_root / "taskgov-usage.sqlite"
 
+    @property
+    def usage_root(self) -> Path:
+        return self.fixed_root / "usage"
+
 
 @dataclass(frozen=True)
 class CurrentRootObservation:
@@ -1151,6 +1155,8 @@ def _database_target(
         backups_path=backups_path,
         viewer_path=viewer_path,
         canonical_fixed=(paths is not None),
+        usage_database=paths.usage_database if paths is not None else artifact_root / "taskgov-usage.sqlite",
+        usage_root=paths.usage_root if paths is not None else artifact_root / "usage",
     )
 
 

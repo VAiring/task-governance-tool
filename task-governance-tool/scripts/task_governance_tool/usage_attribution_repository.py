@@ -7,6 +7,8 @@ No host discovery or setup activation is performed by this module.
 
 from __future__ import annotations
 
+from contextlib import nullcontext
+
 from task_governance_tool.usage_repository import UsageRepository, _DDL
 from task_governance_tool.usage_turn_adapter import TurnObservation, OperationObservation
 from task_governance_tool.usage_attribution import Transition, owner_intervals, project
@@ -158,11 +160,11 @@ class UsageAttributionRepository(UsageRepository):
         with self.connection(write=True) as connection:
             self._record(connection, observations)
 
-    def attribution(self, core_connection) -> dict:
+    def attribution(self, core_connection, *, numerical_connection=None) -> dict:
         """Revalidate persisted associations against core, including after restore."""
         transitions = core_transitions(core_connection, self.basis[0])
         bindings, unresolved = {}, set()
-        with self.connection() as connection:
+        with (self.connection() if numerical_connection is None else nullcontext(numerical_connection)) as connection:
             observations = [OperationObservation(**dict(row)) for row in connection.execute(
                 "SELECT thread_id,turn_id,project_id,task_id,event_id,generation,status FROM usage_operation_turns "
                 "WHERE event_id NOT IN (SELECT event_id FROM usage_operation_conflicts)")]

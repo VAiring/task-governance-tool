@@ -116,6 +116,12 @@ reviewer participation from committed bindings). Their boundary is defined in
 [turn attribution structure](database-design.md#conditional-turn-attribution-structure);
 it does not activate lifecycle hooks or alter core quality gates.
 
+`usage_evidence.py`, `usage_evidence_repository.py`, and
+`usage_evidence_service.py` own respectively immutable metadata formats,
+numerical schema-3 replay/links, and isolated publication/Task-detail reading,
+as specified in [immutable usage persistence](database-design.md#immutable-usage-persistence).
+Core completion never invokes that worker or opens its store.
+
 The implementation keeps these narrow ownership boundaries:
 
 - `cli_parser.py` owns public parser construction, common options, and

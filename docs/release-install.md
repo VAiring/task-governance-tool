@@ -36,8 +36,11 @@ pause/recovery and resume. Task outputs add full ownership IDs and per-caller fl
 unknown identity cannot acquire or complete work. This adds no normal-loop command.
 Schema v25 adds automatic actual-reviewer binding through existing read/save and
 submission, including direct reviewers without acquiring Task ownership. Its
-separate numerical schema 2 supports inclusive-turn attribution. Automatic
-lifecycle collection and immutable usage publication remain later units.
+separate numerical schema 3 supports inclusive-turn attribution and immutable
+cycle-linked snapshots. Task detail adds a non-gating `usage` summary and done
+acknowledgements report pending usage without opening the numerical store.
+Explicit setup alone migrates the numerical store; existing core schema and
+sealed Bundles are unchanged. Automatic lifecycle collection remains a later unit.
 
 Verification declaration is now explicit: omitted/blank verification is
 unspecified and blocks a new completion. Add/edit accept

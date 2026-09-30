@@ -234,7 +234,7 @@ structural head. It then calls the storage-owned exact Task-verification
 validator with that candidate's source schema. The validator returns normally
 or raises a sanitized internal privacy/capacity rejection; every other storage
 failure remains structural and set-fatal. The current implementation accepts
-at most 500 characters through schema v17 and 1,000 at schema v18-v24. The source
+at most 500 characters through schema v17 and 1,000 at schema v18-v25. The source
 schema is selected before migration or recovery publication; no recovery-only
 limit or migration laundering exists.
 
@@ -369,7 +369,7 @@ tgr1.<unpadded-base64url-canonical-json>.<sha256>
 Its exact payload binds version 1, project ID/scheme, current binding
 generation, distinct old/new 64-hex hashes, source layout, source schema, issue
 time, and expiry exactly 900 seconds later. A fixed-current source may be
-schema v1-v24; `legacy_projects_v1` is capped at the explicit v14 transition,
+schema v1-v25; `legacy_projects_v1` is capped at the explicit v14 transition,
 while ordinary legacy discovery remains v1-v13 plus that v14 shape. Canonical JSON uses
 sorted keys, compact separators, UTF-8, and `ensure_ascii=True`; the checksum
 is SHA-256 over ASCII `tgr1.<payload>` and is compared with

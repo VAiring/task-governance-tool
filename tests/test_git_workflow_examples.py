@@ -78,7 +78,7 @@ class GitWorkflowExampleTests(PreparationFixture):
             result["receipts"] = [receipt(reviewer)]
             path = context["review_requests"][index]["result_path"]
             saved = self.invoke("save", "--repo", str(self.root), "--packet", context["packet_path"],
-                                "--output", path, raw=encode(result))
+                                "--output", path, raw=encode(result), reviewer=index)
             self.assertEqual(saved.returncode, 0, saved.stdout)
             paths.append(path)
         registered = self.invoke("submit", "--repo", str(self.root), "--packet", context["packet_path"],

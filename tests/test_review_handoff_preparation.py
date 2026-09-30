@@ -47,9 +47,14 @@ class PreparationFixture(unittest.TestCase):
         self.cli("task", "edit", task_id, "--status", "review_pending")
         return task_id
 
-    def invoke(self, *args, raw=None):
+    @staticmethod
+    def review_environment(index=0):
+        return {**os.environ, "CODEX_THREAD_ID": f"00000000-0000-4000-8000-{200 + index:012d}"}
+
+    def invoke(self, *args, raw=None, reviewer=None):
         return subprocess.run([sys.executable, "-I", "-S", str(self.helper), *args],
-                              input=raw, capture_output=True, cwd=self.root, check=False)
+                              input=raw, capture_output=True, cwd=self.root, check=False,
+                              env=None if reviewer is None else self.review_environment(reviewer))
 
     def prepare(self, task, action="target", options=None, directory="reviews/g1", raw=None):
         options = options if options is not None else ["--kind", "diff_fingerprint", "--revision", FINGERPRINT]
@@ -105,11 +110,12 @@ class InstalledPreparationTests(PreparationFixture):
             generated = preparation._requests(self.root, args, packet_path)
         payload = packet["result_template"]
         payload["receipts"] = [receipt("quoted-path-reviewer")]
-        for command, raw in ((generated["review_requests"][0]["read_command"], None),
-                             (generated["review_requests"][0]["save_command"], encode(payload)),
-                             (generated["submit_command"], None)):
+        for command, raw, reviewer in ((generated["review_requests"][0]["read_command"], None, 0),
+                                       (generated["review_requests"][0]["save_command"], encode(payload), 0),
+                                       (generated["submit_command"], None, None)):
             invoked = subprocess.run(shlex.split(command), input=raw, capture_output=True,
-                                     cwd=self.root, check=False)
+                                     cwd=self.root, check=False,
+                                     env=None if reviewer is None else self.review_environment(reviewer))
             self.assertEqual(invoked.returncode, 0, invoked.stdout or invoked.stderr)
         self.assertEqual((self.root / generated["review_requests"][0]["result_path"]).read_bytes(), encode(payload))
 
@@ -129,7 +135,7 @@ class InstalledPreparationTests(PreparationFixture):
             self.assertIn(request["read_command"], request["request"])
             self.assertIn(request["save_command"], request["request"])
             displayed = self.invoke("read", "--repo", str(self.root), "--packet", context["packet_path"],
-                                    "--role", "independent")
+                                    "--role", "independent", reviewer=index)
             self.assertEqual(displayed.returncode, 0, displayed.stdout)
             payload = json.loads(displayed.stdout)["result_template"]
             self.assertEqual(payload, packet["result_template"])
@@ -139,7 +145,7 @@ class InstalledPreparationTests(PreparationFixture):
             originals.append(raw)
             original_paths.append(request["result_path"])
             saved = self.invoke("save", "--repo", str(self.root), "--packet", context["packet_path"],
-                                "--output", request["result_path"], raw=raw)
+                                "--output", request["result_path"], raw=raw, reviewer=index)
             self.assertEqual(saved.returncode, 0, saved.stdout)
             self.assertEqual(json.loads(saved.stdout)["finding_count"], 1)
         args = ["submit", "--repo", str(self.root), "--packet", context["packet_path"], *original_paths]
@@ -153,7 +159,8 @@ class InstalledPreparationTests(PreparationFixture):
         for path, raw in zip(original_paths, originals):
             self.assertEqual((self.root / path).read_bytes(), raw)
         self.assertEqual(sorted(path.name for path in (self.root / "reviews/g1").iterdir()),
-                         ["packet.json", "review-1.json", "review-2.json"])
+                         ["packet.json", "review-1.json", "review-1.json.session.json",
+                          "review-2.json", "review-2.json.session.json"])
 
     def test_receipt_required_then_manual_and_structured_receipt_and_recovery(self):
         for from_stdin in (False, True):
@@ -385,7 +392,7 @@ class ReviewerDisplayTests(PreparationFixture):
         old_original["receipts"] = copy.deepcopy(original["receipts"])
         self.assertEqual(raw, b"\n " + encode(old_original) + b"\n")
         saved = self.invoke("save", "--repo", str(self.root), "--packet", packet_path,
-                            "--output", "reviews/g1/review-1.json", raw=raw)
+                            "--output", "reviews/g1/review-1.json", raw=raw, reviewer=0)
         self.assertEqual(saved.returncode, 0, saved.stdout)
         submitted = self.invoke("submit", "--repo", str(self.root), "--packet", packet_path,
                                 "reviews/g1/review-1.json")
@@ -397,7 +404,7 @@ class ReviewerDisplayTests(PreparationFixture):
         self.assertEqual((self.root / "reviews/g1/review-1.json").read_bytes(), raw)
         self.assertEqual((self.root / packet_path).read_bytes(), original_packet)
         self.assertEqual(sorted(p.name for p in (self.root / "reviews/g1").iterdir()),
-                         ["packet.json", "review-1.json"])
+                         ["packet.json", "review-1.json", "review-1.json.session.json"])
         print(f"REVIEWER_VIEW packet_bytes={len(encode(packet))}->{len(encode(view))}; "
               "outer_read/save/submit_calls=1/1/1->1/1/1; "
               "display_helper_calls=0->1; registration_cli_calls=1->1; tokens=unmeasured")

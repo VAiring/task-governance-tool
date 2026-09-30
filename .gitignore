@@ -28,6 +28,8 @@ dist/
 *.egg-info/
 
 # Local logs, scratch outputs, and editor/OS files.
+# Repository-root temporary test projects must not be scanned as Git changes.
+/.tmp-*/
 *.log
 *.tmp
 *.bak

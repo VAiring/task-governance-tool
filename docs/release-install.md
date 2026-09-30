@@ -9,7 +9,7 @@ published v0.10.0 artifact and its exact commit, tag, Release, archive,
 checksum, and Release body remain unchanged. This record also does not
 authorize installing or overwriting a Skill in any project.
 
-The current v0.13.0 candidate uses schema-v24 Evidence storage with the unchanged
+The current v0.13.0 candidate uses schema-v25 Evidence storage with the unchanged
 schema-v21 Runner gate protocol while preserving the published v0.10.0 identity and the fixed v0.13.0
 package boundary described below. Explicit `task edit --runner-plan-action`
 supports `replace`, `rebind`, `detach`, and `disable`; the first absent-Plan
@@ -34,8 +34,10 @@ without occupying that slot. Setup alone migrates v23→v24, preserving old busi
 records and sealed Evidence, and marks existing active owners unknown until explicit
 pause/recovery and resume. Task outputs add full ownership IDs and per-caller flags;
 unknown identity cannot acquire or complete work. This adds no normal-loop command.
-Review registration remains parent-owner submitted; automatic bound-reviewer and
-numerical usage/hook integration are not implemented by this ownership change.
+Schema v25 adds automatic actual-reviewer binding through existing read/save and
+submission, including direct reviewers without acquiring Task ownership. Its
+separate numerical schema 2 supports inclusive-turn attribution. Automatic
+lifecycle collection and immutable usage publication remain later units.
 
 Verification declaration is now explicit: omitted/blank verification is
 unspecified and blocks a new completion. Add/edit accept
@@ -62,8 +64,8 @@ total LLM token or elapsed-time savings.
 | Item | Value |
 |---|---|
 | Package version | `0.13.0` |
-| SQLite schema | v24 |
-| Viewer snapshot | v4, accepting source schemas v5-v24 (v5 through v24) |
+| SQLite schema | v25 |
+| Viewer snapshot | v4, accepting source schemas v5-v25 (v5 through v25) |
 | Public command leaves | 23 |
 | Supported runtime | Python 3.12 or newer on Windows, Linux, and macOS (ordinary functions) |
 | Verified platform | Windows x86-64; Ubuntu 24.04 x86-64; macOS 15 Apple Silicon |
@@ -240,7 +242,7 @@ to the supported physical project-scoped package. Setup never creates or edits
 the Runner Plan; taskgov-managed authoring requires explicit
 `task edit --runner-plan-action`.
 
-Setup reports `schema_to=24` and `evidence_status` as `not_present`, `current`,
+Setup reports `schema_to=25` and `evidence_status` as `not_present`, `current`,
 `published`, or `repair_required`. Its ordered write vocabulary includes
 `evidence_projection_publish` after maintenance/binding and before
 `viewer_publish`; read-only preview plans it without writing.
@@ -378,7 +380,7 @@ migration.
 The immutable v0.10.0 release acceptance rehearsed the transition from the
 exact legacy v0.1.0/schema-v2 baseline to v0.10.0/schema v16. The current
 v0.13.0 candidate must separately rehearse that isolated baseline through
-schema v24, including schema-v17 Receipt/completion preservation, subject and
+schema v25, including schema-v17 Receipt/completion preservation, subject and
 provenance migration, capture-v0/fresh retargeting, 500/1,000 capacity,
 preserved Bundle-v1 and native Bundle-v2 projection recovery, backup recovery,
 and no-partial-write behavior before it can become a release.
@@ -396,7 +398,7 @@ continue to prove that release artifacts contain no `config/` content.
 
 Rollback restores one matched pre-migration package, database, and managed
 artifact set as a single compatibility point, then proves that the legacy
-package can read that restored state. Running old code against schema v24,
+package can read that restored state. Running old code against schema v25,
 reverse-migrating in place, mixing generations, or treating a Git checkout
 alone as rollback is unsupported. After cutover, a defect is handled by a
 forward fix and new candidate/version, not a force update, history rewrite,
@@ -462,7 +464,7 @@ published last, SQLite remains canonical, and JSON is never imported. Failure
 preserves the committed mutation and last-good index with one fixed warning.
 
 The Viewer is a self-contained, read-only `file://` projection under the
-ignored project state. Snapshot v4 accepts source schemas v5-v24 and includes
+ignored project state. Snapshot v4 accepts source schemas v5-v25 and includes
 the same bounded newest-first completion history as `task show --audit`; sources v5-v14
 receive an empty, legacy-incomplete history and sources v15-v22 use stored
 cycles. It omits internal event links,
@@ -773,9 +775,12 @@ selected Runner states block. Schema v22 removes only the retired
 Analyzer reservations, preserves source-19/20/21 Bundle bytes/digests, and writes
 source-22/v2 Bundles under the same protocol. Schema v23 adds the explicit
 verification declaration and uses source-23/v2 Bundles without resealing history.
-Current schema v24 adds session ownership and separate immutable execution-cycle
-links, and uses source-24/v2 Bundles without changing the quality gates or old history.
-Viewer snapshot v4 accepts source schemas v5-v24 while exposing no
+Schema v24 adds session ownership and separate immutable execution-cycle links.
+Current schema v25 adds immutable actual-reviewer bindings and uses source-25/v2
+Bundles without changing the quality gates or old history. Explicit setup advances
+the independent numerical store to schema 2 for inclusive-turn attribution;
+automatic hooks and immutable usage publication remain separate execution units.
+Viewer snapshot v4 accepts source schemas v5-v25 while exposing no
 Evidence UI. That schema activation adds no Analyzer, network/model invocation,
 command leaf, or Skill trigger. The separate read-only `task context` leaf now
 combines ordinary selection and full detail without changing those gates.

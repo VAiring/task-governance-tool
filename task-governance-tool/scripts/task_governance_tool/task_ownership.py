@@ -373,7 +373,7 @@ def validate_storage_rows(connection: sqlite3.Connection) -> None:
         if connection.execute(
             "SELECT 1 FROM completion_evidence_bundles AS bundle "
             "LEFT JOIN task_execution_cycles AS link ON link.completion_cycle_id=bundle.completion_cycle_id "
-            "WHERE bundle.source_schema_version=24 AND link.completion_cycle_id IS NULL LIMIT 1"
+            "WHERE bundle.source_schema_version IN (24, 25) AND link.completion_cycle_id IS NULL LIMIT 1"
         ).fetchone():
             raise _unreadable()
     except (TaskValidationError, StorageError, UnicodeError, sqlite3.Error) as exc:

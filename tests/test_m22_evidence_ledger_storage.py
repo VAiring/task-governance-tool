@@ -965,7 +965,7 @@ class EvidenceLedgerStorageTests(unittest.TestCase):
         )
 
     def test_schema_version_and_verification_capacity_are_layered(self):
-        self.assertEqual(SCHEMA_VERSION, 24)
+        self.assertEqual(SCHEMA_VERSION, 25)
         self.assertEqual(stored_task_verification_limit(17), 500)
         self.assertEqual(stored_task_verification_limit(18), 1_000)
         self.assertEqual(stored_task_verification_limit(19), 1_000)
@@ -1197,9 +1197,9 @@ class EvidenceLedgerStorageTests(unittest.TestCase):
                         validate_evidence_ledger_storage(connection)
 
                         applied, warnings = apply_migrations(connection)
-                        self.assertEqual(applied, [19, 20, 21, 22, 23, 24])
+                        self.assertEqual(applied, [19, 20, 21, 22, 23, 24, 25])
                         self.assertEqual(warnings, [])
-                        self.assertEqual(current_schema_version(connection), 24)
+                        self.assertEqual(current_schema_version(connection), 25)
                         self.assertEqual(
                             connection.execute(
                                 "SELECT constraints_text "
@@ -3327,7 +3327,7 @@ class EvidenceLedgerStorageTests(unittest.TestCase):
                             apply_completion_evidence_bundle_migration(connection)
                             self.assertEqual(
                                 apply_migrations(connection),
-                                ([20, 21, 22, 23, 24], []),
+                                ([20, 21, 22, 23, 24, 25], []),
                             )
 
                     corrupt_owner = "corrupt-verification-project-owner"
@@ -3381,7 +3381,7 @@ class EvidenceLedgerStorageTests(unittest.TestCase):
                             apply_completion_evidence_bundle_migration(connection)
                             self.assertEqual(
                                 apply_migrations(connection),
-                                ([20, 21, 22, 23, 24], []),
+                                ([20, 21, 22, 23, 24, 25], []),
                             )
 
                     with closing(connect(db)) as connection:
@@ -3980,7 +3980,7 @@ class EvidenceLedgerStorageTests(unittest.TestCase):
                             apply_completion_evidence_bundle_migration(connection)
                             self.assertEqual(
                                 apply_migrations(connection),
-                                ([20, 21, 22, 23, 24], []),
+                                ([20, 21, 22, 23, 24, 25], []),
                             )
 
                     with closing(connect(target.db_path)) as connection:

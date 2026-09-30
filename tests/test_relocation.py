@@ -175,6 +175,12 @@ class RelocationTokenCodecTests(unittest.TestCase):
         )
         require_unexpired(claims, now=issued_at)
 
+    def test_candidate_review_session_schema_context_and_future_boundary(self):
+        context = legacy_context(source_layout="fixed_current_v1", source_schema_version=25)
+        token = encode_relocation_token(context, issued_at=ISSUED_AT)
+        self.assertEqual(decode_relocation_token(token, now=ISSUED_AT).context, context)
+        self.assert_invalid(legacy_context, source_layout="fixed_current_v1", source_schema_version=26)
+
     def test_context_rejects_invalid_scheme_specific_values_and_ranges(self):
         cases = (
             {"project_id": "invalid-project"},
@@ -214,7 +220,7 @@ class RelocationTokenCodecTests(unittest.TestCase):
         self.assert_invalid(
             legacy_context,
             source_layout="fixed_current_v1",
-            source_schema_version=25,
+            source_schema_version=26,
         )
 
     def test_current_schema_context_roundtrip(self):

@@ -33,11 +33,13 @@ Target setting is forbidden on done Tasks.
 
 Task-scoped writes also obey the [session ownership boundary](task-operation-specification.md#session-ownership-and-recovery).
 Target/Runner admission and Verification/Review/Finding writes recheck the
-observed ownership generation under the writer. Review Receipt and structured
-result registration require the current Task owner or retained completion owner;
-direct reviewer-session registration is not enabled by this unit. An already
-admitted Runner still performs mandatory cleanup and terminal audit after a
-handover; that continuation authorizes no new launch or target.
+observed ownership generation under the writer. Review Receipt, structured
+result and Finding insertion use the narrow schema-25
+[bound-reviewer exception](#reviewer-session-binding) where applicable;
+unbound legacy forwarding remains restricted to the current Task owner or
+retained completion owner. An already admitted Runner still performs mandatory
+cleanup and terminal audit after a handover; that continuation authorizes no new
+launch or target.
 
 `review receipt add` binds a sanitized reviewer key, independent/fallback/
 not-required kind, PASS or changes-requested verdict, summary, user-approval
@@ -505,6 +507,70 @@ automatically retries. Preparation, Packet display and result-transport failures
 return `ok:false` with a sanitized code
 and fixed message, no rejected content or exception detail. An uncertain result
 never authorizes a duplicate registration.
+
+<a id="conditional-reviewer-session-binding"></a>
+
+### Reviewer Session Binding
+
+This section applies to current schema 25 under the
+[approved participation design](session-usage-plan.md#reviewer-participation-without-new-manual-steps)
+and preserves the version-1 reviewer's judgment template. Schema migration
+remains setup-only; numerical collection and lifecycle integration are separate.
+
+A schema-25 Packet additionally contains `review_session_context` with exactly
+`version:1`, `project_id` and `execution_id`. The project and nullable execution
+come from the same admitted core read; an unknown execution permits inspection,
+not a bound save. Reviewer read compares this context with the current public
+Packet along with its existing basis, without another normal-loop command.
+
+Save automatically captures the actual `CODEX_THREAD_ID` and writes the unchanged
+original plus `<output>.session.json`. The latter contains exactly `version:1`,
+`session_id`, `project_id`, `task_id`, `contract_revision`, `review_target`,
+`execution_id` and the lowercase SHA-256 `original_result_digest` over the exact
+original bytes. It obeys the same ignored physical-path/exclusive-write rules.
+Missing identity or execution fails before file creation. Either failed write
+may leave residue; neither file is overwritten, repaired or silently adopted.
+On successful bound save, the response also carries that already validated
+metadata as `review_session`. This is fixed numerical-correlation metadata,
+not a new input, provenance declaration or LLM action. Unbound saves retain
+their old response shape. A numerical collector may use this response and
+the existing successful reviewer read display to identify inclusive review
+turns, but counts them only after matching committed core Receipt/session
+evidence. Parent forwarding cannot substitute its own turn for the reviewer.
+
+Submit validates every sidecar against its original and Packet, then forwards
+the bytes once in the machine-only envelope
+`{format:"taskgov-review-session-handoff-v1",items:[{original_base64,binding}]}`.
+Each item contains one complete original and its metadata; canonical base64 is
+transport encoding, not regenerated review JSON. The existing 1–8 Receipt and
+262,144-byte whole-input limits also apply to this envelope, including encoding
+overhead. Missing, malformed or mismatched binding cannot fall back to legacy.
+An old Packet with a sidecar is rejected instead of discarding the binding.
+
+The same core writer stores the Receipt, its immutable session relation,
+Findings and events, rechecking current execution, Contract and full target.
+An owner can forward bound originals without becoming their reviewer. A direct
+reviewer uses its actual caller ID through the existing single/structured
+registration path, acquires no Task slot, and may add Findings only to its own
+bound Receipt. It gains no Task edit, target, completion or Finding-resolution
+authority. Independent bound reviewers must differ from the current owner;
+different names for the same session on one Task/Contract/target cannot create
+additional independent passes, including concurrent registration. Existing
+provenance, context and verdict rules remain mandatory; identity is not proof
+that an independent or fresh review occurred and is not authentication.
+
+Owner-forwarded legacy input without machine metadata remains explicitly
+unbound and keeps its existing declared quality semantics; never assign its
+cost to the parent. Old Receipts and sealed evidence are not backfilled. Core
+registration, gate reads and completion do not read or attach the numerical DB,
+so its absence, corruption or lock cannot invalidate an otherwise valid core
+operation. A later numerical projection may replay committed Receipt IDs; it
+must never retry registration or become a review gate.
+Missing review-read history leaves partial/unknown reviewer coverage rather
+than assuming the entire chat was review work. A directly registered Receipt
+can establish its own actual registration turn; it does not invent earlier
+review turns. The actual core identity and full target remain controlling
+even when numerical boundaries are absent, conflicting or delayed.
 
 <a id="git-snapshot-and-target-binding"></a>
 

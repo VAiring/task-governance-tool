@@ -10,6 +10,7 @@ from typing import Any
 
 from task_governance_tool.session_identity import CallerIdentity
 from task_governance_tool import task_ownership
+from task_governance_tool import review_session_repository as review_sessions
 
 from task_governance_tool.review_packet_binding import review_packet_binding
 
@@ -58,6 +59,7 @@ from task_governance_tool.evidence_validation_repository import (
 from task_governance_tool.storage import (
     COMPLETION_RECEIPT_VALIDATION_CHUNK_SIZE,
     SCHEMA_VERSION,
+    current_schema_version,
     DatabaseTarget,
     ProjectIdentity,
     StorageError,
@@ -195,6 +197,7 @@ def lock_and_reread_target_owner(
     database_target: DatabaseTarget | None = None,
     caller: CallerIdentity = CallerIdentity(None),
     ownership: task_ownership.OwnershipBasis | None = None,
+    review_session: review_sessions.ReviewSessionBinding | None = None,
 ) -> dict[str, Any]:
     if not connection.in_transaction:
         if database_target is not None:
@@ -208,7 +211,10 @@ def lock_and_reread_target_owner(
     if ownership is None:
         ownership = task_ownership.capture_basis(connection, project_id=project.project_id, task_id=task_id)
     if ownership is not None:
-        task_ownership.require_mutation(connection, ownership, caller)
+        if review_session is not None and current_schema_version(connection) >= 25:
+            review_sessions.require_review_writer(connection, ownership, caller, review_session)
+        else:
+            task_ownership.require_mutation(connection, ownership, caller)
     return task
 
 
@@ -909,13 +915,19 @@ def add_review_receipt(
     review_methods: Any = None,
     database_target: DatabaseTarget | None = None,
     caller: CallerIdentity = CallerIdentity(None),
+    session_binding: review_sessions.ReviewSessionBinding | None = None,
 ) -> ReviewReceiptResult:
     normalized_task_id = validate_task_id(task_id)
     observed_task, ownership = read_mutation_basis(connection, project.project_id, normalized_task_id)
     if observed_task is None:
         raise TaskRepositoryError("not_found", "task was not found")
     reject_done_task_write(observed_task)
-    if ownership is not None:
+    if current_schema_version(connection) >= 25:
+        if session_binding is None:
+            session_binding = review_sessions.direct_binding(ownership, caller)
+    elif session_binding is not None:
+        raise review_error("invalid_review_evidence", "review session binding requires the current schema")
+    if ownership is not None and session_binding is None:
         task_ownership.require_completion_owner(ownership, caller)
     if (
         int(observed_task["review_target_generation"]) <= 0
@@ -958,6 +970,7 @@ def add_review_receipt(
         normalized_task_id,
         database_target=database_target,
         caller=caller, ownership=ownership,
+        review_session=session_binding,
     )
     reject_concurrent_review_basis_change(
         observed_task,
@@ -1134,6 +1147,15 @@ def add_review_receipt(
             "evidence_ledger_inconsistent",
             "stored evidence ledger is inconsistent",
         ) from exc
+    if session_binding is not None:
+        review_sessions.insert_binding_locked(
+            connection, receipt_id=receipt_id, binding=session_binding,
+            target=review_sessions.ReviewSessionTarget(
+                project.project_id, normalized_task_id, task["current_contract_revision"],
+                task["review_target_kind"], task["review_target_value"],
+                task["review_target_base_revision"], task["review_target_generation"],
+            ), observed_ownership=ownership, caller=caller,
+        )
     connection.execute(
         "UPDATE tasks SET updated_at = ? WHERE project_id = ? AND task_id = ?",
         (now, project.project_id, normalized_task_id),
@@ -1254,12 +1276,21 @@ def add_review_finding(
             "receipt must belong to this task, project, and current review target",
             "review_receipt_id",
         )
+    review_session = None
+    if (current_schema_version(connection) >= 25 and caller.session_id not in
+        (ownership.owner_session_id, ownership.completion_session_id)):
+        review_session = review_sessions.read_bindings(
+            connection, receipt_ids={normalized_receipt_id},
+        ).get(normalized_receipt_id)
+        if review_session is None or review_session.session_id != caller.require():
+            raise review_error("review_receipt_mismatch", "the caller is not the bound reviewer for this receipt")
     task = lock_and_reread_target_owner(
         connection,
         project,
         normalized_task_id,
         database_target=database_target,
         caller=caller, ownership=ownership,
+        review_session=review_session,
     )
     reject_concurrent_review_basis_change(
         observed_task,

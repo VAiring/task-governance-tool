@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from task_governance_tool.session_identity import CallerIdentity
 from task_governance_tool import task_ownership
+from task_governance_tool import review_session_repository as review_sessions
+from task_governance_tool.review_session_transport import BoundResult
 from task_governance_tool.tasks import read_mutation_basis
 
 import json
@@ -42,7 +44,7 @@ from task_governance_tool.reviews import (
     review_error,
     validate_stored_review_target,
 )
-from task_governance_tool.storage import DatabaseTarget, ProjectIdentity
+from task_governance_tool.storage import DatabaseTarget, ProjectIdentity, current_schema_version
 from task_governance_tool.tasks import (
     TaskRepositoryError,
     read_internal_task,
@@ -413,6 +415,7 @@ def add_review_results(
     user_approved_reviewers: Sequence[str] = (),
     database_target: DatabaseTarget | None = None,
     caller: CallerIdentity = CallerIdentity(None),
+    session_bindings: tuple[BoundResult, ...] | None = None,
 ) -> dict[str, Any]:
     """Append the whole batch; caller must commit or roll back on exception.
 
@@ -433,7 +436,17 @@ def add_review_results(
     if observed is None:
         raise TaskRepositoryError("not_found", "task was not found")
     reject_done_task_write(observed)
-    if ownership is not None:
+    bound_schema = current_schema_version(connection) >= 25
+    if session_bindings is not None and (
+        not bound_schema or type(session_bindings) is not tuple
+        or len(session_bindings) != len(payload["receipts"])
+        or any(type(item) is not BoundResult for item in session_bindings)
+    ):
+        raise _invalid_input()
+    automatic = review_sessions.direct_binding(ownership, caller) if bound_schema and session_bindings is None else None
+    bindings = ([item.binding for item in session_bindings] if session_bindings is not None
+                else [automatic] * len(payload["receipts"]))
+    if ownership is not None and not any(bindings):
         task_ownership.require_completion_owner(ownership, caller)
     if (
         int(observed["review_target_generation"]) <= 0
@@ -451,9 +464,18 @@ def add_review_results(
         review_tier=observed["review_tier"],
         user_approved_reviewers=user_approved_reviewers,
     )
+    if session_bindings is not None:
+        expected_target = normalized["review_target"]
+        expected_binding = review_sessions.ReviewSessionTarget(
+            project.project_id, normalized_task_id, normalized["contract_revision"],
+            expected_target["kind"], expected_target["value"], expected_target["base_revision"], expected_target["generation"],
+        )
+        if any(item.target != expected_binding for item in session_bindings):
+            raise _basis_mismatch()
     locked = lock_and_reread_target_owner(
         connection, project, normalized_task_id, database_target=database_target,
         caller=caller, ownership=ownership,
+        review_session=bindings[0],
     )
     reject_concurrent_review_basis_change(
         observed, locked,
@@ -469,7 +491,7 @@ def add_review_results(
     validate_stored_review_target(locked)
     require_current_capture(locked)
     receipts = []
-    for entry in normalized["receipts"]:
+    for entry, session_binding in zip(normalized["receipts"], bindings):
         provenance = dict(entry["provenance"] or {})
         methods = provenance.pop("method_codes", None)
         receipt = add_review_receipt(
@@ -480,6 +502,7 @@ def add_review_results(
             review_methods=methods, **provenance,
             database_target=database_target,
             caller=caller,
+            session_binding=session_binding,
         )
         findings = []
         for entry_finding in entry["findings"]:

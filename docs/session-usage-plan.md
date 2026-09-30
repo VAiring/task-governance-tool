@@ -30,7 +30,7 @@ does not itself authorize retirement.
 | 10 | `tg_task_8c2d0ad6222f7031` | Agreement and current owners → this conditional design | Documentation routing, state/permission/usage cases, document checker, exact diff, two independent Tier 2 reviews |
 | 20 | `tg_task_e716b2e85e0c57b8` | Design → working ownership, migration, all command checks and read display | Task, CLI, database, completion and Runner write boundaries; independent-connection races, all state transitions and old-state preservation |
 | 30 | `tg_task_1e4a617e9f425f49` | Design and session/execution identity → atomic numerical collection | Adapter, repository and migration; known numerical fixtures, duplicate/conflict/partial-tail/replay/concurrency/privacy tests |
-| 40 | `tg_task_53aaed4361420d47` | Ownership and collected responses → reviewer participation and shared attribution | Existing review handoff/registration and usage relations; exact target, parent/independent reviewer, response boundaries, AB/BC and reopen cases |
+| 40 | `tg_task_53aaed4361420d47` | Ownership and collected responses → reviewer participation and shared attribution | Existing review handoff/registration and usage relations; exact target, parent/independent reviewer, inclusive turn intervals, AB/BC and reopen cases |
 | 50 | `tg_task_7ab5da8a1f7d1875` | Attribution → immutable usage evidence linked to exact completion cycles | Completion/Evidence/usage projection; collector failures cannot reject completion, late links, replacement and sealed-byte preservation |
 | 60 | `tg_task_f54b556fa739ba95` | Preceding functions → tested lifecycle integration and introduction | Setup/state, packaging, conditional Skill instructions and host adapter; isolated hook/trust/flush/recovery and whole-flow functional tests |
 
@@ -246,7 +246,9 @@ Store only bounded provider/model labels and validated UUID/response IDs.
 Per-model totals cannot silently combine differently identified models.
 
 Read complete bounded JSONL records outside the writer. Ignore message/tool
-arguments, reasoning, full outputs and unknown fields; never retain raw lines,
+arguments, reasoning and unknown fields. A known CLI success acknowledgement
+may supply only allowlisted operation identities for the turn binding below;
+discard all other output content. Never retain raw lines,
 hash private bodies, print rejected values or use an environment dump. Adapter
 diagnostics are fixed codes. The experimental collector's whole-tree discovery,
 root-only restriction and full-session accounting are not product behavior.
@@ -260,38 +262,42 @@ compare the previously read cursor under lock; a stale batch retries its read
 on a later collection, never moves the cursor backwards or advances past an
 uncommitted observation. Do not retry the user's Task mutation.
 
-## Response Boundaries And Attribution
+<a id="response-boundaries-and-attribution"></a>
 
-An explicit adapter must bind Task operation events to the generating model
-response, then apply ordered successful ownership/reviewer events. Wall-clock
-overlap, the latest filename, an adjacent token row alone, or an entire chat's
-total is not such a binding. Existing machine Task-event identities returned
-by CLI acknowledgements can serve as correlation keys only if the host's
-structured tool-result envelope and response relationship are verified.
-Do not parse natural-language output or shell source to guess Task IDs.
+## Turn Intervals And Attribution
 
-The source adapter returns either an exact `(thread, turn, response)` binding
-or `boundary_unknown`. Unknown associations remain unresolved for later replay,
-without preventing the Task operation. The implementation must prove its actual
-host binding before claiming Task attribution; the local observations below
-do not establish it. This is a required input to unit 40, not a new caller
-command, mandatory prompt or permission to treat unknown as exact.
+The user's later turn-interval clarification replaces the earlier mandatory
+operation-to-response join. Bind a successful Task state change to its actual
+`(thread, turn)` using a verified structured host envelope and the known CLI
+success acknowledgement. Verify the operation against the committed core
+transition; a failed command or invented identifier is not an entry or exit.
+Do not infer a turn from time overlap, filename, adjacent usage row, natural
+language or shell source. An unknown binding remains replayable and never
+blocks the ordinary Task operation. This needs no extra caller command or
+LLM-entered identity. PostToolUse is one possible connection, not a requirement.
 
-Responses strictly before first start remain unassigned. A response spanning
-start/switch/completion is indivisible: associate its actual participating
-executions, and retain a common/unassigned component if it also precedes start.
-Do not assign an entire earlier discussion to the next Task. Shared totals
-are whole-response totals, not exclusive per-Task costs; no arbitrary split
-or duplicate sum is permitted. The common component is not a global graph
-connector joining unrelated Tasks.
+An owner's interval begins on entry to `in_progress` and ends on any transition
+out of it. Include both endpoint turns in full, including responses before the
+start operation and after the exit operation within those turns. A same-turn
+start/completion, including an intervening `review_pending`, counts the whole
+turn once. Turns wholly before entry or between closed intervals stay unassigned.
+Completion in a later non-participating turn triggers cumulative registration;
+it does not extend the last interval. For example, active turns 2–4 and 7–9
+followed by completion in turn 12 count 2–4 and 7–9, not turn 12.
 
-Pause/block ends ordinary owner participation at its bound boundary. Completion
-keeps a closing participation through the bound final report in that turn,
-including its delayed usage record, not every later turn in the same chat.
-If work on B occurs in A's closing response, record AB sharing explicitly.
-No final boundary or no confirmed response association means pending/unknown,
-not time-based finalization. Reopen creates a distinct execution; it cannot
-reconnect old and new work merely because the permanent Task ID matches.
+Each exit preserves its subtotal. Resume adds another interval without resetting
+the Task's pre-completion cumulative set, even if ready/cancelled restart changes
+the ownership execution ID. Within one Task completion period, union the covered
+`(thread, turn)` keys before summing their response keys. Keep execution identity
+for ownership, sharing and reopen distinctions; do not merge separate completion
+periods or later executions just because the permanent Task ID matches.
+
+Late observations from an included endpoint turn remain included through the
+existing replay and immutable successor-evidence mechanism. A missing endpoint,
+turn binding or tail yields pending/unknown coverage, not a guessed boundary.
+Shared turns count in an explicitly shared total, never as exclusive Task costs
+or an arbitrary proportional allocation. Unknown totals, incomplete shared groups
+and another Task's unfinished state are not additional Task completion gates.
 
 Build components over execution participation and response/interval membership.
 X={A1,B1}, Y={B1,C1} becomes {A1,B1,C1}, even with disjoint response sets.
@@ -390,7 +396,7 @@ the existing setup-only migration and admission rules.
 
 Usage schema 1 (unit 30) owns registered source sessions, incarnations/cursors,
 response records, conflicts and fixed collection diagnostics. Schema 2 (unit
-40) adds operation/response bindings, numerical reviewer participation projected
+40) adds operation/turn bindings, inclusive measurement intervals, numerical reviewer participation projected
 from core review evidence, and execution membership. It owns no registration
 permission or independent-pass gate. Schema 3 (unit 50) adds immutable aggregate snapshots, exact-cycle
 links and explicit supersession edges. Unit 60 consumes these, not another
@@ -424,14 +430,19 @@ into every Task response. New observations or AB/BC mergers create a new
 snapshot with explicit predecessor IDs. Old records remain; only the current
 non-superseded component is counted. Linking the same snapshot/cycle again is
 a no-op. A's earlier cycle may gain a link after B finishes, but A's later
-reopened execution cannot receive that old link.
+reopened execution cannot receive that old link. Task cumulative membership
+includes every interval since the preceding completion, not just the latest
+ownership execution; ready/cancelled restart must not drop earlier intervals.
+The immutable member set keeps those executions distinguishable for sharing.
 
 `complete` means all registered contributing execution/reviewer boundaries and
 associated persisted response records are accounted for under a verified
 adapter, with no outstanding gaps. It does not mean billing accuracy, hidden
 provider operations or all unregistered intervention. Silence, a Stop alone,
 a stable file size or elapsed time never establishes completeness. Unknown
-tail/lost logs retain observed totals and incomplete/pending status.
+tail/lost logs retain observed totals and incomplete/pending status. This is
+numerical snapshot quality, never an additional gate on ordinary Task completion
+or on recording that Task's observed cumulative usage while others still work.
 
 The existing Task detail and audit surfaces expose usage summary/current
 snapshot/cycle links, without adding a normal loop command. The shared
@@ -448,7 +459,10 @@ SessionStart for project-local startup/resume catch-up, and SessionEnd as a
 best-effort supplement. No hook sends model context, requests continuation,
 launches a model, or changes a Task. Return the event's neutral success shape;
 never use blocking/continuation output for measurement. Parsing discards hook
-message/input/output bodies and preserves only needed validated identities.
+message/input bodies; a tool-result boundary extracts only the allowlisted
+machine fields from a known CLI success acknowledgement and discards the rest.
+Small metadata additions to the ordinary CLI response remain permitted; no
+extra model prompt or context injection is required.
 Parent `session_id` must not be mistaken for the subagent's `agent_id`.
 
 Introduction requires the user to approve exact project-local hook files and
@@ -467,6 +481,8 @@ is the supported recovery trigger, not a daemon/timer or invented complete total
 An interrupted hook is replayable; source observations and cursor are atomic.
 Concurrent/out-of-order hooks cannot roll progress backwards. One participant's
 stop does not finalize a shared component whose other participants remain open.
+It also does not prevent that participant's Task from completing or recording
+its currently observed cumulative usage.
 
 ### Evidence Available And Required Follow-Up
 
@@ -480,11 +496,14 @@ CODEX_THREAD_ID; CODEX_TURN_ID/RESPONSE_ID/TOOL_CALL_ID/CALL_ID were absent.
 Selected-session metadata contained response usage with response/thread/turn
 IDs and separate tool records with call IDs, without a shared direct response
 ID on the tool record. Only structural keys/counts were emitted; no transcript
-content was retained. This does not yet prove the operation/response join.
+content was retained. Those observations did not establish an operation-to-turn
+connection; absence of a tool-record response ID is no longer an obstacle to
+the approved turn-level requirement.
 
-Before unit 40 accepts automatic attribution, demonstrate the exact structured
-join with sanitized host fixtures covering delayed records, multiple calls in
-one response, start/switch/final report and compaction. If no unambiguous join
+Before unit 40 accepts automatic attribution, demonstrate the structured
+successful-operation-to-turn connection with sanitized host fixtures covering
+multiple calls, both endpoint turns, resume, delayed usage and compaction.
+If no unambiguous turn connection
 exists, stop that part for an explicit design decision; do not substitute time
 or session totals. Before unit 60 claims automatic operation, independently
 observe actual trusted hook delivery and last-usage flush/replay on an isolated
@@ -511,7 +530,9 @@ completion, as already required by their live Contracts.
 | Core Task DB write fails | completion fails; no falsely reported core success |
 | Child reviewer, independent root, duplicate alias, stale Packet | actual registered identity; one participant/pass; stale refused |
 | Concurrent bound reviewer aliases or usage DB absent/corrupt/busy | core Receipt/session binding is atomic; alias rejected independently of numerical availability; valid registration/completion still works |
-| Pre-start discussion, switch response and final report | prior responses unassigned; indivisible sharing explicit; tail remains pending until bound |
+| Pre-start discussion, switch turn and final report | earlier nonparticipating turns unassigned; both endpoint turns whole; sharing explicit; delayed endpoint usage included |
+| Active turns 2–4 and 7–9, done in turn 12; ready/cancelled restart | retain both intervals across ownership execution changes; do not add turn 12 or count one turn twice |
+| Start and done in one turn, with or without review-pending | count that entire turn once, including later responses; late records produce successor evidence |
 | AB and same B execution+C without duplicate response | one ABC component, union sum; old aggregate not double counted |
 | Same Task reopened or unrelated time overlap | no automatic graph merge |
 | A completes before B/shared finalization | later immutable snapshot links A's original cycle, not its new cycle |

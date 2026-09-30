@@ -252,7 +252,7 @@ Typed completion storage is exactly `completion_evidence_kind`,
 `review_target_kind`, `review_target_value`,
 `review_target_base_revision`, and generation. Values and their legacy
 projection must satisfy one cross-field matrix before storage or output.
-For a supported schema-v18-through-v24 source, every complete loaded Task row is validated
+For a supported schema-v18-through-v25 source, every complete loaded Task row is validated
 for exact SQLite/Python storage class, bounded text/privacy, closed enums, and
 all Task cross-field matrices before any field can be omitted or exposed.
 Stored values are never coerced, trimmed, repaired, or rewritten by a read.
@@ -337,8 +337,10 @@ The guard applies to all Task-scoped writes: active registration/batches, edits,
 notes, Contracts, checkpoints, Effort bookkeeping, local handoff mutations, Runner
 Plan publication, target/restart, Verification/Review Receipts, results and Findings,
 and both completion forms. Existing done locks and handoff outbox rules remain.
-Review registration currently requires the execution owner/completion owner;
-direct bound-reviewer submission is not yet implemented. Read-only completion
+Review registration and Finding insertion into a reviewer's own bound Receipt
+have the narrow [schema-25 reviewer exception](review-completion-specification.md#reviewer-session-binding).
+Unbound legacy forwarding still requires the execution owner/completion owner;
+the exception grants no other owner-only mutation authority. Read-only completion
 check reports ownership blockers without acquiring anything. Runner admission
 checks before T1; mandatory cleanup/terminal audit for the admitted attempt still
 finishes after an owner change and grants no new launch or Task mutation.

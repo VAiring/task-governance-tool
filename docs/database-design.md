@@ -51,6 +51,7 @@ Current sequential migrations are:
 | 22 | retired Analyzer reservation cleanup in the existing Evidence/Bundle tables |
 | 23 | `verification_declaration`: Task and completion-cycle waiver reasons |
 | 24 | `task_session_ownership`: current ownership and immutable execution/transition/cycle relations |
+| 25 | `review_receipt_sessions`: immutable actual-reviewer/execution binding |
 
 Every migration is ordered, idempotent on reentry, transactional, and
 rollback-tested. Reentry validates rather than synthesizing missing data.
@@ -63,10 +64,10 @@ checkpoint, maintenance, identity, and completion traces. The sole current
 exception is migration 20's Bundle-rebuild retirement of the
 unsupported attached residue defined below; it changes no other migration.
 
-The fixed-state setup migrator accepts complete source schemas v1-v23 and
-treats v24 as current. Legacy `state/projects` discovery is intentionally
+The fixed-state setup migrator accepts complete source schemas v1-v24 and
+treats v25 as current. Legacy `state/projects` discovery is intentionally
 narrower: v1-v13 plus the explicit schema-v14 legacy-layout transition.
-Viewer compatibility is independent and accepts source schemas v5-v24.
+Viewer compatibility is independent and accepts source schemas v5-v25.
 Incomplete history, a missing required object/row, a later marker, too-new
 state, unsupported layout, foreign identity, or corrupt integrity fails closed.
 
@@ -95,6 +96,31 @@ cycle's project/Task and immutable triggers prevent rewriting the relation.
 No prompt, response body, environment, cost, session liveness or caller-specific
 flags are retained. This schema does not create the later numerical usage store
 or review-session binding tables.
+
+<a id="conditional-reviewer-binding-migration"></a>
+
+### Reviewer Binding Migration
+
+`schema_review_sessions.py` owns the setup-only 24→25 migration, exact DDL and
+fingerprint. The public runtime constant is 25. Migration retains the existing short-writer, marker-last
+snapshot proof and PRAGMA-restoration mechanics. It adds the empty binding
+relation and rebuilds only the Bundle source discriminator and coupled native
+cycle guard, preserving all old columns, rows and unrelated objects.
+
+`review_receipt_sessions` is keyed by Receipt ID and references an execution.
+Its fixed columns are actual session UUID, execution ID, `direct|handoff`
+source and nullable original digest (required only for handoff). An insertion
+guard checks matching Receipt/execution project and Task; immutable triggers
+reject updates/deletes. Repository validation additionally checks the exact
+recorded Evidence Reference, full target and same-session aliases. Binding is
+inserted in the Receipt's existing transaction, never an attached numerical DB.
+
+Storage composes the ordered tail and exact inventory. Backup, recovery,
+Evidence Bundle/index, Viewer and relocation codec recognize the current
+source version without weakening normal database-version admission. Core
+completion keeps the schema-24 execution/cycle link and format-2 Evidence
+encoding; reviewer identity is not added to the sealed payload. Old readers
+reject schema 25 rather than dropping its registration constraints.
 
 ## Numerical Collection Persistence
 
@@ -154,6 +180,50 @@ failure without discarding readable prior observations. Its explicit-setup
 adapter runs after core setup, reports a separate outcome and never changes
 core success. No automatic Task operation, reviewer, attribution, completion,
 hook or host-settings connection is activated by this module.
+
+<a id="conditional-turn-attribution-structure"></a>
+
+### Turn Attribution Structure
+
+`usage_turn_adapter.py` projects only host `task_started` metadata and the
+allowlisted fields of successful Task acknowledgements from structured tool
+results. It accepts the observed `input_text`/text blocks and exec output
+container, not command arguments or general natural-language relations.
+`usage_adapter.py` includes this projection only in attribution mode. The
+sanitized prefix version distinguishes the two adapters, so switching mode
+replays old numerical observations idempotently rather than losing boundaries.
+Turn observations, response observations and source cursor commit atomically.
+
+`UsageAttributionRepository` adds `usage_turns`,
+`usage_turn_conflicts`, `usage_operation_turns`, `usage_operation_conflicts`,
+`usage_review_boundaries` and `usage_review_receipt_turns`
+to numerical schema 1. Explicit initialization migrates the migration-marker
+table and adds the new relations in one short transaction, recording version 2
+last. No ordinary read or collector migrates. The setup factory selects schema 2
+for the current schema-25 package. Preview returns `migration_required` and planned `usage_migrate` for
+an exact schema-1 store; explicit setup returns `migrated` and that completed
+write on success. Fresh-store creation keeps `usage_initialize`. Failure remains
+a separate numerical outcome, not rollback or rejection of core setup.
+
+Core read-side resolution uses the exact returned event ID and the transition's
+project/Task/generation/status/actor tuple. Equal creation time is only an
+additional consistency check, never a proximity selector. Missing core rows
+after restore remain unresolved. The numerical store neither supplies core
+state acceptance nor bypasses existing selected/global validation.
+
+`usage_attribution.py` builds inclusive intervals from admitted append-order
+core transitions. It unions turn and response membership before summing, builds
+components over ownership executions, and separately projects cumulative Task
+completion periods. It preserves a Task's pre-completion intervals across
+execution changes without treating permanent Task IDs as graph edges. Its
+current output is observed/pending; immutable cycle-linked publication and
+lifecycle integration retain their separately routed implementation scope.
+`usage_review_attribution.py` attaches reviewer intervals only to committed
+core identity/target evidence. A reviewed execution and the reviewer's own
+active execution can share the same turn; an unrelated parent's submission
+turn cannot stand in for the reviewer's read/save boundary. Legacy unbound
+Receipts add no inferred participation. Missing start history counts only a
+known save/direct-registration turn with explicit partial coverage.
 
 <a id="schema-v20-physical-foundation"></a>
 

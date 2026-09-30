@@ -29,6 +29,8 @@ from task_governance_tool.task_values import (
     validate_legacy_m19_7_stored_text, validate_text,
 )
 from task_governance_tool.verification_declaration import verification_requirement
+from task_governance_tool.session_identity import capture_caller_identity
+from task_governance_tool import review_session_transport as session_transport
 
 
 PACKET_LIMIT = 32768
@@ -183,8 +185,10 @@ def _packet(raw, expected_task_id=None):
         _fail("handoff_input_too_large")
     packet = json.loads(raw.decode("utf-8"), object_pairs_hook=_unique,
                         parse_constant=lambda value: _fail())
-    if type(packet) is not dict or set(packet) != _PACKET_KEYS:
+    if type(packet) is not dict or set(packet) not in (_PACKET_KEYS, _PACKET_KEYS | {"review_session_context"}):
         _fail()
+    if "review_session_context" in packet:
+        session_transport.validate_context(packet["review_session_context"], allow_unknown_execution=True)
     task, contract, target = packet["task"], packet["contract"], packet["review_target"]
     if (type(task) is not dict or type(contract) is not dict or type(target) is not dict
             or type(task.get("task_id")) is not str or type(task.get("review_tier")) is not int
@@ -274,15 +278,28 @@ def save(repo, packet_path, output, raw, approvals=()):
     packet_raw = _read(packet_file, PACKET_LIMIT)
     packet = _packet(packet_raw)
     payload = _validate(raw, packet, approvals, original=True)
+    binding_path, binding_raw = None, None
+    if "review_session_context" in packet:
+        metadata = session_transport.metadata_for(packet, raw, capture_caller_identity())
+        session_transport.validate_metadata(metadata, raw)
+        binding_path = _path(repo, output + ".session.json")
+        binding_raw = json.dumps(metadata, ensure_ascii=True, separators=(",", ":")).encode("utf-8")
     destination = _path(repo, output)
     _write_new(destination, raw)
+    if binding_path is not None:
+        _write_new(binding_path, binding_raw)
     saved = _read(destination, REVIEW_RESULTS_INPUT_LIMIT)
     _validate(saved, packet, approvals, original=True)
     if saved != raw or _read(packet_file, PACKET_LIMIT) != packet_raw:
         _fail("handoff_file_changed")
+    if binding_path is not None and _read(binding_path, PACKET_LIMIT) != binding_raw:
+        _fail("handoff_file_changed")
     entry = payload["receipts"][0]
-    return {"ok": True, "status": "saved", "path": output,
-            "verdict": entry["verdict"], "finding_count": len(entry["findings"])}
+    result = {"ok": True, "status": "saved", "path": output,
+              "verdict": entry["verdict"], "finding_count": len(entry["findings"])}
+    if binding_raw is not None:
+        result["review_session"] = metadata
+    return result
 
 
 def submission(repo, packet_path, originals, approvals=()):
@@ -299,10 +316,28 @@ def submission(repo, packet_path, originals, approvals=()):
         _fail()
     framed = b"[" + b",".join(documents) + b"]"
     payload = _validate(framed, packet, approvals)
+    binding_files = [(_path if "review_session_context" in packet else _relative_path)(
+        repo, item + ".session.json") for item in originals]
+    binding_documents = []
+    if "review_session_context" in packet:
+        for path, raw in zip(binding_files, documents):
+            binding_raw = _read(path, PACKET_LIMIT)
+            metadata = json.loads(binding_raw.decode("utf-8"), object_pairs_hook=_unique)
+            session_transport.validate_metadata(metadata, raw)
+            context = {key: metadata[key] for key in ("version", "project_id", "execution_id")}
+            if context != packet["review_session_context"]:
+                _fail("review_target_mismatch")
+            binding_documents.append((binding_raw, metadata))
+        framed = session_transport.frame_submission(documents, [metadata for _, metadata in binding_documents])
+    elif any(os.path.lexists(path) for path in binding_files):
+        _fail("handoff_invalid_input")
     if _read(packet_file, PACKET_LIMIT) != packet_raw:
         _fail("handoff_file_changed")
     for path, raw in zip(paths, documents):
         if _read(path, REVIEW_RESULTS_INPUT_LIMIT) != raw:
+            _fail("handoff_file_changed")
+    for path, (raw, _) in zip(binding_files, binding_documents):
+        if _read(path, PACKET_LIMIT) != raw:
             _fail("handoff_file_changed")
     return payload["task_id"], framed
 

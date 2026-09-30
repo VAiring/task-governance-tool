@@ -60,15 +60,15 @@ class CompletionEvidenceBundleStorageTests(unittest.TestCase):
             completed = complete_task(db_path, repo, task_id)
             self.assertEqual(completed.returncode, 0, completed.stdout)
             with closing(connect(db_path)) as connection:
-                self.assertEqual(current_schema_version(connection), 24)
+                self.assertEqual(current_schema_version(connection), 25)
                 self.assertEqual(connection.execute(
                     "SELECT source_schema_version FROM completion_evidence_bundles"
-                ).fetchone()[0], 24)
+                ).fetchone()[0], 25)
                 before = logical_database_digest(connection)
                 with self.assertRaisesRegex(AssertionError, "cannot discard ownership or completion history"):
                     remove_v21_gate_basis_for_test(connection)
                 self.assertEqual(logical_database_digest(connection), before)
-                self.assertEqual(current_schema_version(connection), 24)
+                self.assertEqual(current_schema_version(connection), 25)
                 self.assertEqual(connection.execute("PRAGMA foreign_keys").fetchone()[0], 1)
                 self.assertEqual(connection.execute("PRAGMA legacy_alter_table").fetchone()[0], 0)
 
@@ -203,7 +203,7 @@ class CompletionEvidenceBundleStorageTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             db_path = self._initialized_database(Path(directory))
             with closing(connect(db_path)) as connection:
-                self.assertEqual(SCHEMA_VERSION, 24)
+                self.assertEqual(SCHEMA_VERSION, 25)
                 remove_v20_runner_shadow_for_test(connection)
                 self.assertEqual(current_schema_version(connection), 19)
                 marker = connection.execute(

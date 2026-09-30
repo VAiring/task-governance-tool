@@ -159,7 +159,7 @@ source-capacity failure remains candidate-local; every other Task fault is
 structural and set-fatal.
 
 Viewer supplies the source version returned by snapshot validation. For exact
-schema v18-v24, that validation completes the full Evidence Ledger and Task batch
+schema v18-v25, that validation completes the full Evidence Ledger and Task batch
 checks before issuing one private, one-shot batch proof bound to the same
 query-only connection and transaction, project, source version, exact sorted
 Task IDs/count, issuance data version, and a fixed nested savepoint held only

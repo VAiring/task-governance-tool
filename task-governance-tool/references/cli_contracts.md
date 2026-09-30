@@ -261,7 +261,7 @@ Expired or stale context requires a fresh preview and fresh user approval.
     "state_layout_activate"
   ],
   "schema_from": null,
-  "schema_to": 24,
+  "schema_to": 25,
   "maintenance_enabled": true,
   "backup_interval_minutes": 30,
   "backup_generations": 3,
@@ -269,7 +269,7 @@ Expired or stale context requires a fresh preview and fresh user approval.
   "viewer_status": "published",
   "usage": {
     "status": "initialized",
-    "schema_to": 1,
+    "schema_to": 2,
     "planned_writes": ["usage_initialize"],
     "completed_writes": ["usage_initialize"],
     "error": null
@@ -308,9 +308,10 @@ durable stages.
 
 `usage` reports separate numerical-store setup, not Task-cost availability.
 Its status is `not_attempted`, `pending_core_setup` (preview before core
-binding is admitted), `not_present`, `initialized`, `current`, or `unavailable`.
-Its only write is `usage_initialize`; preview has no completed write.
-`schema_to` is 1 and `error` is null or fixed `usage_unavailable`. Numerical
+binding is admitted), `not_present`, `initialized`, `migration_required`,
+`migrated`, `current`, or `unavailable`. Writes are `usage_initialize` and
+`usage_migrate` (exact schema 1 to 2); preview has no completed write.
+`schema_to` is 2 and `error` is null or fixed `usage_unavailable`. Numerical
 failure never undoes successful core setup or blocks ordinary Task work;
 do not repeat Task writes to recover usage. This adds no normal-loop action,
 session registration step, automatic collection or hook installation.
@@ -326,7 +327,7 @@ Preview reports current durable state, not planned state:
 `completed_writes=[]`, and a fresh preview keeps
 `maintenance_enabled=false`. A healthy replay has empty write lists. Every
 error has `status=null`; preflight/policy failures use empty write lists and
-null observed values except `schema_to=24`. A later-stage failure reports only
+null observed values except `schema_to=25`. A later-stage failure reports only
 the durable ordered prefix. Inspect `data.completed_writes` before retrying;
 `setup_incomplete` permits a retry that recomputes from durable state rather
 than repeating an assumed failed stage; it does not guarantee automatic repair
@@ -385,8 +386,8 @@ A ready result has this structure:
     },
     "project_state": {
       "code": "ready",
-      "schema_version": 24,
-      "required_schema_version": 24
+      "schema_version": 25,
+      "required_schema_version": 25
     },
     "task_summary": {
       "code": "ready",
@@ -1449,7 +1450,7 @@ python .agents/skills/task-governance-tool/scripts/taskgov.py review target set 
 generation. Git commits are resolved read-only and stored canonically. A diff
 fingerprint is `sha256:` plus 64 lowercase hexadecimal characters.
 
-At schema v21 through v24, this same target-set operation may use the explicitly opted-in
+At schema v21 through v25, this same target-set operation may use the explicitly opted-in
 trusted-local Runner route. It adds no argument or public Runner command. JSON
 success data is `task`, `changed_fields`, `event`, `verification_route`,
 `blocking_code`, and `review_preparation`; failure

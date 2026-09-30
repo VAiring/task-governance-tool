@@ -360,6 +360,41 @@ result registration tests retain writer atomicity and concurrent-state checks.
 
 <a id="review-packet"></a>
 
+<a id="conditional-core-reviewer-binding-structure"></a>
+
+### Core Reviewer Binding Structure
+
+The [schema-25 contract](review-completion-specification.md#conditional-reviewer-session-binding)
+is active after explicit setup migration. `review_session_transport.py`
+owns pure exact-byte/digest and closed-envelope validation, with no filesystem,
+environment or database access. Handoff save obtains the existing typed caller
+identity once; submit retains it instead of capturing the submitting parent's
+identity. Packet creation includes the execution in its existing stability
+comparison. No new LLM-entered fields or template judgments are added.
+
+`review_session_repository.py` owns the immutable core relation and its exact
+Receipt/Reference/execution joins. `reviews.py` and `review_results.py` use a
+typed bound-reviewer argument only for Receipt/Finding registration; all other
+calls retain the ordinary owner guard. Preflight observations are rechecked
+under the existing short writer. Alias detection and insertion serialize in
+that writer; global and selected Receipt validation consume the same core
+relation, never numerical state. Source execution belongs to the Receipt's
+project/Task; historical bindings remain valid after ownership/target advance.
+
+Migration and its consumer integration are owned by the
+[database design](database-design.md#conditional-reviewer-binding-migration).
+The focused repository, transport, migration and installed-entrypoint tests
+cover rollback, concurrent aliases, parent forwarding, direct reviewers,
+stale/malformed bindings, old unbound input and numerical-store isolation.
+
+`usage_review_attribution.py` projects the existing successful read display,
+bound-save `review_session` metadata and direct registration acknowledgement
+into numerical boundaries. It neither changes core permissions nor reads the
+review judgment. The numerical repository revalidates committed core bindings
+and the exact Task/Contract/target/execution before using those boundaries.
+An unresolved boundary remains partial numerical coverage; it is never a
+reason to resubmit a Receipt or downgrade its core binding.
+
 ## Review Packet
 
 `review_packet_binding.py` owns only a pure, transient SHA-256 binding of
@@ -523,7 +558,7 @@ ownership before T1, but committed execution cleanup and terminal audit never
 depend on later caller ownership. Packet preparation bindings omit the
 caller-relative ownership projection; ownership freshness is checked separately.
 
-1. validate schema v24, identity/binding, optimistic ownership/Task/authority/target
+1. validate schema v25, identity/binding, optimistic ownership/Task/authority/target
    capture basis, Contract, sequential ordering, and evidence;
 2. reread Verification Receipts and review receipts/findings, evaluate the
    current verification and review gates, and select their deterministic

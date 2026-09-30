@@ -156,6 +156,7 @@ class ReviewPacketBasis:
     review_target: dict[str, Any] = field(repr=False)
     stability_token: tuple[Any, ...] = field(repr=False)
     preparation_binding: str = field(repr=False, default="")
+    review_session_context: dict[str, Any] | None = field(repr=False, default=None)
 
 
 def packet_error(code: str, message: str) -> ReviewPacketError:
@@ -310,11 +311,19 @@ def _read_basis(
                 review_target["base_revision"],
                 review_target["generation"],
             )
+            session_context = None
+            if current_schema_version(active_connection) >= 25:
+                from task_governance_tool.task_ownership import read_basis
+                ownership = read_basis(active_connection, project_id=target.project.project_id, task_id=task_id)
+                session_context = {"version": 1, "project_id": target.project.project_id,
+                                   "execution_id": ownership.execution_id}
+                stability_token += (ownership.execution_id,)
             return ReviewPacketBasis(
                 task=task,
                 contract=contract,
                 review_target=review_target,
                 stability_token=stability_token,
+                review_session_context=session_context,
                 preparation_binding=review_packet_binding(
                     row_to_show_task(stored), current_contract["revision"],
                 ),
@@ -583,6 +592,7 @@ def prepare_review_packet(
         "task": basis.task,
         "contract": basis.contract,
         "review_target": basis.review_target,
+        **({"review_session_context": basis.review_session_context} if basis.review_session_context is not None else {}),
         "changed_paths_available": changed_paths_available,
         "changed_paths": changed_paths,
         "changed_paths_total": changed_paths_total,

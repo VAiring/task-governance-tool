@@ -213,6 +213,7 @@ class ReviewPacketTests(unittest.TestCase):
                     "task",
                     "contract",
                     "review_target",
+                    "review_session_context",
                     "changed_paths_available",
                     "changed_paths",
                     "changed_paths_total",
@@ -233,6 +234,10 @@ class ReviewPacketTests(unittest.TestCase):
             self.assertEqual(tuple(diff_data["review_target"]), (
                 "kind", "value", "base_revision", "generation",
             ))
+            self.assertEqual(set(diff_data["review_session_context"]), {
+                "version", "project_id", "execution_id",
+            })
+            self.assertEqual(diff_data["review_session_context"]["version"], 1)
             self.assertFalse(diff_data["changed_paths_available"])
             self.assertEqual(diff_data["changed_paths"], [])
             self.assertEqual(

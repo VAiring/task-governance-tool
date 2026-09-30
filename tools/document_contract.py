@@ -375,7 +375,7 @@ ROUTE_SECTIONS = (
     ),
     (
         "docs/specification.md",
-        "### Current Schema-v24 Persistence Contract",
+        "### Current Schema-v25 Persistence Contract",
         ("database-specification.md#current-schema-v22-persistence-contract",),
     ),
     (
@@ -390,8 +390,8 @@ ROUTE_SECTIONS = (
     ),
     (
         DESIGN,
-        "## Current Schema-v24 Ownership And Verification Declaration Design",
-        ("database-design.md#session-ownership-migration", "database-design.md#current-schema-v22-reservation-cleanup-design"),
+        "## Current Schema-v25 Ownership And Reviewer Binding Design",
+        ("database-design.md#session-ownership-migration", "database-design.md#conditional-reviewer-binding-migration", "database-design.md#current-schema-v22-reservation-cleanup-design"),
     ),
     (
         DESIGN,

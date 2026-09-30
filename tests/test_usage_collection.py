@@ -319,7 +319,7 @@ class UsageCollectionTests(unittest.TestCase):
         cursor = self.repository.cursor(self.source.source_id, THREAD)
         changed = self.source.path.read_bytes().replace(secret.encode(), b"X" * len(secret))
         self.source.path.write_bytes(changed)
-        replay = read_batch(self.source, cursor)
+        replay = read_batch(self.source, cursor, include_attribution=self.repository.collect_attribution)
         self.assertEqual(replay.successor.prefix, cursor.prefix)
         self.assertEqual(replay.successor.incarnation, cursor.incarnation)
 

@@ -103,6 +103,10 @@ def _response(row) -> ResponseUsage:
 
 
 class UsageRepository:
+    schema_statements = _DDL
+    migrations = ((1, "response_collection"),)
+    collect_attribution = False
+
     def __init__(self, path: Path, project_id: str, binding_hash: str, binding_generation: int):
         self.path = Path(path)
         self.basis = (project_id, binding_hash, binding_generation)
@@ -123,9 +127,9 @@ class UsageRepository:
         validate_operational_journal_state(self.path)
 
     def _validate(self, connection):
-        if _schema(connection) != tuple(sorted(_DDL, key=lambda sql: sql.split()[2])):
+        if _schema(connection) != tuple(sorted(self.schema_statements, key=lambda sql: sql.split()[2])):
             raise UsageError("usage_schema_invalid")
-        if [tuple(r) for r in connection.execute("SELECT * FROM usage_migrations")] != [(1, "response_collection")]:
+        if [tuple(r) for r in connection.execute("SELECT * FROM usage_migrations ORDER BY version")] != list(self.migrations):
             raise UsageError("usage_schema_invalid")
         if [tuple(r) for r in connection.execute("SELECT project_id,binding_hash,binding_generation FROM usage_meta")] != [self.basis]:
             raise UsageError("usage_binding_mismatch")
@@ -165,10 +169,10 @@ class UsageRepository:
             temporary = Path(name)
             connection = connect(temporary)
             connection.execute("BEGIN IMMEDIATE")
-            for statement in _DDL:
+            for statement in self.schema_statements:
                 connection.execute(statement)
             connection.execute("INSERT INTO usage_meta VALUES (1,?,?,?)", self.basis)
-            connection.execute("INSERT INTO usage_migrations VALUES (1,'response_collection')")
+            connection.executemany("INSERT INTO usage_migrations VALUES (?,?)", self.migrations)
             self._validate(connection)
             connection.commit()
             connection.close()
@@ -215,6 +219,10 @@ class UsageRepository:
 
     def _before_cursor(self, connection):
         """Local fault-injection seam after observations, before cursor commit."""
+
+    def _record_attribution(self, connection, batch):
+        if batch.attribution:
+            raise UsageError("usage_schema_invalid")
 
     def record_gap(self, source_id: str, thread_id: str, code: str) -> None:
         # An uncommitted/stale observation has lost no data. Its current call
@@ -263,6 +271,7 @@ class UsageRepository:
                                (batch.source_id,))
             connection.executemany("INSERT OR IGNORE INTO usage_diagnostics VALUES (?,?)",
                                    ((batch.source_id, code) for code in batch.diagnostics if code != "partial_tail"))
+            self._record_attribution(connection, batch)
             self._before_cursor(connection)
             connection.execute("UPDATE usage_sources SET incarnation=?,offset=?,prefix=?,file_id=?,pending=? WHERE source_id=?",
                                (new.incarnation, new.offset, new.prefix, new.file_id,

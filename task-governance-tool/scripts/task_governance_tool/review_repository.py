@@ -47,8 +47,11 @@ def _iter_validated_review_receipts_with_provenance(
     from task_governance_tool.storage import (
         SQLITE_INT64_MAX,
         evidence_ledger_inconsistent,
+        current_schema_version,
     )
-
+    if current_schema_version(connection) >= 25:
+        from task_governance_tool.review_session_repository import read_bindings
+        read_bindings(connection, receipt_ids=receipt_ids)
 
     review_privacy_successes = (
         privacy_success_cache if privacy_success_cache is not None else set()

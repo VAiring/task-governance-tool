@@ -53,6 +53,7 @@ class CollectionBatch:
     responses: tuple[ResponseUsage, ...]
     diagnostics: tuple[str, ...]
     pending: str
+    attribution: tuple = ()
 
 
 def _json(raw: bytes) -> dict:
@@ -116,7 +117,8 @@ def _projection(record: dict, thread: str, provider: str, models: dict):
     return asdict(response), response
 
 
-def read_batch(source: SourceInput, expected: Cursor = Cursor()) -> CollectionBatch:
+def read_batch(source: SourceInput, expected: Cursor = Cursor(), *, include_attribution=False,
+               attribution_project_id=None) -> CollectionBatch:
     """Read one stable physical segment without modifying it or any state.
 
 The prefix digest covers only accepted metadata and fixed markers plus record
@@ -138,7 +140,11 @@ numerical prefix replays idempotently in a new incarnation.
             # Bounded, sanitized prefix scan, including model context before cursor.
             digest = hashlib.sha256()
             digest.update(json.dumps([ADAPTER_VERSION, source.thread_id, provider]).encode())
+            if include_attribution:
+                from task_governance_tool.usage_turn_adapter import ADAPTER_VERSION as TURN_VERSION
+                digest.update(TURN_VERSION.encode())
             models, rows, gaps = {}, [], set()
+            attribution = []
             modern_turns, legacy_turns = set(), set()
             context_owner, context_turn = source.thread_id, None
             prior_matches = expected.offset == 0
@@ -152,6 +158,7 @@ numerical prefix replays idempotently in a new incarnation.
             # restart once after the scan that disproves the previous prefix.
             while stream.tell() < before.size:
                 start = stream.tell()
+                projected = ()
                 raw = stream.readline(min(MAX_LINE + 1, before.size - start))
                 if not raw.endswith(b"\n"):
                     if len(raw) > MAX_LINE:
@@ -173,7 +180,11 @@ numerical prefix replays idempotently in a new incarnation.
                     try:
                         if len(raw) > MAX_LINE:
                             raise UsageError("record_too_large")
-                        marker, response = _projection(_json(raw), source.thread_id, provider, models)
+                        decoded = _json(raw)
+                        marker, response = _projection(decoded, source.thread_id, provider, models)
+                        if include_attribution and context_owner == source.thread_id:
+                            from task_governance_tool.usage_turn_adapter import project_record
+                            projected = project_record(decoded, source.thread_id, project_id=attribution_project_id)
                     except (UsageError, TypeError):
                         marker, response, code = ("invalid_record",), None, "invalid_record"
                 boundary = stream.tell()
@@ -187,7 +198,10 @@ numerical prefix replays idempotently in a new incarnation.
                     modern_turns.add(response.turn_id)
                     # Usage may arrive after a later turn has begun. It is
                     # observation provenance, not an active-context transition.
-                digest.update(json.dumps([boundary, marker], sort_keys=True,
+                numerical_marker = [boundary, marker]
+                if include_attribution:
+                    numerical_marker.append([asdict(item) for item in projected])
+                digest.update(json.dumps(numerical_marker, sort_keys=True,
                                          separators=(",", ":")).encode())
                 prefix = digest.hexdigest()
                 if boundary == expected.offset:
@@ -199,7 +213,8 @@ numerical prefix replays idempotently in a new incarnation.
                         rows.append(response)
                         if response.model is None:
                             gaps.add("model_unknown")
-                    if len(rows) >= MAX_BATCH_RECORDS:
+                    attribution.extend(projected)
+                    if len(rows) + len(attribution) >= MAX_BATCH_RECORDS:
                         pending = "more_records" if stream.tell() < before.size else "none"
                         break
             after = os.fstat(stream.fileno())
@@ -211,15 +226,16 @@ numerical prefix replays idempotently in a new incarnation.
                 or current != before):
             raise UsageError("source_changed")
         if expected.incarnation and (replaced or not prior_matches):
-            replay = read_batch(source)
+            replay = read_batch(source, include_attribution=include_attribution,
+                                attribution_project_id=attribution_project_id)
             return CollectionBatch(source.source_id, source.thread_id, expected,
                                    Cursor(expected.incarnation + 1, replay.successor.offset,
                                           replay.successor.prefix, replay.successor.file_id),
                                    replay.responses,
                                    tuple(sorted(set(replay.diagnostics) | {"source_replaced"})),
-                                   replay.pending)
+                                   replay.pending, replay.attribution)
         return CollectionBatch(source.source_id, source.thread_id, expected,
                                Cursor(expected.incarnation or 1, boundary, prefix, file_id),
-                               tuple(rows), tuple(sorted(gaps)), pending)
+                               tuple(rows), tuple(sorted(gaps)), pending, tuple(attribution))
     except (OSError, StatePathError):
         raise UsageError("source_unreadable") from None

@@ -79,10 +79,10 @@ class WindowsPreparationTests(PreparationFixture):
         original = b"\n " + encode(payload) + b"\n"
         result_path = context["review_requests"][0]["result_path"]
         saved = self.invoke("save", "--repo", str(self.root), "--packet", packet_path,
-                            "--output", result_path, raw=original)
+                            "--output", result_path, raw=original, reviewer=0)
         self.assertEqual(saved.returncode, 0, saved.stdout or saved.stderr)
         for path in ("reviews/new", "reviews/new/ancestors", "reviews/new/ancestors/g1",
-                     packet_path, result_path):
+                     packet_path, result_path, result_path + ".session.json"):
             with self.subTest(path=path):
                 observed = acl(path)
                 self.assertFalse(observed["Protected"])
@@ -95,8 +95,8 @@ class WindowsPreparationTests(PreparationFixture):
         submitted = self.invoke("submit", "--repo", str(self.root), "--packet", packet_path,
                                 "--", result_path)
         self.assertEqual(submitted.returncode, 0, submitted.stdout or submitted.stderr)
-        # This is native ACL/transport coverage in one execution context, not
-        # evidence of access by an independent review agent.
+        # Distinct caller IDs model roles, not separate Windows ACL principals
+        # or evidence of access by an independent review agent.
 
     @unittest.skipUnless(sys.platform == "win32", "Windows shell transport")
     def test_generated_powershell_request_from_source_invocation_to_submit(self):
@@ -110,10 +110,11 @@ class WindowsPreparationTests(PreparationFixture):
         powershell = shutil.which("powershell.exe")
         if not powershell:
             self.skipTest("PowerShell 5.1 is unavailable")
-        def shell(command):
+        def shell(command, *, reviewer=None):
             return subprocess.run([powershell, "-NoProfile", "-NonInteractive", "-EncodedCommand",
                 base64.b64encode(command.encode("utf-16le")).decode("ascii")],
-                cwd=self.root, capture_output=True, check=False)
+                cwd=self.root, capture_output=True, check=False,
+                env=None if reviewer is None else self.review_environment(reviewer))
         # The entry is invoked before any Packet exists, including from the native shell.
         task = self.task()
         command = ("& '" + sys.executable.replace("'", "''") + "' -I -S '" +
@@ -124,7 +125,7 @@ class WindowsPreparationTests(PreparationFixture):
         self.assertEqual(completed.returncode, 0, completed.stdout or completed.stderr)
         result = json.loads(completed.stdout)["handoff"]
         packet = json.loads((self.root / result["packet_path"]).read_bytes())
-        displayed = shell(result["review_requests"][0]["read_command"])
+        displayed = shell(result["review_requests"][0]["read_command"], reviewer=0)
         self.assertEqual(displayed.returncode, 0, displayed.stdout or displayed.stderr)
         view = json.loads(displayed.stdout)
         self.assertEqual(view["result_template"], packet["result_template"])
@@ -135,7 +136,7 @@ class WindowsPreparationTests(PreparationFixture):
         request = result["review_requests"][0]["request"]
         # Execute the generated literal data carrier, not a second test-owned save command.
         invocation = request[request.index("$OutputEncoding"):request.index("\nOn saved acknowledgement")]
-        saved = shell(invocation.replace("<completed original JSON>", encode(payload).decode("utf-8")))
+        saved = shell(invocation.replace("<completed original JSON>", encode(payload).decode("utf-8")), reviewer=0)
         self.assertEqual(saved.returncode, 0, saved.stdout or saved.stderr)
         self.assertEqual(json.loads((self.root / result["review_requests"][0]["result_path"]).read_bytes()), payload)
         submitted = shell(result["submit_command"])

@@ -120,7 +120,6 @@ from task_governance_tool.review_packet import (
 from task_governance_tool.review_results import (
     REVIEW_RESULTS_INPUT_LIMIT,
     add_review_results,
-    decode_review_results,
 )
 from task_governance_tool.setup import run_setup
 from task_governance_tool.task_show_projection import build_task_show_data, show_task
@@ -2246,7 +2245,7 @@ def review_failure_result(
     )
 
 
-def read_review_results_stdin() -> dict[str, Any]:
+def read_review_results_stdin():
     stream = getattr(sys.stdin, "buffer", None)
     try:
         if stream is None:
@@ -2257,7 +2256,8 @@ def read_review_results_stdin() -> dict[str, Any]:
             code="invalid_review_evidence",
             message="structured review results are invalid",
         ) from exc
-    return decode_review_results(raw)
+    from task_governance_tool.review_session_transport import decode_submission
+    return decode_submission(raw)
 
 
 def handle_review_command(context: CommandContext) -> CommandResult:
@@ -2308,10 +2308,11 @@ def handle_review_command(context: CommandContext) -> CommandResult:
                             connection,
                             target.project,
                             context.args.task_id,
-                            payload,
+                            payload.document,
                             user_approved_reviewers=context.args.user_approved_reviewers,
                             database_target=target,
                             caller=context.caller,
+                            session_bindings=payload.bindings,
                         )
                     elif context.command == "review.receipt.add":
                         result = add_review_receipt(

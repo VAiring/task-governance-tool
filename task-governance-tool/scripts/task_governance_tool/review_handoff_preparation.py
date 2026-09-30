@@ -374,6 +374,8 @@ def read_for_reviewer(repo, packet_path):
                 "changed_paths_total", "changed_paths_truncated"):
         if current["data"][key] != packet[key]:
             files._fail("review_packet_stale")
+    if current["data"].get("review_session_context") != packet.get("review_session_context"):
+        files._fail("review_packet_stale")
     if files._read(path, files.PACKET_LIMIT) != raw:
         files._fail("handoff_file_changed")
     return {**independent_reviewer_view(packet), "review_material": material,

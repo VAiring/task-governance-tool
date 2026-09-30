@@ -331,17 +331,19 @@ class InstalledReviewHandoffTests(unittest.TestCase):
             packet = cli("review", "prepare", task)
             (root / "reviews/packet.json").write_bytes(encode(packet))
             helper = install.skill_root / "scripts/review_handoff.py"
-            def invoke(operation, *args, raw=None):
+            def invoke(operation, *args, raw=None, reviewer=None):
                 return subprocess.run([sys.executable, "-I", "-S", str(helper), operation,
                     "--repo", str(root), "--packet", "reviews/packet.json", *args],
-                    input=raw, capture_output=True, check=False, cwd=root)
+                    input=raw, capture_output=True, check=False, cwd=root,
+                    env=None if reviewer is None else {
+                        **os.environ, "CODEX_THREAD_ID": f"00000000-0000-4000-8000-{200 + reviewer:012d}"})
             originals = []
-            for suffix in ("a", "b"):
+            for index, suffix in enumerate(("a", "b")):
                 payload = copy.deepcopy(packet["result_template"])
                 payload["receipts"] = [receipt("reviewer-" + suffix, findings=[{"severity": "low", "summary": "example.py:1 日本語 🚀"}])]
                 raw = b"\n" + encode(payload) + b"\n"
                 originals.append(raw)
-                result = invoke("save", "--output", f"reviews/{suffix}.json", raw=raw)
+                result = invoke("save", "--output", f"reviews/{suffix}.json", raw=raw, reviewer=index)
                 self.assertEqual(result.returncode, 0, result.stdout or result.stderr)
                 self.assertEqual(json.loads(result.stdout)["finding_count"], 1)
                 self.assertNotIn(b"provenance", result.stdout)
@@ -379,7 +381,7 @@ class InstalledReviewHandoffTests(unittest.TestCase):
             packet = cli("review", "prepare", task)
             (root / "reviews/packet.json").write_bytes(encode(packet))
             helper = install.skill_root / "scripts/review_handoff.py"
-            for reviewer in ("-reviewer-a", "--reviewer-b"):
+            for index, reviewer in enumerate(("-reviewer-a", "--reviewer-b")):
                 payload = copy.deepcopy(packet["result_template"])
                 payload["receipts"] = [receipt(reviewer, kind="self_review_fallback")]
                 raw = encode(payload)
@@ -390,7 +392,9 @@ class InstalledReviewHandoffTests(unittest.TestCase):
                     result = subprocess.run([sys.executable, "-I", "-S", str(helper), operation,
                         "--repo", str(root), "--packet", "reviews/packet.json",
                         "--user-approved-reviewer=" + reviewer, *args],
-                        input=input_bytes, capture_output=True, check=False, cwd=root)
+                        input=input_bytes, capture_output=True, check=False, cwd=root,
+                        env=({**os.environ, "CODEX_THREAD_ID": f"00000000-0000-4000-8000-{200 + index:012d}"}
+                             if operation == "save" else None))
                     self.assertEqual(result.returncode, 0, result.stdout or result.stderr)
                 registered = json.loads(result.stdout)["data"]["receipts"][0]["receipt"]
                 self.assertEqual(registered["reviewer_key"], reviewer)

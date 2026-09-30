@@ -49,8 +49,8 @@ Missing state is `db_not_initialized`; supported older state is
 `migration_required`; a newer schema is `schema_too_new`. Old binaries reject
 newer state and never downgrade/write it.
 
-Fresh setup creates schema v24. Structurally complete contiguous source schemas
-v1-v23 are setup-only migration inputs; v24 is idempotent current state.
+Fresh setup creates schema v25. Structurally complete contiguous source schemas
+v1-v24 are setup-only migration inputs; v25 is idempotent current state.
 Schema sequence is:
 
 | Version | Durable addition |
@@ -76,6 +76,7 @@ Schema sequence is:
 | v22 | retired Analyzer reservation cleanup in the existing Evidence/Bundle tables |
 | v23 | explicit verification-not-required reasons on Tasks and immutable completion cycles |
 | v24 | session ownership, immutable executions/transitions and execution-to-cycle links |
+| v25 | immutable reviewer-session bindings in the core Receipt transaction |
 
 Each migration is transactional, idempotent, rollback-tested, validates
 contiguous history and required objects/rows, preserves project/business IDs
@@ -142,8 +143,9 @@ every cycle/Bundle Runner-observation pointer remains null; native Bundle-v2
 This check occurs before any database or sidecar write, migration backup,
 recovery copy/publication, Viewer publication, or managed-backup write. A complete v19 source alone may invoke migration
 20; a complete v20 source continues through migrations 21 and 22, and a complete
-v21 source invokes migration 22, followed by 23 and 24. Complete v22 invokes 23
-and 24; complete v23 invokes 24, and exact v24 receives validation-only reentry. Unrelated extra
+v21 source invokes migration 22, followed by 23, 24 and 25. Complete v22 invokes 23,
+24 and 25; complete v23 invokes 24 and 25; complete v24 invokes 25, and exact v25
+receives validation-only reentry. Unrelated extra
 objects retain the existing policy, including deliberate removal of
 unsupported unowned indexes/triggers attached to the rebuilt Bundle table and
 preservation of unrelated standalone objects.
@@ -155,9 +157,11 @@ qualifying Runner protocol with explicit manual fallback.
 <a id="current-schema-v21-persistence-contract"></a>
 <a id="current-schema-v22-persistence-contract"></a>
 
-## Current Schema-v24 Persistence Contract
+<a id="current-schema-v24-persistence-contract"></a>
 
-Schema v24 is the public setup target. Migration `24/task_session_ownership`
+## Current Schema-v25 Persistence Contract
+
+Schema v25 is the public setup target. Its predecessor migration `24/task_session_ownership`
 adds `task_executions`, `task_ownership`, `task_owner_transitions` and
 `task_execution_cycles` (39 tables, 45 explicit indexes, 67 triggers).
 Execution/transition/cycle links are append-only. The one current ownership row
@@ -175,13 +179,34 @@ remains unknown, not zero usage. Explicit recovery is owned by the
 Only the Bundle table and its coupled native-cycle guard are rebuilt to admit
 source 24/format 2. New native completion must link its execution to its exact cycle
 within the same transaction. Older Bundles/cycles remain unlinked and unchanged;
-format 2 is retained and the index reports container 24. No per-caller display or
-usage fields are added to sealed Evidence or Viewer v4. Viewer accepts v5-v24.
+format 2 is retained and the index reports the actual container. No per-caller display or
+usage fields are added to sealed Evidence or Viewer v4. Viewer accepts v5-v25.
 Reentry validates exact DDL, markers, retained graph and integrity without repair.
 Setup retains its existing backup/rollback protocol; no normal command migrates.
 Unsupported attached residue/hybrid state fails closed before writes. Global
 consumers retain full admitted-row validation and recovery retains only its
 existing verification-field-local exception.
+
+<a id="conditional-schema-v25-reviewer-relation"></a>
+
+### Schema-v25 Reviewer Relation
+
+Schema 25 is the current public setup target. Its
+`25/review_receipt_sessions` migration adds only the immutable relation defined
+by the [reviewer binding contract](review-completion-specification.md#conditional-reviewer-session-binding).
+It has 40 tables, 46 explicit indexes and 70 triggers. All predecessor business
+rows, ownership, Receipt provenance, cycle IDs and sealed Bundle bytes remain
+unchanged; old Receipts acquire no guessed reviewer session. The Bundle table
+and native-cycle guard admit source 25/format 2 without adding Bundle members
+or a numerical gate. Historical source-19 through source-24 evidence stays
+readable. The format-2 index reports the actual container schema.
+
+Only explicit setup can run the ordered migration. Global,
+selected, Viewer, backup and recovery consumers preserve their existing scope
+and fail-closed rules. Reentry is validation-only, with exact object inventory,
+DDL, markers, relations and integrity checks. Partial-copy/marker failure rolls
+back; no ordinary read creates the new relation. Numerical storage is neither
+an admission prerequisite nor a participant in the core transaction.
 
 ### Supported Schema-v23 Declaration Delta
 
@@ -218,7 +243,7 @@ reason. Its supported Viewer projection adds no fields or calls.
 Schema v22 is a supported predecessor. Setup reaches it
 through the existing ordered migrations from complete v1-v21 sources; v20
 continues through 21 and then 22 rather than returning early. Exact-v22
-storage-helper reentry is validation-only; public setup continues through 23 and 24.
+storage-helper reentry is validation-only; public setup continues through 23, 24 and 25.
 Ordinary commands never migrate or repair state.
 
 Migration 22 is exactly `evidence_reservation_cleanup`. It rebuilds only
@@ -269,15 +294,15 @@ or general migration framework is added.
 
 ## Numerical Usage Store
 
-Numerical collection uses independent schema 1 in the resolver-owned
+Numerical collection uses independent schema 2 in the resolver-owned
 `current/taskgov-usage.sqlite`, not the main schema sequence. Explicit setup
-initializes an absent store and validates an existing one. Normal reads and
+initializes an absent store, migrates exact schema 1, and validates current state. Normal reads and
 collection never initialize, migrate or repair it. Incompatible structure,
 WAL, corruption, contention or project/binding mismatch produces unavailable
 usage, never a core admission failure or a weakened quality gate. Existing
 core backup/restore does not copy this store or claim a paired numerical
-snapshot. Observations have no Task/execution/cycle association at this stage;
-later attribution must revalidate those core references against restored state.
+snapshot. Attribution revalidates Task/execution references against restored
+core state; immutable cycle-linked snapshots remain a later execution unit.
 
 The internal collector accepts one registered actual caller session and one
 explicit physical segment under its allowed local source root. Header thread,
@@ -333,4 +358,43 @@ incomplete or conflicting, never final complete/billing accuracy. A failed
 collection reports unknown while preserving any readable prior observations.
 Unresolved source loss and replacement remain explicit diagnostics. Partial
 tails and bounded-batch backlog are transient and disappear after catch-up.
-This is the numerical foundation, not implemented Task attribution or hooks.
+This numerical foundation supports the attribution below, not automatic hooks.
+
+<a id="conditional-inclusive-turn-attribution"></a>
+
+### Inclusive-Turn Attribution
+
+Schema-2 attribution follows the approved
+[turn interval contract](session-usage-plan.md#turn-intervals-and-attribution).
+Only explicit setup initializes or migrates the store. Explicit numerical migration
+preserves schema-1 observations, conflicts and cursors; old readers reject the
+new structure. A numerical migration failure cannot roll back core Task state.
+
+Only a structured host turn identity plus a known successful public CLI Task
+acknowledgement can propose a boundary. Revalidate the exact event, project,
+Task, owner generation, status and actor against the committed core transition.
+Missing/restored-away or contradictory references remain unbound. Never parse
+event summary prose, command arguments or adjacent response timestamps to infer
+which Task was active. The projection is not an authorization or quality gate.
+
+Include every response in an explicitly identified covered turn. Both entry
+and exit turns are whole, and subsequent observations from either turn remain
+eligible. Any exit from `in_progress` closes the interval. Resumed intervals
+accumulate until the next completion, including across a ready/cancelled restart
+with a new execution ID. A later completion-only turn does not extend a closed
+interval. Union turn/response keys instead of adding interval subtotals. A
+completed Task's later reopened work remains a separate completion period.
+
+Execution IDs remain the sharing graph nodes: AB and the same B execution/C
+merge even when their response sets do not intersect. A later B execution does
+not connect those groups by permanent Task ID. Different threads' overlapping
+clock times create no edge. Task cumulative views can include several separate
+components without merging those components. Their totals describe registered
+shared work, not exclusive per-Task cost or all unregistered intervention.
+
+The adapter retains only validated turn starts, successful operation identities
+and numerical metadata. It discards all remaining tool-result text before
+hashing or storage. Turn order comes from explicit host `task_started` records
+for known turn IDs, not an estimated Task-time interval. Conflicting identities
+are not last-writer-wins. A lost/cross-thread endpoint retains only a definite
+observed endpoint with an unknown boundary, never unbounded future-session usage.

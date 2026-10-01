@@ -4,6 +4,9 @@
 # Local research notes.
 /research.md
 
+# Independent local repositories used for Skill/no-Skill evaluation.
+/検証用プロジェクト/
+
 # Generated project state and retained package-local migration material.
 /.taskgov/
 /task-governance-tool/state/

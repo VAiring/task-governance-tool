@@ -1,6 +1,6 @@
 ---
 name: task-governance-tool
-description: Project-scoped local-first task execution for Codex using the bundled taskgov CLI and canonical project-local state. Use when setting up or diagnosing task tracking, registering explicit tasks, rediscovering current or held work, selecting next actionable work, preserving explicit scope and acceptance, recording bounded verification attestations or optional continuation checkpoints, handing off out-of-scope discoveries locally, or completing work through deterministic review and evidence gates.
+description: Project-scoped, local-first task governance for Codex using taskgov. Use for setup/read-only diagnosis, explicit task planning and registration, current/next or held-work selection, scope/acceptance tracking, pause/block handling, local handoff, bounded Review Packets, verification receipts, optional checkpoints, and completion through deterministic review and evidence gates.
 ---
 
 # Task Governance Tool
@@ -78,19 +78,9 @@ never bypass it by changing environment values or replaying a stale write.
 Edit, completion, and target-set acknowledgements omit unchanged description
 and verification prose. Retain it from this context; no extra read is needed.
 
-Immediately after registration, a ready `data.context_preparation.context`
-provides that same context instead of another call. Follow its selected Task,
-not a newly registered ID by assumption. Failed preparation does not undo
-registration; recover with `task context`, never another add.
-
-When target setting or qualifying Receipt registration returns a ready review
-Packet, reuse it; preparation-only recovery stays in the linked workflow.
-For shared-file review handoff, use bundled `scripts/review_handoff.py prepare`
-before the Packet-producing command; it captures/saves the complete Packet and
-returns exact reviewer save instructions and the original-byte submit command.
-Follow the
-[review workflow](references/task_workflow.md#prepare-and-record-reviews), not
-newly written validation or collector code.
+Use the [review workflow](references/task_workflow.md#prepare-and-record-reviews)
+for shared-file or direct complete-byte handoff. Assigned independent reviewers
+use the separate entry above.
 
 Read only the linked responsibility needed for the operation or returned
 condition, including its applicable exceptions and input rules. References

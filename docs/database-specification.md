@@ -304,11 +304,12 @@ core backup/restore does not copy this store or claim a paired numerical
 snapshot. Attribution revalidates Task/execution references against restored
 core state; immutable cycle-linked snapshots follow the contract below.
 
-The internal collector accepts one registered actual caller session and one
+The internal collector accepts one registered participant session and one
 explicit physical segment under its allowed local source root. Header thread,
 project location and provider must match; the project location also matches
-the admitted store binding. There is no public registration command, transcript
-discovery, model call, hook installation or ordinary-loop collection yet.
+the admitted store binding. There is no public registration command or model
+call. The optional [lifecycle adapter](setup-state-specification.md#optional-lifecycle-usage-collection)
+locates only registered candidates; ordinary Task operations do not collect logs.
 Relocation cannot silently rebind numerical state: preserve it and report
 unavailable against a different core binding.
 
@@ -358,7 +359,7 @@ incomplete or conflicting, never final complete/billing accuracy. A failed
 collection reports unknown while preserving any readable prior observations.
 Unresolved source loss and replacement remain explicit diagnostics. Partial
 tails and bounded-batch backlog are transient and disappear after catch-up.
-This numerical foundation supports the attribution below, not automatic hooks.
+The lifecycle adapter consumes this same numerical foundation and attribution.
 
 <a id="conditional-inclusive-turn-attribution"></a>
 
@@ -432,4 +433,5 @@ A core-basis mismatch after restore or later transitions returns unavailable
 until replay; missing references are never rebound to the newest Task cycle.
 Restored numerical state with a different project/path binding stays unavailable.
 The main schema remains 25; no numerical table joins a core transaction or gate.
-Automatic lifecycle invocation remains the separate integration unit.
+Optional lifecycle invocation follows the separate Setup/state contract and
+cannot alter these quality or completion boundaries.

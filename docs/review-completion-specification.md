@@ -538,6 +538,14 @@ the existing successful reviewer read display to identify inclusive review
 turns, but counts them only after matching committed core Receipt/session
 evidence. Parent forwarding cannot substitute its own turn for the reviewer.
 
+Successful bound save best-effort registers that same caller in the existing
+numerical session registry for the optional
+[lifecycle collector](setup-state-specification.md#optional-lifecycle-usage-collection).
+It stores no log path or body, initializes/migrates nothing and never changes
+save success. Read/material helpers remain read-only. Missing registration is
+recoverable from the later core Receipt binding; do not repeat a save or Receipt
+to recover usage. Registration alone grants neither ownership nor attribution.
+
 Submit validates every sidecar against its original and Packet, then forwards
 the bytes once in the machine-only envelope
 `{format:"taskgov-review-session-handoff-v1",items:[{original_base64,binding}]}`.

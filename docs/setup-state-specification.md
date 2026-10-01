@@ -646,7 +646,8 @@ status and write lists remain about core setup: numerical failure does not
 roll back valid core state or require re-running a completed migration.
 An explicit later setup can initialize a still-absent numerical store; corrupt,
 foreign or incompatible files are preserved, never overwritten or rebound.
-This does not install hooks or activate automatic collection/Task attribution.
+Setup does not install or trust hooks. Automatic collection requires the
+separate project-local opt-in below.
 
 Evidence and Viewer status are each `not_present`, `current`, `published`, or `repair_required`.
 Successful preview is `setup_preview`; completed writes use `setup_complete`;
@@ -689,6 +690,56 @@ closes/flushed temporary state, and atomically publishes. Setup holds its
 zero-wait artifact lock through backup publication/reconciliation and the
 corresponding migration commit, but never a SQLite writer while copying.
 Preview creates neither lock nor artifact.
+
+### Optional Lifecycle Usage Collection
+
+The bundled `scripts/usage_hook.py` is a neutral host adapter, not a public
+Task command or a Skill trigger. Only explicit approval of the exact project's
+hook definition and the user's host trust action enable lifecycle invocation.
+Never overwrite existing hooks, install user-wide definitions, bypass trust,
+or add hooks as a setup/upgrade side effect. Ordinary Task work needs no extra
+command, model message, context injection or continuation request.
+
+Supported event inputs are `SessionStart`, `Stop`, `SubagentStop` and
+best-effort `SessionEnd`. The process must run from the governed project root;
+the payload's absolute `cwd` must match it, and the physical package and current
+state must pass the existing resolver. SubagentStop selects `agent_id` and
+`agent_transcript_path`, never the parent's session or transcript. Every normal
+return is exit0 with only `{}` and LF, including unavailable usage or invalid
+input. No event changes Task ownership, state, gates, sealed Evidence or Viewer.
+
+The invoking SessionStart can register itself as unassigned. Committed owner
+acquisitions and core actual-reviewer bindings register their identities without
+another Task-side numerical write. Successful bound original-review save also
+best-effort registers its own caller in the existing numerical registry, so a
+reviewer's stop can collect before parent submission; attribution still requires
+the committed core Receipt. Reviewer read/material and ordinary inspection
+remain read-only. Save registration failure never rejects or repeats the save.
+
+Each event catches up only these registered project sessions. Discovery uses
+exact registered IDs to locate standard Codex log filename candidates in
+`CODEX_HOME/sessions` (year/month/day) and flat `archived_sessions`, or the
+default user `.codex` location. It does not open unrelated headers, follow
+directory links/junctions or discover descendants from parenthood. The hook's
+path is only a hint within those roots. Every candidate must pass existing
+physical/header/project/thread validation before numerical source registration.
+Unknown layouts remain unavailable; no host index, private-body search or
+all-project header scan is a fallback.
+
+Persisted complete records flow through the existing atomic cursor/observation
+writer and immutable usage publisher. Delayed endpoint records, completed Tasks
+and previous participants are retried at later events. Interrupted/concurrent
+work remains replayable; stale batches do not rerun a Task command. Missing or
+invalid sources preserve observed totals with gaps. Existing schema3 is required:
+events never initialize, migrate, repair or rebind a database.
+
+Stop, quiet files and elapsed time never establish final coverage. Disabled or
+untrusted hooks perform no collection. With no later event, late usage stays
+pending; starting/resuming an ordinary session in that same project is the
+recovery trigger, not merely restarting the app. SessionEnd is supplemental,
+not guaranteed cleanup. Host-specific delivery and transcript support must be
+observed separately; mocked tests do not certify Desktop, CLI or all OSes.
+See the packaged [installation procedure](../task-governance-tool/references/usage_hooks.md).
 
 ### Same-Process Maintenance
 

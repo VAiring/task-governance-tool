@@ -40,7 +40,10 @@ separate numerical schema 3 supports inclusive-turn attribution and immutable
 cycle-linked snapshots. Task detail adds a non-gating `usage` summary and done
 acknowledgements report pending usage without opening the numerical store.
 Explicit setup alone migrates the numerical store; existing core schema and
-sealed Bundles are unchanged. Automatic lifecycle collection remains a later unit.
+sealed Bundles are unchanged. Optional [trusted project-local lifecycle hooks](setup-state-specification.md#optional-lifecycle-usage-collection)
+collect registered sessions and publish late usage; setup never installs them.
+Host delivery must be independently observed; ordinary OS support is not an
+all-host hook/flush guarantee.
 
 Verification declaration is now explicit: omitted/blank verification is
 unspecified and blocks a new completion. Add/edit accept
@@ -781,8 +784,9 @@ verification declaration and uses source-23/v2 Bundles without resealing history
 Schema v24 adds session ownership and separate immutable execution-cycle links.
 Current schema v25 adds immutable actual-reviewer bindings and uses source-25/v2
 Bundles without changing the quality gates or old history. Explicit setup advances
-the independent numerical store to schema 2 for inclusive-turn attribution;
-automatic hooks and immutable usage publication remain separate execution units.
+the independent numerical store to schema 3 for inclusive-turn attribution and
+immutable usage publication. Lifecycle hooks require separate local approval
+and host trust; no setup side effect enables them.
 Viewer snapshot v4 accepts source schemas v5-v25 while exposing no
 Evidence UI. That schema activation adds no Analyzer, network/model invocation,
 command leaf, or Skill trigger. The separate read-only `task context` leaf now

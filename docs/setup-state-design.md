@@ -82,6 +82,43 @@ layout separation is an orthogonal setup-only observation, not another schema
 or normal-path storage mode. Before activation the outer resolution has no
 ordinary target. Only setup receives a nested old-source observation.
 
+### Lifecycle Usage Hook
+
+`usage_lifecycle.py` owns the optional host input/registration/collection
+composition. Its standalone `usage_hook.py` entrypoint reads bounded JSON stdin,
+discards unknown fields and bodies, and emits only neutral `{}`/exit0. It uses
+the physical entrypoint package and process cwd, never a caller-selected state
+path. The existing ordinary-command structural project-scope preflight precedes
+resolver admission and core reads, with runtime/package/ignore checks disabled
+as in that command boundary. It rejects unsupported or linked installs before
+numerical writes, without adding an integrity scan or Git subprocess. The hook
+has no explicit repo argument; review save retains its explicit-repo self-host
+boundary. No core
+transaction is opened for writing. Setup and the normal Task command loop do
+not invoke the worker or install its host definition.
+
+`registered_participants` in the attribution repository reads committed owner
+acquisitions and actual Receipt-session bindings. `UsageRepository` exposes the
+existing session/source registry and best-effort same-caller registration used
+after successful bound review save. Save preserves its original response even
+when registration fails. Read-only review helpers remain unchanged. No new table,
+source-path retention or database attachment is introduced.
+
+`usage_sources.py` locates only registered UUID-suffixed filename candidates in
+the standard dated sessions and flat archive layouts. Directory inventory is
+not session admission; links/junctions are skipped, unrelated headers are never
+read, and the versioned adapter verifies each candidate before registration.
+Explicit host hints can locate the invoking registered source within the same
+allowed roots. Missing known sources retain fixed gaps; unsupported layouts do
+not authorize wider discovery. Source bytes are read outside all writers.
+
+Each source gets at most one existing bounded batch per event. The same
+compare-and-commit cursor rule handles interruption/concurrency, followed by
+`refresh_usage` for exact-cycle capture and snapshot-first publication. It uses
+the existing canonical paths above; no daemon, timer, process, model call,
+post-commit Task callback or host-settings writer is added. A later same-project
+event retries backlog and late records, with pending coverage throughout.
+
 ### Separation Record And Publication
 
 `state_separation.py` imports neither resolver nor setup. It owns the canonical

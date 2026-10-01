@@ -70,7 +70,7 @@ def _publish(path, document, root, *, immutable):
 
 
 def refresh_usage(target):
-    """Replayable internal worker for later lifecycle integration, not completion.
+    """Replayable internal worker for optional lifecycle events, not completion.
 
     A separate zero-wait publication lock serializes index adoption. Snapshot
     bytes and links are read from one numerical snapshot; original Evidence

@@ -146,8 +146,9 @@ content. The fixed generated targets are:
 The governed project's `.taskgov/` is the generated-state and Git-ignore boundary.
 The separate numerical store is described in the
 [usage persistence contract](database-specification.md#numerical-usage-store).
-It is not a Task authority, completion gate or currently connected automatic
-Task-cost feature; collection/attribution lifecycle integration remains separate.
+It is not a Task authority or completion gate. Optional
+[trusted local hooks](setup-state-specification.md#optional-lifecycle-usage-collection)
+connect collection/attribution without a normal-loop command.
 The recommended target-local rule is exactly:
 
 ```gitignore

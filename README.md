@@ -152,8 +152,11 @@ and resume recovery, not a guessed assignment. New native Bundles use source
 25/format 2 and keep a separate immutable execution-to-cycle link; old history
 is unchanged. Current schema v25 also binds actual reviewers through existing
 read/save and submission without an extra participation step. Explicit setup
-upgrades the separate numerical store to schema 2 for inclusive-turn attribution;
-automatic lifecycle collection and immutable usage publication are not enabled.
+upgrades the separate numerical store to schema 3 for inclusive-turn attribution
+and immutable usage publication. Optional [project-local usage hooks](task-governance-tool/references/usage_hooks.md)
+collect registered participants after separate approval and host trust; setup
+never installs them. Late records remain pending until a later project event,
+and unavailable usage never blocks Task completion.
 
 The Analyzer runtime is retired. Independent Evidence reading/validation
 remains only in repository tests; no report or model runtime replaces it.

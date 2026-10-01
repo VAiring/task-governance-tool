@@ -107,14 +107,15 @@ Numerical collection is separated into `usage_values.py` (closed values),
 `usage_adapter.py` (one approved source), `usage_repository.py` (independent
 SQLite), and `usage_collection.py` (collection/setup composition), as defined
 in [numerical persistence](database-design.md#numerical-collection-persistence).
-Those modules are not part of core admission, gates or automatic Task hooks.
+Those modules are not part of core admission or gates. Optional host integration
+belongs to [lifecycle collection](setup-state-design.md#lifecycle-usage-hook).
 Turn attribution adds `usage_turn_adapter.py` (closed
 operation/turn metadata), `usage_attribution_repository.py` (numerical migration
 and core-reference resolution), `usage_attribution.py` (inclusive intervals
 and set-based shared totals), and `usage_review_attribution.py` (numerical
 reviewer participation from committed bindings). Their boundary is defined in
 [turn attribution structure](database-design.md#conditional-turn-attribution-structure);
-it does not activate lifecycle hooks or alter core quality gates.
+it does not install lifecycle hooks or alter core quality gates.
 
 `usage_evidence.py`, `usage_evidence_repository.py`, and
 `usage_evidence_service.py` own respectively immutable metadata formats,

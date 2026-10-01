@@ -56,6 +56,25 @@ def core_transitions(connection, project_id: str) -> tuple[Transition, ...]:
                      "SELECT * FROM task_owner_transitions WHERE project_id=? ORDER BY rowid", (project_id,)))
 
 
+def registered_participants(connection, project_id: str) -> frozenset[str]:
+    """Committed owner acquisitions and actual Receipt bindings register identities.
+
+    Including past acquisitions enables late collection after completion/restart;
+    neither another project nor unregistered descendants supplies an identity.
+    The caller supplies an already admitted, query-only core snapshot.
+    """
+    from task_governance_tool.review_session_repository import read_bindings
+    from task_governance_tool.session_identity import is_session_id
+    sessions = {row[0] for row in connection.execute(
+        "SELECT actor_session_id FROM task_owner_transitions WHERE project_id=? AND state='owned'", (project_id,))}
+    receipts = {row[0] for row in connection.execute(
+        "SELECT review_receipt_id FROM review_receipts WHERE project_id=?", (project_id,))}
+    sessions.update(item.session_id for item in read_bindings(connection, receipt_ids=receipts).values())
+    if any(not is_session_id(thread) for thread in sessions):
+        raise UsageError("usage_schema_invalid")
+    return frozenset(sessions)
+
+
 def resolve_operation(connection, operation: OperationObservation) -> str | None:
     """The acknowledgement's exact event/Task/generation/status identifies a transition.
 

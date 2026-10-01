@@ -197,6 +197,25 @@ class UsageRepository:
         with self.connection():
             return "current"
 
+    def register_session(self, caller: CallerIdentity) -> None:
+        """Remember this actual participant, without a path or any log read."""
+        if not is_session_id(caller.session_id):
+            raise UsageError("source_not_registered")
+        with self.connection(write=True) as connection:
+            connection.execute("INSERT OR IGNORE INTO usage_sessions VALUES (?)", (caller.session_id,))
+
+    def registered_sources(self) -> tuple[frozenset[str], dict[str, str]]:
+        """Closed registry for lifecycle catch-up, never a host-wide participant scan."""
+        with self.connection() as connection:
+            sessions = frozenset(row[0] for row in connection.execute("SELECT thread_id FROM usage_sessions"))
+            sources = dict(connection.execute("SELECT source_id,thread_id FROM usage_sources"))
+            if (any(not is_session_id(thread) for thread in sessions)
+                    or any(thread not in sessions or not isinstance(source, str) or len(source) != 64
+                           or any(c not in "0123456789abcdef" for c in source)
+                           for source, thread in sources.items())):
+                raise UsageError("usage_schema_invalid")
+            return sessions, sources
+
     def register_source(self, source_id: str, caller: CallerIdentity) -> None:
         """Internal lifecycle seam, not a public participation command."""
         thread = caller.session_id

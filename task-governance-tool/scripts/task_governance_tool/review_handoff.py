@@ -29,7 +29,7 @@ from task_governance_tool.task_values import (
     validate_legacy_m19_7_stored_text, validate_text,
 )
 from task_governance_tool.verification_declaration import verification_requirement
-from task_governance_tool.session_identity import capture_caller_identity
+from task_governance_tool.session_identity import CallerIdentity, capture_caller_identity
 from task_governance_tool import review_session_transport as session_transport
 
 
@@ -299,6 +299,8 @@ def save(repo, packet_path, output, raw, approvals=()):
               "verdict": entry["verdict"], "finding_count": len(entry["findings"])}
     if binding_raw is not None:
         result["review_session"] = metadata
+        from task_governance_tool.usage_lifecycle import register_reviewer
+        register_reviewer(repo, CallerIdentity(metadata["session_id"]))
     return result
 
 

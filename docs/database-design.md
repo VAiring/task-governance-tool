@@ -178,8 +178,9 @@ historical response observations are retained.
 `usage_collection.py` composes those boundaries and returns unknown on numerical
 failure without discarding readable prior observations. Its explicit-setup
 adapter runs after core setup, reports a separate outcome and never changes
-core success. No automatic Task operation, reviewer, attribution, completion,
-hook or host-settings connection is activated by this module.
+core success. Host integration belongs to the
+[lifecycle adapter](setup-state-design.md#lifecycle-usage-hook), not this module;
+no Task operation, completion callback or host-settings writer is added here.
 
 <a id="conditional-turn-attribution-structure"></a>
 
@@ -217,7 +218,7 @@ components over ownership executions, and separately projects cumulative Task
 completion periods. It preserves a Task's pre-completion intervals across
 execution changes without treating permanent Task IDs as graph edges. Its
 current output is observed/pending; immutable cycle-linked publication uses
-the repository below. Lifecycle integration remains separately scoped.
+the repository below and the optional lifecycle adapter invokes it.
 `usage_review_attribution.py` attaches reviewer intervals only to committed
 core identity/target evidence. A reviewed execution and the reviewer's own
 active execution can share the same turn; an unrelated parent's submission
@@ -247,8 +248,8 @@ cannot revive an already superseded snapshot or form a successor cycle.
 No callback touches the core writer; late replay requires no ownership takeover.
 
 `usage_evidence_service.py` supplies safe existing-Task JSON projection and a
-replayable internal publication worker. This is not a public command or an
-installed hook. It uses the resolver's usage paths and the existing physical
+replayable internal publication worker. The optional lifecycle adapter invokes
+it; it is not a public command or a hook installer. It uses the resolver's usage paths and the existing physical
 path, durable-file, no-replace and atomic-replace primitives. A zero-wait usage
 lock serializes capture/publication; snapshots are durable before index replace.
 Files are separately capped at 16 MiB; overflow/failure retains last-good index

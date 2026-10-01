@@ -395,6 +395,12 @@ and the exact Task/Contract/target/execution before using those boundaries.
 An unresolved boundary remains partial numerical coverage; it is never a
 reason to resubmit a Receipt or downgrade its core binding.
 
+After successful bound original save, `usage_lifecycle.register_reviewer`
+best-effort records only the actual caller in the existing numerical registry.
+It admits the same project through the resolver, never migrates or reads logs,
+and suppresses numerical failure without changing the save acknowledgement.
+Read/material remain read-only. Later core bindings can recover registration.
+
 ## Review Packet
 
 `review_packet_binding.py` owns only a pure, transient SHA-256 binding of

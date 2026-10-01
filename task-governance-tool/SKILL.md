@@ -100,6 +100,7 @@ confirmation is required.
 | Existing operation or condition | Read when applicable |
 |---|---|
 | First use, upgrade, or setup/migration required | [Setup and diagnosis](references/task_workflow.md#first-use-and-optional-diagnosis) |
+| Explicit introduction or diagnosis of numerical usage hooks | [Optional collection hooks](references/usage_hooks.md#optional-usage-collection-hooks) |
 | `project_relocation_required` | [Relocation preview and approval](references/cli_contracts.md#setup) |
 | Explicit diagnosis or state/package error | [Doctor](references/cli_contracts.md#doctor) |
 | Explicit taskization | [Completion-based Task boundaries and registration](references/task_workflow.md#taskize-or-add-scope) |

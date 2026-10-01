@@ -54,6 +54,14 @@ it does not ask the LLM for a path or generation or silently replace invalid
 recovery material with empty state. See [setup results and failure handling](cli_contracts.md#setup)
 when previewing or interpreting setup.
 
+Setup also prepares project-local usage hooks. If `data.usage_hooks.next_action`
+is `review_and_trust_hooks`, tell the user to review/trust the project's
+definitions in Codex; prepared is not enabled or observed collection. For
+`review_hook_configuration`, explain that preparation needs inspection, not
+another Task write. Use [hook guidance](usage_hooks.md#installation-and-trust)
+only for introduction or diagnosis. Trust is user-operated and never a normal
+Task-loop prerequisite.
+
 For an upgrade, preserve project-local state and run explicit setup. When
 moving from package-local state to `.taskgov/`, follow the
 [offline transition requirements](cli_contracts.md#setup); preserve the old

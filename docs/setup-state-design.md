@@ -98,8 +98,20 @@ The latter passes explicit-repo intent to the same preflight, permitting the
 existing source-tree exception without redirecting collection or weakening
 layout admission. Invalid arguments are neutral no-ops. Review save retains
 its existing explicit-repo boundary. No core transaction is opened for writing.
-Setup and the normal Task command loop do
-not invoke the worker or install its host definition.
+Setup and the normal Task command loop do not invoke the worker.
+
+`usage_hook_setup.py` owns only definition preparation after outer `run_setup`
+has produced its core and separate numerical outcomes. Private candidate setup,
+ordinary commands and doctor do not call it. It merges the four owned handlers
+into project `.codex/hooks.json`, using existing physical-file helpers and
+no-replace publication for an absent file; an existing file is atomically
+replaced after rechecking its observed bytes/identity. Equal semantic content
+is never rewritten. This is not a database transaction or a trust writer.
+Project-inline TOML is read only to avoid a second usage collector; ambiguous
+manual definitions are preserved for review, not parsed as shell programs.
+The nested `usage_hooks` result and text notice describe preparation and the
+user's remaining trust action independently of core success. Failure is
+non-gating and does not rerun or roll back core or numerical setup.
 
 `registered_participants` in the attribution repository reads committed owner
 acquisitions and actual Receipt-session bindings. `UsageRepository` exposes the

@@ -56,6 +56,23 @@ class UsageLifecycleInstallTests(unittest.TestCase):
                   arguments=("--repo", str(self.root)))
         self.assertEqual(file_snapshot(self.root / ".taskgov"), before)
 
+    def test_setup_generated_command_collects_fixture_without_core_writes(self):
+        self.log({})
+        document = json.loads((self.root / ".codex/hooks.json").read_bytes())
+        handler = document["hooks"]["SessionStart"][0]["hooks"][0]
+        command = (["powershell.exe", "-NoProfile", "-NonInteractive", "-Command", handler["commandWindows"]]
+                   if os.name == "nt" else ["/bin/sh", "-c", handler["command"]])
+        payload = {"hook_event_name": "SessionStart", "session_id": THREAD,
+                   "cwd": str(self.root), "transcript_path": str(self.transcript)}
+        core = self.target.db_path.read_bytes()
+        evidence = file_snapshot(self.target.resolved_evidence_root)
+        result = subprocess.run(command, input=json.dumps(payload).encode(), capture_output=True,
+            cwd=self.root, env={**os.environ, "CODEX_HOME": str(self.host)}, timeout=30)
+        self.assertEqual((result.returncode, result.stdout, result.stderr), (0, b"{}\n", b""))
+        self.assertEqual(self.repository.summary()["models"][0]["response_count"], 5)
+        self.assertEqual(self.target.db_path.read_bytes(), core)
+        self.assertEqual(file_snapshot(self.target.resolved_evidence_root), evidence)
+
     def test_linked_package_preserves_all_state(self):
         self.log({})
         physical = self.root.parent / "physical-package"

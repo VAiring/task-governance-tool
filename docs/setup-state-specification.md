@@ -629,7 +629,7 @@ retention applies only after the next successful backup publication.
 Setup output data is exactly `status`, `planned_writes`, `completed_writes`,
 `schema_from`, `schema_to`, `maintenance_enabled`,
 `backup_interval_minutes`, `backup_generations`, `evidence_status`,
-`viewer_status`, `relocation`, and `usage`. `schema_to` is always 25. `schema_from` is safely observed source
+`viewer_status`, `relocation`, `usage`, and `usage_hooks`. `schema_to` is always 25. `schema_from` is safely observed source
 schema, selected recovery schema, or null. Policy values are effective
 requested/stored values, not persistence claims. `maintenance_enabled`,
 Evidence status, and Viewer status describe durable post-command state.
@@ -646,8 +646,23 @@ status and write lists remain about core setup: numerical failure does not
 roll back valid core state or require re-running a completed migration.
 An explicit later setup can initialize a still-absent numerical store; corrupt,
 foreign or incompatible files are preserved, never overwritten or rebound.
-Setup does not install or trust hooks. Automatic collection requires the
-separate project-local opt-in below.
+After successful core and numerical preparation, explicit setup prepares the
+project-local hook definition described below. It never trusts or invokes hooks.
+
+`usage_hooks` independently contains exactly `status`, `planned_writes`,
+`completed_writes`, `trust`, `next_action`, and `error`. Status is
+`not_attempted` after a core or numerical failure, `preparation_required` when
+preview finds changes, `prepared` after publication, `current` for an unchanged
+definition, or `unavailable` for a configuration/read/publication failure.
+The only write stage is `usage_hooks_prepare`; preview completes no writes.
+Fresh/relocation preview may plan definitions without assuming the future
+numerical binding. `trust` is always `unknown`: prepared is not collection enabled.
+`next_action` is `review_and_trust_hooks` for a prepared/current/planned definition,
+`review_hook_configuration` for unavailable, otherwise null. `error` is null
+or fixed `usage_hooks_unavailable`; no raw configuration or paths are returned.
+Text output carries the same user trust/review guidance. Hook failure preserves
+successful core/numerical setup, its success envelope and core write lists;
+it does not block ordinary Task work. A later explicit setup retries preparation.
 
 Evidence and Viewer status are each `not_present`, `current`, `published`, or `repair_required`.
 Successful preview is `setup_preview`; completed writes use `setup_complete`;
@@ -694,10 +709,34 @@ Preview creates neither lock nor artifact.
 ### Optional Lifecycle Usage Collection
 
 The bundled `scripts/usage_hook.py` is a neutral host adapter, not a public
-Task command or a Skill trigger. Only explicit approval of the exact project's
-hook definition and the user's host trust action enable lifecycle invocation.
-Never overwrite existing hooks, install user-wide definitions, bypass trust,
-or add hooks as a setup/upgrade side effect. Ordinary Task work needs no extra
+Task command or a Skill trigger. Explicit setup prepares only the governed
+project's physical `.codex/hooks.json` (creating `.codex` if absent); the user's
+separate Codex review/trust action enables invocation. Setup preserves unrelated
+hooks, group options, events and top-level metadata, adding or updating only its
+own four command handlers. Equal definitions preserve the original file bytes.
+Generated handlers use the reserved `statusMessage="taskgov: collect numerical usage"`
+to identify ownership; duplicate owned handlers are collapsed. The exact old
+documented ordinary-install recipe can be adopted; other unmarked
+`usage_hook.py` invocations or project-inline TOML usage hooks require manual
+configuration review instead of adding a second collector. Literal script-name
+recognition is case-insensitive on Windows. Unrelated inline hooks are
+preserved. Setup reads but never modifies project `config.toml`.
+Malformed/duplicate-key JSON, nonphysical paths, configurations over 1 MiB,
+ambiguous usage handlers and write failures remain unavailable and preserve the
+original config. Publication uses a flushed sibling temporary, rechecks the
+observed original, and replaces only the validated config; an absent destination
+is published without clobber. A failure may leave a newly created empty `.codex`
+directory, but not a partial definition. No host/user-wide definitions, trust
+store, feature flag or managed policy is changed or scanned. Definitions in
+other configuration layers remain user-managed, not deduplicated by setup.
+
+The generated invocation uses the setup interpreter, physical package entrypoint
+and `--repo` for that project. Windows uses a fixed UTF-16LE encoded PowerShell
+invocation to preserve special path characters through the caller shell; this
+does not expand configurable command behavior. Timeouts are 30 seconds for the
+first three events and 3 for SessionEnd, host bounds rather than performance gates.
+Setup neither proves host event delivery nor reads/detects trust; changed
+definitions may need renewed user trust. Ordinary Task work needs no extra
 command, model message, context injection or continuation request.
 
 Supported event inputs are `SessionStart`, `Stop`, `SubagentStop` and

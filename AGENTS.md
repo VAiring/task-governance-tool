@@ -359,6 +359,9 @@ The product must not become:
   Explicit setup's additional source-retention and retirement writes are
   limited to the current Setup/state separation contract; package inspection
   or an ordinary Task write does not authorize them.
+- Explicit setup may also prepare the project-local usage hook definition as
+  bounded by the Setup/state owner. This never authorizes host trust changes,
+  user-wide settings, hook execution, or config writes from ordinary Task work.
 - A governed target remains the project-identity and state-ownership root when
   it is nested inside an enclosing Git worktree. When the target or an ancestor
   has a Git administrative marker, setup and doctor must use one bounded,

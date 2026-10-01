@@ -6,32 +6,30 @@ Observed shared-work totals are not exclusive Task costs or final billing.
 
 ## Installation And Trust
 
-First use the existing explicit setup/upgrade procedure so both core state and
-the numerical store are current. A successful core setup with unavailable usage
-does not mean collection is ready. Hooks never migrate or repair either store.
+Use the existing explicit setup/upgrade procedure. It prepares core state,
+the numerical store, and the project's `.codex/hooks.json`, preserving unrelated
+hooks and avoiding duplicate taskgov handlers on repeat setup. Read
+`data.usage_hooks`: `prepared`/`current` means configuration only, never enabled
+collection. For `next_action=review_and_trust_hooks`, ask the user to review and
+trust the project's definitions in Codex. If already trusted and unchanged,
+no new trust is implied. Trust remains unconfirmed; do not detect or edit it
+yourself or claim that the hooks ran. Changed definitions may need renewed trust.
 
-Ask for approval of the exact project's `.codex/hooks.json` and show the actual
-commands before writing. The user must review/trust the definitions in Codex.
-Do not overwrite an existing hook configuration, install user-wide hooks, edit
-trust state or enable this as an ordinary setup side effect. If another hook is
-already configured, agree the narrow merge before editing it.
+`unavailable`/`review_hook_configuration` means the existing config was preserved
+for inspection (for example, malformed JSON or a manual/inline usage hook that
+cannot be safely adopted). Do not blindly overwrite it or retry completed Task
+writes. A successful core setup with unavailable usage/hooks is not collection
+readiness. `setup --read-only` previews the preparation without writing.
 
-For a physical package at `.agents/skills/task-governance-tool`, the following
-definition runs from the governed project root. Resolve the Python interpreter
-available on that host before approval; substitute its safely quoted absolute
-path if `python`/`python3` is unavailable. This is a host hook, not another public
-taskgov command or an instruction to the LLM to run it after every response.
-
-```json
-{
-  "hooks": {
-    "SessionStart": [{"hooks": [{"type": "command", "command": "python3 -B .agents/skills/task-governance-tool/scripts/usage_hook.py", "commandWindows": "python -B .agents/skills/task-governance-tool/scripts/usage_hook.py", "timeout": 30}]}],
-    "Stop": [{"hooks": [{"type": "command", "command": "python3 -B .agents/skills/task-governance-tool/scripts/usage_hook.py", "commandWindows": "python -B .agents/skills/task-governance-tool/scripts/usage_hook.py", "timeout": 30}]}],
-    "SubagentStop": [{"hooks": [{"type": "command", "command": "python3 -B .agents/skills/task-governance-tool/scripts/usage_hook.py", "commandWindows": "python -B .agents/skills/task-governance-tool/scripts/usage_hook.py", "timeout": 30}]}],
-    "SessionEnd": [{"hooks": [{"type": "command", "command": "python3 -B .agents/skills/task-governance-tool/scripts/usage_hook.py", "commandWindows": "python -B .agents/skills/task-governance-tool/scripts/usage_hook.py", "timeout": 3}]}]
-  }
-}
-```
+Setup owns four handlers, marked `taskgov: collect numerical usage`, for
+SessionStart, Stop, SubagentStop (30-second bounds), and SessionEnd (3 seconds).
+They invoke the setup interpreter and physical `scripts/usage_hook.py` with
+`--repo` pointing to the project root. Windows uses an encoded, safely quoted
+PowerShell invocation so path characters survive the caller shell. Run from
+that project root; no LLM-supplied identity or per-response command is needed.
+This prepares only project-local definitions, not user-wide hooks, feature flags
+or host trust. Other configuration layers stay user-managed. Hooks never
+migrate or repair either store.
 
 Timeouts are host execution bounds, not performance acceptance requirements.
 The adapter emits only `{}` with successful exit, never model context, a
@@ -39,9 +37,9 @@ continuation request, or a block decision. It modifies only canonical numerical
 state and usage projections, not Task state, original Evidence, Viewer or source.
 No daemon, external service or process termination is required.
 
-For this tool's own development repository only, use the physical source
-entrypoint `task-governance-tool/scripts/usage_hook.py --repo <project-root>`
-in those definitions. Run from that same project root; `--repo` acknowledges
+For this tool's own development repository, setup uses the physical source
+entrypoint `task-governance-tool/scripts/usage_hook.py --repo <project-root>`.
+Run from that same project root; `--repo` acknowledges
 the existing self-host exception, not a different working directory or state
 path. Omission keeps source-tree collection disabled. Ordinary project installs
 need no new argument. Copied/linked packages and competing installs remain

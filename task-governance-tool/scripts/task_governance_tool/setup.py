@@ -1960,6 +1960,16 @@ def run_setup(
     )
     from task_governance_tool.usage_collection import setup_usage
     result.data["usage"] = setup_usage(inspection, result, read_only=read_only)
+    from task_governance_tool.usage_hook_setup import setup_usage_hooks
+    result.data["usage_hooks"] = setup_usage_hooks(inspection, result, read_only=read_only)
+    action = result.data["usage_hooks"]["next_action"]
+    if action is not None:
+        from dataclasses import replace
+        notice = ("Usage hooks: review/trust the project's .codex/hooks.json in Codex after setup; "
+                  "trust and collection are not confirmed."
+                  if action == "review_and_trust_hooks" else
+                  "Usage hooks unavailable: review the project's hook configuration; core setup is unchanged.")
+        result = replace(result, text=result.text + "\n" + notice)
     return result
 
 

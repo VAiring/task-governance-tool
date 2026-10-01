@@ -238,6 +238,7 @@ LANE_MODULES: dict[str, tuple[str, ...]] = {
         "test_task_ownership_runner",
         "test_usage_attribution_install",
         "test_usage_evidence_install",
+        "test_usage_hook_setup",
         "test_usage_lifecycle_install",
         "test_usage_setup",
         "test_verification_declaration",

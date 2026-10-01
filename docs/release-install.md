@@ -41,7 +41,9 @@ cycle-linked snapshots. Task detail adds a non-gating `usage` summary and done
 acknowledgements report pending usage without opening the numerical store.
 Explicit setup alone migrates the numerical store; existing core schema and
 sealed Bundles are unchanged. Optional [trusted project-local lifecycle hooks](setup-state-specification.md#optional-lifecycle-usage-collection)
-collect registered sessions and publish late usage; setup never installs them.
+collect registered sessions and publish late usage. Explicit setup prepares their
+project-local definitions, preserving unrelated hooks and avoiding duplicates;
+the user still reviews/trusts them in Codex. Preparation is not enabled collection.
 Host delivery must be independently observed; ordinary OS support is not an
 all-host hook/flush guarantee.
 
@@ -658,7 +660,9 @@ provenance.
 
 `taskgov` may write only canonical generated Skill state after setup, the
 explicit task-state operation requested by the caller, and, only under explicit
-`task edit --runner-plan-action`, the canonical ignored Runner Plan. It does not
+`task edit --runner-plan-action`, the canonical ignored Runner Plan. Explicit
+setup may also prepare the bounded project `.codex/hooks.json` definition,
+preserving unrelated hooks; user-operated host trust remains separate. It does not
 edit target-project source, stage or write Git, open a browser, create an Issue
 or PR, or use the network.
 

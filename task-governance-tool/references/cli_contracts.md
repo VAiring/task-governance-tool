@@ -274,6 +274,14 @@ Expired or stale context requires a fresh preview and fresh user approval.
     "completed_writes": ["usage_initialize"],
     "error": null
   },
+  "usage_hooks": {
+    "status": "prepared",
+    "planned_writes": ["usage_hooks_prepare"],
+    "completed_writes": ["usage_hooks_prepare"],
+    "trust": "unknown",
+    "next_action": "review_and_trust_hooks",
+    "error": null
+  },
   "relocation": {
     "required": false,
     "source_layout": "fixed_current_v1",
@@ -314,7 +322,17 @@ binding is admitted), `not_present`, `initialized`, `migration_required`,
 `schema_to` is 3 and `error` is null or fixed `usage_unavailable`. Numerical
 failure never undoes successful core setup or blocks ordinary Task work;
 do not repeat Task writes to recover usage. This adds no normal-loop action,
-session registration step, automatic collection or hook installation.
+session registration step or automatic collection.
+
+`usage_hooks` separately reports project `.codex/hooks.json` preparation:
+`not_attempted` after core/usage failure, `preparation_required` in preview,
+`prepared` after a write, `current` for unchanged definitions, or `unavailable`.
+Its only write label is `usage_hooks_prepare`; preview completes none. `trust`
+is always `unknown`. `next_action` is `review_and_trust_hooks` for prepared,
+current or planned definitions, `review_hook_configuration` for unavailable,
+otherwise null. `error` is null or `usage_hooks_unavailable`. Hook failure does
+not undo core/usage success; prepared does not prove trust or collection.
+Follow the [user trust guidance](usage_hooks.md#installation-and-trust).
 
 `relocation` is always present with exactly the six shown keys. `required`
 is boolean. `source_layout` is null, `legacy_projects_v1`, or
@@ -334,8 +352,8 @@ than repeating an assumed failed stage; it does not guarantee automatic repair
 of unsealed preparation. Repeated failure does not authorize deletion or an
 unbounded retry loop; follow the existing reconciliation guidance.
 
-Setup is noninteractive and idempotent. It does not create a second
-configuration file, disable continuity after opt-in, contact a network, mutate
+Setup is noninteractive and idempotent. Apart from its bounded project hook
+definition it does not create configuration files, disable continuity after opt-in, contact a network, mutate
 Git, or modify target source. For a Git-candidate target, only its single
 bounded effective-ignore preflight may inspect Git.
 

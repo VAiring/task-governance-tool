@@ -469,6 +469,10 @@ Introduction requires the user to approve exact project-local hook files and
 review/trust their actual definitions. No user-wide install, trust bypass,
 overwrite of existing hooks or automatic installation during ordinary setup
 is authorized here. Disabled/untrusted hooks are not functioning collection.
+This is the original unit-60 introduction boundary; subsequent explicit setup
+preparation is owned by the current
+[Setup Contract](setup-state-specification.md#setup-contract), not authorized
+by this conditional plan. The user-operated trust requirement remains unchanged.
 Package validation and mocked inputs cannot prove the running Desktop has
 loaded/trusted or executed a hook. User scope, host version and supported OS
 are recorded with the isolated integration result, not inferred from CLI help.

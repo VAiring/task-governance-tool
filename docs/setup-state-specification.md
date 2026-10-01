@@ -708,6 +708,14 @@ state must pass the existing resolver. SubagentStop selects `agent_id` and
 return is exit0 with only `{}` and LF, including unavailable usage or invalid
 input. No event changes Task ownership, state, gates, sealed Evidence or Viewer.
 
+The adapter accepts no arguments for ordinary installs, or exactly
+`--repo <project-root>`. That operand must resolve lexically to the process cwd;
+it does not change cwd or select another project's state. Only explicit
+`--repo` enables the existing development-only source-tree exception, with all
+its physical-layout, required-file and no-competing-install checks intact.
+Malformed arguments or a mismatched operand yield the same neutral response
+without collection. The payload cwd must still match independently.
+
 The invoking SessionStart can register itself as unassigned. Committed owner
 acquisitions and core actual-reviewer bindings register their identities without
 another Task-side numerical write. Successful bound original-review save also

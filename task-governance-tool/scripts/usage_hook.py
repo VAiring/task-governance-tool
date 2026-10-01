@@ -12,4 +12,5 @@ from task_governance_tool.usage_lifecycle import main
 if __name__ == "__main__":
     sys.stdout.reconfigure(encoding="utf-8", newline="\n")
     raise SystemExit(main(stdin=sys.stdin.buffer, stdout=sys.stdout,
-                          skill_root=Path(__file__).absolute().parent.parent))
+                          skill_root=Path(__file__).absolute().parent.parent,
+                          argv=sys.argv[1:]))

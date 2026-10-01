@@ -39,6 +39,14 @@ continuation request, or a block decision. It modifies only canonical numerical
 state and usage projections, not Task state, original Evidence, Viewer or source.
 No daemon, external service or process termination is required.
 
+For this tool's own development repository only, use the physical source
+entrypoint `task-governance-tool/scripts/usage_hook.py --repo <project-root>`
+in those definitions. Run from that same project root; `--repo` acknowledges
+the existing self-host exception, not a different working directory or state
+path. Omission keeps source-tree collection disabled. Ordinary project installs
+need no new argument. Copied/linked packages and competing installs remain
+unsupported; do not create a second install to enable development collection.
+
 ## Coverage And Recovery
 
 SessionStart can register its own session. Committed owner acquisition, actual

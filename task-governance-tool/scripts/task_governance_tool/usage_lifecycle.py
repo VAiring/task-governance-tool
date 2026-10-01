@@ -52,7 +52,7 @@ def register_reviewer(repo, caller):
         pass
 
 
-def collect_event(payload, *, skill_root, repo, environment):
+def collect_event(payload, *, skill_root, repo, environment, repo_explicit=False):
     """Internal report is for tests/diagnosis; never sent as model hook context."""
     unavailable = {"status": "unknown", "collected_sources": 0, "diagnostics": ["usage_unavailable"]}
     try:
@@ -65,7 +65,7 @@ def collect_event(payload, *, skill_root, repo, environment):
         thread = payload.get("agent_id") if child else payload["session_id"]
         if not is_session_id(thread):
             return unavailable
-        target = _target(skill_root, repo)
+        target = _target(skill_root, repo, repo_explicit=repo_explicit)
         repository = repository_for(target)
         sessions, known_sources = repository.registered_sources()
         with closing(connect_initialized_readonly(target)) as core:
@@ -109,14 +109,22 @@ def collect_event(payload, *, skill_root, repo, environment):
         return unavailable
 
 
-def main(*, stdin, stdout, skill_root, repo=None, environment=None):
+def main(*, stdin, stdout, skill_root, repo=None, environment=None, argv=()):
     """Fixed neutral hook protocol even for malformed/private/unknown input."""
     try:
+        cwd = Path.cwd() if repo is None else Path(repo)
+        if argv:
+            if (len(argv) != 2 or argv[0] != "--repo" or not argv[1].strip()
+                    or os.path.normcase(os.path.abspath(argv[1])) != os.path.normcase(os.path.abspath(cwd))):
+                raise UsageError()
+        # Explicit opt-in selects no alternate project: cwd and payload must
+        # still match, and the existing physical-layout preflight stays intact.
         raw = stdin.read(MAX_INPUT + 1)
         if len(raw) <= MAX_INPUT:
             payload = json.loads(raw)
-            collect_event(payload, skill_root=skill_root, repo=Path.cwd() if repo is None else repo,
-                          environment=os.environ if environment is None else environment)
+            collect_event(payload, skill_root=skill_root, repo=cwd,
+                          environment=os.environ if environment is None else environment,
+                          repo_explicit=bool(argv))
     except Exception:
         pass
     stdout.write("{}\n")

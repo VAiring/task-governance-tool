@@ -92,9 +92,13 @@ path. The existing ordinary-command structural project-scope preflight precedes
 resolver admission and core reads, with runtime/package/ignore checks disabled
 as in that command boundary. It rejects unsupported or linked installs before
 numerical writes, without adding an integrity scan or Git subprocess. The hook
-has no explicit repo argument; review save retains its explicit-repo self-host
-boundary. No core
-transaction is opened for writing. Setup and the normal Task command loop do
+entrypoint forwards argv to the neutral adapter, which accepts only no arguments
+or `--repo <project-root>` matching process cwd after lexical normalization.
+The latter passes explicit-repo intent to the same preflight, permitting the
+existing source-tree exception without redirecting collection or weakening
+layout admission. Invalid arguments are neutral no-ops. Review save retains
+its existing explicit-repo boundary. No core transaction is opened for writing.
+Setup and the normal Task command loop do
 not invoke the worker or install its host definition.
 
 `registered_participants` in the attribution repository reads committed owner

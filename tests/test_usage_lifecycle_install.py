@@ -37,11 +37,11 @@ class UsageLifecycleInstallTests(unittest.TestCase):
             rows.append(usage(f"r{n}", turn=turn(n)))
         self.transcript.write_bytes(b"".join(json.dumps(row).encode() + b"\n" for row in rows))
 
-    def hook(self, kind="Stop", *, entrypoint=None, **fields):
+    def hook(self, kind="Stop", *, entrypoint=None, arguments=(), **fields):
         payload = {"hook_event_name": kind, "session_id": THREAD, "turn_id": turn(5),
                    "cwd": str(self.root), "transcript_path": str(self.transcript), **fields}
         result = subprocess.run([sys.executable, "-I", "-S", "-B",
-                    str(entrypoint or self.install.skill_root / "scripts/usage_hook.py")],
+                    str(entrypoint or self.install.skill_root / "scripts/usage_hook.py"), *arguments],
                     cwd=self.root, input=json.dumps(payload).encode(), capture_output=True,
                     env={**os.environ, "CODEX_HOME": str(self.host)}, timeout=30)
         self.assertEqual((result.returncode, result.stdout, result.stderr), (0, b"{}\n", b""))
@@ -52,6 +52,8 @@ class UsageLifecycleInstallTests(unittest.TestCase):
         shutil.copytree(self.install.skill_root, outside)
         before = file_snapshot(self.root / ".taskgov")
         self.hook("SessionStart", entrypoint=outside / "scripts/usage_hook.py")
+        self.hook("SessionStart", entrypoint=outside / "scripts/usage_hook.py",
+                  arguments=("--repo", str(self.root)))
         self.assertEqual(file_snapshot(self.root / ".taskgov"), before)
 
     def test_linked_package_preserves_all_state(self):
@@ -65,6 +67,7 @@ class UsageLifecycleInstallTests(unittest.TestCase):
             self.install.skill_root.symlink_to(physical, target_is_directory=True)
         before = file_snapshot(self.root / ".taskgov")
         self.hook("SessionStart")
+        self.hook("SessionStart", arguments=("--repo", str(self.root)))
         self.assertEqual(file_snapshot(self.root / ".taskgov"), before)
 
     def test_source_package_requires_explicit_repo_and_rejects_competitor(self):
@@ -83,6 +86,46 @@ class UsageLifecycleInstallTests(unittest.TestCase):
         with self.assertRaises(UsageError):
             _target(source, self.root, repo_explicit=True)
         self.assertEqual(file_snapshot(self.root / ".taskgov"), before)
+
+    def test_public_source_hook_requires_explicit_repo_then_collects_same_project(self):
+        self.log({})
+        source = self.root / "task-governance-tool"
+        self.install.skill_root.rename(source)
+        (self.root / "docs").mkdir(exist_ok=True)
+        for relative in ("AGENTS.md", "docs/specification.md", "docs/design.md", "plan.md"):
+            (self.root / relative).write_text("Isolated source fixture\n", encoding="utf-8")
+        entry = source / "scripts/usage_hook.py"
+        before = file_snapshot(self.root / ".taskgov")
+        core = self.target.db_path.read_bytes()
+        evidence = file_snapshot(self.target.resolved_evidence_root)
+        self.hook("SessionStart", entrypoint=entry)
+        self.assertEqual(file_snapshot(self.root / ".taskgov"), before)
+        self.hook("SessionStart", entrypoint=entry, arguments=("--repo", str(self.root)))
+        self.assertEqual(self.repository.summary()["models"][0]["response_count"], 5)
+        self.hook(entrypoint=entry, arguments=("--repo", "."))
+        self.assertEqual(self.repository.summary()["models"][0]["response_count"], 5)
+        self.assertEqual(self.target.db_path.read_bytes(), core)
+        self.assertEqual(file_snapshot(self.target.resolved_evidence_root), evidence)
+        self.install.skill_root.mkdir()
+        before = file_snapshot(self.root / ".taskgov")
+        with self.transcript.open("ab") as stream:
+            stream.write(json.dumps(usage("after-competitor", turn=turn(5))).encode() + b"\n")
+        self.hook(entrypoint=entry, arguments=("--repo", str(self.root)))
+        self.assertEqual(file_snapshot(self.root / ".taskgov"), before)
+
+    def test_public_explicit_repo_does_not_redirect_or_accept_invalid_arguments(self):
+        self.log({})
+        before = file_snapshot(self.root / ".taskgov")
+        for args in (("--repo", str(self.root.parent)), ("--repo",), ("--repo", ""),
+                     ("--repo", " "), ("--other", str(self.root)),
+                     ("--repo", str(self.root), "--repo", str(self.root))):
+            with self.subTest(arguments=args):
+                self.hook("SessionStart", arguments=args)
+                self.assertEqual(file_snapshot(self.root / ".taskgov"), before)
+        self.hook("SessionStart", arguments=("--repo", str(self.root)), cwd=str(self.root.parent))
+        self.assertEqual(file_snapshot(self.root / ".taskgov"), before)
+        self.hook("SessionStart", arguments=("--repo", str(self.root)))
+        self.assertEqual(self.repository.summary()["models"][0]["response_count"], 5)
 
     def test_hook_after_completed_task_then_late_append_preserves_core_and_cycle(self):
         start = self.add()

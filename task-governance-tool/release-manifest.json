@@ -55,7 +55,7 @@
     "scripts/task_governance_tool/project_scope.py": "sha256:82afc21c5c5f19b18a6ddc31aa1c9ca703584ec52e76203b8cc18e90f9821598",
     "scripts/task_governance_tool/relocation.py": "sha256:19ac943f61d2a891b8434c4bb4aac91662d2b3c0eb61baadf1d4fe23e1ae0278",
     "scripts/task_governance_tool/review_handoff.py": "sha256:b7c51eb405d14bbd2063fa1c19b46594d83592ecb6bca318fdf1b0d4b0722453",
-    "scripts/task_governance_tool/review_handoff_preparation.py": "sha256:38e255cc448bcd76fe4d47561bbbb44d4a88465c0a6129bd3061129f2a4c286e",
+    "scripts/task_governance_tool/review_handoff_preparation.py": "sha256:d5de9fd0377aea4a88120c90558faa221115e820f8f2b3a990aea25ebbad319e",
     "scripts/task_governance_tool/review_packet.py": "sha256:8080c01b08c4b39eebe2fa71d9cc987229f8a10f807f113a293d97848583bd82",
     "scripts/task_governance_tool/review_packet_binding.py": "sha256:ee7e3f29bbff41c90572e9edc12fdb5071ee7252a76d64e77f370c467ab9dfcd",
     "scripts/task_governance_tool/review_provenance.py": "sha256:c891feef8b2a1eba26ac2b5cf8e619173cd78ad8c0bf3ee255f73d65b5975b75",

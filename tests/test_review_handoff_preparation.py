@@ -132,8 +132,10 @@ class InstalledPreparationTests(PreparationFixture):
         original_paths = []
         originals = []
         for index, request in enumerate(context["review_requests"]):
-            self.assertIn(request["read_command"], request["request"])
-            self.assertIn(request["save_command"], request["request"])
+            self.assertEqual(set(request), {"result_path", "read_command", "save_command", "request"})
+            self.assertEqual(request["request"].count(request["read_command"]), 1)
+            self.assertEqual(request["request"].count(request["save_command"]), 1)
+            self.assertNotIn(context["submit_command"], request["request"])
             displayed = self.invoke("read", "--repo", str(self.root), "--packet", context["packet_path"],
                                     "--role", "independent", reviewer=index)
             self.assertEqual(displayed.returncode, 0, displayed.stdout)
@@ -772,8 +774,18 @@ class ReviewerMaterialTests(PreparationFixture):
         self.assertNotIn(b"remote", actual.stderr.lower())
         self.assertEqual(file_snapshot(self.root), before)
         # A batch exit zero is deliberately not a content-availability claim.
-        actual = self.material_read(material["blob_batch_command"], raw=(missing + "\n").encode())
-        self.assertIn((missing + " missing").encode(), actual.stdout)
+        available = material["changes"][0]["after_object_id"]
+        body = b"value = 2\n"
+        actual = self.material_read(material["blob_batch_command"],
+                                    raw=(available + "\n" + missing + "\n").encode())
+        self.assertEqual(actual.returncode, 0, actual.stderr)
+        self.assertEqual(actual.stdout, available.encode() + b" blob " +
+                         str(len(body)).encode() + b"\n" + body + b"\n" +
+                         missing.encode() + b" missing\n")
+        recovered = self.material_read(material["blob_command"].replace("<object_id>", available))
+        self.assertEqual(recovered.returncode, 0, recovered.stderr)
+        self.assertEqual(recovered.stdout, body)
+        self.assertEqual(file_snapshot(self.root), before)
 
     def test_short_material_commands_match_previous_fixed_wrapper_bytes_and_failures(self):
         base = self.committed_fixture()

@@ -464,7 +464,11 @@ the applicable result explanation. It never mutates the original Packet or
 fills claims. Helper tests exercise complete-before-display validation, original
 byte and Finding conservation, stale registration rejection and read/save
 failure paths; retrieval tests check the reviewer route without importing the
-parent operation subtree. Local bytes/call observations are not token savings.
+parent operation subtree. Generated request prose covers reviewer judgment and
+result return; the paired read output covers exact material retrieval and its
+exceptions. Their shared explanations can be consolidated without changing
+selectors, command templates, JSON shape or review/save/registration checks.
+Local bytes/call observations are not token savings.
 
 <a id="completion-cycle-history"></a>
 

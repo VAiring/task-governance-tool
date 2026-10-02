@@ -449,11 +449,15 @@ saved, no parent environment is changed, and no network or Git write is added.
 
 Diff-fingerprint/external targets instead return `requires_supplied_material`
 with no Git-derived delta. The caller must provide complete material and evidence
-binding it to the exact value; display success is not that evidence. Generated
-requests explain whole-target judgment, project AGENTS/authority/source/test
-reading, newly discovered dependencies, actual provenance and all Findings,
-fixed save and acknowledgement, and reporting incomplete/uncertain outcomes to
-the caller. Skill guides/internal fingerprint or version code are not normal
+binding it to the exact value; display success is not that evidence. The generated
+request and read output are self-contained together: the request explains
+whole-target independent judgment under project authority, actual provenance and
+all Findings, fixed save/acknowledgement and reporting incomplete/uncertain outcomes.
+The read output owns the concrete artifact/dependency selectors, discovery,
+mode exceptions and complete-delivery/recovery instructions. Keep cautions at
+their applicable retrieval step rather than requiring each explanation exactly
+once; neither scope nor material is reduced. Skill guides/internal fingerprint
+or version code are not normal
 prerequisites; Skill material remains required when actually governing/reviewed.
 Unknown declarations remain unknown. Reviewers do not take over Task management,
 target resets, evidence registration, completion or transport recovery code.

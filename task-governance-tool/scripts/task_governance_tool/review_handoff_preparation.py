@@ -344,13 +344,13 @@ def _review_material(repo, target):
             "instructions": [
                 "changes is the complete target delta, even when the Packet's changed_paths is bounded. Inspect every entry and its modes. Replace only placeholders in the supplied Git commands with the listed object IDs or required project-relative path.",
                 path_quoting,
-                "Execute the supplied helper commands unchanged apart from placeholders; no wrapper code or help lookup is needed. The helper applies the existing sanitized Git environment, disabling lazy fetch, replacement refs, optional locks and prompts without changing your shell environment. Missing objects must be reported, not fetched. A nonzero exit or incomplete delivery is not success, even if a batch prefix was returned.",
+                "Use the supplied commands, replacing only placeholders; no wrapper code or help lookup is needed. The helper disables lazy fetch, replacement refs, optional locks and prompts without changing your shell environment. Report missing objects; do not fetch them. Nonzero exit or incomplete delivery is not success.",
                 "Read before/after blobs by immutable object ID; compare both present blobs with diff_command. Added/deleted entries have one absent side. Mode 120000 is link text, not permission to follow it; mode 160000 names a submodule commit, not a blob: obtain any required unavailable submodule material from the caller.",
-                "For unchanged authority, source, tests and discovered dependencies use dependency_command. For a snapshot, changed paths instead use their listed after object (or are deleted); never substitute mutable index, HEAD or worktree content. Commit dependencies come from that exact commit.",
+                "For unchanged authority, source, tests and discovered dependencies use dependency_command at dependency_revision: the snapshot base or exact reviewed commit. Changed snapshot paths use their listed after object (or are deleted). Never substitute mutable index, HEAD or worktree content.",
                 "unchanged_inventory lists locations, modes and IDs from dependency_revision, excluding every old/new path in changes. It does not select relevant tests or certify content availability. Use it and actual authority/import references to choose known independent reads together; follow newly discovered dependencies afterward. A bounded inventory is not the complete repository or a limit on review scope.",
                 "If locations are omitted or more discovery is needed, directory_command lists that exact revision's directory (empty placeholder for root; otherwise path without trailing slash, escaped by the same path rule). Its paths are relative to that directory; mode 040000 entries can be explored with the same command. Apply changes over this base listing: changed snapshot files use after objects, removed/renamed old paths are absent. Recover tool-truncated listings by requesting sufficient output or exploring narrower directories; report unresolved omissions, never use ambient file search as target material.",
                 "For chosen known blobs, blob_batch_command accepts their listed full object IDs, one per stdin line, then EOF. Preserve the ID-to-path/side mapping. Each response is '<id> blob <byte-count>\\n', exactly that many content bytes, then LF, in input order. Check every response and complete delivery, not merely process exit: '<id> missing' or non-blob type is unavailable, not content or PASS. Do not batch mode 160000 as a blob or follow mode 120000 link text. Group only what the tool can return completely; recover truncated material with individual blob_command reads and sufficient output, or report it. No source body is stored in the Packet or Task DB.",
-                "Inspect project AGENTS.md and its authority routes plus required source/tests and discovered dependencies. Recover missing or tool-truncated output before judgment. These read-only observations are not PASS or an authenticated provenance claim; unavailable required material must be reported to the caller."]}
+                "Read checks saved versus current Task/Contract/target and Git object identity, not review quality or provenance. Recover required unavailable or tool-truncated material before judgment, or report it to the caller."]}
 
 
 def read_for_reviewer(repo, packet_path):
@@ -411,19 +411,17 @@ def _requests(repo, args, packet_path):
             "You are assigned an independent review of the complete exact target under current project authority. "
             "This request and its read output supply your procedure and result format; no Skill operating guide or internal fingerprint implementation is a prerequisite. "
             "Obtain the Task/Contract, criteria, exact material access and result template with this read-only operation:\n"
-            + read + "\nIndependently judge the whole target against its scope, acceptance, constraints, project AGENTS/authority and verification expectation. "
-            "Follow review_material to read exact artifacts and required dependencies, not ambient files. "
-            "The helper checks saved versus current Task/Contract/target and Git object identity, not review quality. "
+            + read + "\nRead project AGENTS.md and its authority routes, then independently judge the whole target against its scope, acceptance, constraints and verification expectation. "
+            "Follow review_material for exact artifacts, required source/tests, discovered dependencies and retrieval exceptions. "
             "Read Skill files when they are actually governing or reviewed material, not to learn Task management. "
-            "For Git material, use review_material.unchanged_inventory to discover unchanged sources/tests, and its blob_batch_command for chosen known blobs when complete delivery is possible; follow new dependencies and recover omissions/truncated output. "
             "If this role does not match actual work, ask the caller, "
-            "do not infer independence. Do not judge from missing, truncated or mismatched material. "
+            "do not infer independence. "
             "Complete the view's result_template using result_instructions, actual judgment and provenance, and all Findings with severity, exact file/line, risks and recommended correction in bounded summaries. "
             "Unknown model/Skill identity or version stays unknown under the supplied matrix; do not search internals to guess it. Null placeholders are not PASS, independence or no Findings. "
             "Replace only the JSON placeholder below; run this fixed save operation, not new save/validation code.\n"
             + invocation + "\nOn saved acknowledgement return path, verdict and Finding count once in the final response; "
-            "do not echo JSON or send a duplicate normal-success notification. Report problems/questions when needed. "
-            "On read mismatch, missing material, unknown role, save failure or lost acknowledgement, report the problem to the caller; do not claim PASS from incomplete inspection or success from an unknown outcome. "
+            "do not echo JSON or send a duplicate normal-success notification. "
+            "Report questions, read mismatch, unavailable/truncated material, unknown role, save failure or lost acknowledgement to the caller; do not claim PASS from incomplete inspection or success from an unknown outcome. "
             "Preserve failed residue; do not overwrite or blindly repeat a save. Do not manage Tasks, reset targets, register DB evidence, complete work or implement transport/recovery code."
         )})
     return {"status": "ready", "packet_path": packet_path, "review_requests": reviewers,

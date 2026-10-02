@@ -119,6 +119,47 @@ class UsageLifecycleTests(unittest.TestCase):
             self.collect()
         self.assertEqual(calls, [self.path])
 
+    def test_split_and_legacy_sources_without_hint_replay_once(self):
+        archive = self.host / "archived_sessions"
+        archive.mkdir()
+        for count, directory in enumerate((self.logs, archive), start=2):
+            with self.subTest(directory=directory.name):
+                segment = directory / f"rollout-2026-10-02T00-00-00-{THREAD}_{TURN}.jsonl"
+                self.write(segment, THREAD, usage(), usage("split-response"))
+                result = self.collect(self.payload(transcript_path=""))
+                self.assertEqual(result["collected_sources"], count)
+                self.assertEqual(self.repo.summary()["models"][0]["total_tokens"], 240)
+                self.collect(self.payload("Stop", transcript_path=""))
+                self.assertEqual(self.repo.summary()["models"][0]["response_count"], 2)
+        self.assertEqual(self.repo.registered_sources()[0], {THREAD})
+        self.assertEqual(set(self.repo.registered_sources()[1].values()), {THREAD})
+
+    def test_segment_id_is_not_a_session_candidate(self):
+        for name in (
+            f"rollout-2026-10-02T00-00-00-{PARENT}_{THREAD}.jsonl",
+            f"rollout-2026-10-02T00-00-00-{PARENT}_{TURN}.jsonl",
+            f"rollout-2026-10-02T00-00-00-{THREAD}_invalid-segment.jsonl",
+            f"other-{THREAD}_{TURN}.jsonl",
+            f"rollout-2026-10-02T00-00-00-{THREAD}_{TURN}.txt",
+        ):
+            (self.logs / name).write_bytes(b"private-unrelated-body")
+        with mock.patch.object(lifecycle, "read_batch", wraps=lifecycle.read_batch) as read:
+            self.collect(self.payload(transcript_path=""))
+        self.assertEqual([call.args[0].path for call in read.call_args_list], [self.path])
+
+    def test_split_filename_still_requires_matching_header(self):
+        self.path.unlink()
+        segment = self.logs / f"rollout-2026-10-02T00-00-00-{THREAD}_{TURN}.jsonl"
+        for changes in ({"thread": PARENT}, {"thread": THREAD, "project": self.root}):
+            with self.subTest(changes=changes):
+                self.write(segment, **changes)
+                with mock.patch.object(lifecycle, "read_batch", wraps=lifecycle.read_batch) as read:
+                    result = self.collect(self.payload(transcript_path=""))
+                self.assertEqual(read.call_count, 1)
+                self.assertEqual(result["collected_sources"], 0)
+                self.assertIn("source_unreadable", result["diagnostics"])
+                self.assertEqual(self.repo.registered_sources()[1], {})
+
     def test_lost_source_preserves_totals_and_records_gap(self):
         self.collect()
         self.path.unlink()

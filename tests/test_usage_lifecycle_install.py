@@ -13,7 +13,7 @@ from tests.test_usage_collection import event, usage
 from tests.test_usage_turn_adapter import tool_record
 from tests.m14_test_support import file_snapshot
 from tests import test_review_session_install as review_support
-from tests.test_review_session_repository import OWNER, REVIEWER
+from tests.test_review_session_repository import OWNER, REVIEWER, SECOND
 from task_governance_tool.state_resolver import resolve_project_state
 from task_governance_tool.usage_evidence_service import repository_for
 
@@ -200,6 +200,100 @@ class UsageLifecycleReviewInstallTests(unittest.TestCase):
     cli = review_support.ReviewSessionInstallTests.cli
     helper = review_support.ReviewSessionInstallTests.helper
     original = review_support.ReviewSessionInstallTests.original
+
+    def test_segment_discovery_recovers_parent_and_preserves_review_cycle_snapshots(self):
+        target = resolve_project_state(skill_root=self.install.skill_root, repo=self.root).target
+        repository = repository_for(target)
+        host = self.root.parent / "segmented-host"
+        logs = host / "sessions/2026/10/02"
+        logs.mkdir(parents=True)
+
+        def rows(thread, prefix, acknowledgements, numbers):
+            result = [event("session_meta", id=thread, cwd=str(self.root), model_provider="openai")]
+            for number in numbers:
+                result += [event("event_msg", type="task_started", turn_id=turn(number), started_at=number * 1000),
+                           event("turn_context", turn_id=turn(number), model="fixture-model")]
+                result += [tool_record(ack, number) for ack in acknowledgements.get(number, ())]
+                result.append(usage(f"{prefix}-{number}", thread=thread, turn=turn(number)))
+            return b"".join(json.dumps(row).encode() + b"\n" for row in result)
+
+        def hook(kind="Stop"):
+            # No transcript hint: a later event must discover every registered participant.
+            payload = {"hook_event_name": kind, "session_id": OWNER.session_id, "cwd": str(self.root)}
+            result = subprocess.run([sys.executable, "-I", "-S", "-B",
+                str(self.install.skill_root / "scripts/usage_hook.py")], cwd=self.root,
+                input=json.dumps(payload).encode(), capture_output=True,
+                env={**os.environ, "CODEX_HOME": str(host)}, timeout=30)
+            self.assertEqual((result.returncode, result.stdout, result.stderr), (0, b"{}\n", b""))
+
+        outputs = []
+        expected = set()
+        for number, caller in enumerate((REVIEWER, SECOND)):
+            read = self.invoke(self.install.skill_root / "scripts/review_handoff.py",
+                ["read", "--repo", str(self.root), "--packet", self.packet_path, "--role", "independent"],
+                caller=caller)
+            self.assertEqual(read.returncode, 0, read.stdout or read.stderr)
+            displayed = json.loads(read.stdout)
+            output = f"reviews/g1/segment-review-{number}.json"
+            saved = self.helper("save", "--packet", self.packet_path, "--output", output,
+                                caller=caller, raw=self.original(f"segment-review-{number}"))
+            outputs.append(output)
+            prefix = f"review-{number}"
+            path = logs / f"rollout-2026-10-02T00-00-00-{caller.session_id}.jsonl"
+            path.write_bytes(rows(caller.session_id, prefix, {2: [displayed], 4: [saved]}, range(1, 6)))
+            expected.update(("openai", f"{prefix}-{n}") for n in (2, 3, 4))
+        self.helper("submit", "--packet", self.packet_path, *outputs)
+        end = self.cli("task", "edit", self.task, "--status", "review_pending")
+        done = self.cli("task", "complete", self.task, "--verification-complete", "--review-complete",
+                        "--commit-not-required")
+        acknowledgements = {2: [self.started], 4: [end], 5: [done]}
+        legacy = logs / f"rollout-2026-10-02T00-00-00-{OWNER.session_id}.jsonl"
+        legacy.write_bytes(rows(OWNER.session_id, "parent", {}, (1,)))
+        core = target.db_path.read_bytes()
+        evidence = file_snapshot(target.resolved_evidence_root)
+        hook()
+        initial = self.cli("task", "show", self.task)["data"]["usage"]
+        self.assertEqual(initial["periods"][0]["response_count"], 6)
+        cycle = initial["cycle_links"][0]["completion_cycle_id"]
+        old_snapshots = file_snapshot(target.resolved_usage_snapshots)
+
+        # A previously missed current segment coexists with the older file and
+        # repeats its first response. Discovery and ordinary replay recover it.
+        segment = logs / f"rollout-2026-10-02T00-00-00-{OWNER.session_id}_{THREAD}.jsonl"
+        segment.write_bytes(rows(OWNER.session_id, "parent", acknowledgements, range(1, 6)))
+        hook("SessionStart")
+        expected.update(("openai", f"parent-{n}") for n in (2, 3, 4))
+
+        def assert_current():
+            current = self.cli("task", "show", self.task)["data"]["usage"]
+            period = current["periods"][0]
+            self.assertEqual(period["response_count"], len(expected))
+            self.assertEqual(period["models"][0]["total_tokens"], len(expected) * 120)
+            self.assertEqual({link["completion_cycle_id"] for link in current["cycle_links"]}, {cycle})
+            with repository.connection() as connection:
+                members = {key for identity in period["snapshot_ids"]
+                           for key in repository.members(connection, identity)}
+            self.assertEqual(members, expected)
+            self.assertEqual(target.db_path.read_bytes(), core)
+            self.assertEqual(file_snapshot(target.resolved_evidence_root), evidence)
+            now = file_snapshot(target.resolved_usage_snapshots)
+            self.assertTrue(old_snapshots.items() <= now.items())
+            return period
+
+        recovered = assert_current()
+        successor = json.loads((target.resolved_usage_snapshots / (recovered["snapshot_ids"][0] + ".json")).read_bytes())
+        self.assertEqual(set(successor["predecessors"]), set(initial["periods"][0]["snapshot_ids"]))
+        stable = file_snapshot(target.resolved_usage_root)
+        hook()
+        self.assertEqual(assert_current(), recovered)
+        self.assertEqual(file_snapshot(target.resolved_usage_root), stable)
+        with segment.open("ab") as stream:
+            stream.write(json.dumps(usage("parent-late", thread=OWNER.session_id, turn=turn(4))).encode() + b"\n")
+        expected.add(("openai", "parent-late"))
+        hook()
+        assert_current()
+        hook()
+        assert_current()
 
     def test_read_is_readonly_saved_child_collects_but_needs_core_receipt(self):
         target = resolve_project_state(skill_root=self.install.skill_root, repo=self.root).target

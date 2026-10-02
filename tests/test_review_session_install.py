@@ -99,8 +99,9 @@ class ReviewSessionInstallTests(unittest.TestCase):
         ignore = self.root / ".gitignore"
         ignore.write_text(ignore.read_text(encoding="utf-8") + "/reviews/\n", encoding="utf-8")
         self.cli("setup")
-        self.task = self.cli("task", "add", "--title", "Bound review fixture", "--status", "in_progress",
-            "--review-tier", "2", "--verification-not-required", "Isolated protocol fixture")["data"]["task"]["task_id"]
+        self.started = self.cli("task", "add", "--title", "Bound review fixture", "--status", "in_progress",
+            "--review-tier", "2", "--verification-not-required", "Isolated protocol fixture")
+        self.task = self.started["data"]["task"]["task_id"]
         prepared = self.helper("prepare", "--directory", "reviews/g1", "target", self.task,
                                "--kind", "diff_fingerprint", "--revision", FINGERPRINT)
         self.packet_path = prepared["handoff"]["packet_path"]

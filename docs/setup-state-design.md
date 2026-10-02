@@ -120,8 +120,14 @@ after successful bound review save. Save preserves its original response even
 when registration fails. Read-only review helpers remain unchanged. No new table,
 source-path retention or database attachment is introduced.
 
-`usage_sources.py` locates only registered UUID-suffixed filename candidates in
-the standard dated sessions and flat archive layouts. Directory inventory is
+`usage_sources.py` locates only registered session IDs in the legacy
+`rollout-<prefix>-<session-uuid>.jsonl` and segmented
+`rollout-<prefix>-<session-uuid>_<segment-uuid>.jsonl` filenames in the standard
+dated sessions and flat archive layouts. It recognizes the two-ID suffix before
+checking registration, so a registered ID in the segment position cannot select
+an unrelated session. Coexisting segments retain separate source cursors and
+use existing response deduplication and immutable snapshot successors; no
+attribution or lifecycle change is needed. Directory inventory is
 not session admission; links/junctions are skipped, unrelated headers are never
 read, and the versioned adapter verifies each candidate before registration.
 Explicit host hints can locate the invoking registered source within the same

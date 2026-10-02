@@ -101,7 +101,7 @@
     "scripts/task_governance_tool/usage_lifecycle.py": "sha256:be6fb4d757aa8200cdc585ee6708843ab9f5c1b25941980ebbc3349aa7d64c72",
     "scripts/task_governance_tool/usage_repository.py": "sha256:01cd75b7cc98f4fb51aff6b900992d9fcee7bda69591ac597e68e1b3bcccc4d7",
     "scripts/task_governance_tool/usage_review_attribution.py": "sha256:460b31900607194695a50857749c010c06dce551c9ed22ff7f798e33a56c465a",
-    "scripts/task_governance_tool/usage_sources.py": "sha256:79227c8015fa1940b0ab28c1dcd55cb2b611c82e40af3bb539c4218151cb6b1f",
+    "scripts/task_governance_tool/usage_sources.py": "sha256:90a5d5aa193cbb346b84e74dc0053d2c8765b39cee790ab2f6841fb4e2d61131",
     "scripts/task_governance_tool/usage_turn_adapter.py": "sha256:6e95dcbceef849af7d8b64dccaf86fe13f1cc953771bdc8a109a1dd9831d9a31",
     "scripts/task_governance_tool/usage_values.py": "sha256:c05436a9eb3042be9c4bb8b4773a28d70b0f456bedf545b1fd1d7326e7ffbeed",
     "scripts/task_governance_tool/verification_declaration.py": "sha256:b6632c299b6b0e09bfd117ccec8b7b457ee2818c384429ac0d7b6a58ff5327be",

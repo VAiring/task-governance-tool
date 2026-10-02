@@ -766,8 +766,11 @@ remain read-only. Save registration failure never rejects or repeats the save.
 Each event catches up only these registered project sessions. Discovery uses
 exact registered IDs to locate standard Codex log filename candidates in
 `CODEX_HOME/sessions` (year/month/day) and flat `archived_sessions`, or the
-default user `.codex` location. It does not open unrelated headers, follow
-directory links/junctions or discover descendants from parenthood. The hook's
+default user `.codex` location. Both the legacy session-UUID suffix and the
+session-UUID plus `_` and segment-UUID suffix are candidates; the segment ID is
+never used as the session identity. Coexisting files are collected through the
+same response-identity deduplication and cursor rules. It does not open unrelated
+headers, follow directory links/junctions or discover descendants from parenthood. The hook's
 path is only a hint within those roots. Every candidate must pass existing
 physical/header/project/thread validation before numerical source registration.
 Unknown layouts remain unavailable; no host index, private-body search or

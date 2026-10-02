@@ -8,6 +8,7 @@ Only the standard dated sessions layout and flat archive are supported here.
 import os
 from pathlib import Path
 
+from task_governance_tool.session_identity import is_session_id
 from task_governance_tool.state_paths import inspect_physical_directory, StatePathError
 from task_governance_tool.usage_adapter import SourceInput
 from task_governance_tool.usage_values import UsageError
@@ -54,6 +55,23 @@ def _directories(root):
             pending.append((child, depth + 1))
 
 
+def _filename_thread(name):
+    """Read the session suffix, optionally followed by _<segment-uuid>.
+
+    Parse the two-ID form first, regardless of registration: a registered
+    segment ID must not select another session's file. This is only a hint.
+    """
+    if not name.startswith("rollout-") or not name.endswith(".jsonl"):
+        return None
+    stem = name[:-6]
+    if stem[-37:-36] == "_":
+        if not is_session_id(stem[-36:]):
+            return None
+        stem = stem[:-37]
+    thread = stem[-36:]
+    return thread if stem[-37:-36] == "-" and is_session_id(thread) else None
+
+
 def locate_sources(threads, roots, project):
     """Return exact-ID candidates only; missing/unreadable roots are not complete."""
     sources = {}
@@ -63,10 +81,7 @@ def locate_sources(threads, roots, project):
         try:
             for directory in _directories(root):
                 for path in directory.iterdir():
-                    # The suffix is a discovery hint, NOT an identity assertion.
-                    if not path.name.startswith("rollout-") or not path.name.endswith(".jsonl"):
-                        continue
-                    thread = path.name[-42:-6]
+                    thread = _filename_thread(path.name)
                     if thread in threads:
                         source = SourceInput(thread, path, root, project)
                         sources[source.source_id] = source

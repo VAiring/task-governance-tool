@@ -1427,6 +1427,12 @@ model/Skill use or empty Findings array is inferred. The new fields count
 toward the unchanged Packet cap and add no CLI call or review-method choice.
 Exact artifacts and governing documents still require inspection.
 
+`contract.authority_ref` carries the saved reference unchanged, possibly empty;
+use it as a location hint only, not proof of approval or referent validity.
+Do not infer paths from opaque identifiers. Shared-file transport also accepts
+older complete Packets without that field, without filling it. No extra lookup
+is needed solely to obtain a reference already present in the Packet.
+
 The fixed `required_output` requests that completed version-1 result with one
 reviewer's Receipt, severity-ordered Findings, and actual provenance. Bounded
 summaries include exact file/line references, remaining risks and recommended

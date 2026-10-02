@@ -74,6 +74,7 @@ def add_task(
     contract: bool = True,
     description: str = "",
     tags: str = "",
+    authority_ref: str = "roadmap:M14.5",
 ) -> str:
     args = [
         "task",
@@ -106,7 +107,7 @@ def add_task(
                 "--contract-constraints",
                 "No writes or network",
                 "--contract-authority-ref",
-                "roadmap:M14.5",
+                authority_ref,
             ]
         )
     result = run_taskgov_internal(*args, maintenance_enabled=False)
@@ -229,7 +230,7 @@ class ReviewPacketTests(unittest.TestCase):
                 "task_id", "title", "status", "verification", "verification_not_required_reason", "review_tier",
             ))
             self.assertEqual(tuple(diff_data["contract"]), (
-                "revision", "scope", "acceptance", "constraints",
+                "revision", "scope", "acceptance", "constraints", "authority_ref",
             ))
             self.assertEqual(tuple(diff_data["review_target"]), (
                 "kind", "value", "base_revision", "generation",
@@ -268,6 +269,7 @@ class ReviewPacketTests(unittest.TestCase):
                 'Scope: "Implement the bounded packet"\n'
                 'Acceptance: "All packet checks pass"\n'
                 'Constraints: "No writes or network"\n'
+                'Authority reference: "roadmap:M14.5"\n'
                 f"Review target: kind=diff_fingerprint value=\"{FINGERPRINT_A}\" "
                 'base_revision="" generation=1\n'
                 "Changed paths: unavailable\n"
@@ -422,8 +424,34 @@ class ReviewPacketTests(unittest.TestCase):
                     "scope": "",
                     "acceptance": "",
                     "constraints": "",
+                    "authority_ref": "",
                 },
             )
+
+    def test_authority_reference_is_copied_without_resolution_or_extra_reads(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo, db = root / "repo", root / "taskgov.sqlite"
+            initialize_repo(repo)
+            initialize_taskgov_internal(repo=repo, db=db)
+            for reference in ("", "docs/missing.md#根拠@abc123",
+                              "conversation:example:approved", "external-id:review-42"):
+                with self.subTest(reference=reference):
+                    task = add_task(db, repo, authority_ref=reference)
+                    set_target(db, repo, task, kind="external_revision", revision="opaque")
+                    before = file_snapshot(root)
+                    with mock.patch.object(packet_module, "read_current_contract",
+                                           wraps=packet_module.read_current_contract) as reads:
+                        result = prepare(db, repo, task)
+                    self.assertEqual(result.returncode, 0, result.stdout)
+                    self.assertEqual(reads.call_count, 2)  # Existing basis + revalidation.
+                    packet = json_payload(result)["data"]
+                    self.assertEqual(packet["contract"]["authority_ref"], reference)
+                    self.assertEqual(packet_module.independent_reviewer_view(packet)["contract"]["authority_ref"], reference)
+                    text = prepare(db, repo, task, json_output=False)
+                    self.assertEqual(text.returncode, 0, text.stdout)
+                    self.assertIn("Authority reference: " + json.dumps(reference, ensure_ascii=False), text.stdout)
+                    self.assertEqual(file_snapshot(root), before)
 
     def test_manual_diagnostic_task_fields_pass_existing_packet_boundary(self):
         title = "Investigate failure: stderr: permission denied"

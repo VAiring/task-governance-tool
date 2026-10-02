@@ -540,6 +540,11 @@ acceptance, constraints, authority reference, change reason, and creation time.
 Revision 0 uses empty strings and null time. Compact/list/current/next/Viewer
 omit Contract text.
 
+The [Review Packet](review-completion-specification.md#review-packet) also
+carries the already-read `authority_ref` unchanged as a context hint. A stored
+identifier is not approval or a guarantee about its referent; an empty or opaque
+identifier does not imply a filesystem path.
+
 ### Handoff Outbox
 
 For every discovery, classify once:

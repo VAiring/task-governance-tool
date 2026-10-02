@@ -348,8 +348,12 @@ that already holds a complete Packet may still use them directly; missing,
 display-truncated or differently bound Packets must not reach reviewers.
 Prepare, read, save and submit share one pure complete-Packet validator,
 including Task verification declarations, Contract scope/acceptance/constraints,
-target/template consistency and display metadata. No missing field is filled
-in. Incomplete input creates no result file and launches no registration CLI;
+the optional saved `authority_ref`, target/template consistency and display
+metadata. Older complete Packets without `contract.authority_ref` remain
+accepted without filling that field. When present, it is a single-line string
+of at most 500 characters under ordinary privacy validation, not the
+stored-constraints exception. No missing required field is filled in.
+Incomplete input creates no result file and launches no registration CLI;
 stored-constraints compatibility above remains unchanged. These file checks
 do not replace live registration checks.
 
@@ -361,8 +365,11 @@ using existing physical/ignored-path and bounded-read rules. It then reuses
 existing target-capture Git observation and one read-only public `review prepare`
 inside this replacement read. Before returning, saved Task, Contract, complete
 target and path metadata must equal the current public Packet, and the saved
-file must be unchanged. A stale Contract/generation, mismatched index, missing
-objects, unavailable state or incomplete response returns no view. It has no
+file must be unchanged. For an older Packet without `authority_ref`, compare
+all its existing Contract fields and omit only that new field from the current
+comparison; keep the saved bytes and display absent, without reconstruction.
+A present reference must match exactly. A stale Contract/generation, mismatched
+index, missing objects, unavailable state or incomplete response returns no view. It has no
 direct storage access, writes nothing and creates no second Packet. Its display is compact
 UTF-8 JSON plus LF, without shell-codepage conversion or
 ASCII escaping of non-ASCII Contract prose. The generated ordinary
@@ -712,10 +719,19 @@ Data keys are exactly `task`, `contract`, `review_target`,
 `changed_paths_truncated`, `review_focus`, `required_output`, `result_template`,
 `result_instructions`, and `receipt_command`. Task contains
 ID/title/status/verification/verification_not_required_reason/tier;
-Contract contains revision/scope/acceptance/constraints;
+Contract contains revision/scope/acceptance/constraints/authority_ref;
 target contains kind/value/base/
 generation. No diff, result, raw output, prompt, conversation, secret, absolute
 path, or caller-authored focus is included. The template is not a review result.
+
+`contract.authority_ref` copies the already-read Contract value unchanged,
+including an empty value (also for revision zero). It is a context hint, not
+proof of approval or of a reference's existence, reachability or correctness.
+Do not infer a path from an empty or opaque identifier. No reference resolution,
+automatic fetch, additional database lookup or reviewer operation is added.
+The independent display retains it; result identity and registration input are
+unchanged. The field counts toward the existing output cap. Avoiding a separate
+lookup solely for this value is a local use case, not measured token savings.
 
 `result_template` has the closed version-1 structured-result shape, with only
 integer `version=1`, Task ID, Contract revision and the complete current target
@@ -769,7 +785,7 @@ reasoning. Receipt command is the non-executed `review result add` shape; the
 packet itself never imports or records results.
 
 Text order is `Task`, `Status`, `Verification`, `Verification not required reason`, `Contract revision`, `Scope`,
-`Acceptance`, `Constraints`, `Review target`, `Changed paths`, `Review focus`,
+`Acceptance`, `Constraints`, `Authority reference`, `Review target`, `Changed paths`, `Review focus`,
 `Required output`, `Result template` (compact ASCII JSON), `Result instructions`,
 `Receipt command`, LF-terminated. After Git, a second short
 read revalidates Task, Contract, and every target field/generation; drift fails

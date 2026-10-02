@@ -200,7 +200,8 @@ def _packet(raw, expected_task_id=None):
         _fail()
     if (set(task) != {
             "task_id", "title", "status", "verification", "verification_not_required_reason", "review_tier"}
-            or set(contract) != {"revision", "scope", "acceptance", "constraints"}
+            or set(contract) not in ({"revision", "scope", "acceptance", "constraints"},
+                                    {"revision", "scope", "acceptance", "constraints", "authority_ref"})
             or (expected_task_id is not None and task["task_id"] != expected_task_id)):
         _fail("review_target_mismatch")
     _packet_target(target)
@@ -210,6 +211,13 @@ def _packet(raw, expected_task_id=None):
     validate_text("verification_not_required_reason", reason, limit=1000)
     if not 0 <= contract["revision"] <= SQLITE_INT64_MAX:
         _fail("handoff_response_invalid")
+    # Older saved Packets omit this context field. Never fill it or resolve it
+    # as a path; supplied references retain the ordinary privacy/size boundary.
+    if "authority_ref" in contract:
+        reference = contract["authority_ref"]
+        if type(reference) is not str or "\n" in reference or "\r" in reference:
+            _fail("handoff_response_invalid")
+        validate_text("contract_authority_ref", reference, limit=500)
     for owner, names in ((task, ("title", "status", "verification")),
                          (contract, ("scope", "acceptance", "constraints"))):
         for name in names:

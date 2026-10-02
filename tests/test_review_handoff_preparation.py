@@ -245,6 +245,12 @@ class InstalledPreparationTests(PreparationFixture):
             "scope_missing": lambda p: p["contract"].pop("scope"),
             "acceptance_missing": lambda p: p["contract"].pop("acceptance"),
             "scope_type": lambda p: p["contract"].update(scope=[]),
+            "authority_type": lambda p: p["contract"].update(authority_ref=None),
+            "authority_size": lambda p: p["contract"].update(authority_ref="x" * 501),
+            "authority_multiline": lambda p: p["contract"].update(authority_ref="first\nsecond"),
+            "authority_private": lambda p: p["contract"].update(authority_ref="password=never-retain"),
+            "authority_legacy_counter": lambda p: p["contract"].update(authority_ref="dispatch_authorization=7"),
+            "unknown_contract_field": lambda p: p["contract"].update(unknown="context"),
             "conflicting_declaration": lambda p: p["task"].update(verification="Run checks"),
             "empty_instructions": lambda p: p.update(result_instructions=[]),
             "target_template_mismatch": lambda p: p["review_target"].update(generation=2),
@@ -360,6 +366,68 @@ class RunnerPreparationOutcomeTests(unittest.TestCase):
 class ReviewerDisplayTests(PreparationFixture):
     def read(self, packet, *options):
         return self.invoke("read", "--repo", str(self.root), "--packet", packet, *options)
+
+    def test_authority_reference_and_legacy_packet_round_trip_without_reconstruction(self):
+        cases = (("", False), ("docs/absent.md#根拠@abc123", False),
+                 ("conversation:example:approved", False), ("external-id:review-42", True))
+        for index, (reference, legacy) in enumerate(cases):
+            with self.subTest(reference=reference, legacy=legacy):
+                task = self.cli("task", "add", "--title", "Reference transport", "--review-tier", "2",
+                    "--status", "in_progress", "--verification-not-required", "Isolated context fixture",
+                    "--contract-scope", "Copy reference", "--contract-acceptance", "Preserve raw value",
+                    "--contract-authority-ref", reference)["task"]["task_id"]
+                self.cli("task", "edit", task, "--status", "review_pending")
+                completed, prepared = self.prepare(task, directory=f"reviews/reference-{index}")
+                self.assertEqual(completed.returncode, 0, completed.stdout)
+                context = prepared["handoff"]
+                path = self.root / context["packet_path"]
+                packet = json.loads(path.read_bytes())
+                self.assertEqual(packet["contract"]["authority_ref"], reference)
+                old_shape = copy.deepcopy(packet)
+                del old_shape["contract"]["authority_ref"]
+                added_bytes = len(encode(packet)) - len(encode(old_shape))
+                self.assertEqual(added_bytes, len(encode({"authority_ref": reference})) - 1)
+                if legacy:
+                    packet = old_shape
+                    path.write_bytes(encode(packet))
+                original_packet = path.read_bytes()
+                with mock.patch.object(preparation, "__file__", str(self.install.skill_root /
+                        "scripts/task_governance_tool/review_handoff_preparation.py")), \
+                     mock.patch.object(preparation, "_capture", wraps=preparation._capture) as source:
+                    view = preparation.read_for_reviewer(self.root, context["packet_path"])
+                source.assert_called_once()  # No extra lookup for the reference.
+                self.assertEqual(view["contract"], packet["contract"])
+                self.assertEqual(view["result_template"], packet["result_template"])
+                original = copy.deepcopy(view["result_template"])
+                original["receipts"] = [receipt(f"reference-reviewer-{index}")]
+                raw = b"\n " + encode(original) + b"\n"
+                output = context["review_requests"][0]["result_path"]
+                saved = self.invoke("save", "--repo", str(self.root), "--packet", context["packet_path"],
+                                    "--output", output, raw=raw, reviewer=index)
+                self.assertEqual(saved.returncode, 0, saved.stdout)
+                submitted = self.invoke("submit", "--repo", str(self.root), "--packet", context["packet_path"], output)
+                self.assertEqual(submitted.returncode, 0, submitted.stdout)
+                self.assertEqual(path.read_bytes(), original_packet)
+                self.assertEqual((self.root / output).read_bytes(), raw)
+                print(f"AUTHORITY_REF legacy={legacy} added_packet_bytes={added_bytes}; "
+                      "reference_only_lookup=unneeded_when_present; read_source_calls=1; tokens=unmeasured")
+                # Optional compatibility must not hide a mismatching supplied
+                # reference, nor any of the old Contract or target fields.
+                for change in (lambda p: p["contract"].update(authority_ref="different-ref"),
+                               lambda p: p["contract"].update(scope="Different scope"),
+                               lambda p: p["contract"].update(revision=2),
+                               lambda p: p["review_target"].update(generation=2)):
+                    broken = copy.deepcopy(packet)
+                    change(broken)
+                    # Keep the template structurally consistent: this checks
+                    # live comparison, not only the pure shape validator.
+                    from task_governance_tool.review_results import review_result_template
+                    broken["result_template"] = review_result_template(task, broken["contract"]["revision"], broken["review_target"])
+                    path.write_bytes(encode(broken))
+                    failed = self.read(context["packet_path"], "--role", "independent")
+                    self.assertNotEqual(failed.returncode, 0, failed.stdout)
+                    self.assertEqual(json.loads(failed.stdout)["code"], "review_packet_stale")
+                path.write_bytes(original_packet)
 
     def test_complete_packet_display_and_original_registration_conserve_meaning(self):
         from task_governance_tool.review_results import normalize_review_results

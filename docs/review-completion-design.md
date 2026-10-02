@@ -447,6 +447,17 @@ boundary includes both fields. No DB/Git read or write is added. The builder
 does not launch a reviewer, execute/import a receipt, store a packet, or
 include a diff, transcript, prompt, stdout/stderr, secret, or absolute path.
 
+The Contract projection includes `authority_ref` from the already-read and
+validated current Contract, unchanged and without resolving it. Text emits
+`Authority reference` after constraints; independent JSON retains the same
+field. The shared pure handoff validator accepts only the existing Contract
+shape or that shape plus a privacy-checked, bounded string `authority_ref`.
+For saved old Packets, reviewer read compares the existing fields against the
+current projection without its new reference field; it never inserts a value
+into the saved Packet or display. A supplied reference is compared exactly.
+Contract revision and full target revalidation, result templates, original
+bytes, output limits and registration checks remain unchanged.
+
 Its separate pure independent display preserves all Packet material/template
 and required-output fields, omits the parent receipt command and selects only
 the applicable result explanation. It never mutates the original Packet or

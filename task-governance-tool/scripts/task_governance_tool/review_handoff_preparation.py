@@ -372,7 +372,12 @@ def read_for_reviewer(repo, packet_path):
     _packet(current["data"], packet["task"]["task_id"])
     for key in ("task", "contract", "review_target", "changed_paths_available", "changed_paths",
                 "changed_paths_total", "changed_paths_truncated"):
-        if current["data"][key] != packet[key]:
+        compared = current["data"][key]
+        if key == "contract" and "authority_ref" not in packet[key]:
+            # Compare the old saved shape without inventing a reference or
+            # changing its bytes/display. Every pre-existing field still matches.
+            compared = {name: value for name, value in compared.items() if name != "authority_ref"}
+        if compared != packet[key]:
             files._fail("review_packet_stale")
     if current["data"].get("review_session_context") != packet.get("review_session_context"):
         files._fail("review_packet_stale")

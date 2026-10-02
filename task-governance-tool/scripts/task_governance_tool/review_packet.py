@@ -253,6 +253,7 @@ def _read_basis(
                 "scope": current_contract["scope"],
                 "acceptance": current_contract["acceptance"],
                 "constraints": current_contract["constraints"],
+                "authority_ref": current_contract["authority_ref"],
             }
 
             normalized_kind = validate_choice(
@@ -647,6 +648,7 @@ def format_review_packet_text(data: dict[str, Any]) -> str:
         f"Scope: {_quoted(contract['scope'])}",
         f"Acceptance: {_quoted(contract['acceptance'])}",
         f"Constraints: {_quoted(contract['constraints'])}",
+        f"Authority reference: {_quoted(contract['authority_ref'])}",
         (
             f"Review target: kind={target['kind']} "
             f"value={_quoted(target['value'])} "

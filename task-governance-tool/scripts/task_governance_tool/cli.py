@@ -119,6 +119,7 @@ from task_governance_tool.review_packet import (
 )
 from task_governance_tool.review_results import (
     REVIEW_RESULTS_INPUT_LIMIT,
+    ReviewResultInputError,
     add_review_results,
 )
 from task_governance_tool.setup import run_setup
@@ -2241,13 +2242,14 @@ def review_failure_result(
     code: str,
     message: str,
     exit_code: int,
+    field: str | None = None,
 ) -> CommandResult:
     return CommandResult(
         ok=False,
         command=context.command,
         project_id=project_id,
         data=review_empty_data(context.command, from_stdin=bool(getattr(context.args, "from_stdin", False))),
-        errors=[{"code": code, "message": message}],
+        errors=[{"code": code, "message": message, **({"field": field} if field else {})}],
         exit_code=exit_code,
     )
 
@@ -2415,6 +2417,7 @@ def handle_review_command(context: CommandContext) -> CommandResult:
             code=exc.code,
             message=exc.message,
             exit_code=EXIT_USAGE,
+            field=exc.field if context.command == "review.result.add" and isinstance(exc, ReviewResultInputError) else None,
         )
     except TaskRepositoryError as exc:
         return review_failure_result(

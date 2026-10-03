@@ -115,13 +115,16 @@ class ReviewProvenanceError(Exception):
     code: str = "invalid_review_evidence"
     message: str = INVALID_REVIEW_PROVENANCE_MESSAGE
     field: str | None = "review_provenance"
+    # Result-input presentation may use this; legacy/public provenance errors
+    # keep their existing code, message and field. No input value is retained.
+    diagnostic: tuple[str, str] | None = None
 
     def __str__(self) -> str:
         return self.message
 
 
-def _invalid() -> ReviewProvenanceError:
-    return ReviewProvenanceError()
+def _invalid(field: str | None = None, reason: str = "value") -> ReviewProvenanceError:
+    return ReviewProvenanceError(diagnostic=(field, reason) if field else None)
 
 
 def _has_exact_keys(value: Mapping[str, Any], fields: tuple[str, ...]) -> bool:
@@ -151,12 +154,12 @@ def _privacy_scan_value(field: str, value: Any) -> None:
                 _reject_private_or_raw_content(field, item)
 
 
-def _normalized_choice(value: Any, allowed: tuple[str, ...]) -> str:
+def _normalized_choice(value: Any, allowed: tuple[str, ...], field: str | None = None) -> str:
     if not isinstance(value, str):
-        raise _invalid()
+        raise _invalid(field, "string")
     normalized = value.strip()
     if normalized not in allowed:
-        raise _invalid()
+        raise _invalid(field, "choice")
     return normalized
 
 
@@ -164,15 +167,16 @@ def _optional_identifier(
     value: Any,
     *,
     pattern: re.Pattern[str],
+    field: str,
 ) -> str | None:
     if value is None:
         return None
     if not isinstance(value, str) or pattern.fullmatch(value) is None:
-        raise _invalid()
+        raise _invalid(field, "identifier")
     try:
         value.encode("ascii")
     except UnicodeEncodeError as exc:
-        raise _invalid() from exc
+        raise _invalid(field, "identifier") from exc
     return value
 
 
@@ -181,6 +185,7 @@ def _normalized_codes(
     *,
     allowed: tuple[str, ...],
     maximum: int,
+    field: str,
 ) -> list[str]:
     if value is None:
         items: list[Any] = []
@@ -189,14 +194,14 @@ def _normalized_codes(
     ):
         items = list(value)
     else:
-        raise _invalid()
+        raise _invalid(field, "array")
     if len(items) > maximum:
-        raise _invalid()
+        raise _invalid(field, "bound")
     normalized: list[str] = []
     for item in items:
-        normalized.append(_normalized_choice(item, allowed))
+        normalized.append(_normalized_choice(item, allowed, field))
     if len(set(normalized)) != len(normalized):
-        raise _invalid()
+        raise _invalid(field, "duplicate")
     selected = set(normalized)
     return [code for code in allowed if code in selected]
 
@@ -247,37 +252,43 @@ def normalize_review_provenance_input(
         return None
 
     normalized_reviewer_class = _normalized_choice(
-        reviewer_class, REVIEWER_CLASSES
+        reviewer_class, REVIEWER_CLASSES, "reviewer_class"
     )
-    normalized_model_state = _normalized_choice(model_state, MODEL_STATES)
-    normalized_skill_state = _normalized_choice(skill_state, SKILL_STATES)
-    normalized_context = _normalized_choice(context_relation, CONTEXT_RELATIONS)
+    normalized_model_state = _normalized_choice(model_state, MODEL_STATES, "model_state")
+    normalized_skill_state = _normalized_choice(skill_state, SKILL_STATES, "skill_state")
+    normalized_context = _normalized_choice(context_relation, CONTEXT_RELATIONS, "context_relation")
     normalized_model_id = _optional_identifier(
         declared_model_id,
         pattern=DECLARED_IDENTIFIER_PATTERN,
+        field="declared_model_id",
     )
     normalized_skill_id = _optional_identifier(
         declared_skill_id,
         pattern=DECLARED_IDENTIFIER_PATTERN,
+        field="declared_skill_id",
     )
     normalized_skill_version = _optional_identifier(
         declared_skill_version,
         pattern=DECLARED_SKILL_VERSION_PATTERN,
+        field="declared_skill_version",
     )
     normalized_profiles = _normalized_codes(
         review_profiles,
         allowed=REVIEW_PROFILES,
         maximum=4,
+        field="review_profiles",
     )
     normalized_lenses = _normalized_codes(
         review_lenses,
         allowed=REVIEW_LENSES,
         maximum=8,
+        field="review_lenses",
     )
     normalized_methods = _normalized_codes(
         method_codes,
         allowed=REVIEW_METHODS,
         maximum=8,
+        field="method_codes",
     )
 
     model_declared = (
@@ -326,7 +337,7 @@ def normalize_review_provenance_input(
             and normalized_skill_version is None
         )
     if not valid_matrix:
-        raise _invalid()
+        raise _invalid("review_provenance", "matrix")
 
     return {
         "reviewer_class": normalized_reviewer_class,

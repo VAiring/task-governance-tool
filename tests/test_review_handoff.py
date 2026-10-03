@@ -3,17 +3,19 @@
 from __future__ import annotations
 
 import copy
+import io
 import json
 import os
 import subprocess
 import sys
 import tempfile
 import unittest
+from contextlib import redirect_stdout
 from pathlib import Path
 from unittest import mock
 
-from tests.m14_test_support import make_physical_install
-from tests.test_review_results import document, encode, receipt, FINGERPRINT
+from tests.m14_test_support import file_snapshot, make_physical_install
+from tests.test_review_results import BinaryInput, document, encode, receipt, FINGERPRINT
 from task_governance_tool import review_handoff as handoff
 from task_governance_tool import review_results
 from task_governance_tool.reviews import ReviewEvidenceError
@@ -91,6 +93,83 @@ class ReviewHandoffFilesTests(unittest.TestCase):
             with self.subTest(raw_length=len(raw)), self.assertRaises((HandoffFailure, ReviewEvidenceError, TaskValidationError)):
                 self.save(raw)
             self.assertFalse((self.root / self.output).exists())
+
+    def test_safe_result_diagnostic_survives_save_and_submit_without_side_effects(self):
+        invalid = copy.deepcopy(self.payload)
+        invalid["receipts"][0]["provenance"]["model_state"] = "invalid-model-value"
+        raw = encode(invalid)
+        other = "reviews/invalid.json"
+        (self.root / other).write_bytes(raw)
+        before = file_snapshot(self.root)
+        for operation, tail in (("save", ["--output", self.output]), ("submit", [other])):
+            output = io.StringIO()
+            with mock.patch.object(sys, "stdin", BinaryInput(raw)), redirect_stdout(output), \
+                 mock.patch.object(handoff.subprocess, "run", wraps=subprocess.run) as calls:
+                code = handoff.main([operation, "--repo", str(self.root), "--packet", self.packet, *tail])
+            self.assertEqual(code, 1)
+            error = json.loads(output.getvalue())
+            self.assertEqual(error["field"], "receipts[].provenance.model_state")
+            self.assertEqual(error["code"], "invalid_review_evidence")
+            self.assertIn("preserve originals", error["message"])
+            self.assertNotIn("invalid-model-value", output.getvalue())
+            self.assertFalse(any("result" in call.args[0] and "add" in call.args[0]
+                                 for call in calls.call_args_list))
+            self.assertEqual(file_snapshot(self.root), before)
+
+    def test_ineligible_approval_identifies_option_without_save_or_submit(self):
+        for tier, kind, verdict in ((2, "independent", "pass"), (0, "not_required", "not_required")):
+            payload = document(receipts=[receipt(kind=kind, verdict=verdict)])
+            packet = packet_for(payload)
+            packet["task"]["review_tier"] = tier
+            (self.root / self.packet).write_bytes(encode(packet))
+            raw = encode(payload)
+            source = "reviews/approval-source.json"
+            (self.root / source).write_bytes(raw)
+            before = file_snapshot(self.root)
+            for operation, tail in (("save", ["--output", self.output]), ("submit", [source])):
+                with self.subTest(tier=tier, operation=operation):
+                    output = io.StringIO()
+                    with mock.patch.object(sys, "stdin", BinaryInput(raw)), redirect_stdout(output), \
+                         mock.patch.object(handoff.subprocess, "run", wraps=subprocess.run) as calls:
+                        code = handoff.main([operation, "--repo", str(self.root), "--packet", self.packet,
+                                             "--user-approved-reviewer", "reviewer-a", *tail])
+                    self.assertEqual(code, 1)
+                    error = json.loads(output.getvalue())
+                    self.assertEqual((error["code"], error["field"]),
+                                     ("invalid_review_evidence", "--user-approved-reviewer"))
+                    self.assertNotIn("reviewer-a", error["message"])
+                    self.assertFalse(any("result" in call.args[0] and "add" in call.args[0]
+                                         for call in calls.call_args_list))
+                    self.assertEqual(file_snapshot(self.root), before)
+
+    def test_element_and_receipt_group_diagnostics_reach_helper_without_writes(self):
+        cases = []
+        for key in ("review_profiles", "review_lenses", "method_codes"):
+            payload = document()
+            payload["receipts"][0]["provenance"][key] = [None]
+            cases.append((2, payload, "receipts[].provenance." + key + "[]"))
+        payload = document(receipts=[receipt(kind="not_required", verdict="not_required")])
+        payload["receipts"][0]["summary"] = ""
+        cases.append((0, payload, "receipts[]"))
+        for tier, payload, field in cases:
+            packet = packet_for(payload)
+            packet["task"]["review_tier"] = tier
+            (self.root / self.packet).write_bytes(encode(packet))
+            raw = encode(payload)
+            source = "reviews/invalid-source.json"
+            (self.root / source).write_bytes(raw)
+            before = file_snapshot(self.root)
+            for operation, tail in (("save", ["--output", self.output]), ("submit", [source])):
+                output = io.StringIO()
+                with mock.patch.object(sys, "stdin", BinaryInput(raw)), redirect_stdout(output), \
+                     mock.patch.object(handoff.subprocess, "run", wraps=subprocess.run) as calls:
+                    code = handoff.main([operation, "--repo", str(self.root), "--packet", self.packet, *tail])
+                self.assertEqual(code, 1)
+                error = json.loads(output.getvalue())
+                self.assertEqual((error["code"], error["field"]), ("invalid_review_evidence", field))
+                self.assertFalse(any("result" in call.args[0] and "add" in call.args[0]
+                                     for call in calls.call_args_list))
+                self.assertEqual(file_snapshot(self.root), before)
 
     def test_packet_legacy_constraints_compatibility_is_shared_and_field_limited(self):
         for index, constraints in enumerate(("dispatch_authorization=7", '{"dispatch_authorization":7}')):

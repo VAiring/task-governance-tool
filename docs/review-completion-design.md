@@ -226,6 +226,18 @@ capacity checks, input-only approval-key matching, and batch orchestration.
 It reuses Receipt/provenance/Finding normalization and the existing individual
 writers; it owns no SQL, schema, batch ledger, or replacement gate.
 
+Result-input diagnostics are a dedicated `ReviewEvidenceError` subtype emitted
+from those existing checks. A closed set of schema paths and fixed reasons
+supplies its field/message; no general path parser or original-position ledger
+is introduced. `[]` deliberately leaves document/element position unspecified.
+Element checks name an array element; legacy multi-field Receipt errors name
+the Receipt group instead of treating their field label as a unique cause.
+The provenance validator can attach field/reason metadata while preserving its
+legacy exception code/message/field; only result normalization consumes that
+metadata. The result CLI and handoff helper expose the dedicated diagnostic,
+not arbitrary exception fields or contents. Shape/privacy/semantic ordering,
+accepted values, normalization and transaction boundaries are unchanged.
+
 The CLI reads bounded binary stdin and decodes before opening the initialized
 connection. The decoder accepts the existing document or an array of 1–8
 complete documents within the same whole-input byte cap. It validates each

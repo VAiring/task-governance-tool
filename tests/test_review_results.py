@@ -89,6 +89,92 @@ class BinaryInput(io.BytesIO):
 
 
 class ReviewResultsInputTests(unittest.TestCase):
+    def test_known_input_diagnostics_use_schema_paths_and_fixed_reasons(self):
+        cases = [
+            (lambda p: p.pop("contract_revision"), "contract_revision", "missing"),
+            (lambda p: p.update(contract_revision=True), "contract_revision", "integer"),
+            (lambda p: p["review_target"].update(kind="invalid-target-value"), "review_target.kind", "choice"),
+            (lambda p: p["receipts"][0].pop("findings"), "receipts[].findings", "missing"),
+            (lambda p: p["receipts"][0].update(summary=12), "receipts[].summary", "string"),
+            (lambda p: p["receipts"][0].update(summary="x" * 1001), "receipts[].summary", "value"),
+            (lambda p: p["receipts"][0].update(provenance=None), "receipts[].provenance", "provenance"),
+            (lambda p: p["receipts"][0]["provenance"].pop("declared_model_id"), "receipts[].provenance.declared_model_id", "missing"),
+            (lambda p: p["receipts"][0]["provenance"].update(model_state="invalid-model-value"), "receipts[].provenance.model_state", "choice"),
+            (lambda p: p["receipts"][0]["provenance"].update(model_state="declared"), "receipts[].provenance", "matrix"),
+            (lambda p: p["receipts"][0]["provenance"].update(declared_model_id="bad identifier"), "receipts[].provenance.declared_model_id", "identifier"),
+            (lambda p: p["receipts"][0]["provenance"].update(method_codes=["diff_inspection"] * 2), "receipts[].provenance.method_codes", "duplicate"),
+            (lambda p: p["receipts"][0].update(findings=[{"severity": "low", "summary": "Same"}] * 2), "receipts[].findings", "duplicate"),
+            (lambda p: p["receipts"][0].update(findings=[{"severity": "urgent", "summary": "Fix"}]), "receipts[].findings[].severity", "choice"),
+        ]
+        for key in ("review_profiles", "review_lenses", "method_codes"):
+            for value, reason in (([False], "string"), (["invalid-code"], "choice")):
+                cases.append((lambda p, key=key, value=value: p["receipts"][0]["provenance"].update({key: value}),
+                              "receipts[].provenance." + key + "[]", reason))
+        for mutate, field, reason in cases:
+            with self.subTest(field=field, reason=reason):
+                candidate = document()
+                mutate(candidate)
+                first = {**candidate, "receipts": [receipt("first")]}
+                for originals in (candidate, [first, candidate]):
+                    with self.assertRaises(result_service.ReviewResultInputError) as caught:
+                        decoded = result_service.decode_review_results(encode(originals))
+                        result_service.normalize_review_results(decoded, review_tier=2)
+                    self.assertEqual(caught.exception.field, field)
+                    self.assertEqual(caught.exception.message, field + ": " + result_service._DIAGNOSTIC_REASONS[reason])
+                    self.assertNotIn("invalid-model-value", caught.exception.message)
+                    self.assertNotIn("bad identifier", caught.exception.message)
+
+    def test_ambiguous_structure_retains_general_error_without_unknown_keys(self):
+        unknown = document()
+        unknown["private-unknown-key"] = "private-unknown-value"
+        raw = encode(document())
+        for candidate in (b"{", raw.replace(b'"version":1', b'"version":1,"version":1'),
+                          encode(unknown), raw + b" " * 262145):
+            with self.assertRaises(review_service.ReviewEvidenceError) as caught:
+                result_service.decode_review_results(candidate)
+            self.assertNotIsInstance(caught.exception, result_service.ReviewResultInputError)
+            self.assertIsNone(caught.exception.field)
+            self.assertEqual(caught.exception.message, "review result input is invalid")
+
+    def test_approval_flag_error_does_not_point_to_a_result_reviewer(self):
+        with self.assertRaises(result_service.ReviewResultInputError) as caught:
+            result_service.normalize_review_results(document(), review_tier=2, user_approved_reviewers=[""])
+        self.assertEqual(caught.exception.field, "--user-approved-reviewer")
+
+    def test_ineligible_approval_keeps_valid_receipt_kind_and_existing_validation_order(self):
+        for tier, kind, verdict in ((2, " independent ", "pass"), (0, "not_required", "not_required")):
+            candidate = document(receipts=[receipt("reviewer-a", kind=kind, verdict=verdict)])
+            for originals in (candidate, [candidate]):
+                with self.subTest(tier=tier, array=isinstance(originals, list)):
+                    decoded = result_service.decode_review_results(encode(originals))
+                    self.assertEqual(result_service.normalize_review_results(decoded, review_tier=tier)
+                                     ["receipts"][0]["receipt_kind"], kind.strip())
+                    with self.assertRaises(result_service.ReviewResultInputError) as caught:
+                        result_service.normalize_review_results(decoded, review_tier=tier,
+                                                                user_approved_reviewers=[" reviewer-a "])
+                    self.assertEqual(caught.exception.field, "--user-approved-reviewer")
+                    self.assertIn("approval flags", caught.exception.message)
+            candidate["receipts"][0]["verdict"] = "invalid-verdict"
+            with self.assertRaises(result_service.ReviewResultInputError) as caught:
+                result_service.normalize_review_results(candidate, review_tier=tier,
+                                                        user_approved_reviewers=["reviewer-a"])
+            self.assertEqual(caught.exception.field, "receipts[].verdict")
+
+    def test_receipt_correlation_names_group_not_an_unproven_scalar_cause(self):
+        for tier, kind, verdict, summary in (
+            (0, "not_required", "not_required", ""),
+            (2, "independent", "not_required", "Assessment"),
+            (0, "self_review_fallback", "pass", "Assessment"),
+        ):
+            candidate = document(receipts=[receipt(kind=kind, verdict=verdict)])
+            candidate["receipts"][0]["summary"] = summary
+            for originals in (candidate, [candidate]):
+                with self.assertRaises(result_service.ReviewResultInputError) as caught:
+                    decoded = result_service.decode_review_results(encode(originals))
+                    result_service.normalize_review_results(decoded, review_tier=tier)
+                self.assertEqual(caught.exception.field, "receipts[]")
+                self.assertIn("relationship", caught.exception.message)
+
     def assert_invalid(self, payload):
         with self.assertRaises(review_service.ReviewEvidenceError) as raised:
             result_service.decode_review_results(payload)
@@ -882,6 +968,39 @@ class ReviewResultsTests(unittest.TestCase):
         result = self.invoke(candidate)
         self.assert_failure(result, "privacy_rejected")
         self.assertNotIn("private-result", result[1] + result[2])
+        self.assertEqual(file_snapshot(self.root), before)
+
+    def test_safe_diagnostic_reaches_json_and_text_without_writes(self):
+        candidate = self.payload(receipts=[receipt("first"), receipt("second")])
+        candidate["receipts"][1]["provenance"]["method_codes"] = ["diff_inspection"] * 2
+        before = file_snapshot(self.root)
+        result = self.invoke(candidate)
+        error = self.assert_failure(result, "invalid_review_evidence")["errors"][0]
+        self.assertEqual(error["field"], "receipts[].provenance.method_codes")
+        self.assertEqual(set(error), {"code", "message", "field"})
+        self.assertNotIn("second", error["message"])
+        code, stdout, stderr = self.invoke(candidate, json_output=False)
+        self.assertEqual((code, stdout), (1, ""))
+        self.assertEqual(stderr, error["message"] + "\n")
+        self.assertEqual(file_snapshot(self.root), before)
+
+    def test_ineligible_approval_diagnostic_reaches_cli_without_writes(self):
+        before = file_snapshot(self.root)
+        error = self.assert_failure(self.invoke(self.payload(), "--user-approved-reviewer", "reviewer-a"),
+                                    "invalid_review_evidence")["errors"][0]
+        self.assertEqual(error["field"], "--user-approved-reviewer")
+        self.assertEqual(file_snapshot(self.root), before)
+
+    def test_element_and_receipt_group_diagnostics_reach_cli_without_writes(self):
+        before = file_snapshot(self.root)
+        for key in ("review_profiles", "review_lenses", "method_codes"):
+            candidate = self.payload()
+            candidate["receipts"][0]["provenance"][key] = [None]
+            error = self.assert_failure(self.invoke(candidate), "invalid_review_evidence")["errors"][0]
+            self.assertEqual(error["field"], "receipts[].provenance." + key + "[]")
+        candidate = self.payload(receipts=[receipt(verdict="not_required")])
+        error = self.assert_failure(self.invoke(candidate), "invalid_review_evidence")["errors"][0]
+        self.assertEqual(error["field"], "receipts[]")
         self.assertEqual(file_snapshot(self.root), before)
 
     def test_read_only_and_parse_rejection_never_consume_stdin_or_open_writer(self):

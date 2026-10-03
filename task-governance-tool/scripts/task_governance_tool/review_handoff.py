@@ -19,6 +19,7 @@ from pathlib import Path
 from task_governance_tool.completion import safe_git_command, safe_git_environment
 from task_governance_tool.review_results import (
     REVIEW_RESULTS_INPUT_LIMIT, REVIEW_RESULTS_RECEIPT_LIMIT,
+    ReviewResultInputError,
     decode_review_results, normalize_review_results, review_result_template,
 )
 from task_governance_tool.reviews import (
@@ -420,6 +421,10 @@ def main(argv=None):
             command.append("--user-approved-reviewer=" + reviewer)
         # No shell pipe, timeout retry, reserialization, alternate writer or SQL.
         return subprocess.run(command, input=framed, check=False, shell=False).returncode
+    except ReviewResultInputError as exc:
+        _emit({"ok": False, "code": exc.code, "field": exc.field,
+               "message": exc.message + "; preserve originals and inspect the outcome before retry."})
+        return 1
     except (HandoffError, ReviewEvidenceError, TaskValidationError) as exc:
         code = exc.code
     except (OSError, ValueError, KeyError, TypeError, RecursionError, subprocess.SubprocessError):

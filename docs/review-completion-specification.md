@@ -215,6 +215,20 @@ validation, privacy checks inspect every typed declaration before enum,
 text-limit, duplicate-reviewer and provenance-matrix validation.
 Caller IDs, timestamps, assurance, approval and resolution fields are not accepted.
 
+Safely identified result-input failures additionally name a closed schema path
+in the existing error `field`, with that path and a fixed reason in `message`
+(also visible in text). For example, `receipts[].provenance.method_codes`
+identifies duplicate method declarations without exposing their values.
+`[]` means an unspecified element, not an input index: original-document and
+Receipt positions are not inferred after concatenation. Code-array element
+failures name that array's `[]` element, not its valid container. Correlation
+failures may name the Receipt or provenance group; approval-option failures name
+`--user-approved-reviewer`. No input value, unknown key, raw JSON or exception
+detail enters diagnostics. Malformed JSON, duplicate/unknown keys, invalid
+Unicode and input-size failures retain the general error. Validation order,
+privacy precedence, error codes and atomic rejection are unchanged. This adds
+neither an input field nor a normal-path operation or automatic correction.
+
 All documents must have identical version, Task ID, Contract revision and
 complete target values, without normalization or rebinding; mismatch fails
 `review_target_mismatch`. Closed-shape and privacy validation of every document
@@ -518,6 +532,12 @@ automatically retries. Preparation, Packet display and result-transport failures
 return `ok:false` with a sanitized code
 and fixed message, no rejected content or exception detail. An uncertain result
 never authorizes a duplicate registration.
+
+For the identified result-input failures above, save/submit also expose the
+same safe `field` and fixed reason, retaining the instruction to preserve
+originals and inspect uncertain outcomes. Result validation still precedes
+file creation or registration, and readback failure may still leave residue.
+Other helper failures keep their existing general diagnostics.
 
 <a id="conditional-reviewer-session-binding"></a>
 

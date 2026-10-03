@@ -72,6 +72,46 @@ _PROVENANCE_IDENTIFIERS = {
 }
 _PROVENANCE_ARRAYS = {"review_profiles", "review_lenses", "method_codes"}
 
+# Paths name schema fields, never an inferred position in concatenated originals.
+_DIAGNOSTIC_FIELDS = (
+    _INPUT_KEYS | {"--user-approved-reviewer", "receipts[]", "receipts[].findings[]"}
+    | {"review_target." + key for key in _TARGET_KEYS}
+    | {"receipts[]." + key for key in _RECEIPT_KEYS}
+    | {"receipts[].provenance." + key for key in _PROVENANCE_KEYS}
+    | {"receipts[].provenance." + key + "[]" for key in _PROVENANCE_ARRAYS}
+    | {"receipts[].findings[].severity", "receipts[].findings[].summary"}
+)
+_DIAGNOSTIC_REASONS = {
+    "missing": "required field is missing",
+    "object": "must be an object",
+    "string": "must be a string",
+    "integer": "must be an integer in the declared range",
+    "version": "must be integer 1",
+    "array": "must be an array",
+    "bound": "collection must satisfy its declared size bounds",
+    "choice": "must use an allowed value",
+    "identifier": "must use the declared ASCII identifier format",
+    "duplicate": "duplicate normalized entries are not allowed",
+    "value": "must satisfy the declared value and length constraints",
+    "receipt": "receipt kind, verdict, summary, approval and Task tier must satisfy their declared relationship",
+    "provenance": "must be null only for not_required, otherwise a complete object",
+    "matrix": "model/Skill states and identifiers must agree with reviewer_class",
+    "approval": "approval flags must uniquely match eligible fallback reviewers",
+}
+_VALIDATION_FIELDS = {
+    "task_id": "task_id", "reviewer_key": "receipts[].reviewer",
+    "receipt_kind": "receipts[].kind", "verdict": "receipts[].verdict",
+    "review_receipt_summary": "receipts[].summary",
+    "severity": "receipts[].findings[].severity",
+    "review_finding_summary": "receipts[].findings[].summary",
+    "user_approved": "--user-approved-reviewer",
+    **{"review_target_" + key: "review_target." + key for key in _TARGET_KEYS},
+}
+
+
+class ReviewResultInputError(ReviewEvidenceError):
+    """Result-only diagnostic made from closed field paths and fixed reasons."""
+
 
 def review_result_template(
     task_id: str, contract_revision: int, review_target: dict[str, Any],
@@ -156,7 +196,11 @@ def review_result_instructions(*, independent: bool = False) -> list[str]:
     ]
 
 
-def _invalid_input() -> ReviewEvidenceError:
+def _invalid_input(field: str | None = None, reason: str | None = None) -> ReviewEvidenceError:
+    if field in _DIAGNOSTIC_FIELDS and reason in _DIAGNOSTIC_REASONS:
+        return ReviewResultInputError(
+            "invalid_review_evidence", f"{field}: {_DIAGNOSTIC_REASONS[reason]}", field,
+        )
     return review_error("invalid_review_evidence", "review result input is invalid")
 
 
@@ -180,23 +224,29 @@ def _invalid_number(value: str) -> Any:
     raise _invalid_input()
 
 
-def _exact_object(value: Any, keys: set[str]) -> None:
-    if type(value) is not dict or set(value) != keys:
+def _exact_object(value: Any, keys: set[str], field: str = "") -> None:
+    if type(value) is not dict:
+        raise _invalid_input(field, "object")
+    if set(value) - keys:
+        # Unknown keys are caller content; do not expose or derive paths from them.
         raise _invalid_input()
+    if missing := keys - set(value):
+        key = sorted(missing)[0]
+        raise _invalid_input(f"{field}.{key}" if field else key, "missing")
 
 
-def _string(value: Any) -> None:
+def _string(value: Any, field: str | None = None) -> None:
     if type(value) is not str:
-        raise _invalid_input()
+        raise _invalid_input(field, "string")
     try:
         value.encode("utf-8")
     except UnicodeError as exc:
         raise _invalid_input() from exc
 
 
-def _integer(value: Any, minimum: int) -> None:
+def _integer(value: Any, minimum: int, field: str) -> None:
     if type(value) is not int or not minimum <= value <= SQLITE_INT64_MAX:
-        raise _invalid_input()
+        raise _invalid_input(field, "integer")
 
 
 def _validate_payload(payload: Any) -> None:
@@ -209,45 +259,47 @@ def _validate_payload(payload: Any) -> None:
         raise _invalid_input() from exc
     _exact_object(payload, _INPUT_KEYS)
     if type(payload["version"]) is not int or payload["version"] != 1:
-        raise _invalid_input()
-    _string(payload["task_id"])
-    _integer(payload["contract_revision"], 0)
+        raise _invalid_input("version", "version")
+    _string(payload["task_id"], "task_id")
+    _integer(payload["contract_revision"], 0, "contract_revision")
     target = payload["review_target"]
-    _exact_object(target, _TARGET_KEYS)
+    _exact_object(target, _TARGET_KEYS, "review_target")
     for key in ("kind", "value", "base_revision"):
-        _string(target[key])
-    _integer(target["generation"], 1)
+        _string(target[key], "review_target." + key)
+    _integer(target["generation"], 1, "review_target.generation")
     receipts = payload["receipts"]
-    if type(receipts) is not list or not 1 <= len(receipts) <= REVIEW_RESULTS_RECEIPT_LIMIT:
-        raise _invalid_input()
+    if type(receipts) is not list:
+        raise _invalid_input("receipts", "array")
+    if not 1 <= len(receipts) <= REVIEW_RESULTS_RECEIPT_LIMIT:
+        raise _invalid_input("receipts", "bound")
     finding_count = 0
     for receipt in receipts:
-        _exact_object(receipt, _RECEIPT_KEYS)
+        _exact_object(receipt, _RECEIPT_KEYS, "receipts[]")
         for key in ("reviewer", "kind", "verdict", "summary"):
-            _string(receipt[key])
+            _string(receipt[key], "receipts[]." + key)
         provenance = receipt["provenance"]
         if provenance is not None:
-            _exact_object(provenance, _PROVENANCE_KEYS)
+            _exact_object(provenance, _PROVENANCE_KEYS, "receipts[].provenance")
             for key, value in provenance.items():
                 if key in _PROVENANCE_IDENTIFIERS and value is None:
                     continue
                 if key in _PROVENANCE_ARRAYS:
                     if type(value) is not list:
-                        raise _invalid_input()
+                        raise _invalid_input("receipts[].provenance." + key, "array")
                     for item in value:
-                        _string(item)
+                        _string(item, "receipts[].provenance." + key + "[]")
                 else:
-                    _string(value)
+                    _string(value, "receipts[].provenance." + key)
         findings = receipt["findings"]
         if type(findings) is not list:
-            raise _invalid_input()
+            raise _invalid_input("receipts[].findings", "array")
         finding_count += len(findings)
         if finding_count > REVIEW_RESULTS_FINDING_LIMIT:
-            raise _invalid_input()
+            raise _invalid_input("receipts[].findings", "bound")
         for finding in findings:
-            _exact_object(finding, {"severity", "summary"})
-            _string(finding["severity"])
-            _string(finding["summary"])
+            _exact_object(finding, {"severity", "summary"}, "receipts[].findings[]")
+            _string(finding["severity"], "receipts[].findings[].severity")
+            _string(finding["summary"], "receipts[].findings[].summary")
 
     # Inspect the complete supplied declarations before enum, duplicate, text
     # capacity, or provenance-matrix checks; never echo rejected values.
@@ -330,14 +382,19 @@ def normalize_review_results(
     try:
         approved: set[str] = set()
         for reviewer in user_approved_reviewers:
-            _string(reviewer)
-            key = validate_text("reviewer_key", reviewer, required=True, limit=500)
+            _string(reviewer, "--user-approved-reviewer")
+            try:
+                key = validate_text("reviewer_key", reviewer, required=True, limit=500)
+            except TaskValidationError as exc:
+                if exc.code == "privacy_rejected":
+                    raise
+                raise _invalid_input("--user-approved-reviewer", "value") from exc
             if key in approved:
-                raise _invalid_input()
+                raise _invalid_input("--user-approved-reviewer", "duplicate")
             approved.add(key)
         target = dict(payload["review_target"])
         if target["kind"] not in REVIEW_TARGET_KINDS:
-            raise _invalid_input()
+            raise _invalid_input("review_target.kind", "choice")
         # Expected identity bytes are checked, not rewritten or Git-resolved.
         validate_text("review_target_value", target["value"], required=True, limit=500)
         validate_text("review_target_base_revision", target["base_revision"], limit=500)
@@ -347,19 +404,29 @@ def normalize_review_results(
         eligible_approvals: set[str] = set()
         for receipt in payload["receipts"]:
             reviewer = validate_text("reviewer_key", receipt["reviewer"], required=True, limit=500)
-            normalized = normalize_receipt(
-                review_tier=review_tier,
-                reviewer=reviewer,
-                kind=receipt["kind"],
-                verdict=receipt["verdict"],
-                summary=receipt["summary"],
-                user_approved=reviewer in approved,
-            )
+            try:
+                normalized = normalize_receipt(
+                    review_tier=review_tier,
+                    reviewer=reviewer,
+                    kind=receipt["kind"],
+                    verdict=receipt["verdict"],
+                    summary=receipt["summary"],
+                    user_approved=reviewer in approved,
+                )
+            except ReviewEvidenceError as exc:
+                # The existing validator combines approval and kind failures.
+                # Explain an ineligible flag only after that validator rejects;
+                # do not reorder validation or tell callers to change a valid kind.
+                if (exc.code == "invalid_review_evidence" and exc.field == "receipt_kind"
+                        and reviewer in approved
+                        and receipt["kind"].strip() in {"independent", "not_required"}):
+                    raise _invalid_input("--user-approved-reviewer", "approval") from exc
+                raise
             if reviewer in reviewer_keys:
-                raise review_error(
+                raise ReviewResultInputError(
                     "review_receipt_already_recorded",
-                    "this reviewer already recorded a receipt for the current target generation",
-                    "reviewer_key",
+                    "receipts[].reviewer: a normalized reviewer is repeated for the current target generation",
+                    "receipts[].reviewer",
                 )
             reviewer_keys.add(reviewer)
             if (
@@ -370,7 +437,7 @@ def normalize_review_results(
                 eligible_approvals.add(reviewer)
             provenance = receipt["provenance"]
             if (provenance is None) != (normalized["receipt_kind"] == "not_required"):
-                raise _invalid_input()
+                raise _invalid_input("receipts[].provenance", "provenance")
             normalized_provenance = normalize_review_provenance_input(
                 receipt_kind=normalized["receipt_kind"],
                 **(provenance or {}),
@@ -386,18 +453,34 @@ def normalize_review_results(
                     "review_finding_summary", finding["summary"], required=True, limit=1000,
                 )
                 if (severity, summary) in finding_keys:
-                    raise _invalid_input()
+                    raise _invalid_input("receipts[].findings", "duplicate")
                 finding_keys.add((severity, summary))
                 findings.append({"severity": severity, "summary": summary})
             receipts.append({**normalized, "provenance": normalized_provenance, "findings": findings})
         if approved != eligible_approvals:
-            raise _invalid_input()
+            raise _invalid_input("--user-approved-reviewer", "approval")
     except TaskValidationError as exc:
         if exc.code == "privacy_rejected":
             raise
-        raise _invalid_input() from exc
+        reason = "choice" if exc.code == "invalid_review_evidence" else "value"
+        raise _invalid_input(_VALIDATION_FIELDS.get(exc.field), reason) from exc
     except ReviewProvenanceError as exc:
-        raise _invalid_input() from exc
+        if exc.diagnostic is None:
+            raise _invalid_input() from exc
+        field, reason = exc.diagnostic
+        path = "receipts[].provenance" + ("." + field if field in _PROVENANCE_KEYS else "")
+        if field in _PROVENANCE_ARRAYS and reason in {"string", "choice"}:
+            path += "[]"
+        raise _invalid_input(path, reason) from exc
+    except ReviewEvidenceError as exc:
+        if isinstance(exc, ReviewResultInputError):
+            raise
+        if exc.code == "invalid_review_evidence":
+            # Legacy receipt_kind errors describe a multi-field relationship,
+            # unlike the scalar enum failure raised as TaskValidationError.
+            field = "receipts[]" if exc.field == "receipt_kind" else _VALIDATION_FIELDS.get(exc.field)
+            raise _invalid_input(field, "receipt") from exc
+        raise
     return {
         "task_id": task_id,
         "contract_revision": payload["contract_revision"],
@@ -429,7 +512,7 @@ def add_review_results(
     except TaskValidationError as exc:
         if exc.code == "privacy_rejected":
             raise
-        raise _invalid_input() from exc
+        raise _invalid_input("task_id", "value") from exc
     if expected_task_id != normalized_task_id:
         raise _basis_mismatch()
     observed, ownership = read_mutation_basis(connection, project.project_id, normalized_task_id)

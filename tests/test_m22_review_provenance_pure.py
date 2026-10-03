@@ -91,6 +91,14 @@ class ReviewProvenancePureTests(unittest.TestCase):
                 )
                 self.assertEqual(normalized, case.expected_normalized())
 
+    def test_result_diagnostic_does_not_change_legacy_error_fields(self):
+        with self.assertRaises(ReviewProvenanceError) as captured:
+            human_input(method_codes=["diff_inspection"] * 2)
+        error = captured.exception
+        self.assertEqual((error.code, error.message, error.field),
+                         ("invalid_review_evidence", INVALID_REVIEW_PROVENANCE_MESSAGE, "review_provenance"))
+        self.assertEqual(error.diagnostic, ("method_codes", "duplicate"))
+
     def test_cross_field_matrix_rejects_missing_and_extra_declarations(self):
         invalid_cases = (
             {

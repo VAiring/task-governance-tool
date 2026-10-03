@@ -1766,6 +1766,15 @@ Unicode and exceeded limits fail `invalid_review_evidence`. Existing privacy
 checks inspect every typed declaration before enum, text-limit, duplicate-reviewer
 or provenance-matrix checks and never echo rejected content.
 
+Known result-input failures may add `field`, such as
+`receipts[].provenance.model_state`, and a fixed reason in `message`.
+The same field/reason is visible in text and helper save/submit errors.
+`[]` does not identify a document or element number; inspect that known field
+in the originals. Missing/type/value/duplicate or declaration-correlation
+diagnostics never echo input values. Malformed JSON, duplicate/unknown keys and
+other unlocatable failures retain the general error. Correct the original at
+its source; this adds no normal-path call or automatic retry/correction.
+
 After closed-shape and privacy validation, all document identity/target values
 must match exactly; disagreements fail `review_target_mismatch`. Task ID,
 Contract revision and the complete target tuple must also match the current

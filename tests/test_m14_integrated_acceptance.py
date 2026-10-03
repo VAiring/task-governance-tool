@@ -388,9 +388,8 @@ class M14IntegratedAcceptanceTests(unittest.TestCase):
 
             setup_payload, _ = self.run_json(install, "setup")
             after = file_snapshot(install.project_root, exclude_state=True)
-            self.assertEqual(set(after) - set(before), {".codex/hooks.json"})
-            self.assertEqual(setup_payload["data"]["usage_hooks"]["status"], "current")
-            after.pop(".codex/hooks.json")
+            self.assertEqual(set(after) - set(before), set())
+            self.assertEqual(setup_payload["data"]["usage_hooks"]["status"], "not_requested")
             self.assertEqual(
                 after,
                 before,
@@ -546,11 +545,9 @@ class M14IntegratedAcceptanceTests(unittest.TestCase):
             self.assertEqual(setup["data"]["backup_interval_minutes"], 30)
             self.assertEqual(setup["data"]["backup_generations"], 3)
             after_setup = file_snapshot(install.project_root, exclude_state=True)
-            self.assertEqual(set(after_setup) - set(unchanged_target), {".codex/hooks.json"})
-            hook_digest = after_setup.pop(".codex/hooks.json")
+            self.assertEqual(set(after_setup) - set(unchanged_target), set())
             self.assertEqual(after_setup, unchanged_target)
-            unchanged_target[".codex/hooks.json"] = hook_digest
-            self.assertEqual(setup["data"]["usage_hooks"]["status"], "prepared")
+            self.assertEqual(setup["data"]["usage_hooks"]["status"], "not_requested")
 
             state_before_doctor = install.state_snapshot()
             doctor_after, _ = self.run_json(

@@ -64,8 +64,9 @@ network/API/analytics/telemetry/server/direct SQLite/watcher/launch/storage.
 
 ## Optional Visibility-Aware Reload
 
-Only physical `<skill>/config/viewer.json` controls reload. Taskgov never
-creates/edits/migrates it. Absence means decimal interval 0 and no browser
+Only physical `<skill>/config/viewer.json` controls reload. Explicit
+[Setup selection](setup-state-specification.md#optional-feature-selection)
+may create/toggle it; ordinary commands never edit it. Absence means decimal interval 0 and no browser
 timer. A present file is physical regular non-link/non-reparse strict UTF-8
 JSON at most 16,384 bytes with exactly:
 
@@ -73,6 +74,8 @@ JSON at most 16,384 bytes with exactly:
 {"schema_version":1,"profile":"visibility-refresh-v1","refresh_interval_seconds":30}
 ```
 
+An optional Boolean `enabled` defaults to true for legacy files. False resolves
+to interval zero while retaining the configured interval for later re-enabling.
 Interval is an integer (not Boolean/float) 5-3,600. Duplicate/unknown/missing
 keys, malformed/oversized/replaced/unsafe content is invalid with no raw
 diagnostic. One publication attempt reads it once for at most two renders.

@@ -7,7 +7,8 @@ Observed shared-work totals are not exclusive Task costs or final billing.
 ## Installation And Trust
 
 Use the existing explicit setup/upgrade procedure. It prepares core state,
-the numerical store, and the project's `.codex/hooks.json`, preserving unrelated
+the numerical store, and, for selected-ON or existing hooks, the project's
+`.codex/hooks.json`, preserving unrelated
 hooks and avoiding duplicate taskgov handlers on repeat setup. Read
 `data.usage_hooks`: `prepared`/`current` means configuration only, never enabled
 collection. For `next_action=review_and_trust_hooks`, ask the user to review and
@@ -46,6 +47,13 @@ need no new argument. Copied/linked packages and competing installs remain
 unsupported; do not create a second install to enable development collection.
 
 ## Coverage And Recovery
+
+Use explicit `setup --usage-collection on|off` for an approved change. OFF is
+remembered in the project package's local Setup choices and prevents subsequent
+collector calls before reading logs or writing usage, even with trusted hooks.
+It preserves stored history, definitions and host trust. ON prepares definitions
+but does not prove trust or delivery. With no saved choice, legacy configured
+hooks retain prior behavior; fresh setup does not create them without ON.
 
 SessionStart can register its own session. Committed owner acquisition, actual
 Receipt binding and successful bound original-review save register participants

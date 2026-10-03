@@ -100,7 +100,7 @@ layout admission. Invalid arguments are neutral no-ops. Review save retains
 its existing explicit-repo boundary. No core transaction is opened for writing.
 Setup and the normal Task command loop do not invoke the worker.
 
-`usage_hook_setup.py` owns only definition preparation after outer `run_setup`
+`usage_hook_setup.py` owns only definition preparation selected by `setup_features.py` after outer `run_setup`
 has produced its core and separate numerical outcomes. Private candidate setup,
 ordinary commands and doctor do not call it. It merges the four owned handlers
 into project `.codex/hooks.json`, using existing physical-file helpers and
@@ -587,6 +587,26 @@ local drift detector, not authentication. Doctor never downloads, repairs,
 updates, or compares upstream state.
 
 ### Setup Plan And Stages
+
+After core and numerical setup, `setup_features.py` applies only the four
+explicit optional choices and projects saved intent separately from current
+configuration. `setup_feature_config.py` owns the closed local choice file and
+bounded physical compare-before-replace publication for choices/profiles;
+invalid originals are preserved. No SQLite transaction spans these writes.
+Runner reuses its existing codec and local-only publisher; no execution layer
+is imported. Effort and Viewer reuse their feature readers for validity.
+Viewer toggle publication reuses `publish_setup_viewer` against the existing
+resolved target. No second setup, migration, Runner or collection is launched.
+
+Feature config application and saved-choice publication are separate. A later
+failure rereads observable state and returns an unavailable feature, not a
+rollback or success claim. Unrelated features can finish. Saved usage OFF is
+checked by `usage_lifecycle` before any log read or numerical write; an invalid
+choice file also prevents collection. Missing choices preserve legacy hook
+invocation, while fresh Setup does not create definitions without ON. Valid
+existing definitions/configs resolve the offer without an automatic choice
+write. Host trust stays unknown. The closed I/O and permissions belong to
+[optional feature selection](setup-state-specification.md#optional-feature-selection).
 
 Read-only setup returns a deterministic plan for restore, initialization,
 migration backup, migration, maintenance configuration, Evidence publication, and Viewer publication

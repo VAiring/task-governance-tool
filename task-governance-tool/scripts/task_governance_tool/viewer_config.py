@@ -192,7 +192,9 @@ def load_viewer_refresh_interval(skill_root: Path | None = None) -> int:
     ):
         raise ViewerConfigError() from None
 
-    if not isinstance(payload, dict) or set(payload) != _EXPECTED_KEYS:
+    if (not isinstance(payload, dict)
+            or set(payload) not in (_EXPECTED_KEYS, _EXPECTED_KEYS | {"enabled"})
+            or type(payload.get("enabled", True)) is not bool):
         raise ViewerConfigError()
     schema_version = payload["schema_version"]
     interval = payload["refresh_interval_seconds"]
@@ -208,4 +210,4 @@ def load_viewer_refresh_interval(skill_root: Path | None = None) -> int:
         <= VIEWER_REFRESH_MAX_SECONDS
     ):
         raise ViewerConfigError()
-    return interval
+    return interval if payload.get("enabled", True) else VIEWER_REFRESH_DISABLED_SECONDS

@@ -63,6 +63,9 @@ class ViewerConfigTests(unittest.TestCase):
 
     def test_strict_json_shape_and_values_are_rejected(self):
         invalid_documents = {
+            "null_enabled": json.dumps({**valid_payload(), "enabled": None}),
+            "int_enabled": json.dumps({**valid_payload(), "enabled": 0}),
+            "string_enabled": json.dumps({**valid_payload(), "enabled": "off"}),
             "non_object": "[]",
             "malformed": "{",
             "duplicate": (

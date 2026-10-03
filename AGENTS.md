@@ -309,7 +309,8 @@ The product must not become:
   source of truth, and must remain out of source commits and release artifacts.
 - The optional `config/viewer.json` presentation policy is separate from
   SQLite backup policy and generated `.taskgov/`. Its absence is a valid
-  disabled state; taskgov never creates it as a setup side effect.
+  disabled state; only explicit optional-feature Setup selection may create or
+  toggle it under the current Setup/state contract.
 - The SQLite database is a helper state store, not the source of truth for a
   target project's decisions.
 - Store references to governing files, command names, hashes, timestamps,
@@ -334,7 +335,7 @@ The product must not become:
 ## Target Project Safety
 
 - Inspect target projects read-only by default.
-- Taskgov-managed Runner Plan publication is authorized only by an explicit
+- Taskgov-managed Task-entry Runner Plan publication is authorized only by an explicit
   `task edit --runner-plan-action` invocation and is bounded to the one
   canonical ignored physical
   `config/verification-runner.json` (and its canonical `config` directory when
@@ -344,6 +345,10 @@ The product must not become:
   separately and concretely user-approved direct local edit is not
   taskgov-managed publication and remains governed by the general target-project
   mutation rules below.
+  Separately, explicit Setup optional-feature selection may toggle global
+  Runner trust or create an empty Plan under the Setup/state owner. It may also
+  save/apply the other approved optional choices. Ordinary Task work never
+  authorizes these configuration writes, host trust, or feature execution.
 - Do not modify a target project simply because task-governance-tool inspected
   it.
 - A changed project path is not evidence of move, copy, or fork intent.

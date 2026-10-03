@@ -298,6 +298,9 @@ The implementation keeps these narrow ownership boundaries:
   transition.
 - `setup.py` orchestrates explicit initialization, migration, recovery,
   relocation, maintenance opt-in, and direct Viewer repair.
+- `setup_features.py` owns the separate Setup-only optional selections;
+  `setup_feature_config.py` owns their bounded choice file and physical profile
+  writes. Feature readers and Runner's existing publisher retain ownership.
 - `doctor.py` combines read-only package, scope, and project observations.
 - `self_status.py` is the bounded package-integrity inspector used internally
   by doctor; there is no public `self` command.
@@ -430,7 +433,8 @@ be a Git repository; runtime never silently re-roots it to a Git worktree.
 Invocation while the current directory is either supported package root
 requires explicit `--repo`, preventing the package from becoming the governed
 project accidentally. Setup alone accepts the bounded backup interval,
-retention, and relocation-confirmation options; normal Skill routing supplies
+retention, relocation-confirmation, and explicit optional-feature choices;
+normal Skill routing supplies
 backup defaults and passes a token only after the explicit preview/approval
 flow.
 

@@ -20,6 +20,12 @@ dispatch. Plan authoring adds no schema change, setup generation or alternate
 Runner, Evidence, Viewer or completion path. Task-associated actions also obey
 the current [session ownership contract](task-operation-specification.md#session-ownership-and-recovery).
 
+The separate explicit [Setup feature selection](setup-state-specification.md#optional-feature-selection)
+may toggle only project `trusted_local` or create an empty Plan, preserving all
+existing entries. It is not a Task-entry authoring action, bypasses no source
+validation, and never dispatches Runner. The actions below keep their existing
+Task-specific ownership and basis rules.
+
 ### Closed Draft And Actions
 
 Authoring reuses the one existing ignored physical file

@@ -19,6 +19,7 @@ from task_governance_tool.usage_attribution_repository import registered_partici
 from task_governance_tool.usage_evidence_service import repository_for, refresh_usage
 from task_governance_tool.usage_sources import source_hint, source_roots, locate_sources
 from task_governance_tool.usage_values import UsageError
+from task_governance_tool.setup_feature_config import collection_allowed
 
 
 EVENTS = frozenset({"SessionStart", "Stop", "SubagentStop", "SessionEnd"})
@@ -56,6 +57,8 @@ def collect_event(payload, *, skill_root, repo, environment, repo_explicit=False
     """Internal report is for tests/diagnosis; never sent as model hook context."""
     unavailable = {"status": "unknown", "collected_sources": 0, "diagnostics": ["usage_unavailable"]}
     try:
+        if not collection_allowed(skill_root):
+            return unavailable
         if (not isinstance(payload, dict) or payload.get("hook_event_name") not in EVENTS
                 or not isinstance(payload.get("cwd"), str) or not Path(payload["cwd"]).is_absolute()
                 or os.path.normcase(os.path.abspath(payload["cwd"])) != os.path.normcase(os.path.abspath(repo))

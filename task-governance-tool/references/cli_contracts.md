@@ -245,7 +245,8 @@ unexpired `data.relocation.confirmation_token` from the preview; its expiry is
 `data.relocation.expires_at`. It never infers move/copy/fork semantics or auto-confirms.
 Expired or stale context requires a fresh preview and fresh user approval.
 
-`data` always has exactly:
+`data` always has exactly the fields below plus `optional_features`, described
+after the example:
 
 ```json
 {
@@ -275,11 +276,11 @@ Expired or stale context requires a fresh preview and fresh user approval.
     "error": null
   },
   "usage_hooks": {
-    "status": "prepared",
-    "planned_writes": ["usage_hooks_prepare"],
-    "completed_writes": ["usage_hooks_prepare"],
+    "status": "not_requested",
+    "planned_writes": [],
+    "completed_writes": [],
     "trust": "unknown",
-    "next_action": "review_and_trust_hooks",
+    "next_action": null,
     "error": null
   },
   "relocation": {
@@ -292,6 +293,32 @@ Expired or stale context requires a fresh preview and fresh user approval.
   }
 }
 ```
+
+Setup additionally accepts `--usage-collection on|off`,
+`--verification-runner on|off`, `--effort-advisory on|off`, and
+`--viewer-reload on|off`, only for explicit user selections. Omission keeps
+prior configuration/choices; OFF is remembered across later setup. New Viewer
+reload uses 30 seconds and retains any existing interval. Runner ON with an
+empty Plan does not run verification; Task entries are authored separately.
+Effort preserves existing thresholds and creates none when enabling a new
+profile. Usage OFF stops subsequent collection without erasing history or
+changing host trust. Fresh setup creates no hooks until ON; legacy definitions
+remain supported. Preview writes nothing and same-choice replay is idempotent.
+
+`optional_features` has `features` (four entries named `usage_collection`,
+`verification_runner`, `effort_advisory`, `viewer_reload`), `offer` (unresolved
+names), and `viewer_default_interval_seconds=30`. Each feature has `requested`
+(Boolean/null), `selection=on|off|undecided|unknown`,
+`selection_source=saved|existing|none|unknown`, `effective=on|off|unknown`,
+`status=not_attempted|observed|preview|applied|unchanged|unavailable`, and
+`error` (null, `feature_choices_unavailable`, `feature_configuration_unavailable`).
+Selection is saved intent, not effective success; direct config edits may
+differ. Preview shows the current effective setting, not proposed ON/OFF.
+Partial failure preserves core `ok` and unrelated choices. Report unavailable
+features honestly; do not rerun completed Task/core operations. User answers
+authorize those feature writes without a second approval; no normal-loop call
+or completion requirement is added. Host trust and actual collection remain
+unknown even when usage configuration is ON.
 
 Successful `status` is `setup_preview`, `relocation_preview`,
 `setup_complete`, or `already_setup`. Write-list values are limited to
@@ -326,7 +353,8 @@ session registration step or automatic collection.
 
 `usage_hooks` separately reports project `.codex/hooks.json` preparation:
 `not_attempted` after core/usage failure, `preparation_required` in preview,
-`prepared` after a write, `current` for unchanged definitions, or `unavailable`.
+`prepared` after a write, `current` for unchanged definitions, `not_requested`
+for an unselected absent definition, `disabled` for saved/requested OFF, or `unavailable`.
 Its only write label is `usage_hooks_prepare`; preview completes none. `trust`
 is always `unknown`. `next_action` is `review_and_trust_hooks` for prepared,
 current or planned definitions, `review_hook_configuration` for unavailable,
@@ -352,10 +380,14 @@ than repeating an assumed failed stage; it does not guarantee automatic repair
 of unsealed preparation. Repeated failure does not authorize deletion or an
 unbounded retry loop; follow the existing reconciliation guidance.
 
-Setup is noninteractive and idempotent. Apart from its bounded project hook
-definition it does not create configuration files, disable continuity after opt-in, contact a network, mutate
-Git, or modify target source. For a Git-candidate target, only its single
-bounded effective-ignore preflight may inspect Git.
+Setup is noninteractive and idempotent. Configuration writes are limited to
+the bounded project hook definitions and the explicitly selected optional
+features and choice record described above. It cannot disable continuity after
+opt-in, contact a network, mutate Git, change host trust, or modify target
+source. Its core Git-candidate check is one bounded effective-ignore preflight;
+the optional Runner configuration path additionally retains the existing
+read-only index/ignore checks. Neither path launches verification or adds a
+normal Task-loop operation.
 
 <a id="doctor"></a>
 
@@ -2049,9 +2081,10 @@ failure confined to its later Viewer stage is `setup_incomplete` and reports
 the durable completed prefix.
 
 The optional physical `config/viewer.json` is browser-presentation policy, not
-a CLI or normal-loop choice. Taskgov never creates it; absence means no refresh
+a normal-loop choice. Only explicit Setup feature selection may create/toggle
+it; absence or `enabled=false` means no refresh
 timer. A valid schema-1 `visibility-refresh-v1` profile applies its 5-3,600 second
-interval on the next Viewer publication. Invalid policy preserves routine Task
+interval on the next Viewer publication (`enabled` defaults to true). Invalid policy preserves routine Task
 success and the last-good Viewer with `viewer_refresh_failed`; actual setup uses
 `setup_incomplete`. Preview remains successful and no-write, reporting
 `viewer_status="repair_required"` and planned `viewer_publish`. Doctor does not

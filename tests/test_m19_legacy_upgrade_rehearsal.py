@@ -43,6 +43,9 @@ SUPPORTED_LOCAL_CONFIG_CONTENTS = {
         b'{\r\n  "schema_version": 1, "profile": "informational-v1", '
         b'"enabled": false, "thresholds": {}\r\n}\r\n'
     ),
+    Path("config/setup-features.json"): (
+        b'{ "schema_version": 1, "choices": {"usage_collection": false} }\r\n'
+    ),
 }
 LEGACY_SETUP_WRITES = [
     "state_layout_retire",
@@ -565,6 +568,9 @@ class LegacyUpgradeAndRollbackRehearsalTests(unittest.TestCase):
             self.assertEqual(upgraded["data"]["planned_writes"], LEGACY_SETUP_WRITES)
             self.assertEqual(upgraded["data"]["completed_writes"], LEGACY_SETUP_WRITES)
             self.assertEqual(upgraded["data"]["evidence_status"], "published")
+            usage_choice = upgraded["data"]["optional_features"]["features"]["usage_collection"]
+            self.assertEqual((usage_choice["selection"], usage_choice["effective"]), ("off", "off"))
+            self.assertNotIn("usage_collection", upgraded["data"]["optional_features"]["offer"])
             self.assertEqual(
                 supported_local_config_snapshot(legacy_skill),
                 supported_config_snapshot,

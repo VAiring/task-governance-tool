@@ -87,8 +87,8 @@ The only presentation policy is optional:
 <physical-skill>/config/viewer.json
 ```
 
-Absence is valid and disables reload with interval 0. Taskgov never creates or
-edits it. A present regular physical UTF-8 file is capped at 16,384 bytes and
+Absence is valid and disables reload with interval 0. Only the separate explicit
+Setup selector may create/toggle it. A present regular physical UTF-8 file is capped at 16,384 bytes and
 must contain exactly:
 
 ```json
@@ -99,7 +99,8 @@ must contain exactly:
 }
 ```
 
-The interval is a JSON integer 5-3,600; booleans, floats,
+The optional Boolean `enabled` defaults to true and false returns interval zero
+without discarding the retained interval. The interval is a JSON integer 5-3,600; booleans, floats,
 duplicate/unknown/missing keys, malformed/trailing JSON, links/reparse paths,
 devices, directories, replacement races, or uninspectable metadata fail
 closed with one sanitized error. The loader uses no-follow where available and

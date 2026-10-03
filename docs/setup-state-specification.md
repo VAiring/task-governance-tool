@@ -629,7 +629,8 @@ retention applies only after the next successful backup publication.
 Setup output data is exactly `status`, `planned_writes`, `completed_writes`,
 `schema_from`, `schema_to`, `maintenance_enabled`,
 `backup_interval_minutes`, `backup_generations`, `evidence_status`,
-`viewer_status`, `relocation`, `usage`, and `usage_hooks`. `schema_to` is always 25. `schema_from` is safely observed source
+`viewer_status`, `relocation`, `usage`, `usage_hooks`, and `optional_features`.
+`schema_to` is always 25. `schema_from` is safely observed source
 schema, selected recovery schema, or null. Policy values are effective
 requested/stored values, not persistence claims. `maintenance_enabled`,
 Evidence status, and Viewer status describe durable post-command state.
@@ -647,13 +648,15 @@ roll back valid core state or require re-running a completed migration.
 An explicit later setup can initialize a still-absent numerical store; corrupt,
 foreign or incompatible files are preserved, never overwritten or rebound.
 After successful core and numerical preparation, explicit setup prepares the
-project-local hook definition described below. It never trusts or invokes hooks.
+project-local hook definition when collection is selected ON or a legacy
+definition already exists. It never trusts or invokes hooks.
 
 `usage_hooks` independently contains exactly `status`, `planned_writes`,
 `completed_writes`, `trust`, `next_action`, and `error`. Status is
 `not_attempted` after a core or numerical failure, `preparation_required` when
 preview finds changes, `prepared` after publication, `current` for an unchanged
-definition, or `unavailable` for a configuration/read/publication failure.
+definition, `not_requested` for an unselected absent definition, `disabled`
+for an explicit saved/requested OFF, or `unavailable` for a configuration/read/publication failure.
 The only write stage is `usage_hooks_prepare`; preview completes no writes.
 Fresh/relocation preview may plan definitions without assuming the future
 numerical binding. `trust` is always `unknown`: prepared is not collection enabled.
@@ -706,10 +709,78 @@ zero-wait artifact lock through backup publication/reconciliation and the
 corresponding migration commit, but never a SQLite writer while copying.
 Preview creates neither lock nor artifact.
 
+### Optional Feature Selection
+
+After core setup, the noninteractive CLI accepts any subset of
+`--usage-collection on|off`, `--verification-runner on|off`,
+`--effort-advisory on|off`, and `--viewer-reload on|off`. These explicit choices
+authorize only their configuration and choice-record writes below. Omission
+preserves existing choices/configuration; it is not OFF and never enables an
+absent feature. Setup without choices offers unresolved items together. The
+LLM uses the user's answer once; deferral or missing answers do not block core
+setup or ordinary Tasks, and no normal-loop question or call is added.
+
+The physical package's `config/setup-features.json` is strict UTF-8 JSON,
+at most 16,384 bytes, with exactly `schema_version=1` and `choices`, an object
+whose only optional keys are `usage_collection`, `verification_runner`,
+`effort_advisory`, `viewer_reload`, each a Boolean. Missing keys are undecided.
+Both ON and OFF persist; valid existing feature configs also count as resolved
+without copying or rewriting them merely to remember a choice. This local
+file is not core DB state, host trust, or Task authority; preserve it with the
+other supported settings under the [installation contract](release-install.md#supported-installation).
+Exclude package `config/` from source/release artifacts.
+
+`optional_features` contains exactly `features`, `offer`, and
+`viewer_default_interval_seconds=30`. `features` has those four fixed names.
+Each row contains exactly `requested` (Boolean or null), `selection`
+(`on|off|undecided|unknown`), `selection_source` (`saved|existing|none|unknown`),
+`effective` (`on|off|unknown`), `status`
+(`not_attempted|observed|preview|applied|unchanged|unavailable`), and `error`
+(null, `feature_choices_unavailable`, or `feature_configuration_unavailable`).
+`offer` lists undecided, safely inspected items without a supplied choice,
+in the feature order above. Invalid/uninspectable settings are unknown and
+need inspection, not an inferred ON/OFF answer. A saved choice is intent:
+direct user configuration changes can make `selection` differ from `effective`.
+Text output reports the same choice, effective configuration, outcome, and offer.
+
+The application boundary is per feature, not a multi-file transaction. A
+failure may leave an applied config without a saved choice or a saved choice
+with unavailable prerequisites. Return `unavailable` with the safely readable
+selection/effective values; never claim total success or retry completed core
+stages. Other selected features may proceed. Core `ok`, write lists and schema
+result are unchanged by optional failures. Preview writes nothing, reports
+requested intent separately from observed effective configuration, and records
+no new choice. Same-choice replay preserves bytes when no repair is necessary.
+
+- Usage ON saves the local collector switch and prepares definitions; host
+  trust and actual delivery remain unobserved. OFF prevents subsequent
+  collector invocations before source reads/numerical writes, even if hooks
+  remain trusted. Keep all existing numerical history and unrelated hooks;
+  do not change host trust or stop in-flight processes. Legacy hooks without
+  the new switch retain prior behavior. Fresh setup creates no hooks until ON.
+- Runner changes only `trusted_local`, preserving Plan version/ID and all
+  entries/limits. ON with no Plan creates a v1 `taskgov-local-plan` with empty
+  entries using the existing local-only publisher. Existing Git ignore/index
+  and physical-source requirements still apply; failure is non-gating here.
+  OFF with no Plan writes only the choice. No Task or verification is invented;
+  a missing Task entry remains manual verification, while malformed/stale/
+  ambiguous Plans retain existing rejection. Only the existing target-setting
+  boundary launches Runner. Task entry authoring remains separate.
+- Effort toggles `enabled` in the existing profile, preserving thresholds.
+  Newly enabled profiles have an empty threshold map; no thresholds are
+  invented and there is no new gate or required tuning.
+- Viewer toggles optional Boolean `enabled` in its existing profile, retaining
+  the interval (new ON uses the offered 30 seconds). An omitted `enabled` is
+  legacy ON. OFF resolves to interval zero, not interval deletion. Changed
+  selection republishes the canonical Viewer through its existing Setup
+  publisher; a publication failure remains an unavailable optional outcome.
+  Already open pages adopt the published setting on their next reload; no
+  browser launch or external control is implied.
+
 ### Optional Lifecycle Usage Collection
 
 The bundled `scripts/usage_hook.py` is a neutral host adapter, not a public
-Task command or a Skill trigger. Explicit setup prepares only the governed
+Task command or a Skill trigger. Selected-ON or existing-hook setup prepares only the governed
 project's physical `.codex/hooks.json` (creating `.codex` if absent); the user's
 separate Codex review/trust action enables invocation. Setup preserves unrelated
 hooks, group options, events and top-level metadata, adding or updating only its

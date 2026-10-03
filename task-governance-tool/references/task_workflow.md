@@ -54,7 +54,19 @@ it does not ask the LLM for a path or generation or silently replace invalid
 recovery material with empty state. See [setup results and failure handling](cli_contracts.md#setup)
 when previewing or interpreting setup.
 
-Setup also prepares project-local usage hooks. If `data.usage_hooks.next_action`
+After core success, use `data.optional_features.offer` to ask only the unresolved
+ON/OFF choices together (or accept deferral). Preserve existing choices; reuse
+answers already given. Explain that new Viewer reload uses 30 seconds, Runner
+ON still needs a separate Task Plan, and usage collection requires user-operated
+hook trust. Apply only explicit answers with the corresponding
+[Setup options](cli_contracts.md#setup), using that same answer as authorization;
+no second confirmation is required. Report per-feature selection, effective
+configuration and outcome, not just core `ok`. Unavailable settings need
+inspection, never a success claim or automatic retry of the entire workflow.
+Missing/deferred choices and optional failures do not block normal Task work.
+Do not repeat this offer during the normal loop.
+
+Selected-ON or existing usage hooks are prepared separately. If `data.usage_hooks.next_action`
 is `review_and_trust_hooks`, tell the user to review/trust the project's
 definitions in Codex; prepared is not enabled or observed collection. For
 `review_hook_configuration`, explain that preparation needs inspection, not

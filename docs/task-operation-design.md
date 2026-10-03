@@ -434,8 +434,9 @@ add a normal Task-loop call until a real adapter is approved.
 `informational-v1`, explicit enabled, and thresholds for five fixed metrics.
 Missing or valid disabled configuration is off; invalid present configuration
 is disabled with a bounded continuation diagnostic. There is no generic
-configuration store, inheritance, environment override, writer, or configured
-command runner.
+configuration store, inheritance, environment override, or configured command
+runner. The separate Setup-only selector may create/toggle this profile,
+preserving existing thresholds; `effort.py` remains read-only.
 
 Thresholds are nonnegative JSON integers for only changed files, changed
 lines, changed modules, Contract revisions, and handoffs, and exceed only when

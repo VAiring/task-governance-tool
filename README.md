@@ -45,7 +45,8 @@ each governed project at exactly:
 Only this project-scoped physical layout is supported for ordinary use. Show
 the exact destination and obtain approval before installing or replacing it.
 An approved package update preserves `config/verification-runner.json`,
-`config/viewer.json`, and `config/effort-advisory.json` byte-for-byte. Release
+`config/viewer.json`, `config/effort-advisory.json`, and
+`config/setup-features.json` byte-for-byte. Release
 artifacts exclude all `config/` content, and package creation never initializes
 project state.
 
@@ -86,8 +87,19 @@ unambiguous same-binding legacy backup-only
 source: recovery occurs in the private fixed-layout stage and never recreates
 the old legacy primary. A moved legacy backup-only source is not a relocation
 candidate and fails no-write as `project_state_unreadable`. It does not add a
-recovery command or accept a recovery path. Setup never creates or edits the
-Runner Plan.
+recovery command or accept a recovery path. After core setup, it offers four
+[optional feature choices](docs/setup-state-specification.md#optional-feature-selection).
+For example, after the user selects these values:
+
+```powershell
+python .agents/skills/task-governance-tool/scripts/taskgov.py setup --usage-collection on --verification-runner on --effort-advisory off --viewer-reload on --json
+```
+
+Omitted choices remain unchanged/undecided; explicit OFF is remembered. New
+Viewer reload uses 30 seconds; existing intervals/thresholds/Runner entries
+are retained. Runner ON with no Task Plan still uses manual verification.
+Check each `optional_features` outcome, not just core `ok`. Host hook trust
+remains a separate user operation, and no normal Task-loop step is added.
 
 After activation, recovery uses only new-root managed backups, never the old
 package-local source or retained copy.
@@ -155,8 +167,9 @@ read/save and submission without an extra participation step. Explicit setup
 upgrades the separate numerical store to schema 3 for inclusive-turn attribution
 and immutable usage publication. Optional [project-local usage hooks](task-governance-tool/references/usage_hooks.md)
 collect registered participants after user review/trust in Codex. Explicit setup
-prepares their project-local definitions but never performs trust or claims
-collection is enabled. Late records remain pending until a later project event,
+prepares selected-ON or existing definitions but never performs trust or claims
+collection was observed. Collection OFF prevents subsequent invocations while
+retaining recorded history. Late records remain pending until a later project event,
 and unavailable usage never blocks Task completion.
 
 The Analyzer runtime is retired. Independent Evidence reading/validation

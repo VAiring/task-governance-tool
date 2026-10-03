@@ -59,6 +59,7 @@ FIXTURE_LINK_TARGETS = (
     "task-governance-tool/SKILL.md",
     "task-governance-tool/references/cli_contracts.md",
     "task-governance-tool/references/task_workflow.md",
+    "task-governance-tool/references/usage_hooks.md",
     "task-governance-tool/scripts/task_governance_tool/tasks.py",
     "task-governance-tool/scripts/task_governance_tool/verification_runner_service.py",
     "tests/evidence_reader_oracle.py",

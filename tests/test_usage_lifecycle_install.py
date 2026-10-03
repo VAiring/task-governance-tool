@@ -57,6 +57,8 @@ class UsageLifecycleInstallTests(unittest.TestCase):
         self.assertEqual(file_snapshot(self.root / ".taskgov"), before)
 
     def test_setup_generated_command_collects_fixture_without_core_writes(self):
+        selected = self.cli("setup", "--usage-collection", "on")
+        self.assertEqual(selected["data"]["usage_hooks"]["status"], "prepared")
         self.log({})
         document = json.loads((self.root / ".codex/hooks.json").read_bytes())
         handler = document["hooks"]["SessionStart"][0]["hooks"][0]

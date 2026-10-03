@@ -26,7 +26,8 @@ class UsageHookSetupTests(unittest.TestCase):
     def run_setup(self, read_only=False):
         return setup.run_setup(repo=str(self.install.project_root), repo_explicit=True,
                                script_path=self.install.entrypoint, read_only=read_only,
-                               backup_interval_minutes=None, backup_generations=None)
+                               backup_interval_minutes=None, backup_generations=None,
+                               feature_selections={"usage_collection": True})
 
     def write_config(self, document):
         self.path.parent.mkdir(exist_ok=True)
@@ -245,7 +246,7 @@ class UsageHookSetupTests(unittest.TestCase):
 
     def test_public_setup_self_host_and_ordinary_reads(self):
         install = make_source_self_host(Path(self.tmp.name) / "self-host")
-        result = install.run("setup", "--repo", str(install.project_root), "--json")
+        result = install.run("setup", "--repo", str(install.project_root), "--usage-collection", "on", "--json")
         payload = json.loads(result.stdout)
         self.assertTrue(payload["ok"], payload)
         self.assertEqual(payload["data"]["usage_hooks"]["status"], "prepared")

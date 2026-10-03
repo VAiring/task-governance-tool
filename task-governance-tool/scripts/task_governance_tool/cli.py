@@ -464,6 +464,9 @@ def handle_setup(context: CommandContext) -> CommandResult:
             "confirm_relocation",
             None,
         ),
+        feature_selections={name: value == "on" for name in (
+            "usage_collection", "verification_runner", "effort_advisory", "viewer_reload")
+            if (value := getattr(context.args, name, None)) is not None},
     )
     return CommandResult(
         ok=service_result.ok,

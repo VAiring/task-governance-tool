@@ -407,6 +407,7 @@ class ReleaseContractCheckerTests(unittest.TestCase):
             "task-governance-tool/config/verification-runner.json",
             "task-governance-tool/config/viewer.json",
             "task-governance-tool/config/effort-advisory.json",
+            "task-governance-tool/config/setup-features.json",
             "task-governance-tool/config/unrecognized-local.json",
             ".agents/skills/example/state/taskgov.sqlite-wal",
             "output/task-viewer.html",

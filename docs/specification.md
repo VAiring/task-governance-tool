@@ -80,6 +80,10 @@ business mutations may perform the opted-in bounded same-process maintenance
 defined below. One explicit `task edit --runner-plan-action` invocation may
 also create or replace only the canonical ignored package-local Runner Plan
 under the current authoring contract.
+Explicit [Setup optional-feature choices](setup-state-specification.md#optional-feature-selection)
+may also save/apply only the closed project-local choices and feature configs,
+including global Runner trust with no Task entry authoring or launch. Ordinary
+Task operations do not authorize those writes or host trust changes.
 The explicit [review handoff helper](review-completion-specification.md#caller-owned-review-handoff)
 may additionally create the caller's named unused ignored Packet directory
 and complete Packet, and named unused result JSON; it checks Git ignore
@@ -161,7 +165,8 @@ state, export, and output paths do not exist in taskgov; the separate caller-own
 review transport helper accepts only its explicitly bounded JSON paths. Path injection is an
 internal test/service seam only.
 
-The physical package and its three supported local `config/` files stay in
+The physical package and its supported local `config/` files listed in the
+[installation contract](release-install.md#supported-installation) stay in
 place. Package-local `state/` is retained only as migration source/retirement
 material, never a second active state or automatic fallback. Keep its existing
 ignore rule during migration and upgrades. Explicit offline

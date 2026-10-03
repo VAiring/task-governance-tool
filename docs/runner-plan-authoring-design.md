@@ -14,8 +14,9 @@ existing owners.
 This is the current implementation design for bounded Runner Plan authoring.
 Plan authoring adds no CLI leaf and exposes the one explicit action option on
 `task edit`; reading this section alone authorizes no config write, Task edit,
-process launch, target mutation, or external operation. Setup never creates the
-config, and the existing `review target set` parent service remains the sole
+process launch, target mutation, or external operation. The separate explicit
+Setup selector can toggle global trust/create an empty Plan through the same
+codec/publisher; the existing `review target set` parent service remains the sole
 Runner dispatch. Authoring adds no schema or alternate Runner, Evidence, Viewer
 or completion graph; current Task ownership admission also applies.
 
@@ -45,6 +46,8 @@ verification_runner_plan_publisher -> state_paths
 verification_runner_plan_authoring -> verification_runner_plan
 verification_runner_plan_authoring -> verification_runner (supported Plan version values only)
 verification_runner_plan_authoring -> task_values (common privacy guard only)
+setup_features -> verification_runner_plan (validated values and codec only)
+setup_features -> verification_runner_plan_publisher
 ```
 
 These edges do not alter the existing Runner-layer registry or add a reverse

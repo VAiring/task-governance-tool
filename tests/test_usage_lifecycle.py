@@ -63,6 +63,20 @@ class UsageLifecycleTests(unittest.TestCase):
         self.assertEqual(self.repo.summary()["models"][0]["response_count"], 1)
         self.assertEqual(self.repo.registered_sources()[0], {THREAD})
 
+    def test_saved_off_prevents_later_collection_and_preserves_accumulated_history(self):
+        self.collect()
+        before = self.repo.summary()
+        self.assertEqual(before["models"][0]["total_tokens"], 120)
+        settings = self.project / "config"
+        settings.mkdir()
+        (settings / "setup-features.json").write_text(json.dumps({
+            "schema_version": 1, "choices": {"usage_collection": False}}), encoding="utf-8")
+        self.write(self.path, THREAD, usage(), usage("late"))
+        with mock.patch.object(lifecycle, "read_batch") as read:
+            self.assertEqual(self.collect(self.payload("Stop"))["collected_sources"], 0)
+        read.assert_not_called()
+        self.assertEqual(self.repo.summary(), before)
+
     def test_unregistered_stop_and_descendant_do_not_read_headers(self):
         with mock.patch.object(lifecycle, "read_batch", wraps=lifecycle.read_batch) as read:
             self.collect(self.payload("Stop"))

@@ -363,6 +363,141 @@ TG-M12.3's current state, blocker detail, review evidence, and completion
 history. A materially different write, external operation, scope expansion,
 or changed acceptance still requires explicit authority.
 
+<a id="setup-optional-feature-selection"></a>
+
+### Approved Setup Optional Feature Selection Contract
+
+This is the approved, pending-implementation static contract for the
+2026-10-03 request to organize the specification and register a repair Task.
+It does not activate new runtime behavior or authorize starting implementation,
+changing this project's live optional settings, or trusting host hooks.
+The existing product and design owners remain current until the reviewed
+implementation synchronizes them. Live Task state and evidence belong only to
+the public CLI.
+
+#### Outcome And Setup Conversation
+
+After the existing basic setup succeeds, return enough structured information
+for the calling LLM to offer the optional features together instead of ending
+with only a completion notice. Setup itself remains noninteractive; the LLM
+collects the user's choices and applies only the authorized selections through
+a bounded setup configuration path. The final notice states the actual result.
+
+- Offer numerical usage collection, trusted-local verification Runner,
+  Effort Advisory, and Viewer automatic reload. Existing setup maintenance,
+  backups, Evidence JSON, and Viewer generation are not additional switches.
+- Distinguish an undecided preference, explicit ON/OFF choice, effective local
+  configuration, and a prerequisite that setup cannot observe. Unknown or
+  invalid configuration is not evidence of OFF, ON, or successful application.
+- Preserve existing valid settings and explicitly recorded choices. Persist
+  ON and OFF choices across sessions and repeated setup, including a decision
+  to leave an absent feature disabled, so it is not repeatedly offered as new.
+  A later explicit request may change the choice. An unanswered question is
+  not an OFF choice and must not be recorded as consent.
+- Ask only for unresolved selections during setup, together where practical;
+  reuse answers already supplied in the conversation. A settings-change request
+  may revisit an existing choice. Do not add a question or command to ordinary
+  Task work, and do not make optional choices a basic-setup completion gate.
+- Retain valid feature-specific values when changing ON/OFF. Explain any
+  necessary value, such as a new reload interval, when offering activation;
+  use the supported configuration semantics without adding mandatory tuning.
+
+#### Feature Meaning And Boundaries
+
+| Feature | Meaning of the choice and remaining prerequisite |
+|---|---|
+| Numerical usage collection | ON requests this project's taskgov collector. Setup reports definition preparation separately from host trust and actual collection. Host trust remains user-operated and unobserved, never inferred from ON or prepared definitions. OFF must prevent taskgov collection even if its hook was previously trusted, while preserving accumulated numerical records and unrelated hooks. It does not revoke or change host/user-wide trust. |
+| Verification Runner | ON/OFF controls the project-level trusted-local opt-in while preserving existing Task entries and limits. ON may be configured before a Task Plan exists; it does not fabricate a Task, command, Plan entry, coverage, or execution result. Task-specific current Plans remain separately authored, and execution remains at the existing review-target boundary. An enabled Runner with no entry for the current Task retains the existing manual verification route; stale, invalid, or ambiguous entries retain their existing rejection behavior. |
+| Effort Advisory | Apply the selected enablement using the supported project profile, preserving configured thresholds. It remains informational with the existing optional observation flow; selection adds no completion condition or new mandatory threshold. |
+| Viewer automatic reload | Apply the selected reload behavior and preserve an existing valid interval. OFF must stop reload rather than merely record a preference. The generated Viewer continues to exist and receive ordinary maintenance; browser launch and automatic reload remain distinct. |
+
+Readiness and recorded preference must remain distinguishable. In particular,
+an ON choice with hook trust unconfirmed or no Runner Task entry must not be
+reported as observed collection or ready-to-run verification. Actual local
+configuration, including separately authorized manual changes, must not be
+misreported based only on an older choice record.
+
+Collection OFF applies to subsequent collector invocations; it does not require
+terminating a running process. Effort enablement must not invent warning
+thresholds or require them: the existing empty-threshold profile remains valid.
+
+#### Write Scope And Permission
+
+One coherent implementation unit owns the setup response and bounded
+selection-application path, durable project-local choice retention, the four
+feature integrations, setup-only Skill guidance, and their coupled tests and
+formal documentation. Do not split this outcome solely by configuration file
+or feature name. Register one sequential Tier 2 Task in lane
+`TG-SETUP-FEATURES-20261003`, order 10; no predecessor in this lane or separately
+usable intermediate delivery is required.
+
+Use existing canonical project/package resolution and project-local settings;
+do not introduce user-wide configuration, another state root, or a network
+service. The implementation specifies the exact bounded input/output and
+choice-storage format in its current owners. A stored choice is not host-trust
+evidence or a second source for Task authority. A settings operation must not
+silently replace unrelated settings, Runner entries, or hook handlers.
+
+Basic setup without feature-selection input inspects/reports optional choices
+without silently enabling them. Existing required setup work, including hook
+definition preparation, remains governed by its current contract until the
+synchronized feature implementation. Applying choices requires the user's
+selection; the same answer authorizes its bounded application without a second
+routine approval. Preview/read-only paths write nothing. Reapplying an unchanged
+choice is idempotent; a later setup preserves the selected disabled state.
+Report per-feature configuration failures and any partial application truthfully; do not
+mark a requested choice effective before its application succeeds. Optional
+application failure must preserve already successful basic setup and must not
+start a migration again, execute verification, or invoke collection as a test.
+
+Current owners to synchronize are
+[Setup behavior](docs/setup-state-specification.md#setup-contract) and
+[structure](docs/setup-state-design.md#setup-plan-and-stages),
+[Runner Plan authoring](docs/runner-plan-authoring-specification.md#current-runner-plan-authoring-and-control-contract)
+and its linked design, the shared
+[Runner eligibility](docs/runner-execution-specification.md#eligibility-plan-and-materialization),
+[Effort Advisory](docs/task-operation-specification.md#effort-advisory),
+and [Viewer reload](docs/viewer-specification.md#optional-visibility-aware-reload)
+and their linked designs. Update directly coupled CLI help/contracts, setup
+Skill references, operator examples, package artifacts, and existing durable
+permission wording that would otherwise conflict with the explicit setup
+selection path. Keep detailed selection guidance on the setup-only reference
+route, not in the ordinary Task loop.
+
+This contract permits a future explicit setup choice to configure Runner
+enablement, Effort, and Viewer reload despite their current non-generation
+rules. It does not authorize setup to author Task-specific Runner steps, launch
+a Runner or browser, change host trust, install a package, or perform external
+operations. Existing usage accuracy, verification, review, and completion
+semantics remain unchanged. Implementation and local Git actions require their
+own applicable start/mutation authority; registration is not that authority.
+
+#### Verification, Review, And Retirement
+
+Verify in isolated local fixtures: first setup and combined choices; actual
+ON/OFF effects; existing settings and explicit OFF retention across repeated
+setup and a fresh caller; later choice changes; unchanged replay; no writes in
+preview; invalid/failed/partial settings application without loss of basic
+setup or unrelated settings; and truthful readiness in JSON/text and Skill
+conversation. Include hook trust remaining unknown, collection OFF preserving
+recorded usage, Runner ON before any Task entry and with an existing valid
+entry, and manual verification when there is no entry for the current Task.
+Preserve the existing
+normal-operation and failure behavior of the affected features.
+
+Use focused setup/configuration/CLI/feature tests and package validation, the
+repository document-contract checker, and representative setup conversations.
+No network or real host trust/configuration mutation is required for these
+checks. No new token benchmark, production installation, or unrelated proof
+gate is part of acceptance. Tier 2 requires two independent review passes with
+no unresolved High/Medium findings for the current implementation target.
+
+This static contract remains the positive scope/acceptance owner until the
+registered Task is completed or explicitly superseded and its durable rules
+have been synchronized into their current owners. Retire or reduce it only
+through the separately authorized documentation-maintenance procedure; do not
+copy live Task progress into this section.
+
 ## Open Issues And Deferred Candidates
 
 These items are not implementation authority. Each needs a separately approved

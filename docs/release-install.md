@@ -41,7 +41,7 @@ cycle-linked snapshots. Task detail adds a non-gating `usage` summary and done
 acknowledgements report pending usage without opening the numerical store.
 Explicit setup alone migrates the numerical store; existing core schema and
 sealed Bundles are unchanged. Optional [trusted project-local lifecycle hooks](setup-state-specification.md#optional-lifecycle-usage-collection)
-collect registered sessions and publish late usage. Explicit setup prepares their
+collect registered sessions and publish late usage. Selected-ON or existing-hook setup prepares their
 project-local definitions, preserving unrelated hooks and avoiding duplicates;
 the user still reviews/trusts them in Codex. Preparation is not enabled collection.
 Host delivery must be independently observed; ordinary OS support is not an
@@ -192,8 +192,9 @@ while replacing packaged core files:
 - `config/verification-runner.json`
 - `config/viewer.json`
 - `config/effort-advisory.json`
+- `config/setup-features.json`
 
-This preservation guarantee is limited to those three named paths. Release
+This preservation guarantee is limited to those four named paths. Release
 artifacts remain free of all `config/` content; that artifact exclusion does
 not extend byte preservation to unrecognized configuration files.
 
@@ -213,7 +214,8 @@ contains this Skill's database, sidecars, backups, locks, generated Evidence
 JSON, and generated Viewer without hiding unrelated project fixtures or
 assets. The Runner Plan rule ignores only its one canonical file. Upgrade
 preservation and Git ignore are independent: taskgov adds no ignore requirement
-for `config/viewer.json` or `config/effort-advisory.json`. Non-Git governed
+for `config/viewer.json`, `config/effort-advisory.json`, or
+`config/setup-features.json`. Non-Git governed
 directories are valid and do not require an ignore file.
 
 From the target-project root, preview setup before the explicit write:
@@ -246,9 +248,12 @@ Git repository.
 `setup` is the only public initializer and migrator. It also performs the
 one-way opt-in to bounded local maintenance and directly publishes or repairs
 canonical Evidence JSON and Viewer. It is explicit, noninteractive, idempotent, and limited
-to the supported physical project-scoped package. Setup never creates or edits
-the Runner Plan; taskgov-managed authoring requires explicit
-`task edit --runner-plan-action`.
+to the supported physical project-scoped package. Explicit optional-feature
+Setup choices may save/apply project switches; Runner Task-entry authoring
+still requires explicit `task edit --runner-plan-action`. See the
+[selection contract](setup-state-specification.md#optional-feature-selection).
+Preserve the local `config/setup-features.json` along with existing feature
+configs on upgrade; it records both ON and OFF and is excluded from artifacts.
 
 Setup reports `schema_to=25` and `evidence_status` as `not_present`, `current`,
 `published`, or `repair_required`. Its ordered write vocabulary includes
@@ -397,7 +402,8 @@ rehearsals cannot satisfy this current gate. No candidate rehearsal selects or
 mutates user-wide, linked, junction, or custom-`--db` state.
 
 The same rehearsal must seed `config/verification-runner.json`,
-`config/viewer.json`, and `config/effort-advisory.json` before candidate
+`config/viewer.json`, `config/effort-advisory.json`, and
+`config/setup-features.json` (including an explicit OFF choice) before candidate
 packaged-core replacement and prove that each remains byte-identical through
 replacement, subsequent `setup` and migration, and paired rollback. Those
 files remain project-local and are not added to rollback's managed artifact
@@ -485,12 +491,14 @@ Sources v21 and v22 validate the complete tagged union. It
 performs no network request and provides no database or task write control.
 
 An optional browser-only refresh profile may exist at the physical installed
-package's `config/viewer.json`. Taskgov never creates or edits it, and the file
+package's `config/viewer.json`. Only explicit optional-feature Setup may create
+or toggle it, and the file
 must not be shipped in a release artifact or listed in the core manifest.
 Absence is valid and leaves automatic refresh disabled
 with no timer. A present file must be no larger than 16,384 bytes and contain
 only strict UTF-8 JSON schema 1, profile `visibility-refresh-v1`, and an integer
-`refresh_interval_seconds` from 5 through 3,600. Links, reparse points,
+`refresh_interval_seconds` from 5 through 3,600, plus optional Boolean `enabled`
+(absent means true; false disables reload without discarding the interval). Links, reparse points,
 non-regular objects, replacement races, invalid encoding/JSON, and non-exact
 fields fail closed without exposing path or OS details.
 
@@ -660,8 +668,12 @@ provenance.
 
 `taskgov` may write only canonical generated Skill state after setup, the
 explicit task-state operation requested by the caller, and, only under explicit
-`task edit --runner-plan-action`, the canonical ignored Runner Plan. Explicit
-setup may also prepare the bounded project `.codex/hooks.json` definition,
+`task edit --runner-plan-action`, the canonical ignored Runner Plan for Task
+entry authoring. Explicit Setup optional-feature selection may separately
+save/apply its closed local choices and feature configs, including Runner
+global trust or an empty Plan, under the
+[Setup contract](setup-state-specification.md#optional-feature-selection).
+Setup may also prepare the bounded project `.codex/hooks.json` definition,
 preserving unrelated hooks; user-operated host trust remains separate. It does not
 edit target-project source, stage or write Git, open a browser, create an Issue
 or PR, or use the network.
@@ -769,7 +781,7 @@ supplies that authorization.
 The Analyzer runtime is retired from the candidate package. Independent
 Evidence reading/validation remains test-only. Existing ignored analysis
 artifacts stay inert and untouched; packaged-core replacement preserves state
-and the three supported configuration files listed above.
+and the supported configuration files listed above.
 
 Version 0.13.0 is an unpublished local candidate. Schema v19 retains the
 schema-v18 capture ledger, subjects/provenance, retargeting, and 1,000-character

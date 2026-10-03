@@ -151,11 +151,14 @@ def _publish(path: Path, root: Path, original, data: bytes) -> None:
                 unlink_validated_file(temporary, root=root)
 
 
-def setup_usage_hooks(inspection, core_result, *, read_only: bool) -> dict:
+def setup_usage_hooks(inspection, core_result, *, read_only: bool, enabled=True) -> dict:
     """Prepare definitions, never invoke collection or read/write host trust."""
     result = {"status": "not_attempted", "planned_writes": [], "completed_writes": [],
               "trust": "unknown", "next_action": None, "error": None}
     if not core_result.ok or inspection.scope is None:
+        return result
+    if enabled is False:
+        result["status"] = "disabled"
         return result
     if core_result.data["usage"]["status"] not in {
             "pending_core_setup", "not_present", "migration_required",
@@ -177,6 +180,9 @@ def setup_usage_hooks(inspection, core_result, *, read_only: bool) -> dict:
                                parse_constant=_reject_constant)
                     if original is not None else {})
         merged = _merge(document, root, skill_root)
+        if enabled is None and not _contains_usage(document):
+            result["status"] = "not_requested"
+            return result
         result.update(status="current", next_action="review_and_trust_hooks")
         if merged != document:
             data = (json.dumps(merged, ensure_ascii=False, indent=2, allow_nan=False) + "\n").encode("utf-8")

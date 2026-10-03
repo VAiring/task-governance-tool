@@ -631,11 +631,11 @@ class SkillSelfContainmentTests(unittest.TestCase):
         contracts = (SKILL_ROOT / "references" / "cli_contracts.md").read_text(
             encoding="utf-8"
         )
-        setup_section, doctor_and_later = contracts.split("## `doctor`", 1)
+        setup_section, doctor_and_later = contracts.split("## `setup`", 1)[1].split("## `doctor`", 1)
         doctor_section = doctor_and_later.split("## Task Commands", 1)[0]
 
         setup_example_match = re.search(
-            r"`data` always has exactly:\s*```json\s*(.*?)\s*```",
+            r"```json\s*(.*?)\s*```",
             setup_section,
             re.DOTALL,
         )
@@ -1531,6 +1531,7 @@ class SkillSelfContainmentTests(unittest.TestCase):
             "config/verification-runner.json",
             "config/viewer.json",
             "config/effort-advisory.json",
+            "config/setup-features.json",
         ):
             self.assertNotIn(relative, manifest["core_files"])
         self.assertFalse(any(path.startswith("task-governance-tool/state/") for path in tracked))

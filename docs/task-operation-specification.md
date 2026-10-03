@@ -608,7 +608,9 @@ record command and source-task non-blocking boundary.
 ### Effort Advisory
 
 The optional project-scoped profile exists only at
-`config/effort-advisory.json`; taskgov never creates or edits it. Strict
+`config/effort-advisory.json`; only explicit
+[Setup selection](setup-state-specification.md#optional-feature-selection) may
+create it or toggle enabled while preserving thresholds. Strict
 profile v1 requires `profile="informational-v1"` and Boolean `enabled`.
 Optional nonnegative integer thresholds are limited to `changed_files`,
 `changed_lines`, `changed_modules`, `contract_revisions`, and `handoffs`, and

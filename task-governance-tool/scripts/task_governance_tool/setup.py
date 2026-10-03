@@ -1944,6 +1944,7 @@ def run_setup(
     backup_interval_minutes: int | None,
     backup_generations: int | None,
     confirmation_token: str | None = None,
+    feature_selections: dict[str, bool] | None = None,
 ) -> SetupServiceResult:
     """Plan or execute setup using only fixed, local stages."""
 
@@ -1960,11 +1961,15 @@ def run_setup(
     )
     from task_governance_tool.usage_collection import setup_usage
     result.data["usage"] = setup_usage(inspection, result, read_only=read_only)
-    from task_governance_tool.usage_hook_setup import setup_usage_hooks
-    result.data["usage_hooks"] = setup_usage_hooks(inspection, result, read_only=read_only)
+    from task_governance_tool.setup_features import setup_features, feature_notice
+    features, hooks = setup_features(inspection, result,
+        selections=feature_selections or {}, read_only=read_only)
+    result.data["optional_features"] = features
+    result.data["usage_hooks"] = hooks
+    from dataclasses import replace
+    result = replace(result, text=result.text + "\n" + feature_notice(features))
     action = result.data["usage_hooks"]["next_action"]
     if action is not None:
-        from dataclasses import replace
         notice = ("Usage hooks: review/trust the project's .codex/hooks.json in Codex after setup; "
                   "trust and collection are not confirmed."
                   if action == "review_and_trust_hooks" else

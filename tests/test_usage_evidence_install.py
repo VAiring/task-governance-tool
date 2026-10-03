@@ -29,7 +29,9 @@ class UsageEvidenceInstallTests(unittest.TestCase):
         temporary = tempfile.TemporaryDirectory()
         self.addCleanup(temporary.cleanup)
         self.install = make_physical_install(Path(temporary.name), git_managed=True)
-        self.root = self.install.project_root
+        # Match the child process cwd and generated --repo operand, including
+        # when Windows TEMP uses an 8.3 alias. Log/payload cwd must match too.
+        self.root = self.install.project_root.resolve()
         self.cli("setup")
         resolution = resolve_project_state(skill_root=self.install.skill_root, repo=self.root)
         self.assertIsNone(resolution.error_code)

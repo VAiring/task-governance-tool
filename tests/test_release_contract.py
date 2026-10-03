@@ -133,10 +133,10 @@ class ReleaseContractCheckerTests(unittest.TestCase):
         self.assertEqual(result.runtime, runtime)
         self.assertEqual(len(runtime.public_commands), 23)
         self.assertEqual(result.ci_python_versions, ("3.12", "3.14"))
-        self.assertEqual(result.manifest_core_count, 126)
         manifest = json.loads(
             (SKILL_ROOT / "release-manifest.json").read_text(encoding="utf-8")
         )
+        self.assertEqual(result.manifest_core_count, len(manifest["core_files"]))
         self.assertEqual(manifest["release_origin"], EXPECTED_RELEASE_ORIGIN)
         self.assertEqual(
             hashlib.sha256((ROOT / "LICENSE").read_bytes()).hexdigest(),

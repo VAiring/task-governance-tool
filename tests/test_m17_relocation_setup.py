@@ -410,6 +410,22 @@ class M17RelocationSetupTests(unittest.TestCase):
                     "status": "relocation_preview",
                     "usage": {"status": "pending_core_setup", "schema_to": 3,
                               "planned_writes": [], "completed_writes": [], "error": None},
+                    "usage_hooks": {
+                        "status": "not_requested", "planned_writes": [], "completed_writes": [],
+                        "trust": "unknown", "next_action": None, "error": None,
+                    },
+                    "optional_features": {
+                        "features": {
+                            name: {"requested": None, "selection": "undecided",
+                                   "selection_source": "none", "effective": "off",
+                                   "status": "observed", "error": None}
+                            for name in ("usage_collection", "verification_runner",
+                                         "effort_advisory", "viewer_reload")
+                        },
+                        "offer": ["usage_collection", "verification_runner",
+                                  "effort_advisory", "viewer_reload"],
+                        "viewer_default_interval_seconds": 30,
+                    },
                     "planned_writes": FIXED_WRITES,
                     "completed_writes": [],
                     "schema_from": 25,
@@ -1177,6 +1193,20 @@ class M17RelocationSetupTests(unittest.TestCase):
                 "planned_writes": [],
                 "completed_writes": [],
                 "usage": {**preview.data["usage"], "status": "not_attempted"},
+                "usage_hooks": {
+                    "status": "not_attempted", "planned_writes": [], "completed_writes": [],
+                    "trust": "unknown", "next_action": None, "error": None,
+                },
+                "optional_features": {
+                    "features": {
+                        name: {"requested": None, "selection": "undecided",
+                               "selection_source": "none", "effective": "unknown",
+                               "status": "not_attempted", "error": None}
+                        for name in ("usage_collection", "verification_runner",
+                                     "effort_advisory", "viewer_reload")
+                    },
+                    "offer": [], "viewer_default_interval_seconds": 30,
+                },
                 "relocation": {
                     **preview.data["relocation"],
                     "confirmation_token": None,

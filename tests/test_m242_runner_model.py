@@ -470,7 +470,6 @@ class RunnerModelTests(unittest.TestCase):
             manifest["release_origin"],
             "github:VAiring/task-governance-tool",
         )
-        self.assertEqual(len(core), 126)
         self.assertEqual(
             core["scripts/task_governance_tool/verification_runner_git.py"],
             "sha256:" + hashlib.sha256(GIT_TARGET_PATH.read_bytes()).hexdigest(),

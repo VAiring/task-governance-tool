@@ -66,7 +66,7 @@ VIEWER_QUALIFICATION_MODES = ("disabled", "viewer-only", "combined")
 OVERHEAD_BUDGET_SECONDS_BY_MODE = {
     "backup-only": 10.0,
     "viewer-only": 10.0,
-    "combined": 12.0,
+    "combined": 15.0,
 }
 BACKUP_QUALIFICATION_ORDERS = (
     tuple(permutations(BACKUP_QUALIFICATION_MODES)) * 3

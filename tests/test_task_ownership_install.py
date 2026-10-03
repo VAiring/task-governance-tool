@@ -164,7 +164,9 @@ class TaskOwnershipInstallTests(unittest.TestCase):
         task_id = self.invoke("task", "add", "--title", "Plan race", "--status", "in_progress",
                               "--verification", "Run isolated checks", "--contract-scope", "Fixture",
                               "--contract-acceptance", "Exact preflight owner")["data"]["task"]["task_id"]
-        target = replace(self.install.target, skill_root=self.install.skill_root, canonical_fixed=True)
+        # The injected target must use the same canonical spelling as its repo,
+        # even when Windows TEMP was supplied through an 8.3 alias.
+        target = replace(self.install.target, skill_root=self.install.skill_root.resolve(), canonical_fixed=True)
         capture = plans._capture_decoded_plan
         def handover(*args, **kwargs):
             self.invoke("task", "edit", task_id, "--status", "paused", "--pause-reason", "Explicit takeover", caller=Y)

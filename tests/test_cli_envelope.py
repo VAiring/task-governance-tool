@@ -532,6 +532,7 @@ class CliEnvelopeTests(unittest.TestCase):
             backup_interval_minutes=None,
             backup_generations=None,
             confirmation_token=token,
+            feature_selections={},
         )
 
     def test_read_only_relocation_confirmation_is_pre_resolution_usage_error(self):

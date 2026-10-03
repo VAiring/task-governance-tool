@@ -364,6 +364,20 @@ class SetupManagedBackupRecoveryTests(unittest.TestCase):
                     "schema_to": 25,
                     "usage": {"status": "not_attempted", "schema_to": 3,
                               "planned_writes": [], "completed_writes": [], "error": None},
+                    "usage_hooks": {
+                        "status": "not_attempted", "planned_writes": [], "completed_writes": [],
+                        "trust": "unknown", "next_action": None, "error": None,
+                    },
+                    "optional_features": {
+                        "features": {
+                            name: {"requested": None, "selection": "undecided",
+                                   "selection_source": "none", "effective": "unknown",
+                                   "status": "not_attempted", "error": None}
+                            for name in ("usage_collection", "verification_runner",
+                                         "effort_advisory", "viewer_reload")
+                        },
+                        "offer": [], "viewer_default_interval_seconds": 30,
+                    },
                     "maintenance_enabled": None,
                     "backup_interval_minutes": None,
                     "backup_generations": None,

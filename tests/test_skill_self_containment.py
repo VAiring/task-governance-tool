@@ -1660,8 +1660,9 @@ print(json.dumps(results, ensure_ascii=False))
             self.assertNotIn(heading, body)
         target, routed = self.linked_output("references/task_workflow.md", parent, "independent-reviewer")
         self.assertEqual(routed, body)
-        _, alternative = self.linked_output(target, body, "prepare-and-record-reviews")
-        self.assertEqual(alternative, parent)
+        _, alternative = self.linked_output(target, body, "direct-review-transport")
+        self.assertIn("### Direct Review Transport", alternative)
+        self.assertNotIn("### Prepare And Record Reviews", alternative)
 
     def reader(self):
         import read_reference
@@ -1836,6 +1837,100 @@ print(json.dumps(results, ensure_ascii=False))
                 title = next(line for line in detail.splitlines() if line.startswith('## '))
                 self.assertNotIn(title, output.splitlines())
                 self.assertIn(title, detail.splitlines())
+
+    def test_single_registration_keeps_common_result_without_batch_schema(self):
+        source = "references/cli_contracts.md"
+        single = self.reader().read_reference(f"{source}#task-add", SKILL_ROOT)
+        _, batch = self.linked_output(source, single, "batch-task-registration")
+        self.assertNotIn("### Batch Task Registration", single)
+        for field in ("--title", "--contract-scope", "--contract-acceptance",
+                      "--verification", "--verification-not-required",
+                      "data.task.task_id", "context_preparation", "context.selected.task.task_id"):
+            self.assertIn(field, single)
+        self.assertNotIn("--from-stdin", single)
+        self.assertNotIn('"common"', single)
+        for field in ("--from-stdin", '"common"', '"tasks"', "data.tasks[].input_index"):
+            self.assertIn(field, batch)
+        _, common = self.linked_output(source, batch, "task-add")
+        self.assertEqual(common, single)
+        _, recovery = self.linked_output(source, batch, "partial-add-recovery")
+        self.assertIn("## Partial-Add Recovery", recovery)
+
+    def test_initial_and_revised_contracts_have_separate_retrieval_routes(self):
+        source = "references/task_workflow.md"
+        skill = (SKILL_ROOT / "SKILL.md").read_text(encoding="utf-8")
+        _, initial = self.linked_output("SKILL.md", skill, "task-contract")
+        _, revised = self.linked_output("SKILL.md", skill, "contract-revision")
+        self.assertNotIn("## Contract Revision", initial)
+        self.assertNotIn("--contract-change-reason", initial)
+        for body in (initial, revised):
+            for field in ("--contract-scope", "--contract-acceptance", "data.selected.task.task_id"):
+                self.assertIn(field, body)
+            self.linked_output(source, body, "errors-and-privacy")
+        self.assertIn("--status in_progress", initial)
+        self.assertIn("--contract-change-reason", revised)
+        self.assertIn("user_instruction:<task-id>:<revision>", revised)
+        _, routed = self.linked_output(source, initial, "contract-revision")
+        self.assertEqual(routed, revised)
+
+    def test_review_transports_share_gates_but_not_transport_subtrees(self):
+        source = "references/task_workflow.md"
+        shared = self.reader().read_reference(f"{source}#prepare-and-record-reviews", SKILL_ROOT)
+        _, direct = self.linked_output(source, shared, "direct-review-transport")
+        for body in (shared, direct):
+            self.assertIn("## Review And Completion", body)
+            self.assertIn("`changes_requested`", body)
+            self.linked_output(source, body, "repair-findings")
+            _, recovery = self.linked_output(source, body, "review-handoff-recovery")
+            self.assertNotIn("## Review Handoff Recovery", body)
+            self.assertIn("## Review Handoff Recovery", recovery)
+        self.assertNotIn("### Direct Review Transport", shared)
+        self.assertNotIn("### Prepare And Record Reviews", direct)
+        for field in ("handoff.status=ready", "review_requests[].request", "submit_command",
+                      "ok=true,status=saved", "data.receipts[].findings", "data.review_gate"):
+            self.assertIn(field, shared)
+        for field in ("data.review_preparation.packet", "result_template", "result_instructions",
+                      "review_target", "contract.revision", "task.task_id"):
+            self.assertIn(field, direct)
+        self.linked_output(source, direct, "structured-review-results")
+        _, recovery = self.linked_output(source, shared, "review-handoff-recovery")
+        self.linked_output(source, recovery, "review-provenance")
+        self.linked_output(source, recovery, "recover-review-handoff")
+
+    def test_helper_stages_keep_common_paths_and_recovery_without_sibling_examples(self):
+        source = "references/cli_contracts.md"
+        operations = {
+            "prepare-review-handoff": ("#### Prepare Review Handoff", "--expected-target-generation"),
+            "read-review-packet": ("#### Read Review Packet", "--role independent"),
+            "save-review-original": ("#### Save Review Original", "--output reviews/review-a.json"),
+            "submit-review-originals": ("#### Submit Review Originals", "submit --repo ."),
+        }
+        for fragment, (heading, operation_input) in operations.items():
+            with self.subTest(operation=fragment):
+                body = self.reader().read_reference(f"{source}#{fragment}", SKILL_ROOT)
+                self.assertIn(heading, body)
+                self.assertIn(operation_input, body)
+                self.assertIn("### Caller-Owned Review Handoff", body)
+                self.assertIn("`.json`", body)
+                self.assertNotIn("--expected-binding", body)
+                for sibling, _ in operations.values():
+                    if sibling != heading:
+                        self.assertNotIn(sibling, body)
+                _, recovery = self.linked_output(source, body, "recover-review-handoff")
+                for field in ("--expected-binding", "--verification-receipt-id", "ok:false"):
+                    self.assertIn(field, recovery)
+
+    def test_taskization_keeps_classifier_and_tier_routes_for_both_add_modes(self):
+        source = "references/task_workflow.md"
+        body = self.reader().read_reference(f"{source}#taskize-or-add-scope", SKILL_ROOT)
+        for heading in ("### One-Pass Select-Split-Merge", "### Review Tier Selection"):
+            self.assertIn(heading, body)
+        self.linked_output(source, body, "task-add")
+        self.linked_output(source, body, "batch-task-registration")
+        self.linked_output(source, body, "task-contract")
+        self.linked_output(source, body, "contract-revision")
+        self.linked_output(source, body, "partial-add-recovery")
+        self.assertNotIn('"common"', body)
 
     def test_edit_guidance_routes_to_typed_completion(self):
         source = 'references/cli_contracts.md'

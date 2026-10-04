@@ -12,6 +12,7 @@ detail are not prerequisites for normal Task work.
 - [`doctor`](#doctor)
 - [Task Commands](#task-commands)
   - [`task add`](#task-add)
+  - [Batch Task Registration](#batch-task-registration)
   - [`task list`](#task-list)
   - [`task next`](#task-next)
   - [`task current`](#task-current)
@@ -35,6 +36,12 @@ detail are not prerequisites for normal Task work.
     - [Finding creation and resolution](#finding-resolution)
     - [Structured Finding Resolutions](#structured-finding-resolutions)
   - [Structured Review Results](#structured-review-results)
+  - [Caller-Owned Review Handoff](#caller-owned-review-handoff)
+    - [Prepare](#prepare-review-handoff)
+    - [Read](#read-review-packet)
+    - [Save](#save-review-original)
+    - [Submit](#submit-review-originals)
+  - [Recover Review Handoff](#recover-review-handoff)
 - [Receipt Output For Integration Or Audit](#receipt-output-for-integration-or-audit)
 - [Internal Continuity Boundary](#internal-continuity-boundary)
 - [Errors And Privacy](#errors-and-privacy)
@@ -560,8 +567,8 @@ Success data contains `task`, `event`, and `context_preparation`, plus
 Initial `done` returns `initial_done_forbidden`; specifically,
 `task add --status done` never stores a task or event. Initial `paused` returns
 `initial_paused_forbidden`. Initial `review_pending` returns `invalid_status_transition`.
-Initial `in_progress` acquires the caller's single active slot; batches retain
-all-or-nothing behavior. Initial `blocked` requires `--blocked-reason`.
+Initial `in_progress` acquires the caller's single active slot.
+Initial `blocked` requires `--blocked-reason`.
 Sequential adds preserve the same predecessor rule used for selection and
 transitions.
 
@@ -578,6 +585,34 @@ An edit of either member clears the old counterpart; both nonempty inputs are
 invalid. `--verification ""` resets to unspecified; omission preserves both.
 Changing the declaration invalidates the current target and evidence. Old done
 history remains valid, but reopening an old blank Task does not infer a waiver.
+
+For multiple finalized groups, use [batch registration](#batch-task-registration)
+instead of these single-Task flags. Both forms use the result below.
+
+For single and batch success, `context_preparation` has exactly `status`,
+`context`, and `errors`. `status=ready` carries the complete ordinary
+[`task context`](#task-context) data with `errors=[]`; its component warnings
+appear once in the outer warnings. Use `context.selected.task.task_id` for
+selected work, not the registered ID by assumption. This replaces the immediate
+separate context read, not any implementation permission or gate. Batch items
+do not duplicate context. The read follows commit with ordinary validation and
+selection; it is not atomic with registration or later maintenance.
+
+`status=failed` has `context=null` and sanitized `errors`, with no partial read
+or component warnings. Outer `ok=true` and exit zero still mean all registration
+results committed. Address the read failure and retry only `task context`; do
+not add the Tasks again. Registration failures do not prepare context. A lost
+outer response remains uncertain: inspect actual state before any registration
+retry using [registration recovery](task_workflow.md#partial-add-recovery).
+No additional normal-path command or user choice is introduced.
+
+### Batch Task Registration
+
+Apply the shared status, verification, Contract and prepared-context conditions
+in [`task add`](#task-add); the input and returned ID mapping below replace
+its single-Task flags and `data.task` result. Registration alone grants no
+implementation or Git permission. For failed/uncertain registration, follow
+[Partial-Add Recovery](task_workflow.md#partial-add-recovery), not blind replay.
 
 For a finalized multiple-Task set, use `task add --from-stdin --json` once with
 this UTF-8 JSON shape (no BOM; at most 262,144 bytes and 1 through 64 items):
@@ -615,22 +650,6 @@ never blindly replay or remove successes. This is not an idempotent importer.
 Windows PowerShell producers must send UTF-8 without BOM, not locale-encoded
 text. This option creates no input file, adapter, extra normal-loop call, or
 authority beyond explicit registration.
-
-For single and batch success, `context_preparation` has exactly `status`,
-`context`, and `errors`. `status=ready` carries the complete ordinary
-[`task context`](#task-context) data with `errors=[]`; its component warnings
-appear once in the outer warnings. Use `context.selected.task.task_id` for
-selected work, not the registered ID by assumption. This replaces the immediate
-separate context read, not any implementation permission or gate. Batch items
-do not duplicate context. The read follows commit with ordinary validation and
-selection; it is not atomic with registration or later maintenance.
-
-`status=failed` has `context=null` and sanitized `errors`, with no partial read
-or component warnings. Outer `ok=true` and exit zero still mean all registration
-results committed. Address the read failure and retry only `task context`; do
-not add the Tasks again. Registration failures do not prepare context. A lost
-outer response remains uncertain: inspect actual state before any registration
-retry, as above. No additional normal-path command or user choice is introduced.
 
 <a id="task-list"></a>
 
@@ -1859,17 +1878,43 @@ or independence. The existing single-item commands remain available.
 ### Caller-Owned Review Handoff
 
 The bundled `scripts/review_handoff.py` is separate from taskgov. Use `python3`
-on Linux/macOS. It needs Python 3.12+ and explicit `--repo`. Start before the
-Packet-producing call with `prepare --directory <unused-ignored-directory>`;
-paths use project-relative `/` spelling. The three closed source operations are:
+on Linux/macOS. It needs Python 3.12+ and explicit `--repo`.
+Use the relevant operation below; generated read/save/submit commands already
+supply their actual paths and need no routine reference lookup. Stop on failed,
+missing or uncertain output and follow [handoff recovery](#recover-review-handoff),
+preserving originals/residue without overwriting or blindly repeating writes.
+
+All Packet/result paths must be untracked, Git-ignored `.json` files within the
+explicit project and physical directories. Only prepare creates its explicitly
+named missing ignored directory chain and `packet.json`, after a ready source
+result; preflight rejects an existing destination before invoking the source.
+Save/submit require existing directories. No operation changes an ignore rule,
+ACL, config, state path or permission. No absolute or
+traversal path, backslash, ADS, device name, link/junction/reparse ancestor,
+nonregular or multiply linked file is accepted. Package/admin/state roots
+`.agents`, `.codex`, `.git`, `.taskgov`, `task-governance-tool` are excluded.
+Non-Git projects retain direct stdin registration; this helper cannot establish
+an ignored-file boundary there. Packet input is bounded to 32,768 bytes.
+
+Save/submit take `--packet`; they remain usable with an already obtained complete
+Packet file. They do not authorize rerunning its source command.
+Prepare/read/save/submit share complete-Packet validation, without filling
+missing fields; legacy stored Contract constraints retain read compatibility.
+For an actually approved Tier-2 self-review PASS, explicitly repeat
+`--user-approved-reviewer <key>` on the applicable save and submit calls. Neither
+JSON nor a saved file transfers approval. Independent reviews do not use it.
+
+#### Prepare Review Handoff
+
+Start before the Packet-producing call with
+`prepare --directory <unused-ignored-directory>`; paths use project-relative
+`/` spelling. Use the Task ID selected by `task context`.
+The ordinary source operations are:
 
 ```powershell
 python .agents/skills/task-governance-tool/scripts/review_handoff.py prepare --repo . --directory reviews/g1 target <task-id> --kind git_snapshot
 # Only after required verification, using the generation from the prior result:
 python .agents/skills/task-governance-tool/scripts/review_handoff.py prepare --repo . --directory reviews/g1 receipt <task-id> --result pass --duration-ms <milliseconds> --scope-coverage full --expected-target-generation <generation>
-# Only for preparation recovery; choose ONE binding form and a new unused area:
-python .agents/skills/task-governance-tool/scripts/review_handoff.py prepare --repo . --directory reviews/recovery recover <task-id> --expected-binding <binding>
-python .agents/skills/task-governance-tool/scripts/review_handoff.py prepare --repo . --directory reviews/recovery recover <task-id> --verification-receipt-id <recorded-id>
 ```
 
 Target accepts the existing kind/revision options; Receipt also accepts the
@@ -1892,7 +1937,7 @@ and authority inspection is unchanged. A target requiring a Receipt returns
 `not_applicable` without files, so its later Receipt call may use the same area.
 `blocked`, `failed` or `unavailable` never supplies reviewer requests. After a
 source succeeds, a Packet/file failure does not undo it. Keep the saved binding
-or Receipt ID, use only the appropriate bound recovery above, never repeat the
+or Receipt ID, use only the appropriate [bound recovery](#recover-review-handoff), never repeat the
 write. A target failure after dispatch is `unknown`, even with an `ok=false`
 response: target/Runner intent or cleanup may already be saved. Only a confirmed
 pre-dispatch rejection is `failed`; do not infer unsaved state from an error code.
@@ -1901,10 +1946,7 @@ retry, new ledger, reviewer launch or raw-response file. Capture is limited to
 262,144 bytes in memory; malformed, incomplete or oversized output cannot be
 used as a Packet. Packet/result files alone are persisted.
 
-Save/submit take `--packet`; they remain usable with an already obtained complete
-Packet file. They do not authorize rerunning its source command.
-Prepare/read/save/submit share complete-Packet validation, without filling
-missing fields; legacy stored Contract constraints retain read compatibility.
+#### Read Review Packet
 
 Assigned independent reviewers use the request's `read_command`, whose shape is
 `review_handoff.py read --repo . --packet reviews/packet.json --role independent`.
@@ -1937,16 +1979,17 @@ the [reviewer procedure](task_workflow.md#independent-reviewer) remains fallback
 guidance. Different/uncertain roles retain the complete Packet
 and applicable alternative instructions; never infer actual independence.
 
-```powershell
-# Reviewer: pipe only the completed original JSON, with UTF-8 shell encoding.
-python .agents/skills/task-governance-tool/scripts/review_handoff.py save --repo . --packet reviews/packet.json --output reviews/review-a.json
-# Parent: the fixed helper frames originals and invokes taskgov stdin once.
-python .agents/skills/task-governance-tool/scripts/review_handoff.py submit --repo . --packet reviews/packet.json reviews/review-a.json reviews/review-b.json
-```
+#### Save Review Original
 
-The [workflow example](task_workflow.md#prepare-and-record-reviews) shows the
-PowerShell here-string data input. Shell transport must encode UTF-8, not UTF-16
-or a BOM. The LLM creates review data, not save/check/transport logic.
+The generated request supplies the exact save command. When shell syntax is
+needed, supply only the actual completed JSON on UTF-8 stdin, not UTF-16 or BOM:
+
+```powershell
+$OutputEncoding = [Console]::InputEncoding = [System.Text.UTF8Encoding]::new($false)
+@'
+<complete original version-1 result JSON>
+'@ | python .agents/skills/task-governance-tool/scripts/review_handoff.py save --repo . --packet reviews/packet.json --output reviews/review-a.json
+```
 
 Save accepts one complete object document with one Receipt. Existing format,
 privacy, tier, provenance and all binding validation happens before any file is
@@ -1955,25 +1998,37 @@ bytes and revalidates them and the unchanged Packet. Success is compact JSON:
 `{ok:true,status:"saved",path,verdict,finding_count}`. It is only a saved-file
 acknowledgement, not registration, review PASS, independence or completion proof.
 
+Return the saved path, verdict and Finding count once, without echoing the body.
+A failed/uncertain save needs [recovery](#recover-review-handoff), not overwrite.
+
+#### Submit Review Originals
+
+After every confirmed saved handoff, run the returned `submit_command`:
+
+```powershell
+python .agents/skills/task-governance-tool/scripts/review_handoff.py submit --repo . --packet reviews/packet.json reviews/review-a.json reviews/review-b.json
+```
+
 Submit accepts 1-8 paths, preserves complete original bytes, and adds only array
 framing. The combined 262,144-byte / 8-Receipt / 64-Finding bounds remain. The
 sibling taskgov stdin command performs its normal atomic registration and live
 revalidation; stdout and exit status are its ordinary response, including every
-Finding. For an actually approved Tier-2 self-review PASS, explicitly repeat
-`--user-approved-reviewer <key>` on the applicable save and submit calls. Neither
-JSON nor a saved file transfers approval. Independent reviews do not use it.
+Finding.
 
-All Packet/result paths must be untracked, Git-ignored `.json` files within the
-explicit project and physical directories. Only prepare creates its explicitly
-named missing ignored directory chain and `packet.json`, after a ready source
-result; preflight rejects an existing destination before invoking the source.
-Save/submit require existing directories. No operation changes an ignore rule,
-ACL, config, state path or permission. No absolute or
-traversal path, backslash, ADS, device name, link/junction/reparse ancestor,
-nonregular or multiply linked file is accepted. Package/admin/state roots
-`.agents`, `.codex`, `.git`, `.taskgov`, `task-governance-tool` are excluded.
-Non-Git projects retain direct stdin registration; this helper cannot establish
-an ignored-file boundary there. Packet input is bounded to 32,768 bytes.
+### Recover Review Handoff
+
+Only for preparation recovery, choose ONE binding form and a new unused area:
+
+```powershell
+python .agents/skills/task-governance-tool/scripts/review_handoff.py prepare --repo . --directory reviews/recovery recover <task-id> --expected-binding <binding>
+python .agents/skills/task-governance-tool/scripts/review_handoff.py prepare --repo . --directory reviews/recovery recover <task-id> --verification-receipt-id <recorded-id>
+```
+
+Keep the shared [path/validation boundary](#caller-owned-review-handoff).
+Use the saved binding or Receipt ID; never replay a successful source write.
+Unknown/lost source or submission outcomes require public-state inspection first.
+For corrections or alternative actual Receipt declarations, use
+[workflow recovery](task_workflow.md#review-handoff-recovery).
 
 Reads check identity and metadata before/after, with final byte rechecks before
 submission. These trusted-local checks do not isolate a hostile peer with the

@@ -798,6 +798,17 @@ Reader implementation and output semantics stay unchanged; focused retrieval
 checks exercise the actual public output and conditional link reachability,
 with semantic scenario review rather than natural-language matching rules.
 
+Single-add and batch schema are sibling CLI sections sharing explicit links to
+the existing registration conditions/result. Initial Contract guidance keeps a
+conditional link to its sibling revision procedure. Review target, shared-file
+orchestration, completion and direct transport share the review introduction;
+handoff correction/recovery is outside that subtree. The helper reference
+keeps shared path/validation rules in its introduction and operation-specific
+prepare/read/save/submit details in separate children. Normal links select the
+needed child, not all sibling modes. Retrieval tests exercise these actual
+routes, input/ID/result fields and failure links; semantic review checks the
+retained rules, without a prose classifier or wording-lock tests.
+
 The package has no separate host-permission guide or approval-tool examples.
 Taskgov-specific write boundaries stay in the CLI operation contracts; uncertain
 write outcomes use existing public-state inspection in the error/retry guidance.

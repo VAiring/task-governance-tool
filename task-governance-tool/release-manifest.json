@@ -1,12 +1,12 @@
 {
   "core_files": {
     "LICENSE": "sha256:cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
-    "SKILL.md": "sha256:327518d2617da4966bc4a6da30ddfd87a14d7ea66f9b024da84cd9bee2716ffd",
+    "SKILL.md": "sha256:10715629d3abe9d244f306338e299a05cf5fd21f3b722b8391046d8987ac3321",
     "agents/openai.yaml": "sha256:088f6070969a6ff72d09a7d1bfc059c1ab7c0e490c54931d8dae354cad925402",
     "assets/task-viewer.template.html": "sha256:64d79314178a60e61dba47943c86649d0330e3264736d22995f80714fdde41f2",
-    "references/cli_contracts.md": "sha256:8543ee0313b434a20eafaf772e69022693b20d3a5da1072ef895bcee2ba2d2ae",
+    "references/cli_contracts.md": "sha256:bac26ae3391af7eec9b8d3091b2ca9480fa8968b14e616256ae89d7716dbfdd4",
     "references/reconciliation.md": "sha256:8ab7b5e734034a8dc186b274de5c1ce65eb17496e7a5690011585292670688aa",
-    "references/task_workflow.md": "sha256:fdc8bdfb057ddfa232cbf50f25bce5e001e7e349fffde764385f42f694058d00",
+    "references/task_workflow.md": "sha256:21809217a601f68f9511718ad5bb28d7fbadf2759e7bc5f95324547857960c88",
     "references/usage_hooks.md": "sha256:eccefc1b1278071796213c123f9f791b8ca86a4a2c64b11f366649fdac8f027a",
     "scripts/read_reference.py": "sha256:4d48e63345a06d97eecac040aaca484ac01958ba3b48c66fcf16785c5a2fd401",
     "scripts/review_handoff.py": "sha256:5b22d14154ce504ef80fbc0fdcce65f3c3271bfbdaaebd0c2f943c33f56a0256",

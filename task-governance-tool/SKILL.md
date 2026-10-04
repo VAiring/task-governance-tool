@@ -79,8 +79,9 @@ Edit, completion, and target-set acknowledgements omit unchanged description
 and verification prose. Retain it from this context; no extra read is needed.
 
 Use the [review workflow](references/task_workflow.md#prepare-and-record-reviews)
-for shared-file or direct complete-byte handoff. Assigned independent reviewers
-use the separate entry above.
+for ordinary shared-file handoff; use [direct transport](references/task_workflow.md#direct-review-transport)
+only when passing complete Packet/result bytes instead. Assigned independent
+reviewers use the separate entry above.
 
 Read only the linked responsibility needed for the operation or returned
 condition, including its applicable exceptions and input rules. References
@@ -95,12 +96,13 @@ confirmation is required.
 | Explicit diagnosis or state/package error | [Doctor](references/cli_contracts.md#doctor) |
 | Explicit taskization | [Completion-based Task boundaries and registration](references/task_workflow.md#taskize-or-add-scope) |
 | Explicit active-Task scope addition | [Scope-addition disposition](references/task_workflow.md#explicit-mid-task-scope-addition) |
-| Copy or revise an authorized Contract | [Task Contract](references/task_workflow.md#task-contract) |
+| Copy an explicit initial Contract | [Task Contract](references/task_workflow.md#task-contract) |
+| Later explicitly authorized Contract change | [Contract revision](references/task_workflow.md#contract-revision) |
 | `effort_advisory_enabled=true` | [Optional Effort Advisory](references/task_workflow.md#optional-effort-advisory) |
 | A useful continuation boundary | [Optional checkpoint](references/task_workflow.md#optional-continuation-checkpoint) |
 | Pause, block, or resume held work | [State transitions](references/task_workflow.md#pause-resume-and-block) |
 | A discovery outside accepted scope | [Local handoff](references/task_workflow.md#scope-control-and-local-handoff) |
-| Exact review material ready, including `git_snapshot` before commit | [Review and completion](references/task_workflow.md#review-and-completion) |
+| Exact review material ready, including `git_snapshot` before commit | [Set the review target](references/task_workflow.md#set-the-review-target) |
 | Explicit Receipt/provenance or saved-history investigation | [Task audit](references/cli_contracts.md#task-audit-detail) |
 | Explicit trusted-local Runner Plan authoring | [Plan actions, example, and OS limits](references/cli_contracts.md#runner-plan-actions) |
 | Maintenance warning after a successful write | [Continuity warnings](references/cli_contracts.md#internal-continuity-boundary) |

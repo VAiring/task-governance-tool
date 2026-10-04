@@ -936,6 +936,16 @@ document organization only: no extra normal-path call, search, reread, choice,
 reader behavior, or gate is introduced. Compare actual reader output, including
 ancestor introductions and descendants, rather than file length alone.
 
+Operation entries distinguish single registration from structured batch input,
+initial Contract creation from later semantic revision, and shared-file review
+from direct complete-byte transport. Shared rules remain on the applicable
+path; conditional input, correction and recovery detail is linked at its trigger
+rather than inherited by unrelated ordinary operations. Helper preparation,
+reviewer read/save and parent submission have separate detail entries. This
+is routing of existing operations, not a new taxonomy or permission decision;
+Select-Split-Merge, Tier floors, exact-target review, original-result retention
+and uncertain-outcome recovery retain their full force.
+
 Select-Split-Merge decisions remain instruction-layer guidance in current
 `SKILL.md` and `references/task_workflow.md`. The separately defined structured
 registration mode only transports those explicit decisions. The guidance itself

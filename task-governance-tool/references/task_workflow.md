@@ -13,12 +13,15 @@ with `python3`. `<task-id>` comes from `task context` at
 - [Bounded Operating Loop](#bounded-operating-loop)
 - [Selection And Execution Boundary](#selection-and-execution-boundary)
 - [Task Contract](#task-contract)
+- [Contract Revision](#contract-revision)
 - [Concise Contracts With Current Owners](#concise-contracts-with-current-owners)
 - [Optional Effort Advisory](#optional-effort-advisory)
 - [Optional Continuation Checkpoint](#optional-continuation-checkpoint)
 - [Pause, Resume, And Block](#pause-resume-and-block)
 - [Scope Control And Local Handoff](#scope-control-and-local-handoff)
 - [Review And Completion](#review-and-completion)
+- [Direct Review Transport](#direct-review-transport)
+- [Review Handoff Recovery](#review-handoff-recovery)
 - [Independent Reviewer](#independent-reviewer)
 - [Repair Findings](#repair-findings)
 - [Reopen](#reopen)
@@ -238,8 +241,19 @@ Alternatively, activate revision 1 only on an exact revision-zero
 python .agents/skills/task-governance-tool/scripts/taskgov.py task edit --repo <target-project> <task-id> --status in_progress --contract-scope "Authorized files and behavior" --contract-acceptance "Exact completion condition" --json
 ```
 
+Explicit constraints use strict normal [privacy validation](cli_contracts.md#errors-and-privacy).
+Do not use a document produced by the current Task to authorize its own
+expansion; hand off proposed hardening outside the current Contract.
+Only for a later authorized change, use [Contract Revision](#contract-revision).
+For an illustrative concise Contract referring to existing shared owners, see
+[the authoring example](#concise-contracts-with-current-owners) only when needed.
+
+## Contract Revision
+
 Make a later semantic revision only from later explicit authority and include
-its reason:
+its reason. Copy explicit scope and acceptance together; do not infer missing
+Contract facts or use a document produced by the current Task to authorize its
+own expansion. Initial creation instead uses [Task Contract](#task-contract).
 
 ```powershell
 python .agents/skills/task-governance-tool/scripts/taskgov.py task edit --repo <target-project> <task-id> --contract-scope "Revised explicit scope" --contract-acceptance "Revised explicit acceptance" --contract-authority-ref "user_instruction:<task-id>:<revision>" --contract-change-reason "User changed the accepted boundary" --json
@@ -250,8 +264,9 @@ taskgov, not a conversation ID, and an allowed positive Contract revision.
 For a semantic edit, use the next Contract revision. The existing concurrent
 write path also accepts the current revision and binds it to the next allocated
 revision; an exact content replay may use an older positive same-Task reference.
-A new `task add` has not returned its Task ID yet: the conversation reference
-above avoids guessing that ID. A conversation ID in the reserved Task-ID slot
+A new `task add` has not returned its Task ID yet: the
+[initial reference example](#task-contract) avoids guessing that ID.
+A conversation ID in the reserved Task-ID slot
 is rejected. These checks do not authenticate user approval.
 
 Do not use a document produced by the current task to authorize that task's own
@@ -268,9 +283,6 @@ external-operation intent or evidence, use
 `operation_sequence=<positive canonical integer>` only as correlation or
 idempotency metadata. Current explicit authority for the operation remains
 separate.
-
-For an illustrative concise Contract referring to existing shared owners, see
-[the authoring example](#concise-contracts-with-current-owners) only when needed.
 
 ## Concise Contracts With Current Owners
 
@@ -458,6 +470,14 @@ alone do not stop completion; the same repair route remains available.
 Reopening a done Task requires approved
 follow-up work and the [isolated reopen procedure](#reopen).
 
+Tier 2 normally requires two distinct independent PASS receipts for the exact
+current target/generation. Taskgov deterministically evaluates qualifying PASS
+receipts and changes-requested receipts only for the current review target and
+generation. Any unresolved high or medium finding from any recorded generation
+still blocks. Distinct reviewer keys prove distinct stored strings, not distinct
+people, LLMs, machines, independent processes, independence, or authenticated
+provenance. Caller declarations do not prove actual model/Skill use or review truth.
+
 ### Set The Review Target
 
 Only after the exact material is ready, stage precisely the intended Git files
@@ -497,8 +517,8 @@ complete response before display and prepares the handoff only if ready. Choose
 an authorized unused ignored directory; no separate mkdir or path-check call is
 needed. A Receipt-required target creates no directory, so the later Receipt
 form uses the same name. Once created, do not reuse it for another generation.
-For direct complete-byte transport, `taskgov.py review target set <task-id>
---kind git_snapshot --json` remains available; do not run both forms.
+For direct complete-byte transport instead, use the
+[direct route](#direct-review-transport); do not run both forms.
 Use the Task ID from `data.selected.task.task_id` in the context response.
 `git_snapshot` rejects `--revision`; unstaged/untracked material is excluded.
 For already committed or non-Git material, the existing `git_commit`,
@@ -519,10 +539,11 @@ the old target is never upgraded in place.
 This is the parent's orchestration procedure. Assigned independent reviewers
 use the separate [reviewer procedure](#independent-reviewer), not this section
 or target-setting/completion instructions. Unknown or different review roles
-retain the full Packet and the applicable existing alternative below; do not
+retain the full Packet and the [direct route](#direct-review-transport); do not
 classify them from a Task tier or allocated reviewer count.
 
-For shared-file transport, start with `review_handoff.py prepare` as above.
+For shared-file transport, start with `review_handoff.py prepare` at the
+[target step](#set-the-review-target), following the normal loop.
 Use only its `handoff.status=ready` output. It has already saved and confirmed
 the complete Packet and unused result paths; give each reviewer its returned
 `review_requests[].request` unchanged together with the project's review scope
@@ -538,70 +559,13 @@ Normal successful reviewers
 return the short acknowledgement once, in their final response, without a
 duplicate success message; questions and failure reports remain appropriate.
 
-If using direct complete-byte transport instead, use the actual
-`data.review_preparation.packet` returned with status `ready`
-by Receipt registration, or directly by target setting for `not_required` or
-`runner_pass`. Pass the complete obtained object directly when the review
-transport supports it; do not save and reread a Packet merely to relay it.
-A shared Packet file is optional when the transport needs one: preserve the
-complete obtained object mechanically, without reconstructing it from displayed
-excerpts. A missing, cut-off or differently bound Packet is not delivered;
-recover the complete retained response or use the [bound recovery procedure](cli_contracts.md#review-prepare).
-Do not repeat target setting or Receipt registration. The Packet's bounded
-`changed_paths_truncated` flag is not transport truncation and never narrows
-the exact material to review.
-
-Give that actual packet to the required independent reviewers; do not rebuild
-Task/Contract/target prompts from separate reads. The command launches no
-reviewer and stores no packet/result. Use the Packet's `review_target`,
-`contract.revision`, and `task.task_id` for result binding. Standalone
-preparation success by itself is not verification gate success.
-Follow its target-kind inspection instruction:
-
-- `git_snapshot`: matching stage-0 index against the stored base, never
-  unstaged or untracked worktree material;
-- `git_commit`: target commit tree/blobs against first parent, or empty tree
-  for a root, not ambient HEAD/worktree;
-- `diff_fingerprint` or `external_revision`: no PASS until exact supplied
-  material is demonstrably bound to that value.
-
-Ask each reviewer to complete the Packet's `result_template` using its
-`result_instructions`, preserving the filled identity. Null placeholders are
-unfinished, not defaults: supply actual verdict, sanitized summary, provenance
-and Findings, using an empty Findings array only after finding no issues.
-This format guidance does not replace exact artifact and authority inspection.
-The [structured result reference](cli_contracts.md#structured-review-results)
-remains available for registration detail; a normal Packet needs no separate
-format lookup.
-Pass each complete original JSON by reference or bytes; do not regenerate its
-content from a summary or fill missing provenance. Where shared files are
-available, fix each reviewer's distinct unused ignored result path and the
-registration command before dispatch. Supply those exact paths with the complete
-Packet in the same review request, so neither side rediscovers or retypes them
-later. Retain originals until the registration outcome is known.
-
-For the shared-file path the prepare output already supplies the commands below
-with actual paths. The reviewer and parent execute them without rebuilding
-transport logic. Paths, partial-success fields and bound recovery forms are in the
-[handoff helper reference](cli_contracts.md#caller-owned-review-handoff).
-
-The reviewer supplies only the actual completed JSON on UTF-8 stdin. In
-PowerShell, a literal here-string carries the data without interpolation:
-
-```powershell
-$OutputEncoding = [Console]::InputEncoding = [System.Text.UTF8Encoding]::new($false)
-@'
-<complete original version-1 result JSON>
-'@ | python .agents/skills/task-governance-tool/scripts/review_handoff.py save --repo . --packet reviews/packet.json --output reviews/review-a.json
-```
-
-The fixed operation validates before creation, saves exclusively, confirms the
-actual saved bytes and complete Packet binding, and returns a short
-path/verdict/Finding-count acknowledgement. Return that acknowledgement without
-echoing the body. Only `ok=true,status=saved` is a ready handoff; it is not
-registration success, PASS evidence, independence proof or completion permission.
-On failure or uncertain outcome, retain the original/residue and investigate;
-a corrected result needs a new unused path. Never overwrite or blindly resend.
+Each reviewer supplies its actual judgment, provenance and every Finding in
+the returned template, never inferred PASS or filled-in missing declarations.
+Preserve complete originals until registration is known; do not regenerate them
+from summaries. Only `ok=true,status=saved` confirms a saved handoff, not review
+truth, independence, registration or completion. The fixed
+[save operation](cli_contracts.md#save-review-original) documents UTF-8 input
+when needed; its command is already in each generated request.
 
 After all confirmed handoffs, the parent runs the returned `submit_command`,
 which has the following shape:
@@ -619,30 +583,11 @@ Task completion. Do not add a routine show/check to confirm it. Repeated
 provenance/events are explicitly omitted from this response, not from storage.
 A short acknowledgement never replaces Findings. Recover an
 incomplete registration response before deciding what to repair; the helper
-does not weaken current-state revalidation or authorize retries. If shared
-ignored files are unavailable, the [existing stdin interface](cli_contracts.md#structured-review-results)
-still accepts complete originals by bytes; do not infer file permissions.
-
-Invalid input saves no prefix. Obtain corrections from their actual source.
-Post-commit display warnings or emission failure do not undo saved results.
-If a response is lost, inspect recorded state before retrying; committed replay
-is not idempotent. JSON grants no approval. Use a named-reviewer approval flag
-only with actual current user approval under the existing fallback rule.
-If the received review is not in that structured format but supplies the actual
-Receipt declarations, use the [single Receipt path](cli_contracts.md#review-provenance)
-and record its actual Findings through the existing Finding command. Do not
-invent missing verdicts, provenance, or target binding to manufacture either
-input. Correct invalid/incomplete results at their source; splitting a rejected
-batch into single calls must not bypass its rejection. This is a choice from
-the received result, not another routine comparison, probe, or reference read.
-
-Tier 2 normally requires two distinct independent PASS receipts for the exact
-current target/generation. Taskgov deterministically evaluates qualifying PASS
-receipts and changes-requested receipts only for the current review target and
-generation. Any unresolved high or medium finding from any recorded generation
-still blocks. Distinct reviewer keys prove distinct stored strings, not distinct
-people, LLMs, machines, independent processes, independence, or authenticated
-provenance. Caller declarations do not prove actual model/Skill use or review truth.
+does not weaken current-state revalidation or authorize retries. Missing, failed or
+uncertain handoff/registration stops continuation: retain originals/residue,
+never overwrite or blindly resend, and use [handoff recovery](#review-handoff-recovery).
+If shared ignored files are unavailable, use the [direct route](#direct-review-transport);
+do not infer file permissions. This is an alternative, not another normal read.
 
 ### Complete Work
 
@@ -706,13 +651,97 @@ and never replaces the write's fresh revalidation.
 Maintenance warnings preserve the successful business result; follow
 [continuity warnings](cli_contracts.md#internal-continuity-boundary), not a new retry loop.
 
+### Direct Review Transport
+
+Use this alternative only when supplying complete Packet/result bytes instead
+of the shared-file preparation route. The shared current-target independence
+and Finding gates above apply equally; this transport does not change them.
+Follow the [normal loop](#bounded-operating-loop)
+with direct `review target set <task-id> --kind git_snapshot --json` and, only
+for `receipt_required`, `verification receipt add` instead of the helper.
+Use the returned target generation and route; never invoke both transports for
+one operation. See [target inputs](cli_contracts.md#review-target) or
+[Receipt inputs](cli_contracts.md#verification-receipt) when those forms are needed.
+
+Use the actual
+`data.review_preparation.packet` returned with status `ready`
+by Receipt registration, or directly by target setting for `not_required` or
+`runner_pass`. Pass the complete obtained object directly when the review
+transport supports it; do not save and reread a Packet merely to relay it.
+A shared Packet file is optional when the transport needs one: preserve the
+complete obtained object mechanically, without reconstructing it from displayed
+excerpts. A missing, cut-off or differently bound Packet is not delivered;
+recover the complete retained response or use the [bound recovery procedure](cli_contracts.md#review-prepare).
+Do not repeat target setting or Receipt registration. The Packet's bounded
+`changed_paths_truncated` flag is not transport truncation and never narrows
+the exact material to review.
+
+Give that actual packet to the required independent reviewers; do not rebuild
+Task/Contract/target prompts from separate reads. The command launches no
+reviewer and stores no packet/result. Use the Packet's `review_target`,
+`contract.revision`, and `task.task_id` for result binding. Standalone
+preparation success by itself is not verification gate success.
+Follow its target-kind inspection instruction:
+
+- `git_snapshot`: matching stage-0 index against the stored base, never
+  unstaged or untracked worktree material;
+- `git_commit`: target commit tree/blobs against first parent, or empty tree
+  for a root, not ambient HEAD/worktree;
+- `diff_fingerprint` or `external_revision`: no PASS until exact supplied
+  material is demonstrably bound to that value.
+
+Ask each reviewer to complete the Packet's `result_template` using its
+`result_instructions`, preserving the filled identity. Null placeholders are
+unfinished, not defaults: supply actual verdict, sanitized summary, provenance
+and Findings, using an empty Findings array only after finding no issues.
+This format guidance does not replace exact artifact and authority inspection.
+The [structured result reference](cli_contracts.md#structured-review-results)
+remains available for registration detail; a normal Packet needs no separate
+format lookup.
+Pass each complete original JSON by reference or bytes; do not regenerate its
+content from a summary or fill missing provenance. Where shared files are
+available, fix each reviewer's distinct unused ignored result path and the
+registration command before dispatch. Supply those exact paths with the complete
+Packet in the same review request, so neither side rediscovers or retypes them
+later. Retain originals until the registration outcome is known.
+
+Submit complete original JSON through the existing
+[stdin interface](cli_contracts.md#structured-review-results). Use its returned
+Findings and `review_gate`, not a routine confirmation read. If the source
+instead supplies actual single-Receipt declarations or requires correction,
+use [handoff recovery and alternative results](#review-handoff-recovery);
+never invent missing claims or use single calls to bypass a rejected batch.
+
+## Review Handoff Recovery
+
+Use only for a failed, incomplete or uncertain handoff/registration, a result
+requiring correction, or the alternative received-result format below. Stop
+continuation and preserve originals and residue. For lost/uncertain outcomes,
+inspect existing public state before deciding whether a write can safely be retried. A failed save/readback
+needs a new unused path, never overwrite. Preparation-only recovery uses its
+saved binding/Receipt ID and [bound recovery](cli_contracts.md#recover-review-handoff),
+not another target or Receipt write.
+
+Invalid input saves no prefix. Obtain corrections from their actual source.
+Post-commit display warnings or emission failure do not undo saved results.
+If a response is lost, inspect recorded state before retrying; committed replay
+is not idempotent. JSON grants no approval. Use a named-reviewer approval flag
+only with actual current user approval under the existing fallback rule.
+If the received review is not in that structured format but supplies the actual
+Receipt declarations, use the [single Receipt path](cli_contracts.md#review-provenance)
+and record its actual Findings through the existing Finding command. Do not
+invent missing verdicts, provenance, or target binding to manufacture either
+input. Correct invalid/incomplete results at their source; splitting a rejected
+batch into single calls must not bypass its rejection. This is a choice from
+the received result, not another routine comparison, probe, or reference read.
+
 ## Independent Reviewer
 
 Use this section when explicitly assigned an independent review. You review
 the complete exact target under the project's current authority; you do not
 set targets, register results, commit, or complete the parent's Task. If your
 role is different or uncertain, ask the caller to use the applicable
-[full-Packet route](#prepare-and-record-reviews); do not infer independence.
+[full-Packet route](#direct-review-transport); do not infer independence.
 That conditional route is not an additional ordinary read.
 
 The generated shared-file request and its output are self-contained; this
@@ -783,7 +812,7 @@ echoing JSON or a duplicate normal-success message. Questions and failure report
 remain appropriate. On failure or a lost response, preserve the original/residue
 and report the uncertain outcome: do not overwrite or blindly resend. Necessary
 investigation remains allowed; the caller handles registration/recovery through
-the [handoff failure rules](cli_contracts.md#caller-owned-review-handoff).
+the [handoff failure rules](#review-handoff-recovery).
 
 ## Repair Findings
 
@@ -876,14 +905,15 @@ it shares files or checks with the feature.
 
 ### Registration, Contract, And Ordering
 
-Register only explicit user-approved work. Register a finalized multiple-Task
-set once with `task add --from-stdin`, using explicit common values as described
-in [CLI contracts](cli_contracts.md#task-add); single-Task flags remain available.
+Register only explicit user-approved work. Use [single-Task flags](cli_contracts.md#task-add)
+for one group; for a finalized multiple-Task set use
+[batch registration](cli_contracts.md#batch-task-registration) once.
 Registration grants no implementation, target-project, Git,
 network, or external-operation permission. A non-zero Contract copies only
 explicit scope, acceptance, constraints, and authority reference.
-For initial reference examples and the reserved Task-ID form, see
-[Task Contract](#task-contract).
+For initial reference examples, see [Task Contract](#task-contract).
+When checking the reserved Task-ID reference form, use its
+[ID and revision rules](#contract-revision); reading them grants no revision authority.
 
 Set the whole Task's verification expectation, or an explicitly justified
 `--verification-not-required` reason, in that same registration or an existing
@@ -894,7 +924,7 @@ Use no extra read or question solely to repeat already-authorized requirements.
 When registration **and immediate implementation** are already authorized and
 the Task can start without bypassing existing selection or predecessor order,
 record that decision with `task add --status in_progress` (or the item's
-`status` in structured input). Otherwise retain the appropriate initial state,
+`status` in batch input). Otherwise retain the appropriate initial state,
 normally `ready`. Do not mark new work active to displace an existing active
 Task or an earlier selected ready candidate. Registration-only authority,
 `selection=none`, and omitted candidate rows do not establish start permission

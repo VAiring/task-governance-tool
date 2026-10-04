@@ -370,6 +370,24 @@ Both cover portable filesystem behavior; `test_review_handoff_windows.py`
 owns the native PowerShell transport case outside POSIX platform selection. Existing
 result registration tests retain writer atomicity and concurrent-state checks.
 
+### Host-Owned Review Waiting
+
+Review waiting is caller guidance over the exposed host API, not a Python
+runtime responsibility. The host owns the blocking timeout, mailbox delivery
+and early return. The parent interprets actual outcomes using its existing
+dispatch handles and Task/Contract/target context. No adapter, scheduler,
+persisted deadline, notification ledger, new user-entered ID or helper operation
+is introduced. `review_handoff.py` and `review_handoff_preparation.py` retain
+their original transport responsibilities; core registration, ownership and
+gates retain their current writers and validation.
+
+The [waiting behavior](review-completion-specification.md#host-owned-review-waiting)
+is carried in the workflow's common Review And Completion introduction, so
+shared-file and direct transport receive it without another reference read.
+Existing reference-retrieval and package checks verify delivery; semantic
+scenario review checks completion, messages, timeout, interruption and host
+limits. There is no new timer state machine to test or claim as implemented.
+
 <a id="review-packet"></a>
 
 <a id="conditional-core-reviewer-binding-structure"></a>

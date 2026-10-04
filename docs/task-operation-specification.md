@@ -894,6 +894,11 @@ global Merge.
 
 ### Active Instruction-Layer Boundary
 
+Review orchestration uses the existing host wait as described by
+[Review/completion](review-completion-specification.md#host-owned-review-waiting).
+This is caller guidance, not a new Skill trigger, taskgov call or completion
+gate. Host limits and current execution rules remain controlling.
+
 Package explanation retrieval may replace whole-reference reads or line-range
 searches with `scripts/read_reference.py "references/<file>.md#<section>"`.
 The supported files are the shipped workflow, CLI contracts, conditional

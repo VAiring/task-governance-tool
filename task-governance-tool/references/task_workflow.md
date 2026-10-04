@@ -478,6 +478,26 @@ still blocks. Distinct reviewer keys prove distinct stored strings, not distinct
 people, LLMs, machines, independent processes, independence, or authenticated
 provenance. Caller declarations do not prove actual model/Skill use or review truth.
 
+After dispatching authorized subagent reviews, use the host's existing wait:
+where exposed and permitted, `collaboration.wait_agent` with
+`timeout_ms: 600000` (600 seconds). Keep the parent turn pending; the host's
+existing notification path provides early return, not a Skill timer or helper.
+Respect a shorter tool limit or current execution rule; use the permitted wait
+or existing authorized review workflow and disclose the limitation, rather than
+claiming a single ten-minute wait. Do not add routine short progress polls.
+
+A return may mean a completion, intermediate/unrelated agent message, user
+input, or timeout, not that all reviewers finished or passed. Use the actual
+dispatched handles to keep outcomes with their Task/Contract/target, even while
+working on another Task. Consume real outcomes; honor user input and handle
+problems before rewaiting for healthy unfinished work. After timeout, assess
+the returned state once; inspect existing host status only if it is insufficient.
+Already-known completion needs no further wait. Missing originals or uncertain
+launch/delivery require existing recovery, not guessed success or blind relaunch.
+On resume, reconcile existing handles/results; do not replay registration for
+duplicate or obsolete notifications. Waiting itself never changes ownership,
+cancels reviewers, or replaces the original-result and completion gates below.
+
 ### Set The Review Target
 
 Only after the exact material is ready, stage precisely the intended Git files

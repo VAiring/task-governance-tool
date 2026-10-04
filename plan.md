@@ -80,6 +80,11 @@ gates. It is not the product contract, execution ledger, or evidence store:
   authenticated provenance; the trusted caller records results truthfully.
 - Completion requires typed evidence. Reopen preserves append-only completion
   cycles but historical evidence never satisfies the new current gate.
+- Review waiting uses the existing host API as defined by
+  [Review/completion](docs/review-completion-specification.md#host-owned-review-waiting),
+  within the current tool and execution limits. The
+  [bounded decision](docs/proposals/review-wait-notification.md) adds no custom
+  wait/notification implementation or host-qualification prerequisite.
 - Durable project identity is separate from mutable filesystem binding. A path
   mismatch is not move/copy/fork intent; only explicit setup confirmation may
   advance a binding.
@@ -503,13 +508,10 @@ copy live Task progress into this section.
 These items are not implementation authority. Each needs a separately approved
 contract and execution unit.
 
-- The [review-wait and parent-chat notification proposal](docs/proposals/review-wait-notification.md)
-  defines one maximum-600-second blocking wait, early return on function-owned
-  review completion notification, and checking/rewaiting when unfinished.
-  Host support for the duration and notification-driven return remains to be
-  established. The proposal requires no separate timer or parent turn ending;
-  it does not activate Skill guidance, change existing review/completion gates,
-  or register implementation work.
+- A new review-wait host adapter or stronger all-reviewers-ended delivery
+  guarantee would require separate scope. Existing-host caller guidance is
+  owned by [Review/completion](docs/review-completion-specification.md#host-owned-review-waiting);
+  stronger host integration is not current work or a Task prerequisite.
 - Decide separately whether to approve the still-proposed verification-
   guardrail successor inventory before reconsidering that Skill-only guidance.
 - Decide whether later product scope should add project-profile detection,

@@ -539,6 +539,43 @@ originals and inspect uncertain outcomes. Result validation still precedes
 file creation or registration, and readback failure may still leave residue.
 Other helper failures keep their existing general diagnostics.
 
+### Host-Owned Review Waiting
+
+The caller uses the existing host subagent wait after authorized review
+dispatch. Where `collaboration.wait_agent` is exposed and current tool limits
+and execution rules permit it, request `timeout_ms: 600000`. This is a maximum
+600-second wait in the pending parent turn, not a reviewer deadline. Early
+return uses the host's existing notifications; taskgov and its handoff helper
+implement no timer, notification service, wait wrapper or new command.
+
+Follow shorter host limits or active execution rules rather than bypassing them.
+Use the permitted wait or existing authorized review workflow, explaining the
+limitation without calling repeated short waits a single ten-minute wait.
+Do not add routine short status polling. This guidance adds no isolated
+qualification, ten-minute experiment or notification-delivery prerequisite
+to the Task gate.
+An accepted timeout parameter is not proof of effective elapsed-time support;
+unmeasured duration and token savings remain unmeasured.
+
+The current `wait_agent` interface can return for any live-agent mailbox update,
+including intermediate messages, as well as completion, user input or timeout.
+It does not select a review set or guarantee an all-reviewers-ended event.
+Use actual dispatch handles and the already-held Task/Contract/target association
+to consume relevant outcomes. An unrelated/intermediate message does not require
+a new full status read. On timeout, assess the returned state once, using an
+existing host status read only if needed. Rewait only for healthy unfinished
+work; address problems and user input first. Known completion before waiting,
+or received with expiry, requires no additional wait. Termination or a notification
+does not establish a valid original, PASS, registration or a satisfied gate.
+
+Missing originals and unknown launch/delivery use existing investigation and
+handoff recovery, not blind relaunch or registration. After interruption reconcile
+existing handles/results; ignore duplicate/obsolete outcomes for current writes.
+No new event identity or persistence is required. Waiting grants no ownership,
+Task transition, reviewer cancellation or cross-chat messaging authority. A's
+outcome still belongs to A when the caller is working on B, under the existing
+[ownership rules](task-operation-specification.md#session-ownership-and-recovery).
+
 <a id="conditional-reviewer-session-binding"></a>
 
 ### Reviewer Session Binding

@@ -503,6 +503,12 @@ copy live Task progress into this section.
 These items are not implementation authority. Each needs a separately approved
 contract and execution unit.
 
+- The [review-wait and parent-chat notification proposal](docs/proposals/review-wait-notification.md)
+  defines the requested turn-ending, ten-minute check and all-review-ended
+  notification behavior. Same-runtime Desktop delivery remains a host
+  prerequisite to establish before feature activation. The proposal does not
+  enable a scheduler, change existing review/completion gates, or register
+  implementation work.
 - Decide separately whether to approve the still-proposed verification-
   guardrail successor inventory before reconsidering that Skill-only guidance.
 - Decide whether later product scope should add project-profile detection,

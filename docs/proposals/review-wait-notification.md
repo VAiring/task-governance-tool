@@ -1,13 +1,13 @@
-# Review Wait And Parent Chat Notification Proposal
+# Review Wait And Completion Notification Proposal
 
 ## Status, Purpose, And Authority
 
-This is the design-only result for the user-requested review-wait change. It
-specifies a proposed optional way to wait after dispatching independent reviews:
-the parent ends its turn, a deterministic host-side controller waits, and a chat
-notification wakes the parent only when results or a ten-minute check need
-attention. It is not an implemented feature, an active Skill instruction, an
-implementation roadmap, or permission to start services or send messages.
+This design-only proposal specifies an instruction to use one blocking wait of
+up to 600 seconds after dispatching independent reviews. Function-owned review
+completion notification returns that wait early. The parent checks unfinished
+work after expiry and, if healthy, calls the next wait. There is no separate
+ten-minute notification timer, timer registration/rearm workflow, or required
+end of the parent turn between waits.
 
 [plan.md](../../plan.md#open-issues-and-deferred-candidates) routes this proposal.
 The current [review handoff](../review-completion-specification.md#caller-owned-review-handoff),
@@ -15,257 +15,173 @@ The current [review handoff](../review-completion-specification.md#caller-owned-
 [reviewer binding](../review-completion-specification.md#reviewer-session-binding),
 [Task ownership](../task-operation-specification.md#session-ownership-and-recovery)
 and [privacy](../specification.md#privacy-safety-and-stable-errors) remain
-controlling. Their implementation boundaries remain in
+controlling. Implementation boundaries remain in
 [review completion design](../review-completion-design.md#structured-result-registration).
-The [design-first rule](../task-operation-specification.md#review-tier-and-design-first-rules)
-requires a later explicit taskization/implementation decision; this proposal
-does not create or start implementation Tasks.
+Under the [design-first rule](../task-operation-specification.md#review-tier-and-design-first-rules),
+this proposal is not an implemented feature, active Skill instruction or
+implementation Task. It authorizes no host setup, trust change, service start,
+live chat message or long-running experiment.
 
-## User-Visible Sequence
+## User-Visible Sequence And Proposed Instruction
 
-1. The parent prepares the current Packet and dispatches the intended reviewers
-   through its existing authorized host. One registration of the review set
-   associates those jobs with the parent chat and arms a ten-minute timer.
-   Timer setup and job registration are function-owned parts of that dispatch,
-   not new instructions for the LLM to construct a timer or repeatedly poll.
-2. Once the controller acknowledges that it owns observation and notification,
-   the parent ends its turn. No LLM remains running just to wait. If this
-   handoff fails, report that automatic waiting is unavailable; the existing
-   review workflow remains usable and dispatched reviewers need not be stopped.
-3. If reviews are still running after ten minutes, the controller sends one
-   check-due notification to the same parent chat and disarms that timer. The
-   awakened parent inspects the supplied status and obtains more detail only
-   if needed. If work is healthy, it explicitly continues waiting; the function
-   arms one new ten-minute timer and the parent ends its turn again. If there
-   is a problem, it keeps the timer stopped while handling that problem.
-4. As soon as all members of the review set have ended, regardless of PASS or
-   changes-requested verdicts, the controller removes all timers belonging to
-   that set and sends a completion notification. It does not wait for the next
-   ten-minute boundary. The parent reads and registers the original results
-   through the existing handoff and handles every Finding under current rules.
+The future caller guidance is:
 
-Ten minutes is a check interval, never a reviewer timeout or a forced failure.
-A slow but observable reviewer can continue through any number of explicitly
-continued intervals. A missing response from the parent never automatically
-rearms a timer or starts a stream of reminders.
+> After dispatching the required reviews, use the supported review wait once
+> with a maximum wait of 600 seconds. Keep the parent turn pending while the
+> function waits; do not repeatedly ask the LLM to check progress. Function-owned
+> completion notification should return this same wait as soon as all reviews
+> end, regardless of their verdicts. If the wait expires with work unfinished,
+> inspect the returned status once. If healthy, call the next maximum-600-second
+> wait; if a problem needs action, handle it before waiting again. Consume and
+> register actual reviewer originals through the existing handoff workflow.
 
-## Responsibility Boundary
+This instruction applies only where the selected host supports the duration
+and early return under its active operating rules. Respect the tool's timeout
+unit: 600 seconds is 600,000 milliseconds. This proposal invents no public wait
+command and does not require a particular host/tool name.
+
+Ten minutes is a maximum interval before checking unfinished work, not a forced
+reviewer termination deadline or a reason to reject a slow review. Waiting
+runs without model calls. There is no periodic chat message just to announce
+progress or model-visible short polling loop hidden inside this instruction.
+
+The complete intended review membership comes from actual dispatch results,
+including failed launches as explicit outcomes. Unknown launches require
+reconciliation, not blind relaunch. Observation covers completion before the
+first wait and between waits. A repaired/new review round has its own current
+basis; an older notification cannot complete it.
+
+## Responsibility And Result Boundaries
 
 | Component | Responsibility |
 |---|---|
-| Parent LLM | Dispatch authorized independent reviews, end its turn, decide whether a check needs intervention or continued waiting, consume originals and handle Findings. |
-| Host adapter | Identify the exact destination chat and reviewer jobs from structured dispatch results; receive lifecycle status; deliver a notification into that same chat with documented busy/idle behavior. |
-| Wait controller | Own one review set, timer state, deduplicated events and a minimal pending-notification record; operate without model calls during waiting. |
-| Existing handoff helper | Prepare/read the Packet, save validated original results and binding sidecars, and submit their unchanged bytes through the public CLI. |
-| Taskgov core | Continue to own Task state, ownership, Receipt registration, evidence freshness, review and completion gates. |
+| Parent LLM | Dispatch authorized reviews, call the bounded wait, assess expiry or an actual issue, rewait when appropriate, and handle originals. |
+| Host wait/notification capability | Observe the intended reviewers, wait without model generation, deliver correlated completion, return the matching wait early, and avoid duplicate effective wakeups. |
+| Existing handoff helper | Prepare/read the Packet, save validated originals and bindings, and submit unchanged originals through the public CLI. |
+| Taskgov core | Own Task state, ownership, verification, review registration, evidence freshness and completion gates. |
 
-The controller does not judge independence, reinterpret Findings, submit
-Receipts, mark Tasks done, acquire Task ownership, or launch a replacement
-reviewer. It observes lifecycle metadata instead of reading chat transcripts.
-The current helper has no scheduler, reviewer launcher or host adapter. A
-future orchestration layer will compose with that helper rather than turning
-file existence or a chat acknowledgement into a replacement gate.
+The current helper implements transport, not waiting, reviewer launching or
+host notifications. Prefer an existing host wait/notification facility when it
+meets this contract. Do not build a scheduler or permanent service merely to
+express a 600-second wait. Exact integration choices need later implementation
+authority; this design adds no persistence schema or normal-loop setup step.
 
-The parent can keep A in `review_pending`, execute B, and later complete A.
-A notification names A explicitly and never uses a default current-Task
-selection that could instead modify B. A parent turn ending is not a Task
-pause or ownership transfer. Existing ownership recovery remains explicit;
-neither the controller nor an adapter may impersonate the owner by changing
-environment identifiers.
+Keep these dimensions distinct: lifecycle (running, ended, execution-failed,
+cancelled or unknown); original availability/validation; actual verdict; and
+registration/gate outcome through the public CLI. Silence is not termination,
+a saved file is not registration, and a notification is not PASS.
 
-## Review Set And Observation Model
+All-ended includes execution failure and cancellation. Once every intended
+reviewer is terminal, notify and return even if an original is missing or
+invalid. Expose that defect for transport repair or a real review; never invent
+PASS or keep waiting for a terminated reviewer. An actual problem may return
+early for attention. A host returning an individual reviewer outcome early
+may let the parent consume that real outcome and wait for the remainder;
+ordinary commentary should not cause repeated model-visible checks.
 
-Registration freezes the intended member set from this dispatch. The adapter
-must capture actual job identifiers, including a failed launch as an explicit
-member outcome; an unknown launch outcome is reconciled without blind relaunch.
-Registration and initial status reconciliation must cover jobs that finish
-before event subscription. No reviewer may be silently omitted to make a set
-complete. Additional reviews after repairs form a new set with its own basis.
+## Notification And Wait Outcomes
 
-The controller retains only the coordination data needed for this set:
+Associate waiting with the existing project, Task, Contract revision, complete
+review target, execution/owner generation, parent host/chat and actual reviewer
+handles. Reuse host correlation instead of asking the LLM to enter session IDs.
+Notifications contain structured lifecycle/result availability and original
+references, plus enough event identity to recognize duplicates. They copy no
+chat/review bodies, reasoning, logs or secrets, and grant no approval/ownership.
 
-- a unique wait-set ID and the caller's idempotency key for dispatch adoption;
-- project ID, Task ID, Contract revision, full review-target tuple and execution
-  ID, plus the observed owner generation;
-- destination host and parent-chat identifiers, and exact reviewer-job handles;
-- the existing Packet/result references and structured member states;
-- controller revision, timer generation/deadline, notification IDs and delivery
-  states, and the structured reason for stopping or reconciliation.
+For a parent waiting on this set, function-owned completion notification and
+the returned wait result are one logical outcome. Use the host's supported
+tool/event path, without additionally starting another parent turn for the same
+completion. A wait timeout is a tool result, not a timer-generated chat message.
 
-These are proposed internal concepts, not new public CLI or JSON fields. A
-later implementation must define its exact schema and explicit local write
-location before activation. Coordination storage is separate from core Task
-evidence and optional token collection. Use one explicitly owned, ignored local
-area and atomic updates; do not create a second authority, secret store, host
-configuration, or copy of review/chat content.
-
-Track the following dimensions separately:
-
-| Dimension | Meaning |
+| Outcome or race | Required handling |
 |---|---|
-| Job lifecycle | Running, ended, execution-failed, cancelled, or unknown. Host loss/silence is unknown, not proof of termination. |
-| Original result | Not yet saved, saved and validated by the existing helper, missing after termination, invalid, or uncertain. |
-| Verdict | The actual verdict from a validated original, or unavailable. Process exit and helper exit do not imply PASS. |
-| Registration and gate | Observed only from existing public Taskgov results. Saved originals, ended jobs and delivered notifications do not establish either. |
+| All-ended before waiting starts | Return completion immediately; no lost notification window. |
+| All-ended during waiting | Notify and return the matching wait early, with actual result availability and verdicts when known. |
+| Maximum wait expires | Reconcile membership first; return completion if all-ended, otherwise one unfinished status for the parent's check. |
+| Healthy unfinished work | Call a new maximum-600-second wait; no timer-registration acknowledgement or mandatory turn-ending round trip. |
+| Problem found | Handle it before another wait; reviewer outcomes remain available through the host result path. |
+| Completion races expiry or is duplicated | Coalesce where possible; otherwise recognize the same set/event and consume it once. Never register originals twice or rewait after all-ended is known. |
+| User input interrupts waiting | Honor the input, retain available results and reconcile before later waiting; no automatic continuation contrary to the user. |
+| Cancellation or obsolete basis | Stop only this wait/automatic continuation, preserve reviewers and evidence, and ignore obsolete notifications for current-state writes. |
 
-`all ended` means every registered job is known to have reached a terminal
-lifecycle state. It includes execution failure and cancellation as abnormal
-outcomes. A missing/invalid result does not keep the wait timer alive after
-termination: notify that the set ended **with missing or invalid results**, so
-the parent can repair the transport or arrange an actual review. Keep all
-originals and uncertain residue under current handoff rules.
+Cancelling a wait does not terminate reviewers, cancel a Task, erase results or
+affect unrelated waits. Those operations retain their existing authorization.
+Waiting and early return never pause a Task or transfer ownership.
 
-## Timer And Event State Machine
+The parent may keep A in review_pending, do B, then complete A. A's notification
+always names A and its basis. While the parent works on B, use only supported
+host delivery/queuing; do not start a concurrent parent turn, interrupt B through
+a fabricated user message, or act on the default current Task. Existing public
+freshness/ownership guards remain controlling.
 
-Each set has one serialized state owner. Use compare-and-set or equivalent
-local locking so concurrent completion, timer and continuation events cannot
-create extra active timers. Timer generations make delayed callbacks inert.
+## Interruption, Recovery, And Unsupported Hosts
 
-| State / event | Required transition and effect |
-|---|---|
-| New registration | Reconcile known member states; if all ended, queue completion directly, otherwise arm deadline `now + 600 seconds`. |
-| Waiting / member update | Update that member idempotently. If all ended, remove this set's timers and queue one completion event. Otherwise retain the current deadline. |
-| Waiting / current deadline due | Reconcile current member states first. If all ended, take the completion path; otherwise disarm, enter `check_due`, and queue one check event. |
-| Check due / parent continues | Reconcile basis and members. If still applicable and unfinished, advance timer generation and arm `now + 600 seconds`. A repeated continuation with the same operation ID returns the existing arm. |
-| Check due / problem found | Enter `attention`, with no timer. Keep lifecycle observation so later all-ended results can still notify the parent. |
-| Attention / problem resolved and parent continues | Reconcile the same basis and members, then arm once, or finish immediately if already all ended. |
-| Any live wait / explicit cancellation or obsolete basis | Remove only this set's timers, revoke unsent events and stop automatic continuation for it. Preserve originals and evidence. |
-| All ended / late timer or continuation | Ignore the obsolete event; never create another wait interval. |
+Use the wait facility's elapsed-time timeout; a return ends that call. There
+are no persisted ten-minute deadlines, overdue notification backlogs or timer
+rearm state here. After disconnection, restart or a lost wait result, reconcile
+once through existing host review handles/results before consuming completion
+or waiting again. Do not assume the old call survived, restart reviewers or
+replay registration. Unknown lifecycle/delivery remains unknown until resolved.
 
-An explicit cancellation of waiting does not terminate reviewer processes,
-delete their results, cancel unrelated automations, or change Task status.
-Those actions retain their own existing authorization. A stopped or obsolete
-set cannot be reactivated by a stale notification. An explicitly requested new
-wait is registered with fresh identity and current basis.
+Host acceptance does not prove parent handling. Reuse existing event identity
+where available. If delivery is uncertain, inspect existing status/results
+instead of blindly sending another turn. Require idempotent handling, not
+exactly-once delivery across independent systems.
 
-Within one live process, deadlines use monotonic elapsed time. Persist a UTC
-deadline for recovery; after sleep/restart, reconcile once and emit at most one
-overdue check, never one notification per missed interval. Uncertain clock or
-job status requires reconciliation, not an assumed healthy automatic rearm.
+Check both capability and active host policy. Accepting a 600,000 argument does
+not prove a call remains blocked for that long. Chat delivery does not prove
+an outstanding wait is released. An arbitrary shell sleep, short tool yields
+followed by repeated LLM polling, or bypassing a shorter host blocking limit
+is not this mode.
 
-## Notification, Race, And Recovery Semantics
+If the host cannot provide the bounded wait and completion-driven early return,
+state the limitation and use the existing authorized review workflow. Do not
+claim support, silently restore periodic timers, or add waiting/notification
+availability as a completion gate. Ordinary review, unrelated work and valid
+completion remain available under current rules. Numerical collection failure
+also does not affect those rules.
 
-Notifications contain a fixed event kind (`check_due`, `all_ended`, or
-`attention_required`), event ID, wait-set/basis identifiers, per-member lifecycle
-and result availability, and references to the original results. A verdict is
-included only from a validated original. Full Findings are consumed through the
-existing result path rather than recopied into a notification. No raw output,
-private review body, reasoning, credentials or conversation text is retained.
+## Host Qualification And Cost Rationale
 
-An idle destination starts a new turn in the same chat. If that parent is
-already active, the adapter must enqueue for that chat using a verified host
-mechanism; it must not start a concurrent parent turn, interrupt unrelated B,
-switch chats, or synthesize user approval. The notification identifies itself
-as a tool/controller event. The LLM checks its supplied basis before acting;
-the existing public write guards remain the final ownership/freshness checks.
+The presently exposed collaboration.wait_agent accepts a duration including
+600,000 ms, but can return for any live-agent mailbox update, not just this
+review set's completion. wait_threads describes return on the first completion
+or attention event and cursor-based snapshots. Neither observation establishes
+an integrated all-review-ended notification and single 600-second wait for the
+current Desktop. This session's shorter blocking-call policy must also be
+respected; the proposal does not override it.
 
-Completion supersedes an unsent check-due event. If the check was already
-accepted by the host when completion arrives, a separate completion event is
-legitimate: on handling the older check, the parent reconciles and finds no need
-to rearm. This design promises idempotent effects, not impossible exactly-once
-delivery across two systems without a shared transaction.
+Qualify the selected host with an authorized isolated test: effective duration
+and unit, matching completion early return, partial/attention events, user
+interruption, expiry/completion race and duplicates. Use virtual time/fake
+delivery for deterministic behavior and separately authorized host tests for
+actual integration. No real ten-minute wait or chat delivery was verified by
+this revision. An idle-chat wakeup API, daemon surviving a finished parent turn,
+or new service is not a prerequisite of the blocking-wait approach.
 
-The pending-notification record distinguishes pending, host-accepted, and
-delivery-unknown. Host acceptance is not parent handling or Receipt
-registration. Before retrying an unknown send, the adapter uses a documented
-idempotency/status mechanism when available. If the host cannot resolve the
-outcome, retain it as unknown and surface recovery through the local controller
-status; do not blindly send new turns. A definitely rejected send may be retried
-after the connection is restored using the same event ID. The parent ignores
-duplicate event IDs and obsolete timer generations.
+The token rationale is fewer unnecessary model resumptions. Tool results still
+lead to another model request within the same visible turn, as the
+[official tool-call flow](https://developers.openai.com/api/docs/guides/function-calling#the-tool-calling-flow)
+describes. A genuine single wait and a function-owned timer both wait without
+generating model output; the visible turn boundary alone establishes no saving.
+Avoiding timer rearm/acknowledgement/end-turn round trips may help, but actual
+savings are unmeasured. Context size, request count, output and
+[cache reuse](https://developers.openai.com/api/docs/guides/prompt-caching)
+matter. An open turn is not a cache-retention guarantee. A token benchmark is
+not a design or ordinary Task completion gate.
 
-On controller restart, reacquire a single local owner, load the minimal set
-record, reconnect observation and reconcile membership, current public Task
-basis, and pending delivery before choosing any action. Known all-ended jobs
-produce completion; an expired unfinished interval produces one check; a
-future deadline retains its remaining time. Unknown jobs or ownership/target
-changes suspend automatic continuation and expose a sanitized recovery reason.
-They do not automatically pause/block the Task or erase valid results.
+## Verification And Activation Boundary
 
-Monitor unavailability, delivery failure, missing host access, and token
-collection failure are not additional review or completion gates. The existing
-manual review handoff remains available. A healthy fallback needs no proof
-that unrelated timers, chats or Tasks are correct.
+Later implementation checks cover early all-PASS and mixed-verdict completion;
+failed launches/terminal jobs with missing originals; unfinished at 599/600
+seconds; healthy rewait and problem handling; completion before subscription
+and during expiry; duplicate/obsolete events; interruption/recovery; A's
+completion while doing B; and unsupported hosts. Check normal success as well
+as failures, using fake lifecycle events and virtual time without real Task DB
+mutation or a ten-minute sleep per scenario.
 
-## Host Connection Feasibility And Remaining Boundary
-
-Official [Codex App Server documentation](https://learn.chatgpt.com/docs/app-server#start-a-turn)
-describes `turn/start` for a specified `threadId`. Its tool-output form can
-resume an idle thread and queue output into an active turn. This establishes
-the protocol capability; it does not establish a connection from an arbitrary
-local process to the user's already-running Desktop chat.
-The documented connection handshake is `initialize` followed by `initialized`;
-loading a thread through `thread/resume` is separate from read-only inspection.
-The [background Hook contract](https://learn.chatgpt.com/docs/hooks#how-background-hooks-run)
-does not start a new idle turn just because a background Hook finishes, so a
-Hook alone does not provide this wake-up mechanism.
-
-The read-only local probe used CLI `0.157.1`. Its `app-server proxy` help
-describes stdio forwarding to a running App Server control socket and accepts
-`--sock`. The host-side `app-server daemon version` probe failed with connection
-refused (OS 10061) at the default control socket. The ordinary sandbox probe
-instead used its isolated home and failed with OS 10050; that sandbox result is
-not evidence about Desktop's endpoint. No daemon was started, configuration or
-trust changed, or test message sent.
-The current official documentation is not a verified capability declaration
-for this installed CLI or Desktop backend. In particular, `toolOutput` and
-active-turn queue compatibility must be checked on the selected runtime before
-the adapter advertises them. The docs establish no `turn/start` idempotency-key
-guarantee; the delivery-unknown branch above therefore remains necessary.
-
-The host-provided `send_message_to_thread` tool is a potential host adapter
-surface when the host exposes it to an authorized controller. Its availability
-inside an LLM turn does not prove an independent Python process can call it or
-survive that turn. Starting a separate App Server also does not prove it is the
-runtime managing the existing Desktop chat. A thread ID alone is insufficient
-to bridge these boundaries.
-
-The selected architecture therefore uses a host adapter with explicit
-capabilities: same-runtime destination resolution, lifecycle observation that
-survives the parent turn, safe busy/idle delivery, and recoverable delivery
-outcomes. Prefer an existing host-owned service when it provides these; do not
-add a second service solely because a CLI command exists. If no supported
-connection is exposed, automatic waiting remains unavailable while ordinary
-review continues. This is an unverified host prerequisite, not a conclusion
-that chat-triggered continuation is impossible.
-
-Before claiming support for the current Desktop, an authorized isolated
-end-to-end check must demonstrate: a parent ends its turn, reviewers continue,
-the controller survives, and both an overdue check and an all-ended event reach
-that exact chat and resume it with correct busy/idle handling. Use a designated
-test chat and explicit send/service authority; do not test on unrelated work.
-This host qualification applies to providing the feature, not completing
-ordinary Tasks or this design responsibility. No actual delivery was verified
-in this design investigation.
-
-## Verification Scenarios For Implementation
-
-Use a virtual clock, fake reviewer lifecycle source, fake notifier and isolated
-local records. These tests require neither a ten-minute real sleep nor model
-calls, network access, real Task DB mutation or token A/B runs. Observe timer
-count/deadline, event identity, per-member/result state and side effects.
-
-| Scenario | Required observable result |
-|---|---|
-| Two PASS originals, jobs end before 600 s | One all-ended event; no remaining timer; originals remain unchanged; no automatic registration/completion. |
-| PASS and changes requested | Same timely all-ended path, actual distinct verdicts preserved, all Findings available through originals. |
-| Job fails or ends without a valid original | All-ended notification explicitly exposes failure/missing/invalid result; no fabricated PASS. |
-| Unfinished at 599 s, then 600 s | No early notification; one check at deadline; no armed timer until parent continues. |
-| Healthy check and continuation | One new deadline 600 s after continuation, parent can end turn; duplicate continuation does not postpone it again. |
-| Problem at check | No rearm; later terminal member events still yield completion unless waiting was explicitly cancelled. |
-| Completion races deadline or continuation | Completion wins before send; an already accepted check may precede completion; late handlers cannot rearm. |
-| Parent still active or executing B | Event is queued for the same chat and names A; no concurrent turn, B mutation or ownership takeover. |
-| Completion before subscription / partial launch | Reconciliation accounts for every intended job, including launch failures; none is lost or silently omitted. |
-| Duplicate dispatch/event / two controllers | One set for one adoption key and at most one timer owner; no duplicate effective continuation. |
-| Cancel set A while set B waits | Only A timers and unsent events removed; no reviewer termination, result deletion or B timer change. |
-| Restart before/after deadline, or after all ended | Reconcile once; retain remaining interval or one due check/completion; no backlog of reminders. |
-| Crash around notification acceptance | Unknown delivery remains distinct; no blind turn replay; supported dedup/status recovery uses the original event ID. |
-| Stale target, changed owner, unknown job or unavailable host | Suspend only automatic continuation, expose reason, retain originals; current ordinary review/completion rules remain usable. |
-
-For this design Task, verification is the current document-contract checker,
-consistency against the linked owners, source-backed connection assessment and
-two independent specification reviews. The table is an executable-test plan for
-later implementation, not a claim that a monitor or Desktop integration has
-already passed those tests. Activation must update the applicable product,
-design, privacy and Skill owners together; until then their current contracts
-remain unchanged.
+This design revision requires the document-contract checker, consistency with
+linked owners and two independent specification reviews. These checks do not
+establish runtime support. Activation needs a later explicit implementation
+decision and coherent updates to applicable product, design and Skill owners;
+this document does not activate the instruction or change current workflow.

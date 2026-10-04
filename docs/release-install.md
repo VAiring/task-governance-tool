@@ -508,8 +508,11 @@ already opened visible `file://` page and requests at most one same-document
 reload per loaded page. It does not launch a browser, watch SQLite, use a
 network, or use Web Storage. Only immediately before that automatic reload, a
 fixed at-most-4,096-byte, five-minute envelope in the current History entry may
-preserve non-search filters, selected Task, fixed-control focus, and document
-scroll. The reloaded page clears owned state before validation, leaves
+preserve search and other filters, optional selected Task, fixed-control focus,
+and document scroll. Search focus or IME composition defers the automatic
+reload until both clear, using the original deadline. The exact envelope and
+fallback rules belong to the [Viewer specification](viewer-specification.md#one-shot-automatic-reload-ui-state).
+The reloaded page clears owned state before validation, leaves
 an unrelated `history.state` payload untouched, and changes neither URL nor
 history length. Five minutes is the restore acceptance limit rather than a
 physical-erasure guarantee; browser-managed state may survive session restore

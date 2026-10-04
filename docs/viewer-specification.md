@@ -90,7 +90,12 @@ second. Doctor ignores this optional file.
 
 After decode and initial render succeed, scheduling occurs only under `file:`
 with positive interval. One monotonic load epoch and at most one timeout are
-owned. Hidden pages own no timer. On visible change/timeout, reload is requested
+owned. Hidden pages, a focused search field, and active search IME composition
+own no timer and do not reload, even after the deadline or while the user is
+thinking without typing. Visibility, search focus/blur, and composition start/end
+reconcile that same timer. Once visible, unfocused, and no longer composing,
+an overdue reload happens once; before the deadline only the original remainder
+is scheduled. On visible change/timeout, reload is requested
 at most once per loaded page only after elapsed interval; otherwise only the
 remainder is scheduled. Browser throttling may delay, never advance. Decode/
 render failure schedules nothing. It reloads only latest published HTML and
@@ -104,19 +109,20 @@ exactly one `history.replaceState(envelope, "")` with no URL. Failure never
 prevents reload. Non-null non-owned state is untouched; any non-array object
 with owner `taskgov-viewer-auto-reload` is owned even if otherwise invalid.
 
-The schema-1 object has exactly owner, schema_version, captured_at_ms, status,
-kind, lane, priority, tag, terminal, selected_task_id, scroll_x, scroll_y, and
-focus_id. Canonical serialization and readback are at most 4,096 UTF-8 bytes.
-Time is nonnegative safe integer; status/kind/priority use current enums or
-empty; lane/tag are at most 1,024 UTF-8 bytes and must exist in new options;
-terminal is Boolean; selected ID is nonempty and at most 128 code points;
-scroll is finite 0-2,147,483,647. Focus is empty or one of
+The schema-2 object has exactly owner, schema_version, captured_at_ms, search,
+status, kind, lane, priority, tag, terminal, selected_task_id, scroll_x, scroll_y,
+and focus_id. Canonical serialization and readback are at most 4,096 UTF-8 bytes.
+Time is nonnegative safe integer; search is the exact input string (including
+empty), bounded by the whole-envelope byte cap without truncation;
+status/kind/priority use current enums or empty; lane/tag are at most 1,024
+UTF-8 bytes; terminal is Boolean; selected ID is null or nonempty and at most
+128 code points; scroll is finite 0-2,147,483,647. Focus is empty or one of
 `search-filter`, `status-filter`, `kind-filter`, `lane-filter`,
 `priority-filter`, `tag-filter`, `terminal-filter`, `reset-filters`.
 
-Search text, business/snapshot content, option arrays, URL/query/fragment,
-path, arbitrary selector, caret/text selection, dynamic-row focus, or nested
-scroll is prohibited. Cookies, Web Storage, IndexedDB, Cache API, service
+Apart from the explicit search input, business/snapshot content, option arrays,
+URL/query/fragment, path, arbitrary selector, caret/text selection, dynamic-row
+focus, or nested scroll is prohibited. Cookies, Web Storage, IndexedDB, Cache API, service
 workers, and network are prohibited.
 
 At eligible load, read state at most once before snapshot decode. Owned state
@@ -128,12 +134,19 @@ and restore are disabled but reload continues. State-read failure does not skip
 the manual-mode attempt.
 
 Restore only on navigation type reload, after successful clear, with exact
-keys/types/bounds, age 0-300,000 ms, current options, visible selected Task,
-and existing fixed focus. Defaults are explicitly applied first. Valid restore
-applies filters, one render/selection, focus without caret, then document
-scroll. Any failure consumes state and resets defaults plus `(0,0)`. If scroll
+keys/types/bounds, age 0-300,000 ms, and existing fixed focus. Old schema-1
+envelopes are consumed without restoration. Defaults are explicitly applied first.
+Valid restore applies the exact search string and filters; a vanished lane/tag
+option alone falls back to its empty filter. No selection, no matches, or a
+selected Task that disappeared or no longer matches does not discard search
+or other valid filters. Selection is restored only if still visible under all
+filters, including search; otherwise normal rendering selects the first visible
+Task or none. Valid restore uses one render/selection, focus without caret, then
+document scroll. Any failure consumes state and resets defaults plus `(0,0)`. If scroll
 fails after focus, best-effort blur only that focused fixed control, then reset.
-No state/error detail reaches UI, console, snapshot, or taskgov output.
+No state/error diagnostic reaches UI, console, snapshot, or taskgov output.
+Oversize input/envelope or unavailable/failed History storage skips capture,
+without truncating the search or blocking reload; the next page uses defaults.
 
 History state is browser-managed and may survive session restore; it is not
 memory-only. One-shot ownership, five-minute age, size cap, and clear-before-

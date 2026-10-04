@@ -29,7 +29,11 @@ const historyFunctions = template.slice(
 );
 const schedulerFunction = template.slice(
   template.indexOf("      const reconcileAutoRefresh"),
-  template.indexOf("      const startAutoRefresh")
+  template.indexOf("      prepareReloadState();")
+);
+const matchesFiltersFunction = template.slice(
+  template.indexOf("      const matchesFilters"),
+  template.indexOf("      const makeCell")
 );
 const startupBlock = template.slice(
   template.indexOf("      prepareReloadState();"),
@@ -43,6 +47,8 @@ globalThis.harnessApi = {
   applyValidatedReloadState,
   restoreReloadEffects,
   reconcileAutoRefresh,
+  startAutoRefresh,
+  matchesFilters,
   selectedDynamicValue,
   setDefaultFilterValues,
   splitTags,
@@ -53,6 +59,7 @@ globalThis.harnessApi = {
 
 const task = {
   task_id: "tg_task_one",
+  title: "Viewer 日本語 search",
   status: "ready",
   kind: "optional",
   lane: "VIEWER",
@@ -62,8 +69,9 @@ const task = {
 
 const ownedState = (overrides = {}) => ({
   owner: "taskgov-viewer-auto-reload",
-  schema_version: 1,
+  schema_version: 2,
   captured_at_ms: 100000,
+  search: "",
   status: "ready",
   kind: "optional",
   lane: "VIEWER",
@@ -94,6 +102,8 @@ const makeScenario = (options = {}) => {
     timeouts: []
   };
   let storedState = Object.hasOwn(options, "state") ? options.state : null;
+  const listeners = new Map();
+  const activeTimeouts = new Map();
   let scrollRestorationMode = "auto";
   const history = {
     length: 7,
@@ -155,6 +165,12 @@ const makeScenario = (options = {}) => {
   const valueControl = (name, initialValue) => {
     let value = initialValue;
     return {
+      id: `${name}-filter`,
+      addEventListener(type, callback) {
+        const key = `${name}:${type}`;
+        if (!listeners.has(key)) listeners.set(key, []);
+        listeners.get(key).push(callback);
+      },
       get value() {
         return value;
       },
@@ -207,6 +223,7 @@ const makeScenario = (options = {}) => {
     refreshIntervalMilliseconds: 5000,
     refreshEpochMilliseconds: 0,
     reloadRequested: false,
+    searchComposing: false,
     window: {
       location: {
         protocol: options.protocol ?? "file:",
@@ -226,21 +243,27 @@ const makeScenario = (options = {}) => {
         calls.scrolls.push([x, y]);
         calls.events.push(`scroll:${x},${y}`);
       },
-      clearTimeout() {},
+      clearTimeout(handle) { activeTimeouts.delete(handle); },
       setTimeout(callback, delay) {
         calls.timeouts.push({ callback, delay });
-        return calls.timeouts.length;
+        const handle = calls.timeouts.length;
+        activeTimeouts.set(handle, callback);
+        return handle;
       }
     },
     document: {
       activeElement: { id: options.activeId ?? "status-filter" },
       visibilityState: options.visibilityState ?? "visible",
+      addEventListener(type, callback) {
+        listeners.set(`document:${type}`, [callback]);
+        calls.events.push("start");
+      },
       getElementById(id) {
         if (!fixedFocusIds.has(id) || options.missingFocus === id) {
           return null;
         }
-        const fixedElement = {
-          id,
+        const fixedElement = id === "search-filter" ? elements.search : { id };
+        Object.assign(fixedElement, {
           focus(focusOptions) {
             if (options.throwFocus) {
               throw new Error("focus failed");
@@ -260,7 +283,7 @@ const makeScenario = (options = {}) => {
             calls.blurs.push(id);
             calls.events.push(`blur:${id}`);
           }
-        };
+        });
         return fixedElement;
       }
     },
@@ -298,48 +321,8 @@ const makeScenario = (options = {}) => {
     },
     renderStatusSummary() {},
     bindFilters() {},
-    startAutoRefresh() {
-      calls.events.push("start");
-    },
     renderTasks() {
-      const visible = context.snapshot.tasks.filter((candidate) => {
-        if (
-          !elements.terminal.checked
-          && context.terminalStatuses.has(candidate.status)
-        ) {
-          return false;
-        }
-        if (elements.status.value && candidate.status !== elements.status.value) {
-          return false;
-        }
-        if (elements.kind.value && candidate.kind !== elements.kind.value) {
-          return false;
-        }
-        if (
-          elements.priority.value
-          && candidate.priority !== elements.priority.value
-        ) {
-          return false;
-        }
-        const lane = context.harnessApi.selectedDynamicValue(
-          elements.lane,
-          context.laneValues
-        );
-        const tag = context.harnessApi.selectedDynamicValue(
-          elements.tag,
-          context.tagValues
-        );
-        if (lane && candidate.lane !== lane) {
-          return false;
-        }
-        if (
-          tag
-          && !context.harnessApi.splitTags(candidate).includes(tag)
-        ) {
-          return false;
-        }
-        return true;
-      });
+      const visible = context.snapshot.tasks.filter(context.harnessApi.matchesFilters);
       if (
         !visible.some(
           (candidate) => candidate.task_id === context.selectedTaskId
@@ -363,7 +346,8 @@ const makeScenario = (options = {}) => {
   };
   vm.createContext(context);
   vm.runInContext(
-    constants + filterHelpers + historyFunctions + schedulerFunction + expose,
+    constants + filterHelpers + matchesFiltersFunction
+      + historyFunctions + schedulerFunction + expose,
     context
   );
   return {
@@ -371,6 +355,16 @@ const makeScenario = (options = {}) => {
     calls,
     context,
     history,
+    activeTimeouts,
+    dispatch(target, type) {
+      if (target === "search" && type === "focus") {
+        context.document.activeElement = elements.search;
+      }
+      if (target === "search" && type === "blur") {
+        context.document.activeElement = { id: "" };
+      }
+      for (const callback of listeners.get(`${target}:${type}`) ?? []) callback();
+    },
     runStartup() {
       vm.runInContext(startupBlock, context);
     },
@@ -437,7 +431,8 @@ const makeScenario = (options = {}) => {
   assert.ok(
     new TextEncoder().encode(JSON.stringify(scenario.state)).byteLength <= 4096
   );
-  assert.ok(!Object.values(scenario.state).includes("private search"));
+  assert.equal(scenario.state.search, "private search");
+  assert.equal(scenario.state.selected_task_id, null);
   assert.equal(scenario.history.length, 7);
   assert.equal(scenario.context.window.location.href, "file:///viewer.html");
 }
@@ -450,7 +445,8 @@ const makeScenario = (options = {}) => {
   noSelection.api.prepareReloadState();
   noSelection.api.setDefaultFilterValues();
   noSelection.api.saveAutoReloadState();
-  assert.equal(noSelection.calls.replaces.length, 0);
+  assert.equal(noSelection.calls.replaces.length, 1);
+  assert.equal(noSelection.state.selected_task_id, null);
 
   const unmanaged = makeScenario({
     state: null,
@@ -487,7 +483,7 @@ assert.equal(new TextEncoder().encode(oversizedLane).byteLength, 1025);
 assert.equal(new TextEncoder().encode(oversizedTag).byteLength, 1025);
 
 const invalidCases = [
-  ["schema version", { state: ownedState({ schema_version: 2 }) }],
+  ["schema version", { state: ownedState({ schema_version: 1 }) }],
   ["schema type", { state: ownedState({ schema_version: "1" }) }],
   ["extra key", { state: { ...ownedState(), extra: true } }],
   [
@@ -511,13 +507,6 @@ const invalidCases = [
   ["kind value", { state: ownedState({ kind: "parallel" }) }],
   ["lane type", { state: ownedState({ lane: 1 }) }],
   [
-    "lane missing option",
-    {
-      state: ownedState({ lane: "missing" }),
-      tasks: [{ ...task, lane: "missing" }]
-    }
-  ],
-  [
     "lane byte bound",
     {
       state: ownedState({ lane: oversizedLane }),
@@ -526,13 +515,6 @@ const invalidCases = [
     }
   ],
   ["tag type", { state: ownedState({ tag: [] }) }],
-  [
-    "tag missing option",
-    {
-      state: ownedState({ tag: "missing" }),
-      tasks: [{ ...task, tags: "missing" }]
-    }
-  ],
   [
     "tag byte bound",
     {
@@ -553,53 +535,7 @@ const invalidCases = [
       tasks: [{ ...task, task_id: "t".repeat(129) }]
     }
   ],
-  [
-    "task missing",
-    { state: ownedState({ selected_task_id: "tg_task_missing" }) }
-  ],
-  ["task filtered out", { state: ownedState({ status: "blocked" }) }],
-  [
-    "task hidden by kind",
-    {
-      state: ownedState({
-        status: "",
-        kind: "sequential",
-        priority: "",
-        lane: "",
-        tag: ""
-      })
-    }
-  ],
-  [
-    "task hidden by priority",
-    {
-      state: ownedState({
-        status: "",
-        kind: "",
-        priority: "low",
-        lane: "",
-        tag: ""
-      })
-    }
-  ],
-  [
-    "terminal task hidden",
-    {
-      state: ownedState({
-        status: "",
-        kind: "",
-        priority: "",
-        lane: "",
-        tag: "",
-        selected_task_id: "tg_task_done"
-      }),
-      tasks: [{
-        ...task,
-        task_id: "tg_task_done",
-        status: "done"
-      }]
-    }
-  ],
+  ["search type", { state: ownedState({ search: null }) }],
   ["scroll x type", { state: ownedState({ scroll_x: "12" }) }],
   ["scroll x negative", { state: ownedState({ scroll_x: -1 }) }],
   [
@@ -745,6 +681,7 @@ for (const [name, options] of invalidCases) {
   });
   assert.deepEqual(readFailure.calls.scrolls, [[0, 0]]);
   assert.ok(readFailure.calls.events.includes("start"));
+  readFailure.context.performance.now = () => 10000;
   readFailure.api.reconcileAutoRefresh();
   assert.equal(readFailure.calls.reloads, 1);
 }
@@ -899,6 +836,166 @@ for (const [capturedAt, now, accepted] of [
   });
   assert.deepEqual(secondReload.calls.scrolls, [[0, 0]]);
   assert.equal(secondReload.calls.replaces.length, 0);
+}
+
+// Search is restored independently of selection and uses the shipped predicate.
+for (const search of ["", "  VIEWER  ", "日本語", "no matching Task", "<text>😀"]) {
+  const before = makeScenario({ selectedTaskId: task.task_id });
+  before.api.prepareReloadState();
+  before.api.setDefaultFilterValues();
+  before.context.elements.search.value = search;
+  before.api.saveAutoReloadState();
+  assert.equal(before.state.search, search);
+  const after = makeScenario({ state: before.state });
+  after.runStartup();
+  assert.equal(after.context.elements.search.value, search);
+  assert.equal(after.api.selectedTaskId,
+    ["no matching Task", "<text>😀"].includes(search) ? null : task.task_id);
+  assert.equal(after.state, null);
+}
+
+for (const [override, tasks, expected] of [
+  [{ selected_task_id: null }, [task], task.task_id],
+  [{ selected_task_id: "tg_task_missing" }, [task], task.task_id],
+  [{}, [], null],
+  [{}, [{ ...task, status: "done" }], null],
+  [{}, [{ ...task, title: "changed" }], null],
+  [{ status: "blocked" }, [task], null],
+  [{ kind: "sequential" }, [task], null],
+  [{ priority: "low" }, [task], null],
+  [{ lane: "vanished", tag: "vanished" }, [task], task.task_id]
+]) {
+  const scenario = makeScenario({ state: ownedState({ search: "日本語", ...override }), tasks });
+  scenario.runStartup();
+  assert.equal(scenario.context.elements.search.value, "日本語");
+  assert.equal(scenario.api.selectedTaskId, expected);
+  assert.equal(scenario.context.elements.status.value, override.status ?? "ready");
+  assert.deepEqual(scenario.calls.scrolls, [[12, 345]]);
+  if (override.lane) assert.equal(scenario.context.elements.lane.value, "");
+  if (override.tag) assert.equal(scenario.context.elements.tag.value, "");
+}
+
+// Exact total-byte boundary, including JSON expansion, rather than a new input cap.
+const emptySearchBytes = Buffer.byteLength(JSON.stringify(ownedState()));
+for (const [search, fits] of [
+  ["s".repeat(4096 - emptySearchBytes), true],
+  ["s".repeat(4097 - emptySearchBytes), false],
+  ["\u0000".repeat(700), false],
+  ["界".repeat(1400), false]
+]) {
+  const scenario = makeScenario({ state: ownedState({ search }) });
+  scenario.api.prepareReloadState();
+  assert.equal(Boolean(scenario.api.validatePendingReloadState()), fits);
+  assert.equal(scenario.state, null);
+}
+{
+  const scenario = makeScenario();
+  scenario.api.prepareReloadState();
+  scenario.api.setDefaultFilterValues();
+  scenario.context.elements.search.value = "界".repeat(1400);
+  scenario.api.reconcileAutoRefresh();
+  assert.equal(scenario.calls.replaces.length, 0);
+  assert.equal(scenario.calls.reloads, 1);
+}
+
+// Exercise the shipped event listeners, clock, and single-timer reconciliation.
+const timedScenario = (options = {}) => {
+  const scenario = makeScenario(options);
+  let now = 0;
+  scenario.context.performance.now = () => now;
+  scenario.api.prepareReloadState();
+  scenario.api.setDefaultFilterValues();
+  scenario.api.startAutoRefresh();
+  scenario.advance = (value) => { now = value; };
+  return scenario;
+};
+{
+  const restoredFocus = makeScenario({
+    state: ownedState({ search: "日本語", focus_id: "search-filter" })
+  });
+  restoredFocus.runStartup();
+  assert.equal(restoredFocus.context.document.activeElement, restoredFocus.context.elements.search);
+  assert.equal(restoredFocus.activeTimeouts.size, 0);
+  restoredFocus.context.performance.now = () => 10000;
+  restoredFocus.dispatch("search", "blur");
+  assert.equal(restoredFocus.calls.reloads, 1);
+  const timer = timedScenario();
+  timer.advance(4999);
+  timer.calls.timeouts.at(-1).callback();
+  assert.equal(timer.calls.reloads, 0);
+  assert.equal(timer.calls.timeouts.at(-1).delay, 1);
+  timer.advance(5000);
+  timer.calls.timeouts.at(-1).callback();
+  timer.calls.timeouts.at(-1).callback();
+  assert.equal(timer.calls.reloads, 1);
+}
+{
+  const scenario = timedScenario();
+  assert.equal(scenario.activeTimeouts.size, 1);
+  scenario.advance(1000);
+  scenario.dispatch("search", "focus");
+  assert.equal(scenario.activeTimeouts.size, 0);
+  scenario.advance(60000); // Thinking without any input event must also defer.
+  scenario.dispatch("document", "visibilitychange");
+  assert.equal(scenario.calls.reloads, 0);
+  scenario.context.elements.search.value = "日本語";
+  scenario.dispatch("search", "blur");
+  scenario.dispatch("search", "blur");
+  scenario.dispatch("document", "visibilitychange");
+  assert.equal(scenario.calls.reloads, 1);
+  assert.equal(scenario.state.search, "日本語");
+  assert.equal(scenario.calls.replaces.length, 1);
+}
+for (const order of [["blur", "compositionend"], ["compositionend", "blur"]]) {
+  const scenario = timedScenario();
+  scenario.dispatch("search", "focus");
+  scenario.dispatch("search", "compositionstart");
+  scenario.advance(6000);
+  scenario.dispatch("search", order[0]);
+  assert.equal(scenario.calls.reloads, 0);
+  assert.equal(scenario.activeTimeouts.size, 0);
+  scenario.context.elements.search.value = "変換確定";
+  scenario.dispatch("search", order[1]);
+  assert.equal(scenario.calls.reloads, 1);
+  assert.equal(scenario.state.search, "変換確定");
+}
+{
+  const scenario = timedScenario();
+  scenario.dispatch("search", "compositionstart"); // Composition independently blocks.
+  scenario.advance(1000);
+  scenario.dispatch("search", "compositionend");
+  assert.equal(scenario.calls.timeouts.at(-1).delay, 4000);
+  scenario.dispatch("search", "focus");
+  scenario.advance(2000);
+  scenario.dispatch("search", "blur");
+  assert.equal(scenario.calls.timeouts.at(-1).delay, 3000);
+  scenario.dispatch("search", "focus"); // Re-focus cancels the remainder.
+  scenario.advance(6000);
+  assert.equal(scenario.activeTimeouts.size, 0);
+  scenario.api.reconcileAutoRefresh();
+  assert.equal(scenario.calls.reloads, 0);
+  scenario.dispatch("search", "blur");
+  assert.equal(scenario.calls.reloads, 1);
+}
+{
+  const hidden = timedScenario();
+  hidden.dispatch("search", "focus");
+  hidden.context.document.visibilityState = "hidden";
+  hidden.advance(6000);
+  hidden.dispatch("search", "blur");
+  assert.equal(hidden.calls.reloads, 0);
+  assert.equal(hidden.activeTimeouts.size, 0);
+  hidden.context.document.visibilityState = "visible";
+  hidden.dispatch("document", "visibilitychange");
+  assert.equal(hidden.calls.reloads, 1);
+  const off = timedScenario({ autoRefreshEnabled: false });
+  off.advance(6000);
+  for (const event of ["focus", "compositionstart", "blur", "compositionend"]) {
+    off.dispatch("search", event);
+  }
+  off.api.reconcileAutoRefresh();
+  assert.equal(off.calls.reloads, 0);
+  assert.equal(off.activeTimeouts.size, 0);
 }
 
 console.log("M15.6 exact shipped History harness PASS");

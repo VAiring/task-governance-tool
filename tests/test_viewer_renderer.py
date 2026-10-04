@@ -365,6 +365,7 @@ class ViewerRendererTests(unittest.TestCase):
             "owner",
             "schema_version",
             "captured_at_ms",
+            "search",
             "status",
             "kind",
             "lane",
@@ -441,9 +442,9 @@ class ViewerRendererTests(unittest.TestCase):
             "const captureAutoReloadState = () => {",
             1,
         )[1].split("const saveAutoReloadState", 1)[0]
-        self.assertNotIn("elements.search", capture_body)
+        self.assertIn("search: elements.search.value", capture_body)
         self.assertNotIn("snapshot:", capture_body)
-        self.assertIn("selected_task_id: selectedTaskId", capture_body)
+        self.assertIn("selected_task_id: snapshot.tasks.some(", capture_body)
         self.assertIn("focus_id: focusId", capture_body)
 
         prepare_index = template.index("prepareReloadState();")

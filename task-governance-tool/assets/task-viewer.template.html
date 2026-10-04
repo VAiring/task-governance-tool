@@ -800,6 +800,7 @@
       let refreshEpochMilliseconds = null;
       let refreshTimeoutHandle = null;
       let reloadRequested = false;
+      let searchComposing = false;
       let selectedTaskId = null;
       let pendingFocusTaskId = null;
       let laneValues = [];
@@ -810,6 +811,7 @@
         "owner",
         "schema_version",
         "captured_at_ms",
+        "search",
         "status",
         "kind",
         "lane",
@@ -1467,7 +1469,7 @@
           || !hasExactReloadStateKeys(value)
           || serializedSize === null
           || serializedSize > reloadStateMaxBytes
-          || value.schema_version !== 1
+          || value.schema_version !== 2
           || !Number.isSafeInteger(value.captured_at_ms)
           || value.captured_at_ms < 0
           || !Number.isSafeInteger(nowMilliseconds)
@@ -1480,6 +1482,7 @@
         if (
           ageMilliseconds < 0
           || ageMilliseconds > reloadStateMaxAgeMilliseconds
+          || typeof value.search !== "string"
           || typeof value.status !== "string"
           || !reloadStateStatuses.has(value.status)
           || typeof value.kind !== "string"
@@ -1493,9 +1496,11 @@
           || tagSize === null
           || tagSize > reloadStateMaxDynamicBytes
           || typeof value.terminal !== "boolean"
-          || typeof value.selected_task_id !== "string"
-          || !value.selected_task_id
-          || [...value.selected_task_id].length > reloadStateMaxTaskIdCharacters
+          || (value.selected_task_id !== null && (
+            typeof value.selected_task_id !== "string"
+            || !value.selected_task_id
+            || [...value.selected_task_id].length > reloadStateMaxTaskIdCharacters
+          ))
           || typeof value.scroll_x !== "number"
           || !Number.isFinite(value.scroll_x)
           || value.scroll_x < 0
@@ -1507,28 +1512,6 @@
           || typeof value.focus_id !== "string"
           || !reloadStateFocusIds.has(value.focus_id)
         ) {
-          return false;
-        }
-        return true;
-      };
-
-      const matchesReloadStateFilters = (task, state) => {
-        if (!state.terminal && terminalStatuses.has(task.status)) {
-          return false;
-        }
-        if (state.status && task.status !== state.status) {
-          return false;
-        }
-        if (state.kind && task.kind !== state.kind) {
-          return false;
-        }
-        if (state.priority && task.priority !== state.priority) {
-          return false;
-        }
-        if (state.lane && asText(task.lane) !== state.lane) {
-          return false;
-        }
-        if (state.tag && !splitTags(task).includes(state.tag)) {
           return false;
         }
         return true;
@@ -1607,21 +1590,10 @@
           const nowMilliseconds = Date.now();
           if (
             !isValidReloadEnvelope(candidate, nowMilliseconds)
-            || (candidate.lane && !laneValues.includes(candidate.lane))
-            || (candidate.tag && !tagValues.includes(candidate.tag))
             || (
               candidate.focus_id
               && document.getElementById(candidate.focus_id) === null
             )
-          ) {
-            return null;
-          }
-          const selectedTask = snapshot.tasks.find(
-            (task) => task.task_id === candidate.selected_task_id
-          );
-          if (
-            !selectedTask
-            || !matchesReloadStateFilters(selectedTask, candidate)
           ) {
             return null;
           }
@@ -1633,13 +1605,6 @@
 
       const captureAutoReloadState = () => {
         try {
-          if (
-            typeof selectedTaskId !== "string"
-            || !selectedTaskId
-            || [...selectedTaskId].length > reloadStateMaxTaskIdCharacters
-          ) {
-            return null;
-          }
           const scrollX = window.scrollX;
           const scrollY = window.scrollY;
           const capturedAtMilliseconds = Date.now();
@@ -1652,28 +1617,23 @@
           const focusId = reloadStateFocusIds.has(activeId) ? activeId : "";
           const candidate = {
             owner: reloadStateOwner,
-            schema_version: 1,
+            schema_version: 2,
             captured_at_ms: capturedAtMilliseconds,
+            search: elements.search.value,
             status: elements.status.value,
             kind: elements.kind.value,
             lane: selectedDynamicValue(elements.lane, laneValues),
             priority: elements.priority.value,
             tag: selectedDynamicValue(elements.tag, tagValues),
             terminal: elements.terminal.checked,
-            selected_task_id: selectedTaskId,
+            selected_task_id: snapshot.tasks.some(
+              (task) => task.task_id === selectedTaskId && matchesFilters(task)
+            ) ? selectedTaskId : null,
             scroll_x: scrollX,
             scroll_y: scrollY,
             focus_id: focusId
           };
-          if (
-            !isValidReloadEnvelope(candidate, capturedAtMilliseconds)
-            || !snapshot.tasks.some(
-              (task) => (
-                task.task_id === candidate.selected_task_id
-                && matchesReloadStateFilters(task, candidate)
-              )
-            )
-          ) {
+          if (!isValidReloadEnvelope(candidate, capturedAtMilliseconds)) {
             return null;
           }
           return candidate;
@@ -1707,17 +1667,20 @@
         }
         try {
           setDefaultFilterValues();
+          elements.search.value = state.search;
           elements.status.value = state.status;
           elements.kind.value = state.kind;
-          elements.lane.value = state.lane
+          elements.lane.value = state.lane && laneValues.includes(state.lane)
             ? String(laneValues.indexOf(state.lane) + 1)
             : "";
           elements.priority.value = state.priority;
-          elements.tag.value = state.tag
+          elements.tag.value = state.tag && tagValues.includes(state.tag)
             ? String(tagValues.indexOf(state.tag) + 1)
             : "";
           elements.terminal.checked = state.terminal;
-          selectedTaskId = state.selected_task_id;
+          selectedTaskId = snapshot.tasks.some(
+            (task) => task.task_id === state.selected_task_id && matchesFilters(task)
+          ) ? state.selected_task_id : null;
           return state;
         } catch (error) {
           setDefaultFilterValues();
@@ -1782,6 +1745,8 @@
           !autoRefreshEnabled
           || reloadRequested
           || document.visibilityState !== "visible"
+          || document.activeElement === elements.search
+          || searchComposing
         ) {
           return;
         }
@@ -1807,6 +1772,16 @@
         }
         refreshEpochMilliseconds = performance.now();
         document.addEventListener("visibilitychange", reconcileAutoRefresh);
+        elements.search.addEventListener("focus", reconcileAutoRefresh);
+        elements.search.addEventListener("blur", reconcileAutoRefresh);
+        elements.search.addEventListener("compositionstart", () => {
+          searchComposing = true;
+          reconcileAutoRefresh();
+        });
+        elements.search.addEventListener("compositionend", () => {
+          searchComposing = false;
+          reconcileAutoRefresh();
+        });
         reconcileAutoRefresh();
       };
 

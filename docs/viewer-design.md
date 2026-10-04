@@ -126,13 +126,18 @@ render, with a valid nonzero interval and `file:` protocol. One reconciliation
 function owns one timeout:
 
 1. clear the prior handle;
-2. stop if disabled, already requested, non-file, or hidden;
+2. stop if disabled, already requested, non-file, hidden, search-focused, or
+   search IME composition is active;
 3. compute elapsed from page-load `performance.now()`;
 4. request exactly one same-document reload once elapsed reaches interval; or
 5. schedule only the monotonic remainder.
 
-Timeout and visibility-change callbacks reuse that function. Hidden pages own
-no timer. There is no interval timer, polling, wall-clock interval
+Timeout, visibility-change, search focus/blur, and composition start/end callbacks
+reuse that function. A Boolean tracks composition independently of focus, so
+either blur/end order stays deferred until both conditions clear. Hidden or
+search-active pages own no timer. Focus alone defers indefinitely, without an
+idle heuristic; release uses the original epoch, not a restarted interval.
+There is no interval timer, polling, wall-clock interval
 calculation, fetch/XHR, storage, worker, database access, retry, or message
 channel. Browser throttling may make reload late, never early.
 
@@ -140,20 +145,23 @@ Immediately before that automatic reload only, the page may make a one-shot
 History API handoff with exact ordered keys:
 
 ```text
-owner, schema_version, captured_at_ms, status, kind, lane, priority, tag,
+owner, schema_version, captured_at_ms, search, status, kind, lane, priority, tag,
 terminal, selected_task_id, scroll_x, scroll_y, focus_id
 ```
 
-Owner is `taskgov-viewer-auto-reload`, schema is 1, and compact UTF-8 JSON is at
-most 4,096 bytes. Only allowed filter values, visible selected Task ID,
-nonnegative finite scroll coordinates, and one of eight fixed control IDs may
-be saved. Search text, Task/snapshot content, arbitrary selectors, URLs/paths,
-dynamic-row focus, selection ranges, and nested UI state are prohibited. No
-selection means no envelope and reload still proceeds.
+Owner is `taskgov-viewer-auto-reload`, schema is 2, and compact UTF-8 JSON is at
+most 4,096 bytes. Only the exact search input, allowed filter values, optional
+visible selected Task ID, nonnegative finite scroll coordinates, and one of
+eight fixed control IDs may be saved. Apart from the explicit search input,
+Task/snapshot content, arbitrary selectors, URLs/paths, dynamic-row focus,
+selection ranges, and nested UI state are prohibited. No
+selection is encoded as null and does not prevent capture. Search is a string
+bounded by the total envelope, not truncated; oversize or unavailable/failed
+storage skips capture without preventing reload.
 
 Capture time is a nonnegative safe integer; status, kind, and priority are
 empty or current enums; lane and tag are each at most 1,024 UTF-8 bytes;
-selected Task ID is nonempty and at most 128 code points; coordinates are
+selected Task ID is null or nonempty and at most 128 code points; coordinates are
 finite integers from 0 through 2,147,483,647; and focus is empty or exactly
 `search-filter`, `status-filter`, `kind-filter`, `lane-filter`,
 `priority-filter`, `tag-filter`, `terminal-filter`, or `reset-filters`.
@@ -162,8 +170,13 @@ Save never overwrites a non-null non-owned state and calls only
 `history.replaceState(candidate, "")` without URL. Failure never prevents
 reload. On a file load, every owned state is cleared before snapshot decode,
 even if malformed, stale, non-reload, or decode-fatal. Restore requires
-successful clear, navigation type reload, exact keys/types/bounds/current
-options, visible selection, current owner/version, and age 0-300,000 ms.
+successful clear, navigation type reload, exact keys/types/bounds,
+current owner/version, and age 0-300,000 ms. Old schema-1 envelopes are cleared
+but not restored. Apply search and filters before using the existing
+`matchesFilters` predicate to restore a still-visible selection. Missing or
+filtered selection falls back to normal rendering, never invalidating search
+or the other filters. Missing lane/tag options clear only that specific filter.
+This also preserves search with no selected Task or zero matches.
 Invalid or failed restore returns filters, selection, focus, and scroll to
 defaults.
 

@@ -894,10 +894,14 @@ global Merge.
 
 ### Active Instruction-Layer Boundary
 
-Review orchestration uses the existing host wait as described by
+Review orchestration uses the existing host timer and bounded supervisor as
+described by
 [Review/completion](review-completion-specification.md#host-owned-review-waiting).
-This is caller guidance, not a new Skill trigger, taskgov call or completion
-gate. Host limits and current execution rules remain controlling.
+The parent ends its turn between scheduled checks; the same wait may shorten
+its next check under the owner's 90-second rule. This is caller guidance, not
+a new Skill trigger, taskgov call or completion gate. Host limits, authorization,
+and current execution rules remain controlling; ordinary non-review waits and
+the independent reviewer's role do not change.
 
 Package explanation retrieval may replace whole-reference reads or line-range
 searches with `scripts/read_reference.py "references/<file>.md#<section>"`.

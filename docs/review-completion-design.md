@@ -372,21 +372,111 @@ result registration tests retain writer atomicity and concurrent-state checks.
 
 ### Host-Owned Review Waiting
 
-Review waiting is caller guidance over the exposed host API, not a Python
-runtime responsibility. The host owns the blocking timeout, mailbox delivery
-and early return. The parent interprets actual outcomes using its existing
-dispatch handles and Task/Contract/target context. No adapter, scheduler,
-persisted deadline, notification ledger, new user-entered ID or helper operation
-is introduced. `review_handoff.py` and `review_handoff_preparation.py` retain
-their original transport responsibilities; core registration, ownership and
-gates retain their current writers and validation.
-
 The [waiting behavior](review-completion-specification.md#host-owned-review-waiting)
-is carried in the workflow's common Review And Completion introduction, so
-shared-file and direct transport receive it without another reference read.
-Existing reference-retrieval and package checks verify delivery; semantic
-scenario review checks completion, messages, timeout, interruption and host
-limits. There is no new timer state machine to test or claim as implemented.
+is host orchestration linked from the workflow's common Review And Completion
+introduction for both shared-file and direct transport. No Python timer controller,
+public taskgov operation, migration, persistent deadline ledger, host daemon,
+or helper-side reviewer launcher is introduced. `review_handoff.py` and
+`review_handoff_preparation.py` retain their transport responsibilities and
+unchanged generated independent-review requests. Package digests cover the
+changed workflow guidance; ordinary reviewer retrieval stays separate.
+
+The parent supplies a bounded supervisor with the already-prepared requests,
+project review scope/authority, existing Task/Contract/target association, and
+the designated parent. The supervisor dispatches the unchanged requests through
+the exposed subagent API and retains its actual returned children. Their native
+terminal events reach the supervising caller; an intermediate mailbox update
+is not terminal. Host status reads resolve missing or ambiguous completion
+information, not a second review or a source of invented verdicts. Reuse an
+existing suitable supervisor, or explicitly account for a needed coordinator
+when no existing host completion callback can execute while the parent is idle.
+Independent reviewers do not monitor peers or operate the timer, and the
+supervisor never registers results or completes the Task.
+
+The supervisor alone creates, shortens, pauses, and rearms one host heartbeat.
+Its session context holds the actual timer and child handles, original review
+basis, designated parent, arm ordinal, scheduled occurrence and timezone, and
+whether shortening or a wake has been consumed. These are orchestration context,
+not a new schema or required durable worksheet. Parent messages use the existing
+host channel and carry the association plus expected arm; the parent has no
+parallel timer-write path. Conceptually each arm is waiting or checking, and a
+terminally closed wait cannot return to either state. These terms add no public
+state enum. Serial processing of control and completion events, not competing
+read-then-write snapshots, prevents a late ACTIVE update from undoing a stop.
+
+The supported fixed-clock appointment uses the host's configured timezone and
+a concrete date/time ten minutes ahead. Submit the existing heartbeat tool's
+`FREQ=DAILY;BYHOUR=<hour>;BYMINUTE=<minute>;BYSECOND=<second>;COUNT=1` schedule
+without `DTSTART`, which that public tool does not accept. Retain the explicitly
+chosen first future occurrence as an absolute instant and its timezone, then
+check the returned/read-back schedule, parent binding, and status. Confirm that
+the chosen occurrence remains future after registration. If creation or readback
+crossed it, pause and reconcile before declaring ready; do not reinterpret the
+same clock time as tomorrow. Unknown timezone, an ambiguous local clock time,
+or a clock/configuration change makes the occurrence uncertain rather than
+authorizing a guessed threshold. Read the public host surface; never inspect
+its private scheduler database to obtain a next-run value.
+
+`COUNT=1` is not a claim that the host automatically retires this appointment.
+The explicit stop protocol owns that guarantee. Neither creation/update time
+nor the interval length is a substitute for the retained first occurrence.
+The fixed prompt identifies this wait and asks the resumed parent to perform
+the check/stop protocol; it does not carry newly generated result messages or
+change between shortening operations. Public tool responses and supported
+readback establish the operation's outcome; a scheduled wake establishes actual
+resumption. Neither implies a precise delivery deadline.
+
+After observing the full dispatched set terminal, the supervisor checks the
+current waiting arm and reads back its current rule, timezone and status.
+Only an unchanged expected rule/timezone and ACTIVE timer support comparing
+full-precision absolute decision time with the retained occurrence. A mismatch
+makes the timing unknown; preserve the existing appointment for parent handling
+instead of guessing or overwriting its state. At exactly 90 seconds remaining,
+as above it, one update to `FREQ=MINUTELY;INTERVAL=1` is eligible. Preserve the
+timer's ID, kind,
+name, prompt, destination and active state. The shortening latch belongs to
+that arm; success, uncertainty, or a duplicate event must not cause repeated
+interval resets. Below 90 seconds, after the nominal due time, while checking,
+or for unknown/stale/stopped context, do not shorten. Reconcile an unknown
+response using existing host inspection before deciding any safe recovery.
+
+A parent check includes the heartbeat input timestamp and expected arm. The
+supervisor compares them with its current occurrence and consumed-wake state.
+A delayed or duplicate wake for an earlier arm, including one timestamped before
+the current appointment while healthy and unshortened, cannot stop/rearm a newer
+arm. The all-ended latch changes that rule: the first matching wake closes the
+arm even if shortening makes it earlier than the original appointment. Do not
+infer a replacement next-run instant or apply the 90-second comparison again;
+all-ended work can never rearm. A valid unfinished check enters
+checking, pauses the associated timer, verifies PAUSED through readback, and
+returns the temporary stop acknowledgement to the active parent. The supervisor
+stays available. A rearm request is valid only for that checked arm and a fresh
+healthy-unfinished state; the supervisor rechecks its already-observed terminal
+events before acting. It chooses another explicit ten-minute appointment,
+increments the arm only on successful preparation, and returns its ready
+acknowledgement. A repeated old rearm request does not create another timer or
+advance the current arm.
+
+Terminal stop/cancellation latches closed before further events can be acted
+on, performs PAUSED plus readback, and acknowledges that confirmed result. The
+supervisor may then return its final response without an acknowledgement back
+from the parent. This is distinct from temporary check-stop, which must leave
+it available for a valid rearm or close. Native final delivery is never claimed
+to restart an idle parent. Ordinary questions do not invoke either stop path.
+Unresolved stop, lost acknowledgement, or an unavailable supervisor remains an
+explicit recovery condition. A replacement writer requires relinquishment or
+confirmed termination of the old supervisor and settlement of its outstanding
+operation; merely losing contact does not authorize takeover.
+
+Existing original retention, registration freshness, ownership and completion
+writers remain controlling. Reference-retrieval and package checks verify both
+transport routes receive the guidance. Focused semantic/host checks cover the
+90-second boundary, late and unknown times, mixed terminal outcomes, serialized
+check/rearm/cancel ordering, duplicate wakes, lost responses and closed waits.
+Fixture decisions do not prove real scheduler timing or delivery. The bounded
+change retains its existing
+[functional and review requirements](proposals/review-wait-notification.md);
+these descriptions do not assert that those gates have already passed.
 
 <a id="review-packet"></a>
 

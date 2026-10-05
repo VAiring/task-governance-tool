@@ -1897,6 +1897,19 @@ print(json.dumps(results, ensure_ascii=False))
         self.linked_output(source, recovery, "review-provenance")
         self.linked_output(source, recovery, "recover-review-handoff")
 
+    def test_both_parent_transports_route_to_complete_wait_protocol(self):
+        source = "references/task_workflow.md"
+        waiting = self.reader().read_reference(f"{source}#wait-across-parent-turns", SKILL_ROOT)
+        for fragment in ("prepare-and-record-reviews", "direct-review-transport"):
+            with self.subTest(transport=fragment):
+                parent = self.reader().read_reference(f"{source}#{fragment}", SKILL_ROOT)
+                _, routed = self.linked_output(source, parent, "wait-across-parent-turns")
+                self.assertEqual(routed, waiting)
+                self.assertNotIn("### Wait Across Parent Turns", parent)
+        reviewer = self.reader().read_reference(f"{source}#independent-reviewer", SKILL_ROOT)
+        self.assertNotIn("#wait-across-parent-turns", reviewer)
+        self.assertNotIn("### Wait Across Parent Turns", reviewer)
+
     def test_helper_stages_keep_common_paths_and_recovery_without_sibling_examples(self):
         source = "references/cli_contracts.md"
         operations = {

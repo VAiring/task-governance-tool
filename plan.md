@@ -82,9 +82,14 @@ gates. It is not the product contract, execution ledger, or evidence store:
   cycles but historical evidence never satisfies the new current gate.
 - Review waiting uses the existing host API as defined by
   [Review/completion](docs/review-completion-specification.md#host-owned-review-waiting),
-  within the current tool and execution limits. The
-  [bounded decision](docs/proposals/review-wait-notification.md) adds no custom
-  wait/notification implementation or host-qualification prerequisite.
+  within the current tool and execution limits. The approved
+  [parent-turn replacement](docs/proposals/review-wait-notification.md) owns the
+  ten-minute check and all-ended resumption acceptance: when the confirmed next
+  check is at least 90 seconds away, one designated writer shortens the same
+  timer to one minute once; the parent requests its stop on resumption. This
+  accepted scheduling alternative supersedes independent direct notification.
+  Integration verification and synchronization remain required for completion;
+  pending-turn guidance does not satisfy the replacement.
 - Durable project identity is separate from mutable filesystem binding. A path
   mismatch is not move/copy/fork intent; only explicit setup confirmation may
   advance a binding.
@@ -508,10 +513,6 @@ copy live Task progress into this section.
 These items are not implementation authority. Each needs a separately approved
 contract and execution unit.
 
-- A new review-wait host adapter or stronger all-reviewers-ended delivery
-  guarantee would require separate scope. Existing-host caller guidance is
-  owned by [Review/completion](docs/review-completion-specification.md#host-owned-review-waiting);
-  stronger host integration is not current work or a Task prerequisite.
 - Decide separately whether to approve the still-proposed verification-
   guardrail successor inventory before reconsidering that Skill-only guidance.
 - Decide whether later product scope should add project-profile detection,

@@ -760,10 +760,13 @@ new taskgov command or scheduler. Representative transport tests and
 semantic review check these instructions rather than matching natural-language
 wording or treating a local call count as measured LLM token savings.
 
-The common Review And Completion introduction also carries
+The common Review And Completion introduction also links
 [host-owned waiting](review-completion-design.md#host-owned-review-waiting)
-for both transport routes. It adds no separate guide lookup, runtime wait code,
-host configuration or instruction-layer notification system.
+for both transport routes. One bounded host supervisor serializes the associated
+timer writes and forwards unchanged independent-review requests; the parent
+retains Task decisions and evidence registration. The workflow owns the complete
+caller protocol without a separate guide lookup. It adds no runtime timer code,
+public CLI leaf, database state, host daemon, or host trust/shared-setting change.
 
 Known-review-material aggregation is caller instruction guidance in the separate
 Independent Reviewer workflow section, not a reader API, collection service, shared reviewer summary,

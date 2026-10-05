@@ -541,40 +541,102 @@ Other helper failures keep their existing general diagnostics.
 
 ### Host-Owned Review Waiting
 
-The caller uses the existing host subagent wait after authorized review
-dispatch. Where `collaboration.wait_agent` is exposed and current tool limits
-and execution rules permit it, request `timeout_ms: 600000`. This is a maximum
-600-second wait in the pending parent turn, not a reviewer deadline. Early
-return uses the host's existing notifications; taskgov and its handoff helper
-implement no timer, notification service, wait wrapper or new command.
+Review waiting uses the host's existing same-parent timer and subagent APIs.
+After authorized review dispatch and confirmed timer preparation, the parent
+ends its turn. Healthy unfinished work is checked after ten minutes; an
+all-reviews-ended observation may bring that check forward under the rule below.
+This is caller orchestration, not a taskgov command, Python scheduler, new Skill
+trigger, or change to non-review waits. A timer or native child final is not
+review evidence, and a child final alone need not start a new idle-parent turn.
 
-Follow shorter host limits or active execution rules rather than bypassing them.
-Use the permitted wait or existing authorized review workflow, explaining the
-limitation without calling repeated short waits a single ten-minute wait.
-Do not add routine short status polling. This guidance adds no isolated
-qualification, ten-minute experiment or notification-delivery prerequisite
-to the Task gate.
-An accepted timeout parameter is not proof of effective elapsed-time support;
-unmeasured duration and token savings remain unmeasured.
+One bounded supervisor owns the wait's reviewer dispatch and all timer writes.
+Reuse an existing suitable supervisor; otherwise a coordinator is necessary
+where the exposed host supplies no idle-parent completion callback. Its extra
+LLM work remains explicit, not a claimed elimination of waiting cost. The
+supervisor forwards the prepared independent-review requests unchanged with
+their project scope and authority, keeps the actual returned child handles,
+and observes their terminal outcomes. Reviewers retain their independent roles;
+none gains a peer-monitoring, timer, Task-management, or registration duty.
+The parent retains the Packet, originals, submit operation, and Task decisions.
 
-The current `wait_agent` interface can return for any live-agent mailbox update,
-including intermediate messages, as well as completion, user input or timeout.
-It does not select a review set or guarantee an all-reviewers-ended event.
-Use actual dispatch handles and the already-held Task/Contract/target association
-to consume relevant outcomes. An unrelated/intermediate message does not require
-a new full status read. On timeout, assess the returned state once, using an
-existing host status read only if needed. Rewait only for healthy unfinished
-work; address problems and user input first. Known completion before waiting,
-or received with expiry, requires no additional wait. Termination or a notification
-does not establish a valid original, PASS, registration or a satisfied gate.
+The wait retains its original Task, Contract, target/generation, designated
+parent, actual timer handle, supervisor, and current scheduled occurrence.
+A session-local arm ordinal identifies each successive ten-minute appointment
+on that same timer; it is not a new business ID, public input, or database row.
+Parent control requests carry this association and the expected arm. Only one
+arm is current. The parent requests checks, cancellation, or healthy rearming
+from the supervisor instead of issuing competing timer writes itself.
 
-Missing originals and unknown launch/delivery use existing investigation and
-handoff recovery, not blind relaunch or registration. After interruption reconcile
-existing handles/results; ignore duplicate/obsolete outcomes for current writes.
-No new event identity or persistence is required. Waiting grants no ownership,
-Task transition, reviewer cancellation or cross-chat messaging authority. A's
-outcome still belongs to A when the caller is working on B, under the existing
+For each arm, choose and retain an explicit first occurrence ten minutes in the
+future, including its date and configured host timezone. Confirm the resulting
+schedule through the exposed host readback while that occurrence is still in
+the future. A missed or ambiguous occurrence is not permission to silently use
+tomorrow's occurrence. The parent ends its turn only after the supervisor
+acknowledges a ready current arm. The timer's prompt is fixed to this wait and
+its parent; shortening never changes the destination or review instructions.
+
+When every dispatched reviewer has ended, regardless of OK, NG, mixed results,
+or missing originals, compare the retained current occurrence with the actual
+decision time only while the current host rule and timezone still match the
+confirmed arm. A mismatch makes timing unknown. A known end is distinct from
+a usable saved original. Apply:
+
+| Current wait condition | Timer action |
+|---|---|
+| Waiting, not previously shortened, with at least 90 seconds remaining | Change this same timer to a one-minute interval once. |
+| Less than 90 seconds remaining, including an occurrence already due | Keep the existing timer; do not postpone an imminent or overdue check. |
+| Occurrence or timezone unknown, context stale, parent already checking, or shortening already attempted with uncertain outcome | Do not guess or repeat a shortening; reconcile the existing state. |
+| Stopped, cancelled, closed, or belonging to an obsolete arm | Do not recreate, reactivate, or rearm it from a late completion. |
+
+One-minute configuration is not a promise of resumption within 60 seconds.
+Retain the existing ten-minute appointment when the 90-second condition cannot
+be established; do not infer a due time from an arbitrary update timestamp.
+Duplicate terminal events do not restart the interval. Actual timer-update
+failure or uncertainty remains visible and cannot be called a successful wake.
+
+On a timer wake, the parent sends the supervisor the wake time and expected
+arm. The supervisor rejects already-consumed or obsolete wakes, including one
+before a healthy, unshortened arm's occurrence, and serializes valid checks with
+completion and cancellation. Once all-ended is latched, the first matching wake
+closes that arm even when shortening brings it before the original ten-minute
+appointment; there is no further threshold decision or inferred new due time.
+For a valid unfinished check it pauses the timer and confirms the paused
+readback before acknowledging the check. This temporary stop keeps the
+supervisor available.
+Only a fresh explicit parent request for the same checked arm, with reviews
+still healthy and unfinished, may create the next ten-minute appointment on
+the same timer. Successful rearming advances the arm and returns a new ready
+acknowledgement before the parent ends its turn again. All-ended work, a
+problem, or cancellation cannot be overwritten by an older rearm request.
+
+For all-ended work, a material problem, or an instruction to stop, cancel, or
+change the wait, close the wait through the same supervisor. Its
+terminal acknowledgement means it has paused this timer and confirmed the
+result; the parent then handles outcomes under the existing result gates.
+The supervisor may end and never accepts delayed rearming of that wait.
+Ordinary questions or status requests alone retain the healthy wait and its
+timer. Stopping this wait does not cancel reviewers, change Task state, or
+cancel unrelated work. A late queued wake never reopens a closed wait.
+
+Lost acknowledgements or an unavailable supervisor require inspection, not a
+second writer, duplicate reviewer dispatch, or blind retry. The parent cannot
+take over timer writes until the old supervisor has relinquished them or is
+confirmed ended and any outstanding operation is resolved. Preserve originals
+and incomplete transport under the existing handoff recovery rules. A wake,
+all-ended observation, or timer acknowledgement supplies no PASS, original,
+registration, ownership, or satisfied completion gate. Outcomes for A remain
+associated with A while the parent works on B, under the existing
 [ownership rules](task-operation-specification.md#session-ownership-and-recovery).
+
+Use only exposed, authorized host operations; never read a private host database
+or change host trust or shared settings to obtain this behavior. A denied
+operation remains denied; this workflow does not authorize a different sender
+or transport to evade it. If necessary host capabilities are unavailable,
+disclose the limitation and use the existing permitted review workflow without
+claiming timer resumption. This adds no host-wide qualification prerequisite
+to ordinary product Tasks. The bounded change's functional, synchronization,
+and Tier 2 gates remain in its
+[acceptance owner](proposals/review-wait-notification.md).
 
 <a id="conditional-reviewer-session-binding"></a>
 

@@ -375,11 +375,11 @@ result registration tests retain writer atomicity and concurrent-state checks.
 The [waiting behavior](review-completion-specification.md#host-owned-review-waiting)
 is host orchestration linked from the workflow's common Review And Completion
 introduction for both shared-file and direct transport. No Python timer controller,
-public taskgov operation, migration, persistent deadline ledger, host daemon,
-or helper-side reviewer launcher is introduced. `review_handoff.py` and
-`review_handoff_preparation.py` retain their transport responsibilities and
-unchanged generated independent-review requests. Package digests cover the
-changed workflow guidance; ordinary reviewer retrieval stays separate.
+public taskgov operation, persistent deadline ledger, host daemon,
+or helper-side reviewer launcher is introduced. The conditional numerical
+marker below has its own setup-only schema migration and does not persist timer
+state. `review_handoff.py` and `review_handoff_preparation.py` retain unchanged
+generated independent-review requests; ordinary reviewer retrieval stays separate.
 
 The parent supplies a bounded supervisor with the already-prepared requests,
 project review scope/authority, existing Task/Contract/target association, and
@@ -477,6 +477,31 @@ Fixture decisions do not prove real scheduler timing or delivery. The bounded
 change retains its existing
 [functional and review requirements](proposals/review-wait-notification.md);
 these descriptions do not assert that those gates have already passed.
+
+#### Review Wait Usage Marker
+
+`review_handoff_preparation.py` generates one safely quoted `wait_ended_command`
+from the same prepared Packet path as read/save/submit. It is for the supervisor,
+not appended to independent-review requests. `review_handoff.py` adds only the
+conditional `wait-ended` operation with mutually exclusive file/UTF-8 stdin
+Packet input. Existing physical input and complete-Packet validators are reused;
+stdin adds no file write and preserves the direct transport route.
+
+`review_wait.py` composes actual caller capture, the existing structural project
+scope/resolver admission, one query-only core snapshot and the repository-owned
+`capture_wait_metadata` check. It emits only the closed versioned metadata marker
+after validation. A best-effort lifecycle registry call remembers the actual
+sender without opening logs, changing core state, or becoming a gate. It does
+not inspect the scheduler, create a review Receipt, capture a caller-supplied
+turn ID, or infer the actual all-ended event. SQL and immutable anchor replay
+belong to [numerical wait attribution](database-design.md#review-wait-decision-structure).
+
+The host envelope supplies the sender's actual turn to the collector; text
+messages and echoed output in another thread are not a substitute. No all-ended
+verdict, timer action or notification body is retained. Installed helper tests
+cover exact/stale basis, both transport forms, identity, unavailable numerical
+state and unchanged core bytes; numerical tests cover duplicate/late/reopen and
+restore behavior. These prove local correlation, not host notification timing.
 
 <a id="review-packet"></a>
 

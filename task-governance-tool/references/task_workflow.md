@@ -540,7 +540,8 @@ cannot support a known due time or parent wake is an explicit integration
 limitation; preserve existing authorized work without claiming this procedure
 is active or verified. Do not change host trust/settings or invent a tool API.
 
-**Parent handoff.** Give the supervisor the binding, unchanged requests and a
+**Parent handoff.** Give the supervisor the binding, unchanged requests,
+the returned `wait_ended_command`, and a
 fixed prompt that resumes this parent to check this association, request its
 timer's stop, and reconcile actual outcomes. No arbitrary cross-chat send is
 part of this procedure. The supervisor dispatches the reviewers, arms the timer
@@ -569,6 +570,34 @@ state, then read back. Do not reset a shortened timer on duplicate completion.
 For missing/stale due information, preserve the existing timer and report the
 uncertainty; this is not a successful threshold decision. Never activate a
 PAUSED timer from a late completion, even if that shortens a nominal deadline.
+
+In this first all-ended decision turn, the supervisor runs `wait_ended_command`
+once, including when it keeps a nearer timer or the timer update fails. This
+records only structural numerical attribution for that whole turn. Do not run
+it for dispatch, partial results, periodic checks, duplicate terminal events,
+parent resumption or later cleanup; do not recreate a decision for a closed
+wait. A helper failure or unavailable usage never delays authorized timer
+handling or review recovery, and never authorizes replaying a timer write.
+
+For direct complete-Packet transport, give the supervisor the original complete
+Packet bytes and use the equivalent fixed helper on UTF-8 stdin:
+
+```powershell
+$OutputEncoding = [Console]::InputEncoding = [System.Text.UTF8Encoding]::new($false)
+@'
+<unchanged complete Packet JSON>
+'@ | python .agents/skills/task-governance-tool/scripts/review_handoff.py wait-ended --repo . --from-stdin
+```
+
+On POSIX use `python3` with the same operation and original bytes on stdin.
+No shared file is needed. Do not reconstruct a Packet from excerpts or supply
+session/turn IDs. The helper validates its current basis and emits
+`ok=true,status=review_wait_ended` with actual-sender metadata; that is not host
+completion proof, timer delivery, a saved review, PASS, or guaranteed usage.
+Retain the acknowledgement in the wait context. The parent never executes this
+command when receiving it. Lost/missing/stale metadata remains unknown coverage;
+do not perform a later parent call to fill it. Repeated collection uses original
+response keys and does not add already counted owner/reviewer turns twice.
 
 Serialize writes and await each result. If cancellation arrives during an
 in-flight shortening, the same writer completes/reconciles that operation and

@@ -78,6 +78,9 @@ class UsageEvidenceRepository(UsageAttributionRepository):
     schema_statements = (_MIGRATION, *_DDL[1:], *_ATTRIBUTION_DDL, *_EVIDENCE_DDL)
     migrations = (*UsageAttributionRepository.migrations, (3, "immutable_usage_evidence"))
 
+    def _core_basis(self, core, numerical_connection):
+        return core_basis(core, self.basis[0])
+
     def inspect(self):
         try:
             return UsageRepository.inspect(self)
@@ -172,7 +175,7 @@ class UsageEvidenceRepository(UsageAttributionRepository):
         publication, host transcript read, or core write occurs in this writer.
         """
         with self.connection(write=True) as connection, core_reader() as core:
-            fingerprint, periods = core_basis(core, self.basis[0])
+            fingerprint, periods = self._core_basis(core, connection)
             projected = self.attribution(core, numerical_connection=connection)
             previous = self._snapshots(connection, current=True)
             adopted = []
@@ -207,8 +210,8 @@ class UsageEvidenceRepository(UsageAttributionRepository):
 
     def read(self, core, *, task_id=None, audit=False, numerical_connection=None):
         from contextlib import nullcontext
-        fingerprint, periods = core_basis(core, self.basis[0])
         with (self.connection() if numerical_connection is None else nullcontext(numerical_connection)) as connection:
+            fingerprint, periods = self._core_basis(core, connection)
             capture = connection.execute("SELECT core_digest FROM usage_capture WHERE singleton=1").fetchone()
             if capture is None or capture[0] != fingerprint:
                 raise UsageError("usage_pending")

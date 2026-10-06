@@ -425,6 +425,7 @@ def _requests(repo, args, packet_path):
             "Preserve failed residue; do not overwrite or blindly repeat a save. Do not manage Tasks, reset targets, register DB evidence, complete work or implement transport/recovery code."
         )})
     return {"status": "ready", "packet_path": packet_path, "review_requests": reviewers,
+            "wait_ended_command": _shell([*base, "wait-ended", *common]),
             "submit_command": _shell([*base, "submit", *common, "--", *paths])}
 
 

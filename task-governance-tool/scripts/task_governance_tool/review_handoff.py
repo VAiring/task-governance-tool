@@ -1,4 +1,4 @@
-"""Bounded caller-owned transport; no database access or replacement review gate.
+"""Bounded caller-owned transport; no core writer or replacement review gate.
 
 Save validates before exclusive creation and retains any failed-write residue.
 Submit frames unchanged originals and delegates to the existing public stdin
@@ -391,6 +391,11 @@ def main(argv=None):
         reader.add_argument("--repo", required=True)
         reader.add_argument("--packet", required=True)
         reader.add_argument("--role", choices=("independent",), required=True)
+        ended = commands.add_parser("wait-ended", help="Declare the bound supervisor's all-ended decision for optional numerical usage")
+        ended.add_argument("--repo", required=True)
+        packet_source = ended.add_mutually_exclusive_group(required=True)
+        packet_source.add_argument("--packet", help="Ignored project-relative complete Packet JSON")
+        packet_source.add_argument("--from-stdin", action="store_true", help="Complete actual Packet as bounded UTF-8 stdin")
         for operation in ("save", "submit"):
             command = commands.add_parser(operation)
             command.add_argument("--repo", required=True, help="Explicit governed project root")
@@ -409,6 +414,11 @@ def main(argv=None):
             return (0 if result["ok"] else 1) if _emit(result) else 1
         if args.operation == "read":
             return 0 if _emit(read_for_reviewer(repo, args.packet), utf8=True) else 1
+        if args.operation == "wait-ended":
+            from task_governance_tool.review_wait import wait_ended
+            raw = sys.stdin.buffer.read(PACKET_LIMIT + 1) if args.from_stdin else None
+            result = wait_ended(repo, packet_path=args.packet, raw=raw)
+            return (0 if result["ok"] else 1) if _emit(result) else 1
         if args.operation == "save":
             raw = sys.stdin.buffer.read(REVIEW_RESULTS_INPUT_LIMIT + 1)
             result = save(repo, args.packet, args.output, raw, args.user_approved_reviewer)

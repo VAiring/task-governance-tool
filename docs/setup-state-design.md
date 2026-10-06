@@ -117,8 +117,11 @@ non-gating and does not rerun or roll back core or numerical setup.
 acquisitions and actual Receipt-session bindings. `UsageRepository` exposes the
 existing session/source registry and best-effort same-caller registration used
 after successful bound review save. Save preserves its original response even
-when registration fails. Read-only review helpers remain unchanged. No new table,
-source-path retention or database attachment is introduced.
+when registration fails. The conditional wait-decision helper uses the same
+best-effort actual-caller registration boundary; its schema-4 marker and relation
+belong to [wait attribution](database-design.md#review-wait-decision-structure).
+Read-only review display/material remain unchanged. Registration retains no
+source path and attaches no database to the core transaction.
 
 `usage_sources.py` locates only registered session IDs in the legacy
 `rollout-<prefix>-<session-uuid>.jsonl` and segmented

@@ -638,6 +638,51 @@ to ordinary product Tasks. The bounded change's functional, synchronization,
 and Tier 2 gates remain in its
 [acceptance owner](proposals/review-wait-notification.md).
 
+#### Review Wait Usage Marker
+
+In the first turn where the designated supervisor observes the full review set
+ended and decides whether to shorten the current wait, it invokes the fixed
+`review_handoff.py wait-ended` helper once. The ready shared-file handoff returns
+`wait_ended_command` beside the existing requests and submit command. The parent
+passes that command to the supervisor with the wait association. Complete-Packet
+transport instead supplies those same complete bytes on UTF-8 stdin using
+`wait-ended --repo <project> --from-stdin`; no shared file is required. The helper
+accepts exactly one of `--packet <ignored-path>` and `--from-stdin`. Ordinary
+independent reviewer requests and their read/save duties do not change.
+
+Invoke it in that decision turn even if the decision keeps a nearer timer or
+the timer update fails. It is not a periodic check, dispatch, partial-completion,
+parent receiving/resumption or cleanup operation. A duplicate terminal event or
+repeated notice does not require another invocation. A cancelled/closed wait
+cannot use a late event to invent a new decision. The helper's outcome never
+controls whether an authorized timer stop or review recovery proceeds.
+
+The helper validates the complete Packet, captures its actual caller without a
+session/turn input, and checks its project, Task, Contract, full target and
+execution against one admitted current core snapshot. It captures the existing
+immutable artifact-manifest ID from that snapshot. Missing, stale or unavailable
+basis produces a sanitized failure and no marker; never substitute the latest
+Task or emit a later parent marker to fill the gap. Physical ignored-path rules
+apply to file input; the same 32,768-byte Packet limit and validation apply to
+stdin. No result file, Task/Receipt/event row or timer is created or changed.
+
+Success is exactly `{ok:true,status:"review_wait_ended",review_wait}`. The closed
+`review_wait` object has `version:1`, `session_id`, `project_id`, `task_id`,
+`execution_id`, `contract_revision`, the four-field `review_target`, and
+`artifact_manifest_id`. It best-effort registers this actual sender in the
+existing numerical session registry without initializing, migrating or reading
+logs. Registration failure does not change the validated marker. The numerical
+[attribution owner](database-specification.md#review-wait-decision-attribution)
+defines whole-turn coverage, replay and duplicate handling.
+
+This is a trusted caller declaration with structural Task correlation. It does
+not inspect host children, prove all-ended or notification delivery, authenticate
+the sender, grant ownership, satisfy a review gate, or guarantee collection.
+Only the actual supervisor uses it; the parent retains the acknowledgement as
+context and never executes it upon receiving the result. Missing identity,
+lost output or unavailable usage leaves coverage unknown and does not justify
+repeating timer changes, Task completion or review registration.
+
 <a id="conditional-reviewer-session-binding"></a>
 
 ### Reviewer Session Binding

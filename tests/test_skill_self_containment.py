@@ -644,6 +644,14 @@ class SkillSelfContainmentTests(unittest.TestCase):
         self.assertEqual(setup_example["schema_to"], SCHEMA_VERSION)
         self.assertIn(f"`schema_to={SCHEMA_VERSION}`", setup_section)
 
+        from task_governance_tool.usage_wait_repository import UsageWaitRepository
+        usage_schema = UsageWaitRepository.migrations[-1][0]
+        self.assertEqual(setup_example["usage"]["schema_to"], usage_schema)
+        usage_contract = setup_section.split("`usage` reports separate", 1)[1].split(
+            "`usage_hooks` separately reports", 1)[0]
+        self.assertIn(f"`schema_to` is {usage_schema}", usage_contract)
+        self.assertIn(f"exact schema 1, 2 or 3 to {usage_schema}", usage_contract)
+
         doctor_example_match = re.search(
             r"A ready result has this structure:\s*```json\s*(.*?)\s*```",
             doctor_section,
@@ -1914,6 +1922,7 @@ print(json.dumps(results, ensure_ascii=False))
         source = "references/cli_contracts.md"
         operations = {
             "prepare-review-handoff": ("#### Prepare Review Handoff", "--expected-target-generation"),
+            "record-review-wait-decision": ("#### Record Review Wait Decision", "wait-ended --repo ."),
             "read-review-packet": ("#### Read Review Packet", "--role independent"),
             "save-review-original": ("#### Save Review Original", "--output reviews/review-a.json"),
             "submit-review-originals": ("#### Submit Review Originals", "submit --repo ."),

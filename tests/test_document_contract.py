@@ -51,6 +51,7 @@ EXPECTED_METRIC_DOCS = EXPECTED_CANONICAL_DOCS + (
 )
 FIXTURE_LINK_TARGETS = (
     "LICENSE",
+    "docs/proposals/review-wait-notification.md",
     "docs/releases/v0.10.0.md",
     "docs/releases/v0.11.0.md",
     "docs/releases/v0.12.0.md",

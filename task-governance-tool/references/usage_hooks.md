@@ -60,6 +60,12 @@ Receipt binding and successful bound original-review save register participants
 without LLM-entered IDs or an extra command. The collector reads only their
 validated same-project logs; parenthood does not register a child. Reviewer read
 remains read-only, and a saved review counts only after its core binding exists.
+The conditional [wait-decision helper](cli_contracts.md#record-review-wait-decision)
+best-effort registers its actual supervisor and marks only the first all-ended
+decision turn. It does not include the whole wait or the receiving parent's
+turn. Numerical schema 4 requires explicit setup to initialize or migrate;
+ordinary helpers and hooks never upgrade old stores. Usage unavailability does
+not prevent review or Task completion, and a marker does not prove collection.
 
 Standard Codex dated `sessions` and flat `archived_sessions` beneath `CODEX_HOME`
 (default user `.codex`) are supported source layouts. Paths/filenames are hints,

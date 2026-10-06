@@ -149,6 +149,7 @@ class UsageAttributionRepository(UsageRepository):
         """Fault-injection seam; migration has not committed."""
 
     def _record(self, connection, observations):
+        from task_governance_tool.usage_wait_attribution import WaitObservation
         for observation in observations:
             if isinstance(observation, TurnObservation):
                 values = (observation.thread_id, observation.turn_id, observation.started_at)
@@ -171,8 +172,16 @@ class UsageAttributionRepository(UsageRepository):
             elif isinstance(observation, ReviewReceiptTurn):
                 connection.execute("INSERT OR IGNORE INTO usage_review_receipt_turns VALUES (?,?,?)",
                                    (observation.thread_id, observation.turn_id, observation.receipt_id))
+            elif isinstance(observation, WaitObservation):
+                self._record_wait(connection, observation)
             else:
                 raise UsageError("boundary_unknown")
+
+    def _record_wait(self, connection, observation):
+        """Old numerical schemas do not persist the later wait projection."""
+
+    def _additional_intervals(self, core, connection, owners, turns, conflicts):
+        return ()
 
     def record(self, observations) -> None:
         """Internal already-registered source seam; no Task mutation or init."""
@@ -213,7 +222,8 @@ class UsageAttributionRepository(UsageRepository):
                     codes.add(row["code"])
                 if row["pending"] != "none":
                     codes.add("collection_pending")
-        owners = owner_intervals(transitions, bindings)
+            owners = owner_intervals(transitions, bindings)
+            additional = self._additional_intervals(core_connection, connection, owners, turns, conflicts)
         reviews = []
         from task_governance_tool.storage import current_schema_version
         if current_schema_version(core_connection) >= 25:
@@ -225,7 +235,7 @@ class UsageAttributionRepository(UsageRepository):
                 reviews.append((receipt_id, target, binding))
         # Conflicting turn order cannot select a reviewer read/save boundary.
         safe_turns = tuple(item for item in turns if (item.thread_id, item.turn_id) not in conflicts)
-        intervals = owners + reviewer_intervals(owners, safe_turns, review_boundaries, receipt_turns, reviews)
+        intervals = owners + reviewer_intervals(owners, safe_turns, review_boundaries, receipt_turns, reviews) + additional
         result = project(intervals, turns, responses,
                          conflicting_turns=conflicts, conflicting_responses=response_conflicts,
                          thread_diagnostics=diagnostics)

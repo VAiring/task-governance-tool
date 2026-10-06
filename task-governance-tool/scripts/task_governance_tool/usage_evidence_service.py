@@ -16,12 +16,12 @@ from task_governance_tool.state_paths import (
 )
 from task_governance_tool.storage import connect_initialized_readonly
 from task_governance_tool.usage_evidence import encode, MAX_DOCUMENT_BYTES
-from task_governance_tool.usage_evidence_repository import UsageEvidenceRepository
+from task_governance_tool.usage_wait_repository import UsageWaitRepository
 from task_governance_tool.usage_values import UsageError
 
 
 def repository_for(target):
-    return UsageEvidenceRepository(target.resolved_usage_database, target.project.project_id,
+    return UsageWaitRepository(target.resolved_usage_database, target.project.project_id,
                                    target.binding_path_hash, target.binding_generation)
 
 

@@ -200,9 +200,9 @@ Turn observations, response observations and source cursor commit atomically.
 `usage_review_boundaries` and `usage_review_receipt_turns`
 to numerical schema 1. Explicit initialization migrates the migration-marker
 table and adds the new relations in one short transaction, recording version 2
-last. No ordinary read or collector migrates. The setup factory selects schema 3
+last. No ordinary read or collector migrates. The setup factory selects schema 4
 for the current schema-25 package. Preview returns `migration_required` and planned `usage_migrate` for
-an exact schema-1 or schema-2 store; explicit setup returns `migrated` and that completed
+an exact schema-1, schema-2 or schema-3 store; explicit setup returns `migrated` and that completed
 write on success. Fresh-store creation keeps `usage_initialize`. Failure remains
 a separate numerical outcome, not rollback or rejection of core setup.
 
@@ -225,6 +225,36 @@ active execution can share the same turn; an unrelated parent's submission
 turn cannot stand in for the reviewer's read/save boundary. Legacy unbound
 Receipts add no inferred participation. Missing start history counts only a
 known save/direct-registration turn with explicit partial coverage.
+
+### Review Wait Decision Structure
+
+`usage_wait_attribution.py` validates the closed helper marker and projects its
+actual sender's host turn as a single-turn interval. It accepts no caller turn
+ID, verdict, timer body or inferred delivery time. Parent echoes fail the
+sender-to-source comparison. Duplicate markers for one execution/manifest use
+the earliest explicit same-sender host turn; conflicting senders or unavailable
+order supply a fixed unknown-boundary diagnostic instead of extra usage.
+The existing response union and execution-period graph handle overlaps, late
+records and reopen separation.
+
+`usage_wait_repository.py` extends the schema-3 evidence repository with
+numerical schema 4 and `usage_wait_turns`. Explicit setup migrates admitted
+schemas 1, 2 or 3 atomically, preserves observations, cursors and immutable
+snapshots, and records the new migration marker last. Old readers reject the
+new schema; ordinary collectors and helpers never initialize or migrate it.
+The existing schema-2/3 repository implementations retain their old meanings.
+
+The repository also supplies the helper's core read validation. One admitted
+snapshot compares the prepared Packet's project, Task, Contract, full target
+and execution with current state and returns the existing artifact-manifest ID.
+There is no new core relation or synthetic Receipt. Later projection verifies
+that exact manifest and its matching authority/criterion Reference plus the
+original execution; it does not require the old target to remain current.
+The schema-4 capture/read basis includes the referenced immutable anchor state,
+so a restore cannot leave a previously captured total accepted after its anchor
+disappears. SQL remains in this repository; host control and Packet transport
+remain outside it. Only allowlisted structural metadata reaches storage or
+prefix hashes.
 
 ### Immutable Usage Persistence
 

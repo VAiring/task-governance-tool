@@ -294,9 +294,9 @@ or general migration framework is added.
 
 ## Numerical Usage Store
 
-Numerical collection uses independent schema 3 in the resolver-owned
+Numerical collection uses independent schema 4 in the resolver-owned
 `current/taskgov-usage.sqlite`, not the main schema sequence. Explicit setup
-initializes an absent store, migrates exact schema 1 or 2, and validates current state. Normal reads and
+initializes an absent store, migrates exact schema 1, 2 or 3, and validates current state. Normal reads and
 collection never initialize, migrate or repair it. Incompatible structure,
 WAL, corruption, contention or project/binding mismatch produces unavailable
 usage, never a core admission failure or a weakened quality gate. Existing
@@ -399,6 +399,46 @@ hashing or storage. Turn order comes from explicit host `task_started` records
 for known turn IDs, not an estimated Task-time interval. Conflicting identities
 are not last-writer-wins. A lost/cross-thread endpoint retains only a definite
 observed endpoint with an unknown boundary, never unbounded future-session usage.
+
+### Review Wait Decision Attribution
+
+The supervisor's first all-reviews-ended decision turn contributes its whole
+observed usage to the structurally associated reviewed execution. This includes
+OK, NG, mixed outcomes and missing originals, whether the timer is shortened or
+kept because fewer than 90 seconds remain. Attribution does not depend on a
+successful timer write. Parent receiving/resumption and user-facing completion
+report turns, unrelated timer operations, and the supervisor's entire waiting
+interval gain no participation from this rule. Existing owner/reviewer coverage
+continues independently.
+
+The conditional [wait helper](review-completion-specification.md#review-wait-usage-marker)
+emits only the actual sender and validated project, Task, execution, Contract,
+full review target and immutable artifact-manifest ID. The collector accepts it
+only in that sender's structured host tool-result turn; a parent's forwarded
+copy cannot substitute its turn. Message bodies, automation prompts, timestamps
+alone and parent/child ancestry cannot establish this association. A marker is
+a trusted caller's declaration of its decision, not proof of host completion,
+review quality, ownership or permission.
+
+Schema 4 stores these numerical observations separately from Task transitions
+and reviewer Receipts. For one execution/manifest basis, repeated collection or
+notification selects only the first explicitly ordered turn from the same
+sender. Missing/conflicting turn order or different claimed senders remains
+unknown rather than adding turns or choosing the latest sender. Union the
+selected turn's original response keys with existing coverage; never add an
+already counted owner/reviewer turn twice. Late observations of that selected
+turn remain eligible through immutable successor snapshots.
+
+Marker emission validates the Packet against one admitted current core read.
+Replay revalidates the captured immutable manifest, its authority/criterion
+Reference and original execution, including after completion or restore. It
+never replaces missing identifiers with a new current target or reopened
+execution. The original execution determines the completion period. Missing
+anchors stay unbound; current snapshot reads also detect that changed core
+basis. Numerical registration, collection or migration unavailability cannot
+block timer handling, review registration or Task completion. Only explicit
+setup migrates old numerical stores; there is no automatic historical marker
+backfill or inference from old notification prose.
 
 ### Immutable Usage Evidence
 

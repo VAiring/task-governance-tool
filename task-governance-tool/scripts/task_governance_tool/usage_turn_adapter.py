@@ -16,7 +16,7 @@ from task_governance_tool.task_values import validate_task_id, TaskValidationErr
 from task_governance_tool.usage_values import UsageError
 
 
-ADAPTER_VERSION = "codex-task-turn-v1"
+ADAPTER_VERSION = "codex-task-turn-v2"
 STATUSES = frozenset({"ready", "in_progress", "review_pending", "paused", "blocked", "done", "cancelled"})
 
 
@@ -102,7 +102,9 @@ def project_record(record: dict, thread_id: str, *, project_id: str | None = Non
     result = []
     for item in _objects(payload.get("output")):
         from task_governance_tool.usage_review_attribution import project_review
+        from task_governance_tool.usage_wait_attribution import project_wait
         result.extend(project_review(item, thread_id, turn, project_id))
+        result.extend(project_wait(item, thread_id, turn, project_id))
         if project_id is not None and item.get("project_id") != project_id:
             continue
         command = item.get("command")

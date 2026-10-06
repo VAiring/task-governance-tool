@@ -39,18 +39,23 @@ def _target(skill_root, repo, *, repo_explicit=False):
     return resolution.target
 
 
-def register_reviewer(repo, caller):
-    """Best effort after successful original save; no change to read-only helpers.
-
-    A saved review can precede parent registration. Remember its actual caller
-    without opening logs; later core binding remains necessary for attribution.
-    Missing/older numerical state is not migrated and never rejects the save.
-    """
+def _register_caller(repo, caller):
+    """Remember only an actual caller; never read logs or migrate numerical state."""
     try:
         target = _target(Path(__file__).absolute().parents[2], repo, repo_explicit=True)
         repository_for(target).register_session(caller)
     except Exception:
         pass
+
+
+def register_reviewer(repo, caller):
+    """Best effort after original save; later core Receipt binding is required."""
+    _register_caller(repo, caller)
+
+
+def register_wait_supervisor(repo, caller):
+    """Best effort after a bound decision; registration alone attributes nothing."""
+    _register_caller(repo, caller)
 
 
 def collect_event(payload, *, skill_root, repo, environment, repo_explicit=False):

@@ -41,6 +41,7 @@ detail are not prerequisites for normal Task work.
     - [Read](#read-review-packet)
     - [Save](#save-review-original)
     - [Submit](#submit-review-originals)
+    - [Record Review Wait Decision](#record-review-wait-decision)
   - [Recover Review Handoff](#recover-review-handoff)
 - [Receipt Output For Integration Or Audit](#receipt-output-for-integration-or-audit)
 - [Internal Continuity Boundary](#internal-continuity-boundary)
@@ -277,7 +278,7 @@ after the example:
   "viewer_status": "published",
   "usage": {
     "status": "initialized",
-    "schema_to": 3,
+    "schema_to": 4,
     "planned_writes": ["usage_initialize"],
     "completed_writes": ["usage_initialize"],
     "error": null
@@ -352,8 +353,8 @@ durable stages.
 Its status is `not_attempted`, `pending_core_setup` (preview before core
 binding is admitted), `not_present`, `initialized`, `migration_required`,
 `migrated`, `current`, or `unavailable`. Writes are `usage_initialize` and
-`usage_migrate` (exact schema 1 or 2 to 3); preview has no completed write.
-`schema_to` is 3 and `error` is null or fixed `usage_unavailable`. Numerical
+`usage_migrate` (exact schema 1, 2 or 3 to 4); preview has no completed write.
+`schema_to` is 4 and `error` is null or fixed `usage_unavailable`. Numerical
 failure never undoes successful core setup or blocks ordinary Task work;
 do not repeat Task writes to recover usage. This adds no normal-loop action,
 session registration step or automatic collection.
@@ -1932,7 +1933,8 @@ not-applicable, not PASS.
 
 Only `handoff.status=ready` supplies a saved complete `packet_path`, per-reviewer
 `review_requests` (distinct result path, exact read/save commands and request), and
-`submit_command`. Pass those requests directly; required independent artifact
+`submit_command`, plus the conditional supervisor-only `wait_ended_command`.
+Pass those requests directly; required independent artifact
 and authority inspection is unchanged. A target requiring a Receipt returns
 `not_applicable` without files, so its later Receipt call may use the same area.
 `blocked`, `failed` or `unavailable` never supplies reviewer requests. After a
@@ -1945,6 +1947,39 @@ For unknown/lost outcomes inspect public state first. There is no automatic
 retry, new ledger, reviewer launch or raw-response file. Capture is limited to
 262,144 bytes in memory; malformed, incomplete or oversized output cannot be
 used as a Packet. Packet/result files alone are persisted.
+
+#### Record Review Wait Decision
+
+Only the designated wait supervisor uses `wait-ended`, once in its first
+all-ended/shortening-decision turn under the
+[waiting procedure](task_workflow.md#wait-across-parent-turns). Shared-file
+preparation already supplies the fixed `wait_ended_command`. Its shape is:
+
+```powershell
+python .agents/skills/task-governance-tool/scripts/review_handoff.py wait-ended --repo . --packet reviews/g1/packet.json
+```
+
+Alternatively, `--from-stdin` accepts the unchanged complete UTF-8 Packet and
+requires no shared file. Choose exactly one input; both retain complete-Packet
+validation and the 32,768-byte limit. No session/turn, timer or verdict input is
+accepted. Actual caller identity and one current core read supply the original
+execution and immutable target anchor. Stale/missing basis fails without a
+marker or core write; it never selects another current Task.
+
+Success is `{ok:true,status:"review_wait_ended",review_wait}`. The metadata has
+`version:1`, actual `session_id`, `project_id`, `task_id`, `execution_id`,
+`contract_revision`, four-field `review_target`, and `artifact_manifest_id`.
+The helper best-effort registers that sender for optional usage collection.
+It does not initialize/migrate usage state, read logs, operate timers, save a
+review or write Task evidence. Numerical failure does not invalidate a validated
+marker or block ordinary review/completion. Only explicit setup upgrades an
+older numerical store; missing coverage is not measured zero.
+
+The marker is a trusted sender declaration, not all-ended, delivery, PASS,
+ownership or collection proof. Parent receipt/resumption, partial or repeated
+events and cleanup do not invoke it. Failed/lost output leaves coverage unknown;
+continue necessary authorized wait handling without replaying timer or Task
+writes. Independent reviewer requests and duties remain unchanged.
 
 #### Read Review Packet
 

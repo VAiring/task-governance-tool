@@ -46,8 +46,8 @@ def setup_usage(inspection, core_result, *, read_only: bool) -> dict:
     from task_governance_tool.storage import SCHEMA_VERSION
     repository_type = UsageRepository
     if SCHEMA_VERSION >= 25:
-        from task_governance_tool.usage_evidence_repository import UsageEvidenceRepository
-        repository_type = UsageEvidenceRepository
+        from task_governance_tool.usage_wait_repository import UsageWaitRepository
+        repository_type = UsageWaitRepository
     result = {"status": "not_attempted", "schema_to": repository_type.migrations[-1][0],
               "planned_writes": [], "completed_writes": [], "error": None}
     if not core_result.ok or inspection.scope is None:

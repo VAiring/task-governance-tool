@@ -766,7 +766,9 @@ for both transport routes. One bounded host supervisor serializes the associated
 timer writes and forwards unchanged independent-review requests; the parent
 retains Task decisions and evidence registration. The workflow owns the complete
 caller protocol without a separate guide lookup. It adds no runtime timer code,
-public CLI leaf, database state, host daemon, or host trust/shared-setting change.
+public taskgov leaf, durable deadline state, host daemon, or host trust/shared-setting
+change. Its conditional usage marker and numerical-only persistence belong to
+[Review/completion](review-completion-design.md#review-wait-usage-marker).
 
 Known-review-material aggregation is caller instruction guidance in the separate
 Independent Reviewer workflow section, not a reader API, collection service, shared reviewer summary,

@@ -492,13 +492,15 @@ dispatches reviewers directly and retains the Packet, actual handles and
 registration command. No resident coordinating LLM or peer-monitoring reviewer
 is needed.
 
-Create one PAUSED same-parent reservation, prepare its original Task/reviewer
-association, then explicitly start the deletion workflow. End this turn only
-after the server confirms its ten-minute check is active and its worker alive.
-At all-ended and original-parent idle, it deletes/confirms that reservation and
-sends once. The direct wake is acknowledged in a genuine new turn; it is not
-PASS, a saved original or registration evidence. Unknown effects, interruption
-and restart do not authorize retry or a replacement reservation.
+Call `review_wait_wait(task_id, reviewer_ids)` once with the original Task and
+actual returned reviewer handles. End this turn only on
+`ok=true,status=waiting,parent_may_end=true`. Reservation creation, preparation,
+start, deletion and receipt observation belong to the service. After direct
+resumption, process the original review results without an ACK or routine
+status/view call. After a healthy unfinished ten-minute check, repeat the same
+wait request; it owns settled cleanup and the next reservation. Unknown effects,
+interruption and restart never authorize a retry or competing wait. A wake or
+receipt is not PASS, an original or registration evidence.
 
 The guide owns configuration, exact controls, fallback/cleanup and subsequent
 unfinished waits. If unavailable, continue permitted review transport and

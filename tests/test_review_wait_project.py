@@ -56,8 +56,9 @@ class ProjectWaitTests(PreparationFixture):
 
     def make(self):
         def session_factory(*args, **kwargs):
+            direct_type = kwargs.pop("direct_factory", DirectProbe)
             return ReviewWaitSession(*args, **kwargs,
-                direct_factory=lambda *a, **kw: DirectProbe(*a, **kw, cycle_seconds=0.01, join_seconds=5))
+                direct_factory=lambda *a, **kw: direct_type(*a, **kw, cycle_seconds=0.01, join_seconds=5))
         session = ProjectReviewWaitSession(ProjectConfig(self.root, self.root / "server.mjs", self.root, "UTC"),
             host_factory=self.host, session_factory=session_factory, clock=lambda: NOW)
         session.skill = self.install.skill_root  # test-only physical install injection
@@ -91,7 +92,7 @@ class ProjectWaitTests(PreparationFixture):
             input=HELLO + READY + request("tools/list"), capture_output=True, cwd=self.root, timeout=10)
         self.assertEqual(0, result.returncode, result.stderr)
         catalogue = json.loads(result.stdout.splitlines()[-1])["result"]["tools"]
-        self.assertEqual(6, len(catalogue))
+        self.assertEqual(9, len(catalogue))
         self.assertNotIn("review_wait_direct_start", [tool["name"] for tool in catalogue])
         self.assertTrue(all(tool["inputSchema"]["additionalProperties"] is False for tool in catalogue))
         self.assertEqual(before, file_snapshot(self.root))
@@ -215,8 +216,39 @@ class ProjectWaitTests(PreparationFixture):
     def test_handoff_routes_policy_without_launch_or_supervisor_duty(self):
         route = self.handoff["handoff"]["review_wait"]
         self.assertEqual({"status": "enabled", "task_id": self.task_id,
-            "prepare_tool": "review_wait_prepare", "guide": "references/review_wait.md"}, route)
+            "wait_tool": "review_wait_wait", "guide": "references/review_wait.md"}, route)
         self.assertFalse(self.paths.review_wait_root.exists())
         for request_item in self.handoff["handoff"]["review_requests"]:
             self.assertNotIn("review_wait_prepare", request_item["request"])
             self.assertNotIn("wait-ended", request_item["request"])
+
+    def test_single_wait_and_automatic_receipt_through_physical_install_basis(self):
+        core = self.paths.database.read_bytes()
+        def factory(**kwargs):
+            host = self.host(**kwargs)
+            if kwargs["automation_id"] == "pending":
+                def create(rule):
+                    host.automation_id = "managed-real-basis"
+                    host.value = replace(host.value, id=host.automation_id, rule=rule)
+                    self.hosts[host.automation_id] = host
+                    host.effects.append("create")
+                    return host.automation_id
+                host.create_heartbeat = create
+                host.verify_created = lambda rule: host.value
+                host.observe_receipt = lambda probe, original: (
+                    host.parent.turn_id if probe in host.sends and host.parent.turn_id == NEW_TURN else None)
+                host.on_send = lambda probe: setattr(host, "parent", ChildTurn(self.parent, NEW_TURN, "inProgress", "active"))
+            return host
+        self.session.managed_host_factory = factory
+        result = self.session.handle("wait", {"task_id": self.task_id, "reviewer_ids": [CHILD]}, self.metadata)
+        self.assertTrue(result.get("parent_may_end"), result)
+        host = self.hosts["managed-real-basis"]
+        host.turn = ChildTurn(CHILD, TURN, "completed", "idle")
+        host.parent = ChildTurn(self.parent, ORIGINAL, "completed", "idle")
+        def received():
+            state = self.session.handle("inspect", {"task_id": self.task_id}, self.metadata)
+            return state.get("delivery", {}).get("acknowledged_turn") == NEW_TURN
+        self.until(received)
+        self.assertEqual(["create", "arm", "delete"], host.effects)
+        self.assertEqual(1, len(host.sends))
+        self.assertEqual(core, self.paths.database.read_bytes())

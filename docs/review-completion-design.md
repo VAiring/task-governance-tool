@@ -372,72 +372,91 @@ result registration tests retain writer atomicity and concurrent-state checks.
 
 ### Host-Owned Review Waiting
 
-The packaged `scripts/review_wait_server.py` entry runs
-`task_governance_tool.review_wait_runtime.project_server`. Its project-level
-configuration pins only repository, public bundled MCP wrapper, Codex home and
-confirmed timezone; no Task, reservation or state-path option is exposed.
-The closed six-tool catalogue delegates to the shared per-association session
-and version-two direct worker. Discovery and startup have no host effects.
-The source `tools/review_wait_*.py` entry points are compatibility aliases to
-the same package implementation, retaining old source controls and store bytes.
+The packaged `scripts/review_wait_server.py` runs `project_server` with only
+repository, public bundled MCP wrapper, Codex home and confirmed timezone.
+Its nine closed controls include the normal `wait`, optional `inspect/stop`
+and six compatible per-reservation controls. Discovery and startup are inert.
+`managed_wait.ManagedWait` owns single-call admission, creation, preparation,
+start and healthy repeated waiting; the source compatibility entry keeps its
+explicit injected paths and old catalogue.
 
-`CanonicalStatePaths.review_wait_root` and `review_wait_store` own the root
-and SHA-256 reservation filename. The project composition first performs physical
-package/project scope, current canonical resolver binding and enabled-policy
-admission. Prepare additionally validates current Task ownership before creating
-the operational directory. The repository retains exclusive creation, physical
-ancestor/no-link checks and one serialized writer per reservation, including
-across processes. Changing caller text cannot choose another storage root.
-Reads never initialize missing state. This operational subtree is outside core
-backup/recovery inventory, like numerical state; it is not restored into active
-workers or copied from source experiments.
+`CanonicalStatePaths.review_wait_root`, `review_wait_store` and
+`review_wait_request_store` own all paths. Reservation filenames hash the actual
+returned ID. A request filename is `request-<sha256(parent UUID:Task ID)>.sqlite`
+under the same operational root. Physical scope, canonical binding and enabled
+policy are checked before mutation; current Task ownership is validated before
+directory creation. This subtree remains outside core backup/recovery inventory,
+like numerical state, and is never restored into active workers.
 
-The project session admits a stored association's parent and reservation before
-loading it, bounds in-memory associations to 64 and never evicts a worker.
-A loaded old association remains inert until an explicit permitted control;
-a direct marker prevents any second start. The original current-basis reader
-also checks Setup policy before each fresh basis read, so OFF suppresses new
-effects and reaches bounded known-ACTIVE cleanup. Cleanup/status/ack remain
-available without policy ON. Each session closes its owned workers on EOF and
-reports uncertain cleanup instead of silently replacing them.
+`request_repository` reuses the wait repository's physical/no-link admission,
+bounded SQLite connection and OS writer lease. Its separate schema version one
+has exact `schema_history` and `attempts` tables. Each bounded canonical JSON row
+retains basis digest (excluding generated wait ID), actual original parent turn,
+sorted reviewer UUID/turn pairs, returned automation ID or null, and phase
+`creating|created|prepared|started|failed|closing|closed|unknown`.
+At most 64 sequential rows preserve prior attempts. Only the latest row advances;
+a new attempt requires closed cleanup and a different actual parent turn.
+Creation intent precedes the host call. Transitions use short transactions
+inside the request writer lease; host effects occur outside transactions.
+No raw SQL belongs in orchestration and no core schema migration is introduced.
 
-`ProjectHost` changes only the fixed direct-notification text to identify the
-reservation/probe and original-review recovery procedure. It inherits the exact
-public transport, metadata, delete receipt/config-absence and acceptance rules.
-The common direct repository and worker own intent-before-effect, one-shot
-send, exact parent/reviewer observations, separate receipt, due cutoff and
-twenty-minute outer deadline described below. Source aliases have no separate
-logic or production path resolver.
+`managed_host.ManagedHost` inherits the public adapter's genuine metadata,
+per-operation correlation, transport and fixed physical config admission.
+It creates only a PAUSED same-parent heartbeat through public
+`automation_update` with explicit `destination=thread` and `targetThreadId`,
+a generated name, fixed Task recovery prompt and validated rule. It requires
+the structured creation ID/status receipt, then verifies the physical config.
+Unknown creation remains durable and cannot be retried or replaced. Fresh
+`ReviewWaitSession` preparation verifies the same captured reviewers and basis
+before the existing version-two direct start. Duplicate same-turn calls return
+readiness only from the same live owned worker and confirmed active state.
 
-Before child reads, the common bootstrap asks `PublicMcpHost` to resolve any
-exact returned `/root/...` reviewer handles. It pages only the admitted parent's
-public `read_thread` result, one turn per page, at most sixteen pages within
-one host timeout; it excludes outputs and requests minimum message text.
-Only structured `subAgentActivity` dispatch/interact pairs may map paths to
-UUIDs. The nearest dispatch turn wins; conflicting same-turn pairs fail closed.
-The first and final reads must match the genuine active executor turn, and a
-changed current-turn mapping also rejects the lookup. Cycles, incomplete pages,
-unknown/malformed identities, parent-as-child and aliases resolving to duplicate
-UUIDs reject preparation. `reviewer_resolution` diagnostics contain fixed codes
-only, including `reviewer_identity_unavailable` and `reviewer_identity_ambiguous`.
-The existing strict child read then captures actual turn UUIDs. No lookup body,
-handle or additional schema is persisted. Canonical UUID input skips the lookup.
+`ManagedDirectProbe` extends only the post-send observation responsibility.
+The inherited worker retains intent-before-effect, one deletion/send attempt,
+parent/reviewer freshness, due cutoff and twenty-minute outer deadline. After
+accepted/unknown send settlement, it observes the original parent for up to
+120 seconds within that outer deadline, never sending again.
+`ManagedHost.observe_receipt` requests bounded public `read_thread` output and
+validates the actual new parent turn plus the exact structured incoming
+`codex_app.send_message_to_thread` delegation event for its fixed probe/message.
+Only that observed UUID updates the existing monotonic acknowledgement field.
+Bodies stay transient. Old turns, unrelated inputs, plain echoes and unknown
+reads cannot set receipt. The legacy direct worker and payload versions remain
+unchanged and still support their separately selected manual acknowledgement.
 
-Handoff preparation adds a closed `review_wait` routing object with
-`status=enabled|disabled|unavailable`, original `task_id`,
-`prepare_tool=review_wait_prepare` and `guide=references/review_wait.md`.
-This reads local policy only, not host availability, and performs no wait
-preparation or reviewer dispatch. Independent requests and result registration
-remain unchanged. The legacy `wait_ended_command` stays available for old
-supervisor contexts but is never invoked by the deterministic workflow.
-The Skill follows the packaged guide for both shared-file and direct transport.
+The normal scheduled-check call uses the same Task/reviewer request. It
+revalidates the same basis and actual pairs, joins the previous worker, and
+rechecks both timer and send outcomes after that join; a deleted timer never
+settles an unknown send. It admits only settled outcomes. The inherited direct cancellation
+records and confirms a known-ACTIVE pause. The request journal then saves closing
+intent before the public host deletes the known PAUSED timer and confirms its
+exact deletion receipt/config absence. Its phase becomes closed only afterward.
+A healthy unfinished set then gets one new internal attempt; an ended set returns
+`reviews_ended`. Unknown prior effects reject both replacement and competing
+cleanup. Optional inspect reads existing state only; explicit stop shares the
+same cleanup path and works after OFF. Restart never resumes a worker.
 
-Physical-install tests cover closed discovery and arguments, Setup gating,
-canonical path use, duplicate reservation exclusion, parent/Task isolation,
-restart/no replay, disabled-policy cleanup and original handoff preservation.
-Fake hosts retain offline default verification. A fresh genuine host
-prepare/start/end/delete/send/ack sequence is the integrated delivery gate;
-source proof and `accepted` alone cannot satisfy it.
+The existing handle resolver pages only the admitted parent's structured
+dispatch/interact records, within sixteen pages and one host deadline. Matching
+active first/final turn, nearest dispatch, ambiguity/duplicate/cycle checks and
+strict child-turn capture are unchanged. Diagnostic codes are fixed; no path
+handles or host bodies reach durable state.
+
+Handoff preparation returns `review_wait={status,task_id,wait_tool,guide}`,
+where the fixed values are `review_wait_wait` and `references/review_wait.md`.
+It reads policy only, never starts waiting or changes read-only CLI effects.
+Reviewer requests, saved originals and registration remain unchanged; the legacy
+`wait_ended_command` remains available only for historical supervisor contexts.
+Installed guidance replaces create/prepare/start/ACK duties with one normal
+wait call and existing result processing after resumption. Non-review waiting
+and actual parent/reviewer numerical attribution are unaffected.
+
+Focused tests cover the single call, fixed destination, failures and unknowns at
+effect boundaries, duplicates, restart/OFF/cancel, healthy scheduled rewait,
+same-parent event observation without ACK and unchanged legacy paths. Physical
+installation and handoff, document/release/Skill checks and two independent
+Tier 2 reviews precede the bounded real-host validation. Accepted sending and
+offline fixtures never establish actual delivery.
 
 #### Development Review Wait Relay
 

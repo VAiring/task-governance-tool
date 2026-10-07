@@ -21,11 +21,18 @@ from .review_wait_host import PublicMcpHost, admit_executor_metadata, executor_t
 from .review_wait_repository import ReviewWaitRepository
 from .review_wait_server import ReviewWaitSession, SessionConfig, serve
 from .review_wait_service import ServiceConfig
+from .managed_host import ManagedHost
+from .managed_direct import ManagedDirectProbe
+from .managed_wait import ManagedWait
 from . import review_wait_mcp_relay as protocol
 
 
 _ID = {"type": "string"}
 OPERATIONS = {
+    "wait": {"task_id": _ID, "reviewer_ids": {"type": "array", "minItems": 1,
+        "maxItems": 64, "uniqueItems": True, "items": {"type": "string"}}},
+    "inspect": {"task_id": _ID},
+    "stop": {"task_id": _ID},
     "prepare": {"automation_id": _ID, "task_id": _ID,
                 "reviewer_ids": {"type": "array", "minItems": 1, "maxItems": 64,
                                  "uniqueItems": True, "items": {"type": "string",
@@ -60,22 +67,27 @@ class ProjectReviewWaitSession:
     operations = OPERATIONS
 
     def __init__(self, config, *, host_factory=None, basis_factory=None,
-                 session_factory=None, clock=None):
+                 session_factory=None, clock=None, managed_host_factory=None):
         if type(config) is not ProjectConfig or any(
                 not path.is_absolute() for path in (config.repo, config.server_path, config.codex_home)):
             raise ValueError("invalid_configuration")
         self.config = config
         self.skill = Path(__file__).absolute().parents[3]
         self.host_factory = host_factory or ProjectHost.from_environment
+        self.managed_host_factory = managed_host_factory or ManagedHost.from_environment
         self.basis_factory = basis_factory or PublicTaskBasisReader
         self.session_factory = session_factory or ReviewWaitSession
         self.clock = clock
         self.sessions = {}
         self.closed = False
+        self.managed = ManagedWait(self)
 
     @staticmethod
     def catalogue():
         descriptions = {
+            "wait": "Wait once for the original Task and actual returned reviewers. Internally creates the same-parent timer, prepares and starts; parent_may_end=true permits ending the turn. Reuse this same request after a healthy ten-minute check; no automation IDs, separate ACK, or routine status calls.",
+            "inspect": "Optional read-only diagnosis of this parent's Task wait; never starts or retries effects.",
+            "stop": "Explicitly stop this parent's Task wait and clean up only known effects; no unknown-operation retry.",
             "prepare": "Prepare canonical one-shot state for the current Task, actual reviewers and an authorized PAUSED same-parent reservation; no timer or send effect.",
             "view": "Inspect the original prepared wait without starting observation or host effects.",
             "direct_delete_start": "Arm a ten-minute check, then delete/confirm it and send once to this same idle parent when its exact reviewers end. Requires authorization for that send.",
@@ -86,7 +98,7 @@ class ProjectReviewWaitSession:
         return [{"name": "review_wait_" + operation, "description": descriptions[operation],
                  "inputSchema": {"type": "object", "properties": fields,
                                  "required": list(fields), "additionalProperties": False},
-                 "annotations": {"readOnlyHint": operation in {"view", "direct_status"}}}
+                 "annotations": {"readOnlyHint": operation in {"view", "direct_status", "inspect"}}}
                 for operation, fields in OPERATIONS.items()]
 
     def _enabled(self):
@@ -117,7 +129,7 @@ class ProjectReviewWaitSession:
             return reader()
         return current
 
-    def _session(self, path, task_id, automation_id):
+    def _session(self, path, task_id, automation_id, *, managed=False):
         if automation_id in self.sessions:
             session = self.sessions[automation_id]
             if session.config.task_id != task_id:
@@ -129,10 +141,20 @@ class ProjectReviewWaitSession:
                                 self.config.timezone, "host_node_intl")
         config = SessionConfig(service, self.config.repo, task_id, automation_id,
                                self.skill / "scripts/review_handoff.py")
-        session = self.session_factory(config, host_factory=self.host_factory,
-            basis_factory=self._reader, clock=self.clock)
+        options = {}
+        host_factory = self.host_factory
+        if managed:
+            host_factory = lambda **kwargs: self.managed_host_factory(task_id=task_id, **kwargs)
+            options["direct_factory"] = ManagedDirectProbe
+        session = self.session_factory(config, host_factory=host_factory,
+            basis_factory=self._reader, clock=self.clock, **options)
         self.sessions[automation_id] = session
         return session
+
+    def _ensure_root(self, paths):
+        if not path_lexically_exists(paths.review_wait_root):
+            create_physical_directory_exclusive(paths.review_wait_root, root=paths.fixed_root)
+        inspect_physical_directory(paths.review_wait_root, root=paths.fixed_root)
 
     def handle(self, operation, arguments, metadata):
         try:
@@ -142,12 +164,15 @@ class ProjectReviewWaitSession:
                     or set(arguments) != set(OPERATIONS[operation])):
                 return {"ok": False, "error": "invalid_request"}
             actual = admit_executor_metadata(metadata)
-            enabling = operation in {"prepare", "direct_delete_start"}
+            enabling = operation in {"wait", "prepare", "direct_delete_start"}
             if enabling:
                 executor_turn_id(actual)
                 if not self._enabled():
                     return {"ok": False, "error": "review_wait_not_enabled"}
             paths = self._location(enabling=enabling)
+            if operation in {"wait", "inspect", "stop"}:
+                validate_task_id(arguments["task_id"])
+                return self.managed.handle(operation, arguments, actual, paths)
             automation = arguments["automation_id"]
             path = paths.review_wait_store(automation)
             if operation == "prepare":
@@ -155,9 +180,7 @@ class ProjectReviewWaitSession:
                 # Validate live ownership before creating even an empty directory.
                 self._reader(self.config.repo, task_id, actual["threadId"], "prepare",
                              helper=self.skill / "scripts/review_handoff.py")()
-                if not path_lexically_exists(paths.review_wait_root):
-                    create_physical_directory_exclusive(paths.review_wait_root, root=paths.fixed_root)
-                inspect_physical_directory(paths.review_wait_root, root=paths.fixed_root)
+                self._ensure_root(paths)
                 session = self._session(path, task_id, automation)
                 args = {"reviewer_ids": arguments["reviewer_ids"]}
             else:

@@ -145,6 +145,16 @@ class CanonicalStatePaths:
         digest = hashlib.sha256(automation_id.encode("ascii")).hexdigest()
         return self.review_wait_root / (digest + ".sqlite")
 
+    def review_wait_request_store(self, parent_id: str, task_id: str) -> Path:
+        """One serialized request history per parent/Task, separate from timers."""
+        from uuid import UUID
+        from .task_values import validate_task_id
+        if type(parent_id) is not str or str(UUID(parent_id)) != parent_id:
+            raise ValueError("invalid_parent_id")
+        validate_task_id(task_id)
+        digest = hashlib.sha256((parent_id + ":" + task_id).encode("ascii")).hexdigest()
+        return self.review_wait_root / ("request-" + digest + ".sqlite")
+
 
 @dataclass(frozen=True)
 class CurrentRootObservation:

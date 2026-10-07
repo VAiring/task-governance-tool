@@ -544,96 +544,124 @@ Other helper failures keep their existing general diagnostics.
 
 ### Host-Owned Review Waiting
 
-The optional project review-wait MCP service replaces resident LLM coordination
-for authorized independent reviews. The parent dispatches the unchanged requests
-itself, retains the original Packet and returned reviewer handles, and creates
-one PAUSED same-parent heartbeat through the public host tool. Setup's explicit
-`--review-wait on` enables only local policy. Host MCP configuration, connection,
-timezone and permission remain separate prerequisites; Setup never changes host
-trust, creates a reservation or sends a message.
+The optional project MCP service owns deterministic waiting for authorized
+independent reviews. The parent dispatches the unchanged requests, retains the
+original Task/Packet, actual reviewer handles and result transport, and calls
+`review_wait_wait(task_id, reviewer_ids)` once. The service creates its fixed
+same-parent PAUSED heartbeat, prepares the association and starts the ten-minute
+check. It returns `{ok:true,status:"waiting",task_id,parent_may_end:true,
+replayed:false}` only after confirmed activation and a live worker. End the
+parent turn on that response. A matching duplicate in the same actual turn may
+return the same readiness with `replayed:true`, without another host effect.
 
-The packaged controls are `review_wait_prepare` with exactly `task_id`,
-`automation_id`, `reviewer_ids`; `review_wait_view`,
-`review_wait_direct_delete_start` and `review_wait_direct_status` with exactly
-`automation_id`; and `review_wait_direct_cancel` / `review_wait_direct_ack`
-with exactly `automation_id`, `probe_id`. Each requires genuine executor
-metadata. Prepare/start require an actual turn and enabled local policy.
-There is no supplied destination, prompt, schedule, storage path, sender or
-arbitrary downstream operation. Only public tools and the documented exact
-automation configuration are used.
+Setup's explicit `--review-wait on` enables local policy only. Host connection,
+configuration, timezone and permission remain separate prerequisites. No Setup
+or read-only CLI call creates a reservation, records receipt or changes trust.
+The wait input has exactly the original Task ID and 1..64 distinct actual
+reviewer references; it accepts no destination, prompt, schedule, automation or
+probe ID, path or arbitrary downstream operation. Optional diagnosis
+`review_wait_inspect(task_id)` is read-only. Explicit
+`review_wait_stop(task_id)` stops that parent's wait and cleans up known effects.
+Neither is a routine success-path duty or a Task completion gate.
 
-`reviewer_ids` accepts canonical reviewer thread UUIDs or the exact `/root/...`
-handles returned by the authorized subagent dispatch. A handle is resolved only
-from this parent's public `read_thread` structured `subAgentActivity` records
-with `kind=started|interacted`, using `agentPath` and `agentThreadId`; messages,
-titles, completion-only records and session logs are not identity evidence.
-The newest parent turn dispatching each path owns its mapping. Conflicting
-UUIDs in that turn, an unknown path, a parent identity, or duplicate UUIDs after
-resolution fail closed before an association or timer effect. Reads are bounded
-to sixteen parent turns and the host-call deadline, and the genuine current
-parent turn must remain active. UUID inputs retain their existing direct route.
-No manual UUID transcription is required. Only canonical UUID/actual-turn pairs
-are retained; lookup records and path handles are transient.
+The six earlier controls remain compatible for existing associations:
+`review_wait_prepare(task_id, automation_id, reviewer_ids)`,
+`review_wait_view(automation_id)`,
+`review_wait_direct_delete_start(automation_id)`,
+`review_wait_direct_status(automation_id)`,
+`review_wait_direct_cancel(automation_id, probe_id)` and
+`review_wait_direct_ack(automation_id, probe_id)`.
+They are recovery/compatibility controls, not the normal wait procedure.
+Every control requires genuine executor metadata; wait/prepare/start additionally
+require the actual current turn and enabled policy.
 
-Prepare validates the original active Task's complete current basis, actual
-reviewer/turn pairs and the PAUSED reservation's parent before recording its
-one-shot association. Canonical operational state is resolved under the
-governed project's `.taskgov/current/review-wait/`; the reservation ID's
-SHA-256 selects one immutable store name. The fixed direct-state sibling
-retains timer and send intent/result and receipt acknowledgement separately.
-An existing association is never overwritten, reused for another Task, migrated
-from a scratch experiment or replaced after corruption. Multiple distinct
-reservations remain isolated, including their designated parent. At most 64
-associations are loaded per process; reaching that bound rejects another load
-without disposing a live worker or performing host effects.
+Reviewer references are canonical UUIDs or exact returned `/root/...` handles.
+Resolve handles only from the admitted parent's structured public
+`read_thread.subAgentActivity` records with `kind=started|interacted`,
+`agentPath` and `agentThreadId`. The nearest dispatch turn owns the mapping.
+Conflicting same-turn mappings, unknown paths, parent-as-child or duplicate
+resolved UUIDs fail before a reservation effect. Lookup is bounded to sixteen
+parent turns and the host deadline, with matching active first/final parent
+observations. UUID input retains its strict direct route. Only actual canonical
+reviewer/turn pairs reach durable state; no manual UUID transcription, message
+inference, session-log identity recovery or duplicate dispatch is needed.
 
-Explicit start uses the version-two
-[delete-confirm-send protocol](#development-direct-review-wake): arm one
-ten-minute appointment; observe every exact reviewer ended and the original
-parent idle; persist deletion intent; delete that same reservation once;
-require the exact deleted receipt and physical config absence; recheck current
-basis, reviewers, parent, cancellation and deadline; persist send intent and
-send once to that same parent. The parent ends only after successful start
-reports `timer_phase=active`, `status=waiting` and `worker_alive=true`.
-All-ended includes failed/interrupted reviews, not a PASS or available original.
-No coordinating LLM or reviewer peer-monitoring duty is introduced.
+The single entry first validates the complete current Task/owner/basis, actual
+reviewer turns and active caller. A canonical parent/Task request journal records
+creation intent before the public host create. The fixed heartbeat explicitly
+sets `destination=thread`, genuine `targetThreadId`, PAUSED status, a code-chosen
+ten-minute rule and a fixed original-Task recovery prompt. Creation must return
+its real ID, then physical configuration readback must confirm that same parent,
+rule, PAUSED status and fixed prompt. No assumed slug or display text supplies
+an ID. Missing/malformed/lost create results stay unknown and prevent another
+creation, including across process restart.
 
-The direct message identifies the reservation and generated probe, asks the new
-parent turn to acknowledge, and directs recovery of the retained original Task
-and Packet. It never supplies a verdict. Host `accepted` is separate from
-genuine new-turn receipt. After resumption, inspect the association; acknowledge
-a direct delivery, or cancel/clean up a scheduled fallback before handling
-actual reviews. Missing originals, stale targets, questions and failure retain
-their existing recovery gates. Outcomes for A remain with A if the caller is
-working on B.
+Each confirmed reservation owns an immutable association under the resolver's
+canonical `.taskgov/current/review-wait/` subtree; its direct-state sibling
+retains timer and send intent/result separately. Preparation rechecks basis and
+actual reviewer turns before start. A request journal serializes creation,
+preparation, start and subsequent cleanup across competing callers, outside
+short database transactions. It retains earlier attempt rows, never overwrites
+an unknown intent, and admits at most 64 attempts per parent/Task journal.
+The existing process bound of 64 loaded associations remains. Capacity failure
+never evicts a worker or authorizes deleting history.
 
-A new parent turn suppresses any still-pending direct send and triggers bounded
-known-ACTIVE cleanup. For healthy unfinished reviews, first settle/inspect the
-old association, then explicitly create and prepare a fresh reservation using
-the same actual reviewers; do not relaunch them merely to wait again. An unknown
-activation, delete, pause or send outcome forbids competing cleanup, replay,
-automatic retry or a replacement wait pretending the old effect is settled.
-The due/outer-deadline, post-delete race, cancellation and EOF rules in the linked
-protocol apply unchanged. External host/UI changes are not serialized by the
+The existing version-two [delete-confirm-send
+protocol](#development-direct-review-wake) governs each occurrence: observe
+every exact reviewer ended and the original parent idle, save deletion intent,
+delete once, confirm its exact receipt and physical configuration absence,
+recheck basis/reviewers/parent/cancellation/deadline, save send intent and send
+once to that same parent. Failed/interrupted reviews qualify as ended, not as
+PASS or available originals. External UI changes are not serialized by the
 local writer lease; this is not atomic host compare-and-send.
 
-Discovery, status and process restart do not resume a worker. OFF or invalid
-policy rejects prepare/start and makes a running worker stop at its next fresh
-basis check. Original-parent view/status/cancel/ack remain available after OFF;
-known-ACTIVE cleanup is still bounded and cannot recall a dispatched message.
-State survives disabled policy, interrupted sessions and package updates as
-audit/recovery material, never as a completion Receipt. Core Task/usage schemas,
-backups and numerical attribution remain separate. No metadata, provider body,
-prompt, transcript or fabricated supervisor turn is stored.
+The normal fixed direct message identifies the original Task and directs its
+existing result processing. It requires no ACK, ID handoff or routine view/status.
+Host acceptance and actual receipt remain separate. After settled accepted or
+unknown sending, the existing session worker may observe for at most two further
+minutes within the original twenty-minute outer deadline. Receipt requires a
+new actual turn of the same parent containing the matching public structured
+`functionCallOutput` for `codex_app.send_message_to_thread`, with the exact
+same-parent delegation envelope and fixed message/probe. A plain message echo,
+wrong parent, old turn, truncated or unavailable read is not receipt. Only the
+observed turn UUID is retained; transient event bodies are discarded. Missing
+receipt remains unverified, without an added LLM call, resend or completion gate.
+Old explicit acknowledgements remain available only for their compatibility use.
 
-When policy or required host capabilities/permission are unavailable, disclose
-that automatic resumption is unavailable and continue the permitted review
-transport. Do not silently enable it, launch a replacement coordination LLM,
-change trust, use a private API or switch sender to evade a denial. The retained
-source-only timer/PAUSED experiments remain compatibility tools, not the normal
-workflow. Their successful fixtures do not establish integrated host delivery.
-The synchronization and independent Tier 2 gates remain in the
-[execution owner](proposals/review-wait-notification.md).
+At the ten-minute scheduled check, an actual new parent turn suppresses an
+unsent direct wake and starts bounded known-ACTIVE pause cleanup. If reviews are
+healthy but unfinished, call the same `review_wait_wait(task_id, reviewer_ids)`
+once with the retained reviewers. It validates their same actual turns and
+basis, joins/stops the old worker, settles known cleanup, records deletion
+intent for its PAUSED timer, confirms deletion, then creates/prepares/starts
+the next fresh occurrence internally. If those reviews have ended, cleanup
+returns `status=reviews_ended,parent_may_end=false` and creates no next timer.
+No reviewer redispatch, separate registration, phase choice or manual reservation
+management is required. The repeated request is not an automatic retry of an
+unknown effect. Changed basis/reviewer identity requires explicit recovery of
+the old association before another wait.
+
+Pending/unknown create, arm, delete, pause or send results forbid replay,
+competing cleanup and replacement. An explicit stop may clean up only a known
+PAUSED/ACTIVE reservation using the same identity and writer admission. Restart,
+discovery and inspection never start a worker; a duplicate after restart cannot
+claim readiness from a stored active flag. Corrupt or missing associated state
+is never repaired from caller text. OFF rejects new waits and reaches bounded
+known-ACTIVE cleanup at the next basis check; optional inspect/stop remain
+available. Due cutoff, cancellation, EOF and original twenty-minute expiry stay
+as defined by the per-occurrence protocol.
+
+Original review requests, judgments, saved originals, registration, Task gates,
+non-review waiting, actual parent/reviewer usage and legacy markers are unchanged.
+No resident supervisor, fabricated usage turn or numerical write is introduced.
+Operational state stores bounded structural identities, phases and receipt
+turns only, outside core Task/usage schemas and backup inventory. When required
+public host facilities or permission are unavailable, disclose that limitation
+and continue permitted review transport; do not enable settings, change sender,
+use a private API or silently substitute a supervisor. Coupled offline checks
+and two independent Tier 2 reviews precede real-host activation; the normal
+single-call/end/delete/send/observed-receipt path requires actual host validation.
+Fixture success and accepted sending alone are insufficient.
 
 <a id="development-review-wait-relay"></a>
 

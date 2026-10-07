@@ -770,12 +770,14 @@ class PublicMcpHost:
     def view_heartbeat(self, *, for_pause: bool = False) -> HeartbeatSnapshot:
         return self._view_config(for_pause=for_pause).snapshot
 
-    def delete_heartbeat(self, before: HeartbeatSnapshot) -> None:
+    def delete_heartbeat(self, before: HeartbeatSnapshot, *, cleanup: bool = False) -> None:
         """One admitted public deletion; receipt and exact-path absence required."""
         if (type(before) is not HeartbeatSnapshot or before.id != self._automation_id
-                or before.status != "ACTIVE" or before.cleanup_only):
+                or type(cleanup) is not bool
+                or (before.status != "PAUSED" if cleanup else before.status != "ACTIVE")
+                or (not cleanup and before.cleanup_only)):
             _fail("unadmitted_heartbeat")
-        current = self._view_config()
+        current = self._view_config(for_pause=before.cleanup_only if cleanup else False)
         if current.snapshot != before:
             _fail("heartbeat_changed")
         try:

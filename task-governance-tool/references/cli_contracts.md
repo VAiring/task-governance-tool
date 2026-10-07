@@ -1938,9 +1938,9 @@ not-applicable, not PASS.
 Only `handoff.status=ready` supplies a saved complete `packet_path`, per-reviewer
 `review_requests` (distinct result path, exact read/save commands and request), and
 `submit_command`, plus the conditional supervisor-only `wait_ended_command`.
-It also supplies `review_wait={status,task_id,prepare_tool,guide}`. Status is
+It also supplies `review_wait={status,task_id,wait_tool,guide}`. Status is
 `enabled|disabled|unavailable` from local policy only; fixed tool/guide values
-are `review_wait_prepare` and `references/review_wait.md`. It does not dispatch
+are `review_wait_wait` and `references/review_wait.md`. It does not dispatch
 reviews, prepare a wait or establish host connection. The deterministic route
 never invokes the legacy `wait_ended_command`.
 Pass those requests directly; required independent artifact

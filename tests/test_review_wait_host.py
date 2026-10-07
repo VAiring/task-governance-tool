@@ -71,6 +71,135 @@ def adapter(home, **changes):
     return host.PublicMcpHost(**args)
 
 
+def dispatch_result(*pairs, turn_id=TURN, cursor=None):
+    """Public structured parent activity, separate from child observations."""
+    value = read_result()
+    value["thread"].update(id=PARENT, status={"type": "active"})
+    value["turns"][0].update(id=turn_id, status="inProgress" if turn_id == TURN else "completed",
+        items=[{"type": "subAgentActivity", "id": f"dispatch-{index}", "kind": "started",
+                "agentPath": path, "agentThreadId": child} for index, (path, child) in enumerate(pairs)])
+    value["page"].update(nextCursor=cursor, hasMore=cursor is not None)
+    return value
+
+
+class ReviewerResolutionTests(unittest.TestCase):
+    path = "/root/reviewer_one"
+    second = "/root/reviewer_two"
+
+    def resolve(self, references, responses):
+        instance = adapter(Path("unused"), reviewer_ids=references)
+        with mock.patch.object(instance, "_json_call", side_effect=responses) as call:
+            result = instance.resolve_reviewer_ids()
+        return result, call
+
+    def test_normal_returned_handles_resolve_in_order_using_parent_dispatch_only(self):
+        value = dispatch_result((self.path, CHILD), (self.second, OTHER))
+        value["turns"][0]["items"][1]["kind"] = "interacted"
+        result, call = self.resolve([self.second, self.path], [value, value])
+        self.assertEqual((OTHER, CHILD), result)
+        self.assertEqual(2, call.call_count)
+        for args, kwargs in call.call_args_list:
+            self.assertEqual(("read_thread", {"threadId": PARENT, "hostId": "local", "turnLimit": 1,
+                "includeOutputs": False, "maxOutputCharsPerItem": 1}), args)
+            self.assertGreater(kwargs["timeout"], 0)
+            self.assertLessEqual(kwargs["timeout"], 20)
+        self.assertNotIn(SECRET, repr(result))
+
+    def test_uuid_route_needs_no_lookup_and_mixed_route_preserves_uuid(self):
+        result, call = self.resolve([CHILD], [])
+        self.assertEqual((CHILD,), result)
+        call.assert_not_called()
+        value = dispatch_result((self.path, OTHER))
+        self.assertEqual((CHILD, OTHER), self.resolve([CHILD, self.path], [value, value])[0])
+
+    def test_previous_turn_dispatch_uses_opaque_cursor_and_nearest_mapping(self):
+        current = dispatch_result((self.path, CHILD), cursor="opaque-one")
+        older = dispatch_result((self.path, PARENT), (self.second, OTHER), turn_id=OTHER)
+        result, call = self.resolve([self.path, self.second], [current, older, current])
+        self.assertEqual((CHILD, OTHER), result)
+        self.assertEqual("opaque-one", call.call_args_list[1].args[1]["cursor"])
+        self.assertNotIn("cursor", call.call_args_list[-1].args[1])
+
+    def test_ambiguous_same_turn_and_duplicate_resolved_aliases_fail(self):
+        cases = [([self.path], dispatch_result((self.path, CHILD), (self.path, OTHER))),
+                 ([self.path, self.second], dispatch_result((self.path, CHILD), (self.second, CHILD))),
+                 ([CHILD, self.path], dispatch_result((self.path, CHILD))),
+                 ([self.path], dispatch_result((self.path, PARENT)))]
+        for refs, value in cases:
+            with self.subTest(refs=refs), self.assertRaises(host.HostAdapterError):
+                self.resolve(refs, [value])
+
+    def test_unknown_completed_only_and_message_text_never_supply_identity(self):
+        for kind in ("completed", "agentMessage", "missing"):
+            value = dispatch_result((self.path, CHILD))
+            value["turns"][0]["items"][0]["kind"] = kind
+            value["turns"][0]["items"].append({"type": "agentMessage", "text":
+                f"{self.path} -> {CHILD} {SECRET}"})
+            with self.subTest(kind=kind), self.assertRaises(host.HostAdapterError) as caught:
+                self.resolve([self.path], [value])
+            self.assertEqual("reviewer_identity_unavailable", caught.exception.code)
+            self.assertNotIn(SECRET, str(caught.exception))
+
+    def test_misbound_malformed_and_changed_parent_records_fail_closed(self):
+        mutations = [lambda v: v["thread"].update(id=OTHER),
+                     lambda v: v["thread"].update(hostId="remote"),
+                     lambda v: v["thread"].update(status={"type": "idle"}),
+                     lambda v: v["turns"][0].update(id=OTHER),
+                     lambda v: v["turns"][0]["items"][0].update(agentThreadId="made-up"),
+                     lambda v: v["turns"][0]["items"][0].update(unexpected=SECRET)]
+        for mutate in mutations:
+            value = dispatch_result((self.path, CHILD))
+            mutate(value)
+            with self.subTest(mutate=mutate), self.assertRaises(host.HostAdapterError):
+                self.resolve([self.path], [value])
+        valid = dispatch_result((self.path, CHILD))
+        for changed in (dispatch_result(), dispatch_result((self.path, CHILD), turn_id=OTHER),
+                        dispatch_result((self.path, OTHER)),
+                        dispatch_result((self.path, CHILD), (self.path, OTHER))):
+            with self.subTest(changed=changed), self.assertRaises(host.HostAdapterError):
+                self.resolve([self.path], [valid, changed])
+
+    def test_bounded_pages_cycles_and_deadline_do_not_guess_or_retry(self):
+        first = dispatch_result(cursor="cursor-one")
+        repeated_cursor = dispatch_result(turn_id=OTHER, cursor="cursor-one")
+        for responses in ([first, first], [first, repeated_cursor],
+                          [dispatch_result(cursor="")]):
+            with self.subTest(responses=responses), self.assertRaises(host.HostAdapterError):
+                self.resolve([self.path], responses)
+        pages = [first] + [dispatch_result(turn_id=str(uuid4()), cursor=f"cursor-{n}")
+                          for n in range(1, host.MAX_REVIEWER_LOOKUP_PAGES)]
+        instance = adapter(Path("unused"), reviewer_ids=[self.path])
+        with mock.patch.object(instance, "_json_call", side_effect=pages) as call:
+            with self.assertRaises(host.HostAdapterError):
+                instance.resolve_reviewer_ids()
+            self.assertEqual(host.MAX_REVIEWER_LOOKUP_PAGES, call.call_count)
+        with mock.patch.object(host.time, "monotonic", side_effect=[0, 21]), \
+                mock.patch.object(instance, "_json_call") as call:
+            with self.assertRaises(host.HostAdapterError):
+                instance.resolve_reviewer_ids()
+            call.assert_not_called()
+        with self.assertRaises(host.HostAdapterError) as caught:
+            self.resolve([self.path], [host.HostAdapterError("host_call_failed")])
+        self.assertEqual("host_call_failed", caught.exception.code)
+        valid = dispatch_result((self.path, CHILD))
+        with mock.patch.object(host.time, "monotonic", side_effect=[0, 1, 21]), \
+                mock.patch.object(instance, "_json_call", return_value=valid) as call:
+            with self.assertRaises(host.HostAdapterError):
+                instance.resolve_reviewer_ids()
+            call.assert_called_once()
+
+    def test_invalid_input_and_unresolved_read_cannot_reach_host(self):
+        for refs in ([self.path, self.path], ["reviewer_one"], ["/root"],
+                     ["/root/../other"], ["/other/reviewer"], ["/root/" + "x" * 1024], [None]):
+            with self.subTest(refs=refs), self.assertRaises(host.HostAdapterError):
+                adapter(Path("unused"), reviewer_ids=refs)
+        instance = adapter(Path("unused"), reviewer_ids=[self.path])
+        with mock.patch.object(instance, "_json_call") as call:
+            with self.assertRaises(host.HostAdapterError):
+                instance.read_child(self.path)
+            call.assert_not_called()
+
+
 class ParserTests(unittest.TestCase):
     def test_read_and_wait_retain_only_latest_identity_and_observed_state(self):
         observed = host.parse_read_thread(read_result(), CHILD)

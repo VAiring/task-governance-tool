@@ -28,7 +28,8 @@ _ID = {"type": "string"}
 OPERATIONS = {
     "prepare": {"automation_id": _ID, "task_id": _ID,
                 "reviewer_ids": {"type": "array", "minItems": 1, "maxItems": 64,
-                                 "uniqueItems": True, "items": _ID}},
+                                 "uniqueItems": True, "items": {"type": "string",
+                                 "description": "Actual returned /root/... reviewer handle or canonical thread UUID; handles resolve from this parent's structured dispatch records."}}},
     "view": {"automation_id": _ID},
     "direct_delete_start": {"automation_id": _ID},
     "direct_status": {"automation_id": _ID},

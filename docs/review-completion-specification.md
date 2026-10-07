@@ -562,6 +562,19 @@ There is no supplied destination, prompt, schedule, storage path, sender or
 arbitrary downstream operation. Only public tools and the documented exact
 automation configuration are used.
 
+`reviewer_ids` accepts canonical reviewer thread UUIDs or the exact `/root/...`
+handles returned by the authorized subagent dispatch. A handle is resolved only
+from this parent's public `read_thread` structured `subAgentActivity` records
+with `kind=started|interacted`, using `agentPath` and `agentThreadId`; messages,
+titles, completion-only records and session logs are not identity evidence.
+The newest parent turn dispatching each path owns its mapping. Conflicting
+UUIDs in that turn, an unknown path, a parent identity, or duplicate UUIDs after
+resolution fail closed before an association or timer effect. Reads are bounded
+to sixteen parent turns and the host-call deadline, and the genuine current
+parent turn must remain active. UUID inputs retain their existing direct route.
+No manual UUID transcription is required. Only canonical UUID/actual-turn pairs
+are retained; lookup records and path handles are transient.
+
 Prepare validates the original active Task's complete current basis, actual
 reviewer/turn pairs and the PAUSED reservation's parent before recording its
 one-shot association. Canonical operational state is resolved under the

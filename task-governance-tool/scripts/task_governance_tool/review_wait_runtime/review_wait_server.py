@@ -41,7 +41,7 @@ _OPERATIONS = {
 
 _BOOTSTRAP_STAGES = frozenset({
     "request", "executor_admission", "host_context", "basis_before",
-    "child_read", "heartbeat_read", "basis_after", "state_create", "service_load",
+    "reviewer_resolution", "child_read", "heartbeat_read", "basis_after", "state_create", "service_load",
 })
 _BOOTSTRAP_REASONS = frozenset({
     "executor_context_required", "caller_mismatch", "invalid_request",
@@ -54,6 +54,7 @@ _BOOTSTRAP_REASONS = frozenset({
     "state_path_invalid", "state_unreadable", "writer_busy", "revision_conflict",
     "invalid_snapshot", "unsupported_journal_mode", "state_transition_invalid",
     "invalid_configuration",
+    "reviewer_identity_unavailable", "reviewer_identity_ambiguous",
 })
 
 
@@ -276,6 +277,7 @@ class ReviewWaitSession:
         from task_governance_tool.review_wait_runtime.review_wait_repository import ReviewWaitRepository
         from task_governance_tool.review_wait_runtime.review_wait_runtime import reservation
         from task_governance_tool.review_wait_runtime.review_wait_service import _bounded_json, _uuid
+        from task_governance_tool.review_wait_runtime.review_wait_host import reviewer_references
         stage = "request"
         try:
             if self.closed:
@@ -299,7 +301,7 @@ class ReviewWaitSession:
             children = arguments["reviewer_ids"]
             if type(children) is not list or not 1 <= len(children) <= 64:
                 return {"ok": False, "error": "invalid_request"}
-            children = tuple(_uuid(value, "invalid_request") for value in children)
+            children = reviewer_references(children, invalid_id_code="invalid_request")
             if len(set(children)) != len(children) or parent in children:
                 return {"ok": False, "error": "invalid_request"}
             config = self.config.service
@@ -314,6 +316,12 @@ class ReviewWaitSession:
             binding = reader()
             if binding.parent_thread_id != parent or binding.task_id != self.config.task_id:
                 return {"ok": False, "error": "task_binding_changed"}
+            if any(child.startswith("/") for child in children):
+                stage = "reviewer_resolution"
+                children = host.resolve_reviewer_ids()
+                children = tuple(_uuid(child, "invalid_request") for child in children)
+                if len(children) != len(arguments["reviewer_ids"]) or len(set(children)) != len(children) or parent in children:
+                    return {"ok": False, "error": "invalid_request"}
             reviewers = []
             stage = "child_read"
             for child in children:

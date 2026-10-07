@@ -54,7 +54,10 @@ Do not introduce a substitute supervisor or claim fixture tests prove delivery.
    failure or required user action. Retain the returned real automation ID.
    An unknown creation outcome needs inspection, not another creation.
 3. Call `review_wait_prepare(task_id, automation_id, reviewer_ids)` with those
-   exact identities. It reads current Task ownership, reviewer turns and the
+   exact returned `/root/...` handles (canonical thread UUIDs remain supported).
+   The service resolves handles from this parent's structured public dispatch
+   records; do not manually transcribe UUIDs or infer them from message prose.
+   It reads current Task ownership, reviewer turns and the
    PAUSED reservation and records one canonical association. It does not arm
    or send. Never reuse this reservation for another preparation or Task.
 4. With the user's existing authorization for this same-parent wake, call
@@ -62,6 +65,14 @@ Do not introduce a substitute supervisor or claim fixture tests prove delivery.
    End the parent turn only when `ok=true`, `state.status=waiting`,
    `state.timer_phase=active`, and `worker_alive=true`. It has then confirmed
    the ten-minute check. Failed/unknown start is inspected, never blindly retried.
+
+If handle resolution is unavailable or ambiguous, preparation stops before any
+association or timer effect. Inspect the actual dispatch and returned diagnostics;
+do not invent a mapping or relaunch reviewers to bypass the failure. Lookup is
+bounded to sixteen parent turns; a same-turn conflicting mapping fails closed.
+The retained PAUSED reservation is inspected/cleaned up through the public host
+tool before selecting another wait. Continue the permitted review transport if
+automatic resumption is unavailable.
 
 The worker observes exact reviewer turns and the original parent through public
 reads. At all-ended and original-parent idle it deletes that reservation, confirms

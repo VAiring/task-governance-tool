@@ -409,6 +409,20 @@ send, exact parent/reviewer observations, separate receipt, due cutoff and
 twenty-minute outer deadline described below. Source aliases have no separate
 logic or production path resolver.
 
+Before child reads, the common bootstrap asks `PublicMcpHost` to resolve any
+exact returned `/root/...` reviewer handles. It pages only the admitted parent's
+public `read_thread` result, one turn per page, at most sixteen pages within
+one host timeout; it excludes outputs and requests minimum message text.
+Only structured `subAgentActivity` dispatch/interact pairs may map paths to
+UUIDs. The nearest dispatch turn wins; conflicting same-turn pairs fail closed.
+The first and final reads must match the genuine active executor turn, and a
+changed current-turn mapping also rejects the lookup. Cycles, incomplete pages,
+unknown/malformed identities, parent-as-child and aliases resolving to duplicate
+UUIDs reject preparation. `reviewer_resolution` diagnostics contain fixed codes
+only, including `reviewer_identity_unavailable` and `reviewer_identity_ambiguous`.
+The existing strict child read then captures actual turn UUIDs. No lookup body,
+handle or additional schema is persisted. Canonical UUID input skips the lookup.
+
 Handoff preparation adds a closed `review_wait` routing object with
 `status=enabled|disabled|unavailable`, original `task_id`,
 `prepare_tool=review_wait_prepare` and `guide=references/review_wait.md`.

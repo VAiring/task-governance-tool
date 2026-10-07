@@ -381,7 +381,7 @@ class SkillSelfContainmentTests(unittest.TestCase):
             package = copy_skill_to(Path(tmp))
             relatives = ("SKILL.md", "references/task_workflow.md",
                          "references/cli_contracts.md", "references/reconciliation.md",
-                         "references/usage_hooks.md")
+                         "references/usage_hooks.md", "references/review_wait.md")
             issues = []
             scans = {
                 relative: _scan(relative, (package / relative).read_text(encoding="utf-8"), issues)

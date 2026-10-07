@@ -144,6 +144,17 @@ class ReviewWaitSessionTests(unittest.TestCase):
         self.assertFalse(response["observer_running"])
         self.assertNotIn(b"PRIVATE_EXECUTOR", self.path.read_bytes())
 
+    def test_unresolved_handle_reports_fixed_stage_without_creating_association(self):
+        with mock.patch.object(self.host, "resolve_reviewer_ids", create=True,
+                side_effect=HostAdapterError("reviewer_identity_unavailable")) as resolve:
+            response = self.session.handle("prepare", {"reviewer_ids": ["/root/reviewer"]}, META)
+        self.assertEqual({"ok": False, "error": "candidate_unavailable",
+            "stage": "reviewer_resolution", "reason": "reviewer_identity_unavailable"}, response)
+        resolve.assert_called_once_with()
+        self.assertFalse(self.path.exists())
+        self.assertEqual([], self.host.effects)
+        self.assertEqual([], self.host.calls)
+
     def test_view_or_arm_missing_store_never_initializes(self):
         for operation in ("view", "arm"):
             self.assertFalse(self.session.handle(operation, {}, META)["ok"])

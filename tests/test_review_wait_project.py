@@ -14,10 +14,12 @@ from tests.test_review_handoff_preparation import PreparationFixture
 from tests.test_review_wait_direct import DirectHost, ORIGINAL, NEW_TURN
 from tests.test_review_wait_service import CHILD, TURN, NOW, OTHER
 from tests.test_review_wait_server import HELLO, READY, request
+from tests.test_review_wait_host import dispatch_result
 from task_governance_tool.review_wait_runtime.project_server import ProjectConfig, ProjectReviewWaitSession
 from task_governance_tool.review_wait_runtime.review_wait_server import ReviewWaitSession
 from task_governance_tool.review_wait_runtime.review_wait_direct import DirectProbe
-from task_governance_tool.review_wait_runtime.review_wait_host import ChildTurn
+from task_governance_tool.review_wait_runtime.review_wait_host import ChildTurn, PublicMcpHost
+from task_governance_tool.review_wait_runtime.review_wait_repository import ReviewWaitRepository
 from task_governance_tool.state_resolver import canonical_state_paths
 
 
@@ -163,6 +165,39 @@ class ProjectWaitTests(PreparationFixture):
         self.assertTrue(result["ok"], result)
         self.assertTrue(result["state"]["received"], result)
         self.assertEqual([probe], host.sends)
+
+    def test_normal_dispatch_handle_prepare_start_delete_send_ack(self):
+        returned_handle = "/root/normal_review"
+        parent_activity = dispatch_result((returned_handle, CHILD))
+        parent_activity["thread"].update(id=self.parent)
+        parent_activity["turns"][0].update(id=ORIGINAL)
+        real_host = PublicMcpHost(metadata=self.metadata, automation_id="timer-1",
+            codex_home=self.root, confirmed_timezone="UTC", timezone_source="host_os",
+            reviewer_ids=[returned_handle], command=["offline-public-host"])
+        simulated = self.host(automation_id="timer-1")
+        with mock.patch.object(real_host, "_json_call", return_value=parent_activity) as public_read, \
+                mock.patch.object(simulated, "resolve_reviewer_ids", create=True,
+                                  side_effect=real_host.resolve_reviewer_ids):
+            prepared = self.call("prepare", task_id=self.task_id, reviewer_ids=[returned_handle])
+        self.assertTrue(prepared["ok"], prepared)
+        self.assertEqual(2, public_read.call_count)
+        controller = ReviewWaitRepository.open_existing(self.paths.review_wait_store("timer-1")).read().controller
+        self.assertEqual([(CHILD, TURN)], [(r.reviewer_id, r.turn_id) for r in controller.reviewers])
+        self.assertNotIn(returned_handle.encode(), self.paths.review_wait_store("timer-1").read_bytes())
+        started = self.call("direct_delete_start")
+        self.assertTrue(started["ok"], started)
+        probe = started["state"]["probe_id"]
+        simulated.turn = ChildTurn(CHILD, TURN, "completed", "idle")
+        simulated.parent = ChildTurn(self.parent, ORIGINAL, "completed", "idle")
+        self.until(lambda: self.call("direct_status")["state"]["status"] == "accepted")
+        self.assertEqual(["arm", "delete"], simulated.effects)
+        self.assertEqual([probe], simulated.sends)
+        simulated.parent = ChildTurn(self.parent, NEW_TURN, "inProgress", "active")
+        ack = self.call("direct_ack", probe_id=probe,
+            metadata={"threadId": self.parent, "turnId": NEW_TURN})
+        self.assertTrue(ack["ok"], ack)
+        self.assertTrue(ack["state"]["received"])
+        self.assertEqual([probe], simulated.sends)
 
     def test_off_stops_running_wait_but_preserves_inspection_and_cleanup(self):
         self.prepare_wait()

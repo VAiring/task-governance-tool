@@ -24,6 +24,7 @@ from task_governance_tool.review_wait_runtime import review_wait_mcp_relay as re
 
 
 MAX_CONFIG_BYTES = 65_536
+MAX_REVIEWER_LOOKUP_PAGES = 16
 SHORTEN_RULE = "FREQ=MINUTELY;INTERVAL=1"
 HOST_BOUNDARY_REASONS = frozenset({
     "host_launch_failed", "host_initialize_failed", "host_response_unavailable",
@@ -101,6 +102,21 @@ def _uuid(value: object, code: str = "invalid_host_response") -> str:
         return value
     except (ValueError, AttributeError):
         _fail(code)
+
+
+def reviewer_references(values: object, *, invalid_id_code: str = "invalid_child_id") -> tuple[str, ...]:
+    """Admit UUIDs or exact host-returned paths; paths are never filesystem input."""
+    if type(values) not in (list, tuple) or not 1 <= len(values) <= 64:
+        _fail("invalid_child_set")
+    references = []
+    for value in values:
+        if isinstance(value, str) and value.startswith("/"):
+            if len(value) > 1024 or not re.fullmatch(r"/root(?:/[a-z0-9_]+)+", value):
+                _fail(invalid_id_code)
+        else:
+            _uuid(value, invalid_id_code)
+        references.append(value)
+    return tuple(references)
 
 
 def _text(value: object, maximum: int = 4096, *, empty: bool = False) -> str:
@@ -449,7 +465,7 @@ class PublicMcpHost:
         try:
             self._metadata = relay.strict_json_loads(relay._encode(admit_executor_metadata(metadata)))
             self._parent_id = _uuid(self._metadata.get("threadId"), "executor_context_required")
-            self._reviewers = tuple(_uuid(x, "invalid_child_id") for x in reviewer_ids)
+            self._reviewers = reviewer_references(reviewer_ids)
             if (not self._reviewers or len(self._reviewers) > 64
                     or len(set(self._reviewers)) != len(self._reviewers)
                     or self._parent_id in self._reviewers):
@@ -576,7 +592,96 @@ class PublicMcpHost:
         except Exception:
             raise HostAdapterError("invalid_host_response") from None
 
+    def resolve_reviewer_ids(self) -> tuple[str, ...]:
+        """Resolve only this parent's structured dispatches, never message text.
+
+        The newest parent turn dispatching a path owns its current meaning.
+        Conflicting mappings within that turn are ambiguous, including a reused
+        name in the same turn. Older turns cannot overwrite a newer dispatch.
+        Resolution is transient; only UUID/actual-turn pairs reach the store.
+        """
+        unresolved = {value for value in self._reviewers if value.startswith("/")}
+        if not unresolved:
+            return self._reviewers
+        original_turn = executor_turn_id(self._metadata)
+        resolved, seen_turns, seen_cursors = {}, set(), set()
+        current_paths = set()
+        cursor = None
+        deadline = time.monotonic() + self._timeout
+
+        def dispatches(value, paths):
+            matches = {reference: set() for reference in paths}
+            for item in value["turns"][0]["items"]:
+                if (not isinstance(item, dict) or item.get("type") != "subAgentActivity"
+                        or item.get("kind") not in ("started", "interacted")):
+                    continue
+                path = item.get("agentPath")
+                if not isinstance(path, str) or path not in paths:
+                    continue
+                _object(item, {"type", "id", "kind", "agentPath", "agentThreadId"},
+                        {"type", "id", "kind", "agentPath", "agentThreadId"})
+                _text(item["id"], 256)
+                matches[path].add(_uuid(item["agentThreadId"]))
+            return matches
+
+        def read(cursor=None):
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                _fail("reviewer_identity_unavailable")
+            arguments = {"threadId": self._parent_id, "hostId": "local", "turnLimit": 1,
+                         "includeOutputs": False, "maxOutputCharsPerItem": 1}
+            if cursor is not None:
+                arguments["cursor"] = cursor
+            value = self._json_call("read_thread", arguments, timeout=remaining)
+            if time.monotonic() >= deadline:
+                _fail("reviewer_identity_unavailable")
+            observation = parse_read_thread(value, self._parent_id)
+            return value, observation
+
+        for page_number in range(MAX_REVIEWER_LOOKUP_PAGES):
+            value, parent = read(cursor)
+            if page_number == 0 and (parent.turn_id != original_turn
+                    or parent.status != "inProgress" or parent.thread_status != "active"):
+                _fail("reviewer_identity_unavailable")
+            if parent.turn_id in seen_turns:
+                _fail("reviewer_identity_unavailable")
+            seen_turns.add(parent.turn_id)
+            matches = dispatches(value, unresolved)
+            for path, identities in matches.items():
+                if len(identities) > 1:
+                    _fail("reviewer_identity_ambiguous")
+                if identities:
+                    resolved[path] = identities.pop()
+                    if page_number == 0:
+                        current_paths.add(path)
+                    unresolved.remove(path)
+            if not unresolved:
+                break
+            page = value["page"]
+            cursor = page["nextCursor"]
+            if (not page["hasMore"] or not isinstance(cursor, str) or not cursor
+                    or len(cursor) > 4096 or cursor in seen_cursors):
+                _fail("reviewer_identity_unavailable")
+            seen_cursors.add(cursor)
+        if unresolved:
+            _fail("reviewer_identity_unavailable")
+        identities = tuple(resolved.get(value, value) for value in self._reviewers)
+        if self._parent_id in identities or len(set(identities)) != len(identities):
+            _fail("invalid_child_set")
+        latest, current = read()
+        if (current.turn_id != original_turn or current.status != "inProgress"
+                or current.thread_status != "active"):
+            _fail("reviewer_identity_unavailable")
+        for path, current_ids in dispatches(latest, resolved).items():
+            if path in current_paths and not current_ids:
+                _fail("reviewer_identity_unavailable")
+            if current_ids and current_ids != {resolved[path]}:
+                _fail("reviewer_identity_ambiguous")
+        self._reviewers = identities
+        return identities
+
     def read_child(self, child_id: str) -> ChildTurn:
+        _uuid(child_id, "invalid_child_id")
         if child_id not in self._reviewers:
             _fail("unadmitted_child")
         value = self._json_call("read_thread", {"threadId": child_id, "hostId": "local",

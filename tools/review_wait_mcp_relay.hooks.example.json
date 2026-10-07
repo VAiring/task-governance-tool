@@ -1,0 +1,18 @@
+{
+  "hooks": {
+    "SubagentStop": [
+      {
+        "hooks": [
+          {
+            "type": "mcp_tool",
+            "server": "taskgov_hook_relay",
+            "tool": "view_review_wait_reservation",
+            "input": {},
+            "timeout": 30,
+            "statusMessage": "taskgov: inspect review wait through JSON relay"
+          }
+        ]
+      }
+    ]
+  }
+}

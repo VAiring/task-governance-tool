@@ -84,6 +84,13 @@ class SetupFeaturesTests(unittest.TestCase):
         self.assertEqual([p.name for p in files], ["setup-features.json"])
         self.assertEqual(self.run_setup().data["optional_features"]["offer"], [])
 
+    def test_review_wait_first_off_is_applied_and_replay_is_unchanged(self):
+        result = self.run_setup(review_wait=False)
+        self.assertEqual("applied", self.rows(result)["review_wait"]["status"])
+        self.assertEqual("unchanged", self.rows(self.run_setup(review_wait=False))["review_wait"]["status"])
+        self.assertFalse((self.root / ".codex/config.toml").exists())
+        self.assertFalse((self.root / ".taskgov/current/review-wait").exists())
+
     def test_preview_selected_changes_reports_actual_not_proposed_and_writes_nothing(self):
         self.run_setup()
         before = file_snapshot(self.root)

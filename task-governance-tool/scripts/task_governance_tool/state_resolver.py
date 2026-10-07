@@ -133,6 +133,18 @@ class CanonicalStatePaths:
     def usage_root(self) -> Path:
         return self.fixed_root / "usage"
 
+    @property
+    def review_wait_root(self) -> Path:
+        return self.fixed_root / "review-wait"
+
+    def review_wait_store(self, automation_id: str) -> Path:
+        """One permanent association per reservation; caller text is never a path."""
+        if (type(automation_id) is not str
+                or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_-]{0,127}", automation_id)):
+            raise ValueError("invalid_automation_id")
+        digest = hashlib.sha256(automation_id.encode("ascii")).hexdigest()
+        return self.review_wait_root / (digest + ".sqlite")
+
 
 @dataclass(frozen=True)
 class CurrentRootObservation:

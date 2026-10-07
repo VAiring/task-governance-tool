@@ -465,7 +465,7 @@ def handle_setup(context: CommandContext) -> CommandResult:
             None,
         ),
         feature_selections={name: value == "on" for name in (
-            "usage_collection", "verification_runner", "effort_advisory", "viewer_reload")
+            "usage_collection", "verification_runner", "effort_advisory", "viewer_reload", "review_wait")
             if (value := getattr(context.args, name, None)) is not None},
     )
     return CommandResult(

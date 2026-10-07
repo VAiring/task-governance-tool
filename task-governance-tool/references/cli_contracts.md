@@ -303,8 +303,8 @@ after the example:
 ```
 
 Setup additionally accepts `--usage-collection on|off`,
-`--verification-runner on|off`, `--effort-advisory on|off`, and
-`--viewer-reload on|off`, only for explicit user selections. Omission keeps
+`--verification-runner on|off`, `--effort-advisory on|off`,
+`--viewer-reload on|off`, and `--review-wait on|off`, only for explicit user selections. Omission keeps
 prior configuration/choices; OFF is remembered across later setup. New Viewer
 reload uses 30 seconds and retains any existing interval. Runner ON with an
 empty Plan does not run verification; Task entries are authored separately.
@@ -313,8 +313,12 @@ profile. Usage OFF stops subsequent collection without erasing history or
 changing host trust. Fresh setup creates no hooks until ON; legacy definitions
 remain supported. Preview writes nothing and same-choice replay is idempotent.
 
-`optional_features` has `features` (four entries named `usage_collection`,
-`verification_runner`, `effort_advisory`, `viewer_reload`), `offer` (unresolved
+Review wait saves only local prepare/start policy; ON does not establish host
+configuration, permission or connection. Follow [review waiting](review_wait.md#review-wait-and-same-parent-resumption)
+when explicitly configuring or using it. OFF preserves inspection and cleanup.
+
+`optional_features` has `features` (five entries named `usage_collection`,
+`verification_runner`, `effort_advisory`, `viewer_reload`, `review_wait`), `offer` (unresolved
 names), and `viewer_default_interval_seconds=30`. Each feature has `requested`
 (Boolean/null), `selection=on|off|undecided|unknown`,
 `selection_source=saved|existing|none|unknown`, `effective=on|off|unknown`,
@@ -1934,6 +1938,11 @@ not-applicable, not PASS.
 Only `handoff.status=ready` supplies a saved complete `packet_path`, per-reviewer
 `review_requests` (distinct result path, exact read/save commands and request), and
 `submit_command`, plus the conditional supervisor-only `wait_ended_command`.
+It also supplies `review_wait={status,task_id,prepare_tool,guide}`. Status is
+`enabled|disabled|unavailable` from local policy only; fixed tool/guide values
+are `review_wait_prepare` and `references/review_wait.md`. It does not dispatch
+reviews, prepare a wait or establish host connection. The deterministic route
+never invokes the legacy `wait_ended_command`.
 Pass those requests directly; required independent artifact
 and authority inspection is unchanged. A target requiring a Receipt returns
 `not_applicable` without files, so its later Receipt call may use the same area.
@@ -1948,11 +1957,39 @@ retry, new ledger, reviewer launch or raw-response file. Capture is limited to
 262,144 bytes in memory; malformed, incomplete or oversized output cannot be
 used as a Packet. Packet/result files alone are persisted.
 
+#### Read Current Review Wait Basis
+
+The read-only `review_handoff.py wait-basis --repo <project> --task-id <original-task>`
+returns the current structural wait basis described below.
+It is a helper operation, not a new taskgov command or ordinary Skill-loop step.
+It never selects another Task, captures a target, launches a reviewer, registers
+usage, or operates a reservation. No Packet, caller/session, timer or database
+path option is accepted. Stored ownership is an observation, not executor identity.
+
+Success is `{ok:true,status:"review_wait_basis",basis}`. The closed `basis` has
+`version:1`, `project_id`, `project_path_hash`, `project_binding_generation`,
+`task_id`, `task_status`, `execution_id`, `ownership_generation`,
+`parent_thread_id`, `contract_revision`, `target_kind`, `target_value`,
+`target_base_revision`, `target_generation`, and `artifact_manifest_id`.
+The stored owner or completion owner, complete current target, Contract,
+project binding and immutable manifest/Reference association come from one
+admitted query-only snapshot. No stored prose, raw path or executor metadata
+is returned. Contract revision zero retains its existing no-Contract meaning.
+
+Missing/changed state fails closed without initialization, migration or repair.
+Failures use `wait_basis_invalid_arguments`, `wait_basis_inactive`,
+`wait_basis_target_required` or `wait_basis_unavailable` with a fixed message;
+the existing parser retains `handoff_invalid_arguments`. No partial basis is
+returned. Numerical collection settings, missing usage state and numerical
+failures do not affect this read. This operation does not activate a wait;
+the MCP service uses it internally for the original Task's current basis.
+
 #### Record Review Wait Decision
 
-Only the designated wait supervisor uses `wait-ended`, once in its first
-all-ended/shortening-decision turn under the
-[waiting procedure](task_workflow.md#wait-across-parent-turns). Shared-file
+Only a retained legacy wait supervisor uses `wait-ended`, once in its first
+all-ended/shortening-decision turn. The current
+[waiting procedure](task_workflow.md#wait-across-parent-turns) is deterministic
+and never invokes this helper or fabricates a supervisor usage turn. Shared-file
 preparation already supplies the fixed `wait_ended_command`. Its shape is:
 
 ```powershell

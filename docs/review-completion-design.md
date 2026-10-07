@@ -372,111 +372,324 @@ result registration tests retain writer atomicity and concurrent-state checks.
 
 ### Host-Owned Review Waiting
 
-The [waiting behavior](review-completion-specification.md#host-owned-review-waiting)
-is host orchestration linked from the workflow's common Review And Completion
-introduction for both shared-file and direct transport. No Python timer controller,
-public taskgov operation, persistent deadline ledger, host daemon,
-or helper-side reviewer launcher is introduced. The conditional numerical
-marker below has its own setup-only schema migration and does not persist timer
-state. `review_handoff.py` and `review_handoff_preparation.py` retain unchanged
-generated independent-review requests; ordinary reviewer retrieval stays separate.
+The packaged `scripts/review_wait_server.py` entry runs
+`task_governance_tool.review_wait_runtime.project_server`. Its project-level
+configuration pins only repository, public bundled MCP wrapper, Codex home and
+confirmed timezone; no Task, reservation or state-path option is exposed.
+The closed six-tool catalogue delegates to the shared per-association session
+and version-two direct worker. Discovery and startup have no host effects.
+The source `tools/review_wait_*.py` entry points are compatibility aliases to
+the same package implementation, retaining old source controls and store bytes.
 
-The parent supplies a bounded supervisor with the already-prepared requests,
-project review scope/authority, existing Task/Contract/target association, and
-the designated parent. The supervisor dispatches the unchanged requests through
-the exposed subagent API and retains its actual returned children. Their native
-terminal events reach the supervising caller; an intermediate mailbox update
-is not terminal. Host status reads resolve missing or ambiguous completion
-information, not a second review or a source of invented verdicts. Reuse an
-existing suitable supervisor, or explicitly account for a needed coordinator
-when no existing host completion callback can execute while the parent is idle.
-Independent reviewers do not monitor peers or operate the timer, and the
-supervisor never registers results or completes the Task.
+`CanonicalStatePaths.review_wait_root` and `review_wait_store` own the root
+and SHA-256 reservation filename. The project composition first performs physical
+package/project scope, current canonical resolver binding and enabled-policy
+admission. Prepare additionally validates current Task ownership before creating
+the operational directory. The repository retains exclusive creation, physical
+ancestor/no-link checks and one serialized writer per reservation, including
+across processes. Changing caller text cannot choose another storage root.
+Reads never initialize missing state. This operational subtree is outside core
+backup/recovery inventory, like numerical state; it is not restored into active
+workers or copied from source experiments.
 
-The supervisor alone creates, shortens, pauses, and rearms one host heartbeat.
-Its session context holds the actual timer and child handles, original review
-basis, designated parent, arm ordinal, scheduled occurrence and timezone, and
-whether shortening or a wake has been consumed. These are orchestration context,
-not a new schema or required durable worksheet. Parent messages use the existing
-host channel and carry the association plus expected arm; the parent has no
-parallel timer-write path. Conceptually each arm is waiting or checking, and a
-terminally closed wait cannot return to either state. These terms add no public
-state enum. Serial processing of control and completion events, not competing
-read-then-write snapshots, prevents a late ACTIVE update from undoing a stop.
+The project session admits a stored association's parent and reservation before
+loading it, bounds in-memory associations to 64 and never evicts a worker.
+A loaded old association remains inert until an explicit permitted control;
+a direct marker prevents any second start. The original current-basis reader
+also checks Setup policy before each fresh basis read, so OFF suppresses new
+effects and reaches bounded known-ACTIVE cleanup. Cleanup/status/ack remain
+available without policy ON. Each session closes its owned workers on EOF and
+reports uncertain cleanup instead of silently replacing them.
 
-The supported fixed-clock appointment uses the host's configured timezone and
-a concrete date/time ten minutes ahead. Submit the existing heartbeat tool's
-`FREQ=DAILY;BYHOUR=<hour>;BYMINUTE=<minute>;BYSECOND=<second>;COUNT=1` schedule
-without `DTSTART`, which that public tool does not accept. Retain the explicitly
-chosen first future occurrence as an absolute instant and its timezone, then
-check the returned/read-back schedule, parent binding, and status. Confirm that
-the chosen occurrence remains future after registration. If creation or readback
-crossed it, pause and reconcile before declaring ready; do not reinterpret the
-same clock time as tomorrow. Unknown timezone, an ambiguous local clock time,
-or a clock/configuration change makes the occurrence uncertain rather than
-authorizing a guessed threshold. Read the public host surface; never inspect
-its private scheduler database to obtain a next-run value.
+`ProjectHost` changes only the fixed direct-notification text to identify the
+reservation/probe and original-review recovery procedure. It inherits the exact
+public transport, metadata, delete receipt/config-absence and acceptance rules.
+The common direct repository and worker own intent-before-effect, one-shot
+send, exact parent/reviewer observations, separate receipt, due cutoff and
+twenty-minute outer deadline described below. Source aliases have no separate
+logic or production path resolver.
 
-`COUNT=1` is not a claim that the host automatically retires this appointment.
-The explicit stop protocol owns that guarantee. Neither creation/update time
-nor the interval length is a substitute for the retained first occurrence.
-The fixed prompt identifies this wait and asks the resumed parent to perform
-the check/stop protocol; it does not carry newly generated result messages or
-change between shortening operations. Public tool responses and supported
-readback establish the operation's outcome; a scheduled wake establishes actual
-resumption. Neither implies a precise delivery deadline.
+Handoff preparation adds a closed `review_wait` routing object with
+`status=enabled|disabled|unavailable`, original `task_id`,
+`prepare_tool=review_wait_prepare` and `guide=references/review_wait.md`.
+This reads local policy only, not host availability, and performs no wait
+preparation or reviewer dispatch. Independent requests and result registration
+remain unchanged. The legacy `wait_ended_command` stays available for old
+supervisor contexts but is never invoked by the deterministic workflow.
+The Skill follows the packaged guide for both shared-file and direct transport.
 
-After observing the full dispatched set terminal, the supervisor checks the
-current waiting arm and reads back its current rule, timezone and status.
-Only an unchanged expected rule/timezone and ACTIVE timer support comparing
-full-precision absolute decision time with the retained occurrence. A mismatch
-makes the timing unknown; preserve the existing appointment for parent handling
-instead of guessing or overwriting its state. At exactly 90 seconds remaining,
-as above it, one update to `FREQ=MINUTELY;INTERVAL=1` is eligible. Preserve the
-timer's ID, kind,
-name, prompt, destination and active state. The shortening latch belongs to
-that arm; success, uncertainty, or a duplicate event must not cause repeated
-interval resets. Below 90 seconds, after the nominal due time, while checking,
-or for unknown/stale/stopped context, do not shorten. Reconcile an unknown
-response using existing host inspection before deciding any safe recovery.
+Physical-install tests cover closed discovery and arguments, Setup gating,
+canonical path use, duplicate reservation exclusion, parent/Task isolation,
+restart/no replay, disabled-policy cleanup and original handoff preservation.
+Fake hosts retain offline default verification. A fresh genuine host
+prepare/start/end/delete/send/ack sequence is the integrated delivery gate;
+source proof and `accepted` alone cannot satisfy it.
 
-A parent check includes the heartbeat input timestamp and expected arm. The
-supervisor compares them with its current occurrence and consumed-wake state.
-A delayed or duplicate wake for an earlier arm, including one timestamped before
-the current appointment while healthy and unshortened, cannot stop/rearm a newer
-arm. The all-ended latch changes that rule: the first matching wake closes the
-arm even if shortening makes it earlier than the original appointment. Do not
-infer a replacement next-run instant or apply the 90-second comparison again;
-all-ended work can never rearm. A valid unfinished check enters
-checking, pauses the associated timer, verifies PAUSED through readback, and
-returns the temporary stop acknowledgement to the active parent. The supervisor
-stays available. A rearm request is valid only for that checked arm and a fresh
-healthy-unfinished state; the supervisor rechecks its already-observed terminal
-events before acting. It chooses another explicit ten-minute appointment,
-increments the arm only on successful preparation, and returns its ready
-acknowledgement. A repeated old rearm request does not create another timer or
-advance the current arm.
+#### Development Review Wait Relay
 
-Terminal stop/cancellation latches closed before further events can be acted
-on, performs PAUSED plus readback, and acknowledges that confirmed result. The
-supervisor may then return its final response without an acknowledgement back
-from the parent. This is distinct from temporary check-stop, which must leave
-it available for a valid rearm or close. Native final delivery is never claimed
-to restart an idle parent. Ordinary questions do not invoke either stop path.
-Unresolved stop, lost acknowledgement, or an unavailable supervisor remains an
-explicit recovery condition. A replacement writer requires relinquishment or
-confirmed termination of the old supervisor and settlement of its outstanding
-operation; merely losing contact does not authorize takeover.
+`tools/review_wait_mcp_relay.py` owns the source-only
+[connectivity relay](review-completion-specification.md#development-review-wait-relay).
+It uses Python's standard library and speaks bounded newline-delimited UTF-8
+MCP JSON-RPC on stdin/stdout. The outer server exposes only the fixed view tool;
+it accepts no arbitrary downstream command, tool, mode, reservation or identity
+through tool arguments. Initialization and discovery do not access the host.
+Discovery, ping and the initialized notification accept standard object `_meta`
+without echoing or retaining it; discovery accepts an absent or null cursor
+and rejects continuation tokens because this catalogue has only one page.
+Invalid control parameters return a parameter error. Discovery metadata never
+supplies missing identity to a later tool call, whose fixed restrictions remain
+independent.
 
-Existing original retention, registration freshness, ownership and completion
-writers remain controlling. Reference-retrieval and package checks verify both
-transport routes receive the guidance. Focused semantic/host checks cover the
-90-second boundary, late and unknown times, mixed terminal outcomes, serialized
-check/rearm/cancel ordering, duplicate wakes, lost responses and closed waits.
-Fixture decisions do not prove real scheduler timing or delivery. The bounded
-change retains its existing
-[functional and review requirements](proposals/review-wait-notification.md);
-these descriptions do not assert that those gates have already passed.
+For each admitted call it starts the unmodified installed `server.mjs` with
+the absolute Node executable from the inherited `CODEX_MCP_NODE_PATH`, using
+an argument array and no shell. The server path and reservation ID are fixed
+startup inputs. It inherits the host-provided environment without injecting
+caller metadata. The downstream handshake advertises no elicitation or
+sampling capability; an unsupported server request fails closed. The original
+request `_meta` is forwarded as an object without rewriting or synthesizing
+any field. Only `automation_update` with the fixed `mode=view` arguments is
+issued. No host-private pipe protocol or database is implemented by the relay;
+the existing bundled MCP entrypoint owns its transport to the host.
+
+One call owns one child process, its bounded I/O workers and cleanup. A deadline
+limits initialization and response receipt. Cleanup closes stdin, waits, and
+terminates/kills and reaps only the owned direct child when needed. A cleanup
+failure prevents success. The direct Node launch avoids a shell intermediary
+whose termination could orphan Node. The relay persists no state and launches
+no independent daemon; the outer MCP server lives only with its stdio session.
+
+`tests/test_review_wait_mcp_relay.py` exercises the protocol against isolated
+fake peers, including exact metadata and fixed-operation forwarding, malformed
+and error responses, disclosure resistance, resource bounds and process cleanup.
+These tests never invoke the real bundled entrypoint or mutate a reservation.
+The companion configuration and Hook examples in `tools/` are inert templates;
+preparing them changes no `.codex` configuration or host trust. Configure the
+relay as a separate project MCP server and pass the named inherited variables
+through `env_vars`, never copied environment values. After user-reviewed
+activation, a real executor call and a real SubagentStop result are separate
+integration checks. Hooks require an already-connected outer MCP server; this
+relay does not change that host lifecycle contract.
+
+<a id="review-wait-basis"></a>
+
+#### Read-Only Review Wait Basis
+
+`review_wait_basis.py` implements the public helper's scope/resolver admission
+and output composition. `review_wait_basis_repository.py` owns its coherent
+query-only Task, owner, project binding and immutable Evidence reads. The retained
+resolver connection is closed after the snapshot; no numerical module, state
+initialization, maintenance or host process participates. The source-only
+compatibility entry `tools/review_wait_basis.py` invokes that fixed public helper and validates its
+bounded closed output into the original wait's current `WaitBinding`.
+
+This separates structural freshness from executor identity. The current stored
+parent is compared with genuine request metadata by the service; it is never
+inserted into missing metadata. The basis includes ownership generation so a
+same-parent reacquisition cannot reactivate an older wait's authority.
+
+<a id="development-review-wait-controller"></a>
+
+#### Development Event-Driven Review Wait
+
+The [source-only replacement boundary](review-completion-specification.md#development-review-wait-controller)
+separates three responsibilities. `tools/review_wait_controller.py` owns pure
+decisions and its closed snapshot codec; `tools/review_wait_repository.py` owns
+the explicitly initialized development store, revision check and writer lease;
+`tools/review_wait_host.py` owns bounded public-tool transport and structural
+readback. `tools/review_wait_runtime.py` composes explicit parent controls and
+one bounded observation with those components. It admits the original current
+Task basis and exact parent/timer/reviewer context, persists every intent before
+an external write, and never replays a pending intent loaded from storage.
+`tools/review_wait_observer.py` owns the non-daemon worker and bounded public
+long waits; `tools/review_wait_service.py` owns each parent request's admission,
+appointment calculation and worker handover; `tools/review_wait_server.py` owns
+the closed stdio protocol and explicit development bootstrap. These source
+paths are compatibility aliases to the shared packaged runtime. The old source
+catalogue and injected scratch-state entry remain separate from the canonical
+project entry; Setup and numerical collection never launch them.
+
+The controller consumes supplied aware instants rather than reading a clock.
+An immutable intent identifies one operation on one reservation and arm. Save
+the intent before calling the host; settle only the matching operation using
+an exact observed result and established completion of the earlier operation.
+Readback alone after a timeout does not establish that completion. Missing or changed readback cannot clear uncertainty
+or authorize another ACTIVE update. Cancellation remains latched while a
+shortening is unresolved; reconcile that operation before issuing PAUSED.
+Fresh healthy rearming requires the checked arm and no later terminal latch.
+Snapshot restoration validates the closed schema and state relationships.
+Appointment validation uses standard-library timezone rules, explicit UTC
+support and fold roundtrips to reject ambiguous or unavailable named zones.
+The chosen occurrence and daily RRULE must agree at whole-second precision;
+the later 90-second comparison retains the actual decision time's precision.
+Composition rechecks the original Task basis before saving and dispatching an
+ACTIVE intent. Stop-only cleanup can still address the original matching wait
+after a Task change. A confirmed activation that misses its occurrence is
+closed and paused for both initial arm and rearm.
+
+The repository's physical path is injected for explicit development tests and
+is supplied by the shared resolver for the canonical project entry.
+It owns schema version/history, bounded serialization and short SQLite
+transactions. Its exclusive writer lease spans claim, external operation and
+settlement; no external host call runs inside the SQLite write transaction.
+Failed or interrupted callers leave their saved pending intent available for
+readback, not an automatic retry. An absent/corrupt store is never silently
+recreated. Production path admission, Setup opt-in and state retention are
+integration responsibilities, not permissions granted by this constructor.
+
+The host adapter reuses the relay's bounded direct-child MCP transport with
+the original executor identity. It admits public `read_thread`/`wait_threads`
+structural observations and fixed `automation_update` operations. The explicitly
+selected direct experiment below additionally owns one fixed same-parent send. Thread
+loading state is not turn completion; returned child and turn IDs must match
+the admitted dispatched pair. Runtime admits completed, failed or interrupted
+turns only with `idle`, `notLoaded` or `systemError`, matching the direct
+experiment's reviewer-end rule; `active` and nonterminal turns remain excluded.
+Bodies, summaries and tool transcripts are
+discarded. SubagentStop is a candidate signal, never terminal proof.
+
+The source entry point can initialize that one scratch store only through its
+explicit prepare operation after fresh original-Task basis and public PAUSED
+reservation observation. Its actual reviewer IDs are expanded to current turn
+IDs by the public host reader. Reopening a prepared store never starts an
+observer, initializes a replacement or replays a pending operation. Configuration
+examples remain inert; they are not Setup or host trust mutations.
+
+The entry point assigns a closed bootstrap stage before each boundary and
+maps only known internal exception classes and explicitly allowlisted codes
+to a fixed diagnostic. It never serializes exception text or a rejected value.
+Host admission checks object and JSON-text embedded turn metadata without
+filling missing primary executor identity. At the one downstream dispatch
+boundary, a transient copy removes the wrapper's six recognized call-ID aliases
+and nested `call.id`, preserving all other fields and the original in-memory
+metadata. The unmodified public wrapper then generates its existing random
+correlation ID for that distinct host operation. This prevents the host's
+thread/turn/call-ID duplicate guard from conflating different operations within
+one outer request. The adapter adds no error-triggered retry, mutation replay,
+sender substitution or persisted metadata. The one-operation connectivity relay
+retains its unchanged forwarding contract.
+The host adapter retains a separate allowlisted boundary reason while preserving
+its general failure code. Only an exact internal host error with a known reason
+can refine bootstrap diagnostics. Cleanup uncertainty takes precedence over a
+received reply; no error message, provider body or inferred permission decision
+is exposed or used to authorize a retry.
+The shared relay response reader assigns closed reasons before rejecting a
+deadline, EOF, I/O/limit fault, malformed response, unsupported inbound method,
+or matching JSON-RPC error envelope. It classifies only standard numeric RPC
+codes; arbitrary codes collapse to a generic reason without retaining the
+message or data. The host refines response-stage failures only for the exact
+internal relay error and an allowlisted reason. Initialization and cleanup keep
+their existing priority; the standalone relay's fixed Hook failure is unchanged.
+
+The automation view response is presentation-only. The documented exact
+automation TOML can verify identity, rule, status and parent binding, but it
+contains no next-run time or timezone. The adapter therefore requires an
+explicit confirmed timezone and never derives a deadline from `updated_at`.
+Immutable schedule fields are preserved on bounded same-reservation updates;
+creation and arbitrary downstream calls are not exposed. `from_environment`
+admits the configured zone against a fresh bounded query to the inherited Node
+runtime's Intl API on each view. A changed zone fails closed; a change after
+dispatch preserves unknown operation state. Actual host timezone and
+parent-process-lifetime equivalence require separate real-host verification.
+The explicit `for_pause` read bypasses timezone admission only for cleanup and
+marks its structural snapshot `cleanup_only`. The retained zone is comparison
+context, not a current timing claim. The adapter refuses arm/shorten with such
+a snapshot; pause still compares immutable configuration and confirms PAUSED.
+Runtime uses this read for check, cancellation and expired-arm cleanup, and for
+reconciling an already closed wait or pending pause without claiming readiness.
+An OS lock coordinates this controller's writers, not an unrelated host UI
+edit; conflicting readback is a recovery condition.
+
+The observer waits outside the repository writer lease, in batches of at most
+eight actual children with a shared bounded round budget and cursors. The host
+parser accepts optional `cursorReset` only as a boolean and still requires the
+bounded nonempty cursor. The observer replaces each child's saved cursor with
+the returned value for its next wait, including after a reset; no reset flag or
+cursor is persisted as terminal evidence. Other unknown poll fields remain
+invalid. Returned
+terminal candidates trigger runtime's exact current-turn reads. Unconfirmed
+terminal candidates remain eligible for rechecking under the same bounded
+pacing until the exact observation agrees. Cancellation is checked between
+those reads and before an ACTIVE dispatch; an already
+dispatched operation still settles or remains pending. Session EOF stops only
+the worker. Timed-out joins return explicit unknown cleanup and cannot authorize
+a replacement observer. Parent controls share this lifetime owner; an ignored
+stale control restarts observation if its admitted current arm remains ready.
+The response separates timer readiness from `wait_ready`, which also requires
+a running healthy observer for unfinished reviews, and reports bounded observer
+state/reason. Lost observation cannot return a qualified ready acknowledgement.
+
+Focused tests cover the 90-second boundary, terminal/turn admission, pre-arm
+completion, duplicate/stale events, stop/rearm races, unknown results, restart
+and competing writers, bounded parsing and disclosure resistance. These tests
+do not establish idle-parent runtime survival, scheduler delivery, activation
+or Task completion. The installed workflow and legacy usage readers are
+switched only with the complete verified integration.
+
+#### Development Same-Parent Direct Wake
+
+The [experimental direct wake](review-completion-specification.md#development-direct-review-wake)
+uses `tools/review_wait_direct.py` for control admission, a bounded session worker
+and separate delivery acknowledgement. `tools/review_wait_direct_repository.py`
+owns the single exclusive, versioned SQLite record at the fixed sibling
+`<development-store filename>.direct.sqlite`; it does not access the core Task
+database. Original basis comes through the existing public reader. Source
+aliases and the canonical project entry share this packaged implementation;
+only the canonical route admits the explicit Setup policy.
+
+Start and send serialize with the prepared wait's writer lease. The timer runtime
+checks for the experiment marker inside that same lease before an ACTIVE intent;
+the server also rejects arm/rearm when a marker exists. A malformed marker or
+broken link fails closed. Each record is one-shot and cannot be overwritten to
+retry. Short transactions retain intent before the host effect; host calls run
+outside SQLite transactions. Metadata stays only in the current worker's memory.
+Short reads and writes of the experiment record share its own lease with bounded
+lock-acquisition waiting, so status inspection cannot obstruct a sender's commit.
+This retries no transaction or host call. Inspection-only instances never cancel
+another session's worker when they close; explicit admitted cancellation remains
+separate from the owning worker's EOF cleanup.
+
+The host adapter reads only its own parent for the original-turn check and sends
+only a fixed message to that parent. The public generic MCP result has no assumed
+delivery receipt schema: validate transport and cleanup for acceptance, discard
+provider content, and require the new parent turn's explicit acknowledgement for
+receipt. That acknowledgement is monotonic and separate from send settlement.
+EOF stops the owned worker; restart is inspection-only. Tests use isolated fake
+hosts and scratch stores for terminal, freshness, cancellation, lost-response,
+duplicate-start, restart and acknowledgement races; they never send real messages.
+
+The deletion variant uses the same worker and fixed sibling repository with a
+closed version-two payload: the version-one fields plus `version:2`,
+`timer_phase`, `timer_rule`, `timer_updated_at` and `timer_due_at`. The immutable
+chosen rule is the validated ten-minute appointment. Its due instant is ten
+minutes after creation; the worker deadline is twenty minutes after creation.
+Version one retains its original ten-minute deadline. Version two's worker
+continues observation when a due-time check declines a new deletion sequence,
+instead of returning through cleanup. A deletion intent saved before due may
+settle and send once within the outer deadline after fresh post-delete checks.
+The update timestamp binds subsequent effects to the confirmed host revision.
+The physical SQLite schema remains version one; old payloads retain their exact
+canonical bytes and are not migrated. Version two is explicitly tagged and
+cannot be decoded as a version-one record. No host prompt or metadata is retained.
+
+Timer phases advance from arming to active or unknown, active to deleting or
+pausing, deleting to deleted or unknown, and pausing to paused or unknown.
+Retain a pending phase across process loss; never infer its outcome or replay it.
+Send status advances independently and cannot become dispatching until deleted.
+An unknown timer outcome blocks sending and competing cleanup. All timer effects
+hold the prepared wait lease, use short separate intent/settlement transactions,
+and preserve concurrent cancellation. Existing generic timer mutations are
+rejected for a version-two marker, including malformed markers. Only admitted
+direct cancellation may attempt known-ACTIVE cleanup after restart.
+
+The host adapter validates fresh reservation identity and uses only public
+`automation_update` delete. It requires the structured receipt with matching
+automation ID, mode, deleted status and current kind/name/rule snapshot, then
+checks the exact documented config path for absence with physical ancestor
+admission. A missing ancestor outside the reservation or inaccessible metadata
+is unknown. No raw scheduler database or private endpoint participates. Tests
+cover deletion-before-send, malformed/missing receipts, remaining configuration,
+post-delete cancellation/basis changes, unknown activation/cleanup, EOF and
+restart without replay, and old payload compatibility.
 
 #### Review Wait Usage Marker
 

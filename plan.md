@@ -84,12 +84,21 @@ gates. It is not the product contract, execution ledger, or evidence store:
   [Review/completion](docs/review-completion-specification.md#host-owned-review-waiting),
   within the current tool and execution limits. The approved
   [parent-turn replacement](docs/proposals/review-wait-notification.md) owns the
-  ten-minute check and all-ended resumption acceptance: when the confirmed next
-  check is at least 90 seconds away, one designated writer shortens the same
-  timer to one minute once; the parent requests its stop on resumption. This
-  accepted scheduling alternative supersedes independent direct notification.
+  ten-minute check and all-ended resumption acceptance: one designated writer
+  deletes the same reservation, confirms deletion, then sends once through
+  public MCP to the same idle parent. This supersedes the earlier shortening
+  acceptance for the replacement. The explicitly authorized
+  [same-parent development experiment](docs/review-completion-specification.md#development-direct-review-wake)
+  tests that ordered path while preserving the earlier PAUSED-only one-shot
+  probe and its evidence. Neither experiment activates an installed workflow.
   Integration verification and synchronization remain required for completion;
   pending-turn guidance does not satisfy the replacement.
+- The accepted correction replaces the review supervisor with the packaged
+  deterministic service. The approved execution owner also covers canonical
+  storage, explicit Setup policy, handoff/Skill synchronization and fresh
+  integrated host verification. [Review/completion](docs/review-completion-specification.md#host-owned-review-waiting)
+  owns these boundaries. Importing, testing or enabling local policy alone
+  does not configure, trust or connect a host controller.
 - Durable project identity is separate from mutable filesystem binding. A path
   mismatch is not move/copy/fork intent; only explicit setup confirmation may
   advance a binding.

@@ -424,7 +424,16 @@ def _requests(repo, args, packet_path):
             "Report questions, read mismatch, unavailable/truncated material, unknown role, save failure or lost acknowledgement to the caller; do not claim PASS from incomplete inspection or success from an unknown outcome. "
             "Preserve failed residue; do not overwrite or blindly repeat a save. Do not manage Tasks, reset targets, register DB evidence, complete work or implement transport/recovery code."
         )})
+    from task_governance_tool.setup_feature_config import read_choices
+    try:
+        choices = read_choices(Path(__file__).absolute().parents[2])[1]
+        wait_status = "enabled" if choices.get("review_wait") is True else "disabled"
+    except Exception:
+        wait_status = "unavailable"
     return {"status": "ready", "packet_path": packet_path, "review_requests": reviewers,
+            "review_wait": {"status": wait_status, "task_id": args.task_id,
+                            "prepare_tool": "review_wait_prepare",
+                            "guide": "references/review_wait.md"},
             "wait_ended_command": _shell([*base, "wait-ended", *common]),
             "submit_command": _shell([*base, "submit", *common, "--", *paths])}
 

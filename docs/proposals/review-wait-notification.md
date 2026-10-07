@@ -2,137 +2,131 @@
 
 ## Purpose And Authority
 
-This approved bounded replacement ends the parent turn while independent
-reviews continue. A ten-minute scheduled check resumes the same parent. If all
-reviews end while at least 90 seconds remain until the confirmed check, its
-single timer is shortened to a one-minute interval. The parent stops the timer
-on resumption and handles the actual results. One minute is a schedule setting,
-not a delivery-time guarantee. This accepted alternative supersedes the earlier
-requirement to stop the timer and independently notify the idle parent.
+The approved replacement ends the parent turn while independent reviews run.
+Keep one ten-minute check during the wait. When every actual reviewer has ended,
+delete that same reservation, confirm deletion, then invoke one public MCP send
+to resume the same idle parent. This user-approved direction supersedes the
+90-second threshold and one-minute shortening acceptance for the replacement.
+It does not assert a delivery-time guarantee or activate the installed workflow.
 
 Durable behavior belongs to
-[host-owned review waiting](../review-completion-specification.md#host-owned-review-waiting),
-structure to the corresponding
-[design](../review-completion-design.md#host-owned-review-waiting), and agent
-execution to the package's
-[review workflow](../../task-governance-tool/references/task_workflow.md#wait-across-parent-turns).
+[host-owned review waiting](../review-completion-specification.md#host-owned-review-waiting)
+and the [development direct-wake contract](../review-completion-specification.md#development-direct-review-wake);
+structure belongs to [Review/completion design](../review-completion-design.md#host-owned-review-waiting).
 [plan.md](../../plan.md#review-completion-state-and-viewer) routes this bounded
-acceptance owner. Live Task state and verification evidence belong only in the
-public CLI. An edited instruction is not evidence that its host integration works.
+execution owner. Live Task state and evidence belong only in the public CLI.
 
 ## Approved Scope And Execution
 
-Implement and verify one coherent replacement across the host procedure, Skill
-reference, relevant review and instruction-layer owners, and package metadata.
-Use existing public host scheduling and subagent facilities; do not add a
-taskgov command, schema, daemon, private scheduler database dependency, host
-trust change, or shared setting. Non-review waiting remains unchanged.
+This same Task replaces the resident coordination LLM with deterministic
+observation and retained operation state. Actual dispatched reviewer/turn pairs,
+the original Task, Contract, target, execution owner, parent and reservation
+remain bound throughout. A hook or saved original alone is not a terminal
+observation. Review interpretation, original transport, result registration,
+usage evidence and Task completion retain their existing gates.
 
-The parent prepares the existing independent review requests and retains their
-Packet, original paths and registration command. One executing supervisor
-dispatches those requests unchanged, retains the actual returned handles and
-observes completion. Reuse an existing suitable supervisor where available.
-Otherwise a bounded host subagent is necessary because ordinary child completion
-does not execute the all-ended decision in an idle parent. This adds coordination
-work; it is not an extra independent review or a promise of token savings.
+The user approves these ordered units and their persistence in this owner:
 
-The supervisor alone owns timer mutations through explicit stop acknowledgement.
-It receives the parent's check, rearm and cancel controls through existing
-subagent controls. Its session-local association retains the Task, Contract,
-target, actual parent/supervisor/reviewer handles, timer identity and destination,
-fixed prompt, arm, confirmed due time and shortening/closed state. These are not
-new taskgov business identifiers or a persistent ledger. Review interpretation,
-original transport, result registration and Task writes remain with their
-existing owners.
+1. Update the Task Contract and coupled behavior/design owners. Extend the
+   source-only controller, storage, public-host adapter and controls to arm one
+   ten-minute check, observe actual reviews and the idle original parent,
+   delete/confirm the reservation, then send once. Preserve old experiment
+   records and the separately selected PAUSED-only probe.
+2. Verify the focused normal, failure, interruption and restart paths, document
+   contracts and coupled package artifacts. Obtain two independent Tier 2
+   review passes with no blocking findings before real-host activation.
+3. Use a fresh explicitly associated experiment reservation and scratch store.
+   Observe the real parent-ended path, confirmed deletion, one send and a new
+   genuine parent-turn acknowledgement. Distinguish host acceptance from receipt.
+   A required host restart is an external boundary, not proof of success.
 
-1. Dispatch the authorized review set and arm one check ten minutes in the
-   future. Retain an actual next-run value when exposed, or select and verify a
-   supported fixed wall-clock first occurrence with its date, UTC instant and
-   host zone. A timer's original update time does not identify its next run after
-   execution or retry. Never infer an unknown due time. End the parent turn only
-   after successful registration/readback and a still-future matching occurrence.
-2. Observe native completion events within actual tool and execution limits.
-   All-ended means every dispatched reviewer is terminal, regardless of OK, NG,
-   failure or missing originals. Partial or intermediate messages do not qualify.
-   At all-ended, compare the confirmed future due time with the current time.
-   At least 90 seconds permits one ACTIVE update of that same timer to a
-   one-minute interval; less than 90 seconds leaves it unchanged. Keep its ID,
-   destination, name and prompt. Read back the result. Do not repeat shortening,
-   activate a paused timer, or change a timer with a stale association/zone/basis.
-3. On the matching parent wake, have that same supervisor pause and read back
-   before acknowledging the check or terminal stop. Healthy unfinished work may
-   receive one explicitly authorized next ten-minute arm. Require the current
-   temporary check acknowledgement and no later all-ended/problem/cancel latch.
-   Confirm the new arm before the parent ends again. All-ended, a handling
-   problem or cancellation closes the association after PAUSED readback.
+The user additionally approves persistence and execution of these production
+integration units in the same Task:
 
-A fixed wall-clock rule must match a supported public schedule shape. Its first
-occurrence must be unambiguous in the current host zone and remain future at
-registration acknowledgement. Count one does not replace explicit cleanup:
-the host may calculate another occurrence after dispatch. After the retained
-occurrence arrives, do not reinterpret it as tomorrow or infer an internal retry.
-A host lacking the needed schedule/readback or parent-wake capability remains an
-explicit integration limitation, not a reason to claim pending-turn waiting
-satisfies this replacement.
+4. Package the verified runtime behind the shared canonical state resolver.
+   Admit fresh, individually bound waits without per-Task server configuration;
+   preserve previous experiment records and reject replay or overlapping use
+   of the same reservation. Update the coupled behavior/design owners. Verify
+   physical package installation, state admission and multi-wait isolation.
+5. Connect explicit Setup selection, review handoff and installed Skill guidance
+   to that packaged service. Keep host configuration and trust explicit, retain
+   offline operation when unavailable, and remove the resident coordinating
+   LLM from the enabled workflow. Preserve actual parent/reviewer usage and
+   legacy evidence. Verify Setup preview/idempotence/failure boundaries and
+   representative handoff operation.
+6. Run the coupled regression and document/package checks, obtain two
+   independent Tier 2 reviews with no blocking findings, then verify the normal
+   canonical route with a fresh real reservation and genuine new-turn receipt.
+   A required host restart remains an external boundary. Update live evidence
+   through the public CLI; preserve all existing completion gates.
+
+All six units are sequential and Tier 2. Units 4-6 depend on the source
+experiment; the installed procedure changes only with the implemented and
+reviewed integration. These units authorize only the stated runtime, resolver,
+Setup/configuration, handoff, Skill, tests and coupled governing-document scope,
+not unrelated follow-up work, shared settings, host trust, or another project's
+installation. No optional lane is introduced. A deterministic event must not
+fabricate a supervisor usage turn. Earlier timer fixtures remain regression
+evidence for existing controls, not acceptance of the deletion path.
 
 ## Races, Recovery And Permission
 
-Process received parent control before a new mutation. Serialize writes and
-reconcile unknown responses before retrying. If cancellation arrives during
-shortening, finish or reconcile that operation, then pause and confirm PAUSED
-before acknowledging cancellation. Old arms, duplicate wakes or a stale healthy
-decision cannot reopen a closed wait. For a healthy unshortened arm, a wake before
-its confirmed due time cannot authorize a new ten-minute arm. Once all-ended is
-latched, however, the first matching timer wake closes the wait even when
-shortening makes it earlier than the original ten-minute occurrence.
+One serialized writer owns activation, deletion, cleanup and sending. Persist
+each intent before its effect. Fresh identity admission and an exact public
+delete receipt plus confirmed absence of the documented configuration are
+required before sending. An error or missing view response is not deletion
+confirmation. Retain deletion separately from the send result and receipt.
 
-Ordinary questions and status requests alone retain a healthy wait. Stopping a
-timer does not itself cancel reviewers or change Task status. Preserve the
-original association if another Task becomes active or ownership, Contract or
-target changes. A wake establishes neither PASS, original delivery, registration,
-ownership nor completion. Missing originals use existing transport recovery.
+Check current basis, exact reviewer turns, original idle parent, cancellation
+and deadline before deletion and again before sending. A later parent turn
+suppresses the send. UI changes outside the local lease remain a host race;
+do not claim atomic host compare-and-send. Failed/interrupted reviews qualify
+as ended but do not satisfy review acceptance or original delivery.
 
-The supervisor stays available until it has returned a confirmed stop. If it or
-an acknowledgement is lost, establish the actual writer and outstanding-operation
-state before transferring timer ownership. Unknown cleanup remains unknown;
-do not create competing writers, duplicate reviewers or blind update retries.
+Unknown activation, deletion, cleanup or send outcomes stay unknown. Never
+automatically retry, recreate a deleted reservation, rearm this one-shot
+association, change sender/transport, or resume its worker after restart.
+Cancellation, expiry, stale basis and owning-session EOF stop further work;
+known active reservations receive at most one pause attempt for cleanup.
+Unknown pending mutations must not receive a competing pause. Explicit cleanup
+can be attempted only with an admitted current writer and known outcome.
 
-Keep authorization consistent across dispatch and scheduled instructions. No
-handle overrides host permission review. A denial is evidence that an operation
-failed, not proof that human authorization was absent or the feature impossible.
-Do not switch sender, API or context to circumvent it. The accepted scheduled
-alternative does not establish that an earlier direct-notification denial was
-resolved. Arbitrary cross-chat messages, real-use configuration changes and
-notification-turn usage accounting remain outside this Task.
+The ten-minute check remains a fallback while reviewers run. A new parent turn
+stops this experiment and triggers bounded known-state cleanup; unfinished
+review handling and a later explicitly prepared wait are separate operations.
+It does not silently launch duplicate reviewers or extend the current record.
+The deletion variant retains the fallback for a further ten-minute delivery
+window after its due time, with no new deletion sequence after due. A sequence
+already durably started before due can finish within that outer deadline.
+The twenty-minute maximum prevents indefinite observation and repeated future
+occurrences without cancelling the fallback at its nominal delivery time.
+
+Use public host facilities and genuine executor context only. No private
+scheduler database, trust change, shared setting, arbitrary cross-chat send,
+permission bypass or notification-turn usage accounting is authorized here.
+The user separately authorized this same-parent send and the test configuration;
+host permission review still applies. Preserve a denial as evidence of failure.
 
 ## Verification And Completion
 
-Confirm the concrete host path: reviewers continue after the parent turn ends,
-the selected timer can resume that parent, the all-ended observer can shorten
-the same ACTIVE timer, and the designated writer confirms PAUSED on resumption.
-Exercise the ten-minute healthy check/rearm path and the one-minute alternative.
-Do not turn fixture success into an unobserved real-host guarantee.
-
 | Scenario | Required outcome |
 |---|---|
-| All ended with 90 seconds exactly or more remaining | Shorten the same ACTIVE timer once. |
-| All ended with less than 90 seconds remaining | Preserve the nearer scheduled check. |
-| Partial completion, intermediate message or ordinary question | Retain the wait without false completion or duplicate dispatch. |
-| NG, failed review or missing original at all-ended | Apply the same timing decision; preserve actual-result/recovery gates. |
-| Duplicate completion, old control or stale Contract/target/owner | No duplicate shortening, rearm, registration or completion. |
-| Cancellation during shortening, or all-ended before a stale rearm | Serialized stop wins; a closed association stays closed. |
-| Shortened wake before the original due time | Stop and close the all-ended wait; do not reject the early wake. |
-| Expired, missing, ambiguous or changed-zone due basis | Do not guess a later occurrence or claim a verified threshold decision. |
-| Healthy current check | Stop/read back, explicitly rearm once for ten minutes, confirm before ending. |
-| Lost writer, unknown update or failed stop | Reconcile ownership and actual state; report unresolved cleanup honestly. |
+| Exact all-ended set and original idle parent | Delete the same ACTIVE check, confirm absence, send once. |
+| Partial review, intermediate message or active original parent | Keep the current check; no premature deletion or send. |
+| NG, failed/interrupted review or missing original | Same wake decision; preserve actual-result/recovery gates. |
+| Delete receipt malformed, rejected, lost or config still present | Retain unknown result; no send, retry or competing mutation. |
+| Cancellation or changed basis/parent after deletion | Preserve deleted fact; suppress send. |
+| Cancellation, deadline, failure or EOF before deletion | Stop worker; pause once only when the ACTIVE outcome is known. |
+| Duplicate start, restart or unsettled intent | Inspect only; no replay, resurrection or second send. |
+| Successful send without new-turn acknowledgement | Accepted only; receipt remains unverified. |
+| New genuine same-parent acknowledgement | Preserve receipt even if send settlement was unknown. |
 
-Run the document-contract checker, applicable package/reference checks and
-focused instruction/host verification. Require two independent Tier 2 reviews
-without blocking findings and the existing evidence/commit/completion gates.
-Performance A/B measurement and unrelated full-test repetition are not required.
+Run the document-contract checker and focused offline tests without real host
+effects, then the bounded authorized real-host experiment. Require two
+independent Tier 2 reviews and the existing evidence/commit/completion gates.
+Fixture success alone does not establish host resumption. Performance A/B
+measurement and unrelated full-test repetition are not required.
 
-This owner remains active until the bounded replacement is complete and its
-durable behavior is synchronized into the existing owners, or the user
-explicitly supersedes it. Retirement requires its separately authorized
-documentation transition. It introduces no qualification exercise for ordinary
-product Tasks.
+This owner remains active until the replacement is complete and its durable
+behavior is synchronized, or the user explicitly supersedes it. Retirement
+requires its separately authorized documentation transition.

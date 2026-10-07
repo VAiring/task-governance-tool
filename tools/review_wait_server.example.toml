@@ -1,0 +1,31 @@
+# Inert source-only candidate configuration. Do not copy before reviewing the
+# exact task, existing PAUSED heartbeat, scratch directory and installed server.
+# This is not a project Skill install or a Setup option. No SubagentStop hook
+# is required: the parent-session worker observes actual public thread status.
+# The direct_start/status/cancel/ack controls are a separately authorized,
+# one-shot same-parent experiment. Use only with the timer PAUSED; acceptance
+# alone is not receipt. The new parent turn must acknowledge the returned probe.
+# The separately selected direct_delete_start instead arms one ten-minute check,
+# deletes/confirms it at all-ended, then sends once. Use a NEW scratch store and
+# reservation; never reuse the old probe association. No restart replays work.
+[mcp_servers.taskgov_review_wait]
+enabled = false
+command = "C:/Users/maste/AppData/Local/Programs/Python/Python314/python.exe"
+args = [
+  "-B",
+  "C:/WorkSpace/task-governance-tool/tools/review_wait_server.py",
+  "--development-store", "C:/WorkSpace/task-governance-tool/.tmp-review-wait-candidate/wait.sqlite",
+  "--repo", "C:/WorkSpace/task-governance-tool",
+  "--task-id", "tg_task_8cfbf2bbf391e2b2",
+  "--helper", "C:/WorkSpace/task-governance-tool/task-governance-tool/scripts/review_handoff.py",
+  "--automation-id", "taskgov-review-wait-connectivity-probe",
+  "--server", "C:/Users/maste/.codex/plugins/cache/openai-bundled/codex-app-tools/0.1.5/server.mjs",
+  "--codex-home", "C:/Users/maste/.codex",
+  "--timezone", "Asia/Tokyo",
+]
+env_vars = ["CODEX_APP_TOOLS_PIPE_PATH", "CODEX_MCP_NODE_PATH", "CODEX_THREAD_ID"]
+
+# This machine already has this local IANA data. Other hosts must use their own
+# verified TZif location or existing Python timezone data; there is no download.
+[mcp_servers.taskgov_review_wait.env]
+PYTHONTZPATH = "C:/Program Files/Git/mingw64/share/zoneinfo"

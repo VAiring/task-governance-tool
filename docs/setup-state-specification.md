@@ -713,7 +713,7 @@ Preview creates neither lock nor artifact.
 
 After core setup, the noninteractive CLI accepts any subset of
 `--usage-collection on|off`, `--verification-runner on|off`,
-`--effort-advisory on|off`, and `--viewer-reload on|off`. These explicit choices
+`--effort-advisory on|off`, `--viewer-reload on|off`, and `--review-wait on|off`. These explicit choices
 authorize only their configuration and choice-record writes below. Omission
 preserves existing choices/configuration; it is not OFF and never enables an
 absent feature. Setup without choices offers unresolved items together. The
@@ -723,7 +723,7 @@ setup or ordinary Tasks, and no normal-loop question or call is added.
 The physical package's `config/setup-features.json` is strict UTF-8 JSON,
 at most 16,384 bytes, with exactly `schema_version=1` and `choices`, an object
 whose only optional keys are `usage_collection`, `verification_runner`,
-`effort_advisory`, `viewer_reload`, each a Boolean. Missing keys are undecided.
+`effort_advisory`, `viewer_reload`, `review_wait`, each a Boolean. Missing keys are undecided.
 Both ON and OFF persist; valid existing feature configs also count as resolved
 without copying or rewriting them merely to remember a choice. This local
 file is not core DB state, host trust, or Task authority; preserve it with the
@@ -731,7 +731,7 @@ other supported settings under the [installation contract](release-install.md#su
 Exclude package `config/` from source/release artifacts.
 
 `optional_features` contains exactly `features`, `offer`, and
-`viewer_default_interval_seconds=30`. `features` has those four fixed names.
+`viewer_default_interval_seconds=30`. `features` has those five fixed names.
 Each row contains exactly `requested` (Boolean or null), `selection`
 (`on|off|undecided|unknown`), `selection_source` (`saved|existing|none|unknown`),
 `effective` (`on|off|unknown`), `status`
@@ -776,6 +776,14 @@ no new choice. Same-choice replay preserves bytes when no repair is necessary.
   publisher; a publication failure remains an unavailable optional outcome.
   Already open pages adopt the published setting on their next reload; no
   browser launch or external control is implied.
+- Review wait changes only its local Boolean choice; effective ON means the
+  local prepare/start policy is enabled, not that the host is configured,
+  connected, trusted or authorized to send. Omitted/malformed policy is disabled
+  at runtime. Setup creates no operational store, reservation or MCP config and
+  launches no process. The separately reviewed project MCP configuration uses
+  the packaged entry point described in [review waiting](review-completion-specification.md#host-owned-review-waiting).
+  OFF preserves state and permits original-parent inspection/cleanup/ack;
+  running workers stop at their next fresh basis check with bounded cleanup.
 
 ### Optional Lifecycle Usage Collection
 

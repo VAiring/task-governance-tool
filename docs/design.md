@@ -56,6 +56,17 @@ plan.md
 tools/
   document_contract.py
   release_contract.py
+  review_wait_basis.py
+  review_wait_controller.py
+  review_wait_direct.py
+  review_wait_direct_repository.py
+  review_wait_host.py
+  review_wait_mcp_relay.py
+  review_wait_observer.py
+  review_wait_repository.py
+  review_wait_runtime.py
+  review_wait_server.py
+  review_wait_service.py
   test_lanes.py
 task-governance-tool/
   release-manifest.json
@@ -66,10 +77,13 @@ task-governance-tool/
     task_workflow.md
     cli_contracts.md
     reconciliation.md
+    review_wait.md
   scripts/
     taskgov.py
     review_handoff.py
+    review_wait_server.py
     task_governance_tool/
+      review_wait_runtime/
 tests/
 fixtures/
 ```

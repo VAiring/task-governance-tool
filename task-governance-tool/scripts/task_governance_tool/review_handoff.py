@@ -396,6 +396,9 @@ def main(argv=None):
         packet_source = ended.add_mutually_exclusive_group(required=True)
         packet_source.add_argument("--packet", help="Ignored project-relative complete Packet JSON")
         packet_source.add_argument("--from-stdin", action="store_true", help="Complete actual Packet as bounded UTF-8 stdin")
+        basis = commands.add_parser("wait-basis", help="Read the original Task's current structural wait basis without writes")
+        basis.add_argument("--repo", required=True)
+        basis.add_argument("--task-id", required=True)
         for operation in ("save", "submit"):
             command = commands.add_parser(operation)
             command.add_argument("--repo", required=True, help="Explicit governed project root")
@@ -418,6 +421,10 @@ def main(argv=None):
             from task_governance_tool.review_wait import wait_ended
             raw = sys.stdin.buffer.read(PACKET_LIMIT + 1) if args.from_stdin else None
             result = wait_ended(repo, packet_path=args.packet, raw=raw)
+            return (0 if result["ok"] else 1) if _emit(result) else 1
+        if args.operation == "wait-basis":
+            from task_governance_tool.review_wait_basis import wait_basis
+            result = wait_basis(repo, task_id=args.task_id)
             return (0 if result["ok"] else 1) if _emit(result) else 1
         if args.operation == "save":
             raw = sys.stdin.buffer.read(REVIEW_RESULTS_INPUT_LIMIT + 1)

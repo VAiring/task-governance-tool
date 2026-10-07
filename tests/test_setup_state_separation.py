@@ -511,7 +511,7 @@ class SetupStateSeparationTests(unittest.TestCase):
                                        "selection_source": "none", "effective": "unknown",
                                        "status": "not_attempted", "error": None}
                                 for name in ("usage_collection", "verification_runner",
-                                             "effort_advisory", "viewer_reload")
+                                             "effort_advisory", "viewer_reload", "review_wait")
                             },
                             "offer": [], "viewer_default_interval_seconds": 30,
                         },

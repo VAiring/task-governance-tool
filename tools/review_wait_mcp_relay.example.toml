@@ -1,0 +1,21 @@
+# Inert template: edit the absolute paths and reservation ID before use.
+# Merge only this table into the project's .codex/config.toml after review.
+# Do not paste environment values or caller IDs into configuration.
+[mcp_servers.taskgov_hook_relay]
+command = 'C:/path/to/python.exe'
+args = [
+  '-B', 'C:/path/to/task-governance-tool/tools/review_wait_mcp_relay.py',
+  '--server', 'C:/path/to/codex-app-tools/server.mjs',
+  '--automation-id', 'approved-paused-probe-reservation'
+]
+cwd = 'C:/path/to/task-governance-tool'
+env_vars = [
+  'CODEX_APP_TOOLS_PIPE_PATH', 'CODEX_MCP_NODE_PATH',
+  'CODEX_BROWSER_USE_NODE_PATH', 'CODEX_ELECTRON_RESOURCES_PATH',
+  'CODEX_CLI_PATH', 'XDG_CACHE_HOME', 'HOME', 'USERPROFILE', 'LOCALAPPDATA', 'PATH'
+]
+enabled = false
+enabled_tools = ['view_review_wait_reservation']
+default_tools_approval_mode = 'prompt'
+startup_timeout_sec = 10
+tool_timeout_sec = 20

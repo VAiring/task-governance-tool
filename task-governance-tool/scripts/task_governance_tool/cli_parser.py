@@ -102,7 +102,7 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     add_common_options(setup_parser)
-    for feature in ("usage-collection", "verification-runner", "effort-advisory", "viewer-reload"):
+    for feature in ("usage-collection", "verification-runner", "effort-advisory", "viewer-reload", "review-wait"):
         setup_parser.add_argument("--" + feature, choices=("on", "off"), default=None,
             help="explicitly save/apply this optional choice after core setup; omission preserves it")
     setup_parser.add_argument(

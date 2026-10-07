@@ -40,6 +40,8 @@ Runner root       <fixed-root>/verification-runner
 Runner lock       <fixed-root>/verification-runner/taskgov-verification-runner.lock
 Runner attempts   <fixed-root>/verification-runner/attempts
 Runner quarantine <fixed-root>/verification-runner/quarantine
+Review waits      <fixed-root>/review-wait/<sha256-reservation-id>.sqlite
+Wait send state   <wait-store-filename>.direct.sqlite
 ```
 
 The resolver returns canonical paths, the in-memory governed root/hash/display
@@ -591,7 +593,7 @@ updates, or compares upstream state.
 
 ### Setup Plan And Stages
 
-After core and numerical setup, `setup_features.py` applies only the four
+After core and numerical setup, `setup_features.py` applies only the five
 explicit optional choices and projects saved intent separately from current
 configuration. `setup_feature_config.py` owns the closed local choice file and
 bounded physical compare-before-replace publication for choices/profiles;
@@ -600,6 +602,10 @@ Runner reuses its existing codec and local-only publisher; no execution layer
 is imported. Effort and Viewer reuse their feature readers for validity.
 Viewer toggle publication reuses `publish_setup_viewer` against the existing
 resolved target. No second setup, migration, Runner or collection is launched.
+Review wait stores only its Boolean choice. Its runtime reads that policy on
+prepare/start and fresh basis checks; Setup performs no host configuration or
+operation. The resolver derives its separate operational subtree, which is
+excluded from core backup/recovery inventory and never resumes on restoration.
 
 Feature config application and saved-choice publication are separate. A later
 failure rereads observable state and returns an unavailable feature, not a

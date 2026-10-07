@@ -1,7 +1,7 @@
 """Bounded local Setup choices and physical configuration publication.
 
-Choices record intent, not host trust or runtime success. Only usage collection
-consults the saved switch at invocation; other features retain their own configs.
+Choices record intent, not host trust or runtime success. Usage collection and
+review waiting consult saved switches; other features retain their own configs.
 """
 
 import json
@@ -17,7 +17,7 @@ from task_governance_tool.state_paths import (
     read_physical_file_bounded, unlink_validated_file,
 )
 
-FEATURES = ("usage_collection", "verification_runner", "effort_advisory", "viewer_reload")
+FEATURES = ("usage_collection", "verification_runner", "effort_advisory", "viewer_reload", "review_wait")
 CHOICES_PATH = Path("config/setup-features.json")
 MAX_BYTES = 16 * 1024
 

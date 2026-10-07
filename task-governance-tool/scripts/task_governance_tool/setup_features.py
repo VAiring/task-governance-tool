@@ -62,6 +62,23 @@ def _profile(skill, feature, enabled, read_only):
     return original is not None, enabled if changed and not read_only else current, changed
 
 
+def _wait_policy(skill, enabled, read_only):
+    _original, choices = config.read_choices(skill)
+    current = choices.get("review_wait") is True
+    changed = enabled is not None and choices.get("review_wait") is not enabled
+    if enabled is not None and not read_only:
+        changed = _save_choice(skill, "review_wait", enabled) or changed
+    return "review_wait" in choices, enabled if enabled is not None and not read_only else current, changed
+
+
+def _configuration(root, skill, name, enabled, read_only):
+    if name == "verification_runner":
+        return _runner(root, skill, enabled, read_only)
+    if name == "review_wait":
+        return _wait_policy(skill, enabled, read_only)
+    return _profile(skill, name, enabled, read_only)
+
+
 def _save_choice(skill, feature, enabled):
     original, choices = config.read_choices(skill)
     if choices.get(feature) is enabled:
@@ -128,9 +145,7 @@ def setup_features(inspection, core_result, *, selections, read_only):
                     effective = ("on" if observed["status"] == "current" else
                                  "off" if observed["status"] in {"disabled", "not_requested"} else "unknown")
             else:
-                present, effective_bool, changed = (
-                    _runner(root, skill, requested, read_only) if name == "verification_runner"
-                    else _profile(skill, name, requested, read_only))
+                present, effective_bool, changed = _configuration(root, skill, name, requested, read_only)
                 effective = "on" if effective_bool else "off"
             row.update(effective=effective, status="observed")
             if name not in choices and present and requested is None:
@@ -155,8 +170,7 @@ def setup_features(inspection, core_result, *, selections, read_only):
                 if name in saved_choices:
                     row.update(selection="on" if saved_choices[name] else "off", selection_source="saved")
                 if name != "usage_collection":
-                    _present, actual, _changed = (_runner(root, skill, None, True)
-                        if name == "verification_runner" else _profile(skill, name, None, True))
+                    _present, actual, _changed = _configuration(root, skill, name, None, True)
                     row["effective"] = "on" if actual else "off"
             except Exception:
                 row["effective"] = "unknown"
@@ -169,4 +183,6 @@ def feature_notice(result):
         lines.append(f"{name}: selection={row['selection']}, effective={row['effective']}, {row['status']}")
     if result["offer"]:
         lines.append("Optional choices (ON/OFF or defer): " + ", ".join(result["offer"]))
+    if result["features"].get("review_wait", {}).get("effective") == "on":
+        lines.append("Review wait: local policy enabled; host MCP configuration, authorization and connection remain separate. See references/review_wait.md.")
     return "\n".join(lines)

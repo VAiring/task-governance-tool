@@ -307,6 +307,9 @@ The shipped `scripts/review_handoff.py` has `prepare`, `read`, `material`, `save
 operations, separate from the taskgov command inventory. All require explicit
 `--repo`. The Packet remains context, not authenticated evidence, and the helper
 never launches a reviewer or replaces current-state registration checks.
+Its independent read-only [wait-basis](#review-wait-basis) operation supplies
+current structural admission for the development wait controller. The legacy
+[wait-ended marker](#review-wait-usage-marker) retains its separate numerical role.
 
 `prepare --directory <unused-relative-directory> [--reviewers 1..8]` starts
 before one explicit Packet-producing operation. Its closed actions are
@@ -541,106 +544,388 @@ Other helper failures keep their existing general diagnostics.
 
 ### Host-Owned Review Waiting
 
-Review waiting uses the host's existing same-parent timer and subagent APIs.
-After authorized review dispatch and confirmed timer preparation, the parent
-ends its turn. Healthy unfinished work is checked after ten minutes; an
-all-reviews-ended observation may bring that check forward under the rule below.
-This is caller orchestration, not a taskgov command, Python scheduler, new Skill
-trigger, or change to non-review waits. A timer or native child final is not
-review evidence, and a child final alone need not start a new idle-parent turn.
+The optional project review-wait MCP service replaces resident LLM coordination
+for authorized independent reviews. The parent dispatches the unchanged requests
+itself, retains the original Packet and returned reviewer handles, and creates
+one PAUSED same-parent heartbeat through the public host tool. Setup's explicit
+`--review-wait on` enables only local policy. Host MCP configuration, connection,
+timezone and permission remain separate prerequisites; Setup never changes host
+trust, creates a reservation or sends a message.
 
-One bounded supervisor owns the wait's reviewer dispatch and all timer writes.
-Reuse an existing suitable supervisor; otherwise a coordinator is necessary
-where the exposed host supplies no idle-parent completion callback. Its extra
-LLM work remains explicit, not a claimed elimination of waiting cost. The
-supervisor forwards the prepared independent-review requests unchanged with
-their project scope and authority, keeps the actual returned child handles,
-and observes their terminal outcomes. Reviewers retain their independent roles;
-none gains a peer-monitoring, timer, Task-management, or registration duty.
-The parent retains the Packet, originals, submit operation, and Task decisions.
+The packaged controls are `review_wait_prepare` with exactly `task_id`,
+`automation_id`, `reviewer_ids`; `review_wait_view`,
+`review_wait_direct_delete_start` and `review_wait_direct_status` with exactly
+`automation_id`; and `review_wait_direct_cancel` / `review_wait_direct_ack`
+with exactly `automation_id`, `probe_id`. Each requires genuine executor
+metadata. Prepare/start require an actual turn and enabled local policy.
+There is no supplied destination, prompt, schedule, storage path, sender or
+arbitrary downstream operation. Only public tools and the documented exact
+automation configuration are used.
 
-The wait retains its original Task, Contract, target/generation, designated
-parent, actual timer handle, supervisor, and current scheduled occurrence.
-A session-local arm ordinal identifies each successive ten-minute appointment
-on that same timer; it is not a new business ID, public input, or database row.
-Parent control requests carry this association and the expected arm. Only one
-arm is current. The parent requests checks, cancellation, or healthy rearming
-from the supervisor instead of issuing competing timer writes itself.
+Prepare validates the original active Task's complete current basis, actual
+reviewer/turn pairs and the PAUSED reservation's parent before recording its
+one-shot association. Canonical operational state is resolved under the
+governed project's `.taskgov/current/review-wait/`; the reservation ID's
+SHA-256 selects one immutable store name. The fixed direct-state sibling
+retains timer and send intent/result and receipt acknowledgement separately.
+An existing association is never overwritten, reused for another Task, migrated
+from a scratch experiment or replaced after corruption. Multiple distinct
+reservations remain isolated, including their designated parent. At most 64
+associations are loaded per process; reaching that bound rejects another load
+without disposing a live worker or performing host effects.
 
-For each arm, choose and retain an explicit first occurrence ten minutes in the
-future, including its date and configured host timezone. Confirm the resulting
-schedule through the exposed host readback while that occurrence is still in
-the future. A missed or ambiguous occurrence is not permission to silently use
-tomorrow's occurrence. The parent ends its turn only after the supervisor
-acknowledges a ready current arm. The timer's prompt is fixed to this wait and
-its parent; shortening never changes the destination or review instructions.
+Explicit start uses the version-two
+[delete-confirm-send protocol](#development-direct-review-wake): arm one
+ten-minute appointment; observe every exact reviewer ended and the original
+parent idle; persist deletion intent; delete that same reservation once;
+require the exact deleted receipt and physical config absence; recheck current
+basis, reviewers, parent, cancellation and deadline; persist send intent and
+send once to that same parent. The parent ends only after successful start
+reports `timer_phase=active`, `status=waiting` and `worker_alive=true`.
+All-ended includes failed/interrupted reviews, not a PASS or available original.
+No coordinating LLM or reviewer peer-monitoring duty is introduced.
 
-When every dispatched reviewer has ended, regardless of OK, NG, mixed results,
-or missing originals, compare the retained current occurrence with the actual
-decision time only while the current host rule and timezone still match the
-confirmed arm. A mismatch makes timing unknown. A known end is distinct from
-a usable saved original. Apply:
+The direct message identifies the reservation and generated probe, asks the new
+parent turn to acknowledge, and directs recovery of the retained original Task
+and Packet. It never supplies a verdict. Host `accepted` is separate from
+genuine new-turn receipt. After resumption, inspect the association; acknowledge
+a direct delivery, or cancel/clean up a scheduled fallback before handling
+actual reviews. Missing originals, stale targets, questions and failure retain
+their existing recovery gates. Outcomes for A remain with A if the caller is
+working on B.
 
-| Current wait condition | Timer action |
-|---|---|
-| Waiting, not previously shortened, with at least 90 seconds remaining | Change this same timer to a one-minute interval once. |
-| Less than 90 seconds remaining, including an occurrence already due | Keep the existing timer; do not postpone an imminent or overdue check. |
-| Occurrence or timezone unknown, context stale, parent already checking, or shortening already attempted with uncertain outcome | Do not guess or repeat a shortening; reconcile the existing state. |
-| Stopped, cancelled, closed, or belonging to an obsolete arm | Do not recreate, reactivate, or rearm it from a late completion. |
+A new parent turn suppresses any still-pending direct send and triggers bounded
+known-ACTIVE cleanup. For healthy unfinished reviews, first settle/inspect the
+old association, then explicitly create and prepare a fresh reservation using
+the same actual reviewers; do not relaunch them merely to wait again. An unknown
+activation, delete, pause or send outcome forbids competing cleanup, replay,
+automatic retry or a replacement wait pretending the old effect is settled.
+The due/outer-deadline, post-delete race, cancellation and EOF rules in the linked
+protocol apply unchanged. External host/UI changes are not serialized by the
+local writer lease; this is not atomic host compare-and-send.
 
-One-minute configuration is not a promise of resumption within 60 seconds.
-Retain the existing ten-minute appointment when the 90-second condition cannot
-be established; do not infer a due time from an arbitrary update timestamp.
-Duplicate terminal events do not restart the interval. Actual timer-update
-failure or uncertainty remains visible and cannot be called a successful wake.
+Discovery, status and process restart do not resume a worker. OFF or invalid
+policy rejects prepare/start and makes a running worker stop at its next fresh
+basis check. Original-parent view/status/cancel/ack remain available after OFF;
+known-ACTIVE cleanup is still bounded and cannot recall a dispatched message.
+State survives disabled policy, interrupted sessions and package updates as
+audit/recovery material, never as a completion Receipt. Core Task/usage schemas,
+backups and numerical attribution remain separate. No metadata, provider body,
+prompt, transcript or fabricated supervisor turn is stored.
 
-On a timer wake, the parent sends the supervisor the wake time and expected
-arm. The supervisor rejects already-consumed or obsolete wakes, including one
-before a healthy, unshortened arm's occurrence, and serializes valid checks with
-completion and cancellation. Once all-ended is latched, the first matching wake
-closes that arm even when shortening brings it before the original ten-minute
-appointment; there is no further threshold decision or inferred new due time.
-For a valid unfinished check it pauses the timer and confirms the paused
-readback before acknowledging the check. This temporary stop keeps the
-supervisor available.
-Only a fresh explicit parent request for the same checked arm, with reviews
-still healthy and unfinished, may create the next ten-minute appointment on
-the same timer. Successful rearming advances the arm and returns a new ready
-acknowledgement before the parent ends its turn again. All-ended work, a
-problem, or cancellation cannot be overwritten by an older rearm request.
+When policy or required host capabilities/permission are unavailable, disclose
+that automatic resumption is unavailable and continue the permitted review
+transport. Do not silently enable it, launch a replacement coordination LLM,
+change trust, use a private API or switch sender to evade a denial. The retained
+source-only timer/PAUSED experiments remain compatibility tools, not the normal
+workflow. Their successful fixtures do not establish integrated host delivery.
+The synchronization and independent Tier 2 gates remain in the
+[execution owner](proposals/review-wait-notification.md).
 
-For all-ended work, a material problem, or an instruction to stop, cancel, or
-change the wait, close the wait through the same supervisor. Its
-terminal acknowledgement means it has paused this timer and confirmed the
-result; the parent then handles outcomes under the existing result gates.
-The supervisor may end and never accepts delayed rearming of that wait.
-Ordinary questions or status requests alone retain the healthy wait and its
-timer. Stopping this wait does not cancel reviewers, change Task state, or
-cancel unrelated work. A late queued wake never reopens a closed wait.
+<a id="development-review-wait-relay"></a>
 
-Lost acknowledgements or an unavailable supervisor require inspection, not a
-second writer, duplicate reviewer dispatch, or blind retry. The parent cannot
-take over timer writes until the old supervisor has relinquished them or is
-confirmed ended and any outstanding operation is resolved. Preserve originals
-and incomplete transport under the existing handoff recovery rules. A wake,
-all-ended observation, or timer acknowledgement supplies no PASS, original,
-registration, ownership, or satisfied completion gate. Outcomes for A remain
-associated with A while the parent works on B, under the existing
-[ownership rules](task-operation-specification.md#session-ownership-and-recovery).
+#### Development Review Wait Relay
 
-Use only exposed, authorized host operations; never read a private host database
-or change host trust or shared settings to obtain this behavior. A denied
-operation remains denied; this workflow does not authorize a different sender
-or transport to evade it. If necessary host capabilities are unavailable,
-disclose the limitation and use the existing permitted review workflow without
-claiming timer resumption. This adds no host-wide qualification prerequisite
-to ordinary product Tasks. The bounded change's functional, synchronization,
-and Tier 2 gates remain in its
+The source repository may explicitly run a development-only MCP relay to
+verify the reservation-reference path into a SubagentStop hook. It exposes
+only `view_review_wait_reservation` with empty arguments and pins one
+already-authorized test reservation at process startup. It calls the existing
+host `automation_update` tool with `mode=view`; it does not create, update,
+activate, shorten, pause, or delete reservations. This utility is outside the
+installable Skill, Setup, numerical collection, and the ordinary Task loop.
+
+The relay forwards the incoming executor `_meta` unchanged. It requires the
+executor's `threadId` and never obtains a substitute identity from arguments,
+configuration, the environment, another chat, or the hook event's parent ID.
+This is preservation of trusted executor context, not independent
+authentication of arbitrary clients that can write to its stdio transport.
+
+Only a validated successful host MCP result and completed process cleanup
+permit an MCP text result containing `{}`, the no-decision Hook JSON. Missing
+context, host errors, malformed responses, unsupported requests, timeouts, and
+unknown cleanup produce bounded sanitized failures, never a successful Hook
+decision. Provider text, metadata, environment values and stderr are not
+retained or echoed. The relay never treats display text as structured schedule
+readback or evidence of reviewer completion.
+
+Preparing code or configuration examples does not enable or trust a hook.
+Actual activation requires the existing explicit project configuration and
+user-operated host trust boundary. A successful connectivity probe establishes
+neither cold-start availability nor all-ended detection, schedule mutation,
+parent resumption, or the full review-wait completion gate. The host-owned
+workflow above remains controlling until the functional replacement is
+implemented and verified.
+
+<a id="review-wait-basis"></a>
+
+#### Read-Only Review Wait Basis
+
+`review_handoff.py wait-basis --repo <original-project> --task-id <original-task>`
+reads one admitted current core snapshot for that Task. It never substitutes
+the selected Task, initializes or migrates state, reads numerical logs, registers
+a usage marker, writes a Task, prepares a Packet or accesses the host scheduler.
+It preserves the canonical resolver, physical project binding and current
+Evidence validation. Missing, stale or inconsistent state produces a sanitized
+failure without a partially usable basis.
+
+Success is exactly `{ok:true,status:"review_wait_basis",basis}`. The closed
+`basis` has `version:1`, `project_id`, `project_path_hash`,
+`project_binding_generation`, `task_id`, `task_status`, `execution_id`,
+`ownership_generation`, `parent_thread_id`, `contract_revision`, `target_kind`,
+`target_value`, `target_base_revision`, `target_generation` and
+`artifact_manifest_id`. These are current stored structural values. Contract
+revision zero retains its existing no-Contract meaning. The owner is a comparison
+value, not an executor credential. A caller-created wait ID identifies only the
+controller association and cannot replace any current core field.
+
+Failure is `{ok:false,code,message}` with fixed text `Current review-wait basis
+is unavailable.` and bounded codes `wait_basis_invalid_arguments`,
+`wait_basis_inactive`, `wait_basis_target_required` or `wait_basis_unavailable`.
+The existing argument parser retains its own handoff argument errors. No partial
+basis or private exception appears in a failure.
+
+The development provider invokes this public helper with fixed argument arrays,
+bounded output and a deadline. It admits only the original Task's active review
+basis owned by the designated actual parent. It cannot repair missing fields
+using saved controller state, a computed filesystem hash, another Task or a
+numerical declaration. Existing Task reads and Review Packets retain their
+shapes; this helper adds no normal-loop call or completion gate.
+
+<a id="development-review-wait-controller"></a>
+
+#### Development Event-Driven Review Wait
+
+The accepted functional replacement moves all-ended decisions and serialized
+timer control into deterministic code, without a resident supervisor LLM.
+The shared controller, repository, public-host adapter and parent-session MCP
+service support the canonical project entry above and retained source controls.
+The latter keep their explicit scratch path and legacy timer variants; they
+cannot enable the canonical workflow or select its state. Importing or testing
+either entry establishes no host connection or delivery. The complete replacement
+requires the real-host and synchronization gates in the
 [acceptance owner](proposals/review-wait-notification.md).
+
+The controller binds the original project, Task, execution, ownership generation,
+Contract, complete
+review target, parent and actual dispatched reviewer/turn pairs. A saved
+original, intermediate message or SubagentStop invocation is not a terminal
+fact. Only an admitted host terminal observation for that exact reviewer turn
+can contribute to all-ended. OK, NG, failed and interrupted outcomes all end
+the associated review; result interpretation and missing-original recovery
+remain separate. A completed, failed or interrupted exact turn qualifies with
+an idle, unloaded or error-state thread; an active thread or nonterminal turn
+does not qualify. Unknown or mismatched observations cannot supply completion.
+
+Each arm retains its chosen absolute occurrence and confirmed timezone/rule.
+Neither a successful display card nor an automation file's update time supplies
+a next-run instant. A shortening decision requires the current binding, matching
+ACTIVE reservation readback and at least 90 seconds remaining. It emits one
+intent for the same reservation and preserves its immutable identity. A parent
+check, healthy rearm and terminal cancellation use the same serialized state;
+old arms cannot reopen a closed wait. An unknown operation outcome remains
+pending until both the prior operation's completion and exact readback are
+established, including after process restart. An old readback after a timeout
+does not prove that the timed-out operation can no longer take effect.
+
+The development repository explicitly initializes only an injected development store;
+ordinary reads do not initialize or migrate it. It retains a closed bounded
+state snapshot and operation intent, with a revision check and exclusive writer
+lease. No executor metadata, raw prompt, provider response, transcript or usage
+record belongs in this store. A host operation occurs outside a database write
+transaction and only after its intent has been saved. The lease prevents a
+second controller writer from overtaking an unresolved operation.
+
+The adapter preserves genuine executor identity and non-correlation metadata, uses only public host tools
+and the documented exact automation configuration file, and returns bounded
+structural observations. It never substitutes a stored parent ID as executor
+identity. It cannot create a timer or obtain trust. Source-only code does not
+authorize changing a real reservation. The parent-session process lifetime,
+post-turn call admission, terminal observation, timezone correspondence and
+full same-parent wake/stop path remain required integration checks. Deployment
+must first connect state through the shared canonical resolver and explicit
+Setup boundary; injected test paths are not an alternate production state mode.
+Appointment admission checks whole-second schedule precision and the absolute
+occurrence against its named timezone, rejecting ambiguous clock times. UTC
+needs no external timezone data; other zones require the runtime's IANA data.
+Missing data produces an explicit refusal, never an inferred fixed offset.
+An explicitly configured existing TZif directory may supply that data through
+the candidate process's standard `PYTHONTZPATH`; this does not authorize an
+installation or shared environment change. Each production-transport view
+checks the inherited Node runtime's current Intl timezone for ACTIVE admission. Missing or changed
+zone information prevents an ACTIVE mutation; same-host equivalence still
+requires the real-host check.
+Stop-only inspection may retain the original zone as an identity value when
+current zone information is unavailable or has changed. It explicitly marks
+that observation as cleanup-only and can authorize PAUSED, never ACTIVE,
+readiness or a timing decision. Immutable reservation identity and fresh status
+readback remain mandatory, so a timezone problem cannot prevent an otherwise
+admitted same-reservation stop.
+
+The development MCP entry point pins the original Task, existing reservation,
+expected host zone and one scratch store at startup. Its explicit `prepare`
+call accepts only the actual dispatched reviewer IDs and genuine executor
+metadata. It captures their actual turn IDs, reads the current Task basis before
+and after host observation, and exclusively creates the store only for a matching
+PAUSED reservation. It neither creates a reservation nor overwrites existing
+state. Discovery, view and restart never initialize state or start observation.
+This explicit development scratch path is not a production state mode.
+
+Bootstrap failures retain `ok:false,error:"candidate_unavailable"` and add
+only fixed `stage` and `reason` diagnostics. Stages identify request, executor
+admission, host context, the first/second Task-basis read, child/reservation
+read, state creation or service loading. Reasons are explicitly allowlisted
+internal boundary codes; unknown exceptions use `candidate_unavailable`.
+These diagnostics expose no exception text, provider body, path, Task/reviewer
+value or executor metadata and never establish a successful operation.
+Host-call diagnostics distinguish child launch, initialization, unavailable
+response, unconfirmed cleanup, an explicit tool error and an invalid response
+shape using fixed codes. A tool error means only that the host tool reported
+failure; it does not by itself establish a permission denial. The adapter's
+existing general error code and all operation success conditions are preserved.
+Response failures further distinguish deadline expiry, EOF, I/O or size limits,
+invalid JSON/envelopes, unsupported server requests/notifications and validated
+JSON-RPC errors. Only the five standard protocol error categories are named;
+other numeric codes become one generic RPC error. Error messages, data, method
+names and arbitrary codes are never exposed. Each category still fails closed,
+and unconfirmed cleanup takes precedence. An RPC error does not establish a
+permission denial or authorize retry or a different caller.
+
+The closed controls are arm, matching check, healthy rearm and cancellation.
+Appointment calculation belongs to code; callers cannot supply arbitrary rules,
+destinations or downstream tools. Each request verifies its genuine executor
+metadata against the pinned parent, including conflicting recognized identity
+aliases. Accepted metadata is retained unchanged only in memory. For each
+distinct downstream operation, a transient copy removes only the public
+wrapper's call-ID aliases and nested `call.id`, allowing that wrapper to assign
+its own fresh request correlation ID. The outer call ID identifies the outer
+operation and must not cause unrelated child reads or reservation operations
+to be treated as duplicate executions. All executor thread, turn, sender and
+other metadata fields remain unchanged; absent identity is never synthesized.
+This correlation rule does not authorize a retry after rejection, failure or
+an unknown outcome, and does not replay any retained mutation intent. The
+single-operation connectivity relay keeps its separate unchanged-copy rule.
+The embedded `x-codex-turn-metadata` may be an object or JSON text, matching
+the public host wrapper. Both forms must agree with the required primary
+`threadId`; neither supplies a missing identity.
+After a confirmed arm, one session-owned non-LLM worker waits on public child
+status and rereads exact terminal candidates through the controller. It holds
+no writer lease while waiting, uses bounded calls and avoids a busy loop when
+the host returns unchanged results. An optional boolean `cursorReset` in a
+public wait poll is accepted; the returned cursor replaces the old cursor for
+the next wait. This reset neither establishes termination nor relaxes the
+remaining closed response validation. An unconfirmed terminal candidate remains
+eligible for bounded rechecking because wait and read observations may converge
+at different times. SubagentStop need not prove finality.
+
+Parent controls join the prior observer before taking over; stale controls
+that leave a healthy arm active retain observation. EOF cooperatively stops
+and joins observation without implicitly changing the reservation. A dispatched
+host operation completes or retains its pending intent; it is not abandoned as
+if it never ran. Unknown worker cleanup is a failure, not permission to start
+a competing worker. A timer-ready snapshot alone is not a working-observer
+acknowledgement. No source test establishes that the host preserves the MCP
+session or permits its calls after the parent turn ends.
+
+These components emit no supervisor turn or wait-ended usage marker and have
+no dependency on numerical collection. They do not remove or rewrite legacy
+usage evidence. Full integration must retire the supervisor-only invocation
+duty while preserving actual parent/reviewer measurement and historical replay.
+
+<a id="development-direct-review-wake"></a>
+
+#### Development Same-Parent Direct Wake
+
+An explicit human request may select the source-only direct-message experiment
+for one prepared development wait. Its controls are `direct_start`,
+`direct_delete_start` and
+`direct_status` with empty arguments, and `direct_cancel` and `direct_ack` with
+only the generated `probe_id`. No caller supplies a destination, prompt,
+schedule, downstream tool or sender identity. Every control requires genuine
+executor thread metadata; start and acknowledgement additionally require an
+actual executor turn. Recognized aliases must agree. The installed workflow,
+Setup and numerical collection remain unchanged. The approved replacement
+acceptance is deletion followed by direct sending; the earlier shortening
+controls remain available only for their existing separate waits.
+
+Start requires the original current Task basis, a never-armed open wait with no
+pending operation, its same PAUSED reservation, actual reviewer/turn pairs and
+the original current parent turn. One exclusive persistent experiment record
+per prepared wait prevents replay and excludes subsequent timer arm/rearm for
+that wait, including after cancellation or restart. The existing timer's stop
+controls remain available only for the PAUSED-only variant. `direct_start`
+never writes the reservation. `direct_delete_start` instead selects a fresh
+version-two experiment, arms that PAUSED reservation once for a validated
+ten-minute occurrence, and retains its timer lifecycle separately from sending.
+Both variants require a new exclusive marker; neither can reuse an old record.
+
+A session-owned deterministic worker observes the exact dispatched reviewer
+turns and the original parent turn through public reads. Completed, failed and
+interrupted reviewer turns with an idle, unloaded or error-state thread can
+qualify as ended. The parent must be idle with its original turn terminal;
+a later parent turn suppresses the send instead of steering it. Before dispatch,
+recheck current Task basis, the same reservation and cancellation under
+the prepared wait's writer lease. External UI changes are not serialized by
+this local lease; an observation is not a host compare-and-send guarantee.
+For version one, require PAUSED. For version two, require the exact confirmed
+ACTIVE occurrence and recheck the complete reviewer set and idle parent before
+deletion. Persist a deletion intent, invoke public automation delete once, and
+require the exact structured deleted receipt for that identity plus physical
+absence of its documented configuration. An errored view does not prove absence.
+Recheck basis, reviewers, original idle parent, cancellation and deadline after
+deletion before persisting send intent. Preserve confirmed deletion even if
+those later checks suppress the send. Never recreate the deleted reservation.
+
+Persist one send intent before invoking public `send_message_to_thread` with
+the genuine executor context and the per-operation correlation rule above.
+Its fixed visible message identifies the experiment
+and probe and asks the same parent to acknowledge receipt. A validated successful
+MCP response means only `accepted`; an explicit error is `rejected`; a missing,
+malformed or unconfirmed response/cleanup is `unknown`. No outcome authorizes
+automatic resend, another sender, alternate transport or timer fallback.
+
+The separately retained receipt acknowledgement requires the exact probe and a
+new genuine turn of the same parent. It does not derive delivery from response
+prose or timing. Acknowledgement can coexist with an unknown send response and
+cannot be erased by late settlement. A real parent-ended observation, send and
+new-turn acknowledgement establish the bounded experiment's result; fixture
+success or acceptance alone establishes no host resumption guarantee.
+
+Version one stops starting further reads after ten minutes; version two has a
+twenty-minute maximum observation deadline. Its scheduled occurrence remains
+at ten minutes. Once that occurrence is due, do not begin a new deletion/send
+sequence: keep the ACTIVE fallback while observing the actual parent for the
+remaining ten-minute delivery window. Recheck this cutoff immediately before
+deletion intent. If deletion intent was already saved before the cutoff, finish
+its one attempt and, only after confirmation and fresh checks, its one send
+within the outer deadline; do not strand an already deleted reservation merely
+because the delete call crossed its former due time. This is a bounded delivery
+window, not a scheduler delivery guarantee. Final expiry remains explicit failure.
+Both variants stop on cancellation, stale basis,
+changed identities or session EOF. It does not resume observation or replay an
+intent on restart. Version two retains arming/active/deleting/deleted/pausing/
+paused/unknown timer state. Known ACTIVE cleanup makes at most one public pause
+attempt after persisting its intent; unknown or pending mutations receive no
+competing effect. Cancellation, expiry, stale identity/basis and owning EOF
+trigger that bounded cleanup. A new parent turn also suppresses sending and
+cleans up, including a scheduled fallback check; a subsequent wait needs an
+explicit new association. Restart itself only inspects; an admitted explicit
+cancel may clean up a known ACTIVE reservation after acquiring the same writer
+lease. The generic timer controls cannot bypass a version-two marker.
+Once dispatch has begun, cancellation cannot recall it; an
+unsettled intent remains unknown. A bounded join failure reports unknown cleanup.
+An already-running bounded host call must finish or time out before worker
+shutdown; the deadline is not a promise to interrupt that host call instantly.
+Its separate scratch repository retains only closed structural identity,
+timestamps, intent/result, fixed diagnostic codes and acknowledgement fields, never executor metadata,
+prompt, provider body, transcript or usage. The canonical resolver/Setup boundary
+for production integration still applies to this development-only state.
+Setup and observation failures use the same fixed host-boundary diagnostics as
+bootstrap; they do not turn a reported host error into a permission conclusion.
 
 #### Review Wait Usage Marker
 
-In the first turn where the designated supervisor observes the full review set
+For a retained legacy supervisor context only, in the first turn where that
+designated supervisor observes the full review set
 ended and decides whether to shorten the current wait, it invokes the fixed
 `review_handoff.py wait-ended` helper once. The ready shared-file handoff returns
 `wait_ended_command` beside the existing requests and submit command. The parent

@@ -122,7 +122,7 @@ NO_USAGE_ATTEMPT = {"status": "not_attempted", "schema_to": 4,
                     "planned_writes": [], "completed_writes": [], "error": None}
 NO_HOOK_ATTEMPT = {"status": "not_attempted", "planned_writes": [],
                    "completed_writes": [], "trust": "unknown", "next_action": None, "error": None}
-FEATURE_NAMES = ["usage_collection", "verification_runner", "effort_advisory", "viewer_reload"]
+FEATURE_NAMES = ["usage_collection", "verification_runner", "effort_advisory", "viewer_reload", "review_wait"]
 NO_FEATURE_ATTEMPT = {"features": {name: {"requested": None, "selection": "undecided",
     "selection_source": "none", "effective": "unknown", "status": "not_attempted", "error": None}
     for name in FEATURE_NAMES}, "offer": [], "viewer_default_interval_seconds": 30}

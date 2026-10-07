@@ -61,7 +61,8 @@ After core success, use `data.optional_features.offer` to ask only the unresolve
 ON/OFF choices together (or accept deferral). Preserve existing choices; reuse
 answers already given. Explain that new Viewer reload uses 30 seconds, Runner
 ON still needs a separate Task Plan, and usage collection requires user-operated
-hook trust. Apply only explicit answers with the corresponding
+hook trust. Review wait ON enables local policy only and separately needs the
+[project MCP connection](review_wait.md#setup-and-connection). Apply only explicit answers with the corresponding
 [Setup options](cli_contracts.md#setup), using that same answer as authorization;
 no second confirmation is required. Report per-feature selection, effective
 configuration and outcome, not just core `ok`. Unavailable settings need
@@ -484,156 +485,27 @@ conditional procedure applies to both shared-file and direct review transport.
 
 ### Wait Across Parent Turns
 
-For authorized parallel reviews, use the host's same-parent scheduled task and
-subagent facilities. The parent ends its turn after a confirmed ten-minute
-check is armed; reviewers continue. All-ended means every dispatched reviewer
-is terminal, including NG, failure or a missing original, not that review passed.
-At all-ended, shorten the same timer to one minute **once** only when its next
-confirmed occurrence is at least 90 seconds away. Keep a nearer occurrence.
-One minute is a schedule setting, not a 60-second delivery guarantee. The parent
-stops this timer on resumption and handles actual results through the gates below.
-Ordinary questions during healthy waiting do not cancel or reschedule the wait.
-Non-review waits are unchanged.
+For authorized reviews that may outlive this parent turn, use the optional
+[deterministic review-wait service](review_wait.md#review-wait-and-same-parent-resumption). It requires explicit Setup
+selection and an already connected, authorized project MCP server. The parent
+dispatches reviewers directly and retains the Packet, actual handles and
+registration command. No resident coordinating LLM or peer-monitoring reviewer
+is needed.
 
-**One timer writer.** Reuse an executing review supervisor when available;
-otherwise use one bounded host subagent to dispatch and watch this review set.
-This supervisor is necessary on hosts where child completion cannot execute
-code in an idle parent. It adds orchestration work, not an independent review;
-do not claim token savings. It forwards the parent's complete prepared review
-requests unchanged with the project's scope/authority, retains the actual
-returned handles, and observes native completion events. It never judges,
-reconstructs or registers originals, changes Task state, or reads peers' review
-content to produce another review. The parent retains the Packet, original paths
-and registration command. Do not make reviewers check each other once and exit:
-both could see an unfinished peer and miss the last completion.
+Create one PAUSED same-parent reservation, prepare its original Task/reviewer
+association, then explicitly start the deletion workflow. End this turn only
+after the server confirms its ten-minute check is active and its worker alive.
+At all-ended and original-parent idle, it deletes/confirms that reservation and
+sends once. The direct wake is acknowledged in a genuine new turn; it is not
+PASS, a saved original or registration evidence. Unknown effects, interruption
+and restart do not authorize retry or a replacement reservation.
 
-The supervisor alone creates, shortens, pauses and rearms this timer. The parent
-sends check, rearm or cancel control to that existing supervisor using the host's
-subagent controls; it does not issue a competing timer update. Preserve one
-association in their existing host context: Task, Contract, review target, parent
-handle, supervisor and reviewer handles, actual timer ID, fixed destination and
-prompt, current arm ordinal, confirmed due time, and shortening/closed state.
-These are returned handles and session-local coordination, not new taskgov IDs,
-user-entered session identifiers, a database or a daemon. Control carries the
-association and expected arm; an old control cannot modify a later arm.
-
-**Arming a known time.** Use supported public schedule controls and readback.
-When the host exposes actual next-run metadata, retain it with its schedule
-basis. A recurring timer's original `updated_at` is not its next-run time after
-dispatch or retry. Do not read private host databases or infer a periodic series.
-When only configuration readback is available, use a supported fixed wall-clock
-heartbeat whose first occurrence is the chosen ten-minute check: for example,
-daily frequency with one hour, minute and second, and count one, without DTSTART.
-Retain the corresponding date, UTC instant, host time zone/offset and exact rule.
-Confirm that the first future occurrence in the host's time zone matches that
-instant, including a midnight or offset transition. An ambiguous/nonexistent
-local time is not an established due time. The selected occurrence must still
-be future after successful registration and readback; otherwise pause and
-reconcile it, never reinterpret it as tomorrow's check.
-
-Count one is not relied upon for automatic cleanup: a host may calculate another
-occurrence after dispatch. Explicit pause/rearm on the first parent wake is
-required. Retain this first occurrence only for this arm. Once it has arrived,
-do not reinterpret it as tomorrow, infer a later retry, or shorten an unknown
-next occurrence. Let the already-due parent wake reconcile the wait. A host that
-cannot support a known due time or parent wake is an explicit integration
-limitation; preserve existing authorized work without claiming this procedure
-is active or verified. Do not change host trust/settings or invent a tool API.
-
-**Parent handoff.** Give the supervisor the binding, unchanged requests,
-the returned `wait_ended_command`, and a
-fixed prompt that resumes this parent to check this association, request its
-timer's stop, and reconcile actual outcomes. No arbitrary cross-chat send is
-part of this procedure. The supervisor dispatches the reviewers, arms the timer
-and confirms its ID, rule, destination, due time and current arm to the parent.
-Only that acknowledgement permits the parent to end its turn. Unknown dispatch
-or registration requires inspection, not a duplicate launch or new timer.
-
-The supervisor remains available through cleanup. It uses the longest permitted
-native event wait within current tool/execution limits; a mailbox return may be
-intermediate or unrelated. Consume relevant actual completions, and inspect
-status only when those events are insufficient. Avoid routine short progress
-polls. A normal child final/mailbox message is not assumed to wake the idle
-parent; the saved schedule does that. If a host caps event waits, obey its cap
-and disclose that orchestration limitation, not an invented long wait.
-
-**All-ended and control order.** Before any write, process received parent
-control, validate the association/arm and current timer identity, rule and state.
-Confirm that the host time zone still matches the retained occurrence; a changed
-zone or offset basis makes that occurrence uncertain rather than a guessed due time.
-An observed stop/cancel or already-closed wait wins over rearm/shorten. At
-all-ended, latch that fact independently of verdicts. For a still-current,
-unshortened arm with a future confirmed due time, compare due minus current time:
-90 seconds exactly or more permits one public update to a one-minute interval;
-less than 90 seconds does not. Preserve the ID, parent, name, prompt and ACTIVE
-state, then read back. Do not reset a shortened timer on duplicate completion.
-For missing/stale due information, preserve the existing timer and report the
-uncertainty; this is not a successful threshold decision. Never activate a
-PAUSED timer from a late completion, even if that shortens a nominal deadline.
-
-In this first all-ended decision turn, the supervisor runs `wait_ended_command`
-once, including when it keeps a nearer timer or the timer update fails. This
-records only structural numerical attribution for that whole turn. Do not run
-it for dispatch, partial results, periodic checks, duplicate terminal events,
-parent resumption or later cleanup; do not recreate a decision for a closed
-wait. A helper failure or unavailable usage never delays authorized timer
-handling or review recovery, and never authorizes replaying a timer write.
-
-For direct complete-Packet transport, give the supervisor the original complete
-Packet bytes and use the equivalent fixed helper on UTF-8 stdin:
-
-```powershell
-$OutputEncoding = [Console]::InputEncoding = [System.Text.UTF8Encoding]::new($false)
-@'
-<unchanged complete Packet JSON>
-'@ | python .agents/skills/task-governance-tool/scripts/review_handoff.py wait-ended --repo . --from-stdin
-```
-
-On POSIX use `python3` with the same operation and original bytes on stdin.
-No shared file is needed. Do not reconstruct a Packet from excerpts or supply
-session/turn IDs. The helper validates its current basis and emits
-`ok=true,status=review_wait_ended` with actual-sender metadata; that is not host
-completion proof, timer delivery, a saved review, PASS, or guaranteed usage.
-Retain the acknowledgement in the wait context. The parent never executes this
-command when receiving it. Lost/missing/stale metadata remains unknown coverage;
-do not perform a later parent call to fill it. Repeated collection uses original
-response keys and does not add already counted owner/reviewer turns twice.
-
-Serialize writes and await each result. If cancellation arrives during an
-in-flight shortening, the same writer completes/reconciles that operation and
-then pauses; it acknowledges cancellation only after PAUSED readback. An unknown
-response is inspected before any retry. A denial remains a denial of that
-operation; do not switch API/sender/context to circumvent it.
-
-**Parent resumption and closing.** Send the actual heartbeat input time and
-expected association/arm to the supervisor. A duplicate consumed wake or an old
-arm must not trigger a new ten-minute arm. For a healthy unshortened arm, a wake
-timestamp before its confirmed due time cannot authorize rearm. Once all-ended
-is latched, however, the first matching timer wake closes the wait, including a
-shortened wake before the original ten-minute due time or an expiry racing the
-shortening. No further due-time comparison or rearm is needed for that arm.
-Reconcile once with the supervisor. For a current wake, the
-supervisor pauses and reads back before sending a check acknowledgement with
-the real terminal/unfinished state. If healthy work remains, the parent may
-explicitly authorize the next ten-minute arm. Rearm requires that exact temporary
-check acknowledgement and no subsequent all-ended/problem/cancel latch; it
-advances the arm and is acknowledged before the parent ends again. A stale
-healthy decision cannot reopen a closed wait.
-
-All-ended, a handling problem, or user cancellation uses a terminal stop
-acknowledgement instead. It means this writer confirmed PAUSED and closed the
-association; only then may the supervisor finish. The parent processes originals
-or recovery after that acknowledgement. Stopping a wait does not itself cancel
-reviewers, change Task state or broaden a user's cancellation. User scope still
-controls those actions. Missing originals, changed ownership/Contract/target or
-outcomes for A while the parent works on B retain their existing gates and
-association. Do not infer PASS, registration or completion from a wake or stop.
-
-If the supervisor or an acknowledgement is lost, reconcile its actual state and
-outstanding operation first. Do not introduce a second writer until the old
-writer has positively relinquished the association or is confirmed ended with
-its operation settled. Until then, report cleanup as unknown; do not announce a
-stopped timer, rearm, duplicate reviewer dispatch or replay result registration.
+The guide owns configuration, exact controls, fallback/cleanup and subsequent
+unfinished waits. If unavailable, continue permitted review transport and
+state the automatic-resumption limitation. Do not enable settings or substitute
+a supervisor to imply this service is active. Parent/reviewer usage and legacy
+wait-marker history remain preserved; deterministic observation generates no
+supervisor usage turn or `wait-ended` call.
 
 ### Set The Review Target
 

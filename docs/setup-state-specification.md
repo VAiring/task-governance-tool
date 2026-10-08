@@ -777,8 +777,8 @@ no new choice. Same-choice replay preserves bytes when no repair is necessary.
   Already open pages adopt the published setting on their next reload; no
   browser launch or external control is implied.
 - Review wait changes only its local Boolean choice; effective ON means the
-  local prepare/start policy is enabled, not that the host is configured,
-  connected, trusted or authorized to send. Omitted/malformed policy is disabled
+  local wait policy (including compatible prepare/start) is enabled, not that
+  the host is configured, connected, trusted or authorized to send. Omitted/malformed policy is disabled
   at runtime. Setup creates no operational store, reservation or MCP config and
   launches no process. The separately reviewed project MCP configuration uses
   the packaged entry point described in [review waiting](review-completion-specification.md#host-owned-review-waiting).

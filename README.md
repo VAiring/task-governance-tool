@@ -320,7 +320,7 @@ prioritize, synchronize, or create external Issues.
 For a review-before-commit Git workflow (`--kind git_snapshot`), stage exactly the intended project
 changes through the project's own Git process, capture the staged target, use
 the route returned by that same call, and prepare one bounded review packet.
-Use Set The Review Target in the [workflow reference](task-governance-tool/references/task_workflow.md)
+Use Set The Review Target in the [workflow reference](task-governance-tool/references/task_workflow.md#set-the-review-target)
 to combine already authorized staging and target capture with failure guards.
 Interpret its response before proceeding. Run the exact project verification
 outside Taskgov and record its bounded attestation only for
@@ -341,13 +341,12 @@ python .agents/skills/task-governance-tool/scripts/review_handoff.py submit --re
 ```
 
 After successful verification and reviews, use the executable
-Complete Work example in the [workflow reference](task-governance-tool/references/task_workflow.md)
+Complete Work example in the [workflow reference](task-governance-tool/references/task_workflow.md#complete-work)
 for an already authorized commit. It passes the full commit ID to
 `--completion-evidence-kind git_commit --completion-revision` with
 `--verification-complete --review-complete`. A failed completion retains the
 successful commit; recover only the remaining tail after inspecting state.
-Combining caller tool invocations neither grants Git permission nor removes
-internal Git/CLI operations, and is not a measured total-token saving.
+Combining caller tool invocations does not grant Git permission or weaken gates.
 
 The `not_required` and `runner_pass` routes skip the verification and
 Verification Receipt lines above and use the ready Packet from target setting.
@@ -392,11 +391,11 @@ parent uses `review_handoff.py submit` without regenerating original contents or
 writing a collector. It retains originals until the
 registration outcome is known and uses all returned Findings, including low
 severity, for repair. See Prepare And Record Reviews in the
-[workflow reference](task-governance-tool/references/task_workflow.md) for
+[workflow reference](task-governance-tool/references/task_workflow.md#prepare-and-record-reviews) for
 complete-Packet delivery and exceptional recovery. The command
 also continues to accept a single document. It validates each document's exact
 identity and combines only Receipts before the existing atomic writer. The
-[package CLI reference](task-governance-tool/references/cli_contracts.md),
+[package CLI reference](task-governance-tool/references/cli_contracts.md#structured-review-results),
 under Structured Review Results,
 defines the fixed JSON input for one Task, Contract revision, and complete
 review target. Missing bindings or provenance are never inferred. Invalid,
@@ -618,7 +617,7 @@ null does not mean an applied or unlimited limit. Linux/macOS do not apply the
 pair, so no host-specific draft conversion is needed. They enforce per-process
 CPU and wall timeout, not Windows Job memory or simultaneous-process limits.
 See the [OS-specific guarantees](docs/runner-execution-specification.md#approved-os-specific-runner-guarantees)
-and the self-contained example in the [package CLI reference](task-governance-tool/references/cli_contracts.md).
+and the self-contained example in the [package CLI reference](task-governance-tool/references/cli_contracts.md#runner-plan-example-and-os-limits).
 Existing v1 drafts with flat `memory_mib` and `process_limit` remain valid.
 Explicit v2 replace upgrades an existing v1
 Plan while preserving unrelated entry values and bases; other actions preserve
@@ -652,7 +651,7 @@ remains committed and the response returns
 `task_applied_runner_plan_unconfirmed`. Do not rely on Runner execution until a
 later explicit Plan-only `replace`, `rebind`, `detach`, or `disable` succeeds.
 See
-[`task-governance-tool/references/cli_contracts.md`](task-governance-tool/references/cli_contracts.md)
+[`task-governance-tool/references/cli_contracts.md`](task-governance-tool/references/cli_contracts.md#runner-plan-actions)
 for the closed input, result, and error contracts.
 
 ## Immutable Published v0.10.0 Artifact

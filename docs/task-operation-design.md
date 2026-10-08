@@ -762,12 +762,14 @@ wording or treating a local call count as measured LLM token savings.
 
 The common Review And Completion introduction also links
 [host-owned waiting](review-completion-design.md#host-owned-review-waiting)
-for both transport routes. One bounded host supervisor serializes the associated
-timer writes and forwards unchanged independent-review requests; the parent
-retains Task decisions and evidence registration. The workflow owns the complete
-caller protocol without a separate guide lookup. It adds no runtime timer code,
-public taskgov leaf, durable deadline state, host daemon, or host trust/shared-setting
-change. Its conditional usage marker and numerical-only persistence belong to
+for both transport routes. The parent dispatches unchanged independent-review
+requests directly; the project MCP runtime owns the ten-minute check and
+same-parent resumption. The workflow supplies applicability and a direct link
+to `references/review_wait.md#normal-wait`, the single home for the caller
+protocol. Explicit Setup and failure/compatibility paths have separate entries.
+The parent retains Task decisions and evidence registration. This guidance adds
+no public taskgov leaf or host trust/shared-setting change. Retained legacy
+supervisor usage markers and numerical-only persistence belong to
 [Review/completion](review-completion-design.md#review-wait-usage-marker).
 
 Known-review-material aggregation is caller instruction guidance in the separate
@@ -790,8 +792,8 @@ without making both guides ordinary reviewer prerequisites.
 `scripts/read_reference.py` is a standalone standard-library document reader,
 not a taskgov command or runtime dependency. It resolves an existing
 package-relative reference filename and heading/explicit-anchor fragment in
-the shipped workflow, CLI contracts, reconciliation, and optional usage-hook
-references. It returns the selected heading subtree plus
+the shipped workflow, CLI contracts, reconciliation, optional usage-hook and
+review-wait references. It returns the selected heading subtree plus
 ancestor introductions verbatim (line endings normalized to LF), retaining
 links and their source-relative interpretation. Fenced examples are not
 headings. Unknown or ambiguous fragments, invalid filenames, and unreadable
@@ -813,11 +815,18 @@ the existing registration conditions/result. Initial Contract guidance keeps a
 conditional link to its sibling revision procedure. Review target, shared-file
 orchestration, completion and direct transport share the review introduction;
 handoff correction/recovery is outside that subtree. The helper reference
-keeps shared path/validation rules in its introduction and operation-specific
-prepare/read/save/submit details in separate children. Normal links select the
-needed child, not all sibling modes. Retrieval tests exercise these actual
+links from its introduction to a shared path/validation child, so recovery can
+read that boundary without loading operation-specific prepare/read/save/submit
+or compatibility siblings. Manual and structured Verification Receipt entries
+are siblings linked to common basis, coverage, result and recovery rules.
+Normal links select the needed child, not all sibling modes. Retrieval tests exercise these actual
 routes, input/ID/result fields and failure links; semantic review checks the
 retained rules, without a prose classifier or wording-lock tests.
+README operation links use those same section destinations. The repository
+document checker admits the two shipped workflow/CLI references only as link
+targets, with its existing physical-file, encoding and Markdown checks. Their
+headings do not join the repository authority routes or document metrics;
+missing sections still fail closed. Package-internal link checks remain separate.
 
 The package has no separate host-permission guide or approval-tool examples.
 Taskgov-specific write boundaries stay in the CLI operation contracts; uncertain
@@ -833,6 +842,11 @@ steps with immediate native-exit checks (PowerShell) or success-only chaining
 the parent still interprets existing JSON success/partial-success and gate
 outcomes. Isolated example tests execute the documented commands against real
 Git and the public CLI, including stopped tails and recovery without replay.
+Grouped reads and composed shell examples reduce only outer caller invocations:
+stage/target still uses one Git and one CLI call; commit/hash/complete uses two
+Git and one CLI call. Outer calls, internal reads and delivered bytes are distinct
+measurements and do not establish total LLM token savings. This methodology is
+development guidance, not an additional consumer procedure or completion gate.
 
 ### Neutral Forward-Test Boundary
 

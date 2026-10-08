@@ -172,7 +172,7 @@ target-project root; optional branches are read only when their condition occurs
    do not add an LLM reading/conversion step. Otherwise keep the manual form.
    A `fail`, `timeout`, or `partial` Receipt requires a fresh target **before**
    another run can become current; a Receipt cannot override a blocked Runner.
-   See [Receipt conditions](cli_contracts.md#verification-receipt) only for their
+   See [Receipt conditions](cli_contracts.md#verification-receipt-rules) only for their
    exact bounds or a rejected/stale basis.
    The helper replaces the direct Receipt command, not an additional call.
    If direct complete-byte transport is used instead, the existing
@@ -181,7 +181,7 @@ target-project root; optional branches are read only when their condition occurs
    with `handoff.status=ready` (direct CLI: `data.review_preparation.status=ready`); do not
    run a second prepare/show/context. `blocked` or `failed` does not permit
    review continuation. For preparation-only failure or an uncertain response,
-   follow [same-Receipt retry](cli_contracts.md#verification-receipt); never
+   follow [same-Receipt retry](cli_contracts.md#verification-receipt-rules); never
    blindly register the result again.
 7. [Record the actual reviews](#prepare-and-record-reviews) using the returned
    Packet; neither successful route needs standalone Packet preparation.
@@ -486,28 +486,12 @@ conditional procedure applies to both shared-file and direct review transport.
 ### Wait Across Parent Turns
 
 For authorized reviews that may outlive this parent turn, use the optional
-[deterministic review-wait service](review_wait.md#review-wait-and-same-parent-resumption). It requires explicit Setup
-selection and an already connected, authorized project MCP server. The parent
-dispatches reviewers directly and retains the Packet, actual handles and
-registration command. No resident coordinating LLM or peer-monitoring reviewer
-is needed.
-
-Call `review_wait_wait(task_id, reviewer_ids)` once with the original Task and
-actual returned reviewer handles. End this turn only on
-`ok=true,status=waiting,parent_may_end=true`. Reservation creation, preparation,
-start, deletion and receipt observation belong to the service. After direct
-resumption, process the original review results without an ACK or routine
-status/view call. After a healthy unfinished ten-minute check, repeat the same
-wait request; it owns settled cleanup and the next reservation. Unknown effects,
-interruption and restart never authorize a retry or competing wait. A wake or
-receipt is not PASS, an original or registration evidence.
-
-The guide owns configuration, exact controls, fallback/cleanup and subsequent
-unfinished waits. If unavailable, continue permitted review transport and
-state the automatic-resumption limitation. Do not enable settings or substitute
-a supervisor to imply this service is active. Parent/reviewer usage and legacy
-wait-marker history remain preserved; deterministic observation generates no
-supervisor usage turn or `wait-ended` call.
+[normal waiting procedure](review_wait.md#normal-wait). That section owns the
+prerequisites, direct reviewer dispatch, wait/end/resume steps and conditional
+recovery routes for both review transports. The parent retains review judgment,
+originals and registration; waiting does not change review or completion gates.
+It adds no Setup or approval step to ordinary work and does not apply to
+non-review waiting.
 
 ### Set The Review Target
 
@@ -654,10 +638,7 @@ by failed completion leaves a real commit, not an entirely failed operation.
 Resolve the returned gate failure and retry only the necessary completion tail;
 never recommit merely to recover registration. After a lost response, inspect
 Git and public Task state first, preserving any successful completion. New
-approval or unresolved judgment ends the combined call. These examples reduce
-outer tool/LLM round trips only: stage/target remains one Git plus one CLI call;
-commit/hash/complete remains two Git plus one CLI call. They do not establish
-total token savings or weaken any current gate.
+approval or unresolved judgment ends the combined call.
 
 The commit must have exactly one parent equal to the captured base and the same
 tree; root and merge commits do not satisfy a snapshot target. Taskgov does not
@@ -821,8 +802,7 @@ not as guessed inputs. Recover failed, missing or tool-truncated material in
 full; successful siblings need not be repeated. Use individual reads when
 batching cannot deliver complete material. Project AGENTS/authority reread
 rules remain; no fixed file/line cap, summary substitute, reading ledger or
-extra prerequisite is added. Outer calls, internal reads and delivered bytes
-are different measures; fewer calls alone do not prove lower total usage.
+extra prerequisite is added.
 
 Fill the provided `result_template` using `result_instructions` and your actual
 judgment, provenance and every Finding, including exact file/line references.

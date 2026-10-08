@@ -205,6 +205,25 @@ class DocumentContractTests(unittest.TestCase):
             all(set(item) == {"bytes", "lines", "path"} for item in payload["metrics"])
         )
 
+    def test_package_operation_links_validate_real_sections_without_changing_authority(self):
+        with self.fixture() as root:
+            result = contract.check_document_contract(root)
+            self.assertTrue(result.ok, result.issues)
+            self.assertEqual({metric.path for metric in result.metrics}, set(EXPECTED_METRIC_DOCS))
+            self.replace(root, "README.md",
+                         "task-governance-tool/references/task_workflow.md#set-the-review-target",
+                         "task-governance-tool/references/task_workflow.md#missing-operation")
+            self.assertIn("link_anchor", self.codes(contract.check_document_contract(root)))
+        with self.fixture() as root:
+            self.replace(root, "task-governance-tool/references/cli_contracts.md",
+                         "### Runner Plan Actions", "### Renamed Plan Operations")
+            result = contract.check_document_contract(root)
+            self.assertTrue(result.ok, result.issues)
+            self.replace(root, "task-governance-tool/references/cli_contracts.md",
+                         '<a id="runner-plan-actions"></a>',
+                         '<a id="removed-plan-actions"></a>')
+            self.assertIn("link_anchor", self.codes(contract.check_document_contract(root)))
+
     def test_cli_internal_exception_is_sanitized(self):
         secret = "private-internal-exception-sentinel"
         output = io.StringIO()

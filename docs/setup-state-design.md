@@ -603,8 +603,8 @@ is imported. Effort and Viewer reuse their feature readers for validity.
 Viewer toggle publication reuses `publish_setup_viewer` against the existing
 resolved target. No second setup, migration, Runner or collection is launched.
 Review wait stores only its Boolean choice. Its runtime reads that policy on
-prepare/start and fresh basis checks; Setup performs no host configuration or
-operation. The resolver derives its separate operational subtree, which is
+normal wait, compatible prepare/start and fresh basis checks; Setup performs no
+host configuration or operation. The resolver derives its separate operational subtree, which is
 excluded from core backup/recovery inventory and never resumes on restoration.
 
 Feature config application and saved-choice publication are separate. A later

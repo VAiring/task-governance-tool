@@ -92,7 +92,9 @@ confirmation is required.
 |---|---|
 | First use, upgrade, or setup/migration required | [Setup and diagnosis](references/task_workflow.md#first-use-and-optional-diagnosis) |
 | Explicit introduction or diagnosis of numerical usage hooks | [Optional collection hooks](references/usage_hooks.md#optional-usage-collection-hooks) |
-| Authorized reviews that outlive the parent turn, or explicit review-wait Setup | [Deterministic review waiting](references/review_wait.md#review-wait-and-same-parent-resumption) |
+| Authorized reviews that outlive the parent turn | [Normal review waiting](references/review_wait.md#normal-wait) |
+| Explicit review-wait Setup | [Setup and connection](references/review_wait.md#setup-and-connection) |
+| Review-wait failure, stop, diagnosis, or old association | [Wait recovery and compatibility](references/review_wait.md#failures-stop-and-diagnosis) |
 | `project_relocation_required` | [Relocation preview and approval](references/cli_contracts.md#setup) |
 | Explicit diagnosis or state/package error | [Doctor](references/cli_contracts.md#doctor) |
 | Explicit taskization | [Completion-based Task boundaries and registration](references/task_workflow.md#taskize-or-add-scope) |

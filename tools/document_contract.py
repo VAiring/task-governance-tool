@@ -69,6 +69,12 @@ CANONICAL_DOCS = (
     HISTORY_INDEX,
 )
 METRIC_DOCS = CANONICAL_DOCS + (RELEASE_INSTALL, ARTIFACT_AUTHORING)
+# README operation links may target shipped guidance without promoting that
+# guidance into the repository authority or measurement inventory.
+PACKAGE_LINK_TARGETS = (
+    "task-governance-tool/references/task_workflow.md",
+    "task-governance-tool/references/cli_contracts.md",
+)
 
 # These sections are closed authority edges. Their prose and link order are not
 # part of the contract; the required destination set is.
@@ -1387,7 +1393,12 @@ def _heading_slugs(scan: Scan) -> set[str]:
 def _links_and_routes(
     root: Path, scans: dict[str, Scan], issues: list[Issue]
 ) -> None:
-    heading_slugs = {relative: _heading_slugs(scan) for relative, scan in scans.items()}
+    link_scans = dict(scans)
+    for relative in PACKAGE_LINK_TARGETS:
+        document = _read(root, relative, issues)
+        if document is not None:
+            link_scans[relative] = _scan(relative, document[1], issues)
+    heading_slugs = {relative: _heading_slugs(scan) for relative, scan in link_scans.items()}
     for relative, scan in scans.items():
         for link in scan.links:
             if _is_external_target(link.target):
@@ -1404,9 +1415,9 @@ def _links_and_routes(
                 continue
             target_path, fragment = resolved
             if fragment and (
-                target_path not in scans
+                target_path not in link_scans
                 or (
-                    fragment not in scans[target_path].anchors
+                    fragment not in link_scans[target_path].anchors
                     and fragment not in heading_slugs[target_path]
                 )
             ):

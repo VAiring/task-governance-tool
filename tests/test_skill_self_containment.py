@@ -1918,6 +1918,67 @@ print(json.dumps(results, ensure_ascii=False))
         self.assertNotIn("#wait-across-parent-turns", reviewer)
         self.assertNotIn("### Wait Across Parent Turns", reviewer)
 
+    def test_wait_routes_select_normal_setup_failure_and_legacy_responsibilities(self):
+        skill = (SKILL_ROOT / "SKILL.md").read_text(encoding="utf-8")
+        source, normal = self.linked_output("SKILL.md", skill, "normal-wait")
+        workflow = self.reader().read_reference(
+            "references/task_workflow.md#wait-across-parent-turns", SKILL_ROOT)
+        _, routed = self.linked_output("references/task_workflow.md", workflow, "normal-wait")
+        self.assertEqual(routed, normal)
+        for value in ("review_wait_wait(task_id, reviewer_ids)", "/root/...",
+                      "ok=true,status=waiting,parent_may_end=true", "status=reviews_ended"):
+            self.assertIn(value, normal)
+            self.assertNotIn(value, workflow)
+        for fragment in ("setup-and-connection", "failures-stop-and-diagnosis"):
+            _, from_skill = self.linked_output("SKILL.md", skill, fragment)
+            _, conditional = self.linked_output(source, normal, fragment)
+            self.assertEqual(conditional, from_skill)
+            title = next(line for line in conditional.splitlines() if line.startswith("## "))
+            self.assertNotIn(title, normal.splitlines())
+        _, setup = self.linked_output(source, normal, "setup-and-connection")
+        self.assertIn("--timezone", setup)
+        self.assertNotIn("--timezone", normal)
+        _, failure = self.linked_output(source, normal, "failures-stop-and-diagnosis")
+        for control in ("review_wait_inspect(task_id)", "review_wait_stop(task_id)"):
+            self.assertIn(control, failure)
+            self.assertNotIn(control, normal)
+        _, legacy = self.linked_output(source, failure, "record-review-wait-decision")
+        for value in ("wait-ended --repo .", "--from-stdin", "32,768", "execution_id"):
+            self.assertIn(value, legacy)
+            self.assertNotIn(value, normal)
+        usage = self.reader().read_reference("references/usage_hooks.md#coverage-and-recovery", SKILL_ROOT)
+        _, usage_legacy = self.linked_output("references/usage_hooks.md", usage, "record-review-wait-decision")
+        self.assertEqual(usage_legacy, legacy)
+
+    def test_receipt_input_routes_share_basis_and_recovery_without_other_input_body(self):
+        source = "references/cli_contracts.md"
+        manual = self.reader().read_reference(f"{source}#verification-receipt", SKILL_ROOT)
+        _, structured = self.linked_output(source, manual, "structured-verification-result")
+        self.assertNotIn("## Structured Verification Result", manual)
+        self.assertNotIn("## Verification Receipt\n", structured)
+        for option in ("--result pass", "--duration-ms <milliseconds>",
+                       "--scope-coverage full", "--expected-target-generation <generation>"):
+            self.assertIn(option, manual)
+            self.assertNotIn(option, structured)
+        for value in ('"version":1', '"duration_ms":1250', "4,096", "--from-stdin"):
+            self.assertIn(value, structured)
+            self.assertNotIn(value, manual)
+        rules = []
+        for body in (manual, structured):
+            _, common = self.linked_output(source, body, "verification-receipt-rules")
+            rules.append(common)
+            for value in ("data.task.task_id", "data.task.review_target_generation",
+                          "receipt_required", "m21_fallback", "`full`", "`partial`",
+                          "64-bit", "evidence_basis_stale", "data.review_preparation",
+                          "--verification-receipt-id <recorded-id>"):
+                self.assertIn(value, common)
+            for title in ("## Verification Receipt\n", "## Structured Verification Result"):
+                self.assertNotIn(title, common)
+        self.assertEqual(*rules)
+        loop = self.reader().read_reference("references/task_workflow.md#bounded-operating-loop", SKILL_ROOT)
+        _, from_loop = self.linked_output("references/task_workflow.md", loop, "verification-receipt-rules")
+        self.assertEqual(from_loop, rules[0])
+
     def test_helper_stages_keep_common_paths_and_recovery_without_sibling_examples(self):
         source = "references/cli_contracts.md"
         operations = {
@@ -1933,12 +1994,19 @@ print(json.dumps(results, ensure_ascii=False))
                 self.assertIn(heading, body)
                 self.assertIn(operation_input, body)
                 self.assertIn("### Caller-Owned Review Handoff", body)
-                self.assertIn("`.json`", body)
+                _, common = self.linked_output(source, body, "handoff-path-and-validation")
+                for boundary in ("`.json`", "32,768", "--user-approved-reviewer", ".taskgov"):
+                    self.assertIn(boundary, common)
+                self.assertNotIn("#### Handoff Path And Validation", body)
                 self.assertNotIn("--expected-binding", body)
                 for sibling, _ in operations.values():
                     if sibling != heading:
                         self.assertNotIn(sibling, body)
                 _, recovery = self.linked_output(source, body, "recover-review-handoff")
+                _, from_recovery = self.linked_output(source, recovery, "handoff-path-and-validation")
+                self.assertEqual(from_recovery, common)
+                for sibling, _ in operations.values():
+                    self.assertNotIn(sibling, from_recovery)
                 for field in ("--expected-binding", "--verification-receipt-id", "ok:false"):
                     self.assertIn(field, recovery)
 

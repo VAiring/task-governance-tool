@@ -27,6 +27,8 @@ detail are not prerequisites for normal Task work.
     - [Runner Plan example and OS limits](#runner-plan-example-and-os-limits)
   - [`task complete`](#task-complete)
 - [Verification Receipt](#verification-receipt)
+- [Verification Receipt Rules](#verification-receipt-rules)
+- [Structured Verification Result](#structured-verification-result)
 - [Local Handoff Commands](#local-handoff-commands)
 - [Review Commands](#review-commands)
   - [`review prepare`](#review-prepare)
@@ -37,6 +39,7 @@ detail are not prerequisites for normal Task work.
     - [Structured Finding Resolutions](#structured-finding-resolutions)
   - [Structured Review Results](#structured-review-results)
   - [Caller-Owned Review Handoff](#caller-owned-review-handoff)
+    - [Shared path and validation boundary](#handoff-path-and-validation)
     - [Prepare](#prepare-review-handoff)
     - [Read](#read-review-packet)
     - [Save](#save-review-original)
@@ -313,9 +316,11 @@ profile. Usage OFF stops subsequent collection without erasing history or
 changing host trust. Fresh setup creates no hooks until ON; legacy definitions
 remain supported. Preview writes nothing and same-choice replay is idempotent.
 
-Review wait saves only local prepare/start policy; ON does not establish host
-configuration, permission or connection. Follow [review waiting](review_wait.md#review-wait-and-same-parent-resumption)
-when explicitly configuring or using it. OFF preserves inspection and cleanup.
+Review wait saves only local wait policy, including compatible prepare/start;
+ON does not establish host configuration, permission or connection. For explicit
+configuration use [Setup and connection](review_wait.md#setup-and-connection);
+ordinary use follows [normal waiting](review_wait.md#normal-wait).
+OFF preserves inspection and cleanup.
 
 `optional_features` has `features` (five entries named `usage_collection`,
 `verification_runner`, `effort_advisory`, `viewer_reload`, `review_wait`), `offer` (unresolved
@@ -850,7 +855,7 @@ For `review_target_required`, prepare the exact material and
 means the retained basis cannot authorize new evidence or completion; use a
 fresh target, never attach an earlier run to it. For
 `verification_receipt_required` or `verification_receipt_blocking`, follow the
-[Verification Receipt conditions](#verification-receipt), including fresh-target
+[Verification Receipt conditions](#verification-receipt-rules), including fresh-target
 requirements after failed, timed-out, or partial verification. A blocked Runner
 cannot be overridden by a manual Receipt. For new target operations, use their
 returned route as specified by the [normal loop](task_workflow.md#bounded-operating-loop).
@@ -1220,24 +1225,37 @@ an explicit reason and approval. `commit_not_required` requires a matching
 
 ## Verification Receipt
 
-After setting the exact review target, record one caller-attested aggregate
-result for a Task with a verification expectation that is nonempty after
-trimming only after running the governed verification outside taskgov on marker
-`0` or the exact-current closed no-launch `m21_fallback`:
+Use this manual form after the governed verification has run, under the
+[shared Receipt rules](#verification-receipt-rules) for Task/generation sources,
+eligibility, coverage, results and recovery:
 
 ```powershell
 python .agents/skills/task-governance-tool/scripts/taskgov.py verification receipt add --repo <target-project> <task-id> --result pass --duration-ms <milliseconds> --scope-coverage full --expected-target-generation <generation> --json
 ```
 
+All four result options are required. If the external verifier already emits
+the fixed [structured result](#structured-verification-result), use that sibling
+input route instead; do not transcribe its fields or combine the two forms.
+
+## Verification Receipt Rules
+
+These rules apply to both [manual input](#verification-receipt) and an already
+[structured verifier result](#structured-verification-result). After setting the
+exact review target, record one caller-attested aggregate result only after
+running the governed verification outside taskgov on marker `0` or the
+exact-current closed no-launch `m21_fallback`, for a Task with a verification
+expectation that is nonempty after trimming.
+
 The normal trigger is `data.verification_route=receipt_required` in the
 successful `review target set` response. Take `<task-id>` from its
 `data.task.task_id` and `<generation>` from `data.task.review_target_generation`.
 Use the actual run's result, measured duration and confirmed coverage; a PASS
-alone never establishes full coverage. Other routes are handled in
+alone never establishes full coverage. `full` covers the entire exact current
+Task verification expectation; partial runs do not combine into full coverage.
+Other routes are handled in
 [target selection](#review-target), without another `task show`.
 
-The four options are required unless `--from-stdin` supplies the fixed
-[structured result](#structured-verification-result). `result` is `pass`, `fail`, or `timeout`;
+`result` is `pass`, `fail`, or `timeout`;
 `scope-coverage` is `full` or `partial`; duration is a nonnegative signed-
 64-bit millisecond value; and expected generation is the positive generation
 returned by target set. `--command-label` is not accepted and no caller subject
@@ -1302,13 +1320,16 @@ For explicit Receipt inspection use [task show](#task-show), not a new command.
 
 <a id="structured-verification-result"></a>
 
-### Structured Verification Result
+## Structured Verification Result
 
 When an external verifier already emits this fixed format, send its stdout
 unchanged to `verification receipt add <task-id> --from-stdin --json`. The
 registration replaces the four individual result options; it does not add a
 normal-loop call, launch verification, or require the LLM to read/convert the
 result. Keep other verification tools on the existing manual attestation path.
+Use the [shared Receipt rules](#verification-receipt-rules) for the Task ID and
+generation source, field bounds, eligibility, binding, coverage and result/
+uncertain-outcome recovery; the input mode changes none of them.
 
 ```json
 {"version":1,"task_id":"tg_task_0123456789abcdef","result":"pass","duration_ms":1250,"scope_coverage":"full","expected_target_generation":1}
@@ -1888,6 +1909,9 @@ Use the relevant operation below; generated read/save/submit commands already
 supply their actual paths and need no routine reference lookup. Stop on failed,
 missing or uncertain output and follow [handoff recovery](#recover-review-handoff),
 preserving originals/residue without overwriting or blindly repeating writes.
+Each operation retains the [shared path and validation boundary](#handoff-path-and-validation).
+
+#### Handoff Path And Validation
 
 All Packet/result paths must be untracked, Git-ignored `.json` files within the
 explicit project and physical directories. Only prepare creates its explicitly
@@ -1989,7 +2013,7 @@ the MCP service uses it internally for the original Task's current basis.
 
 Only a retained legacy wait supervisor uses `wait-ended`, once in its first
 all-ended/shortening-decision turn. The current
-[waiting procedure](task_workflow.md#wait-across-parent-turns) is deterministic
+[waiting procedure](review_wait.md#normal-wait) is deterministic
 and never invokes this helper or fabricates a supervisor usage turn. Normal
 preparation does not generate this legacy command. For that existing supervisor
 context only, use the original project's retained Packet path:
@@ -2009,6 +2033,8 @@ Success is `{ok:true,status:"review_wait_ended",review_wait}`. The metadata has
 `version:1`, actual `session_id`, `project_id`, `task_id`, `execution_id`,
 `contract_revision`, four-field `review_target`, and `artifact_manifest_id`.
 The helper best-effort registers that sender for optional usage collection.
+Coverage is only that decision turn, not the whole wait or the receiving
+parent's turn.
 It does not initialize/migrate usage state, read logs, operate timers, save a
 review or write Task evidence. Numerical failure does not invalidate a validated
 marker or block ordinary review/completion. Only explicit setup upgrades an
@@ -2098,7 +2124,7 @@ python .agents/skills/task-governance-tool/scripts/review_handoff.py prepare --r
 python .agents/skills/task-governance-tool/scripts/review_handoff.py prepare --repo . --directory reviews/recovery recover <task-id> --verification-receipt-id <recorded-id>
 ```
 
-Keep the shared [path/validation boundary](#caller-owned-review-handoff).
+Keep the shared [path/validation boundary](#handoff-path-and-validation).
 Use the saved binding or Receipt ID; never replay a successful source write.
 Unknown/lost source or submission outcomes require public-state inspection first.
 For corrections or alternative actual Receipt declarations, use
@@ -2155,7 +2181,7 @@ Source: <kind>/generation <generation>
 
 It is followed by `Review preparation: <ready|blocked|failed>` and the Packet
 text or sanitized code/message lines. JSON additionally returns
-`data.review_preparation` as described under [Verification Receipt](#verification-receipt).
+`data.review_preparation` as described under [Receipt rules](#verification-receipt-rules).
 The Packet component keeps the standalone 32,768-byte envelope check; the
 combined output also includes the bounded Receipt/status and is not subject
 to a new combined 32,768-byte cap.

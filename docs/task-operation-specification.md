@@ -894,20 +894,20 @@ global Merge.
 
 ### Active Instruction-Layer Boundary
 
-Review orchestration uses the existing host timer and bounded supervisor as
-described by
+The parent directly dispatches authorized independent reviews; the optional
+project MCP service owns the ten-minute check and same-parent resumption under
 [Review/completion](review-completion-specification.md#host-owned-review-waiting).
-The parent ends its turn between scheduled checks; the same wait may shorten
-its next check under the owner's 90-second rule. This is caller guidance, not
-a new Skill trigger, taskgov call or completion gate. Host limits, authorization,
-and current execution rules remain controlling; ordinary non-review waits and
-the independent reviewer's role do not change.
+The normal waiting section owns the caller protocol and its prerequisites;
+Setup, failures and retained legacy controls are conditional routes. No resident
+supervisor is needed. This adds no Skill trigger, taskgov call or completion
+gate. Host limits, authorization and current execution rules remain controlling;
+ordinary non-review waits and the independent reviewer's role do not change.
 
 Package explanation retrieval may replace whole-reference reads or line-range
 searches with `scripts/read_reference.py "references/<file>.md#<section>"`.
 The supported files are the shipped workflow, CLI contracts, conditional
-reconciliation, and optional usage-hook references. The complete selected section and ancestor
-introductions are returned as UTF-8 text without truncation; applicable linked
+reconciliation, optional usage-hook and review-wait references. The complete
+selected section and ancestor introductions are returned as UTF-8 text without truncation; applicable linked
 requirements still need reading. The caller chooses the existing link, not a
 new operation taxonomy. Invalid/unavailable sections return failure with no
 document body, never an unrelated whole reference. This is an optional document
@@ -946,8 +946,10 @@ reader behavior, or gate is introduced. Compare actual reader output, including
 ancestor introductions and descendants, rather than file length alone.
 
 Operation entries distinguish single registration from structured batch input,
-initial Contract creation from later semantic revision, and shared-file review
-from direct complete-byte transport. Shared rules remain on the applicable
+initial Contract creation from later semantic revision, manual Verification
+Receipt input from an already structured verifier result, and shared-file review
+from direct complete-byte transport. Receipt input routes link directly to shared
+basis, coverage, result and recovery rules. Shared rules remain on the applicable
 path; conditional input, correction and recovery detail is linked at its trigger
 rather than inherited by unrelated ordinary operations. Helper preparation,
 reviewer read/save and parent submission have separate detail entries. This

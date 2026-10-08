@@ -907,6 +907,12 @@ Setup, failures and retained legacy controls are conditional routes. No resident
 supervisor is needed. This adds no Skill trigger, taskgov call or completion
 gate. Host limits, authorization and current execution rules remain controlling;
 ordinary non-review waits and the independent reviewer's role do not change.
+Each parent review-transport procedure links directly to normal waiting; the
+older workflow bridge remains a compatible entry, not an intermediate normal
+read. The bounded operating loop owns selection/ownership response handling and
+the shared Tier, current-generation, Finding and independence rules. The Skill
+entry and review ancestor introduction retain concise routing to that existing
+loop, preserving conditions without another mandatory read or call.
 
 Package explanation retrieval may replace whole-reference reads or line-range
 searches with `scripts/read_reference.py "references/<file>.md#<section>"`.

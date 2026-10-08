@@ -1009,7 +1009,10 @@ class SkillSelfContainmentTests(unittest.TestCase):
         contracts = (SKILL_ROOT / "references" / "cli_contracts.md").read_text(encoding="utf-8")
         readme = (ROOT / "README.md").read_text(encoding="utf-8")
         self.assertIn("deterministic review and evidence gates", skill_md)
-        self.assertIn("task current", skill_md)
+        # Operation detail is kept in the linked loop rather than duplicated
+        # in the entry; retrieval tests also resolve that actual section.
+        self.assertIn("references/task_workflow.md#bounded-operating-loop", skill_md)
+        self.assertIn("task current", workflow)
         self.assertIn("two distinct", skill_md)
         for text in (workflow, contracts):
             self.assertIn("--verification-complete", text)
@@ -1888,6 +1891,9 @@ print(json.dumps(results, ensure_ascii=False))
         for body in (shared, direct):
             self.assertIn("## Review And Completion", body)
             self.assertIn("`changes_requested`", body)
+            _, loop = self.linked_output(source, body, "bounded-operating-loop")
+            self.assertEqual(loop, self.reader().read_reference(f"{source}#bounded-operating-loop", SKILL_ROOT))
+            self.assertNotIn("## Bounded Operating Loop", body)
             self.linked_output(source, body, "repair-findings")
             _, recovery = self.linked_output(source, body, "review-handoff-recovery")
             self.assertNotIn("## Review Handoff Recovery", body)
@@ -1928,13 +1934,17 @@ print(json.dumps(results, ensure_ascii=False))
 
     def test_both_parent_transports_route_to_complete_wait_protocol(self):
         source = "references/task_workflow.md"
-        waiting = self.reader().read_reference(f"{source}#wait-across-parent-turns", SKILL_ROOT)
+        waiting = self.reader().read_reference("references/review_wait.md#normal-wait", SKILL_ROOT)
         for fragment in ("prepare-and-record-reviews", "direct-review-transport"):
             with self.subTest(transport=fragment):
                 parent = self.reader().read_reference(f"{source}#{fragment}", SKILL_ROOT)
-                _, routed = self.linked_output(source, parent, "wait-across-parent-turns")
+                _, routed = self.linked_output(source, parent, "normal-wait")
                 self.assertEqual(routed, waiting)
+                self.assertNotIn("#wait-across-parent-turns", parent)
                 self.assertNotIn("### Wait Across Parent Turns", parent)
+        bridge = self.reader().read_reference(f"{source}#wait-across-parent-turns", SKILL_ROOT)
+        _, retained = self.linked_output(source, bridge, "normal-wait")
+        self.assertEqual(retained, waiting)
         reviewer = self.reader().read_reference(f"{source}#independent-reviewer", SKILL_ROOT)
         self.assertNotIn("#wait-across-parent-turns", reviewer)
         self.assertNotIn("### Wait Across Parent Turns", reviewer)

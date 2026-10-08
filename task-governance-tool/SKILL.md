@@ -57,23 +57,10 @@ fail without a whole-file fallback. This replaces a document read, not a
 taskgov call or additional prerequisite. Direct file reading remains valid.
 
 Read the [bounded operating loop](references/task_workflow.md#bounded-operating-loop)
-for ordinary work. It owns the normal sequence from `task context` through
-verification and review gates to completion. `task context` takes **no Task ID**;
-use `data.selected.task.task_id` from its successful response for later
-`task edit`, `task show`, and other Task-addressed calls. Successful
-`selection=none` means no actionable work; `ok=false` is a failed read, not
-permission to guess another Task.
-
-The context already contains the full Task Contract, checkpoint, and current
-gates. Do not add current/next/show reads to reconstruct it. `task current`
-remains available for explicit held-work inspection. `paused_tasks_present`
-is an advisory, not another normal read.
-
-Caller ownership is automatic; do not obtain or supply session IDs. Context
-resumes only this caller's owned work, then selects ready work. For an unknown
-owner or an ownership rejection, use the conditional
-[pause/recovery guidance](references/task_workflow.md#pause-resume-and-block);
-never bypass it by changing environment values or replaying a stale write.
+for ordinary work, from selection through verification and review gates to completion.
+`task context` takes **no Task ID**; the loop owns its response use, automatic
+ownership and conditional recovery. Retain the selected context for later
+operations.
 
 Edit, completion, and target-set acknowledgements omit unchanged description,
 verification, kind/lane/order, priority, tags and creation time. Retain them from

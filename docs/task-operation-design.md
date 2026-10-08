@@ -762,13 +762,19 @@ new taskgov command or scheduler. Representative transport tests and
 semantic review check these instructions rather than matching natural-language
 wording or treating a local call count as measured LLM token savings.
 
-The common Review And Completion introduction also links
+Each parent review-transport entry links directly to
 [host-owned waiting](review-completion-design.md#host-owned-review-waiting)
 for both transport routes. The parent dispatches unchanged independent-review
 requests directly; the project MCP runtime owns the ten-minute check and
 same-parent resumption. The workflow supplies applicability and a direct link
 to `references/review_wait.md#normal-wait`, the single home for the caller
 protocol. Explicit Setup and failure/compatibility paths have separate entries.
+The older `wait-across-parent-turns` anchor remains compatible; ordinary
+transport entries do not route through it. Selection/ownership response use
+and shared review gates live in the already-read bounded operating loop. The
+Skill start entry and inherited Review And Completion introduction are concise
+routes to that loop, rather than repeated copies of its detail. The reader
+continues to return complete ancestor introductions and applicable subtrees.
 The parent retains Task decisions and evidence registration. This guidance adds
 no public taskgov leaf or host trust/shared-setting change. Retained legacy
 supervisor usage markers and numerical-only persistence belong to

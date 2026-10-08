@@ -105,6 +105,17 @@ do not turn them into a question, handoff, pause, blocker, or routine stop.
 Use this normal no-finding Tier 2 task sequence. Examples run from the
 target-project root; optional branches are read only when their condition occurs.
 
+Both review transports use these shared gates: Tier 2 normally requires two
+distinct independent PASS receipts for the exact current target/generation.
+Taskgov evaluates qualifying PASS and `changes_requested` receipts only for that
+current basis; `changes_requested` blocks completion. Unresolved high/medium
+Findings from any recorded generation also block; low Findings alone do not.
+Use [Repair Findings](#repair-findings) for corrections and the
+[isolated reopen procedure](#reopen) for approved follow-up to a done Task.
+Distinct reviewer keys prove distinct stored strings, not distinct people,
+LLMs, machines, independent processes, independence or authenticated provenance.
+Caller declarations do not prove actual model/Skill use or review truth.
+
 1. Immediately after registration, use its ready `context_preparation.context`
    as the context below, without another read. Otherwise select or resume with
    **no Task ID argument**:
@@ -114,14 +125,19 @@ target-project root; optional branches are read only when their condition occurs
    ```
 
    On `ok=true`, use `data.selected.task.task_id` as `<task-id>` below.
-   The tool resumes the first `in_progress` or `review_pending` Task, otherwise
-   selects the first ready candidate. `data.current` recalls held work;
+   The tool resumes this caller's first owned `in_progress` or `review_pending`
+   Task, otherwise selects the first ready candidate. `data.current` recalls held work;
    `data.selected` provides the complete Contract, latest checkpoint, and gates.
    Do not reread current/next/show. `selection=none` is successful absence;
    `ok=false` stops selection rather than falling through to another candidate.
    For explicit inspection of a known Task only, `task show <task-id>` requires
    that returned ID; [audit](cli_contracts.md#task-audit-detail) is historical
    investigation, never another normal read or current completion evidence.
+   `task current` remains available for explicit held-work inspection;
+   `paused_tasks_present` is an advisory, not another normal read.
+   Caller ownership is automatic; do not obtain or supply session IDs. For an
+   unknown owner or ownership rejection, use [pause/recovery](#pause-resume-and-block),
+   never changed environment values or replay of a stale write.
 2. If `data.selected.task.status=ready` and its implementation is authorized,
    start that Task:
 
@@ -463,25 +479,10 @@ durable or the user explicitly accepts forgetting risk.
 
 ## Review And Completion
 
-Follow the [normal loop](#bounded-operating-loop) for sequencing. Use the
-applicable subsection below for exact target, review, completion, or repair work.
-Current-generation `changes_requested` receipts or unresolved high/medium
-Findings stop completion; use [Repair Findings](#repair-findings). Low Findings
-alone do not stop completion; the same repair route remains available.
-Reopening a done Task requires approved
-follow-up work and the [isolated reopen procedure](#reopen).
-
-Tier 2 normally requires two distinct independent PASS receipts for the exact
-current target/generation. Taskgov deterministically evaluates qualifying PASS
-receipts and changes-requested receipts only for the current review target and
-generation. Any unresolved high or medium finding from any recorded generation
-still blocks. Distinct reviewer keys prove distinct stored strings, not distinct
-people, LLMs, machines, independent processes, independence, or authenticated
-provenance. Caller declarations do not prove actual model/Skill use or review truth.
-
-Before dispatching authorized parallel reviews that will outlive this parent
-turn, follow [waiting across parent turns](#wait-across-parent-turns). This
-conditional procedure applies to both shared-file and direct review transport.
+Follow the [normal loop](#bounded-operating-loop) for sequencing and shared
+review gates. Use the applicable procedure below; for `changes_requested` or
+Findings use [Repair Findings](#repair-findings), and for approved follow-up to
+a done Task use the [isolated reopen procedure](#reopen).
 
 ### Wait Across Parent Turns
 
@@ -556,6 +557,9 @@ use the separate [reviewer procedure](#independent-reviewer), not this section
 or target-setting/completion instructions. Unknown or different review roles
 retain the full Packet and the [direct route](#direct-review-transport); do not
 classify them from a Task tier or allocated reviewer count.
+
+Before dispatching authorized reviews that may outlive this parent turn, use
+the [normal waiting procedure](review_wait.md#normal-wait) directly.
 
 For shared-file transport, start with `review_handoff.py prepare` at the
 [target step](#set-the-review-target), following the normal loop.
@@ -674,9 +678,8 @@ Maintenance warnings preserve the successful business result; follow
 ### Direct Review Transport
 
 Use this alternative only when supplying complete Packet/result bytes instead
-of the shared-file preparation route. The shared current-target independence
-and Finding gates above apply equally; this transport does not change them.
-Follow the [normal loop](#bounded-operating-loop)
+of the shared-file preparation route. The [normal loop](#bounded-operating-loop)
+owns the shared current-target independence and Finding gates. Follow it
 with direct `review target set <task-id> --kind git_snapshot --json` and, only
 for `receipt_required`, `verification receipt add` instead of the helper.
 Use the returned target generation and route; never invoke both transports for
@@ -701,7 +704,9 @@ Task/Contract/target prompts from separate reads. The command launches no
 reviewer and stores no packet/result. Use the Packet's `review_target`,
 `contract.revision`, and `task.task_id` for result binding. Standalone
 preparation success by itself is not verification gate success.
-Follow its target-kind inspection instruction:
+Before dispatching authorized reviews that may outlive this parent turn, use
+the [normal waiting procedure](review_wait.md#normal-wait) directly.
+Follow the Packet's target-kind inspection instruction:
 
 - `git_snapshot`: matching stage-0 index against the stored base, never
   unstaged or untracked worktree material;

@@ -1,8 +1,14 @@
+import errno
+import io
+import json
+import os
 import subprocess
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 from unittest import mock
+from contextlib import redirect_stderr, redirect_stdout
 
 
 try:
@@ -10,15 +16,18 @@ try:
         file_snapshot,
         json_payload,
         make_physical_install,
+        tree_snapshot,
     )
 except ModuleNotFoundError:
     from tests.m14_test_support import (
         file_snapshot,
         json_payload,
         make_physical_install,
+        tree_snapshot,
     )
 
 from task_governance_tool import doctor as doctor_service
+from task_governance_tool import cli
 from task_governance_tool import project_scope as project_scope_service
 from task_governance_tool import setup as setup_service
 from task_governance_tool.completion import safe_git_environment
@@ -80,6 +89,170 @@ class ProjectScopeStatePathTests(unittest.TestCase):
                 before = file_snapshot(repo)
                 self.assertFalse(project_scope_service._state_path_is_valid(skill, repo))
                 self.assertEqual(before, file_snapshot(repo))
+
+
+class ProjectRootDiagnosisTests(unittest.TestCase):
+    commands = (
+        ("task", "context"),
+        ("task", "add", "--title", "Must not be recorded"),
+        ("doctor",),
+        ("setup", "--read-only"),
+        ("setup",),
+    )
+    inaccessible_message = (
+        "project root could not be inspected safely; "
+        "check access permissions and execution context"
+    )
+
+    def run_cli(self, install, command, repo, *, as_json=True):
+        stdout, stderr = io.StringIO(), io.StringIO()
+        with (
+            mock.patch.object(cli, "cli_script_path", return_value=install.entrypoint),
+            redirect_stdout(stdout), redirect_stderr(stderr),
+        ):
+            code = cli.main([
+                *command, "--repo", str(repo), *(["--json"] if as_json else []),
+            ])
+        return code, stdout.getvalue(), stderr.getvalue()
+
+    def assert_failure(self, install, command, repo, expected):
+        code, output, error = self.run_cli(install, command, repo)
+        self.assertEqual(code, 2)
+        self.assertEqual(error, "")
+        payload = json.loads(output)
+        self.assertEqual(set(payload), {"ok", "command", "project_id", "data", "warnings", "errors"})
+        self.assertFalse(payload["ok"])
+        self.assertIsNone(payload["project_id"])
+        message = (self.inaccessible_message if expected == "project_root_uninspectable"
+                   else "project root must be an existing directory")
+        self.assertEqual(payload["errors"], [{"code": expected, "message": message}])
+        self.assertEqual(payload["warnings"], [])
+        self.assertNotIn(str(install.project_root), output)
+        self.assertNotIn("private-detail", output)
+        if command == ("task", "context"):
+            self.assertEqual(payload["data"], {
+                "selection": "none", "current": None, "next": None, "selected": None,
+            })
+        if command == ("doctor",):
+            data = payload["data"]
+            self.assertFalse(data["setup_eligible"])
+            self.assertEqual(data["components"]["project_state"]["code"],
+                "project_uninspectable" if expected == "project_root_uninspectable" else "invalid_project")
+            for key in ("task_summary", "handoff_delivery", "maintenance"):
+                self.assertEqual(data["components"][key], {"code": "unavailable"})
+
+    def test_missing_non_directory_and_invalid_path_are_not_access_failures(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            install = make_physical_install(Path(tmp))
+            file = Path(tmp) / "file"
+            file.write_text("fixture", encoding="utf-8")
+            before = tree_snapshot(Path(tmp))
+            for repo in (Path(tmp) / "missing", file, file / "child", "invalid\0path"):
+                for command in self.commands:
+                    with self.subTest(repo=str(repo), command=command):
+                        self.assert_failure(install, command, repo, "invalid_project_root")
+            self.assertEqual(tree_snapshot(Path(tmp)), before)
+
+    def test_strict_resolution_failures_are_fixed_and_never_reach_state(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            install = make_physical_install(Path(tmp))
+            before = tree_snapshot(install.project_root)
+            original = Path.resolve
+            for failure in (PermissionError, OSError, RuntimeError, FileNotFoundError, NotADirectoryError):
+                expected = ("invalid_project_root" if failure in (FileNotFoundError, NotADirectoryError)
+                            else "project_root_uninspectable")
+
+                def resolve(path, strict=False):
+                    if path == install.project_root and strict:
+                        raise failure("private-detail")
+                    return original(path, strict=strict)
+
+                with (
+                    mock.patch.object(Path, "resolve", resolve),
+                    mock.patch.object(project_scope_service, "_state_path_is_valid") as state,
+                    mock.patch.object(project_scope_service, "_state_is_ignored") as ignore,
+                    mock.patch.object(cli, "resolve_project_state") as resolver,
+                    mock.patch.object(doctor_service, "resolve_project_state") as doctor_resolver,
+                    mock.patch.object(setup_service, "resolve_setup_project_state") as setup_resolver,
+                ):
+                    for command in self.commands:
+                        with self.subTest(failure=failure.__name__, command=command):
+                            self.assert_failure(install, command, install.project_root, expected)
+                    for guarded in (state, ignore, resolver, doctor_resolver, setup_resolver):
+                        guarded.assert_not_called()
+                self.assertEqual(tree_snapshot(install.project_root), before)
+
+    @unittest.skipUnless(os.name == "nt", "Windows native invalid-name semantics")
+    def test_windows_invalid_names_return_invalid_root_without_changes(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            install = make_physical_install(Path(tmp))
+            before = tree_snapshot(install.project_root)
+            for name in ("<bad>", "bad|name"):
+                for command in self.commands:
+                    with self.subTest(name=name, command=command):
+                        self.assert_failure(install, command, install.project_root / name, "invalid_project_root")
+            self.assertEqual(tree_snapshot(install.project_root), before)
+
+    def test_only_explicit_windows_invalid_name_proves_invalid_path(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            install = make_physical_install(Path(tmp))
+            before = tree_snapshot(install.project_root)
+            invalid_name = OSError(errno.EINVAL, "private-detail")
+            invalid_name.winerror = 123
+            for failure, expected in (
+                (invalid_name, "invalid_project_root"),
+                (OSError(errno.EINVAL, "private-detail"), "project_root_uninspectable"),
+                (PermissionError(errno.EACCES, "private-detail"), "project_root_uninspectable"),
+            ):
+                with mock.patch.object(project_scope_service, "_physical_directory", side_effect=failure):
+                    for command in self.commands:
+                        with self.subTest(expected=expected, command=command):
+                            self.assert_failure(install, command, install.project_root, expected)
+            self.assertEqual(tree_snapshot(install.project_root), before)
+
+    def test_metadata_and_lexical_failures_do_not_claim_absence(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            install = make_physical_install(Path(tmp))
+            before = tree_snapshot(install.project_root)
+            original = project_scope_service.os.lstat
+            # Exercise actual metadata code, including the ancestor-link scan.
+            for denied in (install.project_root, install.project_root.parent):
+                def lstat(path, *args, **kwargs):
+                    if Path(path) == denied:
+                        raise PermissionError("private-detail")
+                    return original(path, *args, **kwargs)
+
+                with mock.patch.object(project_scope_service, "os", SimpleNamespace(
+                    path=project_scope_service.os.path, lstat=lstat,
+                )):
+                    for command in self.commands:
+                        with self.subTest(denied=denied.name, command=command):
+                            self.assert_failure(install, command, install.project_root, "project_root_uninspectable")
+            with mock.patch.object(project_scope_service, "_absolute_lexical_path", side_effect=RuntimeError("private-detail")):
+                self.assert_failure(install, ("task", "context"), install.project_root, "project_root_uninspectable")
+                code, output, error = self.run_cli(install, ("task", "context"), install.project_root, as_json=False)
+                self.assertEqual(code, 2)
+                self.assertIn(self.inaccessible_message, output + error)
+                self.assertNotIn("private-detail", output + error)
+                self.assertNotIn(str(install.project_root), output + error)
+            self.assertEqual(tree_snapshot(install.project_root), before)
+
+    def test_valid_context_needs_no_doctor_or_ignore_operation(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            install = make_physical_install(Path(tmp))
+            code, output, _ = self.run_cli(install, ("setup",), install.project_root)
+            self.assertEqual(code, 0, output)
+            before = tree_snapshot(install.project_root)
+            with (
+                mock.patch.object(doctor_service, "run_doctor") as doctor,
+                mock.patch.object(project_scope_service, "_state_is_ignored") as ignore,
+            ):
+                code, output, _ = self.run_cli(install, ("task", "context"), install.project_root)
+                self.assertEqual(code, 0, output)
+                self.assertTrue(json.loads(output)["ok"])
+                doctor.assert_not_called()
+                ignore.assert_not_called()
+            self.assertEqual(tree_snapshot(install.project_root), before)
 
 
 class ProjectScopeIgnoreTests(unittest.TestCase):

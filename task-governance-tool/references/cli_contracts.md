@@ -2280,6 +2280,17 @@ project/state resolution with exit 1,
 `--confirm-relocation cannot be used with --read-only`.
 
 Correct an observed command/argument mismatch against its command section.
+`invalid_project_root` means the supplied root is missing, not a directory, or
+an invalid path. `project_root_uninspectable` instead means root inspection or
+normalization could not finish. Its fixed message is `project root could not be
+inspected safely; check access permissions and execution context`. Do not infer
+that the project is absent or initialize a replacement. Check the execution
+context and access boundary without quoting OS exceptions or automatically
+elevating or changing permissions. These errors return exit 2 with no project
+state access/write. Doctor uses `project_state.code="project_uninspectable"`
+for the latter and `setup_eligible=false`; a further doctor call is not required
+to obtain the same diagnosis. Successful Task work still needs no doctor.
+
 `internal_error` alone does not establish a syntax error or an instruction
 defect: the cause may be in the environment or internal processing. Report the
 sanitized failure and keep the cause unconfirmed until relevant read-only

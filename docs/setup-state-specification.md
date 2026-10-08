@@ -91,6 +91,7 @@ Fatal rows use exit 2 and these component/error mappings:
 | WAL header/sidecar | `unsupported_journal` | `unsupported_journal_mode` |
 | linked/competing/unsupported layout | `invalid_layout` | `unsupported_install_layout` |
 | invalid/missing project | `invalid_project` | `invalid_project_root` |
+| project root cannot be inspected or normalized | `project_uninspectable` | `project_root_uninspectable` |
 | omitted repo at a package root | `invalid_project` | `project_scope_required` |
 | unsupported Python | `unsupported_runtime` | `unsupported_python` |
 | ignore not effective | `ignore_required` | `state_ignore_required` |
@@ -98,7 +99,7 @@ Fatal rows use exit 2 and these component/error mappings:
 
 Doctor and setup share this first-applicable preflight precedence:
 `unsupported_python`, `unsupported_install_layout`, `project_scope_required`,
-`invalid_project_root`, `state_path_invalid`,
+`invalid_project_root|project_root_uninspectable`, `state_path_invalid`,
 `package_core_modified|package_status_unknown`, `state_ignore_required`,
 `unsupported_journal_mode`, `database_busy`, `project_state_unreadable`,
 `project_mismatch`, `schema_too_new`, then
@@ -115,6 +116,7 @@ Fixed sanitized messages are:
 | `unsupported_install_layout` | `stateful use requires one supported physical project-scoped package layout` |
 | `project_scope_required` | `explicit --repo is required from the package directory` |
 | `invalid_project_root` | `project root must be an existing directory` |
+| `project_root_uninspectable` | `project root could not be inspected safely; check access permissions and execution context` |
 | `state_path_invalid` | `project state path is not valid for this package layout` |
 | `package_core_modified` | `packaged core files differ from the release manifest` |
 | `package_status_unknown` | `package integrity could not be verified` |
@@ -126,6 +128,21 @@ Fixed sanitized messages are:
 | `schema_too_new` | `task database schema is newer than this taskgov version` |
 | `migration_required` | `task database requires setup migration` |
 | `setup_required` | `project state is not set up` |
+
+Project-root inspection distinguishes a missing path, a non-directory component,
+or an invalid path value (`invalid_project_root`) from an inability to inspect
+or normalize it (`project_root_uninspectable`). Windows `ERROR_INVALID_NAME`
+(123) is positive evidence of an invalid path value; a generic `EINVAL` alone
+is not. `project_root_uninspectable` includes access
+denial and other OS/normalization failures; it does not establish absence or
+claim that permissions are the only possible cause. This shared structural
+preflight applies to ordinary commands as well as setup and doctor. Both
+failures return exit 2, null project identity and no project-state read or
+write. Doctor reports unavailable Task/handoff/maintenance components and
+`setup_eligible=false`. Existing physical-install/link rejection and higher
+preflight precedence remain in force. Neither result authorizes automatic
+elevation, ACL changes, setup, or an extra doctor call on a successful path.
+Messages never include an OS exception, path, or environment value.
 
 Maintenance codes are `not_opted_in` before setup and, once enabled,
 `current`, `due`, `deferred`, or `failed` for current runtime state.

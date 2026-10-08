@@ -43,6 +43,7 @@ PROJECT_COMPONENT_CODES = {
     "unsupported_install_layout": "invalid_layout",
     "project_scope_required": "invalid_project",
     "invalid_project_root": "invalid_project",
+    "project_root_uninspectable": "project_uninspectable",
     "state_path_invalid": "invalid_state_path",
     "state_ignore_required": "ignore_required",
     "unsupported_journal_mode": "unsupported_journal",

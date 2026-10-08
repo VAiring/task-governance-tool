@@ -27,6 +27,7 @@ PREFLIGHT_PRECEDENCE = (
     "unsupported_install_layout",
     "project_scope_required",
     "invalid_project_root",
+    "project_root_uninspectable",
     "state_path_invalid",
     "package_core_modified",
     "package_status_unknown",
@@ -40,6 +41,9 @@ PREFLIGHT_MESSAGES = {
     ),
     "project_scope_required": "explicit --repo is required from the package directory",
     "invalid_project_root": "project root must be an existing directory",
+    "project_root_uninspectable": (
+        "project root could not be inspected safely; check access permissions and execution context"
+    ),
     "state_path_invalid": "project state path is not valid for this package layout",
     "package_core_modified": "packaged core files differ from the release manifest",
     "package_status_unknown": "package integrity could not be verified",
@@ -66,6 +70,7 @@ STRUCTURAL_CODES = frozenset(
         "unsupported_install_layout",
         "project_scope_required",
         "invalid_project_root",
+        "project_root_uninspectable",
         "state_path_invalid",
     }
 )
@@ -172,16 +177,22 @@ def _regular_file(path: Path) -> bool:
 
 
 def _physical_directory(path: Path) -> bool:
-    try:
-        return path.is_dir() and not _is_linklike(path)
-    except OSError:
-        return False
+    # Unlike is_dir(), lstat preserves inspection failures on Python 3.14.
+    details = os.lstat(path)
+    reparse_attribute = getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0)
+    return stat.S_ISDIR(details.st_mode) and not (
+        getattr(details, "st_file_attributes", 0) & reparse_attribute
+    )
 
 
 def _has_linklike_component(path: Path) -> bool:
     candidate = path
     while True:
-        if _is_linklike(candidate):
+        details = os.lstat(candidate)
+        if stat.S_ISLNK(details.st_mode) or (
+            getattr(details, "st_file_attributes", 0)
+            & getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0)
+        ):
             return True
         if candidate.parent == candidate:
             return False
@@ -332,26 +343,33 @@ def inspect_project_scope(
     if include_runtime and sys.version_info < (3, 12):
         add_issue("unsupported_python")
 
-    lexical_repo = _absolute_lexical_path(repo)
-    lexical_cwd = _absolute_lexical_path(Path.cwd())
-    package_cwd_without_repo = (
-        not repo_explicit
-        and _path_is_within(lexical_cwd, lexical_skill_root)
-    )
     if linked_layout:
         add_issue("unsupported_install_layout")
 
-    repo_valid = _physical_directory(lexical_repo)
+    package_cwd_without_repo = False
     canonical_repo: Path | None = None
-    if repo_valid:
-        try:
+    try:
+        lexical_repo = _absolute_lexical_path(repo)
+        if not repo_explicit:
+            lexical_cwd = _absolute_lexical_path(Path.cwd())
+            package_cwd_without_repo = _path_is_within(lexical_cwd, lexical_skill_root)
+        if not _physical_directory(lexical_repo):
+            add_issue("invalid_project_root")
+        else:
             canonical_repo = lexical_repo.resolve(strict=True)
-        except (OSError, RuntimeError):
-            repo_valid = False
-    if repo_valid and _has_linklike_component(lexical_repo):
-        if not linked_layout:
-            add_issue("unsupported_install_layout")
-        linked_layout = True
+            if _has_linklike_component(lexical_repo):
+                if not linked_layout:
+                    add_issue("unsupported_install_layout")
+                linked_layout = True
+    except (FileNotFoundError, NotADirectoryError, ValueError):
+        canonical_repo = None
+        add_issue("invalid_project_root")
+    except (OSError, RuntimeError) as exc:
+        canonical_repo = None
+        # Windows ERROR_INVALID_NAME is positive evidence of an invalid path;
+        # generic EINVAL and other inspection errors do not establish that.
+        invalid_name = isinstance(exc, OSError) and getattr(exc, "winerror", None) == 123
+        add_issue("invalid_project_root" if invalid_name else "project_root_uninspectable")
 
     layout: str | None = None
     if canonical_repo is not None and not linked_layout:
@@ -375,9 +393,6 @@ def inspect_project_scope(
     source_requires_repo = layout == "source" and not repo_explicit
     if package_cwd_without_repo or source_requires_repo:
         add_issue("project_scope_required")
-
-    if not repo_valid:
-        add_issue("invalid_project_root")
 
     scope: ProjectScope | None = None
     if canonical_repo is not None and layout is not None:

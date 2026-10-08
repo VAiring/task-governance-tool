@@ -534,6 +534,22 @@ managed publication is an explicit bounded recovery window.
 
 ### Shared Scope Preflight
 
+`project_scope.py` retains root inspection failures until fixed classification.
+Root and ancestor metadata use exception-preserving `lstat`, not predicates
+that can silently turn an access failure into false. Lexical root construction,
+physical-directory observation, strict canonical resolution, and ancestor-link
+inspection map missing/non-directory/invalid-path failures to
+`invalid_project_root`, including `ValueError` and Windows `winerror=123`
+(`ERROR_INVALID_NAME`). A generic `errno=EINVAL` is not sufficient evidence of
+an invalid name; other OS errors and normalization `RuntimeError` map to
+`project_root_uninspectable`. A failed root observation yields no scope and
+never reaches state-path, ignore, or database resolution. The new code is in
+the shared structural allow-list and follows the same preflight priority as
+root validity, before state/package/ignore failures. Doctor maps it to
+`project_uninspectable`; setup and ordinary CLI commands reuse the fixed
+message. No exception text, retry, permission change, or new normal-loop
+diagnostic operation is added.
+
 Setup and doctor validate a physical target directory, canonical package,
 layout, state ownership, and package identity. If the target or an ancestor
 has a `.git` marker, `project_scope.py` runs exactly one bounded, shell-free

@@ -314,6 +314,11 @@ def save(repo, packet_path, output, raw, approvals=()):
 
 
 def submission(repo, packet_path, originals, approvals=()):
+    """Confirm the complete saved handoff before any registration dispatch.
+
+    The caller need not separately retrieve save acknowledgements or originals.
+    This observes the files now; it does not infer a past save/child outcome.
+    """
     if not 1 <= len(originals) <= REVIEW_RESULTS_RECEIPT_LIMIT:
         _fail()
     packet_file = _path(repo, packet_path)
@@ -379,6 +384,7 @@ def _emit(value, *, utf8=False):
 
 
 def main(argv=None):
+    registration_status = None
     try:
         from task_governance_tool.review_handoff_preparation import (
             add_parser, add_material_parser, prepare, read_for_reviewer, read_material,
@@ -400,7 +406,9 @@ def main(argv=None):
         basis.add_argument("--repo", required=True)
         basis.add_argument("--task-id", required=True)
         for operation in ("save", "submit"):
-            command = commands.add_parser(operation)
+            command = commands.add_parser(operation, help=(
+                "Confirm complete saved originals and register once; no prior acknowledgement read required"
+                if operation == "submit" else "Save one original with physical readback confirmation"))
             command.add_argument("--repo", required=True, help="Explicit governed project root")
             command.add_argument("--packet", required=True, help="Ignored project-relative complete Packet JSON")
             command.add_argument("--user-approved-reviewer", action="append", default=[])
@@ -409,6 +417,8 @@ def main(argv=None):
             else:
                 command.add_argument("originals", nargs="+", help="Ignored project-relative original JSON paths")
         args = parser.parse_args(argv)
+        if args.operation == "submit":
+            registration_status = "not_started"
         repo = Path(os.path.abspath(args.repo))
         if args.operation == "material":
             return read_material(repo, args)
@@ -437,13 +447,16 @@ def main(argv=None):
         for reviewer in args.user_approved_reviewer:
             command.append("--user-approved-reviewer=" + reviewer)
         # No shell pipe, timeout retry, reserialization, alternate writer or SQL.
+        # From dispatch onward a local exception cannot prove rollback. The
+        # child's own normal response (including rejection/exit 2) passes through.
+        registration_status = "unknown"
         return subprocess.run(command, input=framed, check=False, shell=False).returncode
     except ReviewResultInputError as exc:
-        _emit({"ok": False, "code": exc.code, "field": exc.field,
-               "message": exc.message + "; preserve originals and inspect the outcome before retry."})
-        return 1
+        code, field, reason = exc.code, exc.field, exc.message
     except (HandoffError, ReviewEvidenceError, TaskValidationError) as exc:
         code = exc.code
+    except FileNotFoundError:
+        code = "handoff_input_missing" if registration_status == "not_started" else "handoff_io_or_input_failed"
     except (OSError, ValueError, KeyError, TypeError, RecursionError, subprocess.SubprocessError):
         code = "handoff_io_or_input_failed"
     except KeyboardInterrupt:
@@ -456,5 +469,16 @@ def main(argv=None):
         except OSError:
             pass
         return 1
-    _emit({"ok": False, "code": code, "message": "Review handoff failed; preserve originals and inspect the outcome before retry."})
+    message = "Review handoff failed; preserve originals and inspect the outcome before retry."
+    if registration_status == "not_started":
+        message = "Registration was not started; preserve originals and recover the reported handoff input before submitting."
+    elif registration_status == "unknown":
+        message = "Registration outcome is unknown; preserve originals and inspect public recorded evidence before any retry."
+    failure = {"ok": False, "code": code, "message": message}
+    if "field" in locals():
+        suffix = message if registration_status is not None else "preserve originals and inspect the outcome before retry."
+        failure.update(field=field, message=reason + "; " + suffix)
+    if registration_status is not None:
+        failure["registration_status"] = registration_status
+    _emit(failure)
     return 1

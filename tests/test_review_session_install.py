@@ -104,6 +104,7 @@ class ReviewSessionInstallTests(unittest.TestCase):
         self.task = self.started["data"]["task"]["task_id"]
         prepared = self.helper("prepare", "--directory", "reviews/g1", "target", self.task,
                                "--kind", "diff_fingerprint", "--revision", FINGERPRINT)
+        self.handoff = prepared["handoff"]
         self.packet_path = prepared["handoff"]["packet_path"]
         self.packet = json.loads((self.root / self.packet_path).read_bytes())
 
@@ -170,6 +171,64 @@ class ReviewSessionInstallTests(unittest.TestCase):
         self.assertEqual(shown["ownership"], other["ownership"])
         self.cli("task", "edit", self.task, "--add-note", "No reviewer edit privilege", caller=REVIEWER, error="task_not_owned")
 
+    def resume_with_retained_submission(self):
+        command = self.handoff["submit_command"]
+        shell = (["powershell.exe", "-NoProfile", "-NonInteractive", "-Command", command]
+                 if os.name == "nt" else ["/bin/sh", "-c", command])
+        return subprocess.run(shell, cwd=self.root, capture_output=True, check=False,
+                              env={**os.environ, "CODEX_THREAD_ID": OWNER.session_id}, timeout=30)
+
+    def check_resume_decisions(self, *, requested):
+        # Reviewer work finishes before resumption. Discard save responses so
+        # the parent has only its prepared handoff and all-ended indication.
+        originals = []
+        for index, caller in enumerate((REVIEWER, SECOND)):
+            document = copy.deepcopy(self.packet["result_template"])
+            findings = ([{"severity": severity, "summary": f"fixture.py:{line} {severity} review finding"}
+                         for line, severity in enumerate(("low", "medium", "high"), 1)]
+                        if requested and index == 1 else [])
+            document["receipts"] = [receipt(f"resume-{index}",
+                verdict="changes_requested" if requested and index == 1 else "pass", findings=findings)]
+            original = encode(document)
+            path = self.handoff["review_requests"][index]["result_path"]
+            saved = self.invoke(self.install.skill_root / "scripts/review_handoff.py",
+                ["save", "--repo", str(self.root), "--packet", self.packet_path, "--output", path],
+                caller=caller, raw=original)
+            self.assertEqual(saved.returncode, 0, saved.stderr)
+            originals.append((path, original))
+        # The resumed parent executes the exact retained command, without a
+        # list/read/show operation, regenerated paths or original JSON display.
+        result = self.resume_with_retained_submission()
+        self.assertEqual(result.returncode, 0, result.stdout or result.stderr)
+        registered = json.loads(result.stdout)
+        self.assertTrue(registered["ok"])
+        data = registered["data"]
+        self.assertEqual([r["receipt"]["verdict"] for r in data["receipts"]],
+                         ["pass", "changes_requested" if requested else "pass"])
+        self.assertEqual(data["review_gate"]["satisfied"], not requested)
+        self.assertEqual(data["review_gate"]["basis"], {"task_id": self.task,
+            "contract_revision": self.packet["contract"]["revision"], "review_target": self.packet["review_target"]})
+        actual = [f["finding"] for r in data["receipts"] for f in r["findings"]]
+        self.assertEqual([f["severity"] for f in actual], ["low", "medium", "high"] if requested else [])
+        for entry in data["receipts"]:
+            self.assertTrue(entry["receipt"]["summary"])
+            for row in entry["findings"]:
+                self.assertTrue(row["finding"]["review_finding_id"])
+                self.assertEqual(row["finding"]["review_receipt_id"], entry["receipt"]["review_receipt_id"])
+        for path, original in originals:
+            self.assertEqual((self.root / path).read_bytes(), original)
+        before = self.counts()
+        replay = self.resume_with_retained_submission()  # Explicit rejection test, never a normal retry.
+        self.assertNotEqual(replay.returncode, 0)
+        self.assertEqual(json.loads(replay.stdout)["errors"][0]["code"], "review_receipt_already_recorded")
+        self.assertEqual(self.counts(), before)
+
+    def test_all_ended_resume_registers_pass_without_parent_save_confirmation_reads(self):
+        self.check_resume_decisions(requested=False)
+
+    def test_all_ended_resume_registers_requested_changes_and_all_severities_for_judgment(self):
+        self.check_resume_decisions(requested=True)
+
     def test_direct_reviewer_binding_alias_rejection_and_parent_legacy_unbound(self):
         first = self.cli("review", "result", "add", self.task, raw=self.original("direct"), caller=REVIEWER)
         receipt_id = first["data"]["receipts"][0]["receipt"]["review_receipt_id"]
@@ -204,12 +263,15 @@ class ReviewSessionInstallTests(unittest.TestCase):
         metadata = json.loads(original)
         before = self.counts()
         path.unlink()
-        self.helper("submit", "--packet", self.packet_path, output, error=True)
+        missing = self.helper("submit", "--packet", self.packet_path, output, error=True)
+        self.assertEqual(missing["registration_status"], "not_started")
+        self.assertEqual(missing["code"], "handoff_input_missing")
         for field, value in (("original_result_digest", "0" * 64), ("execution_id", "tg_execution_" + "f" * 16),
                              ("session_id", "invalid"), ("contract_revision", metadata["contract_revision"] + 1)):
             changed = {**metadata, field: value}
             path.write_bytes(encode(changed))
-            self.helper("submit", "--packet", self.packet_path, output, error=True)
+            rejected = self.helper("submit", "--packet", self.packet_path, output, error=True)
+            self.assertEqual(rejected["registration_status"], "not_started")
             self.assertEqual(self.counts(), before)
         path.write_bytes(original)
         self.cli("review", "target", "set", self.task, "--kind", "diff_fingerprint", "--revision", FINGERPRINT)

@@ -53,8 +53,17 @@ unknown effect or infer readiness from a failed call.
 3. End this turn only on `ok=true,status=waiting,parent_may_end=true`.
    The service then owns observation, deletion confirmation and one same-parent
    send when every exact reviewer ends and the original parent is idle.
-4. On direct resumption, recover the retained review originals and continue the
-   existing review procedure. No individual ACK, routine status/view, reservation
+4. On all-ended resumption of prepared shared-file reviews, run the retained
+   `submit_command` once through the
+   [shared-file review procedure](task_workflow.md#prepare-and-record-reviews).
+   Submission confirms complete originals and bindings before registration;
+   use its returned verdicts, all Findings and gate for judgment. Do not first
+   retrieve save reports with `list_agents`/`read_thread` or display original JSON.
+   Missing/invalid files follow [handoff recovery](task_workflow.md#review-handoff-recovery);
+   an ended child or a negative verdict is not itself registration success.
+   For [direct complete-byte transport](task_workflow.md#direct-review-transport),
+   use its retained original-result channel and registration procedure instead.
+   No individual ACK, routine status/view, reservation
    management or `wait-ended` call is needed. The worker independently observes
    the matching incoming event in the new parent turn and records receipt.
    The notification itself is not PASS, an original or a completion Receipt.

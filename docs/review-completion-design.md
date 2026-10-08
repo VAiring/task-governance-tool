@@ -284,6 +284,16 @@ submit preserves raw bytes, adds only array framing, and sends them once to
 the sibling public CLI through binary stdin. No LLM-built collector, alternate
 writer or producer-specific adapter is required. The registration transaction
 and current-state revalidation stay here and are not replaced by saved-file checks.
+`submission` owns the complete parent-side confirmation from retained paths;
+no separately retrieved child acknowledgement or model-visible original is a
+prerequisite. Its Packet/original/sidecar validation and final byte comparisons
+finish before the one registration dispatch. `main` tracks that boundary only
+in memory: helper-local submit errors carry `registration_status=not_started`
+before dispatch and `unknown` from dispatch onward. A missing input before
+dispatch has the fixed `handoff_input_missing` code. The child still owns its
+atomic outcome, complete decision response and post-commit output failures;
+its stdout/exit pass through without capture, reinterpretation or replay.
+This introduces no persisted confirmation record, alternate writer or mode.
 This module also owns the pure complete-Packet validator shared by prepare,
 read, save and submit. It retains the existing stored-constraints compatibility,
 without repairing incomplete input or introducing another Packet contract.
@@ -459,6 +469,13 @@ file/stdin invocation remains available for retained supervisor contexts.
 Installed guidance replaces create/prepare/start/ACK duties with one normal
 wait call and existing result processing after resumption. Non-review waiting
 and actual parent/reviewer numerical attribution are unaffected.
+The catalogue and guides route all-ended resumption directly to retained
+submission, whose existing reads confirm the handoff before registration.
+The fixed notification and exact event-receipt matcher remain unchanged: they
+carry ended status, not original content or saved/registered claims. Missing or
+failed originals cannot hold up the ended event; submission reports their
+transport failure. Healthy scheduled checks and conditional recovery retain
+their existing wait controls.
 
 Focused tests cover the single call, fixed destination, failures and unknowns at
 effect boundaries, duplicates, restart/OFF/cancel, healthy scheduled rewait,

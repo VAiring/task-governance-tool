@@ -1905,6 +1905,27 @@ print(json.dumps(results, ensure_ascii=False))
         self.linked_output(source, recovery, "review-provenance")
         self.linked_output(source, recovery, "recover-review-handoff")
 
+    def test_review_resumption_routes_confirmation_to_submission_and_keeps_conditional_recovery(self):
+        from task_governance_tool.review_wait_runtime.project_server import ProjectReviewWaitSession
+        shared = self.reader().read_reference('references/task_workflow.md#prepare-and-record-reviews', SKILL_ROOT)
+        waiting = self.reader().read_reference('references/review_wait.md#normal-wait', SKILL_ROOT)
+        recovery = self.reader().read_reference('references/task_workflow.md#review-handoff-recovery', SKILL_ROOT)
+        for text in (shared, waiting):
+            self.assertIn('submit_command', text)
+            self.assertIn('list_agents', text)
+            self.assertIn('read_thread', text)
+            self.assertIn('before registration', text)
+            self.assertNotIn('after all saved acknowledgements', text)
+            self.assertNotIn('After all confirmed handoffs', text)
+        self.linked_output('references/review_wait.md', waiting, 'direct-review-transport')
+        for condition in ('registration_status=not_started', 'registration_status=unknown',
+                          'lost save acknowledgement', 'public recorded evidence', 'valid subset'):
+            self.assertIn(condition, recovery)
+        description = next(row['description'] for row in ProjectReviewWaitSession.catalogue()
+                           if row['name'] == 'review_wait_wait')
+        for field in ('submit_command', 'all Findings', 'gate', 'Direct transport'):
+            self.assertIn(field, description)
+
     def test_both_parent_transports_route_to_complete_wait_protocol(self):
         source = "references/task_workflow.md"
         waiting = self.reader().read_reference(f"{source}#wait-across-parent-turns", SKILL_ROOT)

@@ -110,6 +110,8 @@ class ReviewHandoffFilesTests(unittest.TestCase):
             error = json.loads(output.getvalue())
             self.assertEqual(error["field"], "receipts[].provenance.model_state")
             self.assertEqual(error["code"], "invalid_review_evidence")
+            if operation == "submit":
+                self.assertEqual(error["registration_status"], "not_started")
             self.assertIn("preserve originals", error["message"])
             self.assertNotIn("invalid-model-value", output.getvalue())
             self.assertFalse(any("result" in call.args[0] and "add" in call.args[0]
@@ -303,8 +305,57 @@ class ReviewHandoffFilesTests(unittest.TestCase):
             code = handoff.main(["submit", "--repo", str(self.root), "--packet", self.packet, self.output])
         self.assertEqual(code, 1)
         self.assertEqual(json.loads(output.getvalue())["code"], "handoff_outcome_unknown")
+        self.assertEqual(json.loads(output.getvalue())["registration_status"], "unknown")
         launch.assert_called_once()
         self.assertEqual((self.root / self.output).read_bytes(), self.raw)
+
+    def test_submit_confirms_every_original_before_dispatch_without_acknowledgements(self):
+        self.save()  # The parent does not receive or inspect this acknowledgement.
+        before = file_snapshot(self.root)
+        for other, raw in (("reviews/absent.json", None), ("reviews/broken.json", b"{")):
+            if raw is not None:
+                (self.root / other).write_bytes(raw)
+            output = io.StringIO()
+            with redirect_stdout(output), mock.patch.object(handoff.subprocess, "run", wraps=subprocess.run) as calls:
+                code = handoff.main(["submit", "--repo", str(self.root), "--packet", self.packet,
+                                     self.output, other])
+            self.assertEqual(code, 1)
+            error = json.loads(output.getvalue())
+            self.assertEqual(error["registration_status"], "not_started")
+            self.assertEqual(error["code"], "handoff_input_missing" if raw is None else "invalid_review_evidence")
+            self.assertFalse(any("result" in call.args[0] and "add" in call.args[0]
+                                 for call in calls.call_args_list))
+            self.assertEqual((self.root / self.output).read_bytes(), self.raw)
+        self.assertTrue(all(file_snapshot(self.root)[path] == value for path, value in before.items()))
+
+    def test_submit_forwards_child_rejection_and_postcommit_output_failure_without_reinterpretation(self):
+        self.save()
+        task, framed = handoff.submission(self.root, self.packet, [self.output])
+        for exit_code, child_output in ((1, '{"ok":false,"data":{"receipts":[]}}\n'),
+                                        (2, 'partial committed response')):
+            def child(*args, **kwargs):
+                sys.stdout.write(child_output)
+                return subprocess.CompletedProcess(args[0], exit_code)
+            output = io.StringIO()
+            with mock.patch.object(handoff, "submission", return_value=(task, framed)), \
+                 mock.patch.object(handoff.subprocess, "run", side_effect=child) as launch, \
+                 redirect_stdout(output):
+                code = handoff.main(["submit", "--repo", str(self.root), "--packet", self.packet, self.output])
+            self.assertEqual(code, exit_code)
+            self.assertEqual(output.getvalue(), child_output)
+            launch.assert_called_once()
+            self.assertEqual((self.root / self.output).read_bytes(), self.raw)
+
+    def test_lost_save_acknowledgement_can_be_confirmed_without_repeating_save(self):
+        with mock.patch.object(sys, "stdin", BinaryInput(self.raw)), \
+             mock.patch.object(handoff, "_emit", return_value=False):
+            code = handoff.main(["save", "--repo", str(self.root), "--packet", self.packet,
+                                 "--output", self.output])
+        self.assertEqual(code, 1)
+        with mock.patch.object(handoff, "save", side_effect=AssertionError("save must not replay")):
+            task, framed = handoff.submission(self.root, self.packet, [self.output])
+        self.assertEqual(task, self.payload["task_id"])
+        self.assertEqual(framed, b"[" + self.raw + b"]")
 
     def test_changed_saved_content_and_packet_fail_without_cleanup(self):
         write = handoff._write_new

@@ -562,7 +562,7 @@ For shared-file transport, start with `review_handoff.py prepare` at the
 Use only its `handoff.status=ready` output. It has already saved and confirmed
 the complete Packet and unused result paths; give each reviewer its returned
 `review_requests[].request` unchanged together with the project's review scope
-and authority. Keep `submit_command` for after all saved acknowledgements.
+and authority. Keep `submit_command` for after all dispatched reviewers end.
 Do not extract/serialize a displayed Packet, write preparation/save/validation
 code, issue a routine path check, or re-query the Packet. The full Packet and
 exact read/save instructions arrive in the same request. The read replaces the
@@ -577,26 +577,34 @@ duplicate success message; questions and failure reports remain appropriate.
 Each reviewer supplies its actual judgment, provenance and every Finding in
 the returned template, never inferred PASS or filled-in missing declarations.
 Preserve complete originals until registration is known; do not regenerate them
-from summaries. Only `ok=true,status=saved` confirms a saved handoff, not review
-truth, independence, registration or completion. The fixed
+from summaries. A reviewer's `ok=true,status=saved` acknowledges its save; the
+parent's submit operation independently confirms complete saved originals before
+registration. Neither confirms review truth, independence or completion. The fixed
 [save operation](cli_contracts.md#save-review-original) documents UTF-8 input
 when needed; its command is already in each generated request.
 
-After all confirmed handoffs, the parent runs the returned `submit_command`,
-which has the following shape:
+After all reviewers end, including normal all-ended resumption, run the retained
+`submit_command` once. It confirms the Packet, originals, applicable session
+bindings and exact bytes before registration; do not first obtain save reports
+with `list_agents`/`read_thread`, display original JSON, or add routine show/check
+calls. An ended child may have failed: submission reports missing/invalid files
+without registering a partial batch. Previously reported material or judgment
+questions still need resolution. The command has the following shape:
 
 ```powershell
 python .agents/skills/task-governance-tool/scripts/review_handoff.py submit --repo . --packet reviews/packet.json reviews/review-a.json reviews/review-b.json
 ```
 
-This sends unchanged originals through the existing atomic stdin registration
+This confirms and sends unchanged originals through the existing atomic stdin registration
 once, without model-generated framing code or another normal check/show.
 Use all returned `data.receipts[].findings`, including low severity, for repair
 decisions. `data.review_gate` observes the existing gate on the saved basis,
 including older blockers; it does not assert verification PASS or authorize
 Task completion. Do not add a routine show/check to confirm it. Repeated
 provenance/events are explicitly omitted from this response, not from storage.
-A short acknowledgement never replaces Findings. Recover an
+A `changes_requested` verdict follows the same successful registration path:
+use its summary, all Findings and IDs, and blocking gate for repair. It is not
+a transport error. A short acknowledgement never replaces Findings. Recover an
 incomplete registration response before deciding what to repair; the helper
 does not weaken current-state revalidation or authorize retries. Missing, failed or
 uncertain handoff/registration stops continuation: retain originals/residue,
@@ -728,8 +736,14 @@ never invent missing claims or use single calls to bypass a rejected batch.
 
 Use only for a failed, incomplete or uncertain handoff/registration, a result
 requiring correction, or the alternative received-result format below. Stop
-continuation and preserve originals and residue. For lost/uncertain outcomes,
-inspect existing public state before deciding whether a write can safely be retried. A failed save/readback
+continuation and preserve originals and residue. A helper submit error with
+`registration_status=not_started` requires correcting/recovering the indicated
+input, not a routine core-state read. Missing, corrupt or mismatched files never
+authorize submitting a valid subset. A lost save acknowledgement can be resolved
+by the retained submit's file confirmation; do not repeat save. For an unknown
+registration outcome (`registration_status=unknown`, lost/truncated output or
+post-commit emission failure), inspect existing public recorded evidence before
+deciding whether any retry is safe. A failed save/readback
 needs a new unused path, never overwrite. Preparation-only recovery uses its
 saved binding/Receipt ID and [bound recovery](cli_contracts.md#recover-review-handoff),
 not another target or Receipt write.

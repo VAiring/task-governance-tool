@@ -226,6 +226,11 @@ prepare operation replaces the direct target/Receipt (or bound recovery) call;
 its submit operation replaces the direct registration invocation,
 not an extra governance command or weaker review/registration check. Helper
 invocations are transport operations, not included in the governance-call count.
+After all-ended shared-file review resumption, the retained submit operation
+also owns saved-original confirmation before dispatch. The parent uses its
+registration response for judgment without a routine agent/thread list,
+separate original read or Task show/check. Conditional transport and unknown
+registration recovery remain governed by the linked Review/completion owner.
 
 A default-off no-finding Tier 2 manual/fallback path therefore has at most
 six governance subprocess calls; a profile-enabled path has at most seven.

@@ -2105,7 +2105,9 @@ A failed/uncertain save needs [recovery](#recover-review-handoff), not overwrite
 
 #### Submit Review Originals
 
-After every confirmed saved handoff, run the returned `submit_command`:
+After all dispatched reviewers end, run the retained `submit_command` once.
+It owns saved-handoff confirmation; no separate save-report or original read is
+required before this operation:
 
 ```powershell
 python .agents/skills/task-governance-tool/scripts/review_handoff.py submit --repo . --packet reviews/packet.json reviews/review-a.json reviews/review-b.json
@@ -2115,7 +2117,12 @@ Submit accepts 1-8 paths, preserves complete original bytes, and adds only array
 framing. The combined 262,144-byte / 8-Receipt / 64-Finding bounds remain. The
 sibling taskgov stdin command performs its normal atomic registration and live
 revalidation; stdout and exit status are its ordinary response, including every
-Finding.
+Finding. The helper first confirms the complete Packet/original files and any
+required session sidecars/digests, then rechecks their bytes before dispatch.
+This observes current files rather than inferring the child or past save outcome.
+Both PASS and `changes_requested` return actual verdicts, summaries, all Finding
+IDs/bodies and the registered-basis `review_gate` through the same response.
+Use those for judgment; the all-ended notification alone proves none of them.
 
 ### Recover Review Handoff
 
@@ -2136,13 +2143,21 @@ Reads check identity and metadata before/after, with final byte rechecks before
 submission. These trusted-local checks do not isolate a hostile peer with the
 same permissions or guarantee future immutability. Save never overwrites, and
 no operation deletes or retries. A partial write or failed confirmation
-leaves its residue and returns no ready acknowledgement. Inspect uncertain
-outcomes first; use a new unused path for a corrected original. After an unknown
+leaves its residue and returns no ready acknowledgement. A lost save response
+may be confirmed by submit's file checks without another parent read or save.
+Use a new unused path for a corrected original. After an unknown
 registration outcome, inspect public recorded evidence, not a blind resubmit.
 
 Helper errors emit `ok:false`, a sanitized code and fixed guidance, without raw
 input/path/exception detail. Path/ignore, file-change, invalid-input, I/O and
 unknown-outcome failures remain distinct from taskgov registration responses.
+For parsed submit invocations, helper-local failures also carry
+`registration_status=not_started|unknown`. The former means no registration
+dispatch: recover the reported input; missing input is `handoff_input_missing`.
+The latter begins at dispatch and requires public recorded-evidence inspection
+before any retry. No valid subset is submitted after an input failure. The
+registration child's ordinary response/exit passes through unchanged, including
+successful registration with a blocking review gate and post-commit output loss.
 File ownership, authorized path allocation and retention remain caller-owned.
 No network, Git write, review launch, alternate gate or database writer is added.
 

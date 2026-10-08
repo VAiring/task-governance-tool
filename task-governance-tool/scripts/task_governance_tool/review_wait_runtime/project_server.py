@@ -85,7 +85,7 @@ class ProjectReviewWaitSession:
     @staticmethod
     def catalogue():
         descriptions = {
-            "wait": "Wait once for the original Task and actual returned reviewers. Internally creates the same-parent timer, prepares and starts; parent_may_end=true permits ending the turn. Reuse this same request after a healthy ten-minute check; no automation IDs, separate ACK, or routine status calls.",
+            "wait": "Wait once for the original Task and actual returned reviewers. Internally creates the same-parent timer, prepares and starts; parent_may_end=true permits ending the turn. After all-ended resumption of prepared shared-file reviews, run the retained submit_command once: it confirms originals before registration and returns judgments, all Findings and the gate. No separate save-report/original read is required; ending is not PASS or registration success. Direct transport keeps its existing procedure. Reuse this wait after a healthy ten-minute check; no automation IDs, separate ACK, or routine status calls.",
             "inspect": "Optional read-only diagnosis of this parent's Task wait; never starts or retries effects.",
             "stop": "Explicitly stop this parent's Task wait and clean up only known effects; no unknown-operation retry.",
             "prepare": "Compatibility only: prepare the earlier per-reservation flow with an authorized PAUSED same-parent timer; no timer or send effect. Normal waiting uses review_wait_wait.",

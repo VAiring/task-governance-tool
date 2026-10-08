@@ -500,6 +500,21 @@ aggregate limits before invoking the sibling taskgov entry once through binary
 stdin. It passes explicit `--user-approved-reviewer` values unchanged, never
 infers approval, and exposes the existing registration output/exit status,
 including every Finding. It has no direct DB access or alternate writer.
+Submit owns the parent's saved-handoff confirmation: after all dispatched
+reviewers end, the parent may invoke its retained command without separately
+retrieving save acknowledgements, listing agents/threads or displaying original
+JSON. Complete physical originals, Packet equality, applicable session sidecars,
+exact digests and final byte rechecks must all pass before dispatch. This
+confirms the currently available handoff, not the success of a past save or
+reviewer process. A lost save acknowledgement alone does not require another
+parent read or replay of save. Known material/quality questions still require
+resolution; transport validation never certifies review quality.
+PASS and `changes_requested` use this same operation. The ordinary successful
+registration response supplies each actual verdict/summary, every Finding and
+its IDs (including low severity), and the gate on the registered basis. A
+negative review is not a registration error. No result body or save claim is
+added to the fixed all-ended notification, and that notification proves neither
+saved files, registration, gate satisfaction nor Task completion.
 Save and submit each require any applicable explicit approval flag; a saved
 file cannot transfer user approval. The writer still rechecks live Task,
 Contract, tier and exact target under its existing lock.
@@ -533,8 +548,9 @@ Git write, scheduler, ledger, platform adapter or automatic cleanup is added.
 
 Invalid input creates no result. A write/readback failure may leave an incomplete
 file, which is retained and never called ready. Correct source data and select
-a new unused result path; do not overwrite residue. Lost save responses require
-inspection of the original; lost submission responses require public recorded
+a new unused result path; do not overwrite residue. Submit may perform the
+necessary original confirmation after a lost save response, without repeating
+save or adopting incomplete/mismatched files. Lost submission responses require public recorded
 state inspection before deciding whether any retry is safe. No operation
 automatically retries. Preparation, Packet display and result-transport failures
 return `ok:false` with a sanitized code
@@ -546,6 +562,19 @@ same safe `field` and fixed reason, retaining the instruction to preserve
 originals and inspect uncertain outcomes. Result validation still precedes
 file creation or registration, and readback failure may still leave residue.
 Other helper failures keep their existing general diagnostics.
+
+For a parsed `submit` invocation, a helper-local failure additionally returns
+`registration_status=not_started|unknown`. `not_started` means all failure
+handling remains before registration dispatch; recover the indicated transport
+input without a routine core-state query. Missing Packet/original/sidecar input
+uses `handoff_input_missing`; invalid, unsafe, changed or inaccessible input
+retains its sanitized existing code/field. All inputs must pass together; no
+valid subset is registered. At dispatch the status becomes `unknown`: a local
+exception/interruption cannot establish rollback and requires existing public
+evidence inspection before any retry. A child response/exit is forwarded
+unchanged, including atomic rejection, successful registration with a blocking
+gate, and post-commit output failure. No wrapper success assertion, retry or new
+completion gate is added. Absent/truncated output itself remains unknown.
 
 ### Host-Owned Review Waiting
 
@@ -625,6 +654,11 @@ local writer lease; this is not atomic host compare-and-send.
 
 The normal fixed direct message identifies the original Task and directs its
 existing result processing. It requires no ACK, ID handoff or routine view/status.
+On all-ended resumption, normal shared-file processing goes directly to the
+retained submit command and its confirmation/registration contract above.
+Failed or interrupted children still trigger the ended notification; unavailable
+or invalid originals are reported by submission, not silently waited for by
+the host. The host does not read result files or infer saved status/verdicts.
 Host acceptance and actual receipt remain separate. After settled accepted or
 unknown sending, the existing session worker may observe for at most two further
 minutes within the original twenty-minute outer deadline. Receipt requires a

@@ -374,9 +374,10 @@ Incomplete input creates no result file and launches no registration CLI;
 stored-constraints compatibility above remains unchanged. These file checks
 do not replace live registration checks.
 
-`read --packet <path> --role independent` replaces the assigned independent
-reviewer's raw Packet read with the display defined below. Role is mandatory
-and explicit; unknown/missing/other values fail without a view. It validates
+`read --repo <root> --packet <path>` replaces the assigned independent
+reviewer's raw Packet read with the display defined below, without a role
+selector. Existing saved Packets need no reconstruction or new review solely
+because the selector was removed. It validates
 the complete saved Packet through the same preparation checks before projection,
 using existing physical/ignored-path and bounded-read rules. It then reuses
 existing target-capture Git observation and one read-only public `review prepare`

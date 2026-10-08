@@ -26,7 +26,9 @@ from task_governance_tool.review_results import review_result_instructions
 
 def request_commands(request):
     """Select the generated invocations for shell execution in transport tests."""
-    (read,) = (line for line in request.splitlines() if "--role=independent" in line)
+    (read,) = (line for line in request.splitlines()
+              if "--packet=" in line and "--output=" not in line
+              and shlex.split(line.removeprefix("& "))[3:4] == ["read"])
     (save,) = (line for line in request.splitlines() if "--output=" in line)
     return read, save.removeprefix("'@ | ").removesuffix(" <<'TASKGOV_REVIEW_RESULT'")
 
@@ -148,8 +150,9 @@ class InstalledPreparationTests(PreparationFixture):
             self.assertEqual(request["request"].count(read), 1)
             self.assertEqual(request["request"].count(save), 1)
             self.assertNotIn(context["submit_command"], request["request"])
+            self.assertNotIn("--role", request["request"])
             displayed = self.invoke("read", "--repo", str(self.root), "--packet", context["packet_path"],
-                                    "--role", "independent", reviewer=index)
+                                    reviewer=index)
             self.assertEqual(displayed.returncode, 0, displayed.stdout)
             payload = json.loads(displayed.stdout)["result_template"]
             self.assertEqual(payload, packet["result_template"])
@@ -438,7 +441,7 @@ class ReviewerDisplayTests(PreparationFixture):
                     from task_governance_tool.review_results import review_result_template
                     broken["result_template"] = review_result_template(task, broken["contract"]["revision"], broken["review_target"])
                     path.write_bytes(encode(broken))
-                    failed = self.read(context["packet_path"], "--role", "independent")
+                    failed = self.read(context["packet_path"])
                     self.assertNotEqual(failed.returncode, 0, failed.stdout)
                     self.assertEqual(json.loads(failed.stdout)["code"], "review_packet_stale")
                 path.write_bytes(original_packet)
@@ -450,8 +453,10 @@ class ReviewerDisplayTests(PreparationFixture):
         packet_path = prepared["handoff"]["packet_path"]
         original_packet = (self.root / packet_path).read_bytes()
         packet = json.loads(original_packet)
-        result = self.read(packet_path, "--role", "independent")
+        before = file_snapshot(self.root)
+        result = self.read(packet_path)
         self.assertEqual(result.returncode, 0, result.stdout)
+        self.assertEqual(file_snapshot(self.root), before)
         view = json.loads(result.stdout)
         self.assertEqual(result.stdout, encode(view) + b"\n")
         self.assertIn("日本語".encode("utf-8"), result.stdout)
@@ -460,6 +465,7 @@ class ReviewerDisplayTests(PreparationFixture):
         for key in packet.keys() - {"result_instructions", "receipt_command"}:
             self.assertEqual(view[key], packet[key], key)
         self.assertEqual(view["context_check"], "matched_at_read")
+        self.assertEqual(view["result_instructions"], review_result_instructions(independent=True))
         self.assertEqual(view["review_material"]["status"], "requires_supplied_material")
         self.assertEqual(view["result_template"]["receipts"], packet["result_template"]["receipts"])
         self.assertIsNone(view["result_template"]["receipts"][0]["kind"])
@@ -491,15 +497,22 @@ class ReviewerDisplayTests(PreparationFixture):
               "outer_read/save/submit_calls=1/1/1->1/1/1; "
               "display_helper_calls=0->1; registration_cli_calls=1->1; tokens=unmeasured")
 
-    def test_unknown_role_incomplete_packet_and_output_loss_never_yield_success(self):
+    def test_removed_role_incomplete_packet_and_output_loss_never_yield_success(self):
         _, prepared = self.prepare(self.task())
         relative = prepared["handoff"]["packet_path"]
         path = self.root / relative
         raw = path.read_bytes()
-        for options in ((), ("--role", "unknown"), ("--role", "self_review_fallback")):
+        help_result = self.invoke("read", "--help")
+        self.assertEqual(help_result.returncode, 0, help_result.stdout)
+        self.assertNotIn(b"--role", help_result.stdout)
+        for required in (b"--repo", b"--packet"):
+            self.assertIn(required, help_result.stdout)
+        before = file_snapshot(self.root)
+        for options in (("--role", "independent"), ("--role", "unknown"), ("--role", "self_review_fallback")):
             failed = self.read(relative, *options)
             self.assertNotEqual(failed.returncode, 0)
             self.assertFalse(json.loads(failed.stdout)["ok"])
+        self.assertEqual(file_snapshot(self.root), before)
         invalid = [b"{", raw[:-1], raw + b" " * handoff.PACKET_LIMIT]
         for change in (lambda p: p["contract"].pop("scope"),
                        lambda p: p["result_template"]["review_target"].update(generation=8),
@@ -510,7 +523,7 @@ class ReviewerDisplayTests(PreparationFixture):
             invalid.append(encode(packet))
         for broken in invalid:
             path.write_bytes(broken)
-            failed = self.read(relative, "--role", "independent")
+            failed = self.read(relative)
             self.assertNotEqual(failed.returncode, 0)
             self.assertFalse(json.loads(failed.stdout)["ok"])
             self.assertNotIn("result_template", json.loads(failed.stdout))
@@ -519,15 +532,14 @@ class ReviewerDisplayTests(PreparationFixture):
         bounded.update(changed_paths_available=True, changed_paths=["first.py"],
                        changed_paths_total=2, changed_paths_truncated=True)
         path.write_bytes(encode(bounded))
-        view = self.read(relative, "--role", "independent")
+        view = self.read(relative)
         self.assertNotEqual(view.returncode, 0, view.stdout)
         self.assertEqual(json.loads(view.stdout)["code"], "review_packet_stale")
         path.write_bytes(raw)
         with mock.patch.object(handoff, "_emit", return_value=False), \
              mock.patch.object(handoff, "_write_new") as write, \
              mock.patch.object(preparation, "_capture", wraps=preparation._capture) as source:
-            code = handoff.main(["read", "--repo", str(self.root), "--packet", relative,
-                                 "--role", "independent"])
+            code = handoff.main(["read", "--repo", str(self.root), "--packet", relative])
         self.assertEqual(code, 1)
         write.assert_not_called()
         source.assert_called_once()
@@ -554,8 +566,7 @@ class ReviewerMaterialTests(PreparationFixture):
         return self.git("rev-parse", "HEAD").decode().strip()
 
     def displayed(self, packet):
-        return self.invoke("read", "--repo", str(self.root), "--packet", packet,
-                           "--role", "independent")
+        return self.invoke("read", "--repo", str(self.root), "--packet", packet)
 
     def material_read(self, command, *, environment=None, posix=False, raw=None):
         if os.name == "nt" and not posix:

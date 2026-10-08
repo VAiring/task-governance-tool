@@ -58,7 +58,7 @@ class ReviewSessionInstallTests(unittest.TestCase):
         from tests.test_usage_turn_adapter import tool_record
 
         read_result = self.invoke(self.install.skill_root / "scripts/review_handoff.py",
-            ["read", "--repo", str(self.root), "--packet", self.packet_path, "--role", "independent"], caller=REVIEWER)
+            ["read", "--repo", str(self.root), "--packet", self.packet_path], caller=REVIEWER)
         self.assertEqual(read_result.returncode, 0, read_result.stdout or read_result.stderr)
         displayed = json.loads(read_result.stdout)
         output = "reviews/g1/numerical-child.json"
@@ -330,7 +330,7 @@ class ReviewSessionInstallTests(unittest.TestCase):
         unknown = CallerIdentity(None)
         before = self.counts()
         result = self.invoke(self.install.skill_root / "scripts/review_handoff.py",
-            ["read", "--repo", str(self.root), "--packet", self.packet_path, "--role", "independent"], caller=unknown)
+            ["read", "--repo", str(self.root), "--packet", self.packet_path], caller=unknown)
         self.assertEqual(result.returncode, 0, result.stdout or result.stderr)
         self.assertEqual(json.loads(result.stdout)["context_check"], "matched_at_read")
         output = "reviews/g1/unknown.json"

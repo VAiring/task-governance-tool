@@ -396,7 +396,6 @@ def main(argv=None):
         reader = commands.add_parser("read", help="Display the saved Packet for an explicitly assigned independent reviewer")
         reader.add_argument("--repo", required=True)
         reader.add_argument("--packet", required=True)
-        reader.add_argument("--role", choices=("independent",), required=True)
         ended = commands.add_parser("wait-ended", help="Declare the bound supervisor's all-ended decision for optional numerical usage")
         ended.add_argument("--repo", required=True)
         packet_source = ended.add_mutually_exclusive_group(required=True)

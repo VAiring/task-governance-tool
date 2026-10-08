@@ -2051,9 +2051,10 @@ writes. Independent reviewer requests and duties remain unchanged.
 #### Read Review Packet
 
 Assigned independent reviewers use the fixed read command embedded in the request, whose shape is
-`review_handoff.py read --repo . --packet reviews/packet.json --role independent`.
-This replaces the raw Packet read, not an extra query. Explicit role is required;
-missing/unknown/other values fail. Full saved-Packet validation precedes display.
+`review_handoff.py read --repo . --packet reviews/packet.json`.
+This replaces the raw Packet read, not an extra query. It always returns the
+independent-reviewer display after full saved-Packet validation. Removing the
+role selector does not require recreating existing Packets or repeating reviews.
 It retains all fields except the parent's `receipt_command` and substitutes
 independent-only `result_instructions`, preserving applicable vocabulary,
 relations, limits, privacy and unfinished claims. The disk Packet is unchanged.

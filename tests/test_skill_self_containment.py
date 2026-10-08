@@ -2024,7 +2024,7 @@ print(json.dumps(results, ensure_ascii=False))
         operations = {
             "prepare-review-handoff": ("#### Prepare Review Handoff", "--expected-target-generation"),
             "record-review-wait-decision": ("#### Record Review Wait Decision", "wait-ended --repo ."),
-            "read-review-packet": ("#### Read Review Packet", "--role independent"),
+            "read-review-packet": ("#### Read Review Packet", "read --repo . --packet reviews/packet.json"),
             "save-review-original": ("#### Save Review Original", "--output reviews/review-a.json"),
             "submit-review-originals": ("#### Submit Review Originals", "submit --repo ."),
         }
@@ -2033,6 +2033,8 @@ print(json.dumps(results, ensure_ascii=False))
                 body = self.reader().read_reference(f"{source}#{fragment}", SKILL_ROOT)
                 self.assertIn(heading, body)
                 self.assertIn(operation_input, body)
+                if fragment == "read-review-packet":
+                    self.assertNotIn("--role", body)
                 self.assertIn("### Caller-Owned Review Handoff", body)
                 _, common = self.linked_output(source, body, "handoff-path-and-validation")
                 for boundary in ("`.json`", "32,768", "--user-approved-reviewer", ".taskgov"):

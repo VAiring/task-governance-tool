@@ -319,8 +319,9 @@ are rewritten, and no SID policy, native ACL adapter or caller option is added.
 
 The same module owns read-only saved-Packet display: existing transport reads
 and complete preparation validation precede `review_packet.py`'s pure
-independent-role projection. The helper parser requires explicit `--role
-independent`; neither tier nor slots select a role. Generated ordinary review
+independent-role projection. The read parser takes only the required repo and
+Packet paths; neither arguments, tier nor slots establish actual independence.
+Generated ordinary review
 requests supply that read command instead of raw-file reading and contain the
 ordinary procedure themselves. Each row has only `result_path` and `request`;
 the request embeds both fixed read/save invocations and remains directly

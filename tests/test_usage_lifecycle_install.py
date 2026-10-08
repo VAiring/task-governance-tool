@@ -232,7 +232,7 @@ class UsageLifecycleReviewInstallTests(unittest.TestCase):
         expected = set()
         for number, caller in enumerate((REVIEWER, SECOND)):
             read = self.invoke(self.install.skill_root / "scripts/review_handoff.py",
-                ["read", "--repo", str(self.root), "--packet", self.packet_path, "--role", "independent"],
+                ["read", "--repo", str(self.root), "--packet", self.packet_path],
                 caller=caller)
             self.assertEqual(read.returncode, 0, read.stdout or read.stderr)
             displayed = json.loads(read.stdout)
@@ -302,7 +302,7 @@ class UsageLifecycleReviewInstallTests(unittest.TestCase):
         repository = repository_for(target)
         before = target.resolved_usage_database.read_bytes()
         display = self.invoke(self.install.skill_root / "scripts/review_handoff.py",
-            ["read", "--repo", str(self.root), "--packet", self.packet_path, "--role", "independent"],
+            ["read", "--repo", str(self.root), "--packet", self.packet_path],
             caller=REVIEWER)
         self.assertEqual(display.returncode, 0)
         self.assertEqual(target.resolved_usage_database.read_bytes(), before)

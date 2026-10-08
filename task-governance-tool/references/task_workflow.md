@@ -778,7 +778,7 @@ That conditional route is not an additional ordinary read.
 The generated shared-file request and its output are self-contained; this
 section is fallback/reference guidance, not an additional normal prerequisite.
 When the request supplies shared-file operations, use its fixed
-`review_handoff.py read --role=independent` command in place of reading the raw
+`review_handoff.py read --repo <root> --packet <path>` command in place of reading the raw
 saved Packet. Its output retains Task/Contract/target,
 verification requirements, review tier, changed-path limits, focus, required
 output and the unfinished result template with all applicable format rules.

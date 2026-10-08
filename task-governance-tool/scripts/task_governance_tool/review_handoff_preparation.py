@@ -423,7 +423,7 @@ def _requests(repo, args, packet_path):
     entry = str(Path(__file__).parent.parent / "review_handoff.py")
     base = [sys.executable, "-B", entry]
     common = ["--repo=" + str(repo), "--packet=" + packet_path]
-    read = _shell([*base, "read", *common, "--role=independent"])
+    read = _shell([*base, "read", *common])
     reviewers = []
     paths = [args.directory + f"/review-{index}.json" for index in range(1, args.reviewers + 1)]
     for path in paths:

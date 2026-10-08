@@ -780,9 +780,11 @@ no public taskgov leaf or host trust/shared-setting change. Retained legacy
 supervisor usage markers and numerical-only persistence belong to
 [Review/completion](review-completion-design.md#review-wait-usage-marker).
 
-Known-review-material aggregation is caller instruction guidance in the separate
-Independent Reviewer workflow section, not a reader API, collection service, shared reviewer summary,
-or persisted reading ledger. Each reviewer keeps full independent responsibility.
+Known-review-material selection remains reviewer-owned instruction guidance in
+the separate Independent Reviewer workflow section. The transient fixed Git
+material collector is owned by Review/completion; it adds no Markdown reader
+API, persistent collection service, shared reviewer summary or reading ledger.
+Each reviewer keeps full independent responsibility.
 Transport fixtures compare separately identified complete outputs with grouped
 outputs, including failure and truncation recovery; semantic scenario review
 checks dependency discovery and judgment boundaries. Outer calls, internal reads,

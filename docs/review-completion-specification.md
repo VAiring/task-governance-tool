@@ -449,7 +449,56 @@ Required unavailable submodule/content or tool-truncated output must be recovere
 or reported before PASS. The observation is trusted-local and point-in-time;
 it does not lock state, certify review quality or replace submission revalidation.
 
-`material --repo <root>` accepts only `blob <full-object-id>`, `batch`,
+After the unchanged first read and reviewer-owned dependency selection,
+`collect_command` supplies a host-native stdin invocation bound to the saved
+Packet's SHA-256. Replace only its placeholder with a UTF-8 JSON array of
+selected project-relative dependency paths (`[]` for none). The parent gains no
+input or selection step. All changed before/after bodies and diffs are automatic;
+no caller-built OID list, repeated long invocation or source body in the first
+read is needed. The command revalidates the physical complete Packet and its
+digest, reuses the exact Git target observer, and rechecks Packet bytes before
+delivery. It neither queries Task state again nor replaces first-read/live-submit
+validation. An opaque target has no collect command.
+
+Collection returns transient UTF-8 JSON with `review_target`, the complete
+`changes`, selected `dependencies`, `bodies`, `status` and recovery instructions.
+Each present changed side and dependency preserves `path`, `revision`,
+`revision_kind`, `side`, `mode`, `object_id`, `body_id` and `status`. Before sides
+use the observed comparison treeish; after sides use the exact target kind/value
+(a snapshot fingerprint is explicitly not a commit). Unchanged dependencies use
+the base/exact commit, changed ones its after side; removed or renamed old paths
+are `absent_at_target`, never resurrected from the base. Duplicate selected paths
+collapse in first-selection order. Bodies are keyed by immutable blob ID, so
+identical content is supplied once without losing any path/revision/side mapping.
+`provided` bodies include exact UTF-8 text and original byte count, preserving
+CRLF and missing final newline. Links are text, submodules remain unavailable.
+Two present supplied sides receive the existing safe Git blob patch. A full
+addition/deletion has `format=whole_file`, its operation and a reference to the
+complete supplied body; it does not manufacture an empty object or duplicate
+the body. Modes/renames remain explicit in each change independently of its diff.
+
+The transient collector accepts at most the existing 16 MiB manifest byte bound
+of JSON input and validates every path before material reads. Delivery holds at
+most 1 MiB per text body/patch and 4 MiB total supplied text bytes; these are
+transport limits, not review-scope limits. Oversized text is `too_large` or
+`delivery_limit`, invalid UTF-8/NUL data is `non_text`, failed reads are
+`unavailable`, and gitlinks are `submodule_unavailable`; an undeliverable side
+makes its diff `source_unavailable`. No truncated body is supplied. Missing
+changed objects may instead fail the existing target observer before any output.
+Every selected path and change retains its outcome. `status=complete` and exit
+zero mean complete material delivery only, not sufficient dependency selection,
+reading or PASS; any unavailable row gives `incomplete` and nonzero with available
+siblings retained. Invalid input, Packet drift, or target-observation failure
+returns nonzero with the existing sanitized material diagnostic and no body.
+Tool-level truncation also requires recovery. Reuse complete provided bodies;
+they do not require another read merely because they arrived here. Recover only
+affected material using existing individual reads, and read newly discovered
+dependencies afterward. No body, diff, dependency list or reading ledger is
+persisted to the Packet or database. No relevance inference, mandatory config,
+supervisor, fixed review-roundtrip count or token-saving guarantee is added.
+
+`material --repo <root>` accepts only `collect --packet=<path>
+--packet-sha256=<digest>`, `blob <full-object-id>`, `batch`,
 `diff <before-full-id> <after-full-id>`, `dependency <full-revision>
 --path=<project-relative-path>`, or `directory <full-revision>
 --path=<project-relative-directory>`. The emitted commands include the actual
@@ -464,7 +513,7 @@ the existing `read` comparison and final registration checks remain controlling.
 `batch` streams validated full IDs from stdin (LF/CRLF or a final unterminated
 line), without a new count cap or retained body. Invalid selectors, paths or
 input fail nonzero; a failure after a batch prefix does not make that prefix
-complete. Successful Git execution forwards its raw bytes/exit status, not a
+complete. Outside `collect`, successful Git execution forwards its raw bytes/exit status, not a
 JSON success envelope or a content-availability assertion. Git's batch missing
 and non-blob records still require inspection even on exit zero. No body is
 saved, no parent environment is changed, and no network or Git write is added.

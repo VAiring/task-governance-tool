@@ -2064,9 +2064,20 @@ a display; no second reviewer check/show, state write or target reset is added.
 `context_check=matched_at_read` is an observation, not a future guarantee.
 `review_material` lists the complete Git delta (not the Packet's bounded list),
 immutable before/after object IDs and modes, comparison/dependency revisions,
-and read/diff command templates. Run their fixed invocation unchanged except
-for placeholders, following the supplied host-specific quote substitution for
-dependency paths. It reuses the sanitized/no-fetch Git environment in a child,
+and a `collect_command` bound to the saved Packet. Replace its single placeholder
+with a JSON array of the dependency paths you selected (`[]` for none); all
+changed before/after bodies and diffs are included automatically. No parent
+selection or OID assembly is required. The returned `bodies` table supplies each
+blob once, with explicit path/revision/side references and outcomes in `changes`
+and `dependencies`. Whole-file add/delete diffs reference their complete body;
+two-sided diffs are Git patches. Reuse provided complete material without a
+redundant reread. `complete`/exit zero is delivery, not review coverage or PASS.
+`incomplete`/nonzero retains successful siblings but requires recovery of missing,
+unavailable, binary or oversized material (1 MiB per text, 4 MiB total). Tool
+truncation also requires recovery; newly discovered dependencies still need reads.
+The retained individual read/diff/directory commands support those cases. Use
+their placeholders and host-specific path quoting as supplied. Retrieval reuses
+the sanitized/no-fetch Git environment in a child,
 without changing your shell environment; missing objects remain unavailable.
 Use listed objects for changed snapshot files,
 base-commit paths for unchanged dependencies, and exact commit paths for commit

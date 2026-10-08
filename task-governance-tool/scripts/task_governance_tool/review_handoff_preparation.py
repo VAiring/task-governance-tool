@@ -211,6 +211,9 @@ def add_material_parser(commands):
         action = actions.add_parser(name)
         action.add_argument("revision")
         action.add_argument("--path", required=True, help="Project-relative path; directory accepts empty root")
+    collect = actions.add_parser("collect", help="Bound target bodies/diffs plus selected dependency paths as UTF-8 JSON stdin")
+    collect.add_argument("--packet", required=True)
+    collect.add_argument("--packet-sha256", required=True)
 
 
 def read_material(repo, args):
@@ -224,6 +227,10 @@ def read_material(repo, args):
         return value
 
     action = args.material_operation
+    if action == "collect":
+        from task_governance_tool.review_material_collection import collect_material
+        result = collect_material(repo, args.packet, args.packet_sha256, sys.stdin.buffer)
+        return (0 if result["status"] == "complete" else 1) if files._emit(result, utf8=True) else 1
     if action == "blob":
         arguments = ["cat-file", "blob", object_id(args.object_id)]
     elif action == "diff":
@@ -297,30 +304,43 @@ def _dependency_inventory(repo, revision, changes):
             "returned": len(entries), "truncated": truncated}
 
 
-def _review_material(repo, target):
-    """Reuse target capture to expose immutable objects, not ambient file paths."""
+def _observe_material(repo, target):
+    """Shared exact-target observation; no mutable path is used as source content."""
     from task_governance_tool.artifact_manifest import (
-        ArtifactManifestError, ARTIFACT_MANIFEST_BYTE_LIMIT, build_artifact_entries,
+        ArtifactManifestError,
         observe_git_commit_manifest, observe_staged_git_manifest,
     )
     from task_governance_tool.completion import CompletionEvidenceError
     from task_governance_tool.git_snapshot import GitSnapshotError
     if target["kind"] not in ("git_snapshot", "git_commit"):
-        return {"status": "requires_supplied_material", "changes": None,
-                "instructions": [
-                    "The saved target cannot retrieve diff/external content. Obtain the complete supplied material and evidence binding it to review_target.value from the caller before PASS; do not substitute Git HEAD or worktree files."]}
+        files._fail("review_material_requires_supplied")
     try:
         observed = (observe_staged_git_manifest(repo) if target["kind"] == "git_snapshot"
                     else observe_git_commit_manifest(repo, target["value"]))
         if (observed.target_value != target["value"]
                 or observed.target_base_revision != target["base_revision"]):
             files._fail("review_target_mismatch")
-        changes = [asdict(entry) for entry in build_artifact_entries(
-            observed.before_leaves, observed.after_leaves)]
-        dependency_revision = (target["base_revision"] if target["kind"] == "git_snapshot"
-                               else target["value"])
-        inventory = _dependency_inventory(repo, dependency_revision, changes)
+        return observed
     except (ArtifactManifestError, GitSnapshotError, CompletionEvidenceError) as exc:
+        files._fail(exc.code)
+
+
+def _review_material(repo, target):
+    """Expose selectors and location hints, never source bodies in the first read."""
+    from task_governance_tool.artifact_manifest import (
+        ArtifactManifestError, ARTIFACT_MANIFEST_BYTE_LIMIT, build_artifact_entries,
+    )
+    from task_governance_tool.git_snapshot import GitSnapshotError
+    if target["kind"] not in ("git_snapshot", "git_commit"):
+        return {"status": "requires_supplied_material", "changes": None,
+                "instructions": [
+                    "The saved target cannot retrieve diff/external content. Obtain the complete supplied material and evidence binding it to review_target.value from the caller before PASS; do not substitute Git HEAD or worktree files."]}
+    observed = _observe_material(repo, target)
+    changes = [asdict(entry) for entry in build_artifact_entries(observed.before_leaves, observed.after_leaves)]
+    dependency_revision = target["base_revision"] if target["kind"] == "git_snapshot" else target["value"]
+    try:
+        inventory = _dependency_inventory(repo, dependency_revision, changes)
+    except (ArtifactManifestError, GitSnapshotError) as exc:
         files._fail(exc.code)
     # The existing manifest limit remains a complete-result boundary, not a
     # shortened list that a reviewer might mistake for the whole target.
@@ -341,15 +361,12 @@ def _review_material(repo, target):
             "dependency_command": _material_command(repo, "dependency", dependency_revision, "--path=<project-relative-path>"),
             "directory_command": _material_command(repo, "directory", dependency_revision, "--path=<project-relative-directory>"),
             "instructions": [
-                "changes is the complete target delta, even when the Packet's changed_paths is bounded. Inspect every entry and its modes. Replace only placeholders in the supplied Git commands with the listed object IDs or required project-relative path.",
-                path_quoting,
-                "Use the supplied commands, replacing only placeholders; no wrapper code or help lookup is needed. The helper disables lazy fetch, replacement refs, optional locks and prompts without changing your shell environment. Report missing objects; do not fetch them. Nonzero exit or incomplete delivery is not success.",
-                "Read before/after blobs by immutable object ID; compare both present blobs with diff_command. Added/deleted entries have one absent side. Mode 120000 is link text, not permission to follow it; mode 160000 names a submodule commit, not a blob: obtain any required unavailable submodule material from the caller.",
-                "For unchanged authority, source, tests and discovered dependencies use dependency_command at dependency_revision: the snapshot base or exact reviewed commit. Changed snapshot paths use their listed after object (or are deleted). Never substitute mutable index, HEAD or worktree content.",
-                "unchanged_inventory lists locations, modes and IDs from dependency_revision, excluding every old/new path in changes. It does not select relevant tests or certify content availability. Use it and actual authority/import references to choose known independent reads together; follow newly discovered dependencies afterward. A bounded inventory is not the complete repository or a limit on review scope.",
+                "Run collect_command, replacing only its JSON-array placeholder with the dependency paths you have selected (for example [\"AGENTS.md\",\"docs/authority.md\"], or []). It retrieves every changed before/after body and diff automatically, plus those dependencies; no OID list or parent selection is needed. Its bodies table supplies each blob once and preserves every path/revision/side association. Reuse provided complete bodies; do not reread merely because they were supplied. Status incomplete/nonzero, unavailable/large/non-text records or tool truncation require affected-material recovery, not repetition of successful siblings or PASS.",
+                "changes is the complete delta even when Packet paths are bounded. Inspect every entry and mode. Mode 120000 is link text, never followed; 160000 is unavailable submodule material to obtain from the caller. Whole-file add/delete diffs refer to the complete supplied body; two-sided diffs are Git patches. Delivery is not review coverage, quality or provenance.",
+                "unchanged_inventory is bounded location guidance, not selected relevance or proof of availability. Use actual authority/import references to select dependencies; follow newly discovered ones afterward. Snapshot changed paths use after objects, removed/renamed old paths are absent, unchanged paths use the base commit; commit targets use their exact commit. Never substitute ambient HEAD/index/worktree content.",
                 "If locations are omitted or more discovery is needed, directory_command lists that exact revision's directory (empty placeholder for root; otherwise path without trailing slash, escaped by the same path rule). Its paths are relative to that directory; mode 040000 entries can be explored with the same command. Apply changes over this base listing: changed snapshot files use after objects, removed/renamed old paths are absent. Recover tool-truncated listings by requesting sufficient output or exploring narrower directories; report unresolved omissions, never use ambient file search as target material.",
-                "For chosen known blobs, blob_batch_command accepts their listed full object IDs, one per stdin line, then EOF. Preserve the ID-to-path/side mapping. Each response is '<id> blob <byte-count>\\n', exactly that many content bytes, then LF, in input order. Check every response and complete delivery, not merely process exit: '<id> missing' or non-blob type is unavailable, not content or PASS. Do not batch mode 160000 as a blob or follow mode 120000 link text. Group only what the tool can return completely; recover truncated material with individual blob_command reads and sufficient output, or report it. No source body is stored in the Packet or Task DB.",
-                "Read checks saved versus current Task/Contract/target and Git object identity, not review quality or provenance. Recover required unavailable or tool-truncated material before judgment, or report it to the caller."]}
+                "Recovery/additional reads use blob_command, diff_command (both sides present), dependency_command (unchanged paths at dependency_revision), or blob_batch_command (listed full IDs, one per stdin line). Batch returns '<id> blob <byte-count>\\n', exactly that many bytes, then LF, per input. Check each record: exit zero may still report missing/non-blob content. The fixed commands disable fetch, replacement refs, locks and prompts; no body enters the Packet or Task DB. Nonzero or incomplete delivery is not success.",
+                "For the individual dependency/directory recovery templates only: " + path_quoting]}
 
 
 def read_for_reviewer(repo, packet_path):
@@ -359,6 +376,15 @@ def read_for_reviewer(repo, packet_path):
     raw = files._read(path, files.PACKET_LIMIT)
     packet = files._packet(raw)
     material = _review_material(repo, packet["review_target"])
+    if material["status"] == "git_objects_verified":
+        from hashlib import sha256
+        command = _material_command(
+            repo, "collect", "--packet=" + packet_path, "--packet-sha256=" + sha256(raw).hexdigest())
+        placeholder = "<selected dependency paths as JSON array>"
+        material["collect_command"] = (
+            "$OutputEncoding = [Console]::InputEncoding = [System.Text.UTF8Encoding]::new($false)\n@'\n"
+            + placeholder + "\n'@ | " + command if os.name == "nt" else
+            command + " <<'TASKGOV_MATERIAL_PATHS'\n" + placeholder + "\nTASKGOV_MATERIAL_PATHS")
     # One existing read-only public operation, inside the replacement read;
     # no extra reviewer check/show, new target, Receipt or direct DB access.
     entry = Path(__file__).parent.parent / "taskgov.py"

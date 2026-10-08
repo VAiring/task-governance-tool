@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import copy
+import hashlib
 import io
 import json
 import os
@@ -600,6 +601,167 @@ class ReviewerMaterialTests(PreparationFixture):
         self.assertEqual(actual.stdout, expected)
         self.assertEqual(file_snapshot(self.root), before)
 
+    def test_collect_supplies_exact_deduplicated_bodies_and_patch_without_extra_parent_input(self):
+        self.committed_fixture()
+        text = "# 日本語\r\nvalue = 2"
+        paths = ["O‘Brien; $x & 日本語.md", "same.md"]
+        for path in paths:
+            (self.root / path).write_bytes(text.encode())
+        self.git("-c", "core.autocrlf=false", "add", "--", *paths)
+        self.git("commit", "--quiet", "-m", "Known dependencies")
+        base = self.git("rev-parse", "HEAD").decode().strip()
+        (self.root / "source.py").write_bytes(text.encode())
+        self.git("-c", "core.autocrlf=false", "add", "--", "source.py")
+        _, prepared = self.prepare(self.task(), options=["--kind", "git_snapshot"])
+        packet = prepared["handoff"]["packet_path"]
+        view = json.loads(self.displayed(packet).stdout)
+        self.assertNotIn(text, json.dumps(view, ensure_ascii=False))
+        material = view["review_material"]
+        selected = [*paths, "source.py", "AGENTS.md", paths[0]]
+        command = material["collect_command"].replace(
+            "<selected dependency paths as JSON array>", json.dumps(selected, ensure_ascii=False))
+        (self.root / "source.py").write_text("unreviewed ambient value", encoding="utf-8")
+        before = file_snapshot(self.root)
+        actual = self.material_read(command, environment=dict(os.environ, GIT_DIR="absent.git", GIT_NO_LAZY_FETCH="0"))
+        self.assertEqual(actual.returncode, 0, actual.stderr)
+        collected = json.loads(actual.stdout)
+        self.assertEqual(collected["status"], "complete")
+        self.assertEqual(collected["review_target"], view["review_target"])
+        self.assertEqual(len(collected["dependencies"]), 4)
+        change, = collected["changes"]
+        oid = change["after_object_id"]
+        self.assertEqual(collected["bodies"][oid], {"status": "provided", "text": text, "byte_count": len(text.encode())})
+        self.assertEqual(len(collected["bodies"]), 3)
+        for dep in collected["dependencies"][:3]:
+            self.assertEqual(dep["body_id"], oid)
+            self.assertEqual(dep["side"], "dependency")
+        self.assertEqual(collected["dependencies"][0]["revision"], base)
+        self.assertEqual(collected["dependencies"][2]["revision"], view["review_target"]["value"])
+        self.assertEqual(change["before"]["revision"], base)
+        self.assertEqual(change["after"]["side"], "after")
+        self.assertEqual(collected["bodies"][change["before_object_id"]]["text"].encode(),
+                         self.git("cat-file", "blob", change["before_object_id"]))
+        self.assertEqual(change["diff"]["text"].encode(), self.git("diff", "--no-ext-diff", "--no-textconv",
+                         change["before_object_id"], oid, "--"))
+        self.assertEqual(file_snapshot(self.root), before)
+
+    def test_collect_modes_rename_deleted_paths_and_whole_file_diffs(self):
+        base = self.committed_fixture()
+        blob = self.git("rev-parse", base + ":SPEC.md").decode().strip()
+        self.git("mv", "--", "source.py", "renamed.py")
+        self.git("rm", "--", "SPEC.md")
+        self.git("update-index", "--chmod=+x", "AGENTS.md")
+        self.git("update-index", "--add", "--cacheinfo", f"120000,{blob},link-text")
+        self.git("update-index", "--add", "--cacheinfo", f"160000,{base},submodule")
+        _, prepared = self.prepare(self.task(), options=["--kind", "git_snapshot"])
+        material = json.loads(self.displayed(prepared["handoff"]["packet_path"]).stdout)["review_material"]
+        command = material["collect_command"].replace("<selected dependency paths as JSON array>",
+                                                     '["source.py","SPEC.md","renamed.py","link-text"]')
+        actual = self.material_read(command)
+        collected = json.loads(actual.stdout)
+        self.assertEqual(collected["status"], "incomplete")
+        deps = {row["path"]: row for row in collected["dependencies"]}
+        self.assertEqual(deps["source.py"]["status"], "absent_at_target")
+        self.assertEqual(deps["SPEC.md"]["status"], "absent_at_target")
+        self.assertEqual(deps["renamed.py"]["status"], "provided")
+        self.assertEqual(deps["link-text"]["mode"], "120000")
+        self.assertEqual(collected["bodies"][blob]["text"], "The value must be 2.\n")
+        changes = collected["changes"]
+        rename = next(row for row in changes if row["kind"] == "rename" and row["new_path"] == "renamed.py")
+        self.assertEqual((rename["before"]["path"], rename["after"]["path"]), ("source.py", "renamed.py"))
+        self.assertEqual(rename["before"]["body_id"], rename["after"]["body_id"])
+        submodule = next(row for row in changes if row["new_path"] == "submodule")
+        self.assertEqual(submodule["after"]["status"], "submodule_unavailable")
+        self.assertEqual(submodule["diff"]["status"], "source_unavailable")
+
+    def test_collect_large_binary_missing_and_later_dependency_recovery(self):
+        self.committed_fixture()
+        from task_governance_tool import review_material_collection as collection
+        contents = {"large.md": b"x" * (collection.BODY_BYTE_LIMIT + 1),
+                    "binary.bin": b"\xff\0", "missing.md": b"missing", "later.md": b"later dependency"}
+        for path, raw in contents.items():
+            (self.root / path).write_bytes(raw)
+        self.git("add", "--", *contents)
+        self.git("commit", "--quiet", "-m", "Recovery fixtures")
+        base = self.git("rev-parse", "HEAD").decode().strip()
+        missing = self.git("rev-parse", base + ":missing.md").decode().strip()
+        (self.root / "source.py").write_bytes(b"value = 2\n")
+        self.git("add", "--", "source.py")
+        _, prepared = self.prepare(self.task(), options=["--kind", "git_snapshot"])
+        packet = prepared["handoff"]["packet_path"]
+        material = json.loads(self.displayed(packet).stdout)["review_material"]
+        object_path = self.root / ".git" / "objects" / missing[:2] / missing[2:]
+        object_path.chmod(stat.S_IWRITE | stat.S_IREAD)
+        object_path.unlink()
+        digest = hashlib.sha256((self.root / packet).read_bytes()).hexdigest()
+        result = self.invoke("material", "--repo", str(self.root), "collect", "--packet=" + packet,
+                             "--packet-sha256=" + digest, raw=b'["large.md","binary.bin","missing.md"]')
+        self.assertNotEqual(result.returncode, 0)
+        collected = json.loads(result.stdout)
+        self.assertEqual(collected["status"], "incomplete")
+        self.assertEqual([row["status"] for row in collected["dependencies"]], ["too_large", "non_text", "unavailable"])
+        self.assertTrue(all("text" not in collected["bodies"][row["object_id"]] for row in collected["dependencies"]))
+        self.assertEqual(collected["changes"][0]["after"]["status"], "provided")
+        for path in ("large.md", "later.md"):
+            recovered = self.material_read(material["dependency_command"].replace("<project-relative-path>", path))
+            self.assertEqual(recovered.returncode, 0, recovered.stderr)
+            self.assertEqual(recovered.stdout, contents[path])
+
+    def test_collect_rejects_invalid_input_changed_packet_and_target_without_bodies(self):
+        self.committed_fixture()
+        (self.root / "source.py").write_bytes(b"value = 2\n")
+        self.git("add", "--", "source.py")
+        _, prepared = self.prepare(self.task(), options=["--kind", "git_snapshot"])
+        packet = prepared["handoff"]["packet_path"]
+        raw_packet = (self.root / packet).read_bytes()
+        arguments = ("material", "--repo", str(self.root), "collect", "--packet=" + packet,
+                     "--packet-sha256=" + hashlib.sha256(raw_packet).hexdigest())
+        snapshot = file_snapshot(self.root)
+        for raw in (b"", b"{}", b'[1]', b'["../SPEC.md"]', b'["HEAD:SPEC.md"]', b'\xff', b'["SPEC.md",null]'):
+            result = self.invoke(*arguments, raw=raw)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertEqual(result.stdout, b"")
+            self.assertNotIn(b"Traceback", result.stderr)
+        self.assertEqual(file_snapshot(self.root), snapshot)
+        (self.root / packet).write_bytes(raw_packet + b"\n")
+        result = self.invoke(*arguments, raw=b"[]")
+        self.assertEqual(result.stdout, b"")
+        self.assertIn(b"review_packet_stale", result.stderr)
+        (self.root / packet).write_bytes(raw_packet)
+        (self.root / "source.py").write_bytes(b"value = 3\n")
+        self.git("add", "--", "source.py")
+        result = self.invoke(*arguments, raw=b"[]")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(result.stdout, b"")
+        self.assertIn(b"review_target_mismatch", result.stderr)
+
+    def test_collect_commit_add_delete_and_aggregate_budget(self):
+        from task_governance_tool import review_material_collection as collection
+        base = self.committed_fixture()
+        self.git("rm", "--", "source.py")
+        (self.root / "added.py").write_bytes(b"new content without LF")
+        self.git("add", "--", "added.py")
+        self.git("commit", "--quiet", "-m", "Whole-file change")
+        revision = self.git("rev-parse", "HEAD").decode().strip()
+        _, prepared = self.prepare(self.task(), options=["--kind", "git_commit", "--revision", revision])
+        packet = prepared["handoff"]["packet_path"]
+        digest = hashlib.sha256((self.root / packet).read_bytes()).hexdigest()
+        self.git("commit", "--quiet", "--allow-empty", "-m", "Later HEAD")
+        result = collection.collect_material(self.root, packet, digest, io.BytesIO(b'["SPEC.md"]'))
+        self.assertEqual(result["status"], "complete")
+        self.assertEqual(result["dependencies"][0]["revision"], revision)
+        for entry in result["changes"]:
+            self.assertEqual(entry["diff"]["format"], "whole_file")
+            self.assertEqual(entry["diff"]["operation"], entry["kind"])
+            side = entry["after"] or entry["before"]
+            self.assertEqual(entry["diff"]["body_id"], side["object_id"])
+            self.assertEqual(result["bodies"][side["object_id"]]["text"].encode(), self.git("cat-file", "blob", side["object_id"]))
+        with mock.patch.object(collection, "TOTAL_BYTE_LIMIT", 25):
+            bounded = collection.collect_material(self.root, packet, digest, io.BytesIO(b'["SPEC.md"]'))
+        self.assertEqual(bounded["status"], "incomplete")
+        self.assertEqual(bounded["dependencies"][0]["status"], "delivery_limit")
+        self.assertLessEqual(sum(row.get("byte_count", 0) for row in bounded["bodies"].values()), 25)
+
     def test_directory_discovery_keeps_tree_coordinates_from_nested_project(self):
         from task_governance_tool.artifact_manifest import observe_staged_git_manifest
 
@@ -652,6 +814,12 @@ class ReviewerMaterialTests(PreparationFixture):
         self.assertLessEqual(inventory["returned"], preparation.INVENTORY_ENTRY_LIMIT)
         self.assertLessEqual(len(encode(inventory["entries"])), preparation.INVENTORY_BYTE_LIMIT)
         self.assertNotIn("later/needed.py", [row["path"] for row in inventory["entries"]])
+        collected = self.material_read(material["collect_command"].replace(
+            "<selected dependency paths as JSON array>", '["later/needed.py"]'))
+        self.assertEqual(collected.returncode, 0, collected.stderr)
+        delivery = json.loads(collected.stdout)
+        dependency, = delivery["dependencies"]
+        self.assertEqual(delivery["bodies"][dependency["body_id"]]["text"], "required = True\n")
         actual = self.material_read(material["directory_command"].replace("<project-relative-directory>", "later"))
         self.assertEqual(actual.returncode, 0, actual.stderr)
         self.assertIn(b"needed.py", actual.stdout)
@@ -912,6 +1080,11 @@ class ReviewerMaterialTests(PreparationFixture):
             material = json.loads(result.stdout)["review_material"]
             self.assertEqual(material["dependency_revision"], root)
             self.assertTrue(all(e["kind"] == "add" for e in material["changes"]))
+            collected = self.material_read(material["collect_command"].replace(
+                "<selected dependency paths as JSON array>", "[]"))
+            self.assertEqual(collected.returncode, 0, collected.stderr)
+            self.assertTrue(all(entry["diff"]["format"] == "whole_file"
+                                for entry in json.loads(collected.stdout)["changes"]))
         current = self.git("rev-parse", "HEAD").decode().strip()
         _, prepared = self.prepare(self.task(), options=["--kind", "git_commit", "--revision", current],
                                    directory="reviews/second")

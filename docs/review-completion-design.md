@@ -343,8 +343,9 @@ per-object framing and missing/non-blob outcomes, not a new success assertion.
 Generated guidance preserves path/side identity, bounded-display recovery,
 snapshot overlay and later dependency discovery. Inventory and bodies never
 enter the saved Packet or DB; save/submit and reviewer isolation are unchanged.
-The same module's `read_material` owns only five fixed reads: blob, batch,
-diff, dependency and directory. It reuses `completion.FULL_GIT_OBJECT_ID`,
+The same module's `read_material` dispatches collection to
+`review_material_collection.py` and retains five fixed raw reads: blob, batch,
+diff, dependency and directory. Those raw reads reuse `completion.FULL_GIT_OBJECT_ID`,
 manifest path validation and `completion.safe_git_command/safe_git_environment`;
 no configurable runner or stored wrapper is introduced. Named `--path=` keeps
 an empty root argument intact on PowerShell 5.1. Batch validates each bounded
@@ -357,6 +358,31 @@ reads forward the fixed Git process's raw output and exit. No Task query,
 Packet mutation, storage connection, body persistence or permission change is
 added to material retrieval. The already generated immutable selectors and
 existing read/submit checks remain the binding boundary.
+The collector shares `_observe_material` with the first read instead of
+reimplementing fingerprint capture. The first read adds one host-native
+`collect_command`, embedding the physical Packet path and exact raw-byte digest;
+only the reviewer-selected JSON path array remains a placeholder. Collection
+reuses complete-Packet validation, its unchanged-file check, and manifest path
+safety. The observer's changed after-leaves and a streamed immutable dependency
+tree resolve only selected paths, independently of the bounded inventory. Changed
+old/new paths suppress base lookup, preserving snapshot overlays and deletions;
+the shared tree reader keeps nested project coordinates. No parent input or new
+public Task query is added.
+`_Bodies` deduplicates blob IDs in memory while source rows retain path, revision,
+kind, side and mode. Fixed `run_git_stream` calls inherit sanitized Git and
+bounded timeout/cleanup. Per-text and aggregate byte budgets bound retention;
+oversized/failed/binary records are explicit, with no partial text. Git patches
+use the existing no-external-diff/no-textconv operation. Whole-file add/delete
+diffs reference the provided body and operation; no temporary files or Git objects
+are written. All rows and byte-preserving UTF-8 bodies are emitted together as
+transient JSON after final Packet validation. Available siblings remain usable
+when another row fails; unchanged raw operations recover large or unavailable
+material and discover later dependencies. The owning specification defines
+statuses/limits; these never substitute for review scope, current-state checks,
+or independently reading and judging all necessary material. Nothing is stored
+in a Packet, database, cache or reading ledger. The generated request delegates
+retrieval to this first-read output, where normal collection and conditional
+individual-read guidance belong; save/wait/submit/completion are unchanged.
 The child inherits no Git overrides and cannot lazily fetch missing material.
 Generated host-specific literal-substitution instructions and fully bound shell
 arguments preserve quotes and shell punctuation, including PowerShell's five

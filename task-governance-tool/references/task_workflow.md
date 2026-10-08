@@ -786,8 +786,15 @@ It also returns `context_check=matched_at_read` after comparing the saved
 Task/Contract/target with the existing public read, plus `review_material`.
 For Git, that material lists every changed entry with machine-verified immutable
 before/after object IDs, modes, comparison base and fixed read/diff command
-templates. Use those objects, including renamed/deleted paths, not ambient
-files. Unchanged snapshot dependencies come from the base commit; changed ones
+templates. After selecting the dependencies you would already read, use its
+generated `collect_command` with only those paths as a JSON array. It automatically
+supplies all changed before/after bodies and diffs, plus your selected dependencies,
+deduplicating bodies while retaining path/revision/side correspondence. Explicitly
+provided complete bodies can be reused; their delivery alone does not require
+another read. Recover unavailable/large/non-text or tool-truncated material via
+the supplied individual commands, and follow newly discovered dependencies later.
+Use those objects, including renamed/deleted paths, not ambient files.
+Unchanged snapshot dependencies come from the base commit; changed ones
 use their listed after object. Commit dependencies use the exact commit.
 This is not a replacement Packet, future freshness guarantee or review PASS.
 Opaque diff/external targets explicitly require supplied material and binding

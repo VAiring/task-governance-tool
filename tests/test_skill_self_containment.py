@@ -290,20 +290,29 @@ class SkillSelfContainmentTests(unittest.TestCase):
         self.assertRegex(ci, r"(?m)^  test:\n")
 
         trust_documents = (
-            readme,
-            release_guide,
-            release_body,
-            workflow_guide,
+            (readme, False),
+            (release_guide, False),
+            (release_body, False),
+            (workflow_guide, True),
         )
-        for text in trust_documents:
+        for text, current_workflow in trust_documents:
             normalized = " ".join(text.lower().split())
-            for phrase in (
+            # The current normal loop owns the same gates in concise wording;
+            # published release prose is retained, not copied back into it.
+            gate_phrases = (
+                "exact current target/generation",
+                "taskgov evaluates qualifying pass and `changes_requested` receipts only for that current basis",
+                "`changes_requested` blocks completion",
+                "unresolved high/medium findings from any recorded generation also block",
+            ) if current_workflow else (
                 "deterministically evaluates",
                 "qualifying pass receipts",
                 "changes-requested receipts only for the current review "
                 "target and generation",
                 "unresolved high or medium finding",
                 "any recorded generation",
+            )
+            for phrase in (*gate_phrases,
                 "distinct stored strings",
                 "people",
                 "llms",

@@ -433,8 +433,7 @@ def _requests(repo, args, packet_path):
     return {"status": "ready", "packet_path": packet_path, "review_requests": reviewers,
             "review_wait": {"status": wait_status, "task_id": args.task_id,
                             "wait_tool": "review_wait_wait",
-                            "guide": "references/review_wait.md"},
-            "wait_ended_command": _shell([*base, "wait-ended", *common]),
+                            "guide": "references/review_wait.md#normal-wait"},
             "submit_command": _shell([*base, "submit", *common, "--", *paths])}
 
 

@@ -95,6 +95,11 @@ class ProjectWaitTests(PreparationFixture):
         self.assertEqual(9, len(catalogue))
         self.assertNotIn("review_wait_direct_start", [tool["name"] for tool in catalogue])
         self.assertTrue(all(tool["inputSchema"]["additionalProperties"] is False for tool in catalogue))
+        tools = {tool["name"]: tool for tool in catalogue}
+        for operation in ("prepare", "view", "direct_delete_start", "direct_status", "direct_cancel", "direct_ack"):
+            self.assertIn("Compatibility", tools["review_wait_" + operation]["description"])
+        self.assertEqual({"task_id", "reviewer_ids"}, set(tools["review_wait_wait"]["inputSchema"]["properties"]))
+        self.assertTrue(tools["review_wait_inspect"]["annotations"]["readOnlyHint"])
         self.assertEqual(before, file_snapshot(self.root))
 
     def test_prepare_canonical_isolated_associations_and_duplicate_exclusion(self):
@@ -216,7 +221,8 @@ class ProjectWaitTests(PreparationFixture):
     def test_handoff_routes_policy_without_launch_or_supervisor_duty(self):
         route = self.handoff["handoff"]["review_wait"]
         self.assertEqual({"status": "enabled", "task_id": self.task_id,
-            "wait_tool": "review_wait_wait", "guide": "references/review_wait.md"}, route)
+            "wait_tool": "review_wait_wait", "guide": "references/review_wait.md#normal-wait"}, route)
+        self.assertNotIn("wait_ended_command", self.handoff["handoff"])
         self.assertFalse(self.paths.review_wait_root.exists())
         for request_item in self.handoff["handoff"]["review_requests"]:
             self.assertNotIn("review_wait_prepare", request_item["request"])

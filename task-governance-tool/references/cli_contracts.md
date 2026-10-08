@@ -1937,12 +1937,13 @@ not-applicable, not PASS.
 
 Only `handoff.status=ready` supplies a saved complete `packet_path`, per-reviewer
 `review_requests` (distinct result path, exact read/save commands and request), and
-`submit_command`, plus the conditional supervisor-only `wait_ended_command`.
+`submit_command`.
 It also supplies `review_wait={status,task_id,wait_tool,guide}`. Status is
 `enabled|disabled|unavailable` from local policy only; fixed tool/guide values
-are `review_wait_wait` and `references/review_wait.md`. It does not dispatch
-reviews, prepare a wait or establish host connection. The deterministic route
-never invokes the legacy `wait_ended_command`.
+are `review_wait_wait` and `references/review_wait.md#normal-wait`. It does not
+dispatch reviews, prepare a wait or establish host connection. Normal responses
+omit `wait_ended_command`; only a retained legacy supervisor uses the separate
+[wait-decision helper](#record-review-wait-decision).
 Pass those requests directly; required independent artifact
 and authority inspection is unchanged. A target requiring a Receipt returns
 `not_applicable` without files, so its later Receipt call may use the same area.
@@ -1989,8 +1990,9 @@ the MCP service uses it internally for the original Task's current basis.
 Only a retained legacy wait supervisor uses `wait-ended`, once in its first
 all-ended/shortening-decision turn. The current
 [waiting procedure](task_workflow.md#wait-across-parent-turns) is deterministic
-and never invokes this helper or fabricates a supervisor usage turn. Shared-file
-preparation already supplies the fixed `wait_ended_command`. Its shape is:
+and never invokes this helper or fabricates a supervisor usage turn. Normal
+preparation does not generate this legacy command. For that existing supervisor
+context only, use the original project's retained Packet path:
 
 ```powershell
 python .agents/skills/task-governance-tool/scripts/review_handoff.py wait-ended --repo . --packet reviews/g1/packet.json

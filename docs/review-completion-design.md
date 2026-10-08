@@ -376,6 +376,8 @@ The packaged `scripts/review_wait_server.py` runs `project_server` with only
 repository, public bundled MCP wrapper, Codex home and confirmed timezone.
 Its nine closed controls include the normal `wait`, optional `inspect/stop`
 and six compatible per-reservation controls. Discovery and startup are inert.
+The six compatibility descriptions label the earlier association/recovery use
+and identify the normal alternative without hiding controls or changing schemas.
 `managed_wait.ManagedWait` owns single-call admission, creation, preparation,
 start and healthy repeated waiting; the source compatibility entry keeps its
 explicit injected paths and old catalogue.
@@ -443,10 +445,11 @@ strict child-turn capture are unchanged. Diagnostic codes are fixed; no path
 handles or host bodies reach durable state.
 
 Handoff preparation returns `review_wait={status,task_id,wait_tool,guide}`,
-where the fixed values are `review_wait_wait` and `references/review_wait.md`.
+where the fixed values are `review_wait_wait` and `references/review_wait.md#normal-wait`.
 It reads policy only, never starts waiting or changes read-only CLI effects.
-Reviewer requests, saved originals and registration remain unchanged; the legacy
-`wait_ended_command` remains available only for historical supervisor contexts.
+Reviewer requests, saved originals and registration remain unchanged. The ready
+response omits `wait_ended_command`; the legacy helper's separately documented
+file/stdin invocation remains available for retained supervisor contexts.
 Installed guidance replaces create/prepare/start/ACK duties with one normal
 wait call and existing result processing after resumption. Non-review waiting
 and actual parent/reviewer numerical attribution are unaffected.
@@ -726,9 +729,9 @@ restart without replay, and old payload compatibility.
 
 #### Review Wait Usage Marker
 
-`review_handoff_preparation.py` generates one safely quoted `wait_ended_command`
-from the same prepared Packet path as read/save/submit. It is for the supervisor,
-not appended to independent-review requests. `review_handoff.py` adds only the
+Normal `review_handoff_preparation.py` output does not generate a
+`wait_ended_command` or append one to independent-review requests. Retained
+legacy supervisors use the separately documented `review_handoff.py`
 conditional `wait-ended` operation with mutually exclusive file/UTF-8 stdin
 Packet input. Existing physical input and complete-Packet validators are reused;
 stdin adds no file write and preserves the direct transport route.

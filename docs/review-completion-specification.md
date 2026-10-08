@@ -572,6 +572,9 @@ The six earlier controls remain compatible for existing associations:
 `review_wait_direct_cancel(automation_id, probe_id)` and
 `review_wait_direct_ack(automation_id, probe_id)`.
 They are recovery/compatibility controls, not the normal wait procedure.
+Their discovery descriptions identify that role and point to the corresponding
+normal wait, diagnosis or stop control; normal receipt is automatic. All nine
+controls remain discoverable with unchanged inputs and execution semantics.
 Every control requires genuine executor metadata; wait/prepare/start additionally
 require the actual current turn and enabled policy.
 
@@ -662,6 +665,14 @@ use a private API or silently substitute a supervisor. Coupled offline checks
 and two independent Tier 2 reviews precede real-host activation; the normal
 single-call/end/delete/send/observed-receipt path requires actual host validation.
 Fixture success and accepted sending alone are insufficient.
+
+Ready handoff responses retain the original Packet, reviewer read/save requests,
+submit command and `review_wait={status,task_id,wait_tool,guide}`. Its fixed guide
+is `references/review_wait.md#normal-wait`, including the applicable permission
+prerequisites and conditional recovery links. They do not emit the legacy
+`wait_ended_command`; the separately documented legacy helper remains available
+only for its retained supervisor context. No mode selection, extra lookup call
+or configuration is added to the normal request.
 
 <a id="development-review-wait-relay"></a>
 
@@ -968,9 +979,9 @@ bootstrap; they do not turn a reported host error into a permission conclusion.
 For a retained legacy supervisor context only, in the first turn where that
 designated supervisor observes the full review set
 ended and decides whether to shorten the current wait, it invokes the fixed
-`review_handoff.py wait-ended` helper once. The ready shared-file handoff returns
-`wait_ended_command` beside the existing requests and submit command. The parent
-passes that command to the supervisor with the wait association. Complete-Packet
+`review_handoff.py wait-ended` helper once. This compatibility operation remains
+documented separately with explicit `--repo` and the retained `--packet` path;
+normal ready handoff does not generate a `wait_ended_command`. Complete-Packet
 transport instead supplies those same complete bytes on UTF-8 stdin using
 `wait-ended --repo <project> --from-stdin`; no shared file is required. The helper
 accepts exactly one of `--packet <ignored-path>` and `--from-stdin`. Ordinary

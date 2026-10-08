@@ -34,6 +34,13 @@ Discovery, inspection and restart never start or replay an old worker.
 
 ## Normal Wait
 
+Use the already selected local policy and connected project MCP service with
+its existing host/timezone/send authorization. Ordinary waiting adds no Setup
+or approval step. For an explicit setup request, use [Setup and connection](#setup-and-connection).
+If a prerequisite is unavailable or an operation fails, use
+[failure and recovery guidance](#failures-stop-and-diagnosis); never retry an
+unknown effect or infer readiness from a failed call.
+
 1. Dispatch the unchanged independent-review requests through the authorized
    subagent facility. Retain the original Task/Packet, actual returned handles,
    original-result paths and registration command. Never duplicate a dispatch
@@ -79,7 +86,10 @@ wait before a new association.
 
 The six earlier per-reservation prepare/view/start/status/cancel/ack controls
 remain available for old associations and explicit diagnosis. They are not part
-of this normal workflow. No automatic migration of experimental state occurs.
+of this normal workflow and their MCP descriptions identify that compatibility
+role. Only a retained legacy supervisor context uses the separate
+[wait-decision marker](cli_contracts.md#record-review-wait-decision); normal
+handoff responses do not generate that command. No automatic migration of experimental state occurs.
 The service retains the existing 64-association bound and 64 request attempts
 per parent/Task; capacity failures preserve history and never evict workers.
 

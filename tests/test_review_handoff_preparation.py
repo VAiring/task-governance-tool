@@ -126,6 +126,8 @@ class InstalledPreparationTests(PreparationFixture):
         self.assertEqual(result["operation_status"], "succeeded")
         self.assertEqual(result["source"]["verification_route"], "not_required")
         context = result["handoff"]
+        self.assertEqual({"status", "packet_path", "review_requests", "review_wait", "submit_command"}, set(context))
+        self.assertEqual("references/review_wait.md#normal-wait", context["review_wait"]["guide"])
         packet = json.loads((self.root / context["packet_path"]).read_bytes())
         self.assertEqual(packet["task"]["task_id"], task)
         self.assertEqual(len(context["review_requests"]), 2)

@@ -3,7 +3,6 @@
 import copy
 import json
 import os
-import shlex
 import subprocess
 import sys
 from unittest import mock
@@ -11,7 +10,6 @@ from unittest import mock
 from tests.m14_test_support import file_snapshot
 from tests.test_review_handoff_preparation import PreparationFixture
 from tests.test_review_results import FINGERPRINT
-from task_governance_tool import review_handoff_preparation as preparation
 from task_governance_tool import usage_lifecycle
 from task_governance_tool.state_resolver import resolve_project_state
 from task_governance_tool.usage_evidence_service import repository_for
@@ -72,26 +70,17 @@ class ReviewWaitHandoffTests(PreparationFixture):
         repository = repository_for(self.target)
         self.assertIn(marker["review_wait"]["session_id"], repository.registered_sources()[0])
 
-    def test_generated_command_quotes_paths_without_changing_reviewer_procedure(self):
-        args = mock.Mock(directory="reviews/quoted's 日本語", reviewers=2)
-        self.packet_path = args.directory + "/packet.json"
+    def test_legacy_marker_accepts_quoted_paths_without_normal_handoff_duty(self):
+        self.packet_path = "reviews/quoted's 日本語/packet.json"
         packet_file = self.root / self.packet_path
         packet_file.parent.mkdir()
         packet_file.write_bytes(self.packet_bytes)
-        with mock.patch.object(preparation, "_shell", side_effect=shlex.join), \
-             mock.patch.object(preparation, "__file__", str(self.install.skill_root /
-                 "scripts/task_governance_tool/review_handoff_preparation.py")):
-            context = preparation._requests(self.root, args, self.packet_path)
-        command = shlex.split(context["wait_ended_command"])
-        self.assertIn("wait-ended", command)
-        self.assertIn("--packet=" + self.packet_path, command)
-        invoked = subprocess.run(command, capture_output=True, cwd=self.root,
-                                 check=False, env=self.review_environment(9))
-        self.assert_success(invoked, json.loads(invoked.stdout))
-        for request in context["review_requests"]:
+        invoked, marker = self.decision()
+        self.assert_success(invoked, marker)
+        for request in self.handoff["review_requests"]:
             self.assertNotIn("wait-ended", request["request"])
             self.assertEqual(set(request), {"result_path", "read_command", "save_command", "request"})
-        self.assertIn("wait_ended_command", self.handoff)
+        self.assertNotIn("wait_ended_command", self.handoff)
 
     def test_missing_or_malformed_actual_caller_cannot_emit_marker(self):
         for identity in (None, "untrusted session text"):

@@ -1678,10 +1678,13 @@ def task_edit_failure_result(
 
 
 def write_task_projection(task: dict[str, Any], changed_fields: list[str]) -> dict[str, Any]:
-    """Omit unchanged prose only from already validated write results."""
+    """Omit unchanged context fields from already validated write results."""
     return {
         key: value for key, value in task.items()
-        if key not in {"description", "verification"} or key in changed_fields
+        if key not in {
+            "description", "verification", "kind", "lane", "lane_order",
+            "priority", "tags", "created_at",
+        } or key in changed_fields
     }
 
 

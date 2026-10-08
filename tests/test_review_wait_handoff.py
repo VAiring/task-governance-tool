@@ -79,7 +79,7 @@ class ReviewWaitHandoffTests(PreparationFixture):
         self.assert_success(invoked, marker)
         for request in self.handoff["review_requests"]:
             self.assertNotIn("wait-ended", request["request"])
-            self.assertEqual(set(request), {"result_path", "read_command", "save_command", "request"})
+            self.assertEqual(set(request), {"result_path", "request"})
         self.assertNotIn("wait_ended_command", self.handoff)
 
     def test_missing_or_malformed_actual_caller_cannot_emit_marker(self):

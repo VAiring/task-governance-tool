@@ -312,12 +312,18 @@ and complete preparation validation precede `review_packet.py`'s pure
 independent-role projection. The helper parser requires explicit `--role
 independent`; neither tier nor slots select a role. Generated ordinary review
 requests supply that read command instead of raw-file reading and contain the
-ordinary procedure themselves. `_review_material` reuses `artifact_manifest.py`
+ordinary procedure themselves. Each row has only `result_path` and `request`;
+the request embeds both fixed read/save invocations and remains directly
+forwardable without separate command keys or parent reconstruction.
+`_review_material` reuses `artifact_manifest.py`
 observers and entry builder, without another fingerprint algorithm, to return
 the complete immutable-object delta and dependency/read command templates.
 The same module streams the immutable dependency revision through the existing
 `git_snapshot.stream_tree_entries`, excluding delta paths and retaining only a
-count/byte-bounded inventory prefix while counting omitted entries. It does not
+count/byte-bounded inventory prefix while counting omitted entries. The inventory
+returns only `entries`, `total`, `returned` and `truncated`, sharing its revision
+with the enclosing `dependency_revision`. The existing count/byte constants
+still bound collection but are not repeated in the display. It does not
 infer relevance, scan the worktree or retain blob content. The additional
 directory-list and `cat-file --batch` templates reuse `_material_command`:
 it now emits short calls to the existing helper's closed `material` operation.

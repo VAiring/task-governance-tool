@@ -310,11 +310,14 @@ Current success-data projections are:
 | `verification.receipt.add` | `receipt`, `review_preparation` |
 
 For `task.edit`, `task.complete`, and `review.target.set`, the successful
-`task` object omits `description` and `verification` unless that field appears
-in `changed_fields`. Other existing Task fields remain unchanged; target-set
-preparation has the separately defined result above. Changed prose, including an explicitly cleared value,
-is returned exactly as saved. This is a JSON compatibility change: consumers
-must retain unchanged prose from their working context, not replace that
+`task` object omits `description`, `verification`, `kind`, `lane`, `lane_order`,
+`priority`, `tags`, and `created_at` unless that field appears in `changed_fields`.
+Every changed value, including an empty string or null after clearing, is returned
+exactly as saved. Other existing Task fields remain unchanged, including identity,
+title, status, ownership and target/generation; event, routes, gates, warnings and
+partial-success results are preserved. Target-set preparation has the separately
+defined result above. This is a JSON compatibility change: consumers
+must retain unchanged fields from their working context, not replace that
 context with the write acknowledgement or add a routine read. Full registration,
 context and Packet projections retain their full content. Audit recovery and
 target-set partial success follow the [Review/completion owner](review-completion-specification.md#git-snapshot-and-target-binding). Complete

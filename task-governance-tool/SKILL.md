@@ -75,8 +75,9 @@ owner or an ownership rejection, use the conditional
 [pause/recovery guidance](references/task_workflow.md#pause-resume-and-block);
 never bypass it by changing environment values or replaying a stale write.
 
-Edit, completion, and target-set acknowledgements omit unchanged description
-and verification prose. Retain it from this context; no extra read is needed.
+Edit, completion, and target-set acknowledgements omit unchanged description,
+verification, kind/lane/order, priority, tags and creation time. Retain them from
+this context; all changed values are returned and no extra read is needed.
 
 Use the [review workflow](references/task_workflow.md#prepare-and-record-reviews)
 for ordinary shared-file handoff; use [direct transport](references/task_workflow.md#direct-review-transport)

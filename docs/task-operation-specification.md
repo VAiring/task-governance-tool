@@ -273,8 +273,8 @@ For a supported schema-v18-through-v25 source, every complete loaded Task row is
 for exact SQLite/Python storage class, bounded text/privacy, closed enums, and
 all Task cross-field matrices before any field can be omitted or exposed.
 Stored values are never coerced, trimmed, repaired, or rewritten by a read.
-Write acknowledgements omit only unchanged description/verification prose as
-defined by the [JSON output contract](specification.md#json-text-limits-and-exit-status);
+Write acknowledgements omit only the unchanged context fields enumerated by
+the [JSON output contract](specification.md#json-text-limits-and-exit-status);
 they are not replacements for the complete working Task context.
 
 Optional work is actionable when ready. Sequential work is actionable only

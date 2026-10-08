@@ -62,9 +62,12 @@ failure preserves the successful target save and supports read-only recovery;
 manual Receipt and blocked routes are unchanged. Audit-only binding output is
 for uncertain-response recovery, not new evidence or a normal-loop read.
 
-The candidate's edit, completion, and target-set JSON acknowledgements no
-longer repeat unchanged description/verification prose. Changed values remain
-present; full read and registration forms, storage, and gates are unchanged.
+The candidate's edit, completion, and target-set JSON acknowledgements omit
+the unchanged context fields listed in the [JSON output contract](specification.md#json-text-limits-and-exit-status).
+Changed values remain present; full read and registration forms, storage, and
+gates are unchanged. Generated reviewer requests embed their commands without
+separate duplicate keys, and material inventories share their enclosing
+dependency revision, as defined by the [handoff contract](review-completion-specification.md#caller-owned-review-handoff).
 Consumers must retain their working context rather than replace it with a
 write acknowledgement. This reduces returned bytes, not a measured claim of
 total LLM token or elapsed-time savings.

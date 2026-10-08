@@ -170,8 +170,13 @@ class TaskCompleteCliTests(unittest.TestCase):
                 full = observed[-1]
                 projected = payload["data"]["task"]
                 self.assertEqual(projected, {k: v for k, v in full.items()
-                                             if k not in {"description", "verification"}})
+                                             if k not in {"description", "verification", "kind", "lane",
+                                                          "lane_order", "priority", "tags", "created_at"}
+                                             or k in payload["data"]["changed_fields"]})
                 self.assertEqual(projected["task_id"], task["task_id"])
+                for field in payload["data"]["changed_fields"]:
+                    if field in full:
+                        self.assertEqual(projected[field], full[field])
                 if index == 1:
                     self.assertEqual(payload["data"]["verification_route"], "not_required")
                     self.assertIsNone(payload["data"]["blocking_code"])

@@ -8,6 +8,7 @@ import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "task-governance-tool" / "scripts"))
 from task_governance_tool.usage_turn_adapter import OperationObservation, TurnObservation, project_record
+from task_governance_tool.cli import write_task_projection
 from tests.test_usage_attribution import THREAD, turn
 
 
@@ -32,6 +33,17 @@ def tool_record(ack, number=2, *, wrapped=True):
 
 
 class UsageTurnAdapterTests(unittest.TestCase):
+    def test_compact_write_acknowledgements_preserve_actual_turn_and_ownership_binding(self):
+        for command, status in (("task.edit", "in_progress"), ("task.complete", "done")):
+            ack = acknowledgement(status)
+            ack["command"] = command
+            ack["data"]["task"].update(kind="optional", lane="", lane_order=None,
+                                       priority="normal", tags="", created_at="2026-10-08T00:00:00Z")
+            expected = project_record(tool_record(ack), THREAD)
+            self.assertEqual(len(expected), 1)
+            ack["data"]["task"] = write_task_projection(ack["data"]["task"], ack["data"]["changed_fields"])
+            self.assertEqual(project_record(tool_record(ack), THREAD), expected)
+
     def test_batch_registration_selects_only_actual_initial_in_progress(self):
         active, ready = acknowledgement(), acknowledgement("ready")
         batch = {"command": "task.add", "ok": True, "project_id": "fixture-project",

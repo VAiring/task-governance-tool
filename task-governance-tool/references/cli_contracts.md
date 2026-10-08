@@ -149,9 +149,10 @@ non-ASCII escapes. Use returned IDs as opaque identities; do not reconstruct
 them from a project path.
 
 Successful `task edit`, `task complete`, and `review target set` acknowledge
-the write without repeating unchanged `description` or `verification` in
-`data.task`. A changed field, including a cleared empty string, is returned
-when named in `changed_fields`. Keep unchanged prose from the working context;
+the write without repeating unchanged `description`, `verification`, `kind`,
+`lane`, `lane_order`, `priority`, `tags`, or `created_at` in `data.task`.
+A changed field, including a cleared empty string or null, is returned
+when named in `changed_fields`. Keep unchanged fields from the working context;
 do not replace it with this acknowledgement or add a routine read. Other
 operation-specific fields, errors, warnings, and human text are unchanged.
 Registration/context, show/audit, and Review Packet retain their full forms.
@@ -1960,7 +1961,8 @@ the Receipt's null absent non-snapshot base. `ok=true`/exit 0 means ready or
 not-applicable, not PASS.
 
 Only `handoff.status=ready` supplies a saved complete `packet_path`, per-reviewer
-`review_requests` (distinct result path, exact read/save commands and request), and
+`review_requests` (each containing only `result_path` and a self-contained
+`request` with the exact read/save commands embedded), and
 `submit_command`.
 It also supplies `review_wait={status,task_id,wait_tool,guide}`. Status is
 `enabled|disabled|unavailable` from local policy only; fixed tool/guide values
@@ -2048,7 +2050,7 @@ writes. Independent reviewer requests and duties remain unchanged.
 
 #### Read Review Packet
 
-Assigned independent reviewers use the request's `read_command`, whose shape is
+Assigned independent reviewers use the fixed read command embedded in the request, whose shape is
 `review_handoff.py read --repo . --packet reviews/packet.json --role independent`.
 This replaces the raw Packet read, not an extra query. Explicit role is required;
 missing/unknown/other values fail. Full saved-Packet validation precedes display.

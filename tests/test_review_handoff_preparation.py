@@ -23,6 +23,13 @@ from task_governance_tool import review_handoff_preparation as preparation
 from task_governance_tool.review_results import review_result_instructions
 
 
+def request_commands(request):
+    """Select the generated invocations for shell execution in transport tests."""
+    (read,) = (line for line in request.splitlines() if "--role=independent" in line)
+    (save,) = (line for line in request.splitlines() if "--output=" in line)
+    return read, save.removeprefix("'@ | ").removesuffix(" <<'TASKGOV_REVIEW_RESULT'")
+
+
 class PreparationFixture(unittest.TestCase):
     def setUp(self):
         temporary = tempfile.TemporaryDirectory()
@@ -110,8 +117,9 @@ class InstalledPreparationTests(PreparationFixture):
             generated = preparation._requests(self.root, args, packet_path)
         payload = packet["result_template"]
         payload["receipts"] = [receipt("quoted-path-reviewer")]
-        for command, raw, reviewer in ((generated["review_requests"][0]["read_command"], None, 0),
-                                       (generated["review_requests"][0]["save_command"], encode(payload), 0),
+        read, save = request_commands(generated["review_requests"][0]["request"])
+        for command, raw, reviewer in ((read, None, 0),
+                                       (save, encode(payload), 0),
                                        (generated["submit_command"], None, None)):
             invoked = subprocess.run(shlex.split(command), input=raw, capture_output=True,
                                      cwd=self.root, check=False,
@@ -134,9 +142,10 @@ class InstalledPreparationTests(PreparationFixture):
         original_paths = []
         originals = []
         for index, request in enumerate(context["review_requests"]):
-            self.assertEqual(set(request), {"result_path", "read_command", "save_command", "request"})
-            self.assertEqual(request["request"].count(request["read_command"]), 1)
-            self.assertEqual(request["request"].count(request["save_command"]), 1)
+            self.assertEqual(set(request), {"result_path", "request"})
+            read, save = request_commands(request["request"])
+            self.assertEqual(request["request"].count(read), 1)
+            self.assertEqual(request["request"].count(save), 1)
             self.assertNotIn(context["submit_command"], request["request"])
             displayed = self.invoke("read", "--repo", str(self.root), "--packet", context["packet_path"],
                                     "--role", "independent", reviewer=index)
@@ -575,7 +584,8 @@ class ReviewerMaterialTests(PreparationFixture):
         (self.root / "checks/behavior.py").write_bytes(b"unreviewed ambient replacement\n")
         material = json.loads(self.displayed(prepared["handoff"]["packet_path"]).stdout)["review_material"]
         inventory = material["unchanged_inventory"]
-        self.assertEqual(inventory["revision"], base)
+        self.assertEqual(set(inventory), {"entries", "total", "returned", "truncated"})
+        self.assertEqual(material["dependency_revision"], base)
         self.assertFalse(inventory["truncated"])
         self.assertEqual(inventory["total"], inventory["returned"])
         listed = {row["path"]: row for row in inventory["entries"]}
@@ -613,7 +623,7 @@ class ReviewerMaterialTests(PreparationFixture):
         before = file_snapshot(self.root)
         for target in targets:
             material = preparation._review_material(self.root / "nested", target)
-            self.assertEqual(material["unchanged_inventory"]["revision"], revision)
+            self.assertEqual(material["dependency_revision"], revision)
             for directory in ("", "checks"):
                 with self.subTest(kind=target["kind"], directory=directory):
                     command = material["directory_command"].replace("<project-relative-directory>", directory)
@@ -909,7 +919,7 @@ class ReviewerMaterialTests(PreparationFixture):
         self.assertEqual(result.returncode, 0, result.stdout)
         self.assertEqual(json.loads(result.stdout)["review_material"]["comparison_base"], root)
         material = json.loads(result.stdout)["review_material"]
-        self.assertEqual(material["unchanged_inventory"]["revision"], current)
+        self.assertEqual(material["dependency_revision"], current)
         self.assertIn("SPEC.md", [row["path"] for row in material["unchanged_inventory"]["entries"]])
 
     def test_live_contract_and_generation_drift_and_opaque_targets(self):

@@ -98,6 +98,38 @@ def table_count(db, table):
 
 
 class TaskEditTests(unittest.TestCase):
+    def test_write_acknowledgement_preserves_changed_and_cleared_metadata(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            db, repo = Path(tmp) / "taskgov.sqlite", Path(tmp) / "repo"
+            task = add_task(db, repo, "Metadata acknowledgement")
+            metadata = {"kind", "lane", "lane_order", "priority", "tags", "created_at"}
+            self.assertTrue(metadata <= task.keys())
+            from task_governance_tool.cli import write_task_projection
+            self.assertIsNone(write_task_projection(task, ["lane_order"])["lane_order"])
+            changed = edit_task(db, repo, task["task_id"], "--kind", "sequential",
+                                "--lane", "output", "--priority", "high", "--tags", "review")
+            for field, value in {"kind": "sequential", "lane": "output", "lane_order": 1,
+                                 "priority": "high", "tags": "review"}.items():
+                self.assertIn(field, changed["data"]["changed_fields"])
+                self.assertEqual(changed["data"]["task"][field], value)
+            cleared = edit_task(db, repo, task["task_id"], "--kind", "optional",
+                                "--lane", "", "--priority", "normal", "--tags", "")
+            for field, value in {"kind": "optional", "lane": "",
+                                 "priority": "normal", "tags": ""}.items():
+                self.assertIn(field, cleared["data"]["changed_fields"])
+                self.assertEqual(cleared["data"]["task"][field], value)
+            self.assertNotIn("lane_order", cleared["data"]["changed_fields"])
+            self.assertEqual(fetch_task(db, task["task_id"])["lane_order"], 1)
+            started = edit_task(db, repo, task["task_id"], "--status", "in_progress")
+            self.assertTrue(metadata.isdisjoint(started["data"]["task"]))
+            for command in (("task", "show", task["task_id"]), ("task", "context")):
+                result = run_taskgov(*command, "--repo", str(repo), "--db", str(db), "--json")
+                self.assertEqual(result.returncode, 0, result.stdout)
+                data = json.loads(result.stdout)["data"]
+                displayed = data["task"] if command[1] == "show" else data["selected"]["task"]
+                for field in metadata:
+                    self.assertEqual(displayed[field], fetch_task(db, task["task_id"])[field])
+
     def test_write_acknowledgement_retains_changed_and_cleared_prose(self):
         with tempfile.TemporaryDirectory() as tmp:
             db, repo = Path(tmp) / "taskgov.sqlite", Path(tmp) / "repo"

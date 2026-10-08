@@ -293,9 +293,8 @@ def _dependency_inventory(repo, revision, changes):
         size += addition
 
     stream_tree_entries(repo, revision, object_id_length=len(revision), consume_entry=collect)
-    return {"revision": revision, "entries": entries, "total": total,
-            "returned": len(entries), "truncated": truncated,
-            "entry_limit": INVENTORY_ENTRY_LIMIT, "byte_limit": INVENTORY_BYTE_LIMIT}
+    return {"entries": entries, "total": total,
+            "returned": len(entries), "truncated": truncated}
 
 
 def _review_material(repo, target):
@@ -407,7 +406,7 @@ def _requests(repo, args, packet_path):
             invocation = "$OutputEncoding = [Console]::InputEncoding = [System.Text.UTF8Encoding]::new($false)\n@'\n<completed original JSON>\n'@ | " + save
         else:
             invocation = save + " <<'TASKGOV_REVIEW_RESULT'\n<completed original JSON>\nTASKGOV_REVIEW_RESULT"
-        reviewers.append({"result_path": path, "read_command": read, "save_command": save, "request": (
+        reviewers.append({"result_path": path, "request": (
             "You are assigned an independent review of the complete exact target under current project authority. "
             "This request and its read output supply your procedure and result format; no Skill operating guide or internal fingerprint implementation is a prerequisite. "
             "Obtain the Task/Contract, criteria, exact material access and result template with this read-only operation:\n"

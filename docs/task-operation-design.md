@@ -119,8 +119,10 @@ operational Findings and exact-current Receipts, not their recent-ten windows.
 The normal event query retains the newest event and all four note-capable
 operation types defined by the Task read contract, with the existing timestamp/
 rowid ordering. It does not infer supersession from age, checkpoints, or prose.
-The CLI's pure `write_task_projection` filters unchanged `description` and
-`verification` from validated edit, completion, and target-set results only.
+The CLI's pure `write_task_projection` filters unchanged `description`,
+`verification`, `kind`, `lane`, `lane_order`, `priority`, `tags`, and `created_at`
+from validated edit, completion, and target-set results only. Membership in
+`changed_fields` always retains the saved value, including empty strings or null.
 It does not change repository result objects, text formatting, registration
 context, or Packet inputs, and performs no additional read.
 No storage writer, schema, global admission, gate evaluator, or Viewer reader

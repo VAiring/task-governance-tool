@@ -390,8 +390,11 @@ index, missing objects, unavailable state or incomplete response returns no view
 direct storage access, writes nothing and creates no second Packet. Its display is compact
 UTF-8 JSON plus LF, without shell-codepage conversion or
 ASCII escaping of non-ASCII Contract prose. The generated ordinary
-independent-review request supplies `read_command`, `save_command`, result path
-and a self-contained procedure; it never supplies the parent's submit
+independent-review row contains only `result_path` and a self-contained `request`.
+The request embeds the exact read and save commands with their procedure and is
+directly forwardable; separate `read_command`/`save_command` keys do not repeat
+them. No extraction, reconstruction or command matching is required of the parent.
+The request never supplies the parent's submit
 command. Assignment is not an attestation of actual independence. A different
 or uncertain role requires the existing full-Packet route, not an inferred
 declaration. Direct complete-Packet transport and legitimate fallback/Tier-0
@@ -416,9 +419,11 @@ in the Packet or retained. A bounded Packet path list does not bound this delta;
 overflow fails, never silently truncates. Snapshot changed files use the listed
 after objects (or are deleted); unchanged dependencies use the base commit.
 Commit dependencies use that immutable commit, never ambient HEAD/index/worktree.
-The transient display also includes `unchanged_inventory`: `revision`, bytewise
-ordered `entries` (`path`, `mode`, `object_id`), `total`, `returned`, `truncated`,
-`entry_limit` and `byte_limit`. It streams that dependency revision's tree,
+The transient display also includes `unchanged_inventory`: bytewise ordered
+`entries` (`path`, `mode`, `object_id`), `total`, `returned` and `truncated` only.
+Its revision is the enclosing `review_material.dependency_revision`; the inventory
+does not repeat that revision or display the fixed count/byte limits.
+It streams that dependency revision's tree,
 excludes every old/new delta path, and returns at most 128 entries and 16,384
 UTF-8 bytes of compact entry-array JSON. It counts all remaining paths even
 after the prefix fills. No body, relevance inference, test-name heuristic or

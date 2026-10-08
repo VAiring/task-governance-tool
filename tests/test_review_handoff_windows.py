@@ -14,7 +14,7 @@ from pathlib import Path
 from tests.m14_test_support import make_physical_install
 from tests.test_review_handoff import packet_for
 from tests.test_review_results import document, encode, receipt, FINGERPRINT
-from tests.test_review_handoff_preparation import PreparationFixture
+from tests.test_review_handoff_preparation import PreparationFixture, request_commands
 
 
 class WindowsReviewHandoffTests(unittest.TestCase):
@@ -125,7 +125,8 @@ class WindowsPreparationTests(PreparationFixture):
         self.assertEqual(completed.returncode, 0, completed.stdout or completed.stderr)
         result = json.loads(completed.stdout)["handoff"]
         packet = json.loads((self.root / result["packet_path"]).read_bytes())
-        displayed = shell(result["review_requests"][0]["read_command"], reviewer=0)
+        read, _ = request_commands(result["review_requests"][0]["request"])
+        displayed = shell(read, reviewer=0)
         self.assertEqual(displayed.returncode, 0, displayed.stdout or displayed.stderr)
         view = json.loads(displayed.stdout)
         self.assertEqual(view["result_template"], packet["result_template"])

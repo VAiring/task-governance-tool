@@ -369,7 +369,7 @@ def _review_material(repo, target):
                 "For the individual dependency/directory recovery templates only: " + path_quoting]}
 
 
-def read_for_reviewer(repo, packet_path):
+def read_for_reviewer(repo, packet_path, *, material_details=False):
     """Validate saved data, bind exact material, then compare live public context."""
     from task_governance_tool.review_packet import independent_reviewer_view
     path = files._path(repo, packet_path)
@@ -385,6 +385,26 @@ def read_for_reviewer(repo, packet_path):
             "$OutputEncoding = [Console]::InputEncoding = [System.Text.UTF8Encoding]::new($false)\n@'\n"
             + placeholder + "\n'@ | " + command if os.name == "nt" else
             command + " <<'TASKGOV_MATERIAL_PATHS'\n" + placeholder + "\nTASKGOV_MATERIAL_PATHS")
+        reuse_guidance = "Reuse a body already received completely only when its immutable object identity or exact revision/path matches this target's mapping. An ambient filename, summary, prior review or incomplete/unknown delivery is not proof. Omit already-held matching dependencies from collection; use returned bodies for both authority reading and review, without repeating them for a different purpose. A changed file's before/after sides and diff remain necessary. Project reread obligations still apply. Each reviewer independently reads and judges the complete scope; no hash calculation or reading ledger is needed."
+        if material_details:
+            material["instructions"].insert(1, reuse_guidance)
+        else:
+            # Keep exact target/location data and normal collection together.
+            # The optional read retains the same full validation; it is not a
+            # prerequisite or a second format lookup before an ordinary save.
+            for key in ("blob_command", "blob_batch_command", "diff_command",
+                        "dependency_command", "directory_command"):
+                del material[key]
+            entry = Path(__file__).parent.parent / "review_handoff.py"
+            material["recovery_command"] = _shell([
+                sys.executable, "-B", str(entry), "read", "--repo=" + str(repo),
+                "--packet=" + packet_path, "--material-details"])
+            material["instructions"] = [
+                "Use collect_command for the first required project AGENTS, authority, source and test reads, selecting the dependency paths you need as its JSON array ([] for none). All changed before/after bodies and diffs are automatic. Read the returned governing text before judging code, then follow its routes and discovered dependencies. The parent does not select material.",
+                reuse_guidance,
+                "changes is complete even if Packet paths are bounded; unchanged_inventory is only bounded location guidance, not selected relevance or availability. Snapshot changed paths use after objects, deleted/renamed old paths are absent, unchanged paths use the base commit; commit targets use their exact commit. Never substitute ambient HEAD/index/worktree content. Modes, path/side mappings and whole-file diff body references remain part of the material.",
+                "Collection complete/exit zero means delivery, not review coverage or PASS. Missing, mismatched, unknown, tool-truncated, large/non-text or unavailable material still needs retrieval; submodule material must be supplied. Use recovery_command only when individual/additional reads or discovery are needed; it supplies their commands and quoting rules. Recover affected material without repeating successful siblings. Keep unknown provenance unknown and use the complete result_instructions below for normal save.",
+            ]
     # One existing read-only public operation, inside the replacement read;
     # no extra reviewer check/show, new target, Receipt or direct DB access.
     entry = Path(__file__).parent.parent / "taskgov.py"
@@ -436,13 +456,13 @@ def _requests(repo, args, packet_path):
             "You are assigned an independent review of the complete exact target under current project authority. "
             "This request and its read output supply your procedure and result format; no Skill operating guide or internal fingerprint implementation is a prerequisite. "
             "Obtain the Task/Contract, criteria, exact material access and result template with this read-only operation:\n"
-            + read + "\nRead project AGENTS.md and its authority routes, then independently judge the whole target against its scope, acceptance, constraints and verification expectation. "
+            + read + "\nUse review_material to obtain or reuse complete target-bound project AGENTS.md and applicable authority before judging the whole target against its scope, acceptance, constraints and verification expectation. "
             "Follow review_material for exact artifacts, required source/tests, discovered dependencies and retrieval exceptions. "
             "Read Skill files when they are actually governing or reviewed material, not to learn Task management. "
             "If this role does not match actual work, ask the caller, "
             "do not infer independence. "
             "Complete the view's result_template using result_instructions, actual judgment and provenance, and all Findings with severity, exact file/line, risks and recommended correction in bounded summaries. "
-            "Unknown model/Skill identity or version stays unknown under the supplied matrix; do not search internals to guess it. Null placeholders are not PASS, independence or no Findings. "
+            "Do not search internals to guess unknown model/Skill identity or version. "
             "Replace only the JSON placeholder below; run this fixed save operation, not new save/validation code.\n"
             + invocation + "\nOn saved acknowledgement return path, verdict and Finding count once in the final response; "
             "do not echo JSON or send a duplicate normal-success notification. "

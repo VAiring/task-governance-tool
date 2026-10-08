@@ -405,9 +405,16 @@ The display adds `context_check=matched_at_read`, sanitized public `warnings`,
 and `review_material`. For Git, the existing manifest observer verifies the
 exact stable index fingerprint/base or canonical commit/first-parent (root:
 empty tree), with its existing object-presence, path, entry and size bounds.
-Material contains the complete delta as existing manifest entry fields, immutable
-before/after object IDs and modes, comparison base, dependency revision, and
-read-only Git blob/diff/path command templates. Their short `material` invocation
+Normal material contains the complete delta as existing manifest entry fields,
+immutable before/after object IDs and modes, comparison base, dependency revision,
+bounded inventory, `collect_command` and a conditional `recovery_command`.
+The latter is the same saved-Packet `read` with optional `--material-details`:
+it retains complete physical, target and live-context validation and supplies
+the individual blob/batch/diff/path/directory commands, quoting rules and retrieval
+exceptions only when needed. It adds no normal prerequisite or format lookup;
+all information required for ordinary independent judgment and save remains in
+the default request/read pair. It does not change the saved Packet or result format.
+The detailed templates' short `material` invocation
 reuses the observer's sanitized Git environment inside the helper (including no lazy fetch,
 replacement refs, optional locks or prompts) without mutating the caller's
 environment. Host-specific single-quote substitution guidance preserves the
@@ -430,7 +437,7 @@ UTF-8 bytes of compact entry-array JSON. It counts all remaining paths even
 after the prefix fills. No body, relevance inference, test-name heuristic or
 new persistent index is included. These are location hints, not proof that a
 blob exists or that all required material was selected or read.
-`directory_command` provides nonrecursive discovery at the same dependency
+In that conditional display, `directory_command` provides nonrecursive discovery at the same dependency
 revision (empty directory means root). Nested tree entries can be explored by
 the same template and path-quoting rule; paths in its result are directory-relative.
 Snapshot changes override that base listing, including deletion and old rename
@@ -450,10 +457,25 @@ Required unavailable submodule/content or tool-truncated output must be recovere
 or reported before PASS. The observation is trusted-local and point-in-time;
 it does not lock state, certify review quality or replace submission revalidation.
 
+Use the existing collection as the first required AGENTS, applicable authority,
+source and test read when those complete, demonstrably target-bound bodies are
+not already available. Read governing bodies before judgment and follow their
+routes; no separate ambient authority read is an automatic prerequisite.
+A previously delivered complete body may be reused only when its immutable
+object identity or exact revision/path is established to match the current
+material mapping. A matching filename, current ambient file, summary or earlier
+review is not that evidence. Unknown, mismatched, missing or tool-truncated
+material stays a retrieval obligation. Reuse the same matched text for authority
+reading and review; changing its purpose does not require another copy. Project
+reread obligations at genuine boundaries remain in force, and each reviewer
+still independently reads and judges every applicable rule and required artifact.
+No caller hash calculation, new attestation input or reading ledger is added.
+
 After the unchanged first read and reviewer-owned dependency selection,
 `collect_command` supplies a host-native stdin invocation bound to the saved
 Packet's SHA-256. Replace only its placeholder with a UTF-8 JSON array of
-selected project-relative dependency paths (`[]` for none). The parent gains no
+selected project-relative dependency paths still needed (`[]` for none); omit
+dependencies already held completely with the matching identity above. The parent gains no
 input or selection step. All changed before/after bodies and diffs are automatic;
 no caller-built OID list, repeated long invocation or source body in the first
 read is needed. The command revalidates the physical complete Packet and its
@@ -491,10 +513,13 @@ zero mean complete material delivery only, not sufficient dependency selection,
 reading or PASS; any unavailable row gives `incomplete` and nonzero with available
 siblings retained. Invalid input, Packet drift, or target-observation failure
 returns nonzero with the existing sanitized material diagnostic and no body.
-Tool-level truncation also requires recovery. Reuse complete provided bodies;
-they do not require another read merely because they arrived here. Recover only
-affected material using existing individual reads, and read newly discovered
-dependencies afterward. No body, diff, dependency list or reading ledger is
+Tool-level truncation also requires recovery. Reuse complete provided bodies
+under the identity/completeness rule above, preserving both changed sides and
+the diff. Use `recovery_command` when individual reads, discovery or recovery
+are needed; then retrieve only affected material or newly discovered dependencies
+instead of collecting successful siblings again. The detailed display retains
+the same current-context rejection and never makes an old body current.
+No body, diff, dependency list or reading ledger is
 persisted to the Packet or database. No relevance inference, mandatory config,
 supervisor, fixed review-roundtrip count or token-saving guarantee is added.
 
@@ -504,7 +529,7 @@ supervisor, fixed review-roundtrip count or token-saving guarantee is added.
 --path=<project-relative-path>`, or `directory <full-revision>
 --path=<project-relative-directory>`. The emitted commands include the actual
 helper/root/revision; only the displayed placeholders need substitution. No
-additional help/guide read or caller-built Python program is needed. The full
+additional normal help/guide read or caller-built Python program is needed. The full
 lowercase SHA-1/SHA-256 selectors come from the material display, not HEAD,
 abbreviations or worktree paths. Dependency paths reuse manifest path safety;
 the directory-only empty path names the root, including on PowerShell 5.1.
@@ -525,8 +550,10 @@ binding it to the exact value; display success is not that evidence. The generat
 request and read output are self-contained together: the request explains
 whole-target independent judgment under project authority, actual provenance and
 all Findings, fixed save/acknowledgement and reporting incomplete/uncertain outcomes.
-The read output owns the concrete artifact/dependency selectors, discovery,
-mode exceptions and complete-delivery/recovery instructions. Keep cautions at
+The default read output owns concrete artifact/dependency selectors, normal
+collection, reuse conditions and the conditions requiring its optional detailed
+read. That detailed read owns individual discovery/retrieval commands and their
+quoting and mode exceptions. Keep cautions at
 their applicable retrieval step rather than requiring each explanation exactly
 once; neither scope nor material is reduced. Skill guides/internal fingerprint
 or version code are not normal

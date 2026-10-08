@@ -319,8 +319,9 @@ are rewritten, and no SID policy, native ACL adapter or caller option is added.
 
 The same module owns read-only saved-Packet display: existing transport reads
 and complete preparation validation precede `review_packet.py`'s pure
-independent-role projection. The read parser takes only the required repo and
-Packet paths; neither arguments, tier nor slots establish actual independence.
+independent-role projection. The read parser requires repo and Packet paths;
+optional `--material-details` selects the conditional retrieval explanation,
+never a role. Arguments, tier and slots do not establish actual independence.
 Generated ordinary review
 requests supply that read command instead of raw-file reading and contain the
 ordinary procedure themselves. Each row has only `result_path` and `request`;
@@ -378,12 +379,28 @@ diffs reference the provided body and operation; no temporary files or Git objec
 are written. All rows and byte-preserving UTF-8 bodies are emitted together as
 transient JSON after final Packet validation. Available siblings remain usable
 when another row fails; unchanged raw operations recover large or unavailable
-material and discover later dependencies. The owning specification defines
+material and discover later dependencies. Default `read_for_reviewer` projects
+the complete target/location data, normal collect invocation and reuse rules,
+replacing individual command templates and their detailed instructions with
+one fully bound `recovery_command`. That command selects `--material-details`
+on the same read, retaining all physical, exact-target and live-context checks.
+Result templates, applicable format/provenance instructions and warnings remain
+in both projections, so ordinary save requires no extra lookup. The detailed
+view restores the existing five raw templates and their complete guidance.
+The owning specification defines
 statuses/limits; these never substitute for review scope, current-state checks,
 or independently reading and judging all necessary material. Nothing is stored
 in a Packet, database, cache or reading ledger. The generated request delegates
-retrieval to this first-read output, where normal collection and conditional
-individual-read guidance belong; save/wait/submit/completion are unchanged.
+the first required governing/source/test reads to collection, unless matching
+complete bodies are already available. Its existing path/revision/object/side
+mappings support reuse across authority reading and review; they do not prove
+that a reviewer received a full body. Reviewers exclude already-held, matching
+dependencies from the ordinary path selection and use conditional individual
+reads for incomplete or later material. No new reuse flag, hash calculation,
+caller-built identity list, relevance selector or mutable-file comparison is
+introduced. Missing identity or complete delivery cannot justify reuse, and
+project reread obligations retain their force. Save/wait/submit/completion
+are unchanged.
 The child inherits no Git overrides and cannot lazily fetch missing material.
 Generated host-specific literal-substitution instructions and fully bound shell
 arguments preserve quotes and shell punctuation, including PowerShell's five
@@ -914,8 +931,9 @@ byte and Finding conservation, stale registration rejection and read/save
 failure paths; retrieval tests check the reviewer route without importing the
 parent operation subtree. Generated request prose covers reviewer judgment and
 result return; the paired read output covers exact material retrieval and its
-exceptions. Their shared explanations can be consolidated without changing
-selectors, command templates, JSON shape or review/save/registration checks.
+exceptions. Their shared explanations can be consolidated while the transient
+material display selects normal or conditional detail. Saved Packet/result
+shapes, immutable selectors and review/save/registration checks stay unchanged.
 Local bytes/call observations are not token savings.
 
 <a id="completion-cycle-history"></a>

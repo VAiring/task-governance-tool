@@ -396,6 +396,8 @@ def main(argv=None):
         reader = commands.add_parser("read", help="Display the saved Packet for an explicitly assigned independent reviewer")
         reader.add_argument("--repo", required=True)
         reader.add_argument("--packet", required=True)
+        reader.add_argument("--material-details", action="store_true",
+                            help="Show conditional individual retrieval, discovery and recovery guidance")
         ended = commands.add_parser("wait-ended", help="Declare the bound supervisor's all-ended decision for optional numerical usage")
         ended.add_argument("--repo", required=True)
         packet_source = ended.add_mutually_exclusive_group(required=True)
@@ -425,7 +427,7 @@ def main(argv=None):
             result = prepare(repo, args)
             return (0 if result["ok"] else 1) if _emit(result) else 1
         if args.operation == "read":
-            return 0 if _emit(read_for_reviewer(repo, args.packet), utf8=True) else 1
+            return 0 if _emit(read_for_reviewer(repo, args.packet, material_details=args.material_details), utf8=True) else 1
         if args.operation == "wait-ended":
             from task_governance_tool.review_wait import wait_ended
             raw = sys.stdin.buffer.read(PACKET_LIMIT + 1) if args.from_stdin else None

@@ -785,14 +785,27 @@ output and the unfinished result template with all applicable format rules.
 It also returns `context_check=matched_at_read` after comparing the saved
 Task/Contract/target with the existing public read, plus `review_material`.
 For Git, that material lists every changed entry with machine-verified immutable
-before/after object IDs, modes, comparison base and fixed read/diff command
-templates. After selecting the dependencies you would already read, use its
-generated `collect_command` with only those paths as a JSON array. It automatically
+before/after object IDs, modes, comparison base, bounded location hints, normal
+`collect_command` and conditional `recovery_command`. Use collection for the
+first required project AGENTS, authority, source and test reads instead of
+automatically reading ambient copies first. Read governing text before judging
+code and follow its routes. Select only dependencies still needed as the
+collect command's JSON array. It automatically
 supplies all changed before/after bodies and diffs, plus your selected dependencies,
 deduplicating bodies while retaining path/revision/side correspondence. Explicitly
-provided complete bodies can be reused; their delivery alone does not require
-another read. Recover unavailable/large/non-text or tool-truncated material via
-the supplied individual commands, and follow newly discovered dependencies later.
+provided complete bodies can be reused when their immutable object identity or
+exact revision/path matches the current target mapping. A filename, summary,
+prior review or unknown/incomplete delivery is insufficient; retrieve the
+affected text. Omit matching, already-held dependencies from collection and use
+the same bodies for governing-rule reading and review without another copy.
+Keep both required changed sides and the diff. No manual hash calculation or
+reading ledger is needed, and project reread obligations still apply.
+Only for individual/additional reads, discovery or recovery, use
+`recovery_command` (the same validated read with optional `--material-details`).
+It supplies the individual templates, quoting rules and retrieval exceptions.
+Recover unavailable/large/non-text or tool-truncated material and newly discovered
+dependencies without collecting successful siblings again. Normal judgment and
+save need no extra guide/format lookup; applicable result rules remain in read.
 Use those objects, including renamed/deleted paths, not ambient files.
 Unchanged snapshot dependencies come from the base commit; changed ones
 use their listed after object. Commit dependencies use the exact commit.

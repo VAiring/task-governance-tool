@@ -2066,18 +2066,30 @@ a display; no second reviewer check/show, state write or target reset is added.
 `review_material` lists the complete Git delta (not the Packet's bounded list),
 immutable before/after object IDs and modes, comparison/dependency revisions,
 and a `collect_command` bound to the saved Packet. Replace its single placeholder
-with a JSON array of the dependency paths you selected (`[]` for none); all
+with a JSON array of the dependency paths still needed (`[]` for none); all
 changed before/after bodies and diffs are included automatically. No parent
 selection or OID assembly is required. The returned `bodies` table supplies each
 blob once, with explicit path/revision/side references and outcomes in `changes`
 and `dependencies`. Whole-file add/delete diffs reference their complete body;
-two-sided diffs are Git patches. Reuse provided complete material without a
-redundant reread. `complete`/exit zero is delivery, not review coverage or PASS.
+two-sided diffs are Git patches. Use collection for the first required AGENTS,
+authority, source and test reads instead of automatically reading ambient copies
+first. Read governing text before judgment and follow its routes. Reuse an
+already complete body only when its immutable object identity or exact
+revision/path matches the current target mapping; omit such dependencies from
+collection. A filename, summary, prior review or unknown/incomplete delivery
+does not establish that match. The same fixed text can serve authority reading
+and review without another copy; project reread obligations still apply.
+`complete`/exit zero is delivery, not review coverage or PASS.
 `incomplete`/nonzero retains successful siblings but requires recovery of missing,
 unavailable, binary or oversized material (1 MiB per text, 4 MiB total). Tool
 truncation also requires recovery; newly discovered dependencies still need reads.
-The retained individual read/diff/directory commands support those cases. Use
-their placeholders and host-specific path quoting as supplied. Retrieval reuses
+Only when individual/additional retrieval or discovery is needed, run the
+returned `recovery_command`: it repeats the same validated read with optional
+`--material-details` and supplies individual read/diff/directory commands and
+their complete quoting and recovery guidance. Recover affected material rather
+than collecting successful siblings again. Normal read retains all judgment,
+format and provenance information needed for save; the detailed read is not a
+normal prerequisite. Retrieval reuses
 the sanitized/no-fetch Git environment in a child,
 without changing your shell environment; missing objects remain unavailable.
 Use listed objects for changed snapshot files,

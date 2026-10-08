@@ -2035,6 +2035,9 @@ print(json.dumps(results, ensure_ascii=False))
                 self.assertIn(operation_input, body)
                 if fragment == "read-review-packet":
                     self.assertNotIn("--role", body)
+                    for rule in ("recovery_command", "--material-details", "immutable object identity",
+                                 "unknown/incomplete", "project reread obligations", "Normal read retains"):
+                        self.assertIn(rule, body)
                 self.assertIn("### Caller-Owned Review Handoff", body)
                 _, common = self.linked_output(source, body, "handoff-path-and-validation")
                 for boundary in ("`.json`", "32,768", "--user-approved-reviewer", ".taskgov"):
@@ -2051,6 +2054,14 @@ print(json.dumps(results, ensure_ascii=False))
                     self.assertNotIn(sibling, from_recovery)
                 for field in ("--expected-binding", "--verification-receipt-id", "ok:false"):
                     self.assertIn(field, recovery)
+
+    def test_reviewer_reference_keeps_complete_reuse_and_conditional_recovery_rules(self):
+        body = self.reader().read_reference("references/task_workflow.md#independent-reviewer", SKILL_ROOT)
+        for rule in ("collect_command", "recovery_command", "--material-details",
+                     "immutable object identity", "exact revision/path", "unknown/incomplete",
+                     "both required changed sides", "newly discovered", "project reread obligations",
+                     "result_template", "result_instructions", "ok=true,status=saved"):
+            self.assertIn(rule, body)
 
     def test_taskization_keeps_classifier_and_tier_routes_for_both_add_modes(self):
         source = "references/task_workflow.md"

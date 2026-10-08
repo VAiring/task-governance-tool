@@ -6,7 +6,7 @@
     "assets/task-viewer.template.html": "sha256:64d79314178a60e61dba47943c86649d0330e3264736d22995f80714fdde41f2",
     "references/cli_contracts.md": "sha256:8f50c785021c6a1f74be23eaccd5571df8f025a8e3cbd3a3247d8995288b00ab",
     "references/reconciliation.md": "sha256:8ab7b5e734034a8dc186b274de5c1ce65eb17496e7a5690011585292670688aa",
-    "references/review_wait.md": "sha256:b8e3e723fa4b6b27e973b27628e9dc7f8a4c3bbcba517ba4905858d3eedffe45",
+    "references/review_wait.md": "sha256:e9b1b63388aae3a37c28223399746522c9d19d72fdf3bd0b5d12c6eeaed62772",
     "references/task_workflow.md": "sha256:79c2a27093062a8fb81e60e13d11e525f697060201bd7078c60dd0ed7dfca480",
     "references/usage_hooks.md": "sha256:860e2375a78a62f349b7ec4efa6d0871a998c8e13b217513c6b8be92550692f9",
     "scripts/read_reference.py": "sha256:48d737f4d16f5a78e0b7d9ca5aa8116994ff3cad5c918c35f6e6bb2905e92f41",

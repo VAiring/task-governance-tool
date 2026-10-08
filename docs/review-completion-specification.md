@@ -609,6 +609,12 @@ They are recovery/compatibility controls, not the normal wait procedure.
 Their discovery descriptions identify that role and point to the corresponding
 normal wait, diagnosis or stop control; normal receipt is automatic. All nine
 controls remain discoverable with unchanged inputs and execution semantics.
+Normal guidance selects the exact `review_wait_wait` tool in the connected MCP
+namespace and reuses an available complete definition; broad catalogue display
+or rediscovery is not a prerequisite. Host-qualified names follow the actual
+server registration. Missing, incomplete or changed definitions and conditional
+diagnosis, stop or compatibility work may need further discovery. This is
+discovery guidance, not a restriction on necessary reading or a new gate.
 Every control requires genuine executor metadata; wait/prepare/start additionally
 require the actual current turn and enabled policy.
 

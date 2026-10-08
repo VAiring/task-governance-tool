@@ -41,6 +41,15 @@ If a prerequisite is unavailable or an operation fails, use
 [failure and recovery guidance](#failures-stop-and-diagnosis); never retry an
 unknown effect or infer readiness from a failed call.
 
+Use the available `review_wait_wait` definition. If discovery is needed, search
+that exact tool in the connected review-wait MCP namespace, rather than general
+`wait` or `task` terms. Host-qualified names may look like
+`mcp__taskgov_review_wait__review_wait_wait`; use the actual returned name and
+schema, since the server registration can differ. Reuse a complete definition
+already returned instead of displaying the same candidates again. Missing,
+incomplete or changed definitions, or recovery needing another control, can
+justify further discovery; this adds no lookup or confirmation prerequisite.
+
 1. Dispatch the unchanged independent-review requests through the authorized
    subagent facility. Retain the original Task/Packet, actual returned handles,
    original-result paths and registration command. Never duplicate a dispatch
@@ -88,13 +97,18 @@ another sender or a substitute supervisor.
 Use `review_wait_inspect(task_id)` only for requested diagnosis or a failure,
 and `review_wait_stop(task_id)` for explicit cancellation or known-state recovery.
 They need no saved automation/probe IDs and add no normal completion gate.
+Discover the applicable exact name in the same connected namespace when needed;
+an already available complete definition needs no repeat lookup.
 Inspection is read-only. Stop cannot recall a dispatched message or retry an
 unknown effect. Restart is inspection-only; no active flag alone proves a live
 worker. Changed Task basis or actual reviewer turns require recovery of the old
 wait before a new association.
 
-The six earlier per-reservation prepare/view/start/status/cancel/ack controls
-remain available for old associations and explicit diagnosis. They are not part
+The six earlier per-reservation controls remain available for old associations
+and explicit diagnosis: `review_wait_prepare`, `review_wait_view`,
+`review_wait_direct_delete_start`, `review_wait_direct_status`,
+`review_wait_direct_cancel` and `review_wait_direct_ack`. Discover the needed
+control by its exact name in that namespace. They are not part
 of this normal workflow and their MCP descriptions identify that compatibility
 role. Only a retained legacy supervisor context uses the separate
 [wait-decision marker](cli_contracts.md#record-review-wait-decision); normal

@@ -394,6 +394,10 @@ Its nine closed controls include the normal `wait`, optional `inspect/stop`
 and six compatible per-reservation controls. Discovery and startup are inert.
 The six compatibility descriptions label the earlier association/recovery use
 and identify the normal alternative without hiding controls or changing schemas.
+The Skill's normal-wait entry routes tool discovery to the exact published name
+within the connected server namespace, reusing an already available definition.
+Conditional recovery names its applicable controls. This is caller guidance;
+the nine-entry catalogue, tool loading, schemas and dispatch remain unchanged.
 `managed_wait.ManagedWait` owns single-call admission, creation, preparation,
 start and healthy repeated waiting; the source compatibility entry keeps its
 explicit injected paths and old catalogue.

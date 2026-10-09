@@ -155,6 +155,13 @@ class CanonicalStatePaths:
         digest = hashlib.sha256((parent_id + ":" + task_id).encode("ascii")).hexdigest()
         return self.review_wait_root / ("request-" + digest + ".sqlite")
 
+    def review_finalization_store(self, parent_id: str, task_id: str, generation: int) -> Path:
+        """One immutable handoff intent per parent/Task/target generation."""
+        request = self.review_wait_request_store(parent_id, task_id)
+        if type(generation) is not int or not 1 <= generation < 2**63:
+            raise ValueError("invalid_target_generation")
+        return request.with_name("finalize-" + request.stem.removeprefix("request-") + f"-{generation}.sqlite")
+
 
 @dataclass(frozen=True)
 class CurrentRootObservation:

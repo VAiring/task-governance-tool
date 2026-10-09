@@ -561,7 +561,15 @@ classify them from a Task tier or allocated reviewer count.
 Before dispatching authorized reviews that may outlive this parent turn, use
 the [normal waiting procedure](review_wait.md#normal-wait) directly.
 
-For shared-file transport, start with `review_handoff.py prepare` at the
+For authorized local `git_snapshot` completion, use `review_handoff.py
+prepare-finalization` with the same arguments as `prepare`, replacing that
+preparation call. Commit authority follows project rules and existing user
+intent; do not add an approval flag, second material list or repeat question.
+Use the [integrated contract](cli_contracts.md#integrated-review-finalization)
+for eligibility and recovery. Projects requiring commit hooks/signing, detached
+HEAD or nested project snapshots retain the manual Git workflow.
+
+For manual shared-file transport, start with `review_handoff.py prepare` at the
 [target step](#set-the-review-target), following the normal loop.
 Use only its `handoff.status=ready` output. It has already saved and confirmed
 the complete Packet and unused result paths; give each reviewer its returned
@@ -587,7 +595,17 @@ registration. Neither confirms review truth, independence or completion. The fix
 [save operation](cli_contracts.md#save-review-original) documents UTF-8 input
 when needed; its command is already in each generated request.
 
-After all reviewers end, including normal all-ended resumption, run the retained
+After integrated worker resumption, use its actual results for reporting or
+necessary repairs. Do not repeat successful registration, commit or completion,
+or routinely retrieve results again. History truncation does not remove required
+notification fields. Only a demonstrated delivery constraint produces an
+explicitly incomplete notice naming the constraint and missing fields and
+directing read-only recovery. Notification correlation is not proof of unseen
+body content. Without a worker result (including
+scheduled `reviews_ended`), run the retained `finalization_command` once after
+all reviewers end; it uses the original target and preserved stages.
+
+For manual preparation, after all reviewers end, run the retained
 `submit_command` once. It confirms the Packet, originals, applicable session
 bindings and exact bytes before registration; do not first obtain save reports
 with `list_agents`/`read_thread`, display original JSON, or add routine show/check
@@ -618,7 +636,12 @@ do not infer file permissions. This is an alternative, not another normal read.
 
 ### Complete Work
 
-For a reviewed `git_snapshot`, create the completion commit through the
+An integrated `status=completed` report already records the confirmed commit and
+native Task completion. Report those results; do not run the manual tail below.
+Partial success uses the retained finalization command only after resolving its
+reported blocker; never create another commit to recover completion.
+
+For manual completion of a reviewed `git_snapshot`, create the completion commit through the
 project's approved Git workflow without changing the reviewed staged tree.
 Only after confirming that commit itself succeeded, use its full commit ID
 for completion. Once the specific commit is authorized and all required
@@ -654,7 +677,8 @@ approval or unresolved judgment ends the combined call.
 
 The commit must have exactly one parent equal to the captured base and the same
 tree; root and merge commits do not satisfy a snapshot target. Taskgov does not
-stage, create commits/branches, push, open PRs, or write Issue comments.
+stage, create branches, push, open PRs, or write Issue comments. Only the
+explicit integrated helper creates the fixed-target local commit.
 Completion revalidates current verification/review gates, unresolved Findings,
 sequential predecessors, and the evidence binding.
 

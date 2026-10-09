@@ -232,6 +232,12 @@ registration response for judgment without a routine agent/thread list,
 separate original read or Task show/check. Conditional transport and unknown
 registration recovery remain governed by the linked Review/completion owner.
 
+For authorized integrated `git_snapshot` completion, `prepare-finalization`
+replaces the same preparation call. The integrated operation performs the same
+native registration and completion gates with the fixed local commit between
+them; a waiting parent receives the actual results without additional normal
+calls. This changes orchestration, not the manual call graph or its gates.
+
 A default-off no-finding Tier 2 manual/fallback path therefore has at most
 six governance subprocess calls; a profile-enabled path has at most seven.
 The qualifying Runner-pass and not-required paths obtain the Packet directly

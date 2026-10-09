@@ -142,8 +142,11 @@ out of taskgov inputs. If handoff input is privacy-rejected, never repeat,
 quote, log, store, or forward the rejected raw content; make at most one fresh
 attempt with a concise sanitized abstraction. See [input errors and privacy](references/cli_contracts.md#errors-and-privacy).
 
-Taskgov does not stage files, create commits or branches, push, open PRs,
-create Issues, or authorize target/external mutation. Leave canonical offline
+Taskgov does not stage files, create branches, push, open PRs, create Issues,
+or authorize target/external mutation. The [integrated review finish](references/cli_contracts.md#integrated-review-finalization)
+can commit only the fixed reviewed snapshot when project rules and existing
+instructions permit it; no approval argument or repeat approval is needed.
+Leave canonical offline
 projections and backup to explicit setup and bounded same-process maintenance;
 they add no LLM command choice or background process. No network use, hidden
 acceptance conditions, or project-specific test strategy is added by this Skill.

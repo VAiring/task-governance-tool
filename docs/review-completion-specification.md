@@ -620,8 +620,9 @@ batch retain the 262,144-byte registration limit. Reads check physical identity,
 size and timestamps before/after, and submit rechecks originals before delivery.
 These are trusted-local race checks, not isolation against a hostile process
 with the same filesystem permissions. The operation does not lock a namespace
-or claim protection after its final observation. No network, reviewer launch,
-Git write, scheduler, ledger, platform adapter or automatic cleanup is added.
+or claim protection after its final observation. Ordinary transport adds no
+network, reviewer launch, Git write, scheduler, ledger, platform adapter or
+automatic cleanup. The integrated operation below owns its separate exception.
 
 Invalid input creates no result. A write/readback failure may leave an incomplete
 file, which is retained and never called ready. Correct source data and select
@@ -652,6 +653,98 @@ evidence inspection before any retry. A child response/exit is forwarded
 unchanged, including atomic rejection, successful registration with a blocking
 gate, and post-commit output failure. No wrapper success assertion, retry or new
 completion gate is added. Absent/truncated output itself remains unknown.
+
+### Integrated Review Finalization
+
+The [approved integration plan](review-finalization-plan.md) defines this
+conditional execution boundary. The implementation and two independent review
+gates must pass before host activation; saving this contract is not activation.
+
+`review_handoff.py prepare-finalization` takes the same arguments and closed
+source actions as `prepare`, replacing that one ordinary preparation call when
+the caller is authorized to register results, make the fixed local commit and
+complete this Task. Commit authority follows the project's operating rules and
+existing user instructions. There is no approval flag, prose permission parser,
+second material argument or approval re-ask. Neither PASS, a Task's commit-required
+metadata nor enabled review waiting creates permission. Ordinary `prepare`,
+`save`, `submit` and manual completion retain their existing behavior. An
+unauthorized integrated operation is not invoked; the caller uses the manual
+route and reports the outstanding permission boundary.
+
+Integrated preparation requires a current owned `git_snapshot`, an exact
+Packet and one set of named original paths. It binds the actual parent,
+execution/ownership generation, project/binding, Contract/target generation,
+base and fingerprint, existing current branch, Packet digest and original paths.
+Capture checks the base/index before and after observation; drift prevents
+preparation. References, unstaged/untracked content and ignored local artifacts
+are not automatically staged or added, and their presence alone is not drift.
+
+All originals must pass the existing complete-batch file/sidecar validation
+before any registration. Missing or invalid originals preserve all-or-nothing
+registration while reporting each available and unavailable result. The existing
+registration, current verification/review/Finding, ownership, ordering and
+completion validators remain controlling. Any unresolved Finding requires parent
+judgment before automatic commit, even where the manual completion gate would
+permit a low-severity Finding. Registration success is not PASS or Task done.
+The integrated all-severity check is repeated from fresh evidence immediately
+before publication and inside the native completion writer. Retained execution,
+owner generation, Contract and target constraints reach both native registration
+and completion writers; same-parent pause/resume does not refresh an old intent.
+
+The local Git exception creates one fixed-tree commit with exactly the reviewed
+base as its sole parent. It never stages, changes worktree content, creates a
+branch, pushes, runs arbitrary commands, or broadens material. Tree construction
+uses immutable index object IDs and modes, checked against the same fingerprint.
+It may first create unreachable immutable Git objects; this is separate from
+publishing a commit on a branch and does not assert Task completion. The candidate
+ID is retained before publication. The adapter checks the exact current snapshot
+and gates immediately before updating only the already existing current branch
+with an old-ID comparison, then verifies the actual resulting commit again.
+Ordinary index/HEAD writers are excluded during this final comparison and ref
+publication. It does not execute hooks, signing, editors or filters; callers
+whose project requires them use manual Git completion. Detached HEAD and nested
+project-relative snapshots also retain the manual path.
+
+Registration, commit publication, completion and notification have separate
+not-started, successful and uncertain outcomes. A failed later stage never undoes
+earlier success. A published commit is reused for completion recovery; an unknown
+effect is observed before any retry. Changed material/base/generation/owner is
+not permission to recapture or reuse older evidence. No raw command output,
+environment, exception, original body or notification body is added to durable
+operational state. Only structural bindings, references, digests, IDs, bounded
+exact reviewer/turn/status observations, closed blocking codes and phases
+are retained under the canonical resolver's operational subtree.
+Observed failed/interrupted, unavailable or changed reviewer turns remain blockers
+on that intent across lost notifications, `--check` and explicit retries. Missing
+later host information is not a successful reviewer observation. A fresh review
+requires a new target generation and intent; the old registered results and
+partial successes remain visible. Ordinary manual completion is unchanged.
+This retention begins with the integrated wait's admission and ordinary child
+observations, before another child/parent read, cancellation or scheduled-turn
+handoff can interrupt dispatch. A healthy unfinished child is not a failure.
+Preparation's fresh child reads belong to the same admission and retain the
+captured pairs even if later startup fails. A closed ordinary manual wait without
+an integrated intent does not pin reviewer turns for a new explicit association.
+An unavailable initial read retains the blocking reason without inventing a
+turn; later observations cannot clear it. A scheduled `reviews_ended` return
+therefore cannot bypass an already observed failure through retained `finalize`.
+
+The retained `finalization_command` invokes `finalize --repo <project>
+--task-id <task> --target-generation <generation>` without selecting new material.
+`--check` returns the complete bound report without registration, Git or completion
+writes. Explicit recovery first observes immutable receipt bindings, the saved
+candidate and actual Task completion. A still-unpublished candidate may be
+published only after observing the original base and exact index and rechecking
+all gates, using the same old-ID comparison; never create a replacement candidate.
+An unknown or changed observation blocks that stage. A lost completion response
+is reconciled through the exact completion revision and released original owner.
+
+Reports distinguish journal intent from observed registration IDs, Git publication
+and Task status. They include every registered Finding, including resolved low
+Findings, and all available original verdicts/summaries. Recorded work uses the
+latest checkpoint and recent Task notes with explicit coverage or `not_recorded`;
+it never invents a work summary. Maintenance warnings remain visible. Missing
+current data is named, and no unknown effect is presented as successful.
 
 ### Host-Owned Review Waiting
 
@@ -735,20 +828,49 @@ once to that same parent. Failed/interrupted reviews qualify as ended, not as
 PASS or available originals. External UI changes are not serialized by the
 local writer lease; this is not atomic host compare-and-send.
 
-The normal fixed direct message identifies the original Task and directs its
+For ordinary review-only preparation, the fixed direct message identifies the original Task and directs its
 existing result processing. It requires no ACK, ID handoff or routine view/status.
 On all-ended resumption, normal shared-file processing goes directly to the
 retained submit command and its confirmation/registration contract above.
 Failed or interrupted children still trigger the ended notification; unavailable
 or invalid originals are reported by submission, not silently waited for by
-the host. The host does not read result files or infer saved status/verdicts.
-Host acceptance and actual receipt remain separate. After settled accepted or
+the host. This manual route does not read result files or infer saved status/verdicts.
+For an exact integrated intent, after confirmed deletion and before sending,
+the worker runs finalization to its next success or blocking boundary. It sends
+the actual Task/target, recorded work, verification, original and registered
+reviews/Findings/IDs, gates, stages, confirmed commit, limitations and next action.
+Failed/interrupted reviewers permit complete-batch registration but stop commit.
+Fresh parent/reviewer/cancellation/deadline checks guard every effect. Legitimate
+completion and its owner release preserve delivery to that original parent;
+unrelated basis drift permits only a bound failure report, never Task/Git writes.
+Neither preparing a manual handoff nor merely enabling waiting grants this intent.
+The complete available result is sent in one notification. A history-read cap
+is not a send limit and never authorizes omitting work, verification, verdicts,
+Findings or other required fields. Source data unavailable for a result remains
+explicitly unavailable. Only a demonstrated transport constraint permits an
+exceptional incomplete-delivery notice naming the actual constraint, omitted
+fields and retained read-only recovery; it is not successful full delivery.
+The current local relay's encoded-frame bound is such a constraint, distinct
+from any host send limit. No assumed host limit, split send or routine parent
+retrieval is introduced.
+
+Host acceptance, notification correlation and full-body observation remain
+separate. `delivery.source_body` describes complete or incomplete composition
+at the source; `delivery.receipt_scope=notification_correlation_only` never
+claims full delivery from an identifier or sender-supplied digest.
+After settled accepted or
 unknown sending, the existing session worker may observe for at most two further
 minutes within the original twenty-minute outer deadline. Receipt requires a
 new actual turn of the same parent containing the matching public structured
-`functionCallOutput` for `codex_app.send_message_to_thread`, with the exact
-same-parent delegation envelope and fixed message/probe. A plain message echo,
-wrong parent, old turn, truncated or unavailable read is not receipt. Only the
+`functionCallOutput` for `codex_app.send_message_to_thread`. An untruncated event
+must match the exact same-parent delegation envelope and outgoing message.
+For integrated results, a truncated read may establish notification correlation
+only when its host-provided prefix contains the complete original-parent,
+notification, Task and target identity, matches the visible outgoing prefix,
+and the host's original character count agrees. Missing identity, incompatible
+truncation, a plain message echo, wrong parent, old turn, different notification
+or unavailable read is not receipt. Unseen suffix content remains unverified;
+neither correlation nor a matching original length proves that content. Only the
 observed turn UUID is retained; transient event bodies are discarded. Missing
 receipt remains unverified, without an added LLM call, resend or completion gate.
 Old explicit acknowledgements remain available only for their compatibility use.
@@ -776,9 +898,12 @@ known-ACTIVE cleanup at the next basis check; optional inspect/stop remain
 available. Due cutoff, cancellation, EOF and original twenty-minute expiry stay
 as defined by the per-occurrence protocol.
 
-Original review requests, judgments, saved originals, registration, Task gates,
-non-review waiting, actual parent/reviewer usage and legacy markers are unchanged.
-No resident supervisor, fabricated usage turn or numerical write is introduced.
+Original review requests, judgments, saved originals, registration validators,
+Task gates, non-review waiting and legacy markers are unchanged. Only an actually
+observed integrated notification turn may be numerically associated with the
+retained original execution after completion, under the
+[usage contract](database-specification.md#review-wait-decision-attribution).
+No resident supervisor or fabricated usage turn is introduced.
 Operational state stores bounded structural identities, phases and receipt
 turns only, outside core Task/usage schemas and backup inventory. When required
 public host facilities or permission are unavailable, disclose that limitation

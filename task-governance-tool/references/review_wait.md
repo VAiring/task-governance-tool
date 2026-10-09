@@ -2,7 +2,9 @@
 
 Use this only for authorized independent reviews that may outlive the parent
 turn. The optional project service owns reservations and observation. The parent
-keeps review judgment, original results, registration and Task decisions.
+keeps review judgment and Task decisions. Integrated preparation delegates only
+its fixed registration/commit/completion; manual preparation keeps those steps
+with the parent.
 Non-review waiting is unchanged; no resident coordinating LLM is needed.
 
 ## Setup And Connection
@@ -62,7 +64,17 @@ justify further discovery; this adds no lookup or confirmation prerequisite.
 3. End this turn only on `ok=true,status=waiting,parent_may_end=true`.
    The service then owns observation, deletion confirmation and one same-parent
    send when every exact reviewer ends and the original parent is idle.
-4. On all-ended resumption of prepared shared-file reviews, run the retained
+4. For integrated preparation, use the worker's actual result report: Task/target,
+   verification, reviews and every Finding/ID, gates, stages, confirmed commit,
+   limitations and next action. Report success or handle the named blocker without
+   repeating successful registration/commit/completion or retrieving results again.
+   Long results retain every available required field. History-read truncation
+   does not require retrieving the result again. Only a demonstrated delivery
+   constraint produces an explicit incomplete notice naming the constraint and
+   omitted fields, with retained `finalization_command --check` recovery;
+   never report that exception as full delivery. Without an integrated worker result,
+   run that retained command once after all reviewers end.
+   For manual prepared shared-file reviews, run the retained
    `submit_command` once through the
    [shared-file review procedure](task_workflow.md#prepare-and-record-reviews).
    Submission confirms complete originals and bindings before registration;
@@ -75,7 +87,8 @@ justify further discovery; this adds no lookup or confirmation prerequisite.
    No individual ACK, routine status/view, reservation
    management or `wait-ended` call is needed. The worker independently observes
    the matching incoming event in the new parent turn and records receipt.
-   The notification itself is not PASS, an original or a completion Receipt.
+   The notification reports observed results; sending or receiving it is not
+   itself PASS, an original or a completion Receipt.
 
 At a scheduled ten-minute check, handle actual review results normally. If the
 same reviewers are healthy but unfinished, repeat only the same wait request.
@@ -117,6 +130,8 @@ The service retains the existing 64-association bound and 64 request attempts
 per parent/Task; capacity failures preserve history and never evict workers.
 
 Timer deletion, host acceptance and actual new-turn receipt remain separate.
-The worker uses bounded public observation; unknown or truncated reads do not
-establish receipt. Missing receipt requires no extra LLM operation or Task gate.
+The worker uses bounded public observation. A truncated structured event may
+establish notification correlation when the complete identity and host evidence
+match; unknown reads or incomplete identity cannot. Correlation does not prove
+unseen body content. Missing receipt requires no extra LLM operation or Task gate.
 All original review/verification/usage/Task gates and failure recovery remain.

@@ -1,6 +1,6 @@
 """Single-call waiting and automatic receipts, with isolated state/fake hosts."""
 
-from dataclasses import replace
+from dataclasses import asdict, replace
 from datetime import timedelta
 import copy
 import json
@@ -23,6 +23,8 @@ from task_governance_tool.state_resolver import canonical_state_paths
 
 TASK = "tg_task_1111111111111111"
 META = {"threadId": PARENT, "turnId": ORIGINAL, "private": "DO_NOT_SAVE_THIS"}
+TARGET = {"contract_revision": 1, "target_kind": "git_snapshot", "target_value": "sha256:" + "a" * 64,
+          "target_base_revision": "b" * 40, "target_generation": 2}
 
 
 class ManagedHostTests(unittest.TestCase):
@@ -94,6 +96,152 @@ class ManagedHostTests(unittest.TestCase):
                 write_config(root, {**values, "prompt": "unrelated"})
                 with self.assertRaises(HostAdapterError):
                     host.verify_created(RULE)
+
+    def test_untruncated_report_receipt_requires_exact_body(self):
+        host = self.host()
+        report = {"task_id": TASK, "target": TARGET, "status": "attention_required", "registered_findings": [{"summary": "確認"}],
+                  "commit_id": None, "next_action": "Repair finding"}
+        host.set_finalization_result(OTHER, report)
+        value = self.receipt(host)
+        with mock.patch.object(host, "_json_call", return_value=value) as call:
+            self.assertEqual(host.observe_receipt(OTHER, ORIGINAL), NEW_TURN)
+        self.assertEqual(call.call_args.args[1]["maxOutputCharsPerItem"], 20000)
+        altered = copy.deepcopy(value)
+        altered["turns"][0]["items"][0]["output"]["text"] = altered["turns"][0]["items"][0]["output"]["text"].replace("Repair finding", "Report completion")
+        with mock.patch.object(host, "_json_call", return_value=altered):
+            self.assertIsNone(host.observe_receipt(OTHER, ORIGINAL))
+
+    def report(self, summary):
+        return {"task_id": TASK, "target": TARGET, "status": "attention_required", "task_title": "結果通知",
+            "recorded_work": {"checkpoint": {"summary": "記録済みの作業"}}, "verification": {"result": "pass"},
+            "originals": [{"reviewer": "one", "verdict": "pass", "summary": summary, "findings": []},
+                          {"reviewer": "two", "verdict": "changes_requested", "summary": "要修正",
+                           "findings": [{"severity": "high", "summary": "高"}, {"severity": "low", "summary": "低"}]}],
+            "registered_findings": [{"review_finding_id": "finding-one", "summary": summary}],
+            "registered_receipt_ids": ["receipt-one", "receipt-two"], "completion_gate": {"ready": False},
+            "stages": {"registration": "succeeded", "commit": "not_started", "completion": "not_started"},
+            "commit_id": None, "unavailable": [], "next_action": "Fix all findings"}
+
+    def bounded_receipt(self, host, maximum=20000):
+        value = self.receipt(host)
+        output = value["turns"][0]["items"][0]["output"]
+        raw = output["text"].encode("utf-16-le")
+        if len(raw) // 2 > maximum:
+            # Measured public read_thread output, including a split surrogate.
+            output.update(text=raw[:maximum * 2].decode("utf-16-le", errors="surrogatepass"),
+                          truncated=True, originalChars=len(raw) // 2)
+        return value
+
+    def test_full_results_survive_read_boundaries_and_all_outcomes(self):
+        for outcome in ("completed", "findings", "failed", "interrupted", "missing", "partial"):
+            for size in (17999, 18000, 18001, 19999, 20000, 20001, 36000):
+                with self.subTest(outcome=outcome, size=size):
+                    report = self.report(("日本語😀" * (size // 5 + 1)))
+                    report["status"] = outcome
+                    if outcome == "missing":
+                        report["originals"][1] = {"status": "unavailable", "reason": "missing_original"}
+                        report["unavailable"] = ["original_two"]
+                    if outcome == "partial":
+                        report["commit_id"] = "c" * 40
+                        report["stages"].update(commit="succeeded", completion="not_started")
+                    host = self.host()
+                    host.set_finalization_result(OTHER, report)
+                    prompt = host._direct_prompt(OTHER)
+                    payload = json.loads(prompt.splitlines()[2])
+                    self.assertEqual({k: v for k, v in payload.items() if k != "delivery"}, report)
+                    self.assertEqual(payload["delivery"], {"source_body": "complete", "omitted_fields": [],
+                                                          "receipt_scope": "notification_correlation_only"})
+                    self.assertNotIn("--check", prompt)
+                    with mock.patch.object(host, "_request", return_value={"content": [], "isError": False}) as send:
+                        self.assertEqual(host.send_direct_probe(OTHER), "accepted")
+                    self.assertEqual(send.call_args.args[1]["prompt"], prompt)
+                    with mock.patch.object(host, "_json_call", return_value=self.bounded_receipt(host)) as read:
+                        self.assertEqual(host.observe_receipt(OTHER, ORIGINAL), NEW_TURN)
+                    self.assertEqual(read.call_args.args[1]["maxOutputCharsPerItem"], 20000)
+
+    def test_truncated_event_requires_complete_identity_and_matching_host_structure(self):
+        host = self.host()
+        host.set_finalization_result(OTHER, self.report("😀" * 14000))
+        value = self.bounded_receipt(host)
+        output = value["turns"][0]["items"][0]["output"]
+        self.assertTrue(output["truncated"])
+        for edit in (
+            lambda v: v["turns"][0].update(id=ORIGINAL),
+            lambda v: v["turns"][0]["items"][0].update(type="agentMessage"),
+            lambda v: v["turns"][0]["items"][0].update(namespace="other"),
+            lambda v: v["turns"][0]["items"][0].update(name="echo"),
+            lambda v: v["turns"][0]["items"][0]["output"].update(originalChars=True),
+            lambda v: v["turns"][0]["items"][0]["output"].pop("originalChars"),
+            lambda v: v["turns"][0]["items"][0]["output"].update(originalChars=output["originalChars"] + 1),
+            lambda v: v["turns"][0]["items"][0]["output"].update(truncated=False),
+            lambda v: v["turns"][0]["items"][0]["output"].update(text=output["text"][:250]),
+            lambda v: v["turns"][0]["items"][0]["output"].update(text=output["text"].replace(PARENT, CHILD)),
+            lambda v: v["turns"][0]["items"][0]["output"].update(text=output["text"].replace(OTHER, CHILD)),
+            lambda v: v["turns"][0]["items"][0]["output"].update(text=output["text"].replace(TASK, "tg_task_2222222222222222")),
+            lambda v: v["turns"][0]["items"][0]["output"].update(text=output["text"].replace('"target_generation":2', '"target_generation":3')),
+            lambda v: v["turns"][0]["items"][0]["output"].update(text=output["text"].replace("記録済み", "未確認の")),
+        ):
+            changed = copy.deepcopy(value)
+            edit(changed)
+            with self.subTest(edit=edit), mock.patch.object(host, "_json_call", return_value=changed):
+                self.assertIsNone(host.observe_receipt(OTHER, ORIGINAL))
+        value["thread"]["id"] = CHILD
+        with mock.patch.object(host, "_json_call", return_value=value), self.assertRaises(HostAdapterError):
+            host.observe_receipt(OTHER, ORIGINAL)
+
+    def test_truncated_correlation_does_not_claim_unseen_body_integrity(self):
+        host = self.host()
+        host.set_finalization_result(OTHER, self.report("x" * 25000))
+        value = self.receipt(host)
+        output = value["turns"][0]["items"][0]["output"]
+        text = output["text"]
+        output.update(text=text[:22000] + "y" + text[22001:])
+        output.update(text=output["text"][:20000], truncated=True, originalChars=len(text))
+        with mock.patch.object(host, "_json_call", return_value=value):
+            self.assertEqual(host.observe_receipt(OTHER, ORIGINAL), NEW_TURN)
+        self.assertEqual(json.loads(host._direct_prompt(OTHER).splitlines()[2])["delivery"]["receipt_scope"],
+                         "notification_correlation_only")
+
+    def test_only_actual_local_relay_limit_produces_explicit_delivery_failure(self):
+        host = self.host()
+        report = self.report("日" * 90000)
+        host.set_finalization_result(OTHER, report)
+        prompt = host._direct_prompt(OTHER)
+        payload = json.loads(prompt.splitlines()[2])
+        self.assertEqual(payload["delivery"]["source_body"], "incomplete")
+        self.assertEqual(payload["delivery"]["limitation"], "local_relay_frame_limit")
+        self.assertEqual(payload["delivery"]["max_frame_bytes"], 262144)
+        self.assertEqual(set(payload["delivery"]["omitted_fields"]), set(report) - set(payload))
+        self.assertIn("--check", payload["delivery"]["recovery"])
+        self.assertEqual(payload["stages"], report["stages"])
+
+    def test_exact_utf16_event_boundary_and_split_surrogate(self):
+        report = self.report("")
+        # A trailing field avoids changing the number of repeated summary fields.
+        report["detail"] = ""
+        empty = self.host()
+        empty.set_finalization_result(OTHER, report)
+        overhead = len(self.receipt(empty)["turns"][0]["items"][0]["output"]["text"].encode("utf-16-le")) // 2
+        for size in (17999, 18000, 18001, 19999, 20000, 20001, 24000):
+            host = self.host()
+            host.set_finalization_result(OTHER, {**report, "detail": "日" * (size - overhead)})
+            value = self.bounded_receipt(host)
+            self.assertEqual(value["turns"][0]["items"][0]["output"]["truncated"], size > 20000)
+            with mock.patch.object(host, "_json_call", return_value=value):
+                self.assertEqual(host.observe_receipt(OTHER, ORIGINAL), NEW_TURN)
+        for padding in ("", "日"):
+            host = self.host()
+            host.set_finalization_result(OTHER, {**report, "detail": padding + "😀" * 14000})
+            value = self.bounded_receipt(host)
+            with mock.patch.object(host, "_json_call", return_value=value):
+                self.assertEqual(host.observe_receipt(OTHER, ORIGINAL), NEW_TURN)
+
+    def test_missing_or_invalid_source_identity_never_creates_a_receipt_header(self):
+        for target in (None, {}, {**TARGET, "target_generation": True}, {**TARGET, "target_value": "unknown"}):
+            host = self.host()
+            with self.assertRaises(HostAdapterError):
+                host.set_finalization_result(OTHER, {**self.report("test"), "target": target})
+            self.assertNotIn(OTHER, host._receipt_headers)
 
 
 class ManagedFlowTests(unittest.TestCase):
@@ -262,6 +410,155 @@ class ManagedFlowTests(unittest.TestCase):
         result = self.call(metadata={"threadId": PARENT, "turnId": NEW_TURN})
         self.assertEqual("reviews_ended", result["status"])
         self.assertEqual(["create", "arm", "pause", "delete"], self.effects)
+
+    def integrated_observer(self):
+        from task_governance_tool.review_finalization import Finalizer
+        from task_governance_tool.review_finalization_repository import FinalizationRecord, FinalizationRepository
+        self.basis = replace(self.basis, execution_id="tg_execution_" + "2" * 16,
+                             artifact_manifest_id="tg_artifact_manifest_" + "3" * 16,
+                             target_kind="git_snapshot", target_base_revision="a" * 40)
+        basis = asdict(self.basis)
+        basis.pop("wait_id")
+        basis.update(version=1, task_status="review_pending")
+        record = FinalizationRecord(basis, "reviews/packet.json", "c" * 64, ("reviews/one.json",), "refs/heads/main")
+        journal = FinalizationRepository(self.root / "finalization.sqlite")
+        with journal.serial(initial=record):
+            pass
+        # Actual observation writer and journal; no fake PASS or Git effects.
+        class ObservationOnly:
+            observe_reviewers = Finalizer.observe_reviewers
+        observer = ObservationOnly()
+        observer.journal = journal
+        self.session._finalizer = lambda binding: observer
+        return journal
+
+    def test_scheduled_failed_reviewer_is_retained_before_reviews_ended(self):
+        journal = self.integrated_observer()
+        self.assertTrue(self.call()["ok"])
+        self.assertEqual(journal.read().reviewer_observations, ())
+        self.child = ChildTurn(CHILD, TURN, "failed", "systemError")
+        self.current_parent = ChildTurn(PARENT, NEW_TURN, "inProgress", "active")
+        result = self.call(metadata={"threadId": PARENT, "turnId": NEW_TURN})
+        self.assertEqual(result["status"], "reviews_ended", result)
+        self.assertEqual(journal.read().reviewer_observations, ((CHILD, TURN, "failed"),))
+        self.assertEqual(journal.read().reviewer_blocker, "finalization_reviewer_failed")
+        self.assertEqual(self.effects, ["create", "arm", "pause", "delete"])
+
+    def test_failed_status_is_retained_while_host_thread_is_still_active(self):
+        journal = self.integrated_observer()
+        self.child = ChildTurn(CHILD, TURN, "failed", "active")
+        self.assertTrue(self.call()["ok"])
+        self.assertEqual(journal.read().reviewer_observations, ((CHILD, TURN, "failed"),))
+        self.assertEqual(journal.read().reviewer_blocker, "finalization_reviewer_failed")
+        self.assertNotIn("send", self.effects)
+
+    def test_scheduled_changed_turn_remains_bound_to_original_pair(self):
+        journal = self.integrated_observer()
+        self.assertTrue(self.call()["ok"])
+        finalizer_factory = self.session._finalizer
+        self.session.close()
+        self.session = self.make()
+        self.session._finalizer = finalizer_factory
+        self.child = ChildTurn(CHILD, OTHER, "completed", "idle")
+        self.current_parent = ChildTurn(PARENT, NEW_TURN, "inProgress", "active")
+        result = self.call(metadata={"threadId": PARENT, "turnId": NEW_TURN})
+        self.assertFalse(result["ok"], result)
+        self.assertEqual(journal.read().reviewer_observations, ((CHILD, TURN, "unknown"),))
+        self.assertEqual(journal.read().reviewer_blocker, "finalization_reviewer_unknown")
+        self.assertNotIn("send", self.effects)
+
+    def test_initial_unavailable_read_blocks_without_inventing_turn(self):
+        journal = self.integrated_observer()
+        factory = self.session.managed_host_factory
+        def unavailable(**kwargs):
+            host = factory(**kwargs)
+            host.read_child = mock.Mock(side_effect=ValueError("private provider failure"))
+            return host
+        self.session.managed_host_factory = unavailable
+        self.assertFalse(self.call()["ok"])
+        self.assertEqual(journal.read().reviewer_observations, ())
+        self.assertEqual(journal.read().reviewer_blocker, "finalization_reviewer_unknown")
+        self.assertEqual(self.effects, [])
+        self.assertNotIn(b"private provider failure", journal.path.read_bytes())
+
+    def test_healthy_scheduled_review_has_no_invented_failure(self):
+        journal = self.integrated_observer()
+        self.assertTrue(self.call()["ok"])
+        self.child = ChildTurn(CHILD, TURN, "completed", "idle")
+        self.current_parent = ChildTurn(PARENT, NEW_TURN, "inProgress", "active")
+        self.assertEqual(self.call(metadata={"threadId": PARENT, "turnId": NEW_TURN})["status"], "reviews_ended")
+        self.assertEqual(journal.read().reviewer_observations, ((CHILD, TURN, "completed"),))
+        self.assertIsNone(journal.read().reviewer_blocker)
+
+    def preparation_handoff(self, status):
+        journal = self.integrated_observer()
+        factory = self.session.managed_host_factory
+        reads = []
+        def during_prepare(**kwargs):
+            host = factory(**kwargs)
+            def child(reviewer):
+                reads.append(reviewer)
+                if len(reads) == 1:
+                    return self.child
+                self.current_parent = ChildTurn(PARENT, NEW_TURN, "inProgress", "active")
+                if status == "unavailable":
+                    raise ValueError("private preparation read failure")
+                return ChildTurn(CHILD, OTHER if status == "changed" else TURN,
+                                 "completed" if status == "changed" else status, "idle")
+            host.read_child = child
+            return host
+        self.session.managed_host_factory = during_prepare
+        self.assertFalse(self.call()["ok"])
+        self.assertEqual(len(reads), 2)
+        self.assertEqual(self.effects, ["create", "delete"])
+        expected_status = "unknown" if status in {"unavailable", "changed"} else status
+        self.assertEqual(journal.read().reviewer_observations, ((CHILD, TURN, expected_status),))
+        self.assertEqual(journal.read().reviewer_blocker, None if status == "completed" else
+                         "finalization_reviewer_" + ("unknown" if expected_status == "unknown" else "failed"))
+        self.assertNotIn(b"private preparation read failure", journal.path.read_bytes())
+
+    def test_preparation_failed_reviewer_survives_startup_failure(self):
+        self.preparation_handoff("failed")
+
+    def test_preparation_interrupted_reviewer_survives_startup_failure(self):
+        self.preparation_handoff("interrupted")
+
+    def test_preparation_unavailable_reviewer_survives_startup_failure(self):
+        self.preparation_handoff("unavailable")
+
+    def test_preparation_changed_turn_preserves_original_pair(self):
+        self.preparation_handoff("changed")
+
+    def test_preparation_healthy_parent_handoff_does_not_invent_failure(self):
+        self.preparation_handoff("completed")
+
+    def test_closed_manual_wait_accepts_new_reviewer_turn(self):
+        self.assertTrue(self.call()["ok"])
+        self.assertEqual(self.call("stop")["status"], "stopped")
+        self.child = ChildTurn(CHILD, OTHER, "inProgress", "active")
+        self.current_parent = ChildTurn(PARENT, NEW_TURN, "inProgress", "active")
+        result = self.call(metadata={"threadId": PARENT, "turnId": NEW_TURN})
+        self.assertTrue(result["parent_may_end"], result)
+        self.assertEqual(self.effects, ["create", "arm", "pause", "delete", "create", "arm"])
+
+    def test_active_manual_wait_rejects_new_reviewer_turn_before_cleanup(self):
+        self.assertTrue(self.call()["ok"])
+        self.child = ChildTurn(CHILD, OTHER, "inProgress", "active")
+        self.current_parent = ChildTurn(PARENT, NEW_TURN, "inProgress", "active")
+        self.assertFalse(self.call(metadata={"threadId": PARENT, "turnId": NEW_TURN})["ok"])
+        self.assertNotIn("delete", self.effects)
+        self.assertEqual(self.effects.count("create"), 1)
+
+    def test_closed_integrated_wait_still_preserves_bound_turn(self):
+        journal = self.integrated_observer()
+        self.assertTrue(self.call()["ok"])
+        self.assertEqual(self.call("stop")["status"], "stopped")
+        self.child = ChildTurn(CHILD, OTHER, "inProgress", "active")
+        self.current_parent = ChildTurn(PARENT, NEW_TURN, "inProgress", "active")
+        self.assertFalse(self.call(metadata={"threadId": PARENT, "turnId": NEW_TURN})["ok"])
+        self.assertEqual(journal.read().reviewer_observations, ((CHILD, TURN, "unknown"),))
+        self.assertEqual(journal.read().reviewer_blocker, "finalization_reviewer_unknown")
+        self.assertEqual(self.effects.count("create"), 1)
 
     def test_restart_and_inspection_never_resume_worker(self):
         self.call()

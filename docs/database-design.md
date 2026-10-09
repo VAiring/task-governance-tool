@@ -256,6 +256,17 @@ disappears. SQL remains in this repository; host control and Packet transport
 remain outside it. Only allowlisted structural metadata reaches storage or
 prefix hashes.
 
+The integrated worker's actual receipt adapter calls the existing numerical
+repository only after matching a new same-parent structured incoming event.
+`record_host_receipt` registers that real parent and stores its typed
+`WaitObservation` in the existing schema-4 relation. The adapter first validates
+the retained execution/manifest anchor in an admitted core read, then closes it
+before the numerical write. It runs only when collection is already enabled;
+missing/unmigrated numerical state remains unavailable. No current-owner lookup,
+message parser, new schema, implicit setup or invented response is introduced.
+Existing interval union and late immutable publication cover the real reporting
+turn even when the preceding integrated completion released ownership.
+
 ### Immutable Usage Persistence
 
 `usage_evidence.py` owns the closed metadata-only snapshot format and validation.

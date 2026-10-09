@@ -538,8 +538,7 @@ class PublicMcpHost:
                 _fail()
             child.send(relay._encode({"jsonrpc": "2.0", "method": "notifications/initialized"}))
             boundary_reason = "host_response_unavailable"
-            child.send(relay._encode({"jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": {
-                "name": name, "arguments": arguments, "_meta": _downstream_metadata(self._metadata)}}))
+            child.send(self._tool_call_bytes(name, arguments))
             result = child.result(2)
             succeeded = True
         except Exception as error:
@@ -561,6 +560,11 @@ class PublicMcpHost:
         if not succeeded:
             raise HostAdapterError("host_call_failed", boundary_reason=boundary_reason) from None
         return result
+
+    def _tool_call_bytes(self, name: str, arguments: dict) -> bytes:
+        """The actual relay frame, also usable for effect-free size admission."""
+        return relay._encode({"jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": {
+            "name": name, "arguments": arguments, "_meta": _downstream_metadata(self._metadata)}})
 
     def _call(self, name: str, arguments: dict, *, timeout: float | None = None) -> tuple[str, ...]:
         try:

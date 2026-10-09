@@ -72,8 +72,10 @@ test strategy, threat-model management, reviewer authentication, signatures,
 or a general workflow/audit engine.
 
 The tool is offline by default. It never creates or changes target-project
-source, Git commits, branches, refs, tags, PRs, Issues, external services, or
-network state. Read-only Git subprocesses are permitted only for the exact
+source, branches, tags, PRs or Issues. The sole local Git write exception is
+the explicitly invoked [integrated finalization](review-completion-specification.md#integrated-review-finalization)
+of an already authorized fixed snapshot on its existing branch. Ordinary
+commands retain read-only Git subprocesses only for the exact
 [validation and review operations](review-completion-specification.md#git-snapshot-and-target-binding). Explicit setup may create the
 canonical ignored project-local state and generated Viewer; successful
 business mutations may perform the opted-in bounded same-process maintenance
@@ -88,8 +90,9 @@ The explicit [review handoff helper](review-completion-specification.md#caller-o
 may additionally create the caller's named unused ignored Packet directory
 and complete Packet, and named unused result JSON; it checks Git ignore
 read-only and submits originals through the existing stdin
-writer. It never changes source, Git state, existing permissions or
-generated-state paths.
+writer. Its ordinary transport operations never change source, Git state,
+existing permissions or generated-state paths. Optional host review waiting
+uses only its separately authorized same-parent notification operations.
 
 ## Package, Runtime, And Generated State
 

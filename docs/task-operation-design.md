@@ -775,7 +775,9 @@ and shared review gates live in the already-read bounded operating loop. The
 Skill start entry and inherited Review And Completion introduction are concise
 routes to that loop, rather than repeated copies of its detail. The reader
 continues to return complete ancestor introductions and applicable subtrees.
-The parent retains Task decisions and evidence registration. This guidance adds
+The parent retains Task decisions. Authorized integrated preparation delegates
+fixed registration/commit/completion to the Review/completion orchestrator;
+manual preparation retains parent-side evidence registration. This guidance adds
 no public taskgov leaf or host trust/shared-setting change. Retained legacy
 supervisor usage markers and numerical-only persistence belong to
 [Review/completion](review-completion-design.md#review-wait-usage-marker).

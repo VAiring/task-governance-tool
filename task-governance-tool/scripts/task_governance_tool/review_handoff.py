@@ -392,7 +392,13 @@ def main(argv=None):
         parser = _Parser(description=__doc__)
         commands = parser.add_subparsers(dest="operation", required=True)
         add_parser(commands)
+        add_parser(commands, "prepare-finalization")
         add_material_parser(commands)
+        finalize = commands.add_parser("finalize", help="Run only the retained authorized finalization; preserve successful stages")
+        finalize.add_argument("--repo", required=True)
+        finalize.add_argument("--task-id", required=True)
+        finalize.add_argument("--target-generation", type=int, help="Retained target generation for explicit recovery; never recaptures material")
+        finalize.add_argument("--check", action="store_true", help="Read retained stages and available evidence without any mutation")
         reader = commands.add_parser("read", help="Display the saved Packet for an explicitly assigned independent reviewer")
         reader.add_argument("--repo", required=True)
         reader.add_argument("--packet", required=True)
@@ -423,9 +429,17 @@ def main(argv=None):
         repo = Path(os.path.abspath(args.repo))
         if args.operation == "material":
             return read_material(repo, args)
-        if args.operation == "prepare":
+        if args.operation in {"prepare", "prepare-finalization"}:
             result = prepare(repo, args)
             return (0 if result["ok"] else 1) if _emit(result) else 1
+        if args.operation == "finalize":
+            from task_governance_tool.review_finalization import Finalizer, _code
+            try:
+                result = Finalizer(repo, args.task_id, capture_caller_identity(), generation=args.target_generation).execute(check=args.check)
+            except Exception as exc:
+                result = {"ok": False, "status": "unavailable", "code": _code(exc),
+                          "message": "Finalization unavailable; preserve existing state and do not replay unknown effects."}
+            return (0 if result["ok"] else 1) if _emit(result, utf8=True) else 1
         if args.operation == "read":
             return 0 if _emit(read_for_reviewer(repo, args.packet, material_details=args.material_details), utf8=True) else 1
         if args.operation == "wait-ended":

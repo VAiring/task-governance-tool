@@ -1222,7 +1222,9 @@ when applicable.
 
 Git evidence resolves to a canonical full commit ID. External evidence requires
 an explicit reason and approval. `commit_not_required` requires a matching
-`diff_fingerprint` target. taskgov does not create commits or mutate Git.
+`diff_fingerprint` target. This command does not create commits or mutate Git;
+the separate [integrated helper](#integrated-review-finalization) owns the sole
+fixed-target local commit exception.
 
 ## Verification Receipt
 
@@ -1984,6 +1986,62 @@ retry, new ledger, reviewer launch or raw-response file. Capture is limited to
 262,144 bytes in memory; malformed, incomplete or oversized output cannot be
 used as a Packet. Packet/result files alone are persisted.
 
+#### Integrated Review Finalization
+
+When project rules and existing user instructions permit the fixed local commit,
+replace `prepare` with `prepare-finalization` using the same source and arguments.
+There is no approval flag, second material list or extra normal preparation call.
+Manual `prepare` retains its existing behavior where this operation is not
+authorized or applicable. Review PASS never supplies Git permission.
+
+The ready response additionally includes `finalization={status:prepared,task_id,
+target_generation}` and a fully quoted `finalization_command`. It binds the
+actual owner, execution, Contract, target generation, stable base/index, existing
+branch, complete Packet and named original paths in canonical operational state.
+The target must be `git_snapshot` at the Git root on an existing attached branch.
+The adapter preserves index/worktree content and executes no commit hooks,
+signing, filters or editor. Projects requiring those use the manual Git workflow.
+No stage, new branch, push, arbitrary command or permission/config write occurs.
+
+After all reviewers end, an enabled matching wait worker registers the whole
+valid original batch, checks existing gates and unresolved Findings, publishes
+only that fixed commit, and records native completion before notifying the same
+parent. Missing originals prevent partial registration. Failed/interrupted
+reviewers or any unresolved Finding stop automatic commit. Other manual
+completion conditions remain unchanged.
+Retained owner/target constraints are checked inside the native writers, and
+Findings are checked again before publication and locked completion. A saved
+failed/interrupted, unavailable or changed reviewer turn remains a blocker on
+this intent across `--check` and retries; obtain fresh reviews under a new target
+generation/intent instead of treating missing host information as success.
+
+If no worker processed the results, use the retained command once:
+
+```powershell
+python .agents/skills/task-governance-tool/scripts/review_handoff.py finalize --repo . --task-id <task-id> --target-generation <generation>
+```
+
+The generated command includes its exact generation; omission uses the current
+Task generation, never another stored intent. `--check` is read-only and returns
+the complete report without creating state or replaying effects. Reports contain
+Task/target, recorded work with coverage or `not_recorded`, verification, original
+and registered reviews, every registered Finding/ID, gates, stage intent and
+observed results, confirmed commit, missing fields, warnings and next action.
+`ok` means the operation had no processing error; only `status=completed` confirms
+all stages, not a successful check, registration or message delivery alone.
+
+Partial success is preserved. Before explicit recovery, resolve the reported
+blocker. The helper observes immutable registration bindings, actual publication
+and native completion before continuing. It reuses the saved candidate and
+requires the original base/index and current gates before publishing a still
+unpublished candidate. Changed/unknown basis cannot authorize recapture or a
+replacement commit. Successful completion is not repeated. Lost or bounded
+notifications caused by a demonstrated delivery constraint use this retained
+command with `--check`. History-read truncation alone does not cause omission
+or require this recovery; notification correlation does not certify an unseen
+body suffix. Do not resubmit originals
+or resend a host message to recover missing report fields.
+
 #### Read Current Review Wait Basis
 
 The read-only `review_handoff.py wait-basis --repo <project> --task-id <original-task>`
@@ -2183,7 +2241,9 @@ before any retry. No valid subset is submitted after an input failure. The
 registration child's ordinary response/exit passes through unchanged, including
 successful registration with a blocking review gate and post-commit output loss.
 File ownership, authorized path allocation and retention remain caller-owned.
-No network, Git write, review launch, alternate gate or database writer is added.
+Ordinary handoff recovery adds no network, Git write, review launch, alternate
+gate or database writer. Integrated finalization has only its bounded exception
+above and uses the existing native registration/completion writers.
 
 ## Receipt Output For Integration Or Audit
 

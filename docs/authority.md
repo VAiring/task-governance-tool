@@ -147,6 +147,15 @@ activate ownership, numerical collection, a schema migration or host hooks.
 Current product owners remain controlling until the corresponding reviewed
 implementation updates them. Unverified host prerequisites are explicit there.
 
+## Conditional Review Finalization Plan
+
+[Review finalization and same-parent result notification](review-finalization-plan.md)
+owns the approved four sequential phases within the single integration Task.
+It does not activate automatic registration, Git writes, completion or result
+delivery before the corresponding reviewed implementation and host gates.
+Review/completion and the directly coupled current owners retain durable
+product and implementation authority.
+
 ## Delegated Repository Operating Guides
 
 - [Artifact authoring](artifact-authoring.md)
@@ -205,11 +214,11 @@ enforced meaning.
 
 ```json
 {
-  "schema": "taskgov-document-authority-v18",
+  "schema": "taskgov-document-authority-v19",
   "mandatory_start": ["AGENTS.md", "docs/authority.md", "live_task_contract"],
   "current": ["docs/specification.md", "docs/design.md", "plan.md", "docs/viewer-specification.md", "docs/viewer-design.md", "docs/runner-plan-authoring-specification.md", "docs/runner-plan-authoring-design.md", "docs/task-operation-specification.md", "docs/task-operation-design.md", "docs/runner-execution-specification.md", "docs/runner-execution-design.md", "docs/evidence-specification.md", "docs/evidence-design.md", "docs/review-completion-specification.md", "docs/review-completion-design.md", "docs/setup-state-specification.md", "docs/setup-state-design.md", "docs/database-specification.md", "docs/database-design.md"],
   "mixed_execution": [],
-  "conditional": ["docs/state-layout-separation-plan.md", "docs/verification-declaration-plan.md", "docs/session-usage-plan.md"],
+  "conditional": ["docs/state-layout-separation-plan.md", "docs/verification-declaration-plan.md", "docs/session-usage-plan.md", "docs/review-finalization-plan.md"],
   "history_index": "docs/history/README.md"
 }
 ```

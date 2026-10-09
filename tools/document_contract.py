@@ -39,6 +39,7 @@ ARTIFACT_AUTHORING = "docs/artifact-authoring.md"
 STATE_LAYOUT_PLAN = "docs/state-layout-separation-plan.md"
 VERIFICATION_DECLARATION_PLAN = "docs/verification-declaration-plan.md"
 SESSION_USAGE_PLAN = "docs/session-usage-plan.md"
+REVIEW_FINALIZATION_PLAN = "docs/review-finalization-plan.md"
 
 CANONICAL_DOCS = (
     "AGENTS.md",
@@ -66,6 +67,7 @@ CANONICAL_DOCS = (
     STATE_LAYOUT_PLAN,
     VERIFICATION_DECLARATION_PLAN,
     SESSION_USAGE_PLAN,
+    REVIEW_FINALIZATION_PLAN,
     HISTORY_INDEX,
 )
 METRIC_DOCS = CANONICAL_DOCS + (RELEASE_INSTALL, ARTIFACT_AUTHORING)
@@ -79,6 +81,7 @@ PACKAGE_LINK_TARGETS = (
 # These sections are closed authority edges. Their prose and link order are not
 # part of the contract; the required destination set is.
 ROUTE_SECTIONS = (
+    (AUTHORITY, "## Conditional Review Finalization Plan", ("review-finalization-plan.md",)),
     (AUTHORITY, "## Conditional Session Ownership And Usage Design", ("session-usage-plan.md",)),
     (AUTHORITY, "## Verification Declaration Correction", ("verification-declaration-plan.md",)),
     (AUTHORITY, "## Conditional State Separation Plan", ("state-layout-separation-plan.md",)),
@@ -587,6 +590,7 @@ ROLE_TITLES = {
     STATE_LAYOUT_PLAN: "# Project State Separation: Design And Execution Plan",
     VERIFICATION_DECLARATION_PLAN: "# Explicit Verification Declaration Correction",
     SESSION_USAGE_PLAN: "# Session Ownership And Usage Evidence Design",
+    REVIEW_FINALIZATION_PLAN: "# Review Finalization And Same-Parent Result Notification",
     "AGENTS.md": "# AGENTS.md",
     "README.md": "# task-governance-tool",
     AUTHORITY: "# Repository Authority Index",
@@ -1253,7 +1257,7 @@ def _section_bounds(scan: Scan, heading: str) -> tuple[int, int] | None:
 
 def _expected_registry() -> dict[str, object]:
     return {
-        "schema": "taskgov-document-authority-v18",
+        "schema": "taskgov-document-authority-v19",
         "mandatory_start": ["AGENTS.md", AUTHORITY, "live_task_contract"],
         "current": [
             "docs/specification.md", "docs/design.md", "plan.md",
@@ -1267,7 +1271,7 @@ def _expected_registry() -> dict[str, object]:
             DATABASE_SPECIFICATION, DATABASE_DESIGN,
         ],
         "mixed_execution": [],
-        "conditional": [STATE_LAYOUT_PLAN, VERIFICATION_DECLARATION_PLAN, SESSION_USAGE_PLAN],
+        "conditional": [STATE_LAYOUT_PLAN, VERIFICATION_DECLARATION_PLAN, SESSION_USAGE_PLAN, REVIEW_FINALIZATION_PLAN],
         "history_index": HISTORY_INDEX,
     }
 

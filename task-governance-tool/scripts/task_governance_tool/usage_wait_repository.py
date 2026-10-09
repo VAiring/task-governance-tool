@@ -110,6 +110,15 @@ class UsageWaitRepository(UsageEvidenceRepository):
     schema_statements = (_MIGRATION, *_DDL[1:], *_ATTRIBUTION_DDL, *_EVIDENCE_DDL, *_WAIT_DDL)
     migrations = (*UsageEvidenceRepository.migrations, (4, "review_wait_attribution"))
 
+    def record_host_receipt(self, observation):
+        """Internal actual-event adapter only; never initialize or infer a turn."""
+        from task_governance_tool.session_identity import CallerIdentity
+        if type(observation) is not WaitObservation:
+            raise UsageError("boundary_unknown")
+        self.register_session(CallerIdentity(observation.thread_id))
+        with self.connection(write=True) as connection:
+            self._record_wait(connection, observation)
+
     def inspect(self):
         try:
             return UsageRepository.inspect(self)

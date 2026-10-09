@@ -808,9 +808,11 @@ history projections use explicit allow-lists and revalidate stored text before
 output.
 
 Git subprocesses use fixed argument vectors, no shell, bounded timeout, safe
-environment, disabled optional locks/lazy fetching, and no target-project
-write. Taskgov never creates a commit, branch, PR, Issue, tag, Release, or
-network request as product behavior. Release operations are repository
+environment and disabled optional locks/lazy fetching. Ordinary operations are
+read-only; the [integrated fixed-target adapter](review-completion-design.md#integrated-review-finalization)
+is the sole local commit/ref-publication exception. Taskgov never creates a
+branch, PR, Issue, tag or Release. Optional review waiting uses only the separately
+authorized public host operations in its owner. Release operations are repository
 release work performed only under their separate approvals, not new Taskgov
 commands.
 

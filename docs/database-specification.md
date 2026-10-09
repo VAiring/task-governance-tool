@@ -406,7 +406,7 @@ The supervisor's first all-reviews-ended decision turn contributes its whole
 observed usage to the structurally associated reviewed execution. This includes
 OK, NG, mixed outcomes and missing originals, whether the timer is shortened or
 kept because fewer than 90 seconds remain. Attribution does not depend on a
-successful timer write. Parent receiving/resumption and user-facing completion
+successful timer write. Unobserved parent receiving/resumption and user-facing completion
 report turns, unrelated timer operations, and the supervisor's entire waiting
 interval gain no participation from this rule. Existing owner/reviewer coverage
 continues independently.
@@ -439,6 +439,17 @@ basis. Numerical registration, collection or migration unavailability cannot
 block timer handling, review registration or Task completion. Only explicit
 setup migrates old numerical stores; there is no automatic historical marker
 backfill or inference from old notification prose.
+
+For the integrated finalization path, an exact public incoming-event receipt
+may separately bind the actual resumed parent's turn to the retained original
+execution/manifest, including when completion has already released ownership.
+The wait worker supplies only the structurally observed turn and its immutable
+prepared binding. Accepted sending, prose, an invented turn or the newest Task
+owner is insufficient. Enabled optional collection uses the existing numerical
+schema-4 single-turn relation and immutable-anchor validation; it performs no
+setup/migration, core write, synthetic response or supervisor interval. Existing
+union/deduplication and unknown/conflicting-source behavior remain controlling.
+Late response collection links that real turn to the original completion period.
 
 ### Immutable Usage Evidence
 

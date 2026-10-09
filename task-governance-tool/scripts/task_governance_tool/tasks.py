@@ -113,6 +113,7 @@ from task_governance_tool.verification_declaration import (
 )
 from task_governance_tool.session_identity import CallerIdentity
 from task_governance_tool import task_ownership
+from task_governance_tool.review_finalization_basis import FinalizationBasis, require_no_findings
 
 
 PUBLIC_TASK_FIELDS = (
@@ -234,6 +235,7 @@ class CompletionPlan:
     request: CompletionRequest
     basis: CompletionBasis = field(repr=False)
     resolution: CompletionResolution
+    finalization_basis: FinalizationBasis | None = field(default=None, repr=False)
 
 
 def validate_task_input(
@@ -1912,6 +1914,9 @@ def validate_completion_plan_basis(
     stale_code: str | None = None,
 ) -> dict[str, Any]:
     """Revalidate a cached outside-Git observation against current DB facts."""
+    if plan.finalization_basis is not None:
+        plan.finalization_basis.require_task(basis.task, basis.ownership)
+        require_no_findings(basis.review_evidence)
     if basis.ownership != plan.basis.ownership:
         raise validation_error("task_ownership_changed", "task ownership changed; inspect current task state")
     if basis.semantic_token != plan.basis.semantic_token:

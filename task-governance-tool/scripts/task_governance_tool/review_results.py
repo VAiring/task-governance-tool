@@ -499,6 +499,7 @@ def add_review_results(
     database_target: DatabaseTarget | None = None,
     caller: CallerIdentity = CallerIdentity(None),
     session_bindings: tuple[BoundResult, ...] | None = None,
+    finalization_basis=None,
 ) -> dict[str, Any]:
     """Append the whole batch; caller must commit or roll back on exception.
 
@@ -560,6 +561,9 @@ def add_review_results(
         caller=caller, ownership=ownership,
         review_session=bindings[0],
     )
+    if finalization_basis is not None:
+        finalization_basis.require_task(locked, task_ownership.read_basis(
+            connection, project_id=project.project_id, task_id=normalized_task_id))
     reject_concurrent_review_basis_change(
         observed, locked,
         code="review_target_mismatch",

@@ -430,6 +430,89 @@ Both cover portable filesystem behavior; `test_review_handoff_windows.py`
 owns the native PowerShell transport case outside POSIX platform selection. Existing
 result registration tests retain writer atomicity and concurrent-state checks.
 
+### Integrated Review Finalization
+
+The [conditional integrated behavior](review-completion-specification.md#integrated-review-finalization)
+is implemented in focused orchestration, operational repository, Git adapter and
+delivery responsibilities. The existing manual helper remains independent.
+Integrated invocation carries the caller's project-authorized intent, not an
+approval boolean. Current typed caller identity and structural generation checks
+remain mandatory; no parent ID is inferred from prose or numerical records.
+
+`review_finalization_git.py` owns only the fixed local Git exception. It reuses
+`capture_git_snapshot`, the canonical entry/fingerprint decoder and
+`verify_git_snapshot_commit`. A stable stage-zero index yields immutable trees
+through fixed `mktree -z` operations and one `commit-tree` candidate. Tree paths
+are raw Git bytes; nested directories are constructed bottom-up. Candidate
+creation leaves refs, the index and the working tree untouched. The orchestrator
+persists its full ID before attempting publication. Fixed argument vectors,
+sanitized environment, bounded time/output, no stderr retention, no lazy fetch
+and disabled fsmonitor/signing prevent extra execution. The generic Task title
+is not inserted into a shell or a commit-message argument.
+
+Publication obtains an exclusive physical index lock without overwriting foreign
+residue. A fixed `update-ref --stdin --no-deref` transaction prepares its old-ID
+branch update; Git owns the branch and implicit HEAD locks. Before committing the
+prepared transaction, the adapter requires the physical HEAD lock and rechecks
+the symbolic HEAD, basis and gates. Unsupported ref backends retain the manual
+route. EOF aborts an uncommitted transaction; the child is always reaped. The
+resulting topology/tree must match the original snapshot. Only the adapter's own
+unchanged index lock is removed by the adapter. Failure after dispatch is not
+claimed as rollback: the saved candidate and actual refs determine recovery.
+An explicit retry may reuse only that candidate after observing the original
+base/index, with the same old-ID comparison, never a second commit.
+The adapter rejects detached HEAD and nested project-relative snapshots;
+the manual route preserves project-required hooks, signing and those layouts.
+Core connections are closed during Git work; operational writer leases do not
+hold SQLite transactions across subprocesses.
+
+`review_finalization.py` composes the existing typed CLI registration/completion
+handlers and their bounded maintenance, with the genuine parent caller identity.
+`review_finalization_basis.py` carries the immutable retained project, execution,
+owner generation, Contract, target and manifest constraints through those handlers.
+Native admission checks the retained project binding. Batch registration checks
+the retained Task/owner under its existing writer lock before inserting any
+Receipt; the CompletionPlan carries the same constraints into the native writer.
+Its locked completion-basis validation also repeats the integrated all-severity
+Finding check. These constraints are internal parameters, not public arguments,
+and ordinary manual registration/completion keeps its existing conditions.
+`review_finalization_repository.py` owns the operational journal and read-only
+reconciliation against immutable core review/session bindings and all registered
+Findings. The canonical resolver's `review_finalization_store` names one
+`finalize-<sha256(parent UUID:Task ID)>-<target generation>.sqlite`. Its exact schema
+one contains `schema_history` and one canonical bounded JSON `intent`; it is not
+part of core backup or schema migration. A physical writer lease spans effects,
+with short transactions only. It retains the closed wait basis, Packet path/digest,
+1–8 result paths, existing branch, original session/digest pairs, Receipt IDs,
+candidate ID and monotone registration/commit/completion intent/success phases.
+It also retains at most eight exact reviewer/turn/status observations and one
+closed reviewer blocking code. Admission, ordinary wait reads, dispatch preflights
+and finalization guards retain each terminal or unavailable observation before
+another read or handoff. Observations accumulate by reviewer identity; an existing
+turn cannot change and a failed/unknown observation cannot be replaced. Partial
+observations may grow to the complete set, whose identities must belong to the
+validated original batch. Healthy unfinished children add no failure. An initial
+unavailable read without a captured turn stores only the existing unknown blocker.
+Preparation uses the same bound admission reader and captured pairs as the first
+preflight, retaining each reread before another child read or worker startup.
+The scheduled preflight compares previously captured pairs and records failure
+before cleanup or `reviews_ended`; it does not require a worker to reach sending.
+Closed manual requests without an integrated intent release their old pairs for
+explicit new association; active requests and integrated intents retain them.
+The worker refreshes these observations at each effect boundary;
+failed/interrupted, unavailable or changed turns latch a blocker for this intent.
+The finalization guard uses its existing journal lease for those callbacks;
+earlier wait reads take their own short journal lease without nested acquisition.
+Parent-turn changes, parent-read failures and cancellation do not create reviewer
+failure evidence. A subsequent absent observation or completed status cannot erase
+that blocker. Recovery and read-only reports retain its reason and require fresh
+reviews under a new target generation/intent. Complete saved originals can still
+be registered as one batch; the blocker prevents automatic Git/Task completion.
+No earlier intent missing these closed fields is silently upgraded or repaired.
+No prose, result bodies, raw Git output or variable notification is journaled.
+Unknown registration/completion acknowledgements are settled by observed immutable
+bindings and exact native completion state. A new target cannot overwrite an intent.
+
 ### Host-Owned Review Waiting
 
 The packaged `scripts/review_wait_server.py` runs `project_server` with only
@@ -477,18 +560,57 @@ Unknown creation remains durable and cannot be retried or replaced. Fresh
 before the existing version-two direct start. Duplicate same-turn calls return
 readiness only from the same live owned worker and confirmed active state.
 
-`ManagedDirectProbe` extends only the post-send observation responsibility.
+`ManagedDirectProbe` adds integrated finalization before sending when an exact
+prepared intent exists, and post-send observation for both routes.
 The inherited worker retains intent-before-effect, one deletion/send attempt,
 parent/reviewer freshness, due cutoff and twenty-minute outer deadline. After
 accepted/unknown send settlement, it observes the original parent for up to
 120 seconds within that outer deadline, never sending again.
 `ManagedHost.observe_receipt` requests bounded public `read_thread` output and
-validates the actual new parent turn plus the exact structured incoming
-`codex_app.send_message_to_thread` delegation event for its fixed probe/message.
+validates the actual new parent turn plus the structured incoming
+`codex_app.send_message_to_thread` delegation event for its outgoing notification.
+For integrated results, a small leading identity contains protocol version,
+probe, original parent, Task and the complete retained target basis before the
+variable result. This is ordinary prompt content, not invented host metadata.
+Untruncated reads require the exact envelope/body. Truncated reads require the
+same-parent envelope and complete leading identity, an exact visible UTF-16
+prefix of the sent message at the requested cap, and the public host's integer
+`originalChars` equal to the expected envelope length above that cap. The host's
+observed `output.text`, `truncated` and `originalChars` shape owns this branch;
+an incompatible or incomplete shape fails closed. Split surrogate pairs are
+compared as UTF-16 units. This establishes correlation only: the unseen suffix
+is not verified by its length or by a sender-controlled identity/digest.
 Only that observed UUID updates the existing monotonic acknowledgement field.
 Bodies stay transient. Old turns, unrelated inputs, plain echoes and unknown
 reads cannot set receipt. The legacy direct worker and payload versions remain
 unchanged and still support their separately selected manual acknowledgement.
+
+After confirmed deletion, integrated finalization receives a guard that rechecks
+the exact idle parent, reviewer turns, cancellation and deadline before effects.
+Its factory requires enabled policy and a matching canonical intent. Current
+basis drift permits only bounded failure reporting to the original parent, and
+legitimate native completion is recognized by the retained execution, generation
+increment, released ownership and exact saved commit. A report is held transiently
+by `ManagedHost` and is sent without trimming to a history limit. Receipt reads
+request the public host's maximum 20,000 UTF-16 code units for integrated reports.
+Complete source composition and notification correlation are explicitly separate
+in `delivery.source_body` and `delivery.receipt_scope`; no runtime field certifies
+the unseen suffix. The leading identity is limited to 2,000 UTF-16 units and must
+fit completely inside the returned prefix. Ordinary fixed review-only notices
+retain their 4,096-unit exact whole-event comparison.
+
+The shared public adapter encodes the actual tool-call frame for effect-free
+admission against the existing local relay's 262,144-byte bound. This includes
+JSON framing, UTF-8 text and genuine executor metadata; it is not a guessed host
+send limit. Only exceeding that bound replaces the full report with an explicit
+incomplete-delivery failure notice, retaining identity/outcomes, listing every
+omitted field, naming `local_relay_frame_limit` and directing the retained
+`finalization_command --check` for exceptional recovery. That notice must itself
+fit the same frame bound. Invalid text fails before this size-only branch.
+Unknown send results remain unknown with no replay or split messages. Bodies,
+prefixes and frame checks stay transient; no storage schema or normal call changes.
+Only an actually observed matching receipt invokes best-effort numerical attribution
+to the original execution; accepted/unknown sending alone never does so.
 
 The normal scheduled-check call uses the same Task/reviewer request. It
 revalidates the same basis and actual pairs, joins the previous worker, and
@@ -517,12 +639,12 @@ file/stdin invocation remains available for retained supervisor contexts.
 Installed guidance replaces create/prepare/start/ACK duties with one normal
 wait call and existing result processing after resumption. Non-review waiting
 and actual parent/reviewer numerical attribution are unaffected.
-The catalogue and guides route all-ended resumption directly to retained
-submission, whose existing reads confirm the handoff before registration.
-The fixed notification and exact event-receipt matcher remain unchanged: they
-carry ended status, not original content or saved/registered claims. Missing or
-failed originals cannot hold up the ended event; submission reports their
-transport failure. Healthy scheduled checks and conditional recovery retain
+For ordinary manual preparation, the catalogue and guides route all-ended
+resumption to retained submission. Integrated preparation instead uses the
+worker's actual report without repeat registration, commit or completion;
+without an integrated worker result, the retained finalization command handles
+the same bound intent. Missing originals produce an incomplete report with
+all-or-nothing registration. Healthy scheduled checks and conditional recovery retain
 their existing wait controls.
 
 Focused tests cover the single call, fixed destination, failures and unknowns at

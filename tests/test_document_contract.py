@@ -43,6 +43,7 @@ EXPECTED_CANONICAL_DOCS = (
     "docs/state-layout-separation-plan.md",
     "docs/verification-declaration-plan.md",
     "docs/session-usage-plan.md",
+    "docs/review-finalization-plan.md",
     "docs/history/README.md",
 )
 EXPECTED_METRIC_DOCS = EXPECTED_CANONICAL_DOCS + (
@@ -242,9 +243,9 @@ class DocumentContractTests(unittest.TestCase):
         self.assertNotIn(secret, serialized)
         self.assertNotIn("Traceback", serialized)
 
-    def test_registry_v18_is_closed(self):
+    def test_registry_v19_is_closed(self):
         expected = {
-            "schema": "taskgov-document-authority-v18",
+            "schema": "taskgov-document-authority-v19",
             "mandatory_start": [
                 "AGENTS.md",
                 "docs/authority.md",
@@ -269,7 +270,7 @@ class DocumentContractTests(unittest.TestCase):
                 "docs/database-design.md",
             ],
             "mixed_execution": [],
-            "conditional": ["docs/state-layout-separation-plan.md", "docs/verification-declaration-plan.md", "docs/session-usage-plan.md"],
+            "conditional": ["docs/state-layout-separation-plan.md", "docs/verification-declaration-plan.md", "docs/session-usage-plan.md", "docs/review-finalization-plan.md"],
             "history_index": "docs/history/README.md",
         }
         with self.fixture() as root:
@@ -435,6 +436,11 @@ class DocumentContractTests(unittest.TestCase):
         self.assertEqual(
             contract.ROUTE_SECTIONS,
             (
+                (
+                    contract.AUTHORITY,
+                    "## Conditional Review Finalization Plan",
+                    ("review-finalization-plan.md",),
+                ),
                 (
                     contract.AUTHORITY,
                     "## Conditional Session Ownership And Usage Design",

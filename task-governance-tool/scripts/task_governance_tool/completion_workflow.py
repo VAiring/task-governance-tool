@@ -58,6 +58,7 @@ COMPLETION_BLOCKING_CODES = (
     "task_not_owned",
     "session_identity_required",
     "task_ownership_changed",
+    "finalization_findings_require_judgment",
 )
 
 
@@ -141,6 +142,7 @@ def check_completion_request(
     initial_connection: sqlite3.Connection | None = None,
     runner_selector: RunnerSelectionProvider | None = None,
     caller: CallerIdentity = CallerIdentity(None),
+    finalization_basis=None,
 ) -> CompletionCheckOutcome:
     """Check one request with read/close/Git/read and no stored authority."""
     manager = (
@@ -266,7 +268,7 @@ def check_completion_request(
                 blocking_code="completion_check_stale",
             )
 
-    plan = replace(plan, basis=final_basis)
+    plan = replace(plan, basis=final_basis, finalization_basis=finalization_basis)
     try:
         validate_completion_plan_basis(
             plan,
@@ -296,6 +298,7 @@ def execute_completion_request(
     input_error: TaskValidationError | TaskRepositoryError | None = None,
     runner_selector: RunnerSelectionProvider | None = None,
     caller: CallerIdentity = CallerIdentity(None),
+    finalization_basis=None,
 ) -> EditTaskResult:
     """Observe outside the lock, then delegate one locked existing transition."""
     with closing(connect_initialized_readonly(target)) as connection:
@@ -390,6 +393,9 @@ def execute_completion_request(
             raise validation_error("task_ownership_changed", "task ownership changed; inspect current task state")
         plan = replace(plan, basis=current_basis)
         validate_completion_plan_basis(plan, current_basis)
+    if finalization_basis is not None:
+        plan = replace(plan, finalization_basis=finalization_basis)
+        validate_completion_plan_basis(plan, plan.basis)
     with closing(connect_initialized(target)) as connection:
         with connection:
             return complete_task(

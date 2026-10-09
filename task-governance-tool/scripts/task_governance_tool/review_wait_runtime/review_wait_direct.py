@@ -235,7 +235,7 @@ class DirectProbe:
                 for expected in controller.reviewers:
                     if self._halt_wait(record, monotonic_deadline):
                         return
-                    child = host.read_child(expected.reviewer_id)
+                    child = self._read_reviewer(host, controller, expected)
                     if self._halt_wait(record, monotonic_deadline):
                         return
                     if child.child_id != expected.reviewer_id or child.turn_id != expected.turn_id:
@@ -268,13 +268,34 @@ class DirectProbe:
             except Exception:
                 pass  # The retained active/pending phase exposes unresolved cleanup.
 
-    def _idle_and_ended(self, host, controller, record, monotonic_deadline):
-        """Fresh observations before each irreversible boundary, with no latches."""
+    def _observe_reviewer(self, controller, observation):
+        """Legacy waits have no integrated result journal."""
+        return None
+
+    def _read_reviewer(self, host, controller, expected, *, terminal=False, reviewer_observer=None):
+        observe = reviewer_observer or (lambda observation: self._observe_reviewer(controller, observation))
+        try:
+            child = host.read_child(expected.reviewer_id)
+        except Exception:
+            observe((expected.reviewer_id, expected.turn_id, "unknown"))
+            raise
+        exact = child.child_id == expected.reviewer_id and child.turn_id == expected.turn_id
+        if exact and (_terminal(child) or child.status in {"failed", "interrupted"}):
+            observe((expected.reviewer_id, expected.turn_id, child.status))
+        elif not exact or terminal:
+            observe((expected.reviewer_id, expected.turn_id, "unknown"))
+        return child
+
+    def _idle_and_ended(self, host, controller, record, monotonic_deadline, *, reviewer_observer=None):
+        """Fresh boundary checks; integrated callers retain every reviewer read."""
         for expected in controller.reviewers:
             if self._halt_wait(record, monotonic_deadline):
                 return False
-            child = host.read_child(expected.reviewer_id)
-            if child.child_id != expected.reviewer_id or child.turn_id != expected.turn_id or not _terminal(child):
+            child = self._read_reviewer(host, controller, expected, terminal=True,
+                                       reviewer_observer=reviewer_observer)
+            exact_terminal = (child.child_id == expected.reviewer_id and child.turn_id == expected.turn_id
+                              and _terminal(child))
+            if not exact_terminal:
                 raise DirectError("reviewer_turn_changed")
         if self._halt_wait(record, monotonic_deadline):
             return False
@@ -313,6 +334,7 @@ class DirectProbe:
                 self.repository.update(record.probe_id, timer_phase="deleted")
                 if not self._idle_and_ended(host, controller, record, monotonic_deadline):
                     return
+            self._before_send(host, controller, record, monotonic_deadline)
             if self._halt_wait(record, monotonic_deadline):
                 return
             parent = host.read_parent()
@@ -341,6 +363,10 @@ class DirectProbe:
             if reason is None and outcome != "accepted":
                 reason = "send_" + outcome
             self.repository.update(record.probe_id, status=outcome, reason=reason)
+
+    def _before_send(self, host, controller, record, monotonic_deadline):
+        """Legacy waiting has no Task/result effects at this extension point."""
+        return None
 
     def _cleanup(self, host):
         if not self.repository.exists():

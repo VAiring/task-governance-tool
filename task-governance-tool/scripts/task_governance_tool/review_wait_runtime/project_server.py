@@ -5,7 +5,7 @@ Setup owns opt-in and the host owns configuration, trust and reservations.
 No worker is recovered or retried when the process starts or reads old state.
 """
 
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from pathlib import Path
 import sys
 
@@ -85,7 +85,7 @@ class ProjectReviewWaitSession:
     @staticmethod
     def catalogue():
         descriptions = {
-            "wait": "Wait once for the original Task and actual returned reviewers. Internally creates the same-parent timer, prepares and starts; parent_may_end=true permits ending the turn. After all-ended resumption of prepared shared-file reviews, run the retained submit_command once: it confirms originals before registration and returns judgments, all Findings and the gate. No separate save-report/original read is required; ending is not PASS or registration success. Direct transport keeps its existing procedure. Reuse this wait after a healthy ten-minute check; no automation IDs, separate ACK, or routine status calls.",
+            "wait": "Wait once for the original Task and actual returned reviewers. Internally creates the same-parent timer, prepares and starts; parent_may_end=true permits ending the turn. An exact prepare-finalization intent runs fixed registration, gates, local commit and completion before result notification: use its actual results and all Findings without repeating successful stages. Manual prepared shared-file reviews instead run the retained submit_command once after all-ended resumption. No routine save-report/original read is required; ending or sending is not PASS or completion. Direct transport keeps its existing procedure. Reuse this wait after a healthy ten-minute check; no automation IDs, separate ACK, or routine status calls.",
             "inspect": "Optional read-only diagnosis of this parent's Task wait; never starts or retries effects.",
             "stop": "Explicitly stop this parent's Task wait and clean up only known effects; no unknown-operation retry.",
             "prepare": "Compatibility only: prepare the earlier per-reservation flow with an authorized PAUSED same-parent timer; no timer or send effect. Normal waiting uses review_wait_wait.",
@@ -129,7 +129,24 @@ class ProjectReviewWaitSession:
             return reader()
         return current
 
-    def _session(self, path, task_id, automation_id, *, managed=False):
+    def _finalizer(self, binding):
+        if not self._enabled():
+            raise BasisError()
+        paths = self._location(enabling=False)
+        intent = paths.review_finalization_store(binding.parent_thread_id,
+                                                 binding.task_id, binding.target_generation)
+        if not path_lexically_exists(intent):
+            return None
+        from task_governance_tool.review_finalization import Finalizer
+        from task_governance_tool.session_identity import CallerIdentity
+        finalizer = Finalizer(self.config.repo, binding.task_id, CallerIdentity(binding.parent_thread_id),
+                              generation=binding.target_generation)
+        basis = finalizer.journal.read().basis
+        if any(basis.get(key) != value for key, value in asdict(binding).items() if key != "wait_id"):
+            raise BasisError()
+        return finalizer
+
+    def _session(self, path, task_id, automation_id, *, managed=False, prepare_reviewer_reader=None):
         if automation_id in self.sessions:
             session = self.sessions[automation_id]
             if session.config.task_id != task_id:
@@ -145,7 +162,9 @@ class ProjectReviewWaitSession:
         host_factory = self.host_factory
         if managed:
             host_factory = lambda **kwargs: self.managed_host_factory(task_id=task_id, **kwargs)
-            options["direct_factory"] = ManagedDirectProbe
+            options["prepare_reviewer_reader"] = prepare_reviewer_reader
+            options["direct_factory"] = lambda *args, **kwargs: ManagedDirectProbe(
+                *args, finalization_factory=lambda controller: self._finalizer(controller.binding), **kwargs)
         session = self.session_factory(config, host_factory=host_factory,
             basis_factory=self._reader, clock=self.clock, **options)
         self.sessions[automation_id] = session

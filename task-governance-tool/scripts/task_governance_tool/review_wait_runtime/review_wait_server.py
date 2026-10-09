@@ -223,7 +223,7 @@ class ReviewWaitSession:
     """
 
     def __init__(self, config: SessionConfig, *, host_factory=None, basis_factory=None,
-                 clock=None, service_factory=None, direct_factory=None):
+                 clock=None, service_factory=None, direct_factory=None, prepare_reviewer_reader=None):
         from task_governance_tool.review_wait_runtime.review_wait_host import PublicMcpHost
         from task_governance_tool.review_wait_runtime.review_wait_service import ReviewWaitService, ServiceConfig
         from task_governance_tool.review_wait_runtime.review_wait_basis import PublicTaskBasisReader
@@ -237,6 +237,7 @@ class ReviewWaitSession:
         self.clock = clock or (lambda: datetime.now(timezone.utc))
         self.service_factory = service_factory or ReviewWaitService
         self.direct_factory = direct_factory
+        self.prepare_reviewer_reader = prepare_reviewer_reader
         self.service = None
         self.direct = None
         self.closed = False
@@ -325,7 +326,8 @@ class ReviewWaitSession:
             reviewers = []
             stage = "child_read"
             for child in children:
-                turn = host.read_child(child)
+                turn = (host.read_child(child) if self.prepare_reviewer_reader is None else
+                        self.prepare_reviewer_reader(binding, host, child))
                 if turn.child_id != child:
                     return {"ok": False, "error": "reviewer_turn_changed"}
                 reviewers.append(Reviewer(child, _uuid(turn.turn_id, "invalid_request")))

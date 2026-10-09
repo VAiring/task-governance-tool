@@ -1980,7 +1980,7 @@ def completion_domain_error_result(
     )
 
 
-def handle_task_complete(context: CommandContext) -> CommandResult:
+def handle_task_complete(context: CommandContext, *, finalization_basis=None) -> CommandResult:
     raw_task_id = getattr(context.args, "task_id", "")
     check_only = bool(getattr(context.args, "check", False))
     input_preflight_error: TaskValidationError | TaskRepositoryError | None = None
@@ -2034,12 +2034,15 @@ def handle_task_complete(context: CommandContext) -> CommandResult:
 
     try:
         if check_only:
+            if finalization_basis is not None:
+                finalization_basis.require_target(target)
             outcome = check_completion_request(
                 target,
                 request,
                 input_error=input_preflight_error,
                 initial_connection=context.read_connection_override,
                 caller=context.caller,
+                finalization_basis=finalization_basis,
                 runner_selector=lambda task, completion_revision: (
                     select_current_verification_runner_basis(
                         target,
@@ -2067,12 +2070,15 @@ def handle_task_complete(context: CommandContext) -> CommandResult:
         effort_profile = load_effort_profile(
             skill_root_from_script(cli_script_path())
         )
+        if finalization_basis is not None:
+            finalization_basis.require_target(target)
         result = execute_completion_request(
             target,
             request,
             effort_profile=effort_profile,
             input_error=input_preflight_error,
             caller=context.caller,
+            finalization_basis=finalization_basis,
             runner_selector=lambda task, completion_revision: (
                 select_current_verification_runner_basis(
                     target,
@@ -2275,7 +2281,7 @@ def read_review_results_stdin():
     return decode_submission(raw)
 
 
-def handle_review_command(context: CommandContext) -> CommandResult:
+def handle_review_command(context: CommandContext, *, submission=None, finalization_basis=None) -> CommandResult:
     target = resolve_context_target(context)
     project_id = target.project.project_id
     if context.read_only:
@@ -2289,7 +2295,7 @@ def handle_review_command(context: CommandContext) -> CommandResult:
 
     try:
         payload = (
-            read_review_results_stdin()
+            (submission if submission is not None else read_review_results_stdin())
             if context.command == "review.result.add"
             else None
         )
@@ -2319,6 +2325,8 @@ def handle_review_command(context: CommandContext) -> CommandResult:
             with closing(connect_initialized(target)) as connection:
                 with connection:
                     if context.command == "review.result.add":
+                        if finalization_basis is not None:
+                            finalization_basis.require_target(target)
                         data = add_review_results(
                             connection,
                             target.project,
@@ -2328,6 +2336,7 @@ def handle_review_command(context: CommandContext) -> CommandResult:
                             database_target=target,
                             caller=context.caller,
                             session_bindings=payload.bindings,
+                            finalization_basis=finalization_basis,
                         )
                     elif context.command == "review.receipt.add":
                         result = add_review_receipt(

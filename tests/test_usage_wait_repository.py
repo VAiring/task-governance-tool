@@ -122,6 +122,20 @@ class UsageWaitRepositoryTests(evidence_support.UsageEvidenceRepositoryTests):
         self.assertEqual(current["completion_cycle_id"], "cycle-reopened")
         self.assertNotEqual(prior["snapshot_ids"], first["snapshot_ids"])
 
+    def test_actual_host_receipt_after_done_binds_original_execution_once(self):
+        item = self.prepare_wait()
+        self.change(TASK, 1, "done", 4, cycle="cycle-before-notification")
+        before = self.core_path.read_bytes()
+        self.repository.record_host_receipt(item)
+        self.repository.record_host_receipt(item)
+        with self.repository.connection() as connection:
+            self.assertEqual(connection.execute("SELECT count(*) FROM usage_wait_turns").fetchone()[0], 1)
+        self.refresh()
+        period = self.read(TASK)["periods"][0]
+        self.assertEqual(period["completion_cycle_id"], "cycle-before-notification")
+        self.assertEqual(period["response_count"], 3)
+        self.assertEqual(self.core_path.read_bytes(), before)
+
     def test_restore_lost_manifest_or_reference_invalidates_cached_read(self):
         item = self.prepare_wait()
         baseline = self.core_path.read_bytes()

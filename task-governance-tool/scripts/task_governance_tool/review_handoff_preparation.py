@@ -29,8 +29,9 @@ COMMANDS = {"target": "review.target.set", "receipt": "verification.receipt.add"
             "recover": "review.prepare"}
 
 
-def add_parser(commands):
-    parser = commands.add_parser("prepare", help="Run one explicit Packet-producing CLI operation and prepare handoff")
+def add_parser(commands, name="prepare"):
+    parser = commands.add_parser(name, help=("Prepare authorized fixed-target registration, local commit and completion"
+        if name == "prepare-finalization" else "Run one explicit Packet-producing CLI operation and prepare handoff"))
     parser.add_argument("--repo", required=True)
     parser.add_argument("--directory", required=True, help="Unused ignored project-relative directory; missing parents may be created")
     parser.add_argument("--reviewers", type=int, choices=range(1, 9), default=2)
@@ -552,6 +553,18 @@ def prepare(repo, args):
                 files._fail("handoff_destination_exists")
         files._check_parents(parents)
         result.update(ok=True, handoff=_requests(repo, args, packet_path))
+        if getattr(args, "operation", "prepare") == "prepare-finalization":
+            from task_governance_tool.review_finalization import prepare_intent
+            try:
+                intent = prepare_intent(repo, packet_path, result_paths, files.capture_caller_identity())
+            except Exception as exc:
+                from task_governance_tool.review_finalization import _code
+                files._fail(_code(exc))
+            entry = str(Path(__file__).parent.parent / "review_handoff.py")
+            result["handoff"]["finalization"] = intent
+            result["handoff"]["finalization_command"] = _shell([
+                sys.executable, "-B", entry, "finalize", "--repo=" + str(repo), "--task-id=" + args.task_id,
+                "--target-generation=" + str(intent["target_generation"])])
         return result
     except (files.HandoffError, files.ReviewEvidenceError, files.TaskValidationError, VerificationReceiptError) as exc:
         code = exc.code

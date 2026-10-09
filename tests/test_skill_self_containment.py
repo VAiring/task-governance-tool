@@ -10,7 +10,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from tools.document_contract import _heading_slugs, _resolve, _scan
+from tools.document_contract import _heading_slugs, _is_external_target, _resolve, _scan
 
 from tools.release_contract import (
     CHECKER_INVOCATION,
@@ -399,6 +399,8 @@ class SkillSelfContainmentTests(unittest.TestCase):
             self.assertEqual(issues, [])
             for relative, scan in scans.items():
                 for link in scan.links:
+                    if _is_external_target(link.target):
+                        continue  # External references are not package file dependencies.
                     with self.subTest(source=relative, target=link.target):
                         resolved = _resolve(package, relative, link.target)
                         self.assertIsNotNone(resolved)
@@ -653,13 +655,13 @@ class SkillSelfContainmentTests(unittest.TestCase):
         self.assertEqual(setup_example["schema_to"], SCHEMA_VERSION)
         self.assertIn(f"`schema_to={SCHEMA_VERSION}`", setup_section)
 
-        from task_governance_tool.usage_wait_repository import UsageWaitRepository
-        usage_schema = UsageWaitRepository.migrations[-1][0]
+        from task_governance_tool.usage_incremental_repository import UsageIncrementalRepository
+        usage_schema = UsageIncrementalRepository.migrations[-1][0]
         self.assertEqual(setup_example["usage"]["schema_to"], usage_schema)
         usage_contract = setup_section.split("`usage` reports separate", 1)[1].split(
             "`usage_hooks` separately reports", 1)[0]
         self.assertIn(f"`schema_to` is {usage_schema}", usage_contract)
-        self.assertIn(f"exact schema 1, 2 or 3 to {usage_schema}", usage_contract)
+        self.assertIn(f"exact schema 1, 2, 3 or 4 to {usage_schema}", usage_contract)
 
         doctor_example_match = re.search(
             r"A ready result has this structure:\s*```json\s*(.*?)\s*```",

@@ -16,12 +16,12 @@ from task_governance_tool.state_paths import (
 )
 from task_governance_tool.storage import connect_initialized_readonly
 from task_governance_tool.usage_evidence import encode, MAX_DOCUMENT_BYTES
-from task_governance_tool.usage_wait_repository import UsageWaitRepository
+from task_governance_tool.usage_incremental_repository import UsageIncrementalRepository
 from task_governance_tool.usage_values import UsageError
 
 
 def repository_for(target):
-    return UsageWaitRepository(target.resolved_usage_database, target.project.project_id,
+    return UsageIncrementalRepository(target.resolved_usage_database, target.project.project_id,
                                    target.binding_path_hash, target.binding_generation)
 
 
@@ -69,7 +69,7 @@ def _publish(path, document, root, *, immutable):
                 unlink_validated_file(temporary, root=root)
 
 
-def refresh_usage(target):
+def refresh_usage(target, *, deadline=None):
     """Replayable internal worker for optional lifecycle events, not completion.
 
     A separate zero-wait publication lock serializes index adoption. Snapshot
@@ -79,21 +79,29 @@ def refresh_usage(target):
     """
     try:
         repository = repository_for(target)
+        if deadline is not None:
+            repository.deadline = deadline
+        core_reader = lambda: closing(connect_initialized_readonly(target) if deadline is None
+                                     else connect_initialized_readonly(target, deadline=deadline))
         # Admit both stores before creating projection directories. No migration.
         with repository.connection():
             pass
-        with closing(connect_initialized_readonly(target)):
+        with core_reader():
             pass
         root = target.resolved_usage_root
         _directory(root, target.db_path.parent)
         with zero_wait_artifact_lock(target.resolved_usage_lock):
-            repository.refresh(lambda: closing(connect_initialized_readonly(target)))
-            with closing(connect_initialized_readonly(target)) as core:
+            repository.refresh(core_reader)
+            with core_reader() as core:
                 projection = repository.read(core, audit=True)
             _directory(target.resolved_usage_snapshots, root)
             for item in projection["snapshots"]:
+                if deadline is not None:
+                    repository.check_budget()
                 _publish(target.resolved_usage_snapshots / (item["snapshot_id"] + ".json"), item, root, immutable=True)
             index = {**projection, "snapshots": [item["snapshot_id"] for item in projection["snapshots"]]}
+            if deadline is not None:
+                repository.check_budget()
             _publish(target.resolved_usage_index, index, root, immutable=False)
         return {"status": "pending", "publication": "current", "diagnostics": []}
     except Exception:

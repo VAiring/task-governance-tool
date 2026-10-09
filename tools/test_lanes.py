@@ -173,6 +173,8 @@ LANE_MODULES: dict[str, tuple[str, ...]] = {
         "test_usage_collection",
         "test_usage_evidence",
         "test_usage_evidence_repository",
+        "test_usage_incremental",
+        "test_usage_incremental_lifecycle",
         "test_usage_lifecycle",
         "test_usage_review_attribution",
         "test_usage_turn_adapter",

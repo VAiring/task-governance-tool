@@ -19,9 +19,13 @@ def collect_registered(repository: UsageRepository, source: SourceInput) -> dict
         if observe_current_root(source.project_root).canonical_path_hash != repository.basis[1]:
             raise UsageError("usage_binding_mismatch")
         expected = repository.cursor(source.source_id, source.thread_id)
-        batch = read_batch(source, expected, include_attribution=repository.collect_attribution,
-                           attribution_project_id=repository.basis[0])
-        repository.commit_batch(batch)
+        if hasattr(repository, "collect_source"):
+            repository.collect_source(source, lane="audit")
+            repository.collect_source(source)
+        else:
+            batch = read_batch(source, expected, include_attribution=repository.collect_attribution,
+                               attribution_project_id=repository.basis[0])
+            repository.commit_batch(batch)
         return repository.summary()
     except UsageError as exc:
         try:
@@ -46,8 +50,8 @@ def setup_usage(inspection, core_result, *, read_only: bool) -> dict:
     from task_governance_tool.storage import SCHEMA_VERSION
     repository_type = UsageRepository
     if SCHEMA_VERSION >= 25:
-        from task_governance_tool.usage_wait_repository import UsageWaitRepository
-        repository_type = UsageWaitRepository
+        from task_governance_tool.usage_incremental_repository import UsageIncrementalRepository
+        repository_type = UsageIncrementalRepository
     result = {"status": "not_attempted", "schema_to": repository_type.migrations[-1][0],
               "planned_writes": [], "completed_writes": [], "error": None}
     if not core_result.ok or inspection.scope is None:

@@ -63,7 +63,7 @@ remains read-only, and a saved review counts only after its core binding exists.
 Only a retained legacy supervisor uses the
 [wait-decision marker](cli_contracts.md#record-review-wait-decision); normal
 deterministic waiting creates no supervisor usage turn. Actual parent/reviewer
-usage and existing marker history remain intact. Numerical schema 4 requires
+usage and existing marker history remain intact. Numerical schema 5 requires
 explicit setup to initialize or migrate; ordinary helpers and hooks never
 upgrade old stores. Usage unavailability does not prevent review or Task
 completion, and a marker does not prove collection.
@@ -82,6 +82,15 @@ Do not redo Task completion or review registration to recover numerical data.
 SessionEnd is best effort, not finalization. Stop, elapsed time and a quiet file
 do not prove final coverage; current snapshots remain pending/incomplete or
 conflicting where appropriate.
+
+Normal collection reads appended records using saved safe context. Prefix
+integrity is checked later in bounded resumable slices, with explicit
+`prefix_verification_deferred` coverage; unchanged mtime/size is not proof.
+Later events share work with old participants/segments and deferred audits.
+Changed shared components are recomputed; stored snapshot/counter and published
+byte validation remains intact. Budget or publication failure preserves prior
+progress/output and never asks to repeat Task completion. This is not a measured
+guarantee that every host invocation avoids its timeout.
 
 Host delivery and source format must be verified in an isolated approved
 project. Mocked tests or CLI help alone do not prove trust/delivery in Desktop,

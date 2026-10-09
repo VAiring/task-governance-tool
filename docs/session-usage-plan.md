@@ -253,14 +253,15 @@ hash private bodies, print rejected values or use an environment dump. Adapter
 diagnostics are fixed codes. The experimental collector's whole-tree discovery,
 root-only restriction and full-session accounting are not product behavior.
 
-Commit response observations and the corresponding source cursor in one usage
-transaction. Cursor identity includes source incarnation, verified prefix and
-complete-record boundary, not a path/mtime alone. A partial trailing record is
-not processed. Truncation/replacement starts a new incarnation and idempotent
-replay; prefix disagreement is not accepted as append. Concurrent collectors
-compare the previously read cursor under lock; a stale batch retries its read
-on a later collection, never moves the cursor backwards or advances past an
-uncommitted observation. Do not retry the user's Task mutation.
+Commit observations, parser continuation, dirty impact and complete-record
+cursor in one numerical transaction. Current incremental collection and its
+explicitly deferred sanitized-prefix integrity guarantee are owned by
+[Numerical Usage Store](database-specification.md#numerical-usage-store).
+Physical replacement, truncation or a later detected prefix disagreement
+requires new-incarnation replay; path/mtime alone is never proof. Concurrent
+collectors compare cursor and continuation revision under lock. A stale batch
+retries at a later event without advancing past uncommitted observations or
+retrying the user's Task mutation.
 
 <a id="response-boundaries-and-attribution"></a>
 

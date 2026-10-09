@@ -118,7 +118,7 @@ EMPTY_RELOCATION = {
     "confirmation_token": None,
     "expires_at": None,
 }
-NO_USAGE_ATTEMPT = {"status": "not_attempted", "schema_to": 4,
+NO_USAGE_ATTEMPT = {"status": "not_attempted", "schema_to": 5,
                     "planned_writes": [], "completed_writes": [], "error": None}
 NO_HOOK_ATTEMPT = {"status": "not_attempted", "planned_writes": [],
                    "completed_writes": [], "trust": "unknown", "next_action": None, "error": None}

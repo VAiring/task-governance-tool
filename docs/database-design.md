@@ -142,25 +142,31 @@ short `BEGIN IMMEDIATE`; no log reads occur under the writer. Setup quick/FK
 checks and exact schema/binding checks apply independently of main admission.
 
 `usage_values.py` validates the closed numerical representation.
-`usage_adapter.py` implements `codex-response-usage-v1`: an explicit session
+`usage_adapter.py` retains the full-prefix baseline adapter and shared closed
+projection: an explicit session
 header supplies provider; matching turn context supplies model/effort; each
 `token_usage_record` supplies exact thread/turn/response identity and counts.
 Response arrival never advances or rewinds the explicit session/turn context
 used to associate legacy records, so delayed observations cannot hide a newer
 turn's missing coverage.
 The adapter reads no unrelated files and has no SQLite or discovery code.
-One line is bounded to 8 MiB; oversized complete lines are drained in bounded
-chunks and become gaps. One batch admits at most 4,096 new response records;
-further records remain pending for a later invocation. These are memory/work
-bounds, not acceptance truncation or completeness claims.
+The current `usage_incremental_adapter.py` resumes separate ingest/audit contexts.
+One line remains bounded to 8 MiB; a slice targets 256 KiB and 512 records and
+may exceed the byte allowance by one bounded record plus the validated header.
+Oversized records drain in 64 KiB chunks with a separate byte position; no body
+is saved and the complete cursor does not move until newline. A monotonic
+deadline stops further work at record/chunk boundaries. These are work bounds,
+not acceptance truncation or an all-environment latency promise.
 
-To verify append continuity without hashing private content, each invocation
-streams the preceding complete prefix and hashes only normalized allowlisted
-metadata/fixed markers with byte boundaries. It still incurs prefix I/O; this
-is incremental durable collection, not a claim of constant-time tail reading.
-Unknown fields and bodies never affect a digest except their record boundary.
-File-object/size/mtime revalidation rejects an observed concurrent source change.
-Replacement replays from a new incarnation, preserving old observations.
+The resumable hash chain includes only normalized allowlisted metadata/fixed
+markers, structural turn projections and byte boundaries. Unknown bodies affect
+only record length. Ingest seeks directly to its committed cursor. Audit keeps
+its own model/context state and fixed goal offset/digest; constant append cannot
+extend that goal. A completed cycle restarts from the header on a later event.
+Mismatch marks ingest for new-incarnation replay. Source-object/size/mtime
+revalidation rejects a concurrent change during a slice; it does not claim to
+detect all between-event edits immediately. Persistent
+`prefix_verification_deferred` makes that detection window explicit.
 
 The repository locks, compares the full previous cursor, persists the source
 incarnation, inserts new unique responses or conflict keys and observation
@@ -170,10 +176,40 @@ reading the source; corruption returns numerical unavailability. Cursor conflict
 return a fixed diagnostic; the caller does not loop or rerun a Task operation.
 Internal lifecycle registration
 captures a typed actual caller and binds only its exact source identity.
-The adapter's full sanitized-prefix scan supplies current legacy-only turn
-coverage. The writer replaces only that source's `legacy_usage` diagnostic
-with the recomputed result in the same transaction; other diagnostics and
-historical response observations are retained.
+Per-source modern/legacy turn coverage is retained atomically with the cursor;
+delayed modern observations resolve only their matching legacy turn. The writer
+updates `legacy_usage` only when needed; other diagnostics/history remain.
+
+`UsageIncrementalRepository` adds numerical schema 5 (`incremental_collection`):
+`usage_scan_state`, `usage_scan_models`, `usage_scan_coverage`, `usage_work_order`,
+`usage_discovery`, `usage_discovered`, `usage_dirty_turns`, and
+`usage_component_basis`, plus a response-turn index and insert/conflict dirty
+triggers. Continuations contain only closed context, incarnation, revision and
+audit goal metadata. Directory inventory retains numeric date parts, entry
+ordinals and an attempt watermark for partial-page continuation, never filenames
+or log bodies. Explicit Setup migrates any exact
+schema 1–4 in one transaction, preserving observations and immutable Evidence;
+ordinary access fails closed until then. First collection replays an old cursor
+whose continuation is absent. Scan CAS, context/coverage, response/conflict
+observations, dirty marks and cursor commit together or all roll back.
+Model/legacy contexts are disposable continuation caches: a new incarnation or
+audit cycle clears only the obsolete lane context. Adopted dirty marks and
+retired component bases can be deleted because their effect is already captured
+in immutable snapshots; no response, observation, incarnation, snapshot, member,
+cycle link or supersession history is deleted.
+
+`usage_incremental_projection.py` reevaluates structural interval geometry and
+diagnostics using the admitted core and numerical snapshot. A component basis
+captures its execution/turn/gap set and unresolved-operation state. A changed
+basis or dirty response turn loads and sums only that component's original
+responses; unchanged components reuse validated snapshots. New graph geometry
+and immutable predecessor overlap handle splits/merges without summing old
+totals. Dirty marks and bases are adopted with snapshots, cycle links and capture
+fingerprint. Core restore or delayed boundaries/reviewer/receipt bindings cannot
+reuse a different geometry. The structural pass is still global; Evidence
+validation still reads membership/counters and publication still checks all
+existing immutable snapshot bytes. Test work counters distinguish aggregation
+from this intentionally retained integrity I/O.
 
 `usage_collection.py` composes those boundaries and returns unknown on numerical
 failure without discarding readable prior observations. Its explicit-setup
@@ -200,9 +236,9 @@ Turn observations, response observations and source cursor commit atomically.
 `usage_review_boundaries` and `usage_review_receipt_turns`
 to numerical schema 1. Explicit initialization migrates the migration-marker
 table and adds the new relations in one short transaction, recording version 2
-last. No ordinary read or collector migrates. The setup factory selects schema 4
+last. No ordinary read or collector migrates. The setup factory selects schema 5
 for the current schema-25 package. Preview returns `migration_required` and planned `usage_migrate` for
-an exact schema-1, schema-2 or schema-3 store; explicit setup returns `migrated` and that completed
+an exact schema-1, schema-2, schema-3 or schema-4 store; explicit setup returns `migrated` and that completed
 write on success. Fresh-store creation keeps `usage_initialize`. Failure remains
 a separate numerical outcome, not rollback or rejection of core setup.
 

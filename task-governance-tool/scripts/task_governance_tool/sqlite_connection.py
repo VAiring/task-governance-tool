@@ -77,13 +77,13 @@ def connect(db_path: Path) -> sqlite3.Connection:
     return configure_connection(sqlite3.connect(db_path))
 
 
-def connect_existing(db_path: Path) -> sqlite3.Connection:
+def connect_existing(db_path: Path, *, timeout: float = 5.0) -> sqlite3.Connection:
     """Open an existing database read/write without allowing SQLite to create it."""
     uri = db_path.resolve(strict=False).as_uri() + "?mode=rw"
-    return configure_connection(sqlite3.connect(uri, uri=True))
+    return configure_connection(sqlite3.connect(uri, uri=True, timeout=timeout))
 
 
-def connect_readonly(db_path: Path) -> sqlite3.Connection:
+def connect_readonly(db_path: Path, *, timeout: float = 5.0) -> sqlite3.Connection:
     """Open one lock-respecting query-only read transaction."""
     validate_operational_journal_state(db_path)
     if not db_path.exists():
@@ -93,7 +93,7 @@ def connect_readonly(db_path: Path) -> sqlite3.Connection:
         )
     uri = db_path.resolve(strict=False).as_uri() + "?mode=ro"
     try:
-        connection = sqlite3.connect(uri, uri=True)
+        connection = sqlite3.connect(uri, uri=True, timeout=timeout)
     except sqlite3.Error as exc:
         raise operational_sqlite_error(
             exc,

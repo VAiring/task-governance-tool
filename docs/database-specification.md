@@ -294,9 +294,9 @@ or general migration framework is added.
 
 ## Numerical Usage Store
 
-Numerical collection uses independent schema 4 in the resolver-owned
+Numerical collection uses independent schema 5 in the resolver-owned
 `current/taskgov-usage.sqlite`, not the main schema sequence. Explicit setup
-initializes an absent store, migrates exact schema 1, 2 or 3, and validates current state. Normal reads and
+initializes an absent store, migrates exact schema 1, 2, 3 or 4, and validates current state. Normal reads and
 collection never initialize, migrate or repair it. Incompatible structure,
 WAL, corruption, contention or project/binding mismatch produces unavailable
 usage, never a core admission failure or a weakened quality gate. Existing
@@ -343,15 +343,44 @@ numeric model total, not measured zero. Metadata is limited to canonical UUIDs,
 bounded labels/response IDs, counters, source identities, cursor boundaries
 and fixed diagnostics; no conversation, reasoning, raw body or raw-line digest.
 
-Complete JSONL records are parsed outside the writer. The source cursor uses
-physical identity, incarnation, complete-record offset and a sanitized-prefix
-digest. It never trusts mtime or path alone. Changed numerical prefix,
-replacement or truncation creates a new incarnation and deduplicated replay.
-A partial tail remains unread; an oversized complete record creates a fixed
-gap. Source changes during reading commit no observations/cursor. The cursor
-and observations commit together under a short writer after comparing the
-previous cursor. Stale concurrent batches do not regress or advance it and
-require a later fresh collection, never a retry of the user's Task mutation.
+Complete JSONL records are parsed outside the writer. Normal collection resumes
+from the committed complete-record offset with allowlisted model, session/turn
+and legacy-coverage context. Physical identity and size detect replacement or
+truncation; path, mtime, size or offset alone never prove prefix integrity.
+An independent bounded, resumable audit rereads the sanitized prefix against a
+fixed captured boundary/digest. This deliberately defers detection, including
+same-length edits with restored mtime. Every source retains the explicit
+`prefix_verification_deferred` diagnostic: finishing one audit is not proof that
+the whole current source remains verified. There is no new completion gate.
+Mismatch schedules a new incarnation and deduplicated replay; previous numerical
+observations and conflicts remain. No subsequent project event means no progress
+or detection guarantee. Continuous append cannot move an in-flight audit goal.
+
+A partial tail remains unread; an oversized complete record creates a fixed gap.
+Its drain position is separate from the complete cursor and retains no bytes.
+Source changes during a slice commit no observations or continuation. Cursor,
+parser context, coverage and dirty-response impact commit atomically after
+checking both previous cursor and continuation revision. Stale concurrent
+batches do not regress or advance unread positions; later collection retries
+numerical work, never the user's Task mutation. Explicit migration preserves
+old evidence and starts contextual replay in a new incarnation; old prefix
+formats are not silently interpreted as new continuations.
+
+After fresh core admission, changed interval geometry, turn ordering/conflicts,
+boundaries, reviewer and actual-receipt bindings, source diagnostics, unresolved
+operations and response/conflict observations select affected shared components.
+Selection includes old/new overlap for merges and splits; completion periods stay
+separate. Unchanged numerical aggregates are reused. Catch-up has the same
+response-key unions, model totals, diagnostics and period association as full
+projection for the same admitted input/basis. Global diagnostic changes may
+require broad recomputation. Structural selection remains a full metadata pass;
+no claim that every path is proportional only to appended bytes is made.
+
+Stored snapshot shape/digest, exact membership, original counters, supersession
+and published immutable bytes retain their existing validation. Deferred log
+auditing does not defer Evidence integrity. Budget or publication failure keeps
+committed collection progress and last-good output, reports pending/unavailable,
+and resumes at later events without retrying completion or review registration.
 
 Repository summaries report observed per-model totals, registered source
 coverage, conflicts and fixed gaps. Collection alone returns pending,

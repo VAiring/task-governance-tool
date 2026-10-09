@@ -188,7 +188,7 @@ class UsageAttributionRepository(UsageRepository):
         with self.connection(write=True) as connection:
             self._record(connection, observations)
 
-    def attribution(self, core_connection, *, numerical_connection=None) -> dict:
+    def attribution(self, core_connection, *, numerical_connection=None, geometry_only=False) -> dict:
         """Revalidate persisted associations against core, including after restore."""
         transitions = core_transitions(core_connection, self.basis[0])
         bindings, unresolved = {}, set()
@@ -210,8 +210,9 @@ class UsageAttributionRepository(UsageRepository):
             conflicts = frozenset(tuple(row) for row in connection.execute("SELECT * FROM usage_turn_conflicts"))
             responses = tuple(ResponseUsage(row["provider"], row["response_id"], row["thread_id"], row["turn_id"],
                                             row["model"], row["effort"], tuple(row[name] for name in METRICS))
-                              for row in connection.execute("SELECT * FROM usage_responses"))
-            response_conflicts = frozenset(tuple(row) for row in connection.execute("SELECT * FROM usage_conflicts"))
+                              for row in connection.execute("SELECT * FROM usage_responses")) if not geometry_only else ()
+            response_conflicts = (frozenset(tuple(row) for row in connection.execute("SELECT * FROM usage_conflicts"))
+                                  if not geometry_only else frozenset())
             review_boundaries = tuple(ReviewBoundary(**dict(row)) for row in connection.execute("SELECT * FROM usage_review_boundaries"))
             receipt_turns = tuple(ReviewReceiptTurn(**dict(row)) for row in connection.execute("SELECT * FROM usage_review_receipt_turns"))
             diagnostics = {}

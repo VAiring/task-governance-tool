@@ -11855,11 +11855,13 @@ def _connect_validated_readonly(
     target: DatabaseTarget,
     *,
     validator: Callable[[sqlite3.Connection, DatabaseTarget], object],
+    deadline: float | None = None,
 ) -> sqlite3.Connection:
     """Open one read-only transaction under the supplied storage boundary."""
 
     try:
-        connection = connect_readonly(target.db_path)
+        connection = (connect_readonly(target.db_path) if deadline is None
+                      else connect_readonly(target.db_path, timeout=0.05))
     except StorageError:
         raise
     except sqlite3.Error as exc:
@@ -11873,7 +11875,14 @@ def _connect_validated_readonly(
             fallback_message="could not open database",
         ) from exc
     try:
+        if deadline is not None:
+            from time import monotonic
+            connection.set_progress_handler(lambda: int(monotonic() >= deadline), 1000)
+            if monotonic() >= deadline:
+                raise StorageError("database_busy", "numerical collection budget exhausted")
         validator(connection, target)
+        if deadline is not None and monotonic() >= deadline:
+            raise StorageError("database_busy", "numerical collection budget exhausted")
     except sqlite3.Error as exc:
         connection.rollback()
         connection.close()
@@ -11892,6 +11901,7 @@ def connect_initialized_readonly(
     target: DatabaseTarget,
     *,
     managed_backup_source: bool = False,
+    deadline: float | None = None,
 ) -> sqlite3.Connection:
     """Open one globally validated current-schema read transaction."""
 
@@ -11902,6 +11912,7 @@ def connect_initialized_readonly(
             if managed_backup_source
             else validate_current_database
         ),
+        deadline=deadline,
     )
 
 

@@ -15,7 +15,7 @@ RESPONSE_ID = re.compile(r"[A-Za-z0-9_.:-]{1,200}\Z")
 GAP_CODES = frozenset({
     "invalid_record", "invalid_usage", "legacy_usage", "model_unknown",
     "partial_tail", "source_unreadable", "source_changed", "source_replaced",
-    "response_conflict", "cursor_stale", "record_too_large",
+    "response_conflict", "cursor_stale", "record_too_large", "prefix_verification_deferred",
 })
 
 

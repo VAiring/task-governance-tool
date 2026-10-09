@@ -363,7 +363,7 @@ after the example:
   "viewer_status": "published",
   "usage": {
     "status": "initialized",
-    "schema_to": 4,
+    "schema_to": 5,
     "planned_writes": ["usage_initialize"],
     "completed_writes": ["usage_initialize"],
     "error": null
@@ -444,8 +444,8 @@ durable stages.
 Its status is `not_attempted`, `pending_core_setup` (preview before core
 binding is admitted), `not_present`, `initialized`, `migration_required`,
 `migrated`, `current`, or `unavailable`. Writes are `usage_initialize` and
-`usage_migrate` (exact schema 1, 2 or 3 to 4); preview has no completed write.
-`schema_to` is 4 and `error` is null or fixed `usage_unavailable`. Numerical
+`usage_migrate` (exact schema 1, 2, 3 or 4 to 5); preview has no completed write.
+`schema_to` is 5 and `error` is null or fixed `usage_unavailable`. Numerical
 failure never undoes successful core setup or blocks ordinary Task work;
 do not repeat Task writes to recover usage. This adds no normal-loop action,
 session registration step or automatic collection.

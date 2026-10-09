@@ -7,6 +7,7 @@ Only the standard dated sessions layout and flat archive are supported here.
 
 import os
 from pathlib import Path
+from time import monotonic
 
 from task_governance_tool.session_identity import is_session_id
 from task_governance_tool.state_paths import inspect_physical_directory, StatePathError
@@ -90,3 +91,65 @@ def locate_sources(threads, roots, project):
             # unavailable. No other directory/header is used as a fallback.
             continue
     return sources
+
+
+def locate_slice(threads, roots, project, position, *, deadline, max_entries=1024, max_sources=15):
+    """Resumable physical-directory inventory, retaining no transcript filenames.
+
+    Only root ordinal, numeric date directories and entry ordinals persist.
+    Directory enumeration is re-opened on each event; concurrent renames can
+    move an entry to the next inventory cycle, never establish completeness.
+    Skipping an old ordinal still costs filename I/O, not transcript parsing.
+    """
+    import copy
+    position = copy.deepcopy(position)
+    sources, entries = {}, 0
+    while position["root"] < len(roots):
+        if monotonic() >= deadline or entries >= max_entries or len(sources) >= max_sources:
+            break
+        root = roots[position["root"]]
+        if not position["stack"]:
+            position["stack"] = [[[], 0]]
+        parts, ordinal = position["stack"][-1]
+        directory = root.joinpath(*parts)
+        descended = False
+        exhausted = True
+        try:
+            inspect_physical_directory(directory, root=root)
+            with os.scandir(directory) as iterator:
+                for index, entry in enumerate(iterator):
+                    if monotonic() >= deadline:
+                        exhausted = False
+                        break
+                    if index < ordinal:
+                        continue
+                    if entries >= max_entries or len(sources) >= max_sources:
+                        exhausted = False
+                        break
+                    entries += 1
+                    position["stack"][-1][1] = index + 1
+                    thread = _filename_thread(entry.name)
+                    if thread in threads:
+                        source = SourceInput(thread, Path(entry.path), root, project)
+                        sources[source.source_id] = source
+                    width = 4 if len(parts) == 0 else 2
+                    if (root.name != "archived_sessions" and len(parts) < 3 and len(entry.name) == width
+                            and entry.name.isascii() and entry.name.isdecimal()):
+                        try:
+                            inspect_physical_directory(Path(entry.path), root=root)
+                        except (OSError, StatePathError):
+                            continue
+                        position["stack"].append([[*parts, entry.name], 0])
+                        descended = True
+                        break
+        except (OSError, StatePathError):
+            pass
+        if descended:
+            continue
+        if not exhausted:
+            break
+        position["stack"].pop()
+        if not position["stack"]:
+            position["root"] += 1
+    complete = position["root"] == len(roots)
+    return sources, position, complete

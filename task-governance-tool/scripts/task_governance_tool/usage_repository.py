@@ -7,7 +7,7 @@ permission to repair state or reject a core Task operation.
 
 from __future__ import annotations
 
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 import os
 from pathlib import Path
 import sqlite3
@@ -103,6 +103,7 @@ def _response(row) -> ResponseUsage:
 
 
 class UsageRepository:
+    connection_timeout = 5.0
     schema_statements = _DDL
     migrations = ((1, "response_collection"),)
     collect_attribution = False
@@ -139,7 +140,10 @@ class UsageRepository:
         connection = None
         try:
             self._physical()
-            connection = connect_existing(self.path) if write else connect_readonly(self.path)
+            opener = connect_existing if write else connect_readonly
+            connection = (opener(self.path) if self.connection_timeout == 5.0
+                          else opener(self.path, timeout=self.connection_timeout))
+            self._configure_work(connection)
             if write:
                 connection.execute("BEGIN IMMEDIATE")
             self._validate(connection)
@@ -151,6 +155,9 @@ class UsageRepository:
         finally:
             if connection is not None:
                 connection.close()
+
+    def _configure_work(self, connection):
+        """Optional numerical worker budget; ordinary/core connections are unchanged."""
 
     def initialize(self) -> str:
         """Explicit setup only. Never repair/overwrite an incompatible store."""
@@ -254,11 +261,11 @@ class UsageRepository:
                 raise UsageError("source_not_registered")
             connection.execute("INSERT OR IGNORE INTO usage_diagnostics VALUES (?,?)", (source_id, code))
 
-    def commit_batch(self, batch: CollectionBatch) -> None:
+    def commit_batch(self, batch: CollectionBatch, *, numerical_connection=None) -> None:
         if (any(code not in GAP_CODES for code in batch.diagnostics)
                 or batch.pending not in {"none", "partial_tail", "more_records"}):
             raise UsageError()
-        with self.connection(write=True) as connection:
+        with (self.connection(write=True) if numerical_connection is None else nullcontext(numerical_connection)) as connection:
             row = connection.execute("SELECT * FROM usage_sources WHERE source_id=? AND thread_id=?", (batch.source_id, batch.thread_id)).fetchone()
             if row is None or _cursor(row) != batch.expected:
                 raise UsageError("cursor_stale")
@@ -286,8 +293,9 @@ class UsageRepository:
             # The adapter rescans owned turn coverage through the successor
             # cursor. A later modern row can resolve a previously legacy-only
             # turn; other gaps remain durable, including source replacement.
-            connection.execute("DELETE FROM usage_diagnostics WHERE source_id=? AND code='legacy_usage'",
-                               (batch.source_id,))
+            if "legacy_usage" not in batch.diagnostics:
+                connection.execute("DELETE FROM usage_diagnostics WHERE source_id=? AND code='legacy_usage'",
+                                   (batch.source_id,))
             connection.executemany("INSERT OR IGNORE INTO usage_diagnostics VALUES (?,?)",
                                    ((batch.source_id, code) for code in batch.diagnostics if code != "partial_tail"))
             self._record_attribution(connection, batch)

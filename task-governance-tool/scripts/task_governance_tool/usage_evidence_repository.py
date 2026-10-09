@@ -176,8 +176,8 @@ class UsageEvidenceRepository(UsageAttributionRepository):
         """
         with self.connection(write=True) as connection, core_reader() as core:
             fingerprint, periods = self._core_basis(core, connection)
-            projected = self.attribution(core, numerical_connection=connection)
             previous = self._snapshots(connection, current=True)
+            projected = self._project_for_refresh(core, connection, previous)
             adopted = []
             for component in projected["components"]:
                 if projected["unresolved_operations"]:
@@ -202,8 +202,15 @@ class UsageEvidenceRepository(UsageAttributionRepository):
                                            (candidate["snapshot_id"], period["completion_cycle_id"], period["task_id"]))
             connection.execute("INSERT INTO usage_capture VALUES (1,?) ON CONFLICT(singleton) DO UPDATE SET core_digest=excluded.core_digest",
                                (fingerprint,))
+            self._adopt_projection(connection, projected, adopted)
             self._before_snapshot_commit(connection)
         return adopted
+
+    def _project_for_refresh(self, core, connection, previous):
+        return self.attribution(core, numerical_connection=connection)
+
+    def _adopt_projection(self, connection, projected, adopted):
+        """Optional numerical cache adoption in the same immutable-evidence transaction."""
 
     def _before_snapshot_commit(self, connection):
         """Test seam; snapshots, supersessions, links and adoption commit together."""

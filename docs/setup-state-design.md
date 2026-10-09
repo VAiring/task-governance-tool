@@ -145,8 +145,30 @@ Explicit host hints can locate the invoking registered source within the same
 allowed roots. Missing known sources retain fixed gaps; unsupported layouts do
 not authorize wider discovery. Source bytes are read outside all writers.
 
-Each source gets at most one existing bounded batch per event. The same
-compare-and-commit cursor rule handles interruption/concurrency, followed by
+`locate_slice` resumes directory inventory using root/date/entry ordinals, at
+most 1,024 newly visited entries and 15 candidate sources per event, leaving a
+slot for the invoking participant's hint. An inventory cycle marks lost known
+sources only after its slices finish. Enumeration may reread preceding names;
+renames can defer discovery to a later cycle, but unrelated headers are never
+opened. Candidate attempts are ordered by oldest persisted attempt, with one
+invoking-participant slot after the oldest. Failed candidates advance attempt
+order without advancing any data cursor. Each inventory page retains an attempt
+watermark; already attempted candidates remain covered across partial events.
+Once all page candidates have been attempted, continuation can advance even if
+no single event processed the whole page. A page completed earlier is advanced
+before spending the next event on the caller hint. No pending candidate is
+discarded merely because the event budget ended. Completed inventory cycles
+also report `source_unreadable` for registered participants with no admitted
+source, including those never located before.
+
+Each selected source receives an audit slice before an ingest slice, so append
+does not starve deferred verification. Cooperative event budgets are 20 seconds
+(1.5 seconds for SessionEnd), with 50 ms SQLite lock waits and query progress
+interrupts for these numerical workers and their admitted core readers. They
+do not alter ordinary Task connection budgets or admission checks. Filesystem
+operations, one bounded record and full Evidence validation can still dominate
+wall time; there is no universal host-timeout guarantee. The same
+compare-and-commit cursor/continuation rule handles interruption, followed by
 `refresh_usage` for exact-cycle capture and snapshot-first publication. It uses
 the existing canonical paths above; no daemon, timer, process, model call,
 post-commit Task callback or host-settings writer is added. A later same-project

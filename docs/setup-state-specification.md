@@ -366,7 +366,7 @@ write. Retry recomputes from the canonical state and the restore temporary is
 cleaned in either case; no later failure authorizes reselection or another
 canonical publication.
 
-The current classifier admits 500 for schema v17 and 1,000 for schema v18-v25,
+The current classifier admits 500 for schema v17 and 1,000 for schema v18-v27,
 rejecting the next character in each source schema. It does not generalize
 local rejection to another field
 or to structural, identity, lineage, metadata, or TOCTOU failure.
@@ -521,7 +521,7 @@ Setup always includes `data.relocation` with exactly `required`,
 successful relocation preview. Fresh preview has null top-level ID and null
 identity/generation/token/expiry.
 
-Relocation failure has status null, required schema 25, empty warnings, one
+Relocation failure has status null, required schema 27, empty warnings, one
 error, null token/expiry, and no rejected value. A no-token mismatch preserves
 the read-only future `planned_writes`; invalid/expired/stale/used/not-required
 token rows have empty write arrays and mechanically observed bounded context.
@@ -647,7 +647,7 @@ Setup output data is exactly `status`, `planned_writes`, `completed_writes`,
 `schema_from`, `schema_to`, `maintenance_enabled`,
 `backup_interval_minutes`, `backup_generations`, `evidence_status`,
 `viewer_status`, `relocation`, `usage`, `usage_hooks`, and `optional_features`.
-`schema_to` is always 25. `schema_from` is safely observed source
+`schema_to` is always 27. `schema_from` is safely observed source
 schema, selected recovery schema, or null. Policy values are effective
 requested/stored values, not persistence claims. `maintenance_enabled`,
 Evidence status, and Viewer status describe durable post-command state.

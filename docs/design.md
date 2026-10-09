@@ -2,14 +2,14 @@
 
 Status: the immutable published product remains v0.10.0/schema v16/Viewer v4
 sources v5-v16/20 leaves; its identity is fixed in `docs/release-install.md`.
-The current unpublished candidate is v0.13.0 with SQLite schema v25, Viewer
-snapshot v4 accepting source schemas v5-v25, and 23 public command leaves. Its
+The current unpublished candidate is v0.13.0 with SQLite schema v27, Viewer
+snapshot v4 accepting source schemas v5-v27, and 23 public command leaves. Its
 active implementation includes tool-owned Verification Receipt subjects,
 versioned Review provenance, immutable Evidence References and completion
 Bundles, deterministic Evidence JSON, and the explicitly opted-in trusted-local
 verification Runner with a closed manual fallback. Schema v20 remains a
 supported migration source and
-audit-only Runner lineage; schema v25 is current persistence and retains the
+audit-only Runner lineage; schema v27 is current persistence and retains the
 schema-v21 Runner gate protocol unchanged.
 Select-Split-Merge-Register is active only in the Skill instruction layer.
 The Task database owns live state and evidence; completed execution narrative
@@ -603,10 +603,13 @@ Current detail is owned by the [Database persistence and migration design](datab
 
 <a id="current-schema-v24-ownership-and-verification-declaration-design"></a>
 
-## Current Schema-v25 Ownership And Reviewer Binding Design
+<a id="current-schema-v25-ownership-and-reviewer-binding-design"></a>
+
+## Current Schema-v27 Ownership And Reviewer Binding Design
 
 Current detail is owned by the [Database persistence and migration design](database-design.md#session-ownership-migration)
 and its [reviewer binding migration](database-design.md#conditional-reviewer-binding-migration)
+and [combined session slot migration](database-design.md#combined-session-slot-migration)
 and its [supported declaration delta](database-design.md#current-schema-v22-reservation-cleanup-design).
 
 <a id="schema21-runner-gate-basis-design"></a>
@@ -925,7 +928,7 @@ a real consuming project or Git state. Tests cover:
 - all 23 parser leaves, removed commands/options, help, text/JSON/error/compact
   envelopes, and byte limits;
 - missing/old/too-new/invalid state with no creation or sidecars;
-- every v1-v25 migration, rollback, idempotency, required-object marker,
+- every v1-v27 migration, rollback, idempotency, required-object marker,
   realistic preservation fixture, quick check, and foreign keys;
 - task validation, ordering, pause/block/current/next, done/reopen,
   completion evidence, every review tier/target/receipt/finding, Contract,
@@ -947,8 +950,8 @@ a real consuming project or Git state. Tests cover:
   no-clobber publication, cleanup resume, and preservation of unrelated files;
 - backup publication/reconciliation/retention/recovery and every crash
   boundary;
-- Viewer v4 sources 5-25, completion-history bounds, version-1 Receipt-link,
-  v19-v25 Bundle-discriminator validation, and v20-v25 source-appropriate
+- Viewer v4 sources 5-27, completion-history bounds, version-1 Receipt-link,
+  v19-v27 Bundle-discriminator validation, and v20-v27 source-appropriate
   Runner-graph validation, 500-ID history batching,
   the accepted 500-Task performance fixture, 64-MiB artifact cap,
   generation/last-good behavior, strict config, timer/visibility, one-shot

@@ -125,7 +125,7 @@ def _physical_current21_install(root: Path, *, git_managed: bool = False):
     install = make_physical_install(root, git_managed=git_managed)
     installed_storage = install.skill_root / "scripts" / "task_governance_tool" / "storage.py"
     source = installed_storage.read_text(encoding="utf-8")
-    current_declaration = "SCHEMA_VERSION = 25"
+    current_declaration = "SCHEMA_VERSION = 27"
     if source.count(current_declaration) != 1:
         raise AssertionError("schema21 fixture requires the exact current declaration")
     installed_storage.write_text(
@@ -382,8 +382,8 @@ def _seed_targeted_m21_fixture(
     title: str = "Persisted schema21 Runner history",
     description: str = "",
 ):
-    if source_schema_version not in (21, 25):
-        raise AssertionError("completion fixture supports only historical21 or current25")
+    if source_schema_version not in (21, 27):
+        raise AssertionError("completion fixture supports only historical21 or current26")
     install = (
         _physical_current21_install(root, git_managed=True)
         if source_schema_version == 21
@@ -451,7 +451,7 @@ def _seed_targeted_m21_fixture(
             )
             if verification_required
             else (("--verification-not-required", "Completion fixture without executable changes")
-                  if source_schema_version == 25 else ())
+                  if source_schema_version == 27 else ())
         ),
         "--contract-scope",
         "Validate one persisted schema21 Runner history fixture.",
@@ -507,7 +507,7 @@ def _seed_targeted_m21_fixture(
             "--result",
             "pass",
             "--duration-ms",
-            "25",
+            "27",
             "--scope-coverage",
             "full",
             "--expected-target-generation",
@@ -627,7 +627,7 @@ def _add_completed_m21_task(
         "--result",
         "pass",
         "--duration-ms",
-        "25",
+        "27",
         "--scope-coverage",
         "full",
         "--expected-target-generation",
@@ -2581,7 +2581,7 @@ class M243BSchema21CompatibilityTests(unittest.TestCase):
                 self.assertEqual(len(projection.native_bundles), 2)
                 self.assertEqual(snapshot["source_schema_version"], 21)
 
-    def test_relocation_token_context_retains_source21_22_23_and_admits_current25(self) -> None:
+    def test_relocation_token_context_retains_source21_22_23_and_admits_current26(self) -> None:
         values = {
             "project_id": "project-000000000000",
             "identity_scheme": "legacy_path_v1",
@@ -2607,8 +2607,8 @@ class M243BSchema21CompatibilityTests(unittest.TestCase):
             24,
         )
         with self.assertRaises(RelocationTokenError):
-            RelocationContext(**values, source_schema_version=26)
-        self.assertEqual(RelocationContext(**values, source_schema_version=25).source_schema_version, 25)
+            RelocationContext(**values, source_schema_version=28)
+        self.assertEqual(RelocationContext(**values, source_schema_version=27).source_schema_version, 27)
 
 
 if __name__ == "__main__":

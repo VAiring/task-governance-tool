@@ -34,6 +34,22 @@ TZif data may be configured with `PYTHONTZPATH`; do not install/download data as
 a side effect. Restart only when required to load reviewed configuration.
 Discovery, inspection and restart never start or replay an old worker.
 
+## Runtime Upgrade And Reconnection
+
+A connected service keeps imported runtime/schema values until it is reloaded.
+Before package replacement or schema migration, settle or stop known running
+waits with the compatible service's existing recovery controls. Preserve their
+records and never retry unknown timer/send effects. After successful explicit
+Setup, restart/reconnect the same reviewed MCP service, preserving its host
+configuration and trust. CLI success alone does not prove service compatibility.
+
+If migration already succeeded and the old service returns
+`review_wait_unavailable`, reload that service before inspecting the retained
+associations. Do not repeat Setup, infer no previous effects, or create a
+replacement timer. Restart/inspection never replays a worker; use the existing
+failure/recovery procedure for each known state. This upgrade instruction adds
+no ordinary Task-loop call or permission to change host settings/trust.
+
 ## Normal Wait
 
 Use the already selected local policy and connected project MCP service with
@@ -70,8 +86,10 @@ justify further discovery; this adds no lookup or confirmation prerequisite.
    The worker observes the matching incoming event and records receipt; no
    individual ACK, reservation management or `wait-ended` call is needed.
 
-Another Task's work or notification may advance this same parent's turn without
-cancelling existing managed waits. Each remains bound to its original Task and
+Other permitted work, such as read-only Task inspection, or a retained Task's
+notification may advance this same parent's turn without cancelling existing
+managed waits. The combined session slot still prevents starting a second Task
+in that session while its current Task awaits review. Each wait remains bound to its original Task and
 reviewers; the service defers while the parent is busy and coordinates its sends.
 It finds the first actual receiving turn through bounded public history even if
 newer turns already exist. No parent-side history correlation or extra call is needed.

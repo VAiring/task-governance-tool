@@ -82,6 +82,10 @@ only for introduction or diagnosis. Trust is user-operated and never a normal
 Task-loop prerequisite.
 
 For an upgrade, preserve project-local state and run explicit setup. When
+the review-wait MCP is connected, also follow its
+[runtime upgrade procedure](review_wait.md#runtime-upgrade-and-reconnection):
+settle known waits before replacement and reload the existing reviewed service
+after Setup. A fresh CLI does not reload a resident MCP process. When
 moving from package-local state to `.taskgov/`, follow the
 [offline transition requirements](cli_contracts.md#setup); preserve the old
 retirement marker and retained recovery material. This is not a normal-loop
@@ -422,9 +426,12 @@ python .agents/skills/task-governance-tool/scripts/taskgov.py task edit --repo <
 After blocking one lane, return to `task context` to resume another active Task
 or select unrelated ready work with its complete context.
 
-Only in-progress occupies the caller's slot. Review-pending retains completion
-responsibility while freeing the slot, so that caller may complete A while
-working on B. It is not an initial status: start before entering review-pending.
+In-progress and review-pending share one caller/project slot. Review-pending
+retains completion responsibility and holds that slot until explicit release or
+completion, so start B only after A releases it. Returning A to in-progress keeps
+its execution and continuous usage interval. It is not an initial status: start
+before entering review-pending. Legacy overlaps are retained during Setup and
+can be explicitly released/recovered or completed; no new conflicting start is allowed.
 Paused work requires an isolated resume before other updates. Blocked reason
 or metadata edits, return to ready and cancellation need no resume or active
 slot; existing state/lane gates remain. Caller identity and ownership comparison

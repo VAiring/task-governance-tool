@@ -1316,7 +1316,7 @@ class M243CRunnerGateTests(unittest.TestCase):
             self.assertEqual(cycle["verification_basis_kind"], "runner_observation")
             self.assertIsNone(cycle["verification_receipt_id"])
             self.assertEqual(cycle["verification_runner_observation_id"], observation_id)
-            self.assertEqual(bundle["source_schema_version"], 25)
+            self.assertEqual(bundle["source_schema_version"], 27)
             self.assertEqual(bundle["bundle_version"], 2)
             self.assertEqual(bundle["verification_basis_kind"], "runner_observation")
             self.assertEqual(bundle["verification_runner_observation_id"], observation_id)

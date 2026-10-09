@@ -22,6 +22,7 @@ class Transition:
     previous_status: str | None
     current_status: str
     actor_session_id: str
+    policy_version: int = 0
 
 
 @dataclass(frozen=True)
@@ -42,11 +43,14 @@ def owner_intervals(transitions: tuple[Transition, ...], bindings: dict[str, tup
     for change in transitions:
         key = change.task_id
         boundary = bindings.get(change.transition_id)
-        if change.current_status == "in_progress" and change.previous_status != "in_progress":
+        covered = change.current_status == "in_progress" or (
+            change.policy_version == 1 and change.current_status == "review_pending")
+        opened = active.get(key)
+        if covered and opened is None:
             start = boundary[1] if boundary and boundary[0] == change.actor_session_id else None
             active[key] = Interval(key, change.execution_id, preceding.get(key),
                                    change.actor_session_id, start, None, False)
-        if change.previous_status == "in_progress" and change.current_status != "in_progress":
+        if not covered:
             opened = active.pop(key, None)
             if opened is not None:
                 end = boundary[1] if boundary and boundary[0] == opened.thread_id else None

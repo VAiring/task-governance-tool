@@ -52,6 +52,8 @@ Current sequential migrations are:
 | 23 | `verification_declaration`: Task and completion-cycle waiver reasons |
 | 24 | `task_session_ownership`: current ownership and immutable execution/transition/cycle relations |
 | 25 | `review_receipt_sessions`: immutable actual-reviewer/execution binding |
+| 26 | `review_pending_session_slot`: combined slot acquisition guards and transition policy version |
+| 27 | `review_pending_reacquisition_guard`: forward correction of legacy pending reacquisition |
 
 Every migration is ordered, idempotent on reentry, transactional, and
 rollback-tested. Reentry validates rather than synthesizing missing data.
@@ -64,10 +66,10 @@ checkpoint, maintenance, identity, and completion traces. The sole current
 exception is migration 20's Bundle-rebuild retirement of the
 unsupported attached residue defined below; it changes no other migration.
 
-The fixed-state setup migrator accepts complete source schemas v1-v24 and
-treats v25 as current. Legacy `state/projects` discovery is intentionally
+The fixed-state setup migrator accepts complete source schemas v1-v26 and
+treats v27 as current. Legacy `state/projects` discovery is intentionally
 narrower: v1-v13 plus the explicit schema-v14 legacy-layout transition.
-Viewer compatibility is independent and accepts source schemas v5-v25.
+Viewer compatibility is independent and accepts source schemas v5-v27.
 Incomplete history, a missing required object/row, a later marker, too-new
 state, unsupported layout, foreign identity, or corrupt integrity fails closed.
 
@@ -102,7 +104,7 @@ or review-session binding tables.
 ### Reviewer Binding Migration
 
 `schema_review_sessions.py` owns the setup-only 24→25 migration, exact DDL and
-fingerprint. The public runtime constant is 25. Migration retains the existing short-writer, marker-last
+fingerprint. Schema 25 remains a supported predecessor. Migration retains the existing short-writer, marker-last
 snapshot proof and PRAGMA-restoration mechanics. It adds the empty binding
 relation and rebuilds only the Bundle source discriminator and coupled native
 cycle guard, preserving all old columns, rows and unrelated objects.
@@ -121,6 +123,37 @@ source version without weakening normal database-version admission. Core
 completion keeps the schema-24 execution/cycle link and format-2 Evidence
 encoding; reviewer identity is not added to the sealed payload. Old readers
 reject schema 25 rather than dropping its registration constraints.
+
+<a id="combined-session-slot-migration"></a>
+
+### Combined Session Slot Migration
+
+`schema_session_slot.py` owns Setup-only 25→26 migration and its exact DDL/fingerprint.
+The public runtime constant is 27. Schema 26 retains the original ownership states
+and active partial index. New insert/acquisition triggers check the combined
+owner/completion-owner session/project slot. A retained legacy overlap is not
+rewritten or arbitrarily assigned: only continuations/releases of its existing
+holdings are possible until explicit recovery removes the conflict. The
+repository applies the same combined check inside its existing writer.
+The migration adds `policy_version INTEGER NOT NULL DEFAULT 0` constrained to
+zero/one on immutable `task_owner_transitions`; an insert guard requires one
+for new transitions. The numerical reader uses that structural version to keep
+old interval meanings while continuing new review-pending intervals. No
+numerical schema change, manual measurement operation or new completion gate
+is introduced. Setup preserves all predecessor column values, owners, statuses,
+cycle links and sealed Bundle bytes, with marker-last rollback and reentry
+validation. Old binaries reject schema 26.
+
+`schema_session_slot_reacquisition.py` owns the explicit 26→27 forward repair;
+it never redefines the applied schema-26 fingerprint. It replaces only the
+combined update guard plus the Bundle source discriminator and native-cycle guard.
+The update guard also treats `completion_only`→`owned` as an acquisition, matching
+the repository when legacy holdings overlap. It retains every predecessor row,
+unrelated object and Bundle payload, checking those projections before and after
+the final migration marker. DDL/copy/marker failures roll back to exact schema 26;
+reentry validates exact schema 27 without repair. Both supported source definitions
+remain independently validated. Numerical schema and policy-zero/one meanings do
+not change, and retained overlaps still require explicit release/completion.
 
 ## Numerical Collection Persistence
 
@@ -237,7 +270,7 @@ Turn observations, response observations and source cursor commit atomically.
 to numerical schema 1. Explicit initialization migrates the migration-marker
 table and adds the new relations in one short transaction, recording version 2
 last. No ordinary read or collector migrates. The setup factory selects schema 5
-for the current schema-25 package. Preview returns `migration_required` and planned `usage_migrate` for
+for the current package. Preview returns `migration_required` and planned `usage_migrate` for
 an exact schema-1, schema-2, schema-3 or schema-4 store; explicit setup returns `migrated` and that completed
 write on success. Fresh-store creation keeps `usage_initialize`. Failure remains
 a separate numerical outcome, not rollback or rejection of core setup.

@@ -45,7 +45,8 @@ class UsageAttributionInstallTests(unittest.TestCase):
             task = added["data"]["task"]
             ready = cli("task", "edit", task["task_id"], "--status", "ready")
             resumed = cli("task", "edit", task["task_id"], "--status", "in_progress")
-            closed = cli("task", "edit", task["task_id"], "--status", "review_pending")
+            pending = cli("task", "edit", task["task_id"], "--status", "review_pending")
+            closed = cli("task", "edit", task["task_id"], "--status", "cancelled")
             self.assertNotEqual(task["ownership"]["execution_id"], resumed["data"]["task"]["ownership"]["execution_id"])
             repository = UsageAttributionRepository(root / "isolated-usage.sqlite", task["project_id"],
                                                      observe_current_root(root).canonical_path_hash, 1)
@@ -55,7 +56,7 @@ class UsageAttributionInstallTests(unittest.TestCase):
             source = SourceInput(THREAD, logs / "fixture.jsonl", logs, root)
             register_source(repository, source, CallerIdentity(THREAD))
             rows = [event("session_meta", id=THREAD, cwd=str(root), model_provider="openai")]
-            acknowledgements = {2: added, 4: ready, 7: resumed, 9: closed}
+            acknowledgements = {2: added, 4: ready, 7: resumed, 9: pending, 11: closed}
             for number in range(1, 13):
                 rows.extend((event("event_msg", type="task_started", turn_id=turn(number), started_at=number * 1000),
                              event("turn_context", turn_id=turn(number), model="fixture-model")))
@@ -70,6 +71,6 @@ class UsageAttributionInstallTests(unittest.TestCase):
                 projected = repository.attribution(core)
             self.assertEqual(projected["unresolved_operations"], 0)
             self.assertEqual(projected["tasks"][0]["task_id"], task["task_id"])
-            self.assertEqual(projected["tasks"][0]["models"][0]["total_tokens"], 6 * 120)
+            self.assertEqual(projected["tasks"][0]["models"][0]["total_tokens"], 8 * 120)
             self.assertEqual(len(projected["tasks"][0]["own_executions"]), 2)
             self.assertIn(("openai", "r12"), projected["unassigned_response_keys"])

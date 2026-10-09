@@ -85,7 +85,7 @@ class UsageEvidenceInstallTests(unittest.TestCase):
         done = self.complete(task)
         self.assertEqual(done["data"]["usage"]["status"], "pending")
         other = self.add("Still active shared participant")
-        self.collect({2: [start], 4: [ready, resumed], 6: [end, other], 7: [done]})
+        self.collect({2: [start], 4: [ready, resumed], 6: [end], 7: [done, other]})
         core = self.target.db_path.read_bytes()
         evidence = file_snapshot(self.target.resolved_evidence_root) if self.target.resolved_evidence_root.exists() else {}
         self.assertEqual(service.refresh_usage(self.target)["publication"], "current")

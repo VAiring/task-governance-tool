@@ -3,6 +3,7 @@
 import json
 import shlex
 import subprocess
+import threading
 import time
 from uuid import uuid4
 from dataclasses import replace
@@ -578,6 +579,14 @@ class InstalledFinalizationTests(fixtures.PreparationFixture):
         from task_governance_tool.review_wait_runtime.managed_host import ManagedHost
         task, service = self.ready()
         direct, host, parent = self.wait_fixture(task, service)
+        deferred = threading.Event()
+        parent_ready = direct._parent_ready
+        def observe_parent(*args, **kwargs):
+            ready = parent_ready(*args, **kwargs)
+            if not ready and direct._finalization_prepared:
+                deferred.set()
+            return ready
+        direct._parent_ready = observe_parent
         wire = ManagedHost(metadata={"threadId": parent, "turnId": ORIGINAL}, task_id=task,
             automation_id=AUTOMATION, codex_home=self.root, confirmed_timezone="UTC", timezone_source="host_os",
             reviewer_ids=list(host.reviewer_ids), command=["offline-peer"])
@@ -624,8 +633,10 @@ class InstalledFinalizationTests(fixtures.PreparationFixture):
             self.assertTrue(result["ok"], result)
             host.parent = ChildTurn(parent, ORIGINAL, "completed", "idle")
             deadline = time.monotonic() + 30
-            while not reports and time.monotonic() < deadline:
-                time.sleep(0.02)
+            # Wait for the worker to observe busy, not merely for the report
+            # callback to append. Otherwise this test can restore idle before
+            # the worker sees busy and legitimately take the non-deferred path.
+            self.assertTrue(deferred.wait(max(0, deadline - time.monotonic())))
             self.assertEqual(len(reports), 1, direct.repository.read())
             self.assertEqual(host.sends, [])
             host.parent = ChildTurn(parent, OTHER, "completed", "idle")

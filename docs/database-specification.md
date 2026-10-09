@@ -49,8 +49,8 @@ Missing state is `db_not_initialized`; supported older state is
 `migration_required`; a newer schema is `schema_too_new`. Old binaries reject
 newer state and never downgrade/write it.
 
-Fresh setup creates schema v25. Structurally complete contiguous source schemas
-v1-v24 are setup-only migration inputs; v25 is idempotent current state.
+Fresh setup creates schema v27. Structurally complete contiguous source schemas
+v1-v26 are setup-only migration inputs; v27 is idempotent current state.
 Schema sequence is:
 
 | Version | Durable addition |
@@ -77,6 +77,8 @@ Schema sequence is:
 | v23 | explicit verification-not-required reasons on Tasks and immutable completion cycles |
 | v24 | session ownership, immutable executions/transitions and execution-to-cycle links |
 | v25 | immutable reviewer-session bindings in the core Receipt transaction |
+| v26 | combined executing/review-pending session slot and versioned interval semantics |
+| v27 | forward repair of the legacy pending-to-active acquisition guard |
 
 Each migration is transactional, idempotent, rollback-tested, validates
 contiguous history and required objects/rows, preserves project/business IDs
@@ -143,8 +145,9 @@ every cycle/Bundle Runner-observation pointer remains null; native Bundle-v2
 This check occurs before any database or sidecar write, migration backup,
 recovery copy/publication, Viewer publication, or managed-backup write. A complete v19 source alone may invoke migration
 20; a complete v20 source continues through migrations 21 and 22, and a complete
-v21 source invokes migration 22, followed by 23, 24 and 25. Complete v22 invokes 23,
-24 and 25; complete v23 invokes 24 and 25; complete v24 invokes 25, and exact v25
+v21 source invokes migration 22, followed by 23 through 27. Complete v22 invokes 23
+through 27; complete v23 invokes 24 through 27; complete v24 invokes 25 through 27;
+complete v25 invokes 26 and 27, complete v26 invokes 27, and exact v27
 receives validation-only reentry. Unrelated extra
 objects retain the existing policy, including deliberate removal of
 unsupported unowned indexes/triggers attached to the rebuilt Bundle table and
@@ -159,9 +162,11 @@ qualifying Runner protocol with explicit manual fallback.
 
 <a id="current-schema-v24-persistence-contract"></a>
 
-## Current Schema-v25 Persistence Contract
+<a id="current-schema-v25-persistence-contract"></a>
 
-Schema v25 is the public setup target. Its predecessor migration `24/task_session_ownership`
+## Current Schema-v27 Persistence Contract
+
+Schema v27 is the public setup target. Its predecessor migration `24/task_session_ownership`
 adds `task_executions`, `task_ownership`, `task_owner_transitions` and
 `task_execution_cycles` (39 tables, 45 explicit indexes, 67 triggers).
 Execution/transition/cycle links are append-only. The one current ownership row
@@ -180,7 +185,7 @@ Only the Bundle table and its coupled native-cycle guard are rebuilt to admit
 source 24/format 2. New native completion must link its execution to its exact cycle
 within the same transaction. Older Bundles/cycles remain unlinked and unchanged;
 format 2 is retained and the index reports the actual container. No per-caller display or
-usage fields are added to sealed Evidence or Viewer v4. Viewer accepts v5-v25.
+usage fields are added to sealed Evidence or Viewer v4. Viewer accepts v5-v27.
 Reentry validates exact DDL, markers, retained graph and integrity without repair.
 Setup retains its existing backup/rollback protocol; no normal command migrates.
 Unsupported attached residue/hybrid state fails closed before writes. Global
@@ -191,7 +196,7 @@ existing verification-field-local exception.
 
 ### Schema-v25 Reviewer Relation
 
-Schema 25 is the current public setup target. Its
+Schema 25 is the supported reviewer-binding predecessor. Its
 `25/review_receipt_sessions` migration adds only the immutable relation defined
 by the [reviewer binding contract](review-completion-specification.md#conditional-reviewer-session-binding).
 It has 40 tables, 46 explicit indexes and 70 triggers. All predecessor business
@@ -207,6 +212,41 @@ and fail-closed rules. Reentry is validation-only, with exact object inventory,
 DDL, markers, relations and integrity checks. Partial-copy/marker failure rolls
 back; no ordinary read creates the new relation. Numerical storage is neither
 an admission prerequisite nor a participant in the core transaction.
+
+### Schema-v26 Combined Session Slot
+
+Explicit Setup applies `26/review_pending_session_slot` after schema 25. It retains
+40 tables and 46 explicit indexes, adds three guards (73 triggers total), and adds
+only `policy_version` to immutable owner transitions. Existing rows receive zero;
+new transitions require one. Policy zero keeps the earlier in-progress-only usage
+intervals; policy one uses the continuous in-progress/review-pending interval
+defined below. No old closed waiting interval is retroactively filled.
+
+New slot acquisitions check both owner states in the same session/project. Existing
+legacy overlaps remain readable and can continue, release or complete under their
+existing owner/generation; another acquisition is rejected until the conflict is
+explicitly resolved. Migration chooses no winner and changes no owner, status,
+execution, old transition value or sealed evidence. The Bundle discriminator and
+native-cycle guard admit source 26/format 2; sources 19–25 remain unchanged.
+Exact DDL/inventory, hybrid detection, preserved-row proof, marker-last rollback,
+validation-only reentry and ordinary-command migration refusal remain required.
+
+### Schema-v27 Legacy Reacquisition Guard
+
+Explicit Setup applies `27/review_pending_reacquisition_guard` after exact schema
+26. The already applied schema-26 definition and fingerprint remain immutable.
+The forward migration replaces the combined update guard so a retained
+`completion_only` to `owned` transition also requires all competing same-session,
+same-project holdings to release first. Normal sole-owner transitions, release
+and completion remain permitted. Preexisting holdings and all history are retained;
+migration neither chooses an owner nor repairs business state. It adds no column,
+usage policy version or gate (40 tables, 46 indexes, 73 triggers remain).
+
+The Bundle discriminator and coupled native-cycle guard admit source 27/format 2,
+preserving all source-19 through source-26 rows, bytes and digests. The index reports
+the actual container. Exact source admission, marker-last row/object preservation,
+copy/marker rollback, validation-only reentry, backup/recovery and ordinary-command
+migration refusal apply unchanged. Old schema-26 writers reject schema 27.
 
 ### Supported Schema-v23 Declaration Delta
 
@@ -243,7 +283,7 @@ reason. Its supported Viewer projection adds no fields or calls.
 Schema v22 is a supported predecessor. Setup reaches it
 through the existing ordered migrations from complete v1-v21 sources; v20
 continues through 21 and then 22 rather than returning early. Exact-v22
-storage-helper reentry is validation-only; public setup continues through 23, 24 and 25.
+storage-helper reentry is validation-only; public setup continues through 23 to 27.
 Ordinary commands never migrate or repair state.
 
 Migration 22 is exactly `evidence_reservation_cleanup`. It rebuilds only
@@ -409,11 +449,22 @@ which Task was active. The projection is not an authorization or quality gate.
 
 Include every response in an explicitly identified covered turn. Both entry
 and exit turns are whole, and subsequent observations from either turn remain
-eligible. Any exit from `in_progress` closes the interval. Resumed intervals
+eligible. For schema-26-and-later transitions, `in_progress` and `review_pending` are one
+continuous interval; their mutual transitions neither close nor restart it.
+Pause/block/ready/cancel/done close it. Resumed intervals
 accumulate until the next completion, including across a ready/cancelled restart
 with a new execution ID. A later completion-only turn does not extend a closed
 interval. Union turn/response keys instead of adding interval subtotals. A
 completed Task's later reopened work remains a separate completion period.
+
+The immutable transition's internal `policy_version` is zero for retained
+pre-26 rows and one for newly recorded schema-26-and-later transitions. Version-zero
+history retains its original in-progress-only meaning, including closed old
+pending gaps; Setup never reinterprets that history. A new transition can
+continue an already open interval into review_pending, but cannot reopen or
+fill a previously closed gap. Pending responses are measured only from actual
+observations; elapsed waiting alone creates no usage. Missing endpoints retain
+the existing bounded unknown behavior.
 
 Execution IDs remain the sharing graph nodes: AB and the same B execution/C
 merge even when their response sets do not intersect. A later B execution does
@@ -516,6 +567,6 @@ Capture and display revalidate immutable execution/cycle/reviewer identities.
 A core-basis mismatch after restore or later transitions returns unavailable
 until replay; missing references are never rebound to the newest Task cycle.
 Restored numerical state with a different project/path binding stays unavailable.
-The main schema remains 25; no numerical table joins a core transaction or gate.
+The main schema is independently versioned (currently 27); no numerical table joins a core transaction or gate.
 Optional lifecycle invocation follows the separate Setup/state contract and
 cannot alter these quality or completion boundaries.

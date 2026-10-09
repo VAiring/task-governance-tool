@@ -1314,12 +1314,12 @@ repeating timer changes, Task completion or review registration.
 
 ### Reviewer Session Binding
 
-This section applies to current schema 25 under the
+This section applies from schema 25 (retained by current schema 27) under the
 [approved participation design](session-usage-plan.md#reviewer-participation-without-new-manual-steps)
 and preserves the version-1 reviewer's judgment template. Schema migration
 remains setup-only; numerical collection and lifecycle integration are separate.
 
-A schema-25 Packet additionally contains `review_session_context` with exactly
+A schema-25-or-later Packet additionally contains `review_session_context` with exactly
 `version:1`, `project_id` and `execution_id`. The project and nullable execution
 come from the same admitted core read; an unknown execution permits inspection,
 not a bound save. Reviewer read compares this context with the current public
@@ -1633,8 +1633,10 @@ the Runner-pass arm uses its qualifying observation with a null Receipt link.
 They use the same transition service.
 
 The caller must own the active Task or its retained `review_pending` completion
-responsibility. Completing review-pending A does not acquire an active slot, so
-the same caller may already be executing B. Ownership generation is part of the
+responsibility. Completing review-pending A releases its existing combined slot;
+ordinary current work cannot start B while A holds that slot. A retained legacy
+overlap may still complete A while B is held, without acquiring another slot or
+retroactively invalidating either Task. Ownership generation is part of the
 optimistic completion basis; a delayed operation cannot complete after handover,
 even if the same session subsequently reacquires the Task.
 

@@ -65,13 +65,13 @@ class TaskOwnershipInstallTests(unittest.TestCase):
         self.invoke("setup", caller=UNKNOWN)
         self.assertNotIn('"is_owner"', self.install.viewer_path.read_text(encoding="utf-8"))
         with closing(sqlite3.connect(self.install.db_path)) as connection:
-            self.assertEqual(connection.execute("SELECT max(version) FROM schema_migrations").fetchone()[0], 25)
+            self.assertEqual(connection.execute("SELECT max(version) FROM schema_migrations").fetchone()[0], 27)
             self.assertEqual(connection.execute("SELECT count(*) FROM task_executions").fetchone()[0], 1)
         backups = tuple((self.install.fixed_root / "backups").glob("taskgov-backup-v1_*.sqlite"))
         self.assertTrue(backups)
         for path in backups:
             with closing(sqlite3.connect(path)) as connection:
-                self.assertEqual(connection.execute("SELECT max(version) FROM schema_migrations").fetchone()[0], 25)
+                self.assertEqual(connection.execute("SELECT max(version) FROM schema_migrations").fetchone()[0], 27)
                 self.assertEqual(connection.execute("PRAGMA quick_check").fetchone()[0], "ok")
 
     def test_plan_only_publication_requires_current_owner_without_task_mutation(self):
@@ -105,8 +105,8 @@ class TaskOwnershipInstallTests(unittest.TestCase):
         # upgrade then runs through the unpatched child-process public CLI.
         storage_path = self.install.skill_root / "scripts" / "task_governance_tool" / "storage.py"
         candidate = storage_path.read_text(encoding="utf-8")
-        self.assertEqual(candidate.count("SCHEMA_VERSION = 25"), 1)
-        storage_path.write_text(candidate.replace("SCHEMA_VERSION = 25", "SCHEMA_VERSION = 23", 1),
+        self.assertEqual(candidate.count("SCHEMA_VERSION = 27"), 1)
+        storage_path.write_text(candidate.replace("SCHEMA_VERSION = 27", "SCHEMA_VERSION = 23", 1),
                                 encoding="utf-8", newline="\n")
         refresh_test_manifest(self.install.skill_root)
         self.assertEqual(self.invoke("setup")["data"]["schema_to"], 23)
@@ -131,11 +131,11 @@ class TaskOwnershipInstallTests(unittest.TestCase):
         refresh_test_manifest(self.install.skill_root)
         state_before = self.install.state_snapshot()
         preview = self.invoke("setup", "--read-only", caller=UNKNOWN)["data"]
-        self.assertEqual((preview["schema_from"], preview["schema_to"]), (23, 25))
+        self.assertEqual((preview["schema_from"], preview["schema_to"]), (23, 27))
         self.assertEqual(preview["completed_writes"], [])
         self.assertEqual(state_before, self.install.state_snapshot())
         result = self.invoke("setup", caller=UNKNOWN)["data"]
-        self.assertEqual((result["schema_from"], result["schema_to"]), (23, 25))
+        self.assertEqual((result["schema_from"], result["schema_to"]), (23, 27))
         with closing(sqlite3.connect(self.install.db_path)) as connection:
             self.assertEqual(before, snapshot(connection))
             self.assertEqual(connection.execute("SELECT count(*) FROM task_executions").fetchone()[0], 0)

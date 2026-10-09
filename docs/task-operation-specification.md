@@ -280,7 +280,7 @@ Typed completion storage is exactly `completion_evidence_kind`,
 `review_target_kind`, `review_target_value`,
 `review_target_base_revision`, and generation. Values and their legacy
 projection must satisfy one cross-field matrix before storage or output.
-For a supported schema-v18-through-v25 source, every complete loaded Task row is validated
+For a supported schema-v18-through-v27 source, every complete loaded Task row is validated
 for exact SQLite/Python storage class, bounded text/privacy, closed enums, and
 all Task cross-field matrices before any field can be omitted or exposed.
 Stored values are never coerced, trimmed, repaired, or rewritten by a read.
@@ -327,7 +327,8 @@ allows reads, help, setup and existing explicit configuration, but acquisition,
 owner-only writes and completion fail `session_identity_required`. IDs are not
 credentials and do not defend against direct DB/environment tampering.
 
-Only `in_progress` occupies one session/project slot and has a fixed owner.
+`in_progress` and `review_pending` together occupy one session/project slot.
+The status names and owner/completion-owner projection remain distinct.
 Start of ready work creates an execution and advances its owner generation.
 Pause/block releases the slot; resume to in_progress reuses the execution,
 acquires the caller and advances generation. Paused work requires isolated
@@ -342,15 +343,23 @@ caller but acquires no slot. A later start, including through another blocked
 state, or the existing exact reopen of done, creates a new execution.
 
 Entry into `review_pending` requires the caller's existing in-progress execution.
-It releases the slot but retains that caller as completion owner at the same
+It retains the slot and that caller as completion owner at the same
 execution/generation. Direct entry from ready/blocked/cancelled/paused or initial
 single/batch registration is rejected; a free slot does not make it valid.
-Repeating known review_pending is an owner-only no-op with no slot acquisition.
-The completion owner can complete A while executing B under the same existing
-quality gates. A Contract revision or other return of A to in_progress must
-reacquire a free slot or roll back the entire mutation. Two simultaneous starts
+Repeating known review_pending is an owner-only no-op. A Contract revision or
+other return of A to in_progress retains the same Task's slot and execution;
+its existing owner-generation check and increment still apply. Two simultaneous starts
 cannot claim one Task or one caller slot. A second active Task fails
 `session_task_in_progress`; a different owner fails `task_not_owned`.
+
+Schema-26 Setup preserves existing multiple held Tasks, owners, statuses and
+history without selecting a winner. Such legacy overlap remains readable and
+can be reduced by ordinary authorized completion/release or explicit reasoned
+pause recovery. It never permits acquiring another Task. Returning a legacy
+pending Task to in_progress requires the other held Tasks to release first;
+the complete mutation rolls back on conflict. Unstarted organization, reads,
+other sessions/projects and independent reviewer participation remain unaffected.
+No operation silently pauses, cancels or reassigns another Task.
 
 Explicit cross-session recovery is exactly a status edit from active/review-pending
 to paused with a nonempty pause reason and a valid caller. It may not include

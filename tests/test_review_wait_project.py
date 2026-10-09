@@ -117,6 +117,28 @@ class ProjectWaitTests(PreparationFixture):
         self.assertEqual([], self.hosts["timer-1"].effects)
         self.assertFalse((self.root / "wait.sqlite").exists())
 
+    def test_resident_preupgrade_ceiling_requires_reload_without_replaying_wait(self):
+        from task_governance_tool import state_resolver
+        self.prepare_wait()
+        before = file_snapshot(self.root)
+        # The running server imported this ceiling before the package/DB
+        # upgrade. A successful fresh CLI does not replace that resident value.
+        for old_ceiling in (25, 26):
+            if old_ceiling >= state_resolver.SCHEMA_VERSION:
+                continue
+            with self.subTest(old_ceiling=old_ceiling), mock.patch.object(state_resolver, "SCHEMA_VERSION", old_ceiling):
+                self.assertEqual(self.call("view"), {"ok": False, "error": "review_wait_unavailable"})
+                self.assertEqual(self.session.handle("inspect", {"task_id": self.task_id}, self.metadata),
+                                 {"ok": False, "error": "review_wait_unavailable"})
+                self.assertEqual(before, file_snapshot(self.root))
+        self.session.close()
+        reloaded = self.make()
+        self.assertTrue(self.call("view", session=reloaded)["ok"])
+        self.assertFalse(self.call("direct_status", session=reloaded)["worker_alive"])
+        self.assertEqual(before, file_snapshot(self.root))
+        self.assertEqual(self.hosts["timer-1"].effects, [])
+        self.assertEqual(self.hosts["timer-1"].sends, [])
+
     def test_disabled_invalid_policy_and_identity_never_create_or_start(self):
         self.cli("setup", "--review-wait", "off")
         before = file_snapshot(self.root)

@@ -9,7 +9,7 @@ published v0.10.0 artifact and its exact commit, tag, Release, archive,
 checksum, and Release body remain unchanged. This record also does not
 authorize installing or overwriting a Skill in any project.
 
-The current v0.13.0 candidate uses schema-v25 Evidence storage with the unchanged
+The current v0.13.0 candidate uses schema-v27 Evidence storage with the unchanged
 schema-v21 Runner gate protocol while preserving the published v0.10.0 identity and the fixed v0.13.0
 package boundary described below. Explicit `task edit --runner-plan-action`
 supports `replace`, `rebind`, `detach`, and `disable`; the first absent-Plan
@@ -28,12 +28,15 @@ manual verification path.
 
 ## Current Candidate Identity
 
-Session ownership is automatic from validated `CODEX_THREAD_ID`; only in-progress
-work occupies a caller/project slot. Review-pending keeps completion authority
-without occupying that slot. Setup alone migrates v23→v24, preserving old business
-records and sealed Evidence, and marks existing active owners unknown until explicit
-pause/recovery and resume. Task outputs add full ownership IDs and per-caller flags;
-unknown identity cannot acquire or complete work. This adds no normal-loop command.
+Session ownership is automatic from validated `CODEX_THREAD_ID`; in-progress and
+review-pending work share one caller/project slot. Review-pending retains that slot,
+completion authority and the continuous usage interval; another Task may start only
+after the holding is released. Schema 26 introduced this combined slot, and schema 27
+repairs legacy pending-to-active reacquisition without changing existing holdings.
+Explicit Setup preserves old business records and sealed Evidence. Its predecessor
+v23→v24 migration marks existing active owners unknown until explicit pause/recovery
+and resume. Task outputs include ownership IDs and per-caller flags; unknown identity
+cannot acquire or complete work. This adds no normal-loop command.
 Schema v25 adds automatic actual-reviewer binding through existing read/save and
 submission, including direct reviewers without acquiring Task ownership. Its
 separate numerical schema 5 supports incremental collection and deferred prefix
@@ -76,8 +79,8 @@ total LLM token or elapsed-time savings.
 | Item | Value |
 |---|---|
 | Package version | `0.13.0` |
-| SQLite schema | v25 |
-| Viewer snapshot | v4, accepting source schemas v5-v25 (v5 through v25) |
+| SQLite schema | v27 |
+| Viewer snapshot | v4, accepting source schemas v5-v27 (v5 through v27) |
 | Public command leaves | 23 |
 | Supported runtime | Python 3.12 or newer on Windows, Linux, and macOS (ordinary functions) |
 | Verified platform | Windows x86-64; Ubuntu 24.04 x86-64; macOS 15 Apple Silicon |
@@ -259,7 +262,20 @@ still requires explicit `task edit --runner-plan-action`. See the
 Preserve the local `config/setup-features.json` along with existing feature
 configs on upgrade; it records both ON and OFF and is excluded from artifacts.
 
-Setup reports `schema_to=25` and `evidence_status` as `not_present`, `current`,
+An already connected review-wait MCP service retains its imported runtime and
+schema ceiling. Before replacing that runtime or migrating, settle or stop
+known running waits through the compatible service's existing recovery controls;
+preserve all associations and never retry an unknown timer/send effect. After
+replacement and successful Setup, restart/reconnect the existing reviewed service
+so it loads the matching package. Preserve its configuration, trust and saved
+state. A fresh CLI's success does not prove that the resident service reloaded.
+Restart and inspection never replay an old worker or authorize a replacement
+reservation. Inspect retained associations through the reloaded service and
+follow only the applicable known-state recovery. If Setup already succeeded but
+the stale service returns `review_wait_unavailable`, reload it before diagnosis;
+do not repeat Setup or infer that the old wait never ran.
+
+Setup reports `schema_to=27` and `evidence_status` as `not_present`, `current`,
 `published`, or `repair_required`. Its ordered write vocabulary includes
 `evidence_projection_publish` after maintenance/binding and before
 `viewer_publish`; read-only preview plans it without writing.
@@ -389,15 +405,16 @@ Finding, or completion source can be recorded.
 
 Installation alone and ordinary task commands never migrate. After replacing
 packaged core files while preserving local state, run `setup`; it performs any
-required migration and Evidence/Viewer repair. A failed migration backup prevents the
-migration.
+required migration and Evidence/Viewer repair. Reload any connected review-wait
+service under the procedure above before using it against the upgraded state.
+A failed migration backup prevents the migration.
 
 ## Release Upgrade And Paired Rollback
 
 The immutable v0.10.0 release acceptance rehearsed the transition from the
 exact legacy v0.1.0/schema-v2 baseline to v0.10.0/schema v16. The current
 v0.13.0 candidate must separately rehearse that isolated baseline through
-schema v25, including schema-v17 Receipt/completion preservation, subject and
+schema v27, including schema-v17 Receipt/completion preservation, subject and
 provenance migration, capture-v0/fresh retargeting, 500/1,000 capacity,
 preserved Bundle-v1 and native Bundle-v2 projection recovery, backup recovery,
 and no-partial-write behavior before it can become a release.
@@ -416,7 +433,7 @@ continue to prove that release artifacts contain no `config/` content.
 
 Rollback restores one matched pre-migration package, database, and managed
 artifact set as a single compatibility point, then proves that the legacy
-package can read that restored state. Running old code against schema v25,
+package can read that restored state. Running old code against schema v27,
 reverse-migrating in place, mixing generations, or treating a Git checkout
 alone as rollback is unsupported. After cutover, a defect is handled by a
 forward fix and new candidate/version, not a force update, history rewrite,
@@ -482,7 +499,7 @@ published last, SQLite remains canonical, and JSON is never imported. Failure
 preserves the committed mutation and last-good index with one fixed warning.
 
 The Viewer is a self-contained, read-only `file://` projection under the
-ignored project state. Snapshot v4 accepts source schemas v5-v25 and includes
+ignored project state. Snapshot v4 accepts source schemas v5-v27 and includes
 the same bounded newest-first completion history as `task show --audit`; sources v5-v14
 receive an empty, legacy-incomplete history and sources v15-v22 use stored
 cycles. It omits internal event links,
@@ -805,13 +822,14 @@ Analyzer reservations, preserves source-19/20/21 Bundle bytes/digests, and write
 source-22/v2 Bundles under the same protocol. Schema v23 adds the explicit
 verification declaration and uses source-23/v2 Bundles without resealing history.
 Schema v24 adds session ownership and separate immutable execution-cycle links.
-Current schema v25 adds immutable actual-reviewer bindings and uses source-25/v2
+Schema v25 adds immutable actual-reviewer bindings. Current schema v27 combines
+executing/review-pending slots and versions interval semantics; it uses source-27/v2
 Bundles without changing the quality gates or old history. Explicit setup advances
 the independent numerical store to schema 5 for incremental collection and
 deferred prefix audits, inclusive-turn and review-wait
 decision attribution and immutable usage publication. Lifecycle hooks require separate local approval
 and host trust; no setup side effect enables them.
-Viewer snapshot v4 accepts source schemas v5-v25 while exposing no
+Viewer snapshot v4 accepts source schemas v5-v27 while exposing no
 Evidence UI. That schema activation adds no Analyzer, network/model invocation,
 command leaf, or Skill trigger. The separate read-only `task context` leaf now
 combines ordinary selection and full detail without changing those gates.

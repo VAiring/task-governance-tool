@@ -153,7 +153,7 @@ def _source22_stored_bundle(connection, project_id, task_id):
 
 class Schema22PureProjectionTests(unittest.TestCase):
     def test_three_v2_bases_match_independent_reader_and_unchanged_domains(self):
-        for source_version, kind in ((v, k) for v in (22, 23, 24, 25)
+        for source_version, kind in ((v, k) for v in (22, 23, 24, 25, 26, 27)
                                      for k in ("caller_attestation", "not_required", "runner_observation")):
             with self.subTest(source=source_version, kind=kind):
                 payload = _payload(kind, source_version=source_version)
@@ -171,7 +171,7 @@ class Schema22PureProjectionTests(unittest.TestCase):
                 self.assertEqual(source.source["payload"]["verification_basis"]["kind"], kind)
 
     def test_closed_versions_schema_ceiling_and_bundle_digest_reject(self):
-        future = _payload("not_required", source_version=26)
+        future = _payload("not_required", source_version=28)
         impossible_v1 = valid_native_payload()
         impossible_v1["source_schema_version"] = 22
         for payload in (future, impossible_v1):
@@ -189,13 +189,17 @@ class Schema22PureProjectionTests(unittest.TestCase):
             _source(_reference_envelope(_payload("not_required", source_version=24)), index_source_version=23)
         with self.assertRaises(EvidenceConsumerError):
             _source(_reference_envelope(_payload("not_required", source_version=25)), index_source_version=24)
+        with self.assertRaises(EvidenceConsumerError):
+            _source(_reference_envelope(_payload("not_required", source_version=26)), index_source_version=25)
+        with self.assertRaises(EvidenceConsumerError):
+            _source(_reference_envelope(_payload("not_required", source_version=27)), index_source_version=26)
         envelope["bundle_digest"] = "sha256:" + "0" * 64
         with self.assertRaises(EvidenceConsumerError):
             _source(envelope)
 
     def test_future_index_and_v1_source22_index_reject_read_only(self):
         envelope = _reference_envelope(_payload("not_required"))
-        future = _index_payload(envelope, source_version=26)
+        future = _index_payload(envelope, source_version=28)
         with self.assertRaises(projection.EvidenceProjectionError):
             projection.build_index_artifact(future)
         for payload, format_version in ((future, 2), (_index_payload(envelope), 1)):

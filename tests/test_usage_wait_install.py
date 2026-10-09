@@ -73,10 +73,10 @@ class UsageWaitInstallTests(unittest.TestCase):
         core = self.target.db_path.read_bytes()
         self.hook()
         first = self.cli("task", "show", task)["data"]["usage"]["periods"][0]
-        self.assertEqual(first["response_count"], 3, first)
+        self.assertEqual(first["response_count"], 6, first)
         with self.repository.connection() as connection:
             members = {key for identity in first["snapshot_ids"] for key in self.repository.members(connection, identity)}
-        self.assertEqual(members, {("openai", "parent-2"), ("openai", "parent-3"), ("openai", "supervisor-4")})
+        self.assertEqual(members, {*(('openai', f'parent-{n}') for n in range(2, 7)), ('openai', 'supervisor-4')})
         self.assertEqual(self.target.db_path.read_bytes(), core)
         self.hook()
         self.assertEqual(self.cli("task", "show", task)["data"]["usage"]["periods"][0], first)
@@ -95,7 +95,7 @@ class UsageWaitInstallTests(unittest.TestCase):
         core = self.target.db_path.read_bytes()
         self.hook()
         prior, current = self.cli("task", "show", task, "--audit")["data"]["usage"]["periods"]
-        self.assertEqual((prior["response_count"], current["response_count"]), (4, 2))
+        self.assertEqual((prior["response_count"], current["response_count"]), (7, 3))
         self.assertEqual(prior["completion_cycle_id"], first["completion_cycle_id"])
         self.assertNotEqual(current["completion_cycle_id"], prior["completion_cycle_id"])
         self.assertEqual(self.target.db_path.read_bytes(), core)
@@ -105,7 +105,7 @@ class UsageWaitInstallTests(unittest.TestCase):
         self.log(THREAD, "parent", {2: [start], 3: [end]}, range(1, 5))
         self.log(OTHER, "supervisor", {4: [marker]}, range(1, 6))
         self.hook()
-        self.assertEqual(self.cli("task", "show", task)["data"]["usage"]["periods"][0]["response_count"], 3)
+        self.assertEqual(self.cli("task", "show", task)["data"]["usage"]["periods"][0]["response_count"], 4)
         # Restore a valid real core with the original execution but before the
         # target capture. The numerical store must not supply the missing anchor.
         self.target.db_path.write_bytes(before_target)

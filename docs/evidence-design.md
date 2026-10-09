@@ -268,9 +268,9 @@ proposal; reevaluates all current gates; and computes the complete payload and
 size. Links, snapshots, Bundle, cycle, Task update, event, and source-generation
 advance commit atomically. Drift, invalid binding/class/digest, or the 16-MiB
 cap rolls back the whole savepoint. Historical rows are immutable; reopen and a
-later completion create a fresh target, cycle, and Bundle. Schema 25 retains
-the exact format-2 encoding and adds source-25 admission after schema 24.
-Source-19 through source-24 Bundles remain readable without resealing. The
+later completion create a fresh target, cycle, and Bundle. Schema 27 retains
+the exact format-2 encoding and adds source-27 admission after schema 26.
+Source-19 through source-25 Bundles remain readable without resealing. The
 execution-to-cycle association is a separate immutable same-transaction link,
 not a new Bundle member or a rewrite of historical cycles. The waiver reason
 is checked on Task/current gate and immutable cycle, but is deliberately absent

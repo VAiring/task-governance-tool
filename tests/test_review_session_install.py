@@ -1,4 +1,4 @@
-"""Candidate schema-25 public CLI/helper tests on disposable physical installs."""
+"""Candidate schema-27 public CLI/helper tests on disposable physical installs."""
 
 from __future__ import annotations
 
@@ -95,7 +95,7 @@ class ReviewSessionInstallTests(unittest.TestCase):
         self.root = self.install.project_root
         storage = self.install.skill_root / "scripts/task_governance_tool/storage.py"
         source = storage.read_text(encoding="utf-8")
-        self.assertEqual(source.count("SCHEMA_VERSION = 25"), 1)
+        self.assertEqual(source.count("SCHEMA_VERSION = 27"), 1)
         ignore = self.root / ".gitignore"
         ignore.write_text(ignore.read_text(encoding="utf-8") + "/reviews/\n", encoding="utf-8")
         self.cli("setup")

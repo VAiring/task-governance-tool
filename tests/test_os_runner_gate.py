@@ -290,7 +290,7 @@ class PosixRunnerPublicGateTests(unittest.TestCase):
         index = read_evidence_index(
             self.install.fixed_root / "evidence", expected_project_id=self.install.project_id,
         )
-        self.assertEqual((index.format_version, index.source_schema_version), (2, 25))
+        self.assertEqual((index.format_version, index.source_schema_version), (2, 27))
         entries = [entry for entry in index.entries if entry["task_id"] == self.task_id]
         self.assertEqual(len(entries), 1)
         source = validate_evidence_source(index, entries[0])

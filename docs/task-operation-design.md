@@ -66,7 +66,9 @@ not raw logs.
 comparison, slot acquisition, immutable execution/transition history and exact
 completion-cycle links. Neither creates a connection or commits. The caller's
 existing writer/savepoint includes ownership and the business mutation; a partial
-unique index serializes active session slots. `read_mutation_basis` captures Task
+unique index plus combined acquisition triggers serialize in-progress and
+review-pending session slots. Legacy overlaps survive migration until explicit
+release/recovery, and every new acquisition checks both states. `read_mutation_basis` captures Task
 content and owner generation in one short snapshot before external preflight,
 and the writer checks that exact generation. It never accepts a displayed self
 flag as authority. Completion includes this basis in its existing semantic token.
@@ -161,7 +163,7 @@ source-capacity failure remains candidate-local; every other Task fault is
 structural and set-fatal.
 
 Viewer supplies the source version returned by snapshot validation. For exact
-schema v18-v25, that validation completes the full Evidence Ledger and Task batch
+schema v18-v27, that validation completes the full Evidence Ledger and Task batch
 checks before issuing one private, one-shot batch proof bound to the same
 query-only connection and transaction, project, source version, exact sorted
 Task IDs/count, issuance data version, and a fixed nested savepoint held only

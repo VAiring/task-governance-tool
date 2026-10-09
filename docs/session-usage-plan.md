@@ -102,8 +102,8 @@ blocked state. No time-based expiration or automatic takeover exists.
 | State | Fixed owner / occupied slot | Completion authority | Ordinary mutation |
 |---|---|---|---|
 | ready, never started | none | none | Existing authorized organization; start acquires caller |
-| in_progress | one caller; one such Task per caller/project | same caller and current generation | owner only |
-| review_pending | no slot | immediately preceding owner and execution generation | completion owner; a write that returns to in_progress must reacquire a free slot |
+| in_progress | one caller; one combined in-progress/review-pending Task per caller/project | same caller and current generation | owner only |
+| review_pending | retains the same combined slot | immediately preceding owner and execution generation | completion owner; return to in-progress retains execution and interval |
 | paused | none | none | Read or isolated resume; acquire caller and advance generation before further work |
 | blocked, including after start | none | none | Existing non-executing organization without resume; execution resume acquires caller and advances generation |
 | done | none | none | Existing exact reopen only; fresh execution plus existing fresh gates |
@@ -112,7 +112,7 @@ blocked state. No time-based expiration or automatic takeover exists.
 
 New entry into `review_pending` requires an existing `in_progress` execution
 owned by the caller. In one transaction it preserves that execution and owner
-generation, moves the caller to completion authority, and releases its slot.
+generation, moves the caller to completion authority, and retains its slot.
 Initial `review_pending` registration, including any such batch item, is
 rejected with `invalid_status_transition`; the entire batch rolls back.
 Direct ready/blocked/cancelled-to-review-pending edits are likewise rejected,
@@ -128,8 +128,8 @@ review loop. Test both single/batch registration and every source state, with
 and without another in-progress Task held by the caller: a free slot does not
 make direct ownerless entry valid, and rejection never changes the other Task.
 Repeating `review_pending` on an already known review-pending Task retains its
-execution/generation and requires its completion owner; it does not acquire a
-slot, even while that caller executes B. Migrated unknown review-pending work
+execution/generation and requires its completion owner; it retains the existing
+slot. Migrated unknown review-pending work
 uses explicit pause/resume recovery, not this no-op. Done retains its existing
 write lock and exact reopen-only path.
 
@@ -155,8 +155,10 @@ The next ordinary resume acquires the new owner. Other owner-state transitions
 remain subject to existing status/lane rules; recovery adds no hard deletion,
 new reset operation, broad authorization or stale-age heuristic.
 
-Review-pending X/A and in-progress X/B can coexist. X can complete A while
-holding B without acquiring a second slot. Y cannot complete A: Y first uses
+Schema 26 prevents new review-pending X/A and in-progress X/B coexistence.
+Legacy overlaps survive explicit Setup without an invented winner or owner.
+X can complete or explicitly release existing holdings; another acquisition
+must wait until conflicts are resolved. Y cannot complete A: Y first uses
 explicit pause recovery followed by the existing resume/acquisition transition,
 subject to its slot and lane checks. An owner change does not erase still-valid
 review evidence; stale commands are rejected using owner generation, while existing target/Contract
@@ -167,8 +169,9 @@ invalidation rules continue to determine quality-evidence freshness.
 Capture the actor and observed owner generation with existing preflight basis;
 revalidate ownership inside the same short `BEGIN IMMEDIATE` writer as the
 business mutation. Never use a previous read/self flag as a capability.
-Unique partial indexes enforce one in_progress owner per Task and one such
-Task per session/project. Recheck after transitions and batch writes.
+The active partial index and combined acquisition guards enforce one held Task
+per session/project across in-progress and review-pending. Recheck inside
+transitions and batch writes; preserve legacy holdings until explicit release.
 
 The owner check covers add-active/batch, edit including Contract-only edits,
 notes, status/reopen, checkpoint, Effort writes, Task-associated handoff writes,
@@ -185,8 +188,9 @@ Project setup/maintenance and read-only diagnosis never impersonate a Task
 owner. Pure reads, including completion check, perform no acquisition.
 
 An automatic transition from review_pending to in_progress (for example a
-Contract revision) must acquire the slot or roll back the entire change. It
-cannot mutate the Contract first and later discover that X is executing B.
+Contract revision) retains its slot and continuous usage interval. A retained
+legacy conflicting holding still prevents that acquisition; the entire change
+rolls back rather than mutating the Contract before discovering the conflict.
 Completion preflight and locked native capture share the exact actor/generation;
 takeover between them makes both completion routes fail with
 `task_ownership_changed`. A different current owner uses `task_not_owned`;
@@ -277,14 +281,17 @@ language or shell source. An unknown binding remains replayable and never
 blocks the ordinary Task operation. This needs no extra caller command or
 LLM-entered identity. PostToolUse is one possible connection, not a requirement.
 
-An owner's interval begins on entry to `in_progress` and ends on any transition
-out of it. Include both endpoint turns in full, including responses before the
-start operation and after the exit operation within those turns. A same-turn
-start/completion, including an intervening `review_pending`, counts the whole
-turn once. Turns wholly before entry or between closed intervals stay unassigned.
-Completion in a later non-participating turn triggers cumulative registration;
-it does not extend the last interval. For example, active turns 2–4 and 7–9
-followed by completion in turn 12 count 2–4 and 7–9, not turn 12.
+Under schema 26's transition policy one, an owner's interval begins on entry to
+`in_progress` and continues across `review_pending` and repairs until leaving
+both states. Include both endpoint turns in full, including responses before
+start and after exit within those turns. Same-turn transitions count that turn
+once. Waiting adds only actual responses, including unrelated responses in this
+held session; elapsed time alone adds none. Turns wholly before entry or between
+closed intervals remain unassigned. Pause/block/ready/cancel/done close coverage.
+Migration retains all earlier transition rows with policy zero, whose intervals
+end on leaving in-progress. It never fills a closed historical pending gap.
+A new-policy transition may continue an already open old interval; old completion
+in a later non-participating turn remains outside its previously closed interval.
 
 Each exit preserves its subtotal. Resume adds another interval without resetting
 the Task's pre-completion cumulative set, even if ready/cancelled restart changes
@@ -528,7 +535,8 @@ completion, as already required by their live Contracts.
 |---|---|
 | X starts A then B without releasing A | B rejected, no partial registration/ownership/event |
 | X pauses A; Y resumes; delayed X completion | A same execution/new generation; X rejected |
-| X review-pending A while executing B | X may complete A; Y may not; Contract-to-active checks slot |
+| X review-pending A then starts B | B rejected; A retains its execution and continuous interval through review and repair; Y cannot mutate A |
+| Retained legacy pending A and held B | X may complete/release A; Y may not; returning A to in_progress requires B to release first |
 | Initial/batch or ready/blocked/cancelled/paused entry directly to review-pending | reject atomically, whether caller's slot is free or occupied; no fabricated prior owner; start/resume must occur first |
 | Missing ID or several migrated active Tasks | no guessed owner; reads remain safe; explicit pause/resume recovery |
 | Task completion with usage store absent/corrupt/busy | core gates govern completion; usage is pending/unknown |
@@ -536,7 +544,8 @@ completion, as already required by their live Contracts.
 | Child reviewer, independent root, duplicate alias, stale Packet | actual registered identity; one participant/pass; stale refused |
 | Concurrent bound reviewer aliases or usage DB absent/corrupt/busy | core Receipt/session binding is atomic; alias rejected independently of numerical availability; valid registration/completion still works |
 | Pre-start discussion, switch turn and final report | earlier nonparticipating turns unassigned; both endpoint turns whole; sharing explicit; delayed endpoint usage included |
-| Active turns 2–4 and 7–9, done in turn 12; ready/cancelled restart | retain both intervals across ownership execution changes; do not add turn 12 or count one turn twice |
+| Active turns 2–4, explicit release, resume at 7, review-pending at 9, done at 12 under the current policy | include 2–4 and 7–12; preserve the released gap and union duplicate endpoint responses |
+| Historical policy-zero active intervals 2–4 and 7–9, pending until done at 12 | retain the original closed intervals; do not retroactively fill waiting turns or add turn 12 as owner usage |
 | Start and done in one turn, with or without review-pending | count that entire turn once, including later responses; late records produce successor evidence |
 | AB and same B execution+C without duplicate response | one ABC component, union sum; old aggregate not double counted |
 | Same Task reopened or unrelated time overlap | no automatic graph merge |

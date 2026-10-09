@@ -51,7 +51,7 @@ _ATTRIBUTION_DDL = (
 
 def core_transitions(connection, project_id: str) -> tuple[Transition, ...]:
     """Use an already admitted core read transaction, not a numerical writer."""
-    return tuple(Transition(**{name: row[name] for name in Transition.__dataclass_fields__})
+    return tuple(Transition(**{name: row[name] for name in Transition.__dataclass_fields__ if name in row.keys()})
                  for row in connection.execute(
                      "SELECT * FROM task_owner_transitions WHERE project_id=? ORDER BY rowid", (project_id,)))
 

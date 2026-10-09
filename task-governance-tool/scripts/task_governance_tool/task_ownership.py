@@ -174,11 +174,15 @@ def _next_generation(current: OwnershipBasis) -> int:
 
 
 def _free_slot(connection: sqlite3.Connection, *, project_id: str, task_id: str, actor: str) -> None:
+    from task_governance_tool.storage import current_schema_version
+    combined = current_schema_version(connection) >= 26
+    subject = "coalesce(owner_session_id, completion_session_id)" if combined else "owner_session_id"
+    held = "state IN ('owned', 'completion_only')" if combined else "state = 'owned'"
     if connection.execute(
-        "SELECT 1 FROM task_ownership WHERE project_id = ? AND owner_session_id = ? "
-        "AND state = 'owned' AND task_id != ? LIMIT 1", (project_id, actor, task_id),
+        f"SELECT 1 FROM task_ownership WHERE project_id = ? AND {subject} = ? "
+        f"AND {held} AND task_id != ? LIMIT 1", (project_id, actor, task_id),
     ).fetchone() is not None:
-        raise validation_error("session_task_in_progress", "the caller already owns an in-progress task")
+        raise validation_error("session_task_in_progress", "the caller already holds an executing or review-pending task")
 
 
 def _new_execution(connection: sqlite3.Connection, current: OwnershipBasis, now: str) -> str:
@@ -192,6 +196,8 @@ def _new_execution(connection: sqlite3.Connection, current: OwnershipBasis, now:
 
 def _record(connection: sqlite3.Connection, previous: OwnershipBasis, current: OwnershipBasis,
             actor: str, now: str, reason: str = "", *, initial: bool = False) -> None:
+    from task_governance_tool.storage import current_schema_version
+    modern = current_schema_version(connection) >= 26
     validate_basis(current)
     connection.execute(
         "UPDATE task_ownership SET execution_id = ?, generation = ?, state = ?, "
@@ -201,8 +207,9 @@ def _record(connection: sqlite3.Connection, previous: OwnershipBasis, current: O
     )
     connection.execute(
         "INSERT INTO task_owner_transitions(transition_id, project_id, task_id, execution_id, generation, "
-        "previous_status, current_status, state, actor_session_id, recovery_reason, created_at) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "previous_status, current_status, state, actor_session_id, recovery_reason, created_at"
+        + (", policy_version) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)" if modern
+           else ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"),
         (f"tg_owner_transition_{secrets.token_hex(8)}", current.project_id, current.task_id,
          current.execution_id, current.generation, None if initial else previous.status,
          current.status, current.state, actor, reason, now),
@@ -327,7 +334,12 @@ def validate_storage_rows(connection: sqlite3.Connection) -> None:
             validate_utc_timestamp(row["started_at"], field="execution time")
             executions[row["execution_id"]] = (row["project_id"], row["task_id"])
         latest = {}
+        policies = {}
         for row in connection.execute("SELECT * FROM task_owner_transitions ORDER BY rowid"):
+            policy = row["policy_version"] if "policy_version" in row.keys() else 0
+            if type(policy) is not int or policy not in (0, 1) or policy < policies.get(row["task_id"], 0):
+                raise _unreadable()
+            policies[row["task_id"]] = policy
             if (not _identifier(row["transition_id"], "tg_owner_transition_")
                 or row["task_id"] not in current or current[row["task_id"]].project_id != row["project_id"]
                 or not is_session_id(row["actor_session_id"])
@@ -373,7 +385,7 @@ def validate_storage_rows(connection: sqlite3.Connection) -> None:
         if connection.execute(
             "SELECT 1 FROM completion_evidence_bundles AS bundle "
             "LEFT JOIN task_execution_cycles AS link ON link.completion_cycle_id=bundle.completion_cycle_id "
-            "WHERE bundle.source_schema_version IN (24, 25) AND link.completion_cycle_id IS NULL LIMIT 1"
+            "WHERE bundle.source_schema_version IN (24, 25, 26, 27) AND link.completion_cycle_id IS NULL LIMIT 1"
         ).fetchone():
             raise _unreadable()
     except (TaskValidationError, StorageError, UnicodeError, sqlite3.Error) as exc:

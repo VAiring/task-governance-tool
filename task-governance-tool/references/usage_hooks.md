@@ -4,6 +4,14 @@ Read this only to introduce or diagnose automatic numerical collection. It is
 not a normal Task-loop procedure, and usage never changes completion gates.
 Observed shared-work totals are not exclusive Task costs or final billing.
 
+After core schema-26 Setup, the caller's in-progress and review-pending states
+share one held Task and continuous inclusive-turn interval. Actual responses
+while waiting count, even for unrelated discussion in that session; waiting
+time alone invents no usage. Explicit release or completion ends coverage.
+Setup preserves older closed intervals and legacy overlapping holdings. Use
+ordinary authorized state transitions to resolve those holdings, not a manual
+measurement command. Usage unavailability never blocks those transitions.
+
 ## Installation And Trust
 
 Use the existing explicit setup/upgrade procedure. It prepares core state,

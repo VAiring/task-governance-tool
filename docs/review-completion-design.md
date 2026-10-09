@@ -302,6 +302,11 @@ without repairing incomplete input or introducing another Packet contract.
 operation: three fixed sibling CLI invocations, bounded binary response capture,
 exit/envelope and Packet consistency checks, creation of the named unused
 ignored directory chain and complete Packet, and exact save/submit instructions.
+For a ready integrated preparation, the same response construction replaces
+`submit_command` with `finalization` and `finalization_command` only after intent
+creation succeeds. Manual response fields and reviewer requests are unchanged;
+an intent-creation failure still returns no ready handoff. No new argument,
+command, validator, persistence field or finalizer effect is introduced.
 It reuses transport path/read/write checks and the existing structured Receipt
 input decoder; it owns no SQL, authority inference or arbitrary-command runner.
 Source mutation outcome, sanitized warnings, and transport outcome are separate.
@@ -435,6 +440,8 @@ result registration tests retain writer atomicity and concurrent-state checks.
 The [conditional integrated behavior](review-completion-specification.md#integrated-review-finalization)
 is implemented in focused orchestration, operational repository, Git adapter and
 delivery responsibilities. The existing manual helper remains independent.
+The retained `finalize` invocation is both workerless explicit continuation and
+conditional recovery; it is not restricted to failed worker operations.
 Integrated invocation carries the caller's project-authorized intent, not an
 approval boolean. Current typed caller identity and structural generation checks
 remain mandatory; no parent ID is inferred from prose or numerical records.
@@ -639,13 +646,12 @@ file/stdin invocation remains available for retained supervisor contexts.
 Installed guidance replaces create/prepare/start/ACK duties with one normal
 wait call and existing result processing after resumption. Non-review waiting
 and actual parent/reviewer numerical attribution are unaffected.
-For ordinary manual preparation, the catalogue and guides route all-ended
-resumption to retained submission. Integrated preparation instead uses the
-worker's actual report without repeat registration, commit or completion;
-without an integrated worker result, the retained finalization command handles
-the same bound intent. Missing originals produce an incomplete report with
-all-or-nothing registration. Healthy scheduled checks and conditional recovery retain
-their existing wait controls.
+The catalogue describes wait effects/readiness and links to the wait protocol
+and workflow's Continue After Reviews owner. It does not duplicate the result
+processing procedure. That owner branches on the selected preparation route and
+observed stage outcomes; unknown effects remain distinct from stages not run.
+Missing originals produce an incomplete report with all-or-nothing registration.
+Healthy scheduled checks and conditional recovery retain their existing controls.
 
 Focused tests cover the single call, fixed destination, failures and unknowns at
 effect boundaries, duplicates, restart/OFF/cancel, healthy scheduled rewait,

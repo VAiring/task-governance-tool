@@ -920,6 +920,18 @@ the shared Tier, current-generation, Finding and independence rules. The Skill
 entry and review ancestor introduction retain concise routing to that existing
 loop, preserving conditions without another mandatory read or call.
 
+Before target or Receipt preparation, that loop chooses integrated completion
+for authorized supported `git_snapshot` work. Explicit manual selection,
+unsupported material/environment and required Git hooks/signing retain the
+parent-managed path. The choice adds no approval argument or repeat question.
+The workflow's Continue After Reviews section owns caller result processing;
+waiting and other entries link to it. It uses actual stages and all results,
+does not repeat successful work or require routine retrieval, and keeps unknown
+outcomes distinct from not-started stages. Workerless `finalize` remains ordinary
+explicit continuation as well as recovery. Long manual completion examples and
+recovery detail are conditional siblings. Task completion still requires the
+existing evidence gates; review end, PASS and message acceptance are not done.
+
 Package explanation retrieval may replace whole-reference reads or line-range
 searches with `scripts/read_reference.py "references/<file>.md#<section>"`.
 The supported files are the shipped workflow, CLI contracts, conditional

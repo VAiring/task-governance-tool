@@ -1,6 +1,8 @@
 """Installed helper through real originals, existing gates, Git and Task done."""
 
 import json
+import shlex
+import subprocess
 import time
 from dataclasses import replace
 from unittest import mock
@@ -20,13 +22,20 @@ class InstalledFinalizationTests(fixtures.PreparationFixture):
         task = self.task("Focused isolated verification")
         (self.root / "source.py").write_text("value = 2\n", encoding="utf-8")
         self.git("add", "source.py")
-        target = self.cli("review", "target", "set", task, "--kind", "git_snapshot")
+        target_call = self.invoke("prepare-finalization", "--repo", str(self.root), "--directory=reviews/g1",
+                                 "target", task, "--kind=git_snapshot")
+        self.assertEqual(target_call.returncode, 0, target_call.stdout or target_call.stderr)
+        target = json.loads(target_call.stdout)
+        self.assertEqual(target["handoff"], {"status": "not_applicable"})
+        self.assertEqual(target["source"]["verification_route"], "receipt_required")
         completed = self.invoke("prepare-finalization", "--repo", str(self.root), "--directory=reviews/g1",
             "receipt", task, "--result=pass", "--duration-ms=1", "--scope-coverage=full",
-            "--expected-target-generation=" + str(target["task"]["review_target_generation"]))
+            "--expected-target-generation=" + str(target["source"]["review_target"]["generation"]))
         self.assertEqual(completed.returncode, 0, completed.stdout or completed.stderr)
         context = json.loads(completed.stdout)["handoff"]
         self.assertEqual(context["finalization"]["status"], "prepared")
+        self.assertEqual(set(context), {"status", "packet_path", "review_requests", "review_wait",
+                                       "finalization", "finalization_command"})
         self.assertNotIn("--commit-approved", context["finalization_command"])
         return task, context
 
@@ -60,7 +69,11 @@ class InstalledFinalizationTests(fixtures.PreparationFixture):
         for index in range(2):
             self.save(context, index)
         (self.root / "source.py").write_text("value = 99  # unstaged\n")
-        result, report = self.finalize(task)
+        # Exercise the exact returned workerless continuation, including its
+        # retained generation, rather than reconstructing a command from prose.
+        result = subprocess.run(shlex.split(context["finalization_command"].removeprefix("& ")),
+                                cwd=self.root, capture_output=True, check=False)
+        report = json.loads(result.stdout)
         self.assertEqual(result.returncode, 0, report)
         self.assertEqual(report["status"], "completed", report)
         self.assertEqual(report["stages"], dict(registration="succeeded", commit="succeeded", completion="succeeded"))

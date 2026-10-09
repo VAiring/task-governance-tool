@@ -1909,9 +1909,11 @@ print(json.dumps(results, ensure_ascii=False))
             self.assertIn("## Review Handoff Recovery", recovery)
         self.assertNotIn("### Direct Review Transport", shared)
         self.assertNotIn("### Prepare And Record Reviews", direct)
-        for field in ("handoff.status=ready", "review_requests[].request", "submit_command",
-                      "ok=true,status=saved", "data.receipts[].findings", "data.review_gate"):
+        for field in ("handoff.status=ready", "review_requests[].request", "ok=true,status=saved"):
             self.assertIn(field, shared)
+        _, continuation = self.linked_output(source, shared, "continue-after-reviews")
+        for field in ("submit_command", "data.receipts[].findings", "data.review_gate"):
+            self.assertIn(field, continuation)
         for field in ("data.review_preparation.packet", "result_template", "result_instructions",
                       "review_target", "contract.revision", "task.task_id"):
             self.assertIn(field, direct)
@@ -1920,26 +1922,49 @@ print(json.dumps(results, ensure_ascii=False))
         self.linked_output(source, recovery, "review-provenance")
         self.linked_output(source, recovery, "recover-review-handoff")
 
-    def test_review_resumption_routes_confirmation_to_submission_and_keeps_conditional_recovery(self):
+    def test_review_resumption_has_one_retrievable_owner_and_conditional_details(self):
         from task_governance_tool.review_wait_runtime.project_server import ProjectReviewWaitSession
-        shared = self.reader().read_reference('references/task_workflow.md#prepare-and-record-reviews', SKILL_ROOT)
-        waiting = self.reader().read_reference('references/review_wait.md#normal-wait', SKILL_ROOT)
-        recovery = self.reader().read_reference('references/task_workflow.md#review-handoff-recovery', SKILL_ROOT)
-        for text in (shared, waiting):
-            self.assertIn('submit_command', text)
-            self.assertIn('list_agents', text)
-            self.assertIn('read_thread', text)
-            self.assertIn('before registration', text)
-            self.assertNotIn('after all saved acknowledgements', text)
-            self.assertNotIn('After all confirmed handoffs', text)
-        self.linked_output('references/review_wait.md', waiting, 'direct-review-transport')
-        for condition in ('registration_status=not_started', 'registration_status=unknown',
-                          'lost save acknowledgement', 'public recorded evidence', 'valid subset'):
-            self.assertIn(condition, recovery)
+        owner = self.reader().read_reference('references/task_workflow.md#continue-after-reviews', SKILL_ROOT)
+        for source, section in (
+            ('references/task_workflow.md', 'prepare-and-record-reviews'),
+            ('references/task_workflow.md', 'complete-work'),
+            ('references/review_wait.md', 'normal-wait'),
+            ('references/cli_contracts.md', 'integrated-review-finalization'),
+        ):
+            entry = self.reader().read_reference(source + '#' + section, SKILL_ROOT)
+            _, linked = self.linked_output(source, entry, 'continue-after-reviews')
+            self.assertEqual(linked, owner)
+            self.assertNotIn('### Continue After Reviews', entry)
+        for fragment, title in (
+            ('manual-completion', '## Manual Completion'),
+            ('review-handoff-recovery', '## Review Handoff Recovery'),
+            ('recover-integrated-finalization', '#### Recover Integrated Finalization'),
+        ):
+            _, detail = self.linked_output('references/task_workflow.md', owner, fragment)
+            self.assertIn(title, detail)
+            self.assertNotIn(title, owner)
         description = next(row['description'] for row in ProjectReviewWaitSession.catalogue()
                            if row['name'] == 'review_wait_wait')
-        for field in ('submit_command', 'all Findings', 'gate', 'Direct transport'):
-            self.assertIn(field, description)
+        # Tool descriptions must lead to real shipped responsibilities; test
+        # retrieval, not copies of natural-language procedure in each surface.
+        targets = re.findall(r'references/[a-z_]+\.md#[a-z-]+', description)
+        self.assertEqual(set(targets), {'references/review_wait.md#normal-wait',
+                                       'references/task_workflow.md#continue-after-reviews'})
+        for target in targets:
+            self.assertTrue(self.reader().read_reference(target, SKILL_ROOT))
+
+    def test_preparation_entries_route_to_choice_before_examples(self):
+        source = 'references/task_workflow.md'
+        choice = self.reader().read_reference(source + '#choose-the-completion-route', SKILL_ROOT)
+        for file, fragment in ((source, 'bounded-operating-loop'), (source, 'set-the-review-target'),
+                               ('references/cli_contracts.md', 'prepare-review-handoff')):
+            entry = self.reader().read_reference(file + '#' + fragment, SKILL_ROOT)
+            _, linked = self.linked_output(file, entry, 'choose-the-completion-route')
+            self.assertEqual(linked, choice)
+        _, manual = self.linked_output(source, choice, 'manual-completion')
+        normal = self.reader().read_reference(source + '#review-and-completion', SKILL_ROOT)
+        self.assertNotIn('## Manual Completion', normal)
+        self.assertIn('--completion-revision', manual)
 
     def test_both_parent_transports_route_to_complete_wait_protocol(self):
         source = "references/task_workflow.md"

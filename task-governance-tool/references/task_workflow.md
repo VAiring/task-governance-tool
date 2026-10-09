@@ -20,7 +20,10 @@ with `python3`. `<task-id>` comes from `task context` at
 - [Pause, Resume, And Block](#pause-resume-and-block)
 - [Scope Control And Local Handoff](#scope-control-and-local-handoff)
 - [Review And Completion](#review-and-completion)
+- [Choose The Completion Route](#choose-the-completion-route)
+- [Continue After Reviews](#continue-after-reviews)
 - [Direct Review Transport](#direct-review-transport)
+- [Manual Completion](#manual-completion)
 - [Review Handoff Recovery](#review-handoff-recovery)
 - [Independent Reviewer](#independent-reviewer)
 - [Repair Findings](#repair-findings)
@@ -157,8 +160,11 @@ Caller declarations do not prove actual model/Skill use or review truth.
    only at a useful continuation boundary.
 4. Only when `data.selected.effort_advisory_enabled=true`, make one
    [Effort observation](#optional-effort-advisory) at the verification/review boundary.
-5. [Set the exact review target](#set-the-review-target).
-   For shared-file review use the fixed helper below from before target setting.
+5. [Choose the completion route](#choose-the-completion-route) **before the first
+   preparation**, then [set the exact review target](#set-the-review-target).
+   The shared-file examples use `prepare-finalization` for authorized supported
+   `git_snapshot` completion. For the conditional parent-managed route, substitute
+   `prepare` in both target and Receipt calls; do not run both preparations.
    Keep its `source.review_target.generation`, `source.verification_route` and
    `source.blocking_code`; no post-target show or inferred route is needed.
    Direct-CLI transport instead uses `data.task.review_target_generation`,
@@ -178,7 +184,7 @@ Caller declarations do not prove actual model/Skill use or review truth.
    duration, coverage, and the returned generation:
 
    ```powershell
-   python .agents/skills/task-governance-tool/scripts/review_handoff.py prepare --repo . --directory reviews/g1 receipt <task-id> --result <pass|fail|timeout> --duration-ms <milliseconds> --scope-coverage <full|partial> --expected-target-generation <generation>
+   python .agents/skills/task-governance-tool/scripts/review_handoff.py prepare-finalization --repo . --directory reviews/g1 receipt <task-id> --result <pass|fail|timeout> --duration-ms <milliseconds> --scope-coverage <full|partial> --expected-target-generation <generation>
    ```
 
    `full` describes the whole Task verification expectation, not merely success.
@@ -201,7 +207,9 @@ Caller declarations do not prove actual model/Skill use or review truth.
    blindly register the result again.
 7. [Record the actual reviews](#prepare-and-record-reviews) using the returned
    Packet; neither successful route needs standalone Packet preparation.
-8. After the current gates pass, [complete with the appropriate evidence](#complete-work).
+8. [Continue after reviews](#continue-after-reviews) using the selected route's
+   actual results. An integrated completed report already includes Task completion;
+   use [explicit manual completion](#manual-completion) only when applicable.
 
 `doctor`, completion `--check`, and `task checkpoint` are optional and absent
 from the default success path. No mandatory question, additional confirmation,
@@ -489,13 +497,35 @@ a done Task use the [isolated reopen procedure](#reopen).
 For authorized reviews that may outlive this parent turn, use the optional
 [normal waiting procedure](review_wait.md#normal-wait). That section owns the
 prerequisites, direct reviewer dispatch, wait/end/resume steps and conditional
-recovery routes for both review transports. The parent retains review judgment,
-originals and registration; waiting does not change review or completion gates.
+recovery routes for both review transports. The parent retains review judgment
+and originals; the selected completion route owns registration. Waiting does not
+change review or completion gates.
 It adds no Setup or approval step to ordinary work and does not apply to
 non-review waiting.
 
+### Choose The Completion Route
+
+Choose once before target/Receipt preparation, using the project's rules and
+existing user intent. This is an instruction decision, not another command,
+approval flag, material list or repeat permission question.
+
+| Applicable case | Preparation and continuation |
+|---|---|
+| Authorized local `git_snapshot` completion at the Git root on an existing attached branch, without required commit hooks/signing | Use `prepare-finalization` for target and, if required, Receipt preparation. Retain `finalization_command`. A matching wait worker may finish the fixed stages; without that worker, `finalize` is the ordinary explicit continuation. |
+| Unsupported target/environment, project-required hooks/signing, missing commit authority, or explicit user choice of manual completion | Use `prepare`, retain `submit_command`, then follow [manual completion](#manual-completion) when its gates and authority permit. Detached HEAD and nested project snapshots use this route. |
+| Complete Packet/result bytes instead of shared ignored files | Use [direct transport](#direct-review-transport) and its existing explicit completion path. |
+
+Review PASS, enabled waiting and commit-required metadata do not grant Git
+authority. The [integrated contract](cli_contracts.md#integrated-review-finalization)
+defines supported material and effects. Preparation never starts a reviewer or
+wait worker. A preparation failure uses [bound recovery](cli_contracts.md#recover-review-handoff),
+not a second target/Receipt write or silent route switch.
+
 ### Set The Review Target
 
+Use the [route already chosen](#choose-the-completion-route); these examples
+use `prepare-finalization`. For parent-managed registration/manual completion,
+replace that operation with `prepare` before running either example.
 Only after the exact material is ready, stage precisely the intended Git files
 through the project's approved Git workflow. Confirm that staging itself
 succeeded before capturing the staged candidate. When the specific files and
@@ -506,7 +536,7 @@ run these in one caller tool invocation (a disposable PowerShell process):
 $ErrorActionPreference = 'Stop'
 git add -- <intended-project-paths>
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-python .agents/skills/task-governance-tool/scripts/review_handoff.py prepare --repo . --directory reviews/g1 target <task-id> --kind git_snapshot
+python .agents/skills/task-governance-tool/scripts/review_handoff.py prepare-finalization --repo . --directory reviews/g1 target <task-id> --kind git_snapshot
 exit $LASTEXITCODE
 ```
 
@@ -514,7 +544,7 @@ On a POSIX shell, use the same ordering with success-only chaining:
 
 ```sh
 git add -- <intended-project-paths> &&
-python3 .agents/skills/task-governance-tool/scripts/review_handoff.py prepare --repo . --directory reviews/g1 target <task-id> --kind git_snapshot
+python3 .agents/skills/task-governance-tool/scripts/review_handoff.py prepare-finalization --repo . --directory reviews/g1 target <task-id> --kind git_snapshot
 ```
 
 This is caller composition, not a taskgov Git operation or permission grant.
@@ -561,20 +591,11 @@ classify them from a Task tier or allocated reviewer count.
 Before dispatching authorized reviews that may outlive this parent turn, use
 the [normal waiting procedure](review_wait.md#normal-wait) directly.
 
-For authorized local `git_snapshot` completion, use `review_handoff.py
-prepare-finalization` with the same arguments as `prepare`, replacing that
-preparation call. Commit authority follows project rules and existing user
-intent; do not add an approval flag, second material list or repeat question.
-Use the [integrated contract](cli_contracts.md#integrated-review-finalization)
-for eligibility and recovery. Projects requiring commit hooks/signing, detached
-HEAD or nested project snapshots retain the manual Git workflow.
-
-For manual shared-file transport, start with `review_handoff.py prepare` at the
-[target step](#set-the-review-target), following the normal loop.
+Both shared-file routes were selected before the [target step](#set-the-review-target).
 Use only its `handoff.status=ready` output. It has already saved and confirmed
 the complete Packet and unused result paths; give each reviewer its returned
 `review_requests[].request` unchanged together with the project's review scope
-and authority. Keep `submit_command` for after all dispatched reviewers end.
+and authority. Retain the selected route's generated continuation command.
 Do not extract/serialize a displayed Packet, write preparation/save/validation
 code, issue a routine path check, or re-query the Packet. The full Packet and
 exact read/save instructions arrive in the same request. The read replaces the
@@ -590,114 +611,65 @@ Each reviewer supplies its actual judgment, provenance and every Finding in
 the returned template, never inferred PASS or filled-in missing declarations.
 Preserve complete originals until registration is known; do not regenerate them
 from summaries. A reviewer's `ok=true,status=saved` acknowledges its save; the
-parent's submit operation independently confirms complete saved originals before
+selected continuation independently confirms complete saved originals before
 registration. Neither confirms review truth, independence or completion. The fixed
 [save operation](cli_contracts.md#save-review-original) documents UTF-8 input
 when needed; its command is already in each generated request.
 
-After integrated worker resumption, use its actual results for reporting or
-necessary repairs. Do not repeat successful registration, commit or completion,
-or routinely retrieve results again. History truncation does not remove required
-notification fields. Only a demonstrated delivery constraint produces an
-explicitly incomplete notice naming the constraint and missing fields and
-directing read-only recovery. Notification correlation is not proof of unseen
-body content. Without a worker result (including
-scheduled `reviews_ended`), run the retained `finalization_command` once after
-all reviewers end; it uses the original target and preserved stages.
+After all dispatched reviewers end, use [Continue after reviews](#continue-after-reviews).
+Missing, failed or uncertain handoff/registration uses [handoff recovery](#review-handoff-recovery).
+If shared ignored files are unavailable, use the [direct route](#direct-review-transport).
 
-For manual preparation, after all reviewers end, run the retained
-`submit_command` once. It confirms the Packet, originals, applicable session
-bindings and exact bytes before registration; do not first obtain save reports
-with `list_agents`/`read_thread`, display original JSON, or add routine show/check
-calls. An ended child may have failed: submission reports missing/invalid files
-without registering a partial batch. Previously reported material or judgment
-questions still need resolution. The command has the following shape:
+### Continue After Reviews
 
-```powershell
-python .agents/skills/task-governance-tool/scripts/review_handoff.py submit --repo . --packet reviews/packet.json reviews/review-a.json reviews/review-b.json
-```
+This section owns result processing for both same-turn completion and resumption.
+Keep the original Task/Packet, originals and selected route's continuation command.
+An ended reviewer, a save acknowledgement or an accepted notification is not
+PASS, registration success or Task completion. Resolve previously reported
+material or judgment questions; do not infer unseen results from a short message.
 
-This confirms and sends unchanged originals through the existing atomic stdin registration
-once, without model-generated framing code or another normal check/show.
-Use all returned `data.receipts[].findings`, including low severity, for repair
-decisions. `data.review_gate` observes the existing gate on the saved basis,
-including older blockers; it does not assert verification PASS or authorize
-Task completion. Do not add a routine show/check to confirm it. Repeated
-provenance/events are explicitly omitted from this response, not from storage.
-A `changes_requested` verdict follows the same successful registration path:
-use its summary, all Findings and IDs, and blocking gate for repair. It is not
-a transport error. A short acknowledgement never replaces Findings. Recover an
-incomplete registration response before deciding what to repair; the helper
-does not weaken current-state revalidation or authorize retries. Missing, failed or
-uncertain handoff/registration stops continuation: retain originals/residue,
-never overwrite or blindly resend, and use [handoff recovery](#review-handoff-recovery).
-If shared ignored files are unavailable, use the [direct route](#direct-review-transport);
-do not infer file permissions. This is an alternative, not another normal read.
+- **Integrated report available:** use its actual Task/target, work coverage,
+  verification, original and registered reviews, every Finding/ID (including low
+  and resolved Findings), gates, stage outcomes, confirmed commit, limitations,
+  warnings and next action. Report confirmed completion or handle the named
+  blocker. Do not repeat successful registration, commit or completion, or add a
+  routine retrieval/check. An `ok` result alone is not done; `status=completed`
+  confirms the integrated stages.
+- **Integrated explicit continuation:** when no worker was used, or a scheduled
+  wait returned `reviews_ended` without a finalization report, run the retained
+  `finalization_command` once. This is an ordinary supported continuation;
+  `finalize` observes the original intent and preserved stages before acting.
+  Missing notification alone does not prove stages were never run. A lost or
+  unknown operation result uses the conditional recovery below, not blind replay.
+- **Parent-managed shared-file registration:** only for the `prepare` route,
+  run the retained `submit_command` once. It confirms the Packet, complete
+  originals, bindings and bytes before registration. Do not first obtain save
+  reports with `list_agents`/`read_thread`, display original JSON or add a
+  routine show/check. Missing/invalid files stop the whole batch. Use the
+  returned `data.receipts[].findings`, summaries, IDs and `data.review_gate`,
+  including every low Finding and older blocker. Registration with
+  `changes_requested` is a result to judge, not a transport failure; a short
+  acknowledgement cannot replace Findings. The observed review gate neither
+  asserts verification PASS nor completes the Task. If eligible, proceed to
+  [manual completion](#manual-completion).
+- **Direct complete-byte transport:** use its retained originals and
+  [registration procedure](#direct-review-transport).
+
+When Findings require judgment, use [Repair Findings](#repair-findings).
+A partial success preserves every successful stage; resolve the reported blocker
+and continue only the remaining tail. An incomplete, lost or uncertain report
+uses [finalization recovery](cli_contracts.md#recover-integrated-finalization)
+for an integrated intent, or [handoff recovery](#review-handoff-recovery) for
+parent registration. Recovery alone is not a reason for a new target or review;
+changed material/basis or failed reviewer observations retain their existing gates.
+No individual ACK, result re-query or routine status call is added.
 
 ### Complete Work
 
-An integrated `status=completed` report already records the confirmed commit and
-native Task completion. Report those results; do not run the manual tail below.
-Partial success uses the retained finalization command only after resolving its
-reported blocker; never create another commit to recover completion.
-
-For manual completion of a reviewed `git_snapshot`, create the completion commit through the
-project's approved Git workflow without changing the reviewed staged tree.
-Only after confirming that commit itself succeeded, use its full commit ID
-for completion. Once the specific commit is authorized and all required
-verification/review judgments are settled, the caller may do this in one
-disposable PowerShell tool invocation:
-
-```powershell
-$ErrorActionPreference = 'Stop'
-git commit -m "<project-approved message>"
-if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-$taskgovCommit = git rev-parse --verify 'HEAD^{commit}'
-if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-Write-Output $taskgovCommit
-python .agents/skills/task-governance-tool/scripts/taskgov.py task complete <task-id> --verification-complete --review-complete --completion-evidence-kind git_commit --completion-revision $taskgovCommit --json
-exit $LASTEXITCODE
-```
-
-POSIX equivalent:
-
-```sh
-git commit -m "<project-approved message>" &&
-taskgov_commit=$(git rev-parse --verify 'HEAD^{commit}') &&
-printf '%s\n' "$taskgov_commit" &&
-python3 .agents/skills/task-governance-tool/scripts/taskgov.py task complete <task-id> --verification-complete --review-complete --completion-evidence-kind git_commit --completion-revision "$taskgov_commit" --json
-```
-
-Keep the full commit ID and complete CLI response. A successful commit followed
-by failed completion leaves a real commit, not an entirely failed operation.
-Resolve the returned gate failure and retry only the necessary completion tail;
-never recommit merely to recover registration. After a lost response, inspect
-Git and public Task state first, preserving any successful completion. New
-approval or unresolved judgment ends the combined call.
-
-The commit must have exactly one parent equal to the captured base and the same
-tree; root and merge commits do not satisfy a snapshot target. Taskgov does not
-stage, create branches, push, open PRs, or write Issue comments. Only the
-explicit integrated helper creates the fixed-target local commit.
-Completion revalidates current verification/review gates, unresolved Findings,
-sequential predecessors, and the evidence binding.
-
-Only when applicable, use one of the other evidence forms instead:
-
-```powershell
-python .agents/skills/task-governance-tool/scripts/taskgov.py task complete <task-id> --verification-complete --review-complete --completion-evidence-kind external_revision --completion-revision <revision> --completion-evidence-reason "Approved external release" --external-revision-approved --json
-python .agents/skills/task-governance-tool/scripts/taskgov.py task complete <task-id> --verification-complete --review-complete --commit-not-required --json
-```
-
-External revision requires an actual approved durable revision and reason.
-`commit_not_required` is for no managed material change and requires a matching
-`diff_fingerprint` target. These forms are mutually exclusive.
-
-Optional inspection only: add `--check --read-only` to the intended complete
-command. This is absent from normal success, records no authorization token,
-and never replaces the write's fresh revalidation.
-Maintenance warnings preserve the successful business result; follow
-[continuity warnings](cli_contracts.md#internal-continuity-boundary), not a new retry loop.
+Use [Continue after reviews](#continue-after-reviews) to interpret actual outcomes.
+Integrated completion already includes the confirmed commit and native Task
+completion. Only the parent-managed route or an applicable explicit alternative
+uses [manual completion](#manual-completion); review PASS alone is not Task done.
 
 ### Direct Review Transport
 
@@ -760,6 +732,71 @@ Findings and `review_gate`, not a routine confirmation read. If the source
 instead supplies actual single-Receipt declarations or requires correction,
 use [handoff recovery and alternative results](#review-handoff-recovery);
 never invent missing claims or use single calls to bypass a rejected batch.
+
+## Manual Completion
+
+Use only for the parent-managed route, explicit user choice, or an unsupported
+integrated target/environment. Existing authorization and current verification,
+review and evidence gates still apply. A completed integrated report needs no
+manual tail; use [Continue after reviews](#continue-after-reviews).
+
+For manual completion of a reviewed `git_snapshot`, create the completion commit through the
+project's approved Git workflow without changing the reviewed staged tree.
+Only after confirming that commit itself succeeded, use its full commit ID
+for completion. Once the specific commit is authorized and all required
+verification/review judgments are settled, the caller may do this in one
+disposable PowerShell tool invocation:
+
+```powershell
+$ErrorActionPreference = 'Stop'
+git commit -m "<project-approved message>"
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+$taskgovCommit = git rev-parse --verify 'HEAD^{commit}'
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+Write-Output $taskgovCommit
+python .agents/skills/task-governance-tool/scripts/taskgov.py task complete <task-id> --verification-complete --review-complete --completion-evidence-kind git_commit --completion-revision $taskgovCommit --json
+exit $LASTEXITCODE
+```
+
+POSIX equivalent:
+
+```sh
+git commit -m "<project-approved message>" &&
+taskgov_commit=$(git rev-parse --verify 'HEAD^{commit}') &&
+printf '%s\n' "$taskgov_commit" &&
+python3 .agents/skills/task-governance-tool/scripts/taskgov.py task complete <task-id> --verification-complete --review-complete --completion-evidence-kind git_commit --completion-revision "$taskgov_commit" --json
+```
+
+Keep the full commit ID and complete CLI response. A successful commit followed
+by failed completion leaves a real commit, not an entirely failed operation.
+Resolve the returned gate failure and retry only the necessary completion tail;
+never recommit merely to recover registration. After a lost response, inspect
+Git and public Task state first, preserving any successful completion. New
+approval or unresolved judgment ends the combined call.
+
+The commit must have exactly one parent equal to the captured base and the same
+tree; root and merge commits do not satisfy a snapshot target. Taskgov does not
+stage, create branches, push, open PRs, or write Issue comments. Only the
+explicit integrated helper creates the fixed-target local commit.
+Completion revalidates current verification/review gates, unresolved Findings,
+sequential predecessors, and the evidence binding.
+
+Only when applicable, use one of the other evidence forms instead:
+
+```powershell
+python .agents/skills/task-governance-tool/scripts/taskgov.py task complete <task-id> --verification-complete --review-complete --completion-evidence-kind external_revision --completion-revision <revision> --completion-evidence-reason "Approved external release" --external-revision-approved --json
+python .agents/skills/task-governance-tool/scripts/taskgov.py task complete <task-id> --verification-complete --review-complete --commit-not-required --json
+```
+
+External revision requires an actual approved durable revision and reason.
+`commit_not_required` is for no managed material change and requires a matching
+`diff_fingerprint` target. These forms are mutually exclusive.
+
+Optional inspection only: add `--check --read-only` to the intended complete
+command. This is absent from normal success, records no authorization token,
+and never replaces the write's fresh revalidation.
+Maintenance warnings preserve the successful business result; follow
+[continuity warnings](cli_contracts.md#internal-continuity-boundary), not a new retry loop.
 
 ## Review Handoff Recovery
 

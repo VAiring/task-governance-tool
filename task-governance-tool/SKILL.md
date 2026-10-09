@@ -66,10 +66,11 @@ Edit, completion, and target-set acknowledgements omit unchanged description,
 verification, kind/lane/order, priority, tags and creation time. Retain them from
 this context; all changed values are returned and no extra read is needed.
 
-Use the [review workflow](references/task_workflow.md#prepare-and-record-reviews)
-for ordinary shared-file handoff; use [direct transport](references/task_workflow.md#direct-review-transport)
-only when passing complete Packet/result bytes instead. Assigned independent
-reviewers use the separate entry above.
+Before review preparation, [choose the completion route](references/task_workflow.md#choose-the-completion-route):
+authorized supported snapshots use `prepare-finalization`; conditional manual
+and direct transports remain available. Use the [review workflow](references/task_workflow.md#prepare-and-record-reviews)
+for dispatch and [continue after reviews](references/task_workflow.md#continue-after-reviews)
+for returned results or resumption. Assigned independent reviewers use the separate entry above.
 
 Read only the linked responsibility needed for the operation or returned
 condition, including its applicable exceptions and input rules. References

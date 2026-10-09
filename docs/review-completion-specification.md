@@ -332,8 +332,9 @@ unchanged; this is not an exception for new caller input or other fields.
 Only ready success creates the explicitly
 named missing physical directory chain and its exclusive `packet.json`, then
 confirms the complete saved bytes and distinct unused `review-N.json` paths.
-It returns the Packet path, exact per-reviewer read/save instructions and the parent
-submit command. There is no LLM extraction/serialization, save-path check call,
+It returns the Packet path, exact per-reviewer read/save instructions and the
+selected continuation: parent submit for `prepare`, or the integrated command
+defined below for `prepare-finalization`. There is no LLM extraction/serialization, save-path check call,
 second normal Packet query, new prerequisite or response-count limit. Only the
 complete Packet and later reviewer originals are transport files.
 
@@ -344,7 +345,8 @@ ID/result/coverage/Contract/target. Existing sanitized warnings remain visible.
 The helper's target uses Packet spelling: an absent non-snapshot base is `""`,
 corresponding to the Receipt projection's `null`; no identity or target is rebound.
 `handoff.status=ready` supplies `packet_path`, `review_requests` and
-`submit_command`; `not_applicable` is successful without files or requests
+`submit_command` for ordinary `prepare`. Integrated preparation replaces that
+command with its finalization fields below; `not_applicable` is successful without files or requests
 (for example, a target requiring a manual Receipt). `blocked`, `failed` and
 `unavailable` supply no reviewer requests. `ok`/exit 0 means ready or
 not-applicable, not review PASS. A committed operation followed by preparation
@@ -671,6 +673,15 @@ metadata nor enabled review waiting creates permission. Ordinary `prepare`,
 unauthorized integrated operation is not invoked; the caller uses the manual
 route and reports the outstanding permission boundary.
 
+Consumer guidance chooses this route before the first target/Receipt preparation.
+Authorized supported snapshot work uses `prepare-finalization` for both source
+actions. Explicit manual selection, unsupported targets/environments and required
+hooks/signing retain `prepare` and manual completion. The ready integrated
+handoff includes `finalization={status:prepared,task_id,target_generation}` and
+`finalization_command`, and omits `submit_command`; ordinary `prepare` retains
+its submit field and behavior. The finalizer owns registration for its intent,
+so separate parent submission is not a competing ordinary next action.
+
 Integrated preparation requires a current owned `git_snapshot`, an exact
 Packet and one set of named original paths. It binds the actual parent,
 execution/ownership generation, project/binding, Contract/target generation,
@@ -731,6 +742,9 @@ therefore cannot bypass an already observed failure through retained `finalize`.
 
 The retained `finalization_command` invokes `finalize --repo <project>
 --task-id <task> --target-generation <generation>` without selecting new material.
+After all reviewers end, it is the ordinary explicit continuation when no worker
+was used or a scheduled wait returned review end without a finalization report,
+as well as the recovery entry. Missing notification is not evidence of no effect.
 `--check` returns the complete bound report without registration, Git or completion
 writes. Explicit recovery first observes immutable receipt bindings, the saved
 candidate and actual Task completion. A still-unpublished candidate may be
@@ -914,12 +928,21 @@ single-call/end/delete/send/observed-receipt path requires actual host validatio
 Fixture success and accepted sending alone are insufficient.
 
 Ready handoff responses retain the original Packet, reviewer read/save requests,
-submit command and `review_wait={status,task_id,wait_tool,guide}`. Its fixed guide
+the selected preparation route's continuation command and
+`review_wait={status,task_id,wait_tool,guide}`. Its fixed guide
 is `references/review_wait.md#normal-wait`, including the applicable permission
 prerequisites and conditional recovery links. They do not emit the legacy
 `wait_ended_command`; the separately documented legacy helper remains available
 only for its retained supervisor context. No mode selection, extra lookup call
 or configuration is added to the normal request.
+
+The MCP description identifies effects, readiness and the existing guide links;
+the Skill owns caller sequencing. The workflow's Continue After Reviews section
+is the single consumer procedure for result handling, linked from waiting,
+dispatch, completion and CLI detail. It preserves all required report fields and
+successful stages, routes parent submission only from manual preparation, and
+keeps incomplete/unknown recovery conditional. Recovery alone does not require
+new review; changed basis and observed reviewer failures retain their gates.
 
 <a id="development-review-wait-relay"></a>
 

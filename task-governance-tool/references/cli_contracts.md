@@ -1938,15 +1938,16 @@ JSON nor a saved file transfers approval. Independent reviews do not use it.
 
 #### Prepare Review Handoff
 
-Start before the Packet-producing call with
-`prepare --directory <unused-ignored-directory>`; paths use project-relative
-`/` spelling. Use the Task ID selected by `task context`.
-The ordinary source operations are:
+Before the first Packet-producing call, [choose the completion route](task_workflow.md#choose-the-completion-route).
+Authorized supported snapshot completion uses `prepare-finalization`; the
+parent-managed route uses `prepare` in place of that operation in both examples.
+Use `--directory <unused-ignored-directory>` with project-relative `/` spelling
+and the Task ID selected by `task context`:
 
 ```powershell
-python .agents/skills/task-governance-tool/scripts/review_handoff.py prepare --repo . --directory reviews/g1 target <task-id> --kind git_snapshot
+python .agents/skills/task-governance-tool/scripts/review_handoff.py prepare-finalization --repo . --directory reviews/g1 target <task-id> --kind git_snapshot
 # Only after required verification, using the generation from the prior result:
-python .agents/skills/task-governance-tool/scripts/review_handoff.py prepare --repo . --directory reviews/g1 receipt <task-id> --result pass --duration-ms <milliseconds> --scope-coverage full --expected-target-generation <generation>
+python .agents/skills/task-governance-tool/scripts/review_handoff.py prepare-finalization --repo . --directory reviews/g1 receipt <task-id> --result pass --duration-ms <milliseconds> --scope-coverage full --expected-target-generation <generation>
 ```
 
 Target accepts the existing kind/revision options; Receipt also accepts the
@@ -1964,8 +1965,10 @@ not-applicable, not PASS.
 
 Only `handoff.status=ready` supplies a saved complete `packet_path`, per-reviewer
 `review_requests` (each containing only `result_path` and a self-contained
-`request` with the exact read/save commands embedded), and
-`submit_command`.
+`request` with the exact read/save commands embedded). Manual `prepare` supplies
+`submit_command`; integrated preparation instead supplies the
+[finalization fields and command](#integrated-review-finalization), without
+`submit_command`. Retain the returned route's command.
 It also supplies `review_wait={status,task_id,wait_tool,guide}`. Status is
 `enabled|disabled|unavailable` from local policy only; fixed tool/guide values
 are `review_wait_wait` and `references/review_wait.md#normal-wait`. It does not
@@ -1988,14 +1991,17 @@ used as a Packet. Packet/result files alone are persisted.
 
 #### Integrated Review Finalization
 
-When project rules and existing user instructions permit the fixed local commit,
-replace `prepare` with `prepare-finalization` using the same source and arguments.
+For authorized supported completion, use `prepare-finalization` from the first
+target call and for any required Receipt call, with the same source arguments
+as `prepare`. Choose the route [before preparation](task_workflow.md#choose-the-completion-route).
 There is no approval flag, second material list or extra normal preparation call.
 Manual `prepare` retains its existing behavior where this operation is not
-authorized or applicable. Review PASS never supplies Git permission.
+authorized or applicable, or the user explicitly chooses manual completion.
+Review PASS never supplies Git permission.
 
-The ready response additionally includes `finalization={status:prepared,task_id,
-target_generation}` and a fully quoted `finalization_command`. It binds the
+The ready response includes `finalization={status:prepared,task_id,
+target_generation}` and a fully quoted `finalization_command`, and omits
+`submit_command`: the finalizer owns registration for this intent. It binds the
 actual owner, execution, Contract, target generation, stable base/index, existing
 branch, complete Packet and named original paths in canonical operational state.
 The target must be `git_snapshot` at the Git root on an existing attached branch.
@@ -2015,7 +2021,8 @@ failed/interrupted, unavailable or changed reviewer turn remains a blocker on
 this intent across `--check` and retries; obtain fresh reviews under a new target
 generation/intent instead of treating missing host information as success.
 
-If no worker processed the results, use the retained command once:
+After all reviewers end, workerless explicit continuation uses the retained
+command once. This is an ordinary completion path as well as the recovery entry:
 
 ```powershell
 python .agents/skills/task-governance-tool/scripts/review_handoff.py finalize --repo . --task-id <task-id> --target-generation <generation>
@@ -2030,14 +2037,28 @@ observed results, confirmed commit, missing fields, warnings and next action.
 `ok` means the operation had no processing error; only `status=completed` confirms
 all stages, not a successful check, registration or message delivery alone.
 
+Use [Continue after reviews](task_workflow.md#continue-after-reviews) for result
+processing and the applicable next action. Use [integrated recovery](#recover-integrated-finalization)
+only for a blocker, partial success or missing/uncertain result.
+
+#### Recover Integrated Finalization
+
+Use only for a reported blocker, partial success, or missing/uncertain result
+of an integrated intent. No notification does not establish that stages were
+not run. A lost or unknown result first uses the retained `finalization_command`
+with `--check` to observe the report without effects; this is not a normal
+completion prerequisite. It does not itself add a new review requirement.
+
 Partial success is preserved. Before explicit recovery, resolve the reported
 blocker. The helper observes immutable registration bindings, actual publication
 and native completion before continuing. It reuses the saved candidate and
 requires the original base/index and current gates before publishing a still
 unpublished candidate. Changed/unknown basis cannot authorize recapture or a
-replacement commit. Successful completion is not repeated. Lost or bounded
-notifications caused by a demonstrated delivery constraint use this retained
-command with `--check`. History-read truncation alone does not cause omission
+replacement commit. Successful completion is not repeated. Only a demonstrated
+delivery constraint permits an explicitly incomplete notice naming the actual
+constraint and omitted fields; never report that notice as complete delivery.
+Lost or explicitly incomplete notifications use the retained command with
+`--check`. History-read truncation alone does not cause omission
 or require this recovery; notification correlation does not certify an unseen
 body suffix. Do not resubmit originals
 or resend a host message to recover missing report fields.
@@ -2187,7 +2208,9 @@ A failed/uncertain save needs [recovery](#recover-review-handoff), not overwrite
 
 #### Submit Review Originals
 
-After all dispatched reviewers end, run the retained `submit_command` once.
+Only for parent-managed registration (`prepare`), after all dispatched reviewers
+end run the retained `submit_command` once. Integrated preparation uses its
+finalization command instead; do not separately submit its originals.
 It owns saved-handoff confirmation; no separate save-report or original read is
 required before this operation:
 
@@ -2209,6 +2232,10 @@ Use those for judgment; the all-ended notification alone proves none of them.
 ### Recover Review Handoff
 
 Only for preparation recovery, choose ONE binding form and a new unused area:
+
+Keep the preparation operation chosen before the source write. The examples
+use `prepare` for parent-managed registration; substitute `prepare-finalization`
+for an integrated intent. Recovery never authorizes a different route or Git action.
 
 ```powershell
 python .agents/skills/task-governance-tool/scripts/review_handoff.py prepare --repo . --directory reviews/recovery recover <task-id> --expected-binding <binding>

@@ -17,7 +17,9 @@ WORKFLOW = Path(__file__).resolve().parents[1] / "task-governance-tool/reference
 
 
 def example(heading, language):
-    section = WORKFLOW.read_text(encoding="utf-8").split("### " + heading + "\n", 1)[1]
+    text = WORKFLOW.read_text(encoding="utf-8")
+    marker = ("## " if heading == "Manual Completion" else "### ") + heading + "\n"
+    section = text.split(marker, 1)[1]
     return section.split("```" + language + "\n", 1)[1].split("```", 1)[0]
 
 
@@ -43,8 +45,12 @@ class GitWorkflowExampleTests(PreparationFixture):
         return subprocess.run(["git", *args], cwd=self.root, capture_output=True,
                               text=True, check=True)
 
-    def command(self, heading, *, paths="sample.txt", task=None, directory="reviews/g1"):
+    def command(self, heading, *, paths="sample.txt", task=None, directory="reviews/g1", manual=True):
         code = example(heading, self.language)
+        if manual:
+            # The documented conditional substitution selects parent-managed
+            # registration before target capture; the examples default integrated.
+            code = code.replace(" prepare-finalization ", " prepare ")
         code = code.replace("<intended-project-paths>", paths)
         code = code.replace("<task-id>", task or self.task_id)
         code = code.replace("<project-approved message>", "reviewed fixture")
@@ -97,7 +103,7 @@ class GitWorkflowExampleTests(PreparationFixture):
         target = self.target()
         self.assertEqual(target["source"]["review_target"]["generation"], 1)
         self.reviews(target)
-        completed = self.run_example("Complete Work")
+        completed = self.run_example("Manual Completion")
         self.assertEqual(completed.returncode, 0, completed.stdout or completed.stderr)
         commit = self.git("rev-parse", "HEAD").stdout.strip()
         self.assertIn(commit.encode("ascii"), completed.stdout)
@@ -133,7 +139,7 @@ class GitWorkflowExampleTests(PreparationFixture):
 
     def test_failed_git_commit_does_not_call_completion(self):
         # No staged changes: git commit fails before even an intentionally invalid Task ID is used.
-        result = self.run_example("Complete Work", task="tg_task_0000000000000000")
+        result = self.run_example("Manual Completion", task="tg_task_0000000000000000")
         self.assertNotEqual(result.returncode, 0)
         self.assertNotIn(b'"ok"', result.stdout)
         self.assertEqual(self.git("rev-parse", "HEAD").stdout.strip(), self.base)
@@ -141,7 +147,7 @@ class GitWorkflowExampleTests(PreparationFixture):
 
     def test_commit_success_and_completion_failure_recover_only_tail(self):
         target = self.target()
-        result = self.run_example("Complete Work")  # No reviews yet: existing gate must fail.
+        result = self.run_example("Manual Completion")  # No reviews yet: existing gate must fail.
         self.assertNotEqual(result.returncode, 0)
         commit = self.git("rev-parse", "HEAD").stdout.strip()
         self.assertNotEqual(commit, self.base)
@@ -157,7 +163,15 @@ class GitWorkflowExampleTests(PreparationFixture):
         self.reviews(target)
         self.file.write_text("changed after review\n", encoding="utf-8")
         self.git("add", "sample.txt")
-        result = self.run_example("Complete Work")
+        result = self.run_example("Manual Completion")
         self.assertNotEqual(result.returncode, 0)
         self.assertIn(b"review_target_mismatch", result.stdout)
         self.assertEqual(self.show()["task"]["status"], "in_progress")
+
+    def test_default_target_example_prepares_only_integrated_continuation(self):
+        target = self.target(manual=False)
+        self.assertEqual(target["source"]["review_target"]["generation"], 1)
+        self.assertEqual(target["handoff"]["finalization"]["status"], "prepared")
+        self.assertIn("finalization_command", target["handoff"])
+        self.assertNotIn("submit_command", target["handoff"])
+        self.assertEqual(self.git("rev-parse", "HEAD").stdout.strip(), self.base)

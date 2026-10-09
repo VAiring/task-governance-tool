@@ -565,6 +565,9 @@ def prepare(repo, args):
             result["handoff"]["finalization_command"] = _shell([
                 sys.executable, "-B", entry, "finalize", "--repo=" + str(repo), "--task-id=" + args.task_id,
                 "--target-generation=" + str(intent["target_generation"])])
+            # The finalizer owns registration for this intent. Do not present
+            # an independent parent-side submission as another normal next step.
+            del result["handoff"]["submit_command"]
         return result
     except (files.HandoffError, files.ReviewEvidenceError, files.TaskValidationError, VerificationReceiptError) as exc:
         code = exc.code

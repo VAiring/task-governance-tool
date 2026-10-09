@@ -54,7 +54,7 @@ justify further discovery; this adds no lookup or confirmation prerequisite.
 
 1. Dispatch the unchanged independent-review requests through the authorized
    subagent facility. Retain the original Task/Packet, actual returned handles,
-   original-result paths and registration command. Never duplicate a dispatch
+   original-result paths and selected continuation command. Never duplicate a dispatch
    whose outcome is unknown.
 2. Call `review_wait_wait(task_id, reviewer_ids)` once with that original Task
    and the actual returned `/root/...` handles (canonical UUIDs also work).
@@ -64,31 +64,11 @@ justify further discovery; this adds no lookup or confirmation prerequisite.
 3. End this turn only on `ok=true,status=waiting,parent_may_end=true`.
    The service then owns observation, deletion confirmation and one same-parent
    send when every exact reviewer ends and the original parent is idle.
-4. For integrated preparation, use the worker's actual result report: Task/target,
-   verification, reviews and every Finding/ID, gates, stages, confirmed commit,
-   limitations and next action. Report success or handle the named blocker without
-   repeating successful registration/commit/completion or retrieving results again.
-   Long results retain every available required field. History-read truncation
-   does not require retrieving the result again. Only a demonstrated delivery
-   constraint produces an explicit incomplete notice naming the constraint and
-   omitted fields, with retained `finalization_command --check` recovery;
-   never report that exception as full delivery. Without an integrated worker result,
-   run that retained command once after all reviewers end.
-   For manual prepared shared-file reviews, run the retained
-   `submit_command` once through the
-   [shared-file review procedure](task_workflow.md#prepare-and-record-reviews).
-   Submission confirms complete originals and bindings before registration;
-   use its returned verdicts, all Findings and gate for judgment. Do not first
-   retrieve save reports with `list_agents`/`read_thread` or display original JSON.
-   Missing/invalid files follow [handoff recovery](task_workflow.md#review-handoff-recovery);
-   an ended child or a negative verdict is not itself registration success.
-   For [direct complete-byte transport](task_workflow.md#direct-review-transport),
-   use its retained original-result channel and registration procedure instead.
-   No individual ACK, routine status/view, reservation
-   management or `wait-ended` call is needed. The worker independently observes
-   the matching incoming event in the new parent turn and records receipt.
-   The notification reports observed results; sending or receiving it is not
-   itself PASS, an original or a completion Receipt.
+4. On resumption or an all-ended result, follow
+   [Continue after reviews](task_workflow.md#continue-after-reviews), the single
+   result-processing procedure for integrated, parent-managed and direct routes.
+   The worker observes the matching incoming event and records receipt; no
+   individual ACK, reservation management or `wait-ended` call is needed.
 
 At a scheduled ten-minute check, handle actual review results normally. If the
 same reviewers are healthy but unfinished, repeat only the same wait request.

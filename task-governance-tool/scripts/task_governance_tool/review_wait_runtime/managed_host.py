@@ -2,6 +2,8 @@
 
 from uuid import uuid4
 import json
+import time
+import threading
 import re
 
 from task_governance_tool.task_values import validate_task_id
@@ -31,12 +33,18 @@ class ManagedHost(PublicMcpHost):
         self.task_id = validate_task_id(task_id)
         self._finalization_prompts = {}
         self._receipt_headers = {}
+        self._sent_probes = set()
+        self._prompt_lock = threading.RLock()
         super().__init__(**kwargs)
 
     def set_finalization_result(self, probe, result):
+        with self._prompt_lock:
+            self._set_finalization_result(probe, result)
+
+    def _set_finalization_result(self, probe, result):
         """Keep the complete report transiently; history limits never trim it."""
         _uuid(probe)
-        if probe in self._finalization_prompts or result.get("task_id") != self.task_id:
+        if probe in self._sent_probes or result.get("task_id") != self.task_id:
             raise HostAdapterError("host_call_failed")
         target = result.get("target")
         if (type(target) is not dict or set(target) != {"contract_revision", "target_kind", "target_value",
@@ -58,6 +66,8 @@ class ManagedHost(PublicMcpHost):
         # The complete identity must precede the variable body in a bounded read.
         if _host_text_length(prefix) > 2000:
             raise HostAdapterError("host_call_failed")
+        if probe in self._receipt_headers and self._receipt_headers[probe] != prefix:
+            raise HostAdapterError("host_call_failed")  # Refresh never rebinds the target.
         suffix = "\n成功済みの処理を繰り返さず、この実結果で報告・必要な対応を続けてください。個別ACKや通知の再送は不要です。"
         raw = json.dumps(value, ensure_ascii=False, allow_nan=False, separators=(",", ":"))
         (prefix + raw + suffix).encode("utf-8")  # Reject invalid text before size-only fallback.
@@ -79,6 +89,16 @@ class ManagedHost(PublicMcpHost):
                 "hostId": "local", "prompt": prefix + raw + suffix})
         self._finalization_prompts[probe] = prefix + raw + suffix
         self._receipt_headers[probe] = prefix
+
+    def send_direct_probe(self, probe_id):
+        with self._prompt_lock:
+            probe = _uuid(probe_id, "invalid_probe_id")
+            if probe in self._sent_probes:
+                raise HostAdapterError("host_call_failed")
+            # Freeze before invoking transport, including rejected/unknown
+            # outcomes. Receipt must compare the exact attempted notification.
+            self._sent_probes.add(probe)
+            return super().send_direct_probe(probe)
 
     def create_heartbeat(self, rule):
         """The caller has already saved creation intent; one call, no retries."""
@@ -120,21 +140,49 @@ class ManagedHost(PublicMcpHost):
             "この通知自体はPASSやTask完了の証拠ではありません。予約の再作成や通知の再送は不要です。"
         )
 
-    def observe_receipt(self, probe, original_turn):
-        """Correlate the host's structured incoming event with an actual new turn.
+    def observe_receipt(self, probe, send_parent_turn, *, deadline=None):
+        """Find the first receipt after this attempt's fresh pre-send turn.
 
         Neither unrelated user input nor a plain assistant echo is a receipt.
-        A truncated history prefix can establish correlation, never full-body
-        integrity. The bounded event text is transient and never persisted.
+        A newest-first scan must reach the pre-send fence before choosing its
+        oldest match. Missing history, cycles or exhaustion stay unconfirmed.
+        Cursors, fence and event bodies are transient; restart never resumes it.
         """
         _uuid(probe)
-        _uuid(original_turn)
+        _uuid(send_parent_turn)
         maximum = 20000 if probe in self._finalization_prompts else 4096
-        value = self._json_call("read_thread", {"threadId": self.parent_thread_id, "hostId": "local",
-            "turnLimit": 1, "includeOutputs": True, "maxOutputCharsPerItem": maximum})
-        parent = parse_read_thread(value, self.parent_thread_id)
-        if parent.turn_id == original_turn:
-            return None
+        bound = time.monotonic() + self._timeout
+        if deadline is not None:
+            bound = min(bound, deadline)
+        cursor, candidate = None, None
+        seen_turns, seen_cursors = set(), set()
+        for _ in range(16):
+            remaining = bound - time.monotonic()
+            if remaining <= 0:
+                return None
+            arguments = {"threadId": self.parent_thread_id, "hostId": "local", "turnLimit": 1,
+                         "includeOutputs": True, "maxOutputCharsPerItem": maximum}
+            if cursor is not None:
+                arguments["cursor"] = cursor
+            value = self._json_call("read_thread", arguments, timeout=remaining)
+            parent = parse_read_thread(value, self.parent_thread_id)
+            if time.monotonic() >= bound or parent.turn_id in seen_turns:
+                return None
+            if parent.turn_id == send_parent_turn:
+                return candidate  # Never accept an event in/before the fence.
+            seen_turns.add(parent.turn_id)
+            if self._receipt_event(value, probe, maximum):
+                candidate = parent.turn_id
+            page = value["page"]
+            cursor = page["nextCursor"]
+            if (not page["hasMore"] or type(cursor) is not str or not cursor
+                    or len(cursor) > 4096 or cursor in seen_cursors):
+                return None
+            seen_cursors.add(cursor)
+        return None
+
+    def _receipt_event(self, value, probe, maximum):
+        """A truncated prefix establishes correlation, not full-body integrity."""
         envelope = ("<codex_delegation>\n  <source_thread_id>" + self.parent_thread_id
                     + "</source_thread_id>\n  <input>")
         expected = envelope + self._direct_prompt(probe) + "</input>\n</codex_delegation>"
@@ -145,7 +193,7 @@ class ManagedHost(PublicMcpHost):
                 output = item.get("output")
                 if (type(output) is dict and output.get("truncated") is False
                         and output.get("text") == expected):
-                    return parent.turn_id
+                    return True
                 if type(output) is not dict or output.get("truncated") is not True:
                     continue
                 text = output.get("text")
@@ -161,5 +209,5 @@ class ManagedHost(PublicMcpHost):
                         and text.startswith(envelope + header)
                         and expected.encode("utf-16-le", errors="surrogatepass").startswith(
                             text.encode("utf-16-le", errors="surrogatepass"))):
-                    return parent.turn_id
-        return None
+                    return True
+        return False

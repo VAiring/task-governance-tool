@@ -4,6 +4,7 @@ import json
 import shlex
 import subprocess
 import time
+from uuid import uuid4
 from dataclasses import replace
 from unittest import mock
 
@@ -331,6 +332,7 @@ class InstalledFinalizationTests(fixtures.PreparationFixture):
                 raise ValueError("owner released")
             return binding
         direct = (probe_class or ManagedDirectProbe)(path, current, lambda metadata: host, lambda: NOW,
+                                    dispatch_path=lambda parent: self.root / "reviews/dispatch.sqlite",
                                     cycle_seconds=0.01, join_seconds=5, finalization_factory=lambda controller: service)
         self.addCleanup(direct.close)
         return direct, host, parent
@@ -369,7 +371,7 @@ class InstalledFinalizationTests(fixtures.PreparationFixture):
         host.read_child = child
         reports = []
         host.set_finalization_result = lambda probe, result: reports.append(result)
-        host.observe_receipt = lambda probe, old: None
+        host.observe_receipt = lambda probe, old, **kwargs: None
         result = direct.handle("direct_delete_start", {}, {"threadId": parent, "turnId": ORIGINAL})
         self.assertTrue(result["ok"], result)
         host.parent = ChildTurn(parent, ORIGINAL, "completed", "idle")
@@ -379,6 +381,10 @@ class InstalledFinalizationTests(fixtures.PreparationFixture):
         self.assertEqual(len(reports), 1, direct.repository.read())
         direct.close()
         report = reports[0]
+        if change == "parent":
+            self.assertEqual(report["status"], "completed", report)
+            self.assertEqual(service.core.read(task)["task"]["status"], "done")
+            return
         self.assertEqual(report["stages"]["commit"], "not_started", report)
         self.assertEqual(report["stages"]["completion"], "not_started", report)
         self.assertEqual(self.git("rev-parse", "HEAD"), before)
@@ -417,7 +423,7 @@ class InstalledFinalizationTests(fixtures.PreparationFixture):
     def test_worker_guard_interrupted_reviewer_is_retained_across_cli_retry(self):
         self.worker_guard_race("interrupted")
 
-    def test_worker_guard_parent_change_does_not_latch_reviewer_failure(self):
+    def test_worker_guard_new_idle_parent_turn_allows_bound_finalization(self):
         self.worker_guard_race("parent")
 
     def test_worker_guard_parent_unavailable_does_not_latch_reviewer_failure(self):
@@ -444,11 +450,21 @@ class InstalledFinalizationTests(fixtures.PreparationFixture):
             return ChildTurn(child_id, TURN, "completed", "idle")
         host.read_child = child
         host.read_parent = lambda: ChildTurn(parent, NEW_TURN if observed else ORIGINAL, "inProgress", "active")
-        host.set_finalization_result = lambda *args: self.fail("A new parent must suppress old dispatch")
-        host.observe_receipt = lambda *args: None
+        host.set_finalization_result = lambda *args: self.fail("A busy parent must defer dispatch")
+        host.observe_receipt = lambda *args, **kwargs: None
         started = direct.handle("direct_delete_start", {}, {"threadId": parent, "turnId": ORIGINAL})
         self.assertTrue(started["ok"], started)
-        direct._worker.join(20)
+        if status in {"completed", "failed", "interrupted"}:
+            deadline = time.monotonic() + 20
+            while len(service.journal.read().reviewer_observations) < 2 and time.monotonic() < deadline:
+                time.sleep(0.01)
+            self.assertEqual(len(service.journal.read().reviewer_observations), 2)
+            self.assertTrue(direct._worker.is_alive())
+            self.assertEqual(direct.repository.read().status, "waiting")
+            self.assertEqual(direct.repository.read().timer_phase, "active")
+            direct.close()  # Explicit EOF, not a later parent turn, stops it.
+        else:
+            direct._worker.join(20)
         self.assertFalse(direct._worker.is_alive())
         self.assertTrue(observed)
         self.assertEqual(host.sends, [])
@@ -557,7 +573,7 @@ class InstalledFinalizationTests(fixtures.PreparationFixture):
 
     def test_wait_worker_finishes_before_same_parent_notification_and_receipt(self):
         from tests.test_review_wait_direct import ORIGINAL, NEW_TURN
-        from tests.test_review_wait_host import read_result, AUTOMATION
+        from tests.test_review_wait_host import read_result, AUTOMATION, OTHER
         from task_governance_tool.review_wait_runtime.review_wait_host import ChildTurn
         from task_governance_tool.review_wait_runtime.managed_host import ManagedHost
         task, service = self.ready()
@@ -572,11 +588,14 @@ class InstalledFinalizationTests(fixtures.PreparationFixture):
             self.assertEqual(service.core.read(task)["task"]["status"], "done")
             reports.append(result)
             wire.set_finalization_result(probe, result)
+            # B becomes busy after A completes but before A's single send.
+            if len(reports) == 1:
+                host.parent = ChildTurn(parent, OTHER, "inProgress", "active")
             payload = json.loads(wire._direct_prompt(probe).splitlines()[2])
             self.assertEqual({key: item for key, item in payload.items() if key != "delivery"}, result)
         host.set_finalization_result = report
         host.on_send = lambda probe: setattr(host, "parent", ChildTurn(parent, NEW_TURN, "inProgress", "active"))
-        def observe(probe, old):
+        def observe(probe, old, **kwargs):
             if probe not in host.sends:
                 return None
             value = read_result()
@@ -589,20 +608,70 @@ class InstalledFinalizationTests(fixtures.PreparationFixture):
                 output["originalChars"] = len(raw) // 2
             value["turns"][0].update(id=NEW_TURN, status="inProgress", items=[{
                 "type": "functionCallOutput", "namespace": "codex_app", "name": "send_message_to_thread", "output": output}])
-            with mock.patch.object(wire, "_json_call", return_value=value):
-                return wire.observe_receipt(probe, old)
+            value["page"].update(hasMore=True, nextCursor="previous")
+            fence = read_result()
+            fence["thread"]["id"] = parent
+            fence["turns"][0].update(id=old, items=[])
+            newer = read_result()
+            newer["thread"]["id"] = parent
+            newer["turns"][0].update(id=str(uuid4()), items=[])
+            newer["page"].update(hasMore=True, nextCursor="notification")
+            with mock.patch.object(wire, "_json_call", side_effect=[newer, value, fence]):
+                return wire.observe_receipt(probe, old, **kwargs)
         host.observe_receipt = observe
         with mock.patch.object(service, "record_notification_receipt") as usage:
             result = direct.handle("direct_delete_start", {}, {"threadId": parent, "turnId": ORIGINAL})
             self.assertTrue(result["ok"], result)
             host.parent = ChildTurn(parent, ORIGINAL, "completed", "idle")
             deadline = time.monotonic() + 30
-            while not usage.called and time.monotonic() < deadline:
+            while not reports and time.monotonic() < deadline:
                 time.sleep(0.02)
             self.assertEqual(len(reports), 1, direct.repository.read())
+            self.assertEqual(host.sends, [])
+            host.parent = ChildTurn(parent, OTHER, "completed", "idle")
+            while not usage.called and time.monotonic() < deadline:
+                time.sleep(0.02)
+            self.assertEqual(len(reports), 2, direct.repository.read())
             self.assertEqual(len(host.sends), 1)
             usage.assert_called_once_with(NEW_TURN)
             self.assertEqual(direct.repository.read().acknowledged_turn, NEW_TURN)
+
+    def test_busy_deferred_completed_report_is_rechecked_after_task_reopen(self):
+        from tests.test_review_wait_direct import ORIGINAL, NEW_TURN
+        from task_governance_tool.review_wait_runtime.review_wait_host import ChildTurn
+        task, service = self.ready()
+        direct, host, parent = self.wait_fixture(task, service)
+        reports = []
+        def report(probe, result):
+            reports.append(result)
+            if len(reports) == 1:
+                host.parent = ChildTurn(parent, NEW_TURN, "inProgress", "active")
+        host.set_finalization_result = report
+        host.observe_receipt = lambda *args, **kwargs: None
+        with mock.patch.object(service, "execute", wraps=service.execute) as execute:
+            self.assertTrue(direct.handle("direct_delete_start", {}, {"threadId": parent, "turnId": ORIGINAL})["ok"])
+            host.parent = ChildTurn(parent, ORIGINAL, "completed", "idle")
+            deadline = time.monotonic() + 30
+            while not reports and time.monotonic() < deadline:
+                time.sleep(0.02)
+            self.assertEqual(reports[0]["status"], "completed")
+            completed = reports[0]["commit_id"]
+            self.assertEqual(host.sends, [])
+            self.cli("task", "edit", task, "--status", "in_progress", "--reopen-reason", "New authorized work")
+            host.parent = ChildTurn(parent, NEW_TURN, "completed", "idle")
+            while direct.repository.read().status != "accepted" and time.monotonic() < deadline:
+                time.sleep(0.02)
+            self.assertEqual(direct.repository.read().status, "accepted")
+            self.assertEqual(len(host.sends), 1)
+            self.assertEqual(len(reports), 2)
+            self.assertEqual(reports[-1]["status"], "attention_required")
+            self.assertEqual(reports[-1]["blocking_code"], "review_target_mismatch")
+            self.assertIsNone(reports[-1]["task_status"])
+            self.assertEqual(reports[-1]["stages"], reports[0]["stages"])
+            self.assertEqual(reports[-1]["commit_id"], completed)
+            self.assertEqual(self.git("rev-parse", "HEAD").decode().strip(), completed)
+            self.assertEqual(service.core.read(task)["task"]["status"], "in_progress")
+            self.assertEqual([call.kwargs.get("check", False) for call in execute.call_args_list], [False, True])
 
     def test_check_does_not_register_or_commit(self):
         task, context = self.prepared()

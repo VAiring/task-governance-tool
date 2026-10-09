@@ -246,8 +246,7 @@ class DirectProbe:
                 parent = host.read_parent()
                 if self._halt_wait(record, monotonic_deadline):
                     return
-                if parent.child_id != controller.binding.parent_thread_id or parent.turn_id != record.original_parent_turn:
-                    raise DirectError("parent_turn_changed")
+                self._parent_ready(parent, controller, record, require_idle=False)
                 if all_ended and _terminal(parent) and parent.thread_status == "idle":
                     if self._dispatch(host, record, monotonic_deadline) is not False:
                         return
@@ -271,6 +270,14 @@ class DirectProbe:
     def _observe_reviewer(self, controller, observation):
         """Legacy waits have no integrated result journal."""
         return None
+
+    def _parent_ready(self, parent, controller, record, *, require_idle=True):
+        """The explicit legacy experiment remains fixed to its starting turn."""
+        if (parent.child_id != controller.binding.parent_thread_id
+                or parent.turn_id != record.original_parent_turn
+                or require_idle and (not _terminal(parent) or parent.thread_status != "idle")):
+            raise DirectError("parent_turn_changed")
+        return True
 
     def _read_reviewer(self, host, controller, expected, *, terminal=False, reviewer_observer=None):
         observe = reviewer_observer or (lambda observation: self._observe_reviewer(controller, observation))
@@ -300,9 +307,8 @@ class DirectProbe:
         if self._halt_wait(record, monotonic_deadline):
             return False
         parent = host.read_parent()
-        if (parent.child_id != controller.binding.parent_thread_id or parent.turn_id != record.original_parent_turn
-                or not _terminal(parent) or parent.thread_status != "idle"):
-            raise DirectError("parent_turn_changed")
+        if not self._parent_ready(parent, controller, record):
+            return False
         self._prepared(controller)
         return not self._halt_wait(record, monotonic_deadline)
 
@@ -314,15 +320,17 @@ class DirectProbe:
             self._prepared(controller)
             if self._halt_wait(record, monotonic_deadline):
                 return
-            if record.version == 2 and self._now() >= datetime.fromisoformat(record.timer_due_at):
-                return False  # Keep observing the scheduled fallback; do not pause it.
             current = self.repository.read()
-            observed = self._heartbeat(host, controller, current)
-            if record.version == 2:
+            if (record.version == 2 and current.timer_phase == "active"
+                    and self._now() >= datetime.fromisoformat(record.timer_due_at)):
+                return False  # Keep observing the scheduled fallback; do not pause it.
+            if record.version != 2 or current.timer_phase != "deleted":
+                observed = self._heartbeat(host, controller, current)
+            if record.version == 2 and current.timer_phase != "deleted":
                 if current.timer_phase != "active":
                     raise DirectError("heartbeat_changed")
                 if not self._idle_and_ended(host, controller, record, monotonic_deadline):
-                    return
+                    return False
                 if self._now() >= datetime.fromisoformat(record.timer_due_at):
                     return False
                 self.repository.update(record.probe_id, timer_phase="deleting")
@@ -332,23 +340,25 @@ class DirectProbe:
                     self.repository.update(record.probe_id, timer_phase="unknown")
                     raise DirectError(_reason(error)) from None
                 self.repository.update(record.probe_id, timer_phase="deleted")
-                if not self._idle_and_ended(host, controller, record, monotonic_deadline):
-                    return
+            if not self._idle_and_ended(host, controller, record, monotonic_deadline):
+                return False
             self._before_send(host, controller, record, monotonic_deadline)
             if self._halt_wait(record, monotonic_deadline):
                 return
             parent = host.read_parent()
             if self._halt_wait(record, monotonic_deadline):
                 return
-            if (parent.child_id != controller.binding.parent_thread_id or parent.turn_id != record.original_parent_turn
-                    or not _terminal(parent) or parent.thread_status != "idle"):
-                raise DirectError("parent_turn_changed")
+            if not self._parent_ready(parent, controller, record):
+                return False
             self._prepared(controller)
             if self._stop.is_set():
                 return
             if self._expired(record, monotonic_deadline):
                 self.repository.update(record.probe_id, status="expired")
                 return
+            # Transient receipt fence belongs to this single attempt. Restart
+            # never resumes observation or sends, so it needs no new payload.
+            self._send_parent_turn = parent.turn_id
             self.repository.update(record.probe_id, status="dispatching")
             # Once dispatching is durable, cancellation cannot claim the effect
             # never ran. Keep the wait lease until the single call settles.

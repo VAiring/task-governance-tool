@@ -171,7 +171,7 @@ class Finalizer:
         """
         if self.journal is None:
             return
-        with self.journal.serial() as lease:
+        with self.journal.serial(wait_for_observation=True) as lease:
             record = self.journal.read()
             if observations:
                 record = self.journal.observe_reviewers(lease, observations)

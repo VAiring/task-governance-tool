@@ -78,8 +78,11 @@ required before sending. An error or missing view response is not deletion
 confirmation. Retain deletion separately from the send result and receipt.
 
 Check current basis, exact reviewer turns, original idle parent, cancellation
-and deadline before deletion and again before sending. A later parent turn
-suppresses the send. UI changes outside the local lease remain a host race;
+and deadline before deletion and again before sending. The explicit development
+experiment suppresses a send on a later parent turn. Managed waits instead follow
+the current [multi-Task parent and receipt rules](../review-completion-specification.md#host-owned-review-waiting):
+newer work alone preserves the bound association, while a busy parent defers it.
+UI changes outside the local lease remain a host race;
 do not claim atomic host compare-and-send. Failed/interrupted reviews qualify
 as ended but do not satisfy review acceptance or original delivery.
 
@@ -115,7 +118,7 @@ host permission review still applies. Preserve a denial as evidence of failure.
 | Partial review, intermediate message or active original parent | Keep the current check; no premature deletion or send. |
 | NG, failed/interrupted review or missing original | Same wake decision; preserve actual-result/recovery gates. |
 | Delete receipt malformed, rejected, lost or config still present | Retain unknown result; no send, retry or competing mutation. |
-| Cancellation or changed basis/parent after deletion | Preserve deleted fact; suppress send. |
+| Cancellation or changed basis/parent identity after deletion | Preserve deleted fact; suppress send (integrated stale-basis failure reporting retains its current owner). |
 | Cancellation, deadline, failure or EOF before deletion | Stop worker; pause once only when the ACTIVE outcome is known. |
 | Duplicate start, restart or unsettled intent | Inspect only; no replay, resurrection or second send. |
 | Successful send without new-turn acknowledgement | Accepted only; receipt remains unverified. |

@@ -162,6 +162,14 @@ class CanonicalStatePaths:
             raise ValueError("invalid_target_generation")
         return request.with_name("finalize-" + request.stem.removeprefix("request-") + f"-{generation}.sqlite")
 
+    def review_wait_dispatch_store(self, parent_id: str) -> Path:
+        """Lock-only namespace shared by this project's same-parent senders."""
+        from uuid import UUID
+        if type(parent_id) is not str or str(UUID(parent_id)) != parent_id:
+            raise ValueError("invalid_parent_id")
+        digest = hashlib.sha256(parent_id.encode("ascii")).hexdigest()
+        return self.review_wait_root / ("dispatch-" + digest + ".sqlite")
+
 
 @dataclass(frozen=True)
 class CurrentRootObservation:

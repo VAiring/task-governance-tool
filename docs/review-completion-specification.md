@@ -847,6 +847,15 @@ once to that same parent. Failed/interrupted reviews qualify as ended, not as
 PASS or available originals. External UI changes are not serialized by the
 local writer lease; this is not atomic host compare-and-send.
 
+Managed waits bind the original parent identity, Task, execution/owner generation,
+Contract, target and reviewer turns, not the parent's latest turn. Work or receipt
+for another legitimate Task does not cancel that association. A busy parent
+defers effects within the original deadline. Same-project workers for that parent
+serialize fresh checks, deletion, integrated finalization and sending under one
+internal OS lease. Each notification still has its own one-shot send intent;
+cancel or genuine basis change affects only its association. The explicit legacy
+development experiment retains its original-turn restriction.
+
 For ordinary review-only preparation, the fixed direct message identifies the original Task and directs its
 existing result processing. It requires no ACK, ID handoff or routine view/status.
 On all-ended resumption, normal shared-file processing goes directly to the
@@ -880,7 +889,7 @@ claims full delivery from an identifier or sender-supplied digest.
 After settled accepted or
 unknown sending, the existing session worker may observe for at most two further
 minutes within the original twenty-minute outer deadline. Receipt requires a
-new actual turn of the same parent containing the matching public structured
+new actual turn after the fresh pre-send parent turn, containing the matching public structured
 `functionCallOutput` for `codex_app.send_message_to_thread`. An untruncated event
 must match the exact same-parent delegation envelope and outgoing message.
 For integrated results, a truncated read may establish notification correlation
@@ -890,12 +899,18 @@ and the host's original character count agrees. Missing identity, incompatible
 truncation, a plain message echo, wrong parent, old turn, different notification
 or unavailable read is not receipt. Unseen suffix content remains unverified;
 neither correlation nor a matching original length proves that content. Only the
-observed turn UUID is retained; transient event bodies are discarded. Missing
+observed turn UUID is retained. Bounded newest-first public history cursor traversal
+must reach that attempt's pre-send turn before choosing the first matching receiving
+turn. Later unrelated turns do not hide receipt. Missing boundaries, ambiguous or
+cyclic pages, exhausted bounds and unavailable reads remain unconfirmed. The
+pre-send fence, cursors and event bodies stay transient; restart never resumes
+receipt observation. Missing
 receipt remains unverified, without an added LLM call, resend or completion gate.
 Old explicit acknowledgements remain available only for their compatibility use.
 
-At the ten-minute scheduled check, an actual new parent turn suppresses an
-unsent direct wake and starts bounded known-ACTIVE pause cleanup. If reviews are
+At the ten-minute scheduled check, a new parent turn alone preserves the managed
+wait. The existing due cutoff prevents starting a fresh deletion/send sequence.
+If reviews are
 healthy but unfinished, call the same `review_wait_wait(task_id, reviewer_ids)`
 once with the retained reviewers. It validates their same actual turns and
 basis, joins/stops the old worker, settles known cleanup, records deletion

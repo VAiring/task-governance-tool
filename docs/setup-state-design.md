@@ -42,6 +42,7 @@ Runner attempts   <fixed-root>/verification-runner/attempts
 Runner quarantine <fixed-root>/verification-runner/quarantine
 Review waits      <fixed-root>/review-wait/<sha256-reservation-id>.sqlite
 Wait send state   <wait-store-filename>.direct.sqlite
+Wait dispatch lock <fixed-root>/review-wait/dispatch-<sha256-parent-UUID>.sqlite.lock
 ```
 
 The resolver returns canonical paths, the in-memory governed root/hash/display
@@ -50,6 +51,11 @@ state (`missing`, `fixed_current_v1`, or `legacy_projects_v1`), binding state
 (`unbound`, `matching`, or `relocation_required`), and an optional deep
 setup-only recovery/legacy or layout-migration observation. None of its raw paths or path hashes
 crosses a formatter.
+
+Review-wait association, request and lock-only dispatch paths are derived by
+this same resolver; their operational protocol is owned by
+[Review/completion design](review-completion-design.md#host-owned-review-waiting).
+No dispatch database, alternate state root or core migration is introduced.
 
 For the Runner subsystem, `CanonicalStatePaths` derives the four fixed paths above
 and `DatabaseTarget` carries them to the parent service. Internal test targets

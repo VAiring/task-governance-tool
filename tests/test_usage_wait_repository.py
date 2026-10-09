@@ -37,17 +37,17 @@ class UsageWaitRepositoryTests(evidence_support.UsageEvidenceRepositoryTests):
                     target_kind,target_value,target_base_revision,target_generation,digest);
             """)
 
-    def anchor(self, *, number=1, manifest=MANIFEST, generation=1):
-        item = fact(5, execution=execution(number), manifest=manifest, generation=generation)
+    def anchor(self, *, number=1, manifest=MANIFEST, generation=1, task=TASK):
+        item = fact(5, task=task, execution=execution(number), manifest=manifest, generation=generation)
         p = item.project_id
         with closing(sqlite3.connect(self.core_path)) as core:
             snapshot = "snapshot-" + manifest
-            core.execute("INSERT INTO authority_snapshots VALUES (?,?,?,?)", (snapshot, p, TASK, 1))
+            core.execute("INSERT INTO authority_snapshots VALUES (?,?,?,?)", (snapshot, p, task, 1))
             core.execute("INSERT INTO artifact_manifests VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
-                (manifest, p, TASK, "opaque_target", item.target_kind, item.target_value, "", generation,
+                (manifest, p, task, "opaque_target", item.target_kind, item.target_value, "", generation,
                  snapshot, None, None, "sha256:" + "b" * 64))
             core.execute("INSERT INTO evidence_references VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-                ("reference-" + manifest, p, TASK, "artifact_manifest", "opaque_target", manifest, 1,
+                ("reference-" + manifest, p, task, "artifact_manifest", "opaque_target", manifest, 1,
                  snapshot, None, None, item.target_kind, item.target_value, "", generation, "sha256:" + "c" * 64))
             core.commit()
         return item
@@ -134,6 +134,34 @@ class UsageWaitRepositoryTests(evidence_support.UsageEvidenceRepositoryTests):
         period = self.read(TASK)["periods"][0]
         self.assertEqual(period["completion_cycle_id"], "cycle-before-notification")
         self.assertEqual(period["response_count"], 3)
+        self.assertEqual(self.core_path.read_bytes(), before)
+
+    def test_two_completed_tasks_share_actual_receiving_turn_and_late_response_once(self):
+        a = self.prepare_wait()
+        second = "tg_task_2222222222222222"
+        self.change(TASK, 1, "done", 4, cycle="cycle-A")
+        self.change(second, 2, "in_progress", 6)
+        self.change(second, 2, "review_pending", 7)
+        self.change(second, 2, "done", 8, cycle="cycle-B")
+        b = self.anchor(task=second, number=2, manifest="tg_artifact_manifest_1123456789abcdef")
+        # Notification observation arrives after later B activity. Both actual
+        # notices happened in turn 5; neither is reassigned to latest turn 8.
+        for item in (b, a, a, b):
+            self.repository.record_host_receipt(item)
+        before = self.core_path.read_bytes()
+        self.refresh()
+        first = self.read(TASK)["periods"][0]
+        self.assertEqual(first["response_count"], 5)  # turns 2,3,5,6,7, shared once
+        self.assertEqual(first["completion_cycle_id"], "cycle-A")
+        self.assertEqual(self.read(second)["periods"][0]["completion_cycle_id"], "cycle-B")
+        self.append(usage("late-shared-receipt", turn=turn(5)))
+        self.collect()
+        self.refresh()
+        for task in (TASK, second):
+            result = self.read(task)["periods"][0]
+            self.assertEqual(result["response_count"], 6)
+            self.assertEqual(result["shared_executions"], [execution(1), execution(2)])
+        self.assertNotEqual(self.read(TASK)["periods"][0]["snapshot_ids"], first["snapshot_ids"])
         self.assertEqual(self.core_path.read_bytes(), before)
 
     def test_restore_lost_manifest_or_reference_invalidates_cached_read(self):

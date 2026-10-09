@@ -70,6 +70,12 @@ justify further discovery; this adds no lookup or confirmation prerequisite.
    The worker observes the matching incoming event and records receipt; no
    individual ACK, reservation management or `wait-ended` call is needed.
 
+Another Task's work or notification may advance this same parent's turn without
+cancelling existing managed waits. Each remains bound to its original Task and
+reviewers; the service defers while the parent is busy and coordinates its sends.
+It finds the first actual receiving turn through bounded public history even if
+newer turns already exist. No parent-side history correlation or extra call is needed.
+
 At a scheduled ten-minute check, handle actual review results normally. If the
 same reviewers are healthy but unfinished, repeat only the same wait request.
 It settles known cleanup and prepares the next reservation internally.

@@ -6,8 +6,10 @@ import copy
 import json
 from pathlib import Path
 import tempfile
+import threading
 import time
 import unittest
+from uuid import uuid4
 from unittest import mock
 
 from tests.test_review_wait_service import BINDING, CHILD, TURN, PARENT, OTHER, NOW
@@ -65,10 +67,19 @@ class ManagedHostTests(unittest.TestCase):
                 + host._direct_prompt(OTHER) + "</input>\n</codex_delegation>"}}])
         return value
 
+    def history(self, host, newest):
+        """The real cursor walk includes the send-time lower boundary."""
+        latest = copy.deepcopy(newest)
+        latest["page"].update(hasMore=True, nextCursor="before-send")
+        fence = read_result()
+        fence["thread"]["id"] = PARENT
+        fence["turns"][0].update(id=ORIGINAL, items=[])
+        return mock.patch.object(host, "_json_call", side_effect=[latest, fence])
+
     def test_only_matching_structured_event_in_new_real_parent_turn_is_receipt(self):
         host = self.host()
         value = self.receipt(host)
-        with mock.patch.object(host, "_json_call", return_value=value) as call:
+        with self.history(host, value) as call:
             self.assertEqual(NEW_TURN, host.observe_receipt(OTHER, ORIGINAL))
         self.assertEqual(PARENT, call.call_args.args[1]["threadId"])
         for edit in (lambda v: v["turns"][0].update(id=ORIGINAL),
@@ -78,7 +89,7 @@ class ManagedHostTests(unittest.TestCase):
                      lambda v: v["turns"][0]["items"][0]["output"].update(text="unrelated input")):
             altered = copy.deepcopy(value)
             edit(altered)
-            with mock.patch.object(host, "_json_call", return_value=altered):
+            with self.history(host, altered):
                 self.assertIsNone(host.observe_receipt(OTHER, ORIGINAL))
         value["thread"]["id"] = CHILD
         with mock.patch.object(host, "_json_call", return_value=value):
@@ -103,13 +114,57 @@ class ManagedHostTests(unittest.TestCase):
                   "commit_id": None, "next_action": "Repair finding"}
         host.set_finalization_result(OTHER, report)
         value = self.receipt(host)
-        with mock.patch.object(host, "_json_call", return_value=value) as call:
+        with self.history(host, value) as call:
             self.assertEqual(host.observe_receipt(OTHER, ORIGINAL), NEW_TURN)
         self.assertEqual(call.call_args.args[1]["maxOutputCharsPerItem"], 20000)
         altered = copy.deepcopy(value)
         altered["turns"][0]["items"][0]["output"]["text"] = altered["turns"][0]["items"][0]["output"]["text"].replace("Repair finding", "Report completion")
-        with mock.patch.object(host, "_json_call", return_value=altered):
+        with self.history(host, altered):
             self.assertIsNone(host.observe_receipt(OTHER, ORIGINAL))
+
+    def test_report_can_refresh_before_send_but_attempted_body_is_immutable(self):
+        for outcome in ("accepted", "rejected", "unknown"):
+            with self.subTest(outcome=outcome):
+                host = self.host()
+                report = self.report("Original")
+                host.set_finalization_result(OTHER, report)
+                header = host._receipt_headers[OTHER]
+                with self.assertRaises(HostAdapterError):
+                    host.set_finalization_result(OTHER, {**report, "target": {**TARGET, "target_generation": 3}})
+                host.set_finalization_result(OTHER, {**report, "blocking_code": "review_target_mismatch"})
+                self.assertEqual(header, host._receipt_headers[OTHER])
+                expected = host._direct_prompt(OTHER)
+                wire = {"content": [], "isError": outcome == "rejected"} if outcome != "unknown" else {}
+                with mock.patch.object(host, "_request", return_value=wire) as send:
+                    self.assertEqual(host.send_direct_probe(OTHER), outcome)
+                    with self.assertRaises(HostAdapterError):
+                        host.set_finalization_result(OTHER, report)
+                    with self.assertRaises(HostAdapterError):
+                        host.send_direct_probe(OTHER)
+                    self.assertEqual(send.call_count, 1)
+                    self.assertEqual(send.call_args.args[1]["prompt"], expected)
+                self.assertEqual(host._direct_prompt(OTHER), expected)
+
+    def test_readonly_refresh_does_not_erase_the_known_attempt_failure(self):
+        from types import SimpleNamespace
+        from task_governance_tool.review_wait_runtime.managed_direct import ManagedDirectProbe
+        for reason in ("finalization_originals_unavailable", "verification_required",
+                       "finalization_findings_require_judgment"):
+            with self.subTest(reason=reason):
+                host = self.host()
+                previous = {**self.report("known blocked attempt"), "ok": False, "blocking_code": reason}
+                host.set_finalization_result(OTHER, previous)
+                worker = object.__new__(ManagedDirectProbe)
+                worker._finalization_prepared = True
+                worker._finalization_result = previous
+                worker._receipt_finalizer = mock.Mock()
+                worker._receipt_finalizer.execute.return_value = {**previous, "ok": True, "blocking_code": None}
+                worker._before_send(host, None, SimpleNamespace(probe_id=OTHER), 0)
+                actual = json.loads(host._direct_prompt(OTHER).splitlines()[2])
+                self.assertFalse(actual["ok"])
+                self.assertEqual(actual["blocking_code"], reason)
+                self.assertEqual(actual["stages"], previous["stages"])
+                worker._receipt_finalizer.execute.assert_called_once_with(check=True)
 
     def report(self, summary):
         return {"task_id": TASK, "target": TARGET, "status": "attention_required", "task_title": "結果通知",
@@ -155,7 +210,7 @@ class ManagedHostTests(unittest.TestCase):
                     with mock.patch.object(host, "_request", return_value={"content": [], "isError": False}) as send:
                         self.assertEqual(host.send_direct_probe(OTHER), "accepted")
                     self.assertEqual(send.call_args.args[1]["prompt"], prompt)
-                    with mock.patch.object(host, "_json_call", return_value=self.bounded_receipt(host)) as read:
+                    with self.history(host, self.bounded_receipt(host)) as read:
                         self.assertEqual(host.observe_receipt(OTHER, ORIGINAL), NEW_TURN)
                     self.assertEqual(read.call_args.args[1]["maxOutputCharsPerItem"], 20000)
 
@@ -183,7 +238,7 @@ class ManagedHostTests(unittest.TestCase):
         ):
             changed = copy.deepcopy(value)
             edit(changed)
-            with self.subTest(edit=edit), mock.patch.object(host, "_json_call", return_value=changed):
+            with self.subTest(edit=edit), self.history(host, changed):
                 self.assertIsNone(host.observe_receipt(OTHER, ORIGINAL))
         value["thread"]["id"] = CHILD
         with mock.patch.object(host, "_json_call", return_value=value), self.assertRaises(HostAdapterError):
@@ -197,7 +252,7 @@ class ManagedHostTests(unittest.TestCase):
         text = output["text"]
         output.update(text=text[:22000] + "y" + text[22001:])
         output.update(text=output["text"][:20000], truncated=True, originalChars=len(text))
-        with mock.patch.object(host, "_json_call", return_value=value):
+        with self.history(host, value):
             self.assertEqual(host.observe_receipt(OTHER, ORIGINAL), NEW_TURN)
         self.assertEqual(json.loads(host._direct_prompt(OTHER).splitlines()[2])["delivery"]["receipt_scope"],
                          "notification_correlation_only")
@@ -227,13 +282,13 @@ class ManagedHostTests(unittest.TestCase):
             host.set_finalization_result(OTHER, {**report, "detail": "日" * (size - overhead)})
             value = self.bounded_receipt(host)
             self.assertEqual(value["turns"][0]["items"][0]["output"]["truncated"], size > 20000)
-            with mock.patch.object(host, "_json_call", return_value=value):
+            with self.history(host, value):
                 self.assertEqual(host.observe_receipt(OTHER, ORIGINAL), NEW_TURN)
         for padding in ("", "日"):
             host = self.host()
             host.set_finalization_result(OTHER, {**report, "detail": padding + "😀" * 14000})
             value = self.bounded_receipt(host)
-            with mock.patch.object(host, "_json_call", return_value=value):
+            with self.history(host, value):
                 self.assertEqual(host.observe_receipt(OTHER, ORIGINAL), NEW_TURN)
 
     def test_missing_or_invalid_source_identity_never_creates_a_receipt_header(self):
@@ -242,6 +297,56 @@ class ManagedHostTests(unittest.TestCase):
             with self.assertRaises(HostAdapterError):
                 host.set_finalization_result(OTHER, {**self.report("test"), "target": target})
             self.assertNotIn(OTHER, host._receipt_headers)
+
+    def pages(self, host, turns, matches=()):
+        pages = []
+        for index, identity in enumerate(turns):
+            value = self.receipt(host)
+            value["turns"][0]["id"] = identity
+            if identity not in matches:
+                value["turns"][0]["items"] = []
+            more = index + 1 < len(turns)
+            value["page"].update(hasMore=more, nextCursor=f"page-{index + 1}" if more else None)
+            pages.append(value)
+        return pages
+
+    def test_older_first_receipt_found_after_other_task_turns_and_duplicate_events(self):
+        host = self.host()
+        later, duplicate, first, pre_send = [str(uuid4()) for _ in range(4)]
+        pages = self.pages(host, [later, duplicate, first, pre_send, ORIGINAL], (first, duplicate))
+        # The latest pre-send turn belongs to B; admission's ORIGINAL is older.
+        for _ in range(2):
+            with mock.patch.object(host, "_json_call", side_effect=pages) as call:
+                self.assertEqual(first, host.observe_receipt(OTHER, pre_send))
+                self.assertEqual(call.call_count, 4)
+                self.assertEqual([c.args[1].get("cursor") for c in call.call_args_list],
+                                 [None, "page-1", "page-2", "page-3"])
+                self.assertTrue(all(c.kwargs["timeout"] > 0 for c in call.call_args_list))
+
+    def test_pre_send_event_or_missing_fence_never_confirms_receipt(self):
+        host = self.host()
+        pre_send = str(uuid4())
+        for turns, matches in (([NEW_TURN, pre_send, ORIGINAL], (pre_send, ORIGINAL)),
+                               ([NEW_TURN], (NEW_TURN,))):
+            with mock.patch.object(host, "_json_call", side_effect=self.pages(host, turns, matches)):
+                self.assertIsNone(host.observe_receipt(OTHER, pre_send))
+
+    def test_receipt_search_is_bounded_and_rejects_cycles(self):
+        host = self.host()
+        pages = self.pages(host, [str(uuid4()) for _ in range(18)] + [ORIGINAL])
+        with mock.patch.object(host, "_json_call", side_effect=pages) as call:
+            self.assertIsNone(host.observe_receipt(OTHER, ORIGINAL))
+            self.assertEqual(call.call_count, 16)
+        pages = self.pages(host, [NEW_TURN, NEW_TURN, ORIGINAL], (NEW_TURN,))
+        with mock.patch.object(host, "_json_call", side_effect=pages):
+            self.assertIsNone(host.observe_receipt(OTHER, ORIGINAL))
+        pages = self.pages(host, [NEW_TURN, str(uuid4()), ORIGINAL], (NEW_TURN,))
+        pages[1]["page"]["nextCursor"] = pages[0]["page"]["nextCursor"]
+        with mock.patch.object(host, "_json_call", side_effect=pages):
+            self.assertIsNone(host.observe_receipt(OTHER, ORIGINAL))
+        with mock.patch.object(host, "_json_call") as call:
+            self.assertIsNone(host.observe_receipt(OTHER, ORIGINAL, deadline=time.monotonic() - 1))
+            call.assert_not_called()
 
 
 class ManagedFlowTests(unittest.TestCase):
@@ -252,6 +357,7 @@ class ManagedFlowTests(unittest.TestCase):
         self.paths = canonical_state_paths(self.root / "skill", repo=self.root)
         self.paths.fixed_root.mkdir(parents=True)
         self.basis = replace(BINDING, task_id=TASK)
+        self.bases, self.children, self.received = {}, {}, {}
         self.now = NOW
         self.enabled = True
         self.current_parent = ChildTurn(PARENT, ORIGINAL, "inProgress", "active")
@@ -269,18 +375,19 @@ class ManagedFlowTests(unittest.TestCase):
 
     def factory(self, **kwargs):
         automation = kwargs["automation_id"]
+        task = kwargs["task_id"]
         if automation != "pending" and automation in self.hosts:
             return self.hosts[automation]
         fixture = self
         class Host(DirectHost):
             def read_child(self, child):
-                return fixture.child
+                return fixture.children.get(task, fixture.child)
 
             def read_parent(self):
                 return fixture.current_parent
 
             def resolve_reviewer_ids(self):
-                return (CHILD,)
+                return (fixture.children.get(task, fixture.child).child_id,)
 
             def create_heartbeat(self, rule):
                 fixture.effects.append("create")
@@ -309,14 +416,16 @@ class ManagedFlowTests(unittest.TestCase):
                 fixture.effects.append("send")
                 self.sends.append(probe)
                 if fixture.auto_receive:
-                    fixture.current_parent = ChildTurn(PARENT, NEW_TURN, "inProgress", "active")
+                    turn = NEW_TURN if not fixture.received and fixture.current_parent.turn_id != NEW_TURN else str(uuid4())
+                    fixture.received[probe] = turn
+                    fixture.current_parent = ChildTurn(PARENT, turn, "inProgress", "active")
                 return self.outcome
 
-            def observe_receipt(self, probe, original):
+            def observe_receipt(self, probe, original, *, deadline=None):
                 if fixture.fail_receipt:
                     raise HostAdapterError("invalid_host_response")
-                if fixture.auto_receive and probe in self.sends and fixture.current_parent.turn_id != original:
-                    return fixture.current_parent.turn_id
+                if fixture.auto_receive and probe in self.sends:
+                    return fixture.received.get(probe)
                 return None
         return Host()
 
@@ -327,16 +436,17 @@ class ManagedFlowTests(unittest.TestCase):
                 direct_factory=lambda *a, **kw: direct_type(*a, **kw, cycle_seconds=0.01, join_seconds=5))
         session = ProjectReviewWaitSession(ProjectConfig(self.root, self.root / "server.mjs", self.root, "UTC"),
             managed_host_factory=self.factory, session_factory=session_factory, clock=lambda: self.now,
-            basis_factory=lambda repo, task, parent, wait, **kwargs: lambda: replace(self.basis, wait_id=wait))
+            basis_factory=lambda repo, task, parent, wait, **kwargs: lambda:
+                replace(self.bases.get(task, self.basis), task_id=task, wait_id=wait))
         session._enabled = lambda: self.enabled
         session._location = lambda **kwargs: self.paths
         self.sessions.append(session)
         return session
 
-    def call(self, operation="wait", *, session=None, metadata=None, **args):
+    def call(self, operation="wait", *, session=None, metadata=None, task_id=TASK, **args):
         if operation == "wait":
             args.setdefault("reviewer_ids", ["/root/actual_reviewer"])
-        return (session or self.session).handle(operation, {"task_id": TASK, **args}, metadata or META)
+        return (session or self.session).handle(operation, {"task_id": task_id, **args}, metadata or META)
 
     def inspect(self):
         return self.call("inspect")
@@ -443,6 +553,52 @@ class ManagedFlowTests(unittest.TestCase):
         self.assertEqual(journal.read().reviewer_observations, ((CHILD, TURN, "failed"),))
         self.assertEqual(journal.read().reviewer_blocker, "finalization_reviewer_failed")
         self.assertEqual(self.effects, ["create", "arm", "pause", "delete"])
+
+    def test_preflight_observation_waits_for_short_worker_write_without_replaying(self):
+        journal = self.integrated_observer()
+        observer = self.session._finalizer(self.basis)
+        entered, finished, errors = threading.Event(), threading.Event(), []
+        def observe():
+            entered.set()
+            try:
+                observer.observe_reviewers(((CHILD, TURN, "failed"),))
+            except Exception as error:
+                errors.append(error)
+            finally:
+                finished.set()
+        with journal.serial():
+            worker = threading.Thread(target=observe)
+            worker.start()
+            self.assertTrue(entered.wait(2))
+            self.assertFalse(finished.wait(0.05))
+        worker.join(2)
+        self.assertTrue(finished.is_set())
+        self.assertEqual(errors, [])
+        self.assertEqual(journal.read().reviewer_observations, ((CHILD, TURN, "failed"),))
+        self.assertEqual(self.effects, [])
+
+    def test_finalization_read_waits_for_short_observation_commit(self):
+        journal = self.integrated_observer()
+        entered, finished, outcomes = threading.Event(), threading.Event(), []
+        def read():
+            entered.set()
+            try:
+                outcomes.append(journal.read())
+            except Exception as error:
+                outcomes.append(error)
+            finally:
+                finished.set()
+        with journal.serial(), journal._connection(write=True) as connection:
+            # Hold the same SQLite exclusion window as an observation commit.
+            connection.execute("COMMIT")
+            connection.execute("BEGIN EXCLUSIVE")
+            worker = threading.Thread(target=read)
+            worker.start()
+            self.assertTrue(entered.wait(2))
+            self.assertFalse(finished.wait(0.05))
+        worker.join(2)
+        self.assertTrue(finished.is_set())
+        self.assertEqual(outcomes, [journal.read()])
 
     def test_failed_status_is_retained_while_host_thread_is_still_active(self):
         journal = self.integrated_observer()
@@ -668,3 +824,168 @@ class ManagedFlowTests(unittest.TestCase):
         with RequestRepository(path).serial():
             self.assertFalse(self.call()["ok"])
         self.assertEqual(["create", "arm"], self.effects)
+
+    def two_waits(self):
+        second = "tg_task_2222222222222222"
+        self.assertTrue(self.call()["parent_may_end"])
+        # Work on B legitimately advances the same parent's actual turn.
+        self.current_parent = ChildTurn(PARENT, NEW_TURN, "inProgress", "active")
+        self.children[second] = ChildTurn(OTHER, str(uuid4()), "inProgress", "active")
+        self.assertTrue(self.call(task_id=second, metadata={"threadId": PARENT, "turnId": NEW_TURN})["parent_may_end"])
+        self.assertEqual(self.inspect()["delivery"]["status"], "waiting")
+        self.assertNotIn("pause", self.effects)
+        return second
+
+    def test_two_tasks_simultaneous_reverse_and_consecutive_completion_stay_bound(self):
+        # Each iteration owns fresh disposable state and independent workers.
+        for order in ("simultaneous", "a_first", "b_first"):
+            with self.subTest(order=order):
+                fixture = ManagedFlowTests()
+                fixture.setUp()
+                try:
+                    second = fixture.two_waits()
+                    if order != "b_first":
+                        fixture.child = replace(fixture.child, status="completed", thread_status="idle")
+                    if order != "a_first":
+                        fixture.children[second] = replace(fixture.children[second], status="completed", thread_status="idle")
+                    fixture.current_parent = replace(fixture.current_parent, status="completed", thread_status="idle")
+                    fixture.until(lambda: len(fixture.received) == 1)
+                    time.sleep(0.05)  # The other worker must defer while parent is busy.
+                    self.assertEqual(fixture.effects.count("send"), 1)
+                    fixture.child = replace(fixture.child, status="completed", thread_status="idle")
+                    fixture.children[second] = replace(fixture.children[second], status="completed", thread_status="idle")
+                    fixture.current_parent = replace(fixture.current_parent, status="completed", thread_status="idle")
+                    fixture.until(lambda: len(fixture.received) == 2)
+                    for task in (TASK, second):
+                        fixture.until(lambda: fixture.call("inspect", task_id=task)["delivery"]["acknowledged_turn"] is not None)
+                        record = fixture.call("inspect", task_id=task)["delivery"]
+                        self.assertEqual(record["acknowledged_turn"], fixture.received[record["probe_id"]])
+                    self.assertEqual(fixture.effects.count("delete"), 2)
+                    self.assertEqual(fixture.effects.count("send"), 2)
+                    self.assertEqual(fixture.effects.count("pause"), 0)
+                finally:
+                    fixture.doCleanups()
+
+    def test_cancel_or_changed_target_of_one_task_preserves_other_wait(self):
+        for change in ("cancel", "target"):
+            with self.subTest(change=change):
+                fixture = ManagedFlowTests()
+                fixture.setUp()
+                try:
+                    second = fixture.two_waits()
+                    if change == "cancel":
+                        self.assertTrue(fixture.call("stop")["ok"])
+                    else:
+                        fixture.bases[TASK] = replace(fixture.basis, target_generation=2)
+                        fixture.until(lambda: fixture.inspect()["delivery"]["status"] == "suppressed")
+                    fixture.children[second] = replace(fixture.children[second], status="completed", thread_status="idle")
+                    fixture.current_parent = replace(fixture.current_parent, status="completed", thread_status="idle")
+                    fixture.until(lambda: fixture.call("inspect", task_id=second)["delivery"]["status"] == "accepted")
+                    self.assertEqual(fixture.effects.count("send"), 1)
+                    self.assertEqual(fixture.hosts["managed-1"].sends, [])
+                finally:
+                    fixture.doCleanups()
+
+    def test_busy_after_deletion_defers_send_without_redeleting_or_suppressing(self):
+        self.call()
+        host = self.hosts["managed-1"]
+        host.on_delete = lambda: setattr(self, "current_parent", ChildTurn(PARENT, NEW_TURN, "inProgress", "active"))
+        self.ended()
+        self.until(lambda: self.inspect()["delivery"]["timer_phase"] == "deleted")
+        self.assertEqual(self.inspect()["delivery"]["status"], "waiting")
+        self.assertNotIn("send", self.effects)
+        # An already-started deletion can finish sending after the due cutoff.
+        self.now += timedelta(minutes=11)
+        self.current_parent = replace(self.current_parent, status="completed", thread_status="idle")
+        self.until(lambda: self.inspect()["delivery"]["status"] == "accepted")
+        self.assertEqual(self.effects, ["create", "arm", "delete", "send"])
+
+    def test_unknown_send_for_a_does_not_replay_or_cancel_b_after_restart(self):
+        second = self.two_waits()
+        self.auto_receive = False
+        self.hosts["managed-1"].outcome = "unknown"
+        self.child = replace(self.child, status="completed", thread_status="idle")
+        self.current_parent = replace(self.current_parent, status="completed", thread_status="idle")
+        self.until(lambda: self.inspect()["delivery"]["status"] == "unknown")
+        self.children[second] = replace(self.children[second], status="completed", thread_status="idle")
+        self.current_parent = ChildTurn(PARENT, str(uuid4()), "completed", "idle")
+        self.until(lambda: self.call("inspect", task_id=second)["delivery"]["status"] == "accepted")
+        self.session.close()
+        before = list(self.effects)
+        restarted = self.make()
+        self.assertEqual(self.call("inspect", session=restarted)["delivery"]["status"], "unknown")
+        self.assertEqual(self.call("inspect", task_id=second, session=restarted)["delivery"]["status"], "accepted")
+        self.assertEqual(before, self.effects)
+        self.assertEqual(self.effects.count("send"), 2)
+        self.assertEqual(len(self.hosts["managed-1"].sends), 1)
+        self.assertEqual(len(self.hosts["managed-2"].sends), 1)
+
+    def test_new_parent_turn_after_due_keeps_fallback_until_outer_expiry(self):
+        self.call()
+        self.now += timedelta(minutes=11)
+        self.current_parent = ChildTurn(PARENT, NEW_TURN, "completed", "idle")
+        self.child = replace(self.child, status="completed", thread_status="idle")
+        time.sleep(0.05)
+        self.assertEqual(self.inspect()["delivery"]["status"], "waiting")
+        self.assertEqual(self.effects, ["create", "arm"])
+        self.now += timedelta(minutes=10)
+        self.until(lambda: self.inspect()["delivery"]["timer_phase"] == "paused")
+        self.assertEqual(self.inspect()["delivery"]["status"], "expired")
+
+    def test_same_parent_os_dispatch_lease_defers_without_host_effect(self):
+        from task_governance_tool.review_wait_runtime.request_repository import ParentDispatchRepository
+        self.call()
+        path = self.paths.review_wait_dispatch_store(PARENT)
+        with ParentDispatchRepository(path).serial():
+            self.ended()
+            time.sleep(0.05)
+            self.assertEqual(self.effects, ["create", "arm"])
+            self.assertEqual(self.inspect()["delivery"]["status"], "waiting")
+        self.until(lambda: self.inspect()["delivery"]["status"] == "accepted")
+        self.assertFalse(path.exists())  # Only the bounded OS lock, no database.
+
+    def test_first_dispatch_lock_publish_never_exposes_empty_file_to_competitor(self):
+        from task_governance_tool import state_paths
+        from task_governance_tool.review_wait_runtime.request_repository import ParentDispatchRepository
+        self.paths.review_wait_root.mkdir()
+        path = self.paths.review_wait_dispatch_store(PARENT)
+        repository = ParentDispatchRepository(path)
+        writing, release, outcomes = threading.Event(), threading.Event(), []
+        write = state_paths._write_all
+        def interrupted_write(*args):
+            if threading.current_thread().name == "first-dispatch-creator":
+                writing.set()
+                if not release.wait(3):
+                    raise AssertionError("test writer was not released")
+            return write(*args)
+        def first():
+            try:
+                with repository.serial():
+                    outcomes.append("first_admitted")
+            except Exception as error:
+                outcomes.append(str(error))
+        with mock.patch.object(state_paths, "_write_all", side_effect=interrupted_write):
+            worker = threading.Thread(target=first, name="first-dispatch-creator")
+            worker.start()
+            try:
+                self.assertTrue(writing.wait(3))
+                self.assertFalse(repository.lock_path.exists())
+                with ParentDispatchRepository(path).serial():
+                    self.assertEqual(repository.lock_path.stat().st_size, 1)
+                    outcomes.append("second_admitted")
+            finally:
+                release.set()
+                worker.join(3)
+        self.assertEqual(outcomes, ["second_admitted", "first_admitted"])
+        self.assertEqual(repository.lock_path.read_bytes(), b"\x00")
+        self.assertFalse(list(self.paths.review_wait_root.glob("*.tmp")))
+
+    def test_existing_empty_dispatch_lock_is_not_repaired(self):
+        from task_governance_tool.review_wait_runtime.request_repository import ParentDispatchRepository
+        self.paths.review_wait_root.mkdir()
+        repository = ParentDispatchRepository(self.paths.review_wait_dispatch_store(PARENT))
+        repository.lock_path.write_bytes(b"")
+        with self.assertRaisesRegex(Exception, "state_unreadable"):
+            with repository.serial():
+                self.fail("corrupt lock admitted")
+        self.assertEqual(repository.lock_path.read_bytes(), b"")

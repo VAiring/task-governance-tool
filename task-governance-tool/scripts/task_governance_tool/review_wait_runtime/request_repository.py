@@ -10,7 +10,12 @@ from dataclasses import asdict, dataclass, replace
 import json
 import os
 import re
-from uuid import UUID
+from uuid import UUID, uuid4
+
+from task_governance_tool.no_replace import rename_no_replace
+from task_governance_tool.state_paths import (
+    StatePathError, create_exclusive_durable_file, path_lexically_exists, unlink_validated_file,
+)
 
 from .review_wait_repository import ReviewWaitRepository, RepositoryError, _missing, _identity
 
@@ -63,6 +68,39 @@ def _encode(record):
     if type(record) is not RequestRecord:
         raise RepositoryError("invalid_snapshot")
     return json.dumps(asdict(record), sort_keys=True, separators=(",", ":"))
+
+
+class ParentDispatchRepository(ReviewWaitRepository):
+    def _prepare_lock(self):
+        if not _missing(self.lock_path):
+            return
+        root = self.path.parent
+        temporary = None
+        try:
+            temporary = create_exclusive_durable_file(
+                self.lock_path.with_name(".dispatch-" + uuid4().hex + ".tmp"),
+                b"\x00", root=root, max_bytes=1)
+            try:
+                rename_no_replace(temporary, self.lock_path, root=root)
+            except StatePathError:
+                # A concurrent creator may publish first. Admission below
+                # still validates that complete physical lock; never replace it.
+                if _missing(self.lock_path):
+                    raise
+        except StatePathError:
+            raise RepositoryError("state_unreadable") from None
+        finally:
+            if temporary is not None and path_lexically_exists(temporary.path):
+                unlink_validated_file(temporary, root=root)
+
+    @contextmanager
+    def serial(self):
+        """Nonblocking physical OS lease only; no database or send replay."""
+        # Publish the complete byte atomically; direct O_EXCL creation would
+        # expose an empty lock to another same-parent worker before os.write.
+        self._prepare_lock()
+        with self._lease():
+            yield
 
 
 class RequestRepository(ReviewWaitRepository):

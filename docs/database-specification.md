@@ -450,6 +450,10 @@ schema-4 single-turn relation and immutable-anchor validation; it performs no
 setup/migration, core write, synthetic response or supervisor interval. Existing
 union/deduplication and unknown/conflicting-source behavior remain controlling.
 Late response collection links that real turn to the original completion period.
+Receipt search may find that first receiving turn behind newer work for another
+Task. It never substitutes the latest turn, execution or manifest. A turn shared
+by several valid associations contributes its response keys once to the union;
+late observations remain in each original execution's completion period.
 
 ### Immutable Usage Evidence
 

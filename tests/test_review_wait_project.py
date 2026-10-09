@@ -241,7 +241,7 @@ class ProjectWaitTests(PreparationFixture):
                     return host.automation_id
                 host.create_heartbeat = create
                 host.verify_created = lambda rule: host.value
-                host.observe_receipt = lambda probe, original: (
+                host.observe_receipt = lambda probe, original, **kwargs: (
                     host.parent.turn_id if probe in host.sends and host.parent.turn_id == NEW_TURN else None)
                 host.on_send = lambda probe: setattr(host, "parent", ChildTurn(self.parent, NEW_TURN, "inProgress", "active"))
             return host

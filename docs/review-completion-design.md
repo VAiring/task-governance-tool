@@ -542,12 +542,23 @@ start and healthy repeated waiting; the source compatibility entry keeps its
 explicit injected paths and old catalogue.
 
 `CanonicalStatePaths.review_wait_root`, `review_wait_store` and
-`review_wait_request_store` own all paths. Reservation filenames hash the actual
+`review_wait_request_store` and `review_wait_dispatch_store` own all paths. Reservation filenames hash the actual
 returned ID. A request filename is `request-<sha256(parent UUID:Task ID)>.sqlite`
 under the same operational root. Physical scope, canonical binding and enabled
 policy are checked before mutation; current Task ownership is validated before
 directory creation. This subtree remains outside core backup/recovery inventory,
 like numerical state, and is never restored into active workers.
+
+The dispatch namespace is `dispatch-<sha256(parent UUID)>.sqlite`; only its
+one-byte `.lock` sibling is created, with no SQLite payload or schema. The
+request repository's `ParentDispatchRepository` reuses physical/no-link and
+nonblocking OS lease admission. Initial creation flushes a private one-byte
+sibling and publishes it with the existing no-replace primitive, so competing
+workers never see a partially written lock. A losing publisher removes only
+its own validated temporary and admits the existing complete lock. Contention defers the worker within its original
+deadline; no host effect or transaction is retried. The lease spans fresh checks,
+deletion, finalization and one send across same-project/same-parent workers,
+without serializing unrelated parents or claiming atomic host compare-and-send.
 
 `request_repository` reuses the wait repository's physical/no-link admission,
 bounded SQLite connection and OS writer lease. Its separate schema version one
@@ -578,8 +589,41 @@ The inherited worker retains intent-before-effect, one deletion/send attempt,
 parent/reviewer freshness, due cutoff and twenty-minute outer deadline. After
 accepted/unknown send settlement, it observes the original parent for up to
 120 seconds within that outer deadline, never sending again.
-`ManagedHost.observe_receipt` requests bounded public `read_thread` output and
-validates the actual new parent turn plus the structured incoming
+Managed parent freshness means the original parent identity and current idle
+state; another Task's newer turn does not invalidate its bound wait. Busy reads
+defer deletion/sending; after confirmed deletion the same worker may wait for
+idle without deleting again, within the original outer deadline. Integrated
+effect guards wait for idle under that bound, without retrying finalization.
+A prepared result is retained transiently if the parent becomes busy again.
+Before resumed sending, read-only finalization checking rebuilds that report
+against its exact retained intent and current evidence. Reopen or target/owner
+drift produces a bound failure report with prior successful stages preserved;
+registration, commit and completion are never repeated to refresh a notification.
+Read-only checking does not rerun business gates; an earlier known attempt's
+blocking reason remains unless the check supplies a newer failure or confirms
+completion. A successful read alone never erases an unresolved attempt failure.
+The host adapter permits report replacement only before sending and under the
+same complete notification/Task/target identity. Its local prompt lock freezes
+the body before the single transport attempt, including unknown/rejected outcomes;
+later receipt comparison cannot observe a rewritten message.
+Legacy experiments keep their original-turn rule.
+When scheduled-check preflight and an existing worker retain reviewer facts at
+the same time, the finalization observation writer may wait at most one second
+for its OS lease. Only lock admission repeats; transactions and effects do not.
+This operational finalization repository alone uses a one-second SQLite busy
+timeout so concurrent preflight reads and short observation commits can settle.
+No transaction or external stage is replayed; other wait stores keep their
+existing admission policy.
+
+Immediately before the durable send intent the worker captures the fresh idle
+parent turn as this attempt's transient receipt fence. After send settlement,
+`ManagedHost.observe_receipt` requests newest-first public `read_thread` pages
+with one turn each, at most sixteen pages per scan and one shared host timeout
+clipped to the receipt deadline. It follows bounded nonrepeating cursors, rejects
+duplicate turns, and must reach the fence. It chooses the oldest matching turn
+strictly after that fence; missing history/bounds never choose a partial candidate.
+Later B turns therefore cannot hide A's first received notification. It validates
+the structured incoming
 `codex_app.send_message_to_thread` delegation event for its outgoing notification.
 For integrated results, a small leading identity contains protocol version,
 probe, original parent, Task and the complete retained target basis before the
@@ -593,7 +637,7 @@ an incompatible or incomplete shape fails closed. Split surrogate pairs are
 compared as UTF-16 units. This establishes correlation only: the unseen suffix
 is not verified by its length or by a sender-controlled identity/digest.
 Only that observed UUID updates the existing monotonic acknowledgement field.
-Bodies stay transient. Old turns, unrelated inputs, plain echoes and unknown
+Fence/cursors/bodies stay transient. No worker restarts after process loss. Old turns, unrelated inputs, plain echoes and unknown
 reads cannot set receipt. The legacy direct worker and payload versions remain
 unchanged and still support their separately selected manual acknowledgement.
 

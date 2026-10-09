@@ -164,7 +164,8 @@ class ProjectReviewWaitSession:
             host_factory = lambda **kwargs: self.managed_host_factory(task_id=task_id, **kwargs)
             options["prepare_reviewer_reader"] = prepare_reviewer_reader
             options["direct_factory"] = lambda *args, **kwargs: ManagedDirectProbe(
-                *args, finalization_factory=lambda controller: self._finalizer(controller.binding), **kwargs)
+                *args, finalization_factory=lambda controller: self._finalizer(controller.binding),
+                dispatch_path=lambda parent: self._location(enabling=False).review_wait_dispatch_store(parent), **kwargs)
         session = self.session_factory(config, host_factory=host_factory,
             basis_factory=self._reader, clock=self.clock, **options)
         self.sessions[automation_id] = session

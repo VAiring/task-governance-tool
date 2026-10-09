@@ -183,6 +183,8 @@ def _forward(previous: ReviewWaitController, candidate: ReviewWaitController) ->
 class ReviewWaitRepository:
     """One development wait per explicit file; ordinary runtime must use its resolver."""
 
+    _connection_timeout = 0
+
     def __init__(self, path: Path):
         self.path = _path(path)
         self.lock_path = self.path.with_name(self.path.name + ".lock")
@@ -246,7 +248,8 @@ class ReviewWaitRepository:
         before = self._inspect()
         connection = None
         try:
-            connection = sqlite3.connect(self.path.as_uri() + ("?mode=rw" if write else "?mode=ro"), uri=True, timeout=0, isolation_level=None)
+            connection = sqlite3.connect(self.path.as_uri() + ("?mode=rw" if write else "?mode=ro"), uri=True,
+                                         timeout=self._connection_timeout, isolation_level=None)
             connection.execute("PRAGMA trusted_schema = OFF")
             if not write:
                 connection.execute("PRAGMA query_only = ON")

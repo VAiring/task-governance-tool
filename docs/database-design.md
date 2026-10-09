@@ -266,6 +266,10 @@ missing/unmigrated numerical state remains unavailable. No current-owner lookup,
 message parser, new schema, implicit setup or invented response is introduced.
 Existing interval union and late immutable publication cover the real reporting
 turn even when the preceding integrated completion released ownership.
+The wait adapter supplies the first matched turn after its send-time boundary,
+including one found behind later same-parent turns. Association uses each retained
+execution/manifest independently; shared-turn response keys are unioned, and no
+latest-owner lookup or separate usage schema is needed.
 
 ### Immutable Usage Persistence
 

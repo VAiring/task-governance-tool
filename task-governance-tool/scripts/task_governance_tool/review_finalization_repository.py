@@ -9,6 +9,8 @@ from dataclasses import asdict, dataclass, replace
 import json
 import os
 import re
+import sys
+import time
 
 from .review_wait_runtime.review_wait_repository import ReviewWaitRepository, RepositoryError, _missing, _identity
 from .review_wait_runtime.review_wait_basis import parse_basis
@@ -115,12 +117,29 @@ def _encode(record):
 
 
 class FinalizationRepository(ReviewWaitRepository):
+    # A scheduled preflight can read while its old worker retains an observation.
+    # SQLite's bounded busy wait settles that short read/commit overlap; it does
+    # not replay a transaction or any externally visible finalization operation.
+    _connection_timeout = 1
+
     @contextmanager
-    def serial(self, *, initial=None):
+    def serial(self, *, initial=None, wait_for_observation=False):
         fresh = _missing(self.path)
         if fresh and (initial is None or not _missing(self.lock_path)):
             raise RepositoryError("state_unreadable")
-        with self._lease(create_lock=initial is not None) as lease:
+        # Wait only for a short observation writer's OS-lock admission, never
+        # replay a transaction, finalization stage or host effect.
+        deadline = time.monotonic() + (1 if wait_for_observation else 0)
+        while True:
+            manager = self._lease(create_lock=initial is not None)
+            try:
+                lease = manager.__enter__()
+                break
+            except RepositoryError as error:
+                if error.code != "writer_busy" or time.monotonic() >= deadline:
+                    raise
+                time.sleep(0.01)
+        try:
             if _missing(self.path):
                 if initial is None or not fresh:
                     raise RepositoryError("state_unreadable")
@@ -139,6 +158,11 @@ class FinalizationRepository(ReviewWaitRepository):
             lease._check()
             yield lease
             lease._check()
+        except BaseException:
+            manager.__exit__(*sys.exc_info())
+            raise
+        else:
+            manager.__exit__(None, None, None)
 
     @staticmethod
     def _load(connection):

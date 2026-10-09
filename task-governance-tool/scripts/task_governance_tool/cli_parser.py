@@ -74,6 +74,8 @@ def build_parser() -> argparse.ArgumentParser:
         description="Local project task-state helper for Codex.",
     )
     parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
+    parser.add_argument("--records-only", action="store_true",
+                        help="restrict this invocation to ordinary Task records; never launch a Runner or change configuration")
     add_common_options(parser)
     parser.register(
         "action",

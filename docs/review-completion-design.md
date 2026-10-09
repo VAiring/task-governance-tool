@@ -81,6 +81,11 @@ only live marker `2` adds the Runner selection and selected-basis recapture.
 
 ## Review Target And Git Snapshot
 
+The [record authorization adapter](task-operation-design.md#ordinary-record-authorization-adapter)
+restricts optional host-preapproved calls before dispatch and propagates that
+restriction through ordinary handoff preparation. It grants no integrated
+finalization, review-wait or Git publication authority.
+
 Caller-side success-only composition of Git staging and target capture, or Git
 commit/full-ID retrieval and completion, uses the existing commands unchanged.
 It introduces no runtime wrapper or transaction spanning Git and SQLite. A

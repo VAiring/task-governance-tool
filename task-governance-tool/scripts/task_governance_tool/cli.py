@@ -2313,6 +2313,7 @@ def handle_review_command(context: CommandContext, *, submission=None, finalizat
                 kind=getattr(context.args, "kind", ""),
                 revision=getattr(context.args, "revision", None),
                 caller=context.caller,
+                **({"allow_runner": False} if getattr(context.args, "records_only", False) else {}),
             )
             data = {
                 "task": write_task_projection(result.task, result.changed_fields),
@@ -2799,6 +2800,12 @@ def main(
                 exit_code=EXIT_TOOL_ERROR,
             )
         args = parser.parse_args(raw_argv)
+        if args.records_only:
+            from task_governance_tool.task_record_policy import RecordPolicyError, validate_record_arguments
+            try:
+                validate_record_arguments("taskgov.py", raw_argv)
+            except RecordPolicyError:
+                raise CommandLineError("record_operation_not_allowed", "operation requires the existing authorization route", exit_code=EXIT_TOOL_ERROR)
         if args.command is None:
             parser.print_help()
             return EXIT_SUCCESS

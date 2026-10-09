@@ -86,6 +86,7 @@ confirmation is required.
 | Review-wait failure, stop, diagnosis, or old association | [Wait recovery and compatibility](references/review_wait.md#failures-stop-and-diagnosis) |
 | `project_relocation_required` | [Relocation preview and approval](references/cli_contracts.md#setup) |
 | Explicit diagnosis or state/package error | [Doctor](references/cli_contracts.md#doctor) |
+| Explicit introduction/diagnosis of ordinary-Task host preapproval | [Optional preapproval](references/cli_contracts.md#optional-task-preapproval) |
 | Explicit taskization | [Completion-based Task boundaries and registration](references/task_workflow.md#taskize-or-add-scope) |
 | Explicit active-Task scope addition | [Scope-addition disposition](references/task_workflow.md#explicit-mid-task-scope-addition) |
 | Copy an explicit initial Contract | [Task Contract](references/task_workflow.md#task-contract) |
@@ -102,6 +103,11 @@ confirmation is required.
 For exact options, fields, bounds, and errors, use the matching command in the
 [CLI contents](references/cli_contracts.md#contents), not unrelated commands.
 Verification without explicit Runner opt-in remains manual.
+When ordinary-Task preapproval is explicitly activated, reuse its configured
+literal invocation with `--records-only` for ordinary records; generated restricted
+handoff commands preserve it. There is no extra permission check command or
+per-Task approval. Existing Contract/configuration, Runner, Git and integrated
+finalization operations retain their current authorization route.
 At registration or an existing edit, state the required verification or use
 `--verification-not-required` with an authorized short reason. Omission is
 unspecified, not waived, and blocks completion; do not infer a waiver from prose.

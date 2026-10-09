@@ -613,6 +613,10 @@ eligible Runner next validates the fixed lifecycle inventory and acquires the
 zero-wait Runner lock before any T1 writer. Lock contention returns
 `runner_busy`; lifecycle or inventory uncertainty returns
 `runner_state_invalid`; both leave the target and Runner tables unchanged.
+For an optional records-only invocation, `allow_runner=False` instead rejects
+that eligible route before ownership-writer, lock, cleanup or T1 effects with
+`runner_execution_requires_authorization`. It does not affect unrestricted
+calls, invent deferred execution, or change the existing manual fallback.
 Under that retained lock, the service reconciles any pending intent before it
 may invoke one short T1 transaction that revalidates the prepared Task,
 Contract, criteria, target generation, manifest, plan, implementation, and
@@ -727,8 +731,8 @@ the attempt pending and fails closed.
 Post-intent pending, basis drift, incomplete process proof, and cleanup or
 terminal-state uncertainty use the existing sanitized `runner_state_invalid`
 service failure; zero-wait lock contention uses `runner_busy`; a storage error
-retains its existing code. No new public error code or envelope member is
-added. The committed T1 target and intent survive a later service error.
+retains its existing code. These post-intent failures add no error code or
+envelope member. The committed T1 target and intent survive a later service error.
 Success and fallback perform exactly the existing one target-set post-commit
 maintenance opportunity; a post-T1 error performs none and relies on the
 already-advanced due state. Internal Runner writes add no maintenance call and

@@ -642,6 +642,93 @@ endpoints and generation bridge remain reliable. A bounded observation failure
 may report `activity_generation_uncertain`. These fields are advisory
 bookkeeping, never Task authority or a completion gate.
 
+## Optional Ordinary-Task Preapproval
+
+Preapproval has exactly two classes: ordinary records already authorized by the
+user/project, and operations that retain their existing authorization rules.
+It does not establish intent, authorize unsolicited Task creation, reinterpret
+a Contract, or waive ownership, ordering, verification, review or completion.
+An optional project-local Codex `PermissionRequest` hook may admit only the
+first class. It makes no Task record, new normal-loop call, LLM classification
+step or per-Task approval record. Absence of host activation changes nothing.
+
+The first-position `--records-only` option restricts existing `taskgov.py` and
+`review_handoff.py` invocations before state access. It requires one explicit
+`--repo` and exact option names; duplicate singleton options, abbreviations,
+unknown arguments and excluded combinations fail `record_operation_not_allowed`.
+The taskgov failure uses its existing parse error envelope and exit 2; the
+helper uses its sanitized failure envelope and nonzero exit. This option grants
+no host permission by itself and never weakens an ordinary validator.
+
+Admitted operations are existing read/selection/diagnosis, explicit Task
+registration (including its initial Contract, individual or structured stdin),
+ordinary state/reason/note updates, checkpoints, local Handoff recording and
+reads, target/Packet preparation without Runner execution, Verification/Review
+Receipt and Finding registration/resolution, and ordinary `task complete`.
+Their existing bounded same-process maintenance is included. Task edit admits
+only `--status`, `--blocked-reason`, `--pause-reason`, and `--add-note`, besides
+common options; status is ready, in_progress, review_pending, paused or blocked.
+Other edits, including purpose/metadata, existing-Task initial or revised
+Contract, quality declaration/tier, Runner Plan, cancellation, reopen and the
+legacy edit-to-done form retain the ordinary route. New registration may state
+its already-approved initial quality/Contract; that is not an existing-Task edit.
+
+Setup, trust/permission/configuration changes, Git writes, external operations,
+Handoff withdrawal and explicit approval overrides (external-revision approval,
+Tier-2 self-review approval) remain outside preapproval. `task complete` records
+completion using existing evidence; it does not create a commit. Helper
+`prepare-finalization`, `finalize`, and review-wait controls retain their existing
+route, including MCP approvals, reservations, notifications and automatic commit.
+Preapproval cannot be used to change the existing integrated/manual route choice.
+
+Restricted target setting still resolves current Runner eligibility. If it
+would take the Runner route, it fails `runner_execution_requires_authorization`
+before target, attempt, cleanup, lock or launch writes. It does not silently
+substitute manual evidence or change a Plan. That definite no-write result may
+continue through the same existing operation without the restriction only when
+its execution is already authorized under project/host rules. Other failed or
+unknown outcomes retain ordinary recovery, with no blind retry. Manual target
+and Receipt preparation use their existing routes. Restricted helper preparation
+propagates isolation/restriction to its source child and generated read/save/
+submit/material commands; the helper preserves ordinary full-batch validation.
+
+The hook checks the complete literal command, fixed absolute Python/package/
+project, single repository argument, and pinned package revision. Only the
+configured PowerShell or POSIX literal invocation is recognized, with isolated
+Python `-I -S -B`; arbitrary interpreter options, other scripts/projects, shell
+expansion, chaining, redirection and unrecognized syntax decline to decide.
+The existing fixed UTF-8 literal stdin transports are supported. Package
+reference reads through the fixed `read_reference.py` are also eligible.
+No blanket interpreter, script-directory, `task edit` or command-prefix allow
+rule is provided. Unknown input, policy/package drift or inspection failure
+returns `{}` to preserve the existing host approval flow, never an implicit allow.
+
+`scripts/task_preapproval.py propose` produces a preserving `hooks.json`
+candidate on stdout, incorporating an explicitly supplied existing hooks file.
+It writes no configuration and enables/trusts nothing. Applying it requires
+explicit approval for the concrete project `.codex/hooks.json` change; existing
+user/managed/inline config and other hooks remain untouched. Project-layer trust,
+hook-definition trust, enabled hooks, compatible host support and restart/load
+are host prerequisites. A fixed bootstrap embedded in the reviewed definition
+checks policy code before importing it; the policy then checks the complete
+manifest and shipped files. The pinned bootstrap and restricted entry points
+compile package modules from source, never bytecode or native-extension substitutes.
+Each module retains its fixed shipped source origin; a same-named directory
+cannot substitute a new package initializer before validation.
+Existing physical `__pycache__` bytecode is inert and is not deleted; unlisted
+non-cache import artifacts decline to decide. A changed package requires a newly reviewed proposal,
+not automatic permission refresh. This is trusted-local drift detection, not an
+execution lease against hostile concurrent code replacement. Managed restrictions
+and other denying hooks remain controlling.
+
+The host behavior is based on the official [PermissionRequest contract](https://learn.chatgpt.com/docs/hooks#permissionrequest)
+and [hook trust/configuration](https://learn.chatgpt.com/docs/hooks#review-and-trust-hooks).
+Prefix-only [command rules](https://learn.chatgpt.com/docs/agent-configuration/rules)
+cannot distinguish arbitrary trailing Task arguments. Fixtures and candidate
+validation prove their bounded contracts, not live Guardian reduction. Report
+actual host activation/results separately; no token, billing or savings claim
+follows from examples, local timing or `project_root_uninspectable` alone.
+
 ## Reduced Loop Discipline
 
 <a id="reduced-loop-discipline"></a>
@@ -1000,9 +1087,10 @@ other existing fields. In-scope discovery, test-driven cross-module failure,
 and unrequested work remain governed by current rules and cannot invoke this
 policy.
 
-The Skill documents taskgov-specific authorization and write boundaries, not
-host approval mechanisms. It adds no permission-guide read or host-tool approval
-example. Host enforcement and the separate authorization for installation,
+The Skill documents taskgov-specific authorization and write boundaries. The
+[optional preapproval adapter](#optional-ordinary-task-preapproval) has an explicit
+host-activation route, not a normal permission-guide read or repeated approval
+question. Host enforcement and the separate authorization for installation,
 setup, Runner Plan publication, Git, and external operations remain unchanged.
 Intended staging must succeed before snapshot target capture, and the intended
 commit before completion registration; a later command's success cannot replace

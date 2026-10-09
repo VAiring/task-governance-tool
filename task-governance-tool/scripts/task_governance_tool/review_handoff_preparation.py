@@ -72,6 +72,8 @@ def _command(repo, args):
         decode_verification_result(raw, task_id=task_id)
         arguments.append("--from-stdin")
     entry = Path(__file__).parent.parent / "taskgov.py"
+    if getattr(args, "records_only", False) is True:
+        return [sys.executable, "-I", "-S", "-B", str(entry), "--records-only", *arguments, "--repo", str(repo), "--json"], raw
     return [sys.executable, "-B", str(entry), *arguments, "--repo", str(repo), "--json"], raw
 
 
@@ -267,9 +269,9 @@ def read_material(repo, args):
                           shell=False, env=safe_git_environment(), check=False).returncode
 
 
-def _material_command(repo, operation, *arguments):
+def _material_command(repo, operation, *arguments, records_only=False):
     entry = Path(__file__).parent.parent / "review_handoff.py"
-    return _shell([sys.executable, "-I", "-S", "-B", str(entry), "material", "--repo=" + str(repo),
+    return _shell([sys.executable, "-I", "-S", "-B", str(entry), *(["--records-only"] if records_only else []), "material", "--repo=" + str(repo),
                    operation, *arguments])
 
 
@@ -326,7 +328,7 @@ def _observe_material(repo, target):
         files._fail(exc.code)
 
 
-def _review_material(repo, target):
+def _review_material(repo, target, *, records_only=False):
     """Expose selectors and location hints, never source bodies in the first read."""
     from task_governance_tool.artifact_manifest import (
         ArtifactManifestError, ARTIFACT_MANIFEST_BYTE_LIMIT, build_artifact_entries,
@@ -356,11 +358,11 @@ def _review_material(repo, target):
             "comparison_base": observed.comparison_base,
             "dependency_revision": dependency_revision,
             "unchanged_inventory": inventory,
-            "blob_command": _material_command(repo, "blob", "<object_id>"),
-            "blob_batch_command": _material_command(repo, "batch"),
-            "diff_command": _material_command(repo, "diff", "<before_object_id>", "<after_object_id>"),
-            "dependency_command": _material_command(repo, "dependency", dependency_revision, "--path=<project-relative-path>"),
-            "directory_command": _material_command(repo, "directory", dependency_revision, "--path=<project-relative-directory>"),
+            "blob_command": _material_command(repo, "blob", "<object_id>", records_only=records_only),
+            "blob_batch_command": _material_command(repo, "batch", records_only=records_only),
+            "diff_command": _material_command(repo, "diff", "<before_object_id>", "<after_object_id>", records_only=records_only),
+            "dependency_command": _material_command(repo, "dependency", dependency_revision, "--path=<project-relative-path>", records_only=records_only),
+            "directory_command": _material_command(repo, "directory", dependency_revision, "--path=<project-relative-directory>", records_only=records_only),
             "instructions": [
                 "Run collect_command, replacing only its JSON-array placeholder with the dependency paths you have selected (for example [\"AGENTS.md\",\"docs/authority.md\"], or []). It retrieves every changed before/after body and diff automatically, plus those dependencies; no OID list or parent selection is needed. Its bodies table supplies each blob once and preserves every path/revision/side association. Reuse provided complete bodies; do not reread merely because they were supplied. Status incomplete/nonzero, unavailable/large/non-text records or tool truncation require affected-material recovery, not repetition of successful siblings or PASS.",
                 "changes is the complete delta even when Packet paths are bounded. Inspect every entry and mode. Mode 120000 is link text, never followed; 160000 is unavailable submodule material to obtain from the caller. Whole-file add/delete diffs refer to the complete supplied body; two-sided diffs are Git patches. Delivery is not review coverage, quality or provenance.",
@@ -370,17 +372,17 @@ def _review_material(repo, target):
                 "For the individual dependency/directory recovery templates only: " + path_quoting]}
 
 
-def read_for_reviewer(repo, packet_path, *, material_details=False):
+def read_for_reviewer(repo, packet_path, *, material_details=False, records_only=False):
     """Validate saved data, bind exact material, then compare live public context."""
     from task_governance_tool.review_packet import independent_reviewer_view
     path = files._path(repo, packet_path)
     raw = files._read(path, files.PACKET_LIMIT)
     packet = files._packet(raw)
-    material = _review_material(repo, packet["review_target"])
+    material = _review_material(repo, packet["review_target"], records_only=records_only)
     if material["status"] == "git_objects_verified":
         from hashlib import sha256
         command = _material_command(
-            repo, "collect", "--packet=" + packet_path, "--packet-sha256=" + sha256(raw).hexdigest())
+            repo, "collect", "--packet=" + packet_path, "--packet-sha256=" + sha256(raw).hexdigest(), records_only=records_only)
         placeholder = "<selected dependency paths as JSON array>"
         material["collect_command"] = (
             "$OutputEncoding = [Console]::InputEncoding = [System.Text.UTF8Encoding]::new($false)\n@'\n"
@@ -398,7 +400,7 @@ def read_for_reviewer(repo, packet_path, *, material_details=False):
                 del material[key]
             entry = Path(__file__).parent.parent / "review_handoff.py"
             material["recovery_command"] = _shell([
-                sys.executable, "-B", str(entry), "read", "--repo=" + str(repo),
+                sys.executable, *(["-I", "-S"] if records_only else []), "-B", str(entry), *(["--records-only"] if records_only else []), "read", "--repo=" + str(repo),
                 "--packet=" + packet_path, "--material-details"])
             material["instructions"] = [
                 "Use collect_command for the first required project AGENTS, authority, source and test reads, selecting the dependency paths you need as its JSON array ([] for none). All changed before/after bodies and diffs are automatic. Read the returned governing text before judging code, then follow its routes and discovered dependencies. The parent does not select material.",
@@ -411,6 +413,8 @@ def read_for_reviewer(repo, packet_path, *, material_details=False):
     entry = Path(__file__).parent.parent / "taskgov.py"
     command = [sys.executable, "-B", str(entry), "review", "prepare",
                packet["task"]["task_id"], "--repo", str(repo), "--json"]
+    if records_only:
+        command = [sys.executable, "-I", "-S", "-B", str(entry), "--records-only", *command[3:]]
     code, response = _capture(command, None, lambda: None)
     current = _envelope(response, code, "review.prepare")
     if not current["ok"]:
@@ -443,6 +447,8 @@ def _shell(arguments):
 def _requests(repo, args, packet_path):
     entry = str(Path(__file__).parent.parent / "review_handoff.py")
     base = [sys.executable, "-B", entry]
+    if getattr(args, "records_only", False) is True:
+        base = [sys.executable, "-I", "-S", "-B", entry, "--records-only"]
     common = ["--repo=" + str(repo), "--packet=" + packet_path]
     read = _shell([*base, "read", *common])
     reviewers = []
@@ -504,7 +510,9 @@ def prepare(repo, args):
             # Target-set errors do not report whether T1 or restart cleanup
             # committed. A parser rejection precedes dispatch; other target
             # failures cannot establish no-write from their code or exit value.
-            if args.source_operation == "target" and envelope["command"] != "parse":
+            if (args.source_operation == "target" and envelope["command"] != "parse"
+                    and not (getattr(args, "records_only", False) is True
+                             and [error["code"] for error in envelope["errors"]] == ["runner_execution_requires_authorization"])):
                 result["operation_status"] = "unknown"
                 result["warnings"] = [*result["warnings"], {
                     "code": "handoff_outcome_unknown",

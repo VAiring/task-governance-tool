@@ -468,6 +468,61 @@ handoff, changes status, expands scope/acceptance, or blocks completion.
 enablement. The Skill calls `task effort`
 once at the existing verification/review boundary only when enabled.
 
+## Ordinary Record Authorization Adapter
+
+`task_record_policy.py` owns a closed, exact-spelling argv inventory shared by
+the optional host hook and executing CLI/helper. It scans every argument, consumes
+option values structurally, distinguishes command words from data, rejects
+duplicate singleton/repository options and does not infer approval from text.
+It returns the one explicit repository; normal parsers and domain validators
+still validate shape, values, authority-dependent semantics and current gates.
+The first-position `--records-only` restriction is checked before project/state
+dispatch; it is not stored in the DB or passed as an approval attestation.
+
+`task_preapproval.py` owns bounded, transient PermissionRequest decoding,
+conservative literal PowerShell/POSIX parsing, physical-path binding, and
+manifest/content pinning. It executes no inspected command, imports no target
+code, records no event/command/stdin/transcript or environment, and abstains on
+unknown/invalid input. The fixed host definition embeds a stdlib-only bootstrap
+that hashes the entry, source-import bootstrap, package initializer, policy and
+argv-policy modules before importing them. `scripts/source_imports.py` is itself
+compiled directly from source before package imports. Its exact-package finder
+always compiles `.py` bytes and never falls back to bytecode or native extensions;
+the two shipped package names (`task_governance_tool` and its `review_wait_runtime`)
+have fixed `__init__.py` origins, and their modules have fixed sibling `.py`
+origins. Filesystem directory discovery never chooses an alternate origin;
+same-named package directories cannot replace flat modules before validation.
+the hook and restricted CLI/helper entries use it, including child invocations.
+They do not add the scripts root to isolated Python's general import path, so
+unlisted scripts-root modules cannot shadow standard-library imports before
+the policy's inventory check.
+Ordinary unrestricted entry points retain their existing import behavior.
+The policy verifies every manifest member and rejects unlisted non-cache files
+under scripts. Physical `__pycache__/*.pyc` may remain but are never imported by
+the package finder. Isolated `-I -S -B` separately excludes site/PYTHONPATH and
+bytecode writes; `-B` alone does not suppress bytecode reads. The pinned
+definition is configuration, not an interpreter-prefix exception. Host execution
+and concurrent hostile replacement remain outside this trusted-local check.
+
+The `propose` helper deep-copies existing hooks data, preserves every existing
+group/value and adds one exact PermissionRequest group idempotently. It emits
+JSON only. It neither writes `.codex`, edits global/inline/MCP settings, adds
+trust, invokes setup nor grants future package revisions. The target physical
+package must be the project's supported install or development self-host path.
+The host must load and trust the concrete proposed definition separately.
+
+The core target handler passes `allow_runner=False` only for restricted calls.
+The Runner service retains its ordinary eligibility/preflight, then rejects an
+eligible execution before any Runner lock, cleanup, T1 or target persistence.
+There is no record-first deferred launch or new Runner state. Manual fallback
+continues unchanged. Restricted handoff preparation passes the option to its
+fixed isolated child and generated continuations; a definite authorization
+rejection remains `operation_status=failed`, not an unknown committed target.
+All other uncertain outcomes retain the existing transport contract. Tests use
+physical isolated installations and the public CLI, along with service-boundary
+fault/launch assertions and host-shaped hook fixtures; they do not certify live
+host activation or savings.
+
 ## Reduced Loop Discipline Design
 
 <a id="reduced-loop-discipline-design"></a>

@@ -47,6 +47,14 @@ an unexecuted path remains unverified.
 
 ### Eligibility, Plan, And Materialization
 
+The optional first-position `--records-only` CLI restriction retains this
+eligibility decision but rejects an eligible Runner route before target/attempt
+recording, lifecycle cleanup or process launch. It returns the definite no-write
+`runner_execution_requires_authorization` result under the
+[Task preapproval boundary](task-operation-specification.md#optional-ordinary-task-preapproval).
+It never changes the Plan, silently selects manual verification or authorizes
+retry without the existing execution permission. Unrestricted calls are unchanged.
+
 Explicit [Setup feature selection](setup-state-specification.md#optional-feature-selection)
 may change only the project's `trusted_local` switch or create an empty Plan.
 That ON switch is not Task eligibility: without a matching Task entry the

@@ -1180,6 +1180,7 @@ def set_review_target_with_optional_runner(
     kind: Any,
     revision: Any = None,
     caller: CallerIdentity = CallerIdentity(None),
+    allow_runner: bool = True,
     _cancel_requested: Callable[[], bool] = lambda: False,
 ) -> _ReviewTargetRouteResult:
     """Set one exact review target and optionally consume the local Runner plan."""
@@ -1232,6 +1233,10 @@ def set_review_target_with_optional_runner(
             ),
             caller,
         )
+
+    if not allow_runner:
+        raise _service_error("runner_execution_requires_authorization",
+                             "Runner execution requires the existing authorization route; no target was recorded")
 
     # Admit this explicit restart before its lock/inventory/cleanup side effects.
     # T1 revalidates the same observed generation; terminal/cleanup after an

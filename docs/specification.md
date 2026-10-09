@@ -221,6 +221,9 @@ retry on `review prepare --verification-receipt-id`, as defined by
 This changes success output, not the leaf inventory or completion gate.
 Applicable commands retain
 `--repo`, `--json`, and `--read-only`; root `--version` is project-free.
+The optional first-position `--records-only` restriction is defined by
+[ordinary-Task preapproval](task-operation-specification.md#optional-ordinary-task-preapproval);
+it adds no command leaf or approval to the default invocation.
 Omitted `--repo` means the current directory, including a physical non-Git
 directory. Invocation from either supported package root requires explicit
 `--repo`.

@@ -70,6 +70,10 @@ gates. It is not the product contract, execution ledger, or evidence store:
   non-authoritative guidance. They add no normal-path question, persisted
   retry counter, automatic Task mutation, or unrelated-lane stop. Tests are
   never weakened merely to obtain a pass.
+- Optional [ordinary-Task preapproval](docs/task-operation-specification.md#optional-ordinary-task-preapproval)
+  separates approved local records from existing Contract, quality, configuration,
+  Runner, Git and external authorization. Host activation is explicit; configuration
+  examples or fixture success do not establish a reduction in live approval reviews.
 
 ### Review, Completion, State, And Viewer
 

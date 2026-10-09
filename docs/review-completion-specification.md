@@ -31,6 +31,11 @@ Every target set, including identical or A-to-B-to-A values, increments a
 positive signed-64-bit generation. Historical receipts never reactivate.
 Target setting is forbidden on done Tasks.
 
+The optional [records-only restriction](task-operation-specification.md#optional-ordinary-task-preapproval)
+rejects a Runner-eligible target before persistence or execution. It does not
+change generation or substitute a different verification route. Ordinary target
+setting and integrated finalization retain their existing authorization.
+
 Task-scoped writes also obey the [session ownership boundary](task-operation-specification.md#session-ownership-and-recovery).
 Target/Runner admission and Verification/Review/Finding writes recheck the
 observed ownership generation under the writer. Review Receipt, structured

@@ -384,12 +384,15 @@ def _emit(value, *, utf8=False):
 
 
 def main(argv=None):
+    raw_argv = tuple(argv if argv is not None else sys.argv[1:])
     registration_status = None
     try:
         from task_governance_tool.review_handoff_preparation import (
             add_parser, add_material_parser, prepare, read_for_reviewer, read_material,
         )
         parser = _Parser(description=__doc__)
+        parser.add_argument("--records-only", action="store_true",
+                            help="restrict to ordinary record transport without Runner or integrated finalization")
         commands = parser.add_subparsers(dest="operation", required=True)
         add_parser(commands)
         add_parser(commands, "prepare-finalization")
@@ -423,7 +426,13 @@ def main(argv=None):
                 command.add_argument("--output", required=True, help="Unused ignored project-relative JSON path; parent must exist")
             else:
                 command.add_argument("originals", nargs="+", help="Ignored project-relative original JSON paths")
-        args = parser.parse_args(argv)
+        args = parser.parse_args(raw_argv)
+        if args.records_only:
+            from task_governance_tool.task_record_policy import RecordPolicyError, validate_record_arguments
+            try:
+                validate_record_arguments("review_handoff.py", raw_argv)
+            except RecordPolicyError:
+                _fail("record_operation_not_allowed")
         if args.operation == "submit":
             registration_status = "not_started"
         repo = Path(os.path.abspath(args.repo))
@@ -441,7 +450,8 @@ def main(argv=None):
                           "message": "Finalization unavailable; preserve existing state and do not replay unknown effects."}
             return (0 if result["ok"] else 1) if _emit(result, utf8=True) else 1
         if args.operation == "read":
-            return 0 if _emit(read_for_reviewer(repo, args.packet, material_details=args.material_details), utf8=True) else 1
+            return 0 if _emit(read_for_reviewer(repo, args.packet, material_details=args.material_details,
+                **({"records_only": True} if args.records_only else {})), utf8=True) else 1
         if args.operation == "wait-ended":
             from task_governance_tool.review_wait import wait_ended
             raw = sys.stdin.buffer.read(PACKET_LIMIT + 1) if args.from_stdin else None
@@ -459,6 +469,8 @@ def main(argv=None):
         entrypoint = Path(__file__).parent.parent / "taskgov.py"
         command = [sys.executable, "-B", str(entrypoint), "review", "result", "add", task_id,
                    "--repo", str(repo), "--json"]
+        if args.records_only:
+            command = [sys.executable, "-I", "-S", "-B", str(entrypoint), "--records-only", *command[3:]]
         for reviewer in args.user_approved_reviewer:
             command.append("--user-approved-reviewer=" + reviewer)
         # No shell pipe, timeout retry, reserialization, alternate writer or SQL.

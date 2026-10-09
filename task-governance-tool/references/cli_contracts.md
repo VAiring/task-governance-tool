@@ -7,6 +7,7 @@ detail are not prerequisites for normal Task work.
 ## Contents
 
 - [Invocation And Public Inventory](#invocation-and-public-inventory)
+- [Optional Task Preapproval](#optional-task-preapproval)
 - [Envelope And Read/Write Boundary](#envelope-and-readwrite-boundary)
 - [`setup`](#setup)
 - [`doctor`](#doctor)
@@ -126,6 +127,86 @@ Applicable common options may appear before or after command groups as shown by
 `task edit` take the selected ID, normally
 `data.selected.task.task_id` from `task context`. Use returned values, not the
 illustrative IDs in JSON examples.
+
+## Optional Task Preapproval
+
+Read this section only for explicit introduction or diagnosis of host preapproval.
+Normal work reuses the already configured invocation, without a permission-guide
+read, new command, approval question or per-Task authorization record.
+
+There are two classes: already-authorized ordinary Task records, and operations
+that retain their existing rules. Preapproval never authorizes unsolicited Task
+registration, implementation, an existing Contract change, weaker quality gates,
+or fabricated evidence. Initial Contract/quality fields for a newly authorized
+Task belong to registration; revising an existing Task remains separate.
+
+The optional first-position `--records-only` argument restricts the existing CLI
+and ordinary handoff helper. Use the configured absolute Python/package/project
+paths and isolated Python flags, for example after explicit host activation:
+
+```powershell
+& '<absolute-python>' '-I' '-S' '-B' '<absolute-package>/scripts/taskgov.py' '--records-only' 'task' 'context' '--repo' '<absolute-project>' '--json'
+```
+
+The same prefix replaces the ordinary invocation for registration, state/reason/
+note updates, checkpoints, local Handoff records, evidence and completion records.
+It adds no Task-loop operation. Only state, blocker/pause reason and note options
+are admitted on `task edit`; use ordinary `task complete` for completion. Existing
+ownership, sequential, exact-target, verification and review gates still apply.
+All existing bounded same-process maintenance remains included. Shared-file
+`prepare/read/material/save/submit` use the same restriction and generated
+continuations preserve it. Existing literal stdin transports remain available.
+
+Contract/purpose/quality/Runner Plan edits, setup/trust/configuration, Git and
+external operations, approval overrides, reopen/cancel/withdraw, and integrated
+`prepare-finalization`/`finalize` retain their existing authorization route.
+Do not switch an already selected integrated workflow to manual just to get
+preapproval. MCP approval, review-wait reservations/notifications and automatic
+commit permission are unchanged. Normal `task complete` records evidence; it does
+not make a Git commit.
+
+An eligible Runner target is rejected before writes with
+`runner_execution_requires_authorization`. Preserve the intended verification;
+continue that same operation through its ordinary route only under existing
+execution authority. It is a definite no-write result, including through
+restricted `prepare target`. Other unknown failures retain ordinary recovery.
+`record_operation_not_allowed` is an excluded or malformed restricted invocation,
+not permission to remove the restriction and retry blindly.
+
+For introduction, inspect the exact existing project hooks and applicable host
+configuration. The write-free proposal helper emits a preserving JSON candidate:
+
+```powershell
+& '<absolute-python>' '-I' '-S' '-B' '<absolute-package>/scripts/task_preapproval.py' 'propose' '--repo' '<absolute-project>' '--python' '<absolute-python>' '--shell' 'powershell' '--existing-hooks' '<absolute-project>/.codex/hooks.json'
+```
+
+Omit `--existing-hooks` only when that file is absent. POSIX uses the same
+arguments with `--shell posix` and its native literal quoting. This is a proposed
+`PermissionRequest` definition, not an installer or a broad interpreter allow
+rule. Show its concrete diff and destination before asking to apply it. Preserve
+all other user/managed/inline/MCP settings and existing hooks. Never silently
+enable hooks, trust a definition, replace configuration or weaken a host denial.
+
+Applying `<project>/.codex/hooks.json` requires explicit approval. Codex must
+support/load enabled PermissionRequest hooks and trust both the project layer
+and exact definition; review/trust via the host's hook UI (`/hooks` in the CLI),
+then restart/load as required. The embedded fixed bootstrap verifies policy
+code before loading it, and the policy pins shipped package contents. The hook
+and restricted entry points read package modules from source; existing bytecode
+caches are not executed or deleted. Unlisted native/legacy import artifacts
+decline to the existing approval flow. Package
+changes require a fresh reviewed proposal; there is no automatic trust refresh.
+The physical interpreter is trusted local infrastructure, not a command-wide
+Python permission. These checks do not provide a hostile-process execution lease.
+
+The hook admits only the configured literal invocation, exact supported
+arguments and one bound project. It declines unknown syntax, substitutions,
+compound commands, other scripts/projects, drift and inspection failures to the
+existing approval flow. More restrictive managed rules/other denying hooks still
+apply. A fixture allow response or generated example does not prove actual
+Guardian reduction: report host activation and observed outcomes separately,
+and leave unperformed deployment/measurement explicit. See the official
+[PermissionRequest and trust contract](https://learn.chatgpt.com/docs/hooks#permissionrequest).
 
 ## Envelope And Read/Write Boundary
 

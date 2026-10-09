@@ -462,6 +462,10 @@ or unknown root options before package, project, Git, or state resolution. A
 rejected token or option value is never echoed. Argparse contains no
 compatibility subparsers.
 
+The optional `--records-only` restriction and read-only host configuration
+proposal are owned by the [Task operation adapter](task-operation-design.md#ordinary-record-authorization-adapter).
+Their two-class authorization boundary does not expand this command inventory.
+
 `setup` is the only initializer, migrator, recovery/relocation confirmer,
 maintenance opt-in, and direct Viewer repair surface. `setup --read-only`
 builds a no-write plan. `doctor` is the sole diagnostic, is inherently

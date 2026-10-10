@@ -415,7 +415,17 @@ declaration. Direct complete-Packet transport and legitimate fallback/Tier-0
 paths remain available with their existing rules and external approval boundary.
 
 The display adds `context_check=matched_at_read`, sanitized public `warnings`,
-and `review_material`. For Git, the existing manifest observer verifies the
+`review_material`, and fixed `verification_guidance`. Its `verification_evidence`
+comes from that same current public Packet after full context comparison, even
+when the saved older Packet omits the optional field. It refreshes the observation
+without changing saved bytes; an old saved summary is never substituted for the
+current one. No additional public command, parent transcription, or reviewer
+lookup is required. Guidance distinguishes the declared expectation from results,
+caller attestation from qualifying Runner observation, waiver from execution,
+and missing/stale/incomplete evidence from success. It preserves independent
+quality judgment and legitimate investigation/questions; neither the summary nor
+its successful delivery authenticates execution or proves sufficiency or PASS.
+For Git, the existing manifest observer verifies the
 exact stable index fingerprint/base or canonical commit/first-parent (root:
 empty tree), with its existing object-presence, path, entry and size bounds.
 Normal material contains the complete delta as existing manifest entry fields,
@@ -1624,14 +1634,44 @@ no Git and report paths unavailable. Target-specific behavior is internal and
 adds no Skill branch.
 
 Data keys are exactly `task`, `contract`, `review_target`,
+`verification_evidence`,
 `changed_paths_available`, `changed_paths`, `changed_paths_total`,
 `changed_paths_truncated`, `review_focus`, `required_output`, `result_template`,
 `result_instructions`, and `receipt_command`. Task contains
 ID/title/status/verification/verification_not_required_reason/tier;
 Contract contains revision/scope/acceptance/constraints/authority_ref;
 target contains kind/value/base/
-generation. No diff, result, raw output, prompt, conversation, secret, absolute
+generation. No diff, raw output, prompt, conversation, secret, absolute
 path, or caller-authored focus is included. The template is not a review result.
+
+`verification_evidence` contains exactly `observed_at` (canonical UTC summary
+read time), `source_kind`, `current_verification_subject`, `gate`, `counts`, and
+`current_receipt`. The last four reuse the normal
+[verification projection](#public-and-read-projection), including its closed
+types, exact-current selection and subject/Contract/full-target matching. The
+enclosing Packet supplies the Task, Contract and complete target binding.
+Only this final coherent read's summary is returned; historical Receipt lists,
+other reviewers' judgments, raw commands and logs are excluded.
+`source_kind` is `caller_attestation` when an exact-current manual Receipt is
+present, `runner_observation` for the qualifying Runner gate without a Receipt,
+`not_required` for an explicit waiver, `legacy_exemption` for the existing
+historical exemption, and `unavailable` otherwise. An unavailable source can
+mean missing, pending, stale or blocking evidence as distinguished by the
+existing gate; it never asserts that no run happened. Failed/partial manual
+Receipts remain caller attestations with an unsatisfied gate. Runner selection
+reuses current physical and stored-basis validation without launching a process
+or acquiring a manual Receipt. Legacy history never satisfies a new gate.
+This is context, not authentication of an external run, test sufficiency or
+review PASS. Direct transport receives the same preparation-time summary.
+Older complete saved Packets may omit this field; when supplied, its closed
+shape is validated by every handoff consumer. Save/submit never use it as a
+replacement gate or change original bytes. Current reviewer read refreshes it
+only after matching the saved Task/Contract/full target to the public Packet.
+For caller attestation the gate is required: a satisfied gate needs pass/full
+and that Receipt's qualifying ID. An unsatisfied gate has no qualifying ID;
+it is either basis-stale (even a pass/full Receipt cannot satisfy a stale basis)
+or Receipt-blocking with fail, timeout or partial coverage. Legacy nullable
+subjects remain compatible; absence of a subject is not itself proof of success.
 
 `contract.authority_ref` copies the already-read Contract value unchanged,
 including an empty value (also for revision zero). It is a context hint, not
@@ -1668,8 +1708,7 @@ actual claims, independent verdicts, provenance vocabulary/matrix, identifier
 grammars, one-original/one-Receipt capacity, all Finding limits and privacy.
 It omits parent batch-registration and inapplicable fallback/Tier-0/approval
 details. No null is filled or identity, verdict, method or independence inferred.
-The complete Packet on disk and the public `review prepare` JSON/text contracts
-are unchanged. Existing save/submit consume only the full Packet and preserve
+The complete Packet on disk is preserved. Existing save/submit consume only the full Packet and preserve
 originals, validation, current-state revalidation and atomicity. Display success
 is not PASS or future freshness: the handoff read adds the separately described
 point-in-time context/material observations; exact-target/authority inspection and recovery of
@@ -1681,7 +1720,9 @@ bytes total, are returned. Unsafe paths fail `review_packet_path_unsafe` with
 `review packet contains an unsafe project path`; no path is hidden. Complete
 text or JSON is at most 32,768 UTF-8 bytes or fails
 `review_packet_too_large` with `review packet exceeds the supported size`.
-Git observation uses at most 10 subprocesses.
+Target-path Git observation uses at most 10 subprocesses. A live Runner target
+also uses the existing Runner selector's separately bounded physical-basis
+checks to establish current verification context; it never launches verification.
 
 Four common focus rows are Contract compliance; state/completion integrity;
 privacy/target safety; and verification/regression. The fifth mechanically
@@ -1696,7 +1737,8 @@ packet itself never imports or records results.
 Text order is `Task`, `Status`, `Verification`, `Verification not required reason`, `Contract revision`, `Scope`,
 `Acceptance`, `Constraints`, `Authority reference`, `Review target`, `Changed paths`, `Review focus`,
 `Required output`, `Result template` (compact ASCII JSON), `Result instructions`,
-`Receipt command`, LF-terminated. After Git, a second short
+`Receipt command`, then `Verification evidence (point-in-time)` as compact JSON,
+LF-terminated. After Git, a second short
 read revalidates Task, Contract, and every target field/generation; drift fails
 `review_packet_stale` with `review context changed while preparing the packet`.
 
@@ -2267,8 +2309,9 @@ apply unchanged. `task context.selected` uses this same normal projection.
 `receipts_exact_current`, `qualifying_exact_current`, and
 `blocking_exact_current`. Recent receipts are newest-first, at most 10, and
 use the public Receipt allow-list. The existing Task target remains the source
-of the current source-revision object. Other list/current/next/compact/review
-packet projections remain unchanged.
+of the current source-revision object. Other list/current/next/compact projections
+remain unchanged. Review Packet Receipt details use the same normal current-only
+projection above.
 
 The projection types and null rules are fixed:
 

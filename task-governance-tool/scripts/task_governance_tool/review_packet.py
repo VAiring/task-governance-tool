@@ -155,6 +155,8 @@ class ReviewPacketBasis:
     contract: dict[str, Any] = field(repr=False)
     review_target: dict[str, Any] = field(repr=False)
     stability_token: tuple[Any, ...] = field(repr=False)
+    internal_task: dict[str, Any] = field(repr=False, default_factory=dict)
+    verification_evidence: dict[str, Any] | None = field(repr=False, default=None)
     preparation_binding: str = field(repr=False, default="")
     review_session_context: dict[str, Any] | None = field(repr=False, default=None)
 
@@ -174,6 +176,8 @@ def _read_basis(
     revalidation: bool,
     connection: sqlite3.Connection | None = None,
     verification_receipt_id: str | None = None,
+    include_verification: bool = False,
+    runner_selection=None,
 ) -> ReviewPacketBasis:
     try:
         manager = (
@@ -324,6 +328,11 @@ def _read_basis(
                 contract=contract,
                 review_target=review_target,
                 stability_token=stability_token,
+                internal_task=dict(stored),
+                verification_evidence=(
+                    _review_verification(active_connection, stored, runner_selection)
+                    if include_verification else None
+                ),
                 review_session_context=session_context,
                 preparation_binding=review_packet_binding(
                     row_to_show_task(stored), current_contract["revision"],
@@ -523,6 +532,11 @@ def project_changed_paths(
     return retained, total, len(retained) != total
 
 
+def _review_verification(connection, task, runner_selection):
+    from task_governance_tool.review_verification import read_review_verification
+    return read_review_verification(connection, task=task, runner_selection=runner_selection)
+
+
 def prepare_review_packet(
     target: DatabaseTarget,
     task_id: Any,
@@ -554,6 +568,14 @@ def prepare_review_packet(
     if expected_binding is not None and basis.preparation_binding != expected_binding:
         raise packet_error("review_packet_stale", STALE_PACKET_MESSAGE)
 
+    # Reuse the existing no-launch selector outside SQLite, only for a live
+    # Runner target. Its current-basis check is repeated by the evidence reader.
+    runner_selection = None
+    if (basis.internal_task.get("status") != "done"
+            and basis.internal_task.get("review_target_runner_basis_version") == 2):
+        from task_governance_tool.verification_runner_selection import select_current_verification_runner_basis
+        runner_selection = select_current_verification_runner_basis(target, task=basis.internal_task)
+
     observation_error: ReviewPacketError | None = None
     changed_paths_available = False
     raw_paths: tuple[bytes, ...] = ()
@@ -570,8 +592,11 @@ def prepare_review_packet(
         normalized_task_id,
         revalidation=True,
         verification_receipt_id=receipt_id,
+        include_verification=True,
+        runner_selection=runner_selection,
     )
-    if current.stability_token != basis.stability_token or (
+    if (current.stability_token != basis.stability_token
+            or current.preparation_binding != basis.preparation_binding) or (
         expected_binding is not None and current.preparation_binding != expected_binding
     ):
         raise packet_error(
@@ -593,6 +618,7 @@ def prepare_review_packet(
         "task": basis.task,
         "contract": basis.contract,
         "review_target": basis.review_target,
+        "verification_evidence": current.verification_evidence,
         **({"review_session_context": basis.review_session_context} if basis.review_session_context is not None else {}),
         "changed_paths_available": changed_paths_available,
         "changed_paths": changed_paths,
@@ -667,4 +693,7 @@ def format_review_packet_text(data: dict[str, Any]) -> str:
         *(f"- {item}" for item in data["result_instructions"]),
         f"Receipt command: {data['receipt_command']}",
     ]
+    if "verification_evidence" in data:
+        lines.append("Verification evidence (point-in-time): " + json.dumps(
+            data["verification_evidence"], ensure_ascii=True, separators=(",", ":")))
     return "\n".join(lines)

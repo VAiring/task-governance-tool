@@ -908,6 +908,12 @@ channel; do not replace it with a summary or claim a saved-file acknowledgement.
 Report questions, missing material and uncertain delivery to the caller;
 preserve the original and do not blindly resend after an unknown outcome.
 
+Use the Packet's `verification_evidence` when present as preparation-time
+context bound to its Task/Contract/full target. The expectation is not a result;
+manual Receipts are caller attestations, qualifying Runner results are observations,
+and waiver is not execution. An absent legacy summary or an unsatisfied gate is
+not PASS. Independently judge quality; investigate or ask when needed.
+
 ### Shared-File Reviewer
 
 The generated shared-file request and its output are self-contained; this
@@ -919,6 +925,11 @@ verification requirements, review tier, changed-path limits, focus, required
 output and the unfinished result template with all applicable format rules.
 It also returns `context_check=matched_at_read` after comparing the saved
 Task/Contract/target with the existing public read, plus `review_material`.
+Its current `verification_evidence` and `verification_guidance` supply the
+saved verification summary and its source/limits in that first read. Do not
+require parent transcription or routine extra lookup for already supplied
+information. Evidence availability is not execution authentication, sufficient
+testing or review PASS; necessary investigation and questions remain allowed.
 For Git, that material lists every changed entry with machine-verified immutable
 before/after object IDs, modes, comparison base, bounded location hints, normal
 `collect_command` and conditional `recovery_command`. Use collection for the

@@ -186,8 +186,15 @@ def _packet(raw, expected_task_id=None):
         _fail("handoff_input_too_large")
     packet = json.loads(raw.decode("utf-8"), object_pairs_hook=_unique,
                         parse_constant=lambda value: _fail())
-    if type(packet) is not dict or set(packet) not in (_PACKET_KEYS, _PACKET_KEYS | {"review_session_context"}):
+    if (type(packet) is not dict or not _PACKET_KEYS <= set(packet)
+            or set(packet) - _PACKET_KEYS - {"review_session_context", "verification_evidence"}):
         _fail()
+    if "verification_evidence" in packet:
+        from task_governance_tool.review_verification import validate_review_verification
+        try:
+            validate_review_verification(packet["verification_evidence"])
+        except (ValueError, TypeError, KeyError):
+            _fail("handoff_response_invalid")
     if "review_session_context" in packet:
         session_transport.validate_context(packet["review_session_context"], allow_unknown_execution=True)
     task, contract, target = packet["task"], packet["contract"], packet["review_target"]

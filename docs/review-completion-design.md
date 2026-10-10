@@ -436,8 +436,17 @@ new file or role classifier is added. Opaque targets explicitly require supplied
 material/binding, not inferred Git content. Existing observation limits and
 sanitized failure codes apply without partial material. `review_results.py` renders the applicable independent
 format branch from the existing vocabulary owners; it does not filter prose
-with patterns or change the decoder/normalizer. Default full instructions and
-Packet remain unchanged for existing consumers and alternative review paths.
+with patterns or change the decoder/normalizer. Default full result instructions
+remain unchanged for existing consumers and alternative review paths.
+
+The first read also projects `verification_evidence` from that validated current
+public Packet and fixed `verification_guidance` from `review_verification.py`.
+Saved evidence is shape-checked but never trusted in place of the current read;
+old Packets without it remain accepted. Existing identity/Contract/target/path
+comparison precedes projection, without another CLI capture. A changed summary
+or observation time alone does not rewrite the saved Packet or invalidate a
+review target. Request prose points to the supplied summary and its limits,
+without a normal parent-transcription or reviewer-query step.
 
 The transport module owns bounded physical reads, explicit ignored-path checks,
 exclusive creation and retained failed-write residue. Standard-library file
@@ -1145,8 +1154,8 @@ target tuple. A change returns `review_packet_stale`.
 For a snapshot it recaptures the exact base/index context. For a Git commit it
 lists first-parent changes, using the empty tree for a root. Fingerprint and
 external targets perform no Git read and state that exact caller-provided
-material must be bound to the target before PASS. At most 10 shell-free Git
-processes, 100 bytewise-sorted relative paths, 240 UTF-8 bytes per path, and
+material must be bound to the target before PASS. This target-path observation
+allows at most 10 shell-free Git processes, 100 bytewise-sorted relative paths, 240 UTF-8 bytes per path, and
 16,384 aggregate path bytes are allowed. Safe overflow is marked truncated;
 an unsafe path or a packet above 32,768 bytes fails with no partial packet.
 
@@ -1159,7 +1168,8 @@ enums and identifier grammars come from the existing definitions; explanatory
 combination rules do not implement another validator. `review_packet.py` adds
 these projections only after its existing revalidation and renders the same
 template as compact ASCII JSON in text output. The unchanged CLI Packet-size
-boundary includes both fields. No DB/Git read or write is added. The builder
+boundary includes both fields. Template/instruction rendering adds no DB/Git
+read or write. The builder
 does not launch a reviewer, execute/import a receipt, store a packet, or
 include a diff, transcript, prompt, stdout/stderr, secret, or absolute path.
 
@@ -1186,6 +1196,25 @@ exceptions. Their shared explanations can be consolidated while the transient
 material display selects normal or conditional detail. Saved Packet/result
 shapes, immutable selectors and review/save/registration checks stay unchanged.
 Local bytes/call observations are not token savings.
+
+`review_verification.py` owns the bounded reviewer summary and its pure optional
+saved-Packet validator. It reuses `read_verification_evidence` and its exact-current
+Receipt collector, excluding audit rows and review judgments. Done-only history
+uses the existing validated completion-cycle reader. The Packet's initial read
+retains the internal Task solely to select a live marker-2 Runner basis outside
+SQLite using the existing no-launch selector. Its final read revalidates that
+selection and obtains the summary on the same connection as Task/Contract/target;
+the existing complete preparation binding is also compared between reads, and
+drift rejection precedes output. The conditional Runner selector retains its own
+bounded physical checks in addition to the Packet's target-path observation;
+it neither shares nor expands that observer's ten-process budget.
+The summary includes the read time,
+source kind and existing normal verification fields, under the unchanged Packet
+byte cap. Public text appends compact summary JSON. No verification execution,
+gate, schema, evidence persistence, extra public call or reviewer method is added.
+The handoff validator accepts legacy omission and otherwise validates the closed
+summary, timestamps, subject/Receipt identifiers, field types and relations.
+Save and registration retain their own unchanged live-evidence boundaries.
 
 <a id="completion-cycle-history"></a>
 

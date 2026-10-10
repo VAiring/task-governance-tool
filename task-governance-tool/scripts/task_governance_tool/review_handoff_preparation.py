@@ -409,10 +409,15 @@ def read_for_reviewer(repo, packet_path, *, material_details=False, records_only
                 "Collection complete/exit zero means delivery, not review coverage or PASS. Missing, mismatched, unknown, tool-truncated, large/non-text or unavailable material still needs retrieval; submodule material must be supplied. Use recovery_command only when individual/additional reads or discovery are needed; it supplies their commands and quoting rules. Recover affected material without repeating successful siblings. Keep unknown provenance unknown and use the complete result_instructions below for normal save.",
             ]
     current = validate_live_packet(repo, path, raw, packet, records_only=records_only)
+    from task_governance_tool.review_verification import GUIDANCE
+    if "verification_evidence" not in current["data"]:
+        files._fail("handoff_response_invalid")
     if material["status"] == "git_objects_verified" and not records_only:
         from task_governance_tool.review_workspace import workspace_guidance
         material["verification_workspace"] = workspace_guidance(repo, packet_path, raw)
     return {**independent_reviewer_view(packet), "review_material": material,
+            "verification_evidence": current["data"]["verification_evidence"],
+            "verification_guidance": GUIDANCE,
             "context_check": "matched_at_read", "warnings": current["warnings"]}
 
 
@@ -472,6 +477,7 @@ def _requests(repo, args, packet_path):
             "You are assigned an independent review of the complete exact target under current project authority. "
             "This request and its read output supply your procedure and result format; no Skill operating guide or internal fingerprint implementation is a prerequisite. "
             "Obtain the Task/Contract, criteria, exact material access and result template with the read-only operation below. "
+            "Its verification_evidence supplies the current saved verification summary; follow verification_guidance for its source and limits. "
             "Use review_material to obtain or reuse complete target-bound project AGENTS.md and applicable authority before judging the whole target against its scope, acceptance, constraints and verification expectation. "
             "Follow review_material for exact artifacts, required source/tests, discovered dependencies and retrieval exceptions. "
             "Read Skill files when they are actually governing or reviewed material, not to learn Task management. "

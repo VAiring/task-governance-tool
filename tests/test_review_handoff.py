@@ -39,6 +39,59 @@ def packet_for(payload):
 
 
 class ReviewHandoffFilesTests(unittest.TestCase):
+    def test_saved_verification_gate_matches_receipt_outcome_matrix(self):
+        from task_governance_tool.review_verification import validate_review_verification
+        receipt_id = "tg_verification_receipt_" + "a" * 16
+        for outcome in ("pass", "fail", "timeout"):
+            for coverage in ("full", "partial"):
+                qualifies = outcome == "pass" and coverage == "full"
+                for stale in (False, True):
+                    with self.subTest(outcome=outcome, coverage=coverage, stale=stale):
+                        satisfied = qualifies and not stale
+                        summary = {
+                            "observed_at": "2026-10-10T00:00:01Z",
+                            "source_kind": "caller_attestation",
+                            # Legacy subject absence must not hide malformed
+                            # gates or reject a legitimate stored projection.
+                            "current_verification_subject": None,
+                            "gate": {"required": True, "satisfied": satisfied,
+                                     "blocking_code": "evidence_basis_stale" if stale else
+                                         None if qualifies else "verification_receipt_blocking",
+                                     "qualifying_receipt_id": receipt_id if satisfied else None},
+                            "counts": {"receipts_exact_current": 1, "qualifying_exact_current": int(qualifies),
+                                       "blocking_exact_current": int(not qualifies)},
+                            "current_receipt": {"verification_receipt_id": receipt_id, "result": outcome,
+                                                "scope_coverage": coverage, "duration_ms": 1,
+                                                "created_at": "2026-10-10T00:00:00Z"},
+                        }
+                        packet = packet_for(self.payload)
+                        packet["task"].update(verification="Fixture expectation", verification_not_required_reason="")
+                        packet["verification_evidence"] = summary
+                        validate_review_verification(summary)
+                        self.assertEqual(handoff._packet(encode(packet)), packet)
+                        invalid_gates = [
+                            {"required": True, "satisfied": True, "blocking_code": None,
+                             "qualifying_receipt_id": None},
+                            {"required": False, "satisfied": True, "blocking_code": None,
+                             "qualifying_receipt_id": receipt_id if qualifies else None},
+                            {"required": True, "satisfied": False, "blocking_code": "verification_receipt_required",
+                             "qualifying_receipt_id": None},
+                        ]
+                        if qualifies:
+                            invalid_gates.extend([
+                                {"required": True, "satisfied": False, "blocking_code": "evidence_basis_stale",
+                                 "qualifying_receipt_id": receipt_id},
+                                {"required": True, "satisfied": False, "blocking_code": "verification_receipt_blocking",
+                                 "qualifying_receipt_id": None},
+                            ])
+                        for gate in invalid_gates:
+                            broken = copy.deepcopy(packet)
+                            broken["verification_evidence"]["gate"] = gate
+                            with self.assertRaises(ValueError):
+                                validate_review_verification(broken["verification_evidence"])
+                            with self.assertRaises(handoff.HandoffError):
+                                handoff._packet(encode(broken))
+
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory()
         self.addCleanup(self.temporary.cleanup)

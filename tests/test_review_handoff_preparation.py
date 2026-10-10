@@ -265,8 +265,13 @@ class InstalledPreparationTests(PreparationFixture):
                 self.assertEqual(completed.returncode, 0, completed.stdout)
                 # CLI serializers can order keys differently; the complete Packet
                 # object (unlike original reviewer bytes) is the transport contract.
-                self.assertEqual(json.loads((self.root / recovered["handoff"]["packet_path"]).read_bytes()),
-                                 json.loads((self.root / result["handoff"]["packet_path"]).read_bytes()))
+                earlier = json.loads((self.root / result["handoff"]["packet_path"]).read_bytes())
+                later = json.loads((self.root / recovered["handoff"]["packet_path"]).read_bytes())
+                # The read timestamp advances; every evidence fact and binding
+                # must remain identical on bound preparation recovery.
+                self.assertGreaterEqual(later["verification_evidence"].pop("observed_at"),
+                                        earlier["verification_evidence"].pop("observed_at"))
+                self.assertEqual(later, earlier)
                 # Release the combined execution/review slot between input forms.
                 self.cli("task", "edit", task, "--status", "ready")
 
@@ -447,6 +452,51 @@ class RunnerPreparationOutcomeTests(unittest.TestCase):
 
 
 class ReviewerDisplayTests(PreparationFixture):
+    def test_first_read_refreshes_verification_without_transcription_or_extra_lookup(self):
+        from task_governance_tool.review_verification import validate_review_verification
+        task = self.task(verification="Declared expectation, not proof of execution")
+        self.prepare(task)  # Receipt-required, so capture the ordinary public Packet.
+        packet = self.cli("review", "prepare", task, "--read-only")
+        self.assertEqual(packet["verification_evidence"]["source_kind"], "unavailable")
+        directory = self.root / "reviews" / "verification"
+        directory.mkdir(parents=True)
+        packet_path = "reviews/verification/packet.json"
+        self.cli("verification", "receipt", "add", task, "--result", "pass", "--duration-ms", "42",
+                 "--scope-coverage", "full", "--expected-target-generation", "1")
+        for legacy in (False, True):
+            saved = copy.deepcopy(packet)
+            if legacy:
+                del saved["verification_evidence"]
+            path = self.root / packet_path
+            path.write_bytes(encode(saved))
+            original = path.read_bytes()
+            with mock.patch.object(preparation, "__file__", str(self.install.skill_root /
+                    "scripts/task_governance_tool/review_handoff_preparation.py")), \
+                 mock.patch.object(preparation, "_capture", wraps=preparation._capture) as capture:
+                view = preparation.read_for_reviewer(self.root, packet_path)
+            capture.assert_called_once()
+            self.assertEqual(path.read_bytes(), original)
+            summary = view["verification_evidence"]
+            validate_review_verification(summary)
+            self.assertEqual(summary["source_kind"], "caller_attestation")
+            self.assertTrue(summary["gate"]["satisfied"])
+            self.assertEqual(summary["current_receipt"]["duration_ms"], 42)
+            self.assertIn("not an execution result", view["verification_guidance"])
+            self.assertNotIn("recent_receipts", summary)
+            self.assertNotIn("review_evidence", view)
+            for mutation in (lambda x: x.update(raw_output="not permitted"),
+                             lambda x: x.update(source_kind="other_reviewer_pass"),
+                             lambda x: x["current_receipt"].update(duration_ms=True),
+                             lambda x: x["gate"].update(qualifying_receipt_id=None, satisfied=False)):
+                invalid = copy.deepcopy(view)
+                mutation(invalid["verification_evidence"])
+                with self.assertRaises((ValueError, TypeError)):
+                    validate_review_verification(invalid["verification_evidence"])
+                malformed_packet = copy.deepcopy(packet)
+                malformed_packet["verification_evidence"] = invalid["verification_evidence"]
+                with self.assertRaises(handoff.HandoffError):
+                    handoff._packet(encode(malformed_packet))
+
     def read(self, packet, *options):
         return self.invoke("read", "--repo", str(self.root), "--packet", packet, *options)
 
@@ -511,6 +561,7 @@ class ReviewerDisplayTests(PreparationFixture):
                     self.assertNotEqual(failed.returncode, 0, failed.stdout)
                     self.assertEqual(json.loads(failed.stdout)["code"], "review_packet_stale")
                 path.write_bytes(original_packet)
+                self.cli("task", "edit", task, "--status", "ready")
 
     def test_complete_packet_display_and_original_registration_conserve_meaning(self):
         from task_governance_tool.review_results import normalize_review_results
@@ -527,10 +578,13 @@ class ReviewerDisplayTests(PreparationFixture):
         self.assertEqual(result.stdout, encode(view) + b"\n")
         self.assertIn("日本語".encode("utf-8"), result.stdout)
         self.assertEqual(set(view), (set(packet) - {"receipt_command"}) |
-                         {"review_material", "context_check", "warnings"})
-        for key in packet.keys() - {"result_instructions", "receipt_command"}:
+                         {"review_material", "context_check", "warnings", "verification_guidance"})
+        for key in packet.keys() - {"result_instructions", "receipt_command", "verification_evidence"}:
             self.assertEqual(view[key], packet[key], key)
         self.assertEqual(view["context_check"], "matched_at_read")
+        self.assertEqual(view["verification_evidence"]["source_kind"], "not_required")
+        self.assertFalse(view["verification_evidence"]["gate"]["required"])
+        self.assertIsNone(view["verification_evidence"]["current_receipt"])
         self.assertEqual(view["result_instructions"], review_result_instructions(independent=True))
         self.assertEqual(view["review_material"]["status"], "requires_supplied_material")
         self.assertEqual(view["result_template"]["receipts"], packet["result_template"]["receipts"])
@@ -718,6 +772,8 @@ class ReviewerMaterialTests(PreparationFixture):
         self.assertEqual(detailed_result.returncode, 0, detailed_result.stderr)
         detailed = json.loads(detailed_result.stdout)
         details = detailed["review_material"]
+        self.assertGreaterEqual(detailed["verification_evidence"].pop("observed_at"),
+                                normal["verification_evidence"].pop("observed_at"))
         self.assertEqual({k: v for k, v in normal.items() if k != "review_material"},
                          {k: v for k, v in detailed.items() if k != "review_material"})
         for name in ("changes", "comparison_base", "dependency_revision", "unchanged_inventory", "collect_command"):
@@ -1748,6 +1804,20 @@ class SharedPatchDeliveryTests(unittest.TestCase):
 
 
 class LegacyPacketPreparationTests(unittest.TestCase):
+    def test_packet_rejects_legacy_done_contract_drift(self):
+        from tests.test_m22_evidence_ledger_storage import initialize_v17_fixture, seed_v17_contract_constraints
+        from task_governance_tool.storage import connect, apply_migrations, StorageError
+        from task_governance_tool.review_packet import prepare_review_packet
+        with tempfile.TemporaryDirectory() as temporary:
+            target, task_id = initialize_v17_fixture(Path(temporary))
+            with closing(connect(target.db_path)) as connection:
+                seed_v17_contract_constraints(connection, project_id=target.project.project_id,
+                                             task_id=task_id, constraints="dispatch_authorization=7")
+                apply_migrations(connection)
+            with self.assertRaises(StorageError) as failed:
+                prepare_review_packet(target, task_id)
+            self.assertEqual(failed.exception.code, "completion_history_inconsistent")
+
     def test_migrated_public_packet_preserves_both_stored_constraints_forms(self):
         from tests.test_m22_evidence_ledger_storage import initialize_v17_fixture, seed_v17_contract_constraints
         from task_governance_tool.storage import connect, apply_migrations
@@ -1755,8 +1825,14 @@ class LegacyPacketPreparationTests(unittest.TestCase):
 
         for constraints in ("dispatch_authorization=7", '{"dispatch_authorization":7}'):
             with self.subTest(constraints=constraints), tempfile.TemporaryDirectory() as temporary:
-                target, task_id = initialize_v17_fixture(Path(temporary))
+                target, _ = initialize_v17_fixture(Path(temporary))
                 with closing(connect(target.db_path)) as connection:
+                    # Add this Contract to the live legacy Task, not after a
+                    # different Task's immutable completion. The latter creates
+                    # a real Contract/cycle mismatch when evidence is projected.
+                    task_id = connection.execute("SELECT task_id FROM tasks WHERE status = 'ready'").fetchone()[0]
+                    connection.execute("UPDATE tasks SET review_target_kind = 'external_revision', "
+                        "review_target_value = 'legacy-live', review_target_generation = 1 WHERE task_id = ?", (task_id,))
                     seed_v17_contract_constraints(connection, project_id=target.project.project_id,
                                                  task_id=task_id, constraints=constraints)
                     apply_migrations(connection)
@@ -1766,3 +1842,4 @@ class LegacyPacketPreparationTests(unittest.TestCase):
                 transported = json.loads(preparation._packet(packet, task_id))
                 self.assertEqual(transported, packet)
                 self.assertEqual(transported["contract"]["constraints"], constraints)
+                self.assertFalse(transported["verification_evidence"]["gate"]["satisfied"])

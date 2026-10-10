@@ -1598,10 +1598,20 @@ Git.
 Success data keys are exactly:
 
 ```text
-task, contract, review_target, changed_paths_available, changed_paths,
+task, contract, review_target, verification_evidence, changed_paths_available, changed_paths,
 changed_paths_total, changed_paths_truncated, review_focus, required_output,
 result_template, result_instructions, receipt_command
 ```
+
+`verification_evidence` supplies `observed_at`, `source_kind`, and the normal
+current-only `current_verification_subject`, `gate`, `counts`, `current_receipt`.
+It is bound to the enclosing Task/Contract/full target. `caller_attestation`
+reports a manual run; `runner_observation` denotes the qualifying Runner gate;
+`not_required` is an explicit waiver; `legacy_exemption` is history only;
+`unavailable` leaves missing, pending, stale or blocking evidence unsatisfied.
+Failed/partial manual results retain their result and unsatisfied gate. A summary
+does not authenticate execution or prove test sufficiency or review PASS.
+Other reviewers' judgments, historical Receipt lists and raw output are excluded.
 
 Changed paths are strict relative UTF-8 project paths, sorted bytewise, and
 bounded to 100 rows, 240 UTF-8 bytes per row, and 16,384 aggregate path bytes.
@@ -2261,6 +2271,12 @@ one read-only public `review prepare`, comparing saved Task/Contract/target and
 path metadata. Mismatch, unavailable state or incomplete response fails without
 a display; no second reviewer check/show, state write or target reset is added.
 `context_check=matched_at_read` is an observation, not a future guarantee.
+`verification_evidence` is refreshed from that same current public read, with
+fixed `verification_guidance` explaining its source and limits. Older saved
+Packets may omit it and remain unchanged; a supplied summary must pass closed
+validation. No parent transcription, second Packet read or Task-show lookup is
+needed to obtain the normal summary. Relevant investigation and questions remain
+permitted, and independent quality judgment remains required.
 `review_material` lists the complete Git delta (not the Packet's bounded list),
 immutable before/after object IDs and modes, comparison/dependency revisions,
 and a `collect_command` bound to the saved Packet. Replace its single placeholder

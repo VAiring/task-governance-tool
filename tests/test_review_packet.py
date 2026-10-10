@@ -1,9 +1,10 @@
 import json
+import os
 import subprocess
 import sys
 import tempfile
 import unittest
-from contextlib import closing
+from contextlib import closing, ExitStack
 from pathlib import Path
 from unittest import mock
 
@@ -177,6 +178,90 @@ def database_target(db: Path, repo: Path):
 
 
 class ReviewPacketTests(unittest.TestCase):
+    def test_verification_summary_selects_only_exact_current_manual_evidence(self):
+        from task_governance_tool.review_verification import validate_review_verification
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo, db = root / "repo", root / "state.sqlite"
+            initialize_repo(repo)
+            initialize_taskgov_internal(repo=repo, db=db)
+            task = add_task(db, repo)
+            old_ids = []
+            for generation, (result, coverage) in enumerate(
+                    (("pass", "full"), ("fail", "full"), ("timeout", "full"), ("pass", "partial")), 1):
+                set_target(db, repo, task, kind="external_revision", revision=f"revision-{generation}")
+                missing = json_payload(prepare(db, repo, task))["data"]["verification_evidence"]
+                self.assertEqual(missing["source_kind"], "unavailable")
+                self.assertEqual(missing["gate"]["blocking_code"], "verification_receipt_required")
+                self.assertIsNone(missing["current_receipt"])
+                self.assertNotIn("receipts_total", missing["counts"])
+                validate_review_verification(missing)
+                recorded = run_taskgov_internal("verification", "receipt", "add", task,
+                    "--repo", str(repo), "--db", str(db), "--result", result,
+                    "--duration-ms", "123", "--scope-coverage", coverage,
+                    "--expected-target-generation", str(generation), "--json", maintenance_enabled=False)
+                self.assertEqual(recorded.returncode, 0, recorded.stdout)
+                packet = json_payload(prepare(db, repo, task))["data"]
+                summary = packet["verification_evidence"]
+                validate_review_verification(summary)
+                self.assertEqual(summary["source_kind"], "caller_attestation")
+                self.assertEqual(summary["gate"]["satisfied"], result == "pass" and coverage == "full")
+                self.assertEqual(summary["current_receipt"]["duration_ms"], 123)
+                self.assertEqual(summary["current_receipt"]["result"], result)
+                self.assertEqual(summary["current_receipt"]["scope_coverage"], coverage)
+                self.assertEqual(packet["review_target"]["generation"], generation)
+                for old in old_ids:
+                    self.assertNotIn(old, json.dumps(packet))
+                old_ids.append(summary["current_receipt"]["verification_receipt_id"])
+            old_subject = summary["current_verification_subject"]
+            edited = run_taskgov_internal("task", "edit", task, "--repo", str(repo), "--db", str(db),
+                "--contract-scope", "Updated scope", "--contract-acceptance", "Updated acceptance",
+                "--contract-authority-ref", "conversation:test:authorized-revision",
+                "--contract-change-reason", "Explicit fixture revision", "--json", maintenance_enabled=False)
+            self.assertEqual(edited.returncode, 0, edited.stdout)
+            edited = run_taskgov_internal("task", "edit", task, "--repo", str(repo), "--db", str(db),
+                "--verification", "New declared verification", "--json", maintenance_enabled=False)
+            self.assertEqual(edited.returncode, 0, edited.stdout)
+            set_target(db, repo, task, kind="external_revision", revision="new-contract")
+            packet = json_payload(prepare(db, repo, task))["data"]
+            summary = packet["verification_evidence"]
+            self.assertGreater(packet["contract"]["revision"], 1)
+            self.assertNotEqual(summary["current_verification_subject"], old_subject)
+            self.assertEqual(summary["source_kind"], "unavailable")
+            self.assertFalse(summary["gate"]["satisfied"])
+            self.assertIsNone(summary["current_receipt"])
+
+    def test_runner_summary_uses_selected_observation_and_rejects_stale_basis(self):
+        from tests.test_m242_runner_service import RunnerServiceFixture, passing_process_result
+        from task_governance_tool import verification_runner_service as service
+        from task_governance_tool import verification_runner_selection as selection
+        from task_governance_tool.review_verification import validate_review_verification
+        with tempfile.TemporaryDirectory() as temporary:
+            fixture = RunnerServiceFixture(Path(temporary))
+            prepared = fixture.prepared()
+            paths = service._runner_paths(fixture.target)
+            with service.zero_wait_runner_lock(paths):
+                intent = service._persist_launch_intent(fixture.target, prepared)
+                pending = packet_module.prepare_review_packet(fixture.target, fixture.task_id)["verification_evidence"]
+                self.assertEqual(pending["source_kind"], "unavailable")
+                self.assertEqual(pending["gate"]["blocking_code"], "evidence_basis_stale")
+                with ExitStack() as stack:
+                    for name, value in (("materialize_runner_target", None), ("_basis_is_current", True),
+                                        ("_physical_basis_matches", True),
+                                        ("observe_fixed_package_runtime", Path(sys.executable).resolve())):
+                        stack.enter_context(mock.patch.object(service, name, return_value=value))
+                    stack.enter_context(mock.patch.object(service, "run_process_request", side_effect=passing_process_result))
+                    service._run_intent_under_lock(fixture.target, paths, prepared, intent, cancel_requested=lambda: False)
+            for current in (True, False):
+                with mock.patch.object(selection, "_stored_runner_physical_basis_matches", return_value=current), \
+                     mock.patch.object(service, "run_process_request", side_effect=AssertionError("Packet must not run verification")):
+                    summary = packet_module.prepare_review_packet(fixture.target, fixture.task_id)["verification_evidence"]
+                validate_review_verification(summary)
+                self.assertEqual(summary["source_kind"], "runner_observation" if current else "unavailable")
+                self.assertEqual(summary["gate"]["satisfied"], current)
+                self.assertIsNone(summary["current_receipt"])
+                self.assertEqual(summary["counts"]["receipts_exact_current"], 0)
+
     def test_all_target_kinds_have_one_bounded_allow_list_and_fixed_text(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -214,6 +299,7 @@ class ReviewPacketTests(unittest.TestCase):
                     "task",
                     "contract",
                     "review_target",
+                    "verification_evidence",
                     "review_session_context",
                     "changed_paths_available",
                     "changed_paths",
@@ -291,6 +377,12 @@ class ReviewPacketTests(unittest.TestCase):
                 +
                 f"Receipt command: {diff_data['receipt_command']}\n"
             )
+            summary_line = text_result.stdout.splitlines()[-1]
+            self.assertTrue(summary_line.startswith("Verification evidence (point-in-time): "))
+            text_summary = json.loads(summary_line.split(": ", 1)[1])
+            self.assertEqual({k: v for k, v in text_summary.items() if k != "observed_at"},
+                             {k: v for k, v in diff_data["verification_evidence"].items() if k != "observed_at"})
+            expected_text += summary_line + "\n"
             self.assertEqual(text_result.stdout, expected_text)
             escaped_data = json.loads(json.dumps(diff_data))
             escaped_data["task"]["title"] = "line\u0085next\u2028more\u2029end"
@@ -399,19 +491,12 @@ class ReviewPacketTests(unittest.TestCase):
                     self.assertEqual(len(blank["provenance"]), 10)
                     self.assertTrue(all(value is None for value in blank["provenance"].values()))
 
-            revision_zero_id = add_task(
-                db,
-                repo,
-                title="Revision zero",
-                contract=False,
-            )
-            set_target(
-                db,
-                repo,
-                revision_zero_id,
-                kind="external_revision",
-                revision="external-zero",
-            )
+            # This independent Task needs its own owner under the session-slot
+            # contract; the first Task intentionally remains review-pending.
+            with mock.patch.dict(os.environ, {"CODEX_THREAD_ID": "00000000-0000-4000-8000-000000000099"}):
+                revision_zero_id = add_task(db, repo, title="Revision zero", contract=False)
+            with mock.patch.dict(os.environ, {"CODEX_THREAD_ID": "00000000-0000-4000-8000-000000000099"}):
+                set_target(db, repo, revision_zero_id, kind="external_revision", revision="external-zero")
             revision_zero_packet = json_payload(
                 prepare(db, repo, revision_zero_id)
             )["data"]
@@ -452,6 +537,9 @@ class ReviewPacketTests(unittest.TestCase):
                     self.assertEqual(text.returncode, 0, text.stdout)
                     self.assertIn("Authority reference: " + json.dumps(reference, ensure_ascii=False), text.stdout)
                     self.assertEqual(file_snapshot(root), before)
+                    released = run_taskgov_internal("task", "edit", task, "--repo", str(repo),
+                        "--db", str(db), "--status", "ready", "--json", maintenance_enabled=False)
+                    self.assertEqual(released.returncode, 0, released.stdout)
 
     def test_manual_diagnostic_task_fields_pass_existing_packet_boundary(self):
         title = "Investigate failure: stderr: permission denied"

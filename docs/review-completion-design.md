@@ -337,6 +337,11 @@ requests supply that read command instead of raw-file reading and contain the
 ordinary procedure themselves. Each row has only `result_path` and `request`;
 the request embeds both fixed read/save invocations and remains directly
 forwardable without separate command keys or parent reconstruction.
+`_requests` places all shared procedure text before the bound read/save command
+sections, in that order. Host-native quoting, UTF-8 data carriers and the
+existing invocation arguments remain unchanged. Focused tests compare the
+common opening across cases and retain native command/Packet/result bindings;
+this layout is not an observation of host prompt caching.
 `_review_material` reuses `artifact_manifest.py`
 observers and entry builder, without another fingerprint algorithm, to return
 the complete immutable-object delta and dependency/read command templates.

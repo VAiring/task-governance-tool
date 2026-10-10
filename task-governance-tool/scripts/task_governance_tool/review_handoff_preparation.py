@@ -471,19 +471,20 @@ def _requests(repo, args, packet_path):
         reviewers.append({"result_path": path, "request": (
             "You are assigned an independent review of the complete exact target under current project authority. "
             "This request and its read output supply your procedure and result format; no Skill operating guide or internal fingerprint implementation is a prerequisite. "
-            "Obtain the Task/Contract, criteria, exact material access and result template with this read-only operation:\n"
-            + read + "\nUse review_material to obtain or reuse complete target-bound project AGENTS.md and applicable authority before judging the whole target against its scope, acceptance, constraints and verification expectation. "
+            "Obtain the Task/Contract, criteria, exact material access and result template with the read-only operation below. "
+            "Use review_material to obtain or reuse complete target-bound project AGENTS.md and applicable authority before judging the whole target against its scope, acceptance, constraints and verification expectation. "
             "Follow review_material for exact artifacts, required source/tests, discovered dependencies and retrieval exceptions. "
             "Read Skill files when they are actually governing or reviewed material, not to learn Task management. "
             "If this role does not match actual work, ask the caller, "
             "do not infer independence. "
             "Complete the view's result_template using result_instructions, actual judgment and provenance, and all Findings with severity, exact file/line, risks and recommended correction in bounded summaries. "
             "Do not search internals to guess unknown model/Skill identity or version. "
-            "Replace only the JSON placeholder below; run this fixed save operation, not new save/validation code.\n"
-            + invocation + "\nOn saved acknowledgement return path, verdict and Finding count once in the final response; "
+            "Replace only the JSON placeholder below; run this fixed save operation, not new save/validation code. "
+            "On saved acknowledgement return path, verdict and Finding count once in the final response; "
             "do not echo JSON or send a duplicate normal-success notification. "
             "Report questions, read mismatch, unavailable/truncated material, unknown role, save failure or lost acknowledgement to the caller; do not claim PASS from incomplete inspection or success from an unknown outcome. "
             "Preserve failed residue; do not overwrite or blindly repeat a save. Do not manage Tasks, reset targets, register DB evidence, complete work or implement transport/recovery code."
+            + "\n\nRead command:\n" + read + "\n\nSave command:\n" + invocation
         )})
     from task_governance_tool.setup_feature_config import read_choices
     try:

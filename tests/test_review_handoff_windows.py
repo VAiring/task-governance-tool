@@ -136,7 +136,7 @@ class WindowsPreparationTests(PreparationFixture):
             "severity": "low", "summary": "example.py:1 日本語 🚀"}])]
         request = result["review_requests"][0]["request"]
         # Execute the generated literal data carrier, not a second test-owned save command.
-        invocation = request[request.index("$OutputEncoding"):request.index("\nOn saved acknowledgement")]
+        invocation = request.split("\n\nSave command:\n", 1)[1]
         saved = shell(invocation.replace("<completed original JSON>", encode(payload).decode("utf-8")), reviewer=0)
         self.assertEqual(saved.returncode, 0, saved.stdout or saved.stderr)
         self.assertEqual(json.loads((self.root / result["review_requests"][0]["result_path"]).read_bytes()), payload)

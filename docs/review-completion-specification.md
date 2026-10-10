@@ -402,6 +402,12 @@ independent-review row contains only `result_path` and a self-contained `request
 The request embeds the exact read and save commands with their procedure and is
 directly forwardable; separate `read_command`/`save_command` keys do not repeat
 them. No extraction, reconstruction or command matching is required of the parent.
+Common rules and procedure form the request's stable opening; the bound read
+command and then the save invocation follow in labeled sections. Paths and
+commands retain their exact arguments and correspondence. This presentation
+does not change steps or require an extra read. A stable request prefix may
+permit cache reuse, but actual host/conversation caching, token use and cost
+effects are unmeasured; neither padding nor a performance gate is introduced.
 The request never supplies the parent's submit
 command. Assignment is not an attestation of actual independence. A different
 or uncertain role requires the existing full-Packet route, not an inferred

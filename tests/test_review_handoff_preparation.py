@@ -15,6 +15,7 @@ import tempfile
 import unittest
 from contextlib import ExitStack, closing, redirect_stdout
 from pathlib import Path
+from types import SimpleNamespace
 from unittest import mock
 
 from tests.m14_test_support import file_snapshot, make_physical_install
@@ -71,6 +72,69 @@ class PreparationFixture(unittest.TestCase):
         completed = self.invoke("prepare", "--repo", str(self.root), "--directory=" + directory,
                                 action, task, *options, raw=raw)
         return completed, json.loads(completed.stdout)
+
+
+class ReviewRequestLayoutTests(unittest.TestCase):
+    def test_shared_rules_precede_case_commands_without_changing_bindings(self):
+        prefixes = []
+        for platform in ("nt", "posix"):
+            for records_only in (False, True):
+                for case, directory in enumerate(("reviews/first", "-reviews/日本語's ‘quoted’; $x & case")):
+                    repo = Path("project-" + str(case)).absolute()
+                    packet = directory + "/packet.json"
+                    args = SimpleNamespace(directory=directory, reviewers=case + 1,
+                                           records_only=records_only, task_id="case-" + str(case))
+                    # Replace only this module's OS selector, not pathlib's host.
+                    with mock.patch.object(preparation, "os", SimpleNamespace(name=platform)), \
+                         mock.patch.object(preparation, "_shell", wraps=preparation._shell) as shell, \
+                         mock.patch("task_governance_tool.setup_feature_config.read_choices", return_value=(None, {})):
+                        result = preparation._requests(repo, args, packet)
+                    entry = str(Path(preparation.__file__).parent.parent / "review_handoff.py")
+                    base = [sys.executable, *(["-I", "-S", "-B"] if records_only else ["-B"]),
+                            entry, *(["--records-only"] if records_only else [])]
+                    common = ["--repo=" + str(repo), "--packet=" + packet]
+                    expected_calls = [[*base, "read", *common]]
+                    for index, row in enumerate(result["review_requests"], 1):
+                        self.assertEqual(set(row), {"result_path", "request"})
+                        output = directory + f"/review-{index}.json"
+                        self.assertEqual(row["result_path"], output)
+                        prefix, commands = row["request"].split("\n\nRead command:\n")
+                        read, save = commands.split("\n\nSave command:\n")
+                        prefixes.append(prefix)
+                        for value in (str(repo), directory, packet, output, str(sys.executable)):
+                            self.assertNotIn(value, prefix)
+                        self.assertEqual(row["request"].count("<completed original JSON>"), 1)
+                        expected_calls.append([*base, "save", *common, "--output=" + output])
+                        if platform == "posix":
+                            self.assertEqual(shlex.split(read), expected_calls[0])
+                            self.assertEqual(shlex.split(save.split(" <<'TASKGOV_REVIEW_RESULT'", 1)[0]), expected_calls[-1])
+                            self.assertTrue(save.endswith("\nTASKGOV_REVIEW_RESULT"))
+                        else:
+                            self.assertTrue(read.startswith("& "))
+                            self.assertTrue(save.startswith("$OutputEncoding = [Console]::InputEncoding = "))
+                            self.assertIn("\n'@ | & ", save)
+                    expected_calls.append([*base, "submit", *common, "--", *(row["result_path"] for row in result["review_requests"])])
+                    self.assertEqual([call.args[0] for call in shell.call_args_list], expected_calls)
+        self.assertEqual(len(set(prefixes)), 1)
+        # Conditions and prohibitions stay ahead of dynamic material. Independent
+        # review checks full meaning; these guard the clauses most easily lost.
+        for rule in ("complete exact target under current project authority",
+                     "no Skill operating guide or internal fingerprint implementation is a prerequisite",
+                     "scope, acceptance, constraints and verification expectation",
+                     "required source/tests, discovered dependencies and retrieval exceptions",
+                     "when they are actually governing or reviewed material",
+                     "ask the caller, do not infer independence",
+                     "result_instructions, actual judgment and provenance, and all Findings",
+                     "severity, exact file/line, risks and recommended correction",
+                     "Do not search internals to guess unknown model/Skill identity or version",
+                     "run this fixed save operation, not new save/validation code",
+                     "return path, verdict and Finding count once in the final response",
+                     "do not echo JSON or send a duplicate normal-success notification",
+                     "read mismatch, unavailable/truncated material, unknown role, save failure or lost acknowledgement",
+                     "do not claim PASS from incomplete inspection or success from an unknown outcome",
+                     "Preserve failed residue; do not overwrite or blindly repeat a save",
+                     "Do not manage Tasks, reset targets, register DB evidence, complete work or implement transport/recovery code"):
+            self.assertIn(rule, prefixes[0])
 
 
 class InstalledPreparationTests(PreparationFixture):
@@ -203,6 +267,8 @@ class InstalledPreparationTests(PreparationFixture):
                 # object (unlike original reviewer bytes) is the transport contract.
                 self.assertEqual(json.loads((self.root / recovered["handoff"]["packet_path"]).read_bytes()),
                                  json.loads((self.root / result["handoff"]["packet_path"]).read_bytes()))
+                # Release the combined execution/review slot between input forms.
+                self.cli("task", "edit", task, "--status", "ready")
 
     def test_bound_recovery_does_not_write_another_target_and_conflicting_binding_fails(self):
         task = self.task()

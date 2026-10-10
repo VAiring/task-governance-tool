@@ -111,6 +111,12 @@ verification evidence to `tasks.py::suggested_next_action`. That pure formatter
 uses `reviews.py::first_review_gate_error` and existing required/qualifying
 counts only when required verification is satisfied on `review_pending`.
 It does not rescan receipts, query storage/Git, or own a second gate evaluator.
+Its missing-review text retains the count and unperformed-review instruction,
+then refers to the caller's already selected completion route and retained
+continuation. The formatter neither detects that route nor reads finalization
+state; it adds no route parameter or persisted field. Registration ownership
+stays with the existing integrated, manual/shared-file or direct continuation,
+including their recovery rules, rather than a separate parent-registration hint.
 Callers without that evidence, including compact next, retain the fixed mapping;
 compact current keeps its existing formatter. Completion revalidation is unchanged.
 That module also owns the fixed normal/audit presentation boundary. The audit

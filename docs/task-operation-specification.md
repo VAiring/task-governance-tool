@@ -99,9 +99,14 @@ working evidence and explicit audit projections.
 For `review_pending` detail only, when required current verification is satisfied
 and the existing review gate reports only insufficient independent PASS receipts,
 the suggested action states the remaining count and directs the caller to obtain
-any unperformed reviews and register actual results using the Packet template or
-the existing structured-result input reference. It reuses the already-read gate
-evaluation and required/qualifying counts. Old-generation PASS, blocking Findings
+any unperformed reviews and process actual results through the already selected
+completion route and its retained continuation instructions. This route-neutral
+hint does not select or inspect a route, prescribe separate parent registration
+for integrated completion, or require a manual-input guide read. The existing
+[result continuation](review-completion-specification.md#integrated-review-finalization)
+and Skill guidance retain integrated, manual/shared-file, direct and recovery
+procedures. It reuses the already-read gate evaluation and required/qualifying
+counts, with no new state or I/O. Old-generation PASS, blocking Findings
 (including resolved Findings awaiting a newer target), changes-requested results,
 and accepted fallbacks retain their existing gate meaning. All other cases,
 including verification not required, retain the status-based hint. Both show

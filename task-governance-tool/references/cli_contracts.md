@@ -980,7 +980,12 @@ under `task context`'s `data.selected`; no follow-up read is needed:
 | `completion_history` | `total` and `legacy_history_incomplete`, not current completion evidence. |
 | `effort_advisory_enabled` | Whether the normal loop uses the optional Effort observation. Invalid configuration returns false with a continuation warning. |
 | `usage` | Last captured registered shared-work summary and cycle links, or explicit unknown. Numerical gaps never change Task gates. Optional [collection coverage and recovery](usage_hooks.md#coverage-and-recovery) explain gaps without an extra normal-loop command. |
-| `suggested_next_action` | A next-action hint, not authority or proof of completion. In review-pending detail, satisfied required verification and only missing independent PASS reviews yield a remaining count and the existing result-input route; otherwise the status-based hint remains. Obtain any unperformed reviews before registering actual returned results. |
+| `suggested_next_action` | A next-action hint, not authority or proof of completion. In review-pending detail, satisfied required verification and only missing independent PASS reviews yield a remaining count; otherwise the status-based hint remains. Obtain any unperformed reviews, then process actual results through the already selected completion route and retained continuation instructions. This does not request separate parent registration for integrated completion or another guide/state read. |
+
+Keep the selected route's generated continuation or direct-transport instructions.
+The existing [result continuation](task_workflow.md#continue-after-reviews) owns
+integrated, manual/shared-file, direct and recovery processing when applicable;
+the hint does not replace those instructions or require rereading them.
 
 Use `review_evidence.gate.satisfied` and its required/qualifying independent
 pass counts, not the number of recent reviews, to read review readiness.

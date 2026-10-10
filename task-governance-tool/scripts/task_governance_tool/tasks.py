@@ -1244,9 +1244,8 @@ def suggested_next_action(
             if error is not None and error.code == "review_receipts_insufficient" and missing > 0:
                 return (
                     f"Current target needs {missing} more independent PASS review(s). "
-                    "Obtain any unperformed reviews, then register actual results via "
-                    "review result add; input: Packet result_template or "
-                    "references/cli_contracts.md#structured-review-results."
+                    "Obtain any unperformed reviews, then process actual results through "
+                    "the already selected completion route and its retained continuation instructions."
                 )
         return "Complete the required review gate, then update the task status."
     if status == "paused":

@@ -146,12 +146,21 @@ class TaskShowProjectionTests(unittest.TestCase):
             hint = normal["suggested_next_action"]
             if missing:
                 self.assertIn(f"{missing} more independent PASS", hint)
-                self.assertIn("review result add", hint)
-                self.assertIn("#structured-review-results", hint)
+                self.assertIn("Obtain any unperformed reviews", hint)
+                self.assertIn("process actual results", hint)
+                self.assertIn("already selected completion route", hint)
+                self.assertIn("retained continuation instructions", hint)
+                # The same hint leaves registration to the selected integrated,
+                # shared-file or direct route, rather than prescribing a manual call.
+                self.assertNotIn("review result add", hint)
+                self.assertNotIn("result_template", hint)
+                self.assertNotIn("references/", hint)
                 self.assertNotIn(task_id, hint)
                 # The formatter itself consumes only supplied values, never IO.
                 with mock.patch("sqlite3.connect", side_effect=AssertionError("extra read")), mock.patch(
                     "subprocess.Popen", side_effect=AssertionError("extra Git/process")
+                ), mock.patch.object(
+                    Path, "open", side_effect=AssertionError("extra route/file read")
                 ):
                     self.assertEqual(tasks.suggested_next_action(
                         audit["task"], review_evidence=audit["review_evidence"],
@@ -207,6 +216,7 @@ class TaskShowProjectionTests(unittest.TestCase):
             self.assertEqual(tasks.suggested_next_action(
                 row, review_evidence=shown["review_evidence"], verification_evidence=shown["verification_evidence"],
             ), tasks.suggested_next_action(row))
+        self.success("task", "edit", task_id, "--status", "ready")
         no_verification = self.add()["task_id"]
         self.target(no_verification)
         self.success("task", "edit", no_verification, "--status", "review_pending")
@@ -222,6 +232,7 @@ class TaskShowProjectionTests(unittest.TestCase):
             hint = self.show(task_id)["data"]["suggested_next_action"]
             if tier == 0:
                 self.assertEqual(hint, generic)
+                self.success("task", "edit", task_id, "--status", "ready")
                 continue
             self.assertIn(f"{tier} more independent PASS", hint)
             self.success(
@@ -234,6 +245,7 @@ class TaskShowProjectionTests(unittest.TestCase):
             shown = self.show(task_id)["data"]
             self.assertTrue(shown["review_evidence"]["gate"]["satisfied"])
             self.assertEqual(shown["suggested_next_action"], generic)
+            self.success("task", "edit", task_id, "--status", "ready")
 
     def test_normal_has_fixed_shapes_and_complete_task_contract_checkpoint_and_routes(self):
         scope = "Complete scope 日本語. " * 110

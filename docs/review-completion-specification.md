@@ -308,7 +308,7 @@ helper below performs caller-owned transport without changing this writer.
 
 ### Caller-Owned Review Handoff
 
-The shipped `scripts/review_handoff.py` has `prepare`, `read`, `material`, `save` and `submit`
+The shipped `scripts/review_handoff.py` has `prepare`, `read`, `material`, `workspace`, `save` and `submit`
 operations, separate from the taskgov command inventory. All require explicit
 `--repo`. The Packet remains context, not authenticated evidence, and the helper
 never launches a reviewer or replaces current-state registration checks.
@@ -660,6 +660,83 @@ evidence inspection before any retry. A child response/exit is forwarded
 unchanged, including atomic rejection, successful registration with a blocking
 gate, and post-commit output failure. No wrapper success assertion, retry or new
 completion gate is added. Absent/truncated output itself remains unknown.
+
+### Optional Reviewer Verification Workspace
+
+For Git material, the ordinary reviewer read may supply
+`review_material.verification_workspace` with literal `prepare_command`,
+`cleanup_command` and conditional instructions. Reading remains write-free.
+No parent selection, extra argument, environment registration, mandatory test
+or additional completion gate is introduced. Records-only reads omit this
+capability and records-only invocation rejects both workspace operations.
+
+`workspace prepare|cleanup` requires explicit `--repo`, saved `--packet`, its
+`--packet-sha256`, a generated 32-lowercase-hex `--workspace-id` and generated
+`--temp-root-sha256` binding the selected OS temporary parent. A changed
+temporary environment fails rather than claiming the old workspace absent.
+The ID is
+allocated in the read response before any effect, so a lost prepare response
+does not lose the cleanup handle. Prepare is exclusive, never replayed into an
+existing workspace. It validates the complete unchanged Packet, live Task,
+Contract and target generation, then the complete fixed Git material before
+creation. It reuses the Runner's bounded material preflight, blob/hash and exact
+inventory checks, and rechecks the Packet/live binding after restoration.
+Only complete success returns `status=ready`, `working_directory`, exact
+Task/Contract/target, material digest/counts and `verification_status=not_run`.
+Missing, stale, unsupported, oversized or incomplete material returns no ready
+workspace. Linked/submodule/sparse/unsafe target entries retain the existing
+materializer's rejection. Nested governed roots with different Git coordinates
+are unsupported by this optional helper; existing material retrieval remains
+available. There is no ambient worktree/untracked fallback or network fetch.
+Git administrative paths in the target are rejected. The new POSIX copy retains
+tracked executability (owner-only execute permission); Windows uses its native
+file semantics. No existing source permissions change.
+
+The destination is the physical OS temporary directory's exclusive
+`taskgov-review-<workspace-id>/target`, outside the governed repository and
+without a Git administrative marker in its ancestor chain. The OS temp selector
+is resolved read-only to an existing physical path before admission; OS aliases
+do not require a user's environment change. All effects use that validated
+physical path, never the alias. A changed selector that resolves elsewhere
+fails the retained parent binding; links within the destination and source
+material retain their no-follow checks. It contains only
+the complete fixed target. The sibling bounded `owner.json` records the Packet
+digest, Task/Contract/target, repo-path digest, handle and physical root identity.
+No custom destination, configuration, source/Git write or database row is added.
+This disposable copy is not a security sandbox and does not authorize executing
+target code. After reading project authority, each reviewer may run their
+independently selected, already-authorized existing verification in the returned
+directory using normal execution tools. They inspect their own actual results,
+including failure, timeout and incomplete delivery, and retain independent
+judgment and additional investigation. Neither ready nor another reviewer's
+PASS is verification success. Runner trust/Plan, process guarantees and Receipt
+registration remain separate; no command, dependency installation or test is
+launched by this helper.
+
+After every process using that copy has ended, explicit cleanup validates the
+same retained Packet/owner/root, inventories a bounded physical tree without
+following links, then removes only those individually revalidated files and
+directories. It accepts already-absent as success, and need not match live Task
+state that may have advanced since preparation. Foreign/replaced ownership,
+links, excessive inventory, timeout or IO uncertainty retains residue and
+returns failure with `cleanup_status=retained`; callers inspect rather than
+delete an uncertain tree or blindly prepare again. A failed preparation tries
+the same bounded cleanup only for its own newly created root. Process termination
+or lost acknowledgement may leave residue recoverable by the retained cleanup
+command. No global temporary sweep, persistent execution/log ledger or automatic
+verification result is created. Temporary source and ownership metadata are
+removed on confirmed cleanup and never enter Packet, Receipt, Task DB or exports.
+An error echoes the workspace handle only when it meets the exact ID grammar;
+otherwise `workspace_id` is null, never the rejected value. A created root whose
+physical identity could not be established is reported retained and is not
+automatically removed.
+
+This removes model-written source/test reconstruction and Git retrieval code.
+An existing tool invocation can combine preparation and an already-authorized
+check only after checking ready; otherwise preparation and execution remain
+separate responses. Cleanup still requires an observed ended process. These
+are response-count conditions, not measured token/time savings; the six-test
+representative fixture establishes functional equivalence only.
 
 ### Integrated Review Finalization
 

@@ -517,7 +517,8 @@ class TestLanePolicyTests(unittest.TestCase):
                 "test_setup_state_separation", "test_state_resolver",
                 "test_state_separation",
                 "test_state_transition_primitives", "test_review_handoff",
-                "test_review_handoff_preparation", "test_task_validation",
+                "test_review_handoff_preparation", "test_review_workspace",
+                "test_task_preapproval", "test_task_validation",
             ),
         )
         expected = tuple(
@@ -602,7 +603,7 @@ class TestLanePolicyTests(unittest.TestCase):
         inventory = discover_tests(ROOT)
         portable = {
             case.id() for case in inventory.cases
-            if case.__class__.__module__ in {"test_review_handoff", "test_review_handoff_preparation"}
+            if case.__class__.__module__ in {"test_review_handoff", "test_review_handoff_preparation", "test_review_workspace"}
         }
         windows = {
             case.id() for case in inventory.cases

@@ -145,6 +145,11 @@ containing the repository, and confines every exclusive write and inventory
 check to that destination. The `lifecycle` owner remains responsible for its
 creation and cleanup.
 
+The optional [reviewer workspace](review-completion-design.md#optional-reviewer-verification-workspace)
+also reuses this target-material boundary in its own exclusively created
+OS-temp destination. That caller owns preparation and cleanup; it invokes no
+Runner Plan, process/lifecycle, trust admission, intent or Receipt machinery.
+
 `verification_runner_plan.py` owns:
 
 ```

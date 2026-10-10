@@ -408,6 +408,16 @@ def read_for_reviewer(repo, packet_path, *, material_details=False, records_only
                 "changes is complete even if Packet paths are bounded; unchanged_inventory is only bounded location guidance, not selected relevance or availability. Snapshot changed paths use after objects, deleted/renamed old paths are absent, unchanged paths use the base commit; commit targets use their exact commit. Never substitute ambient HEAD/index/worktree content. Modes, path/side mappings and whole-file diff body references remain part of the material.",
                 "Collection complete/exit zero means delivery, not review coverage or PASS. Missing, mismatched, unknown, tool-truncated, large/non-text or unavailable material still needs retrieval; submodule material must be supplied. Use recovery_command only when individual/additional reads or discovery are needed; it supplies their commands and quoting rules. Recover affected material without repeating successful siblings. Keep unknown provenance unknown and use the complete result_instructions below for normal save.",
             ]
+    current = validate_live_packet(repo, path, raw, packet, records_only=records_only)
+    if material["status"] == "git_objects_verified" and not records_only:
+        from task_governance_tool.review_workspace import workspace_guidance
+        material["verification_workspace"] = workspace_guidance(repo, packet_path, raw)
+    return {**independent_reviewer_view(packet), "review_material": material,
+            "context_check": "matched_at_read", "warnings": current["warnings"]}
+
+
+def validate_live_packet(repo, path, raw, packet, *, records_only=False):
+    """Compare one complete saved Packet with the existing public read."""
     # One existing read-only public operation, inside the replacement read;
     # no extra reviewer check/show, new target, Receipt or direct DB access.
     entry = Path(__file__).parent.parent / "taskgov.py"
@@ -433,8 +443,7 @@ def read_for_reviewer(repo, packet_path, *, material_details=False, records_only
         files._fail("review_packet_stale")
     if files._read(path, files.PACKET_LIMIT) != raw:
         files._fail("handoff_file_changed")
-    return {**independent_reviewer_view(packet), "review_material": material,
-            "context_check": "matched_at_read", "warnings": current["warnings"]}
+    return current
 
 
 def _shell(arguments):

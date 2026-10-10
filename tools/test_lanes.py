@@ -48,6 +48,7 @@ PLATFORM_SMOKE_MODULES = (
     "test_state_transition_primitives",
     "test_review_handoff",
     "test_review_handoff_preparation",
+    "test_review_workspace",
     "test_task_preapproval",
     "test_task_validation",
 )
@@ -145,6 +146,7 @@ LANE_MODULES: dict[str, tuple[str, ...]] = {
         "test_review_results",
         "test_review_session_repository",
         "test_review_session_transport",
+        "test_review_workspace",
         "test_selection",
         "test_sequential_transitions",
         "test_session_identity",

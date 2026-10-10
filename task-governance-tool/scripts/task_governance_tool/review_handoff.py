@@ -397,6 +397,13 @@ def main(argv=None):
         add_parser(commands)
         add_parser(commands, "prepare-finalization")
         add_material_parser(commands)
+        workspace = commands.add_parser("workspace", help="Prepare or clean one optional fixed-target verification workspace; never execute tests")
+        workspace.add_argument("workspace_operation", choices=("prepare", "cleanup"))
+        workspace.add_argument("--repo", required=True)
+        workspace.add_argument("--packet", required=True)
+        workspace.add_argument("--packet-sha256", required=True)
+        workspace.add_argument("--workspace-id", required=True)
+        workspace.add_argument("--temp-root-sha256", required=True)
         finalize = commands.add_parser("finalize", help="Run only the retained authorized finalization; preserve successful stages")
         finalize.add_argument("--repo", required=True)
         finalize.add_argument("--task-id", required=True)
@@ -436,6 +443,10 @@ def main(argv=None):
         if args.operation == "submit":
             registration_status = "not_started"
         repo = Path(os.path.abspath(args.repo))
+        if args.operation == "workspace":
+            from task_governance_tool.review_workspace import operate
+            result = operate(repo, args)
+            return (0 if result["ok"] else 1) if _emit(result, utf8=True) else 1
         if args.operation == "material":
             return read_material(repo, args)
         if args.operation in {"prepare", "prepare-finalization"}:

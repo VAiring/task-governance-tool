@@ -1222,7 +1222,9 @@ class ReviewerMaterialTests(PreparationFixture):
         self.assertNotEqual(failed.returncode, 0)
         # A semantic Contract revision clears the live target by contract.
         self.assertEqual(json.loads(failed.stdout)["code"], "review_target_missing")
-        self.cli("task", "edit", task, "--status", "review_pending")
+        # The independent opaque-target case needs a free owner slot; a
+        # review-pending Task now retains it just like an executing Task.
+        self.cli("task", "edit", task, "--status", "cancelled")
         _, prepared = self.prepare(self.task(), options=["--kind", "external_revision", "--revision", "approved-revision"],
                                    directory="reviews/external")
         result = self.displayed(prepared["handoff"]["packet_path"])

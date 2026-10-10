@@ -226,6 +226,10 @@ blocking failure.
 
 ### Runner Policy And Accounting
 
+The separate [reviewer workspace](review-completion-specification.md#optional-reviewer-verification-workspace)
+reuses bounded fixed-target restoration only. It is not a Runner invocation,
+trust grant, verification result or alternative to this execution contract.
+
 The existing `runner_policy_digest` identifies the accounting and CPU-control
 meaning without changing SQL columns, Runner contract version `1`,
 implementation version `taskgov-verification-runner/1`, closed durable JSON

@@ -440,6 +440,53 @@ Both cover portable filesystem behavior; `test_review_handoff_windows.py`
 owns the native PowerShell transport case outside POSIX platform selection. Existing
 result registration tests retain writer atomicity and concurrent-state checks.
 
+### Optional Reviewer Verification Workspace
+
+`review_workspace.py` owns optional caller-invoked restoration and cleanup,
+separate from review transport and Runner execution. The helper parser admits
+`workspace prepare|cleanup`; ordinary records-only policy rejects them before
+filesystem access. Read adds generated literal operations only for ordinary
+Git material, without creating anything. `validate_live_packet` shares the
+existing complete saved/current public-Packet comparison between read and the
+two preparation boundaries; it adds no direct storage access.
+
+Workspace preparation binds raw Packet SHA-256 and a preallocated UUID hex
+handle. It rejects nested Git coordinates, reuses `verification_runner_git`
+observation, preflight and materialization, and derives an exclusive OS-temp
+root outside Git ancestors. A new POSIX root uses mode 0700; Windows inherits
+the physical temporary parent's ACL. Existing permissions are untouched.
+Temporary location selection is read-only: first configured TMPDIR/TEMP/TMP,
+otherwise LOCALAPPDATA/Temp on Windows or /tmp on POSIX. An absolute selector
+is resolved strictly once to its existing physical path, admitting normal OS
+aliases such as macOS /var without using them for writes. The entire resulting
+physical ancestor chain is checked and its path supplies the retained digest.
+Missing/looping/relative selectors or unsafe physical destinations fail; no
+write probe or current-directory fallback occurs. This selection exception
+does not follow links in Packet/source paths, materialized entries or cleanup.
+After exact materialization, POSIX 100755 entries receive mode 0700 through
+identity-checked no-follow descriptors in this new copy only. Git administrative
+path components are rejected before restoration.
+Only `target/` receives exact blobs. A sibling bounded 4096-byte owner document
+holds closed structural binding and physical root identity; no command or raw
+execution output is retained. It is temporary cleanup ownership, not a new
+Task record, execution identity or security boundary.
+
+Cleanup uses `state_paths` physical-file/directory primitives after a full
+no-follow inventory, capped at 60,000 entries, depth 66 and 30 seconds. It
+revalidates identities at each removal and keeps the marker until target
+files/directories are gone. It never calls recursive deletion. Failure removes
+only a root created in that invocation when ownership remains provable;
+explicit cleanup compares the retained Packet and marker independently of
+later live Task transitions. Fixed diagnostic codes and absent/retained state
+do not quote filesystem exceptions or rejected identifiers (an invalid handle
+is null). Retained state starts immediately after mkdir succeeds, before the
+physical identity check; a root without proven identity is never auto-cleaned.
+Portable fixtures supply their own physical temp parent and separately exercise
+OS aliases, changed selections and unsafe destinations. Original save/submit and finalization are
+unchanged. Tests cover exact index/commit restoration, the representative six
+checks, ambient exclusion, binding drift, unavailable/incomplete material,
+failure/timeout cleanup, lost output, quoted paths and records-only rejection.
+
 ### Integrated Review Finalization
 
 The [conditional integrated behavior](review-completion-specification.md#integrated-review-finalization)

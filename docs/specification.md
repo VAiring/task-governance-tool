@@ -93,6 +93,9 @@ read-only and submits originals through the existing stdin
 writer. Its ordinary transport operations never change source, Git state,
 existing permissions or generated-state paths. Optional host review waiting
 uses only its separately authorized same-parent notification operations.
+Its separately invoked [reviewer workspace](review-completion-specification.md#optional-reviewer-verification-workspace)
+may restore fixed Git source into an exclusive OS temporary directory and
+clean that owned copy; it never executes target code or grants execution trust.
 
 ## Package, Runtime, And Generated State
 
@@ -825,6 +828,10 @@ before display. It never retains the response envelope or raw streams/logs;
 only the complete bounded Packet and validated original review documents may
 be saved in the caller's explicit ignored transport area. This is not a general
 command-output capture, logging option or expanded Receipt-retention contract.
+The optional reviewer workspace separately retains only fixed source/test
+blobs and bounded structural cleanup ownership in its disposable OS-temp root.
+Confirmed cleanup removes these; no verification command, stream or result log
+is captured by that helper or copied into Task state, Packets or exports.
 
 A native Verification Receipt stores only the fixed internal compatibility
 label, closed result, duration, coverage, tool-owned identity/time and

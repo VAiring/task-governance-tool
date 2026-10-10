@@ -3,7 +3,7 @@
 Read this only when introducing or changing an explicitly approved Runner
 application. It is not a normal Task-loop prerequisite. The
 [Plan actions and OS limits](cli_contracts.md#runner-plan-actions),
-[Setup choices](cli_contracts.md#setup), and
+[Setup choices](cli_contracts.md#optional-setup-features), and
 [normal verification/review flow](task_workflow.md#set-the-review-target)
 remain controlling. This guide adds no command, trust grant or execution gate.
 
@@ -26,7 +26,13 @@ Record the concrete mismatch and obtain the ordinary project decision before
 changing the prescribed checks or adding an adapter. Do not call a smaller or
 different suite equivalent to obtain Runner PASS.
 
+For an approved unittest adaptation, use [the entry example](#a-target-owned-unittest-entry).
+Once checks fit, use [Plan application](#prepare-once-bind-each-task-then-use-the-returned-route);
+for a changed criterion or cost assessment, use [maintenance](#maintain-the-mapping-and-assess-the-cost).
+
 ## A Target-Owned Unittest Entry
+
+Apply the [runtime and equivalence conditions](#decide-whether-the-approved-checks-fit).
 
 For an approved `python -B -m unittest -v` from the project root, the following
 root-level `verify.py` preserves unittest's discovery entry (`module=None`):
@@ -86,6 +92,8 @@ and wall limits. Unexecuted platforms remain unverified.
 
 ## Prepare Once, Bind Each Task, Then Use The Returned Route
 
+Use only checks that satisfy [the application conditions](#decide-whether-the-approved-checks-fit).
+
 1. Use an already installed physical package with ordinary Setup completed and
    canonical state/config ignored. Do not reinstall or rerun Setup for each
    Task. If global Runner ON is explicitly selected during Setup, it can create
@@ -116,6 +124,10 @@ preparation is not permission to replay target-setting and launch again; follow
 [preparation recovery](task_workflow.md#review-handoff-recovery).
 
 ## Maintain The Mapping And Assess The Cost
+
+The [application conditions](#decide-whether-the-approved-checks-fit) and
+[Plan publication/recovery rules](#prepare-once-bind-each-task-then-use-the-returned-route)
+remain applicable when the mapping changes.
 
 When a Contract or verification criterion changes, reassess the whole mapping.
 For one exact-current enabled entry, combine the approved basis edit with

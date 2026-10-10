@@ -268,6 +268,23 @@ and canonical Evidence/Viewer projection repair action:
 python .agents/skills/task-governance-tool/scripts/taskgov.py setup --json
 ```
 
+Setup is noninteractive and idempotent. Configuration writes are limited to
+the bounded project hook definitions and explicitly selected optional features
+and choice record. It cannot disable continuity after opt-in, contact a network,
+mutate Git, change host trust, or modify target source. Its core Git-candidate
+check is one bounded effective-ignore preflight; optional Runner configuration
+retains its read-only index/ignore checks. Neither launches verification or adds
+a normal Task-loop operation.
+
+Use [options](#setup-options) for invocation and [results](#setup-result-fields)
+to interpret output. Read only the applicable conditional detail:
+[optional choices](#optional-setup-features),
+[offline upgrade/recovery](#offline-upgrade-and-recovery), or
+[relocation](#relocation-preview-and-approval). For a failed or uncertain result,
+use [outcome and retry rules](#setup-outcomes-and-recovery) before another write.
+
+### Setup Options
+
 Options:
 
 - `--backup-interval-minutes <1..1440>`
@@ -282,6 +299,8 @@ approval boundary below. A first setup defaults to 30 minutes after the last
 successful managed copy and three retained generations. Once configured,
 omitted options preserve stored values; values equal to stored policy are a
 write-free replay.
+
+### Offline Upgrade And Recovery
 
 Initial setup or upgrade to separated state uses the fixed project-root
 `.taskgov/` area. Stop Taskgov writers and enabled Runner processes before
@@ -327,6 +346,8 @@ restoring one matched pre-migration package, database, and managed-artifact set
 together; an older runtime against a newer schema, mixed generations, an
 in-place reverse migration, or a Git checkout alone is not rollback.
 
+### Relocation Preview And Approval
+
 A binding mismatch never authorizes a rebind. Normal commands and `doctor`
 return the bounded relocation condition without writing. Write-mode setup
 without a token returns `project_relocation_required`. Only
@@ -338,8 +359,14 @@ unexpired `data.relocation.confirmation_token` from the preview; its expiry is
 `data.relocation.expires_at`. It never infers move/copy/fork semantics or auto-confirms.
 Expired or stale context requires a fresh preview and fresh user approval.
 
+Use the token and expiry from [Setup result fields](#setup-result-fields);
+the [relocation errors](#relocation-errors) distinguish rejected confirmations.
+
+### Setup Result Fields
+
 `data` always has exactly the fields below plus `optional_features`, described
-after the example:
+in [optional choices](#optional-setup-features). Interpret stages, partial success
+and retry using [outcome and retry rules](#setup-outcomes-and-recovery):
 
 ```json
 {
@@ -387,6 +414,8 @@ after the example:
 }
 ```
 
+### Optional Setup Features
+
 Setup additionally accepts `--usage-collection on|off`,
 `--verification-runner on|off`, `--effort-advisory on|off`,
 `--viewer-reload on|off`, and `--review-wait on|off`, only for explicit user selections. Omission keeps
@@ -418,6 +447,8 @@ features honestly; do not rerun completed Task/core operations. User answers
 authorize those feature writes without a second approval; no normal-loop call
 or completion requirement is added. Host trust and actual collection remain
 unknown even when usage configuration is ON.
+
+### Setup Outcomes And Recovery
 
 Successful `status` is `setup_preview`, `relocation_preview`,
 `setup_complete`, or `already_setup`. Write-list values are limited to
@@ -478,15 +509,6 @@ the durable ordered prefix. Inspect `data.completed_writes` before retrying;
 than repeating an assumed failed stage; it does not guarantee automatic repair
 of unsealed preparation. Repeated failure does not authorize deletion or an
 unbounded retry loop; follow the existing reconciliation guidance.
-
-Setup is noninteractive and idempotent. Configuration writes are limited to
-the bounded project hook definitions and the explicitly selected optional
-features and choice record described above. It cannot disable continuity after
-opt-in, contact a network, mutate Git, change host trust, or modify target
-source. Its core Git-candidate check is one bounded effective-ignore preflight;
-the optional Runner configuration path additionally retains the existing
-read-only index/ignore checks. Neither path launches verification or adds a
-normal Task-loop operation.
 
 <a id="doctor"></a>
 
@@ -866,7 +888,10 @@ the normal flow calls this only when
 python .agents/skills/task-governance-tool/scripts/taskgov.py task effort --repo <target-project> <task-id> --read-only --json
 ```
 
-The package-local versioned profile is never created or changed by taskgov.
+`task effort` reads the package-local versioned profile without creating or
+changing it. Only explicit [Setup selection](#optional-setup-features) may
+create it or toggle `enabled`, preserving existing thresholds; a newly enabled
+profile has no thresholds until explicitly configured.
 Its only metrics are changed Git files, lines, modules, current Contract
 revision count, and recorded source-task handoff count. An absent, disabled, or
 invalid profile returns an enabled-false bounded projection and performs no
@@ -911,7 +936,7 @@ under `task context`'s `data.selected`; no follow-up read is needed:
 | `handoff_summary` | Counts for `pending_handoff`, `handed_off`, and `handoff_withdrawn_by_user`; these do not expand Task scope. |
 | `completion_history` | `total` and `legacy_history_incomplete`, not current completion evidence. |
 | `effort_advisory_enabled` | Whether the normal loop uses the optional Effort observation. Invalid configuration returns false with a continuation warning. |
-| `usage` | Last captured registered shared-work summary and cycle links, or explicit unknown. Numerical gaps never change Task gates. Optional [trusted local hooks](usage_hooks.md#optional-usage-collection-hooks) collect without an extra normal-loop command. |
+| `usage` | Last captured registered shared-work summary and cycle links, or explicit unknown. Numerical gaps never change Task gates. Optional [collection coverage and recovery](usage_hooks.md#coverage-and-recovery) explain gaps without an extra normal-loop command. |
 | `suggested_next_action` | A next-action hint, not authority or proof of completion. In review-pending detail, satisfied required verification and only missing independent PASS reviews yield a remaining count and the existing result-input route; otherwise the status-based hint remains. Obtain any unperformed reviews before registering actual returned results. |
 
 Use `review_evidence.gate.satisfied` and its required/qualifying independent
@@ -947,7 +972,8 @@ history too; omitting its display is not permission to ignore invalid state.
 On `ok=false`, use the sanitized error rather than empty/null data as a Task or
 gate result. `project_state_unreadable`, `invalid_verification_evidence`, or
 `completion_history_inconsistent` can indicate invalid retained content;
-follow [read-failure diagnosis](#errors-and-privacy), not an audit bypass or
+follow [stored-state errors](#task-review-and-handoff-errors) and, for uncertain
+outcomes, [failure diagnosis](#uncertain-operation-outcomes), not an audit bypass or
 another candidate. Neither mode exposes raw reviews or private reasoning.
 
 <a id="task-audit-detail"></a>
@@ -1003,7 +1029,7 @@ fields; normal text omits saved-cycle detail.
 
 Stored public completion-evidence and review-target text is strictly
 privacy-revalidated before projection. Completion history has no
-[legacy counter compatibility exception](#errors-and-privacy); rejected or corrupt stored text returns
+[legacy counter compatibility exception](#legacy-stored-counter-compatibility); rejected or corrupt stored text returns
 `completion_history_inconsistent` without exposing the value. Audit `task show`
 and Viewer use the same bounded history projection; normal show validates it
 before omitting its detail.
@@ -1094,7 +1120,7 @@ Contract-only, require explicit later authority and a reason, invalidate
 current completion/review eligibility, and use immutable successive revisions.
 Canonically unchanged input is a write-free replay.
 Omitted later constraints retain the byte-identical, already-validated prior
-value, including [bounded legacy counter forms](#errors-and-privacy); explicit constraints use strict
+value, including [bounded legacy counter forms](#legacy-stored-counter-compatibility); explicit constraints use strict
 normal validation. Carry-forward does not accept caller-supplied legacy
 vocabulary or grant authority.
 
@@ -1182,7 +1208,7 @@ never contains draft bytes, Plan bytes, argv, paths, or publisher detail.
 #### Runner Plan Example And OS Limits
 
 For an approved existing verification command, first use the conditional
-[Runner application guide](runner_application.md) to assess equivalent target
+[Runner application guidance](runner_application.md#decide-whether-the-approved-checks-fit) to assess equivalent target
 entrypoints, initial/per-Task preparation, updates and the returned result route.
 Its unittest example is not a blanket conversion of arbitrary checks.
 
@@ -1854,7 +1880,8 @@ Register the reviewers' concise structured results together, using UTF-8 JSON
 stdin with `review result add <task-id> --json`. There is no input-file argument
 or output destination. Submit one complete version-1 document or an array of
 complete documents, without retyping the original results. The normal shared-file
-path uses the [fixed handoff helper](#caller-owned-review-handoff), without LLM-built
+path uses [Submit Review Originals](#submit-review-originals) and its shared
+path/validation and recovery rules, without LLM-built
 transport code. For an existing caller that already owns its stdin transport,
 the following direct PowerShell example remains compatible:
 
@@ -1909,8 +1936,9 @@ and combines only `receipts` in document order. Preserve returned verdicts and
 provenance rather than filling or retyping them. Truncated displays are not
 complete originals. File names, permissions, complete reads and retention are
 caller-owned; this command opens no input file and adds no cleanup operation.
-Use the [handoff procedure](task_workflow.md#prepare-and-record-reviews) and fixed
-helper for save, necessary saved-document confirmation and short acknowledgement
+Use [Save Review Original](#save-review-original) when saving a new original, and
+[Submit Review Originals](#submit-review-originals) for necessary saved-document confirmation and registration,
+with the short save acknowledgement
 without generated validation code or repeated LLM body retrieval. Neither replaces the validation below or excuses
 an incomplete Packet, failed save or uncertain registration outcome.
 
@@ -2461,6 +2489,11 @@ inspect this policy; it cannot confirm its validity.
 
 ## Errors And Privacy
 
+Use the applicable input or failure section. Stored-input rules apply before
+submission; an uncertain write outcome requires its own diagnosis before retry.
+
+### Command And Argument Errors
+
 Removed or unknown root commands return exit 2 and `invalid_command` with
 message `command is not available`. Any public `--db` occurrence returns exit 2
 and `invalid_option` with message `option is not available`. Other unknown
@@ -2477,6 +2510,9 @@ project/state resolution with exit 1,
 `--confirm-relocation cannot be used with --read-only`.
 
 Correct an observed command/argument mismatch against its command section.
+
+### Project Root Errors
+
 `invalid_project_root` means the supplied root is missing, not a directory, or
 an invalid path. `project_root_uninspectable` instead means root inspection or
 normalization could not finish. Its fixed message is `project root could not be
@@ -2488,12 +2524,16 @@ state access/write. Doctor uses `project_state.code="project_uninspectable"`
 for the latter and `setup_eligible=false`; a further doctor call is not required
 to obtain the same diagnosis. Successful Task work still needs no doctor.
 
+### Uncertain Operation Outcomes
+
 `internal_error` alone does not establish a syntax error or an instruction
 defect: the cause may be in the environment or internal processing. Report the
 sanitized failure and keep the cause unconfirmed until relevant read-only
 diagnosis establishes it; do not guess new options or blindly retry writes.
 If a write response is lost or its committed outcome is unknown, inspect the
 actual saved state through the relevant public read before deciding on a retry.
+
+### Relocation Errors
 
 Relocation setup failures use exit 2 and these fixed sanitized messages:
 
@@ -2505,6 +2545,8 @@ Relocation setup failures use exit 2 and these fixed sanitized messages:
 | `relocation_token_stale` | `project relocation state changed; run setup --read-only again` |
 | `relocation_token_used` | `relocation confirmation has already been used` |
 | `relocation_not_required` | `project relocation is not required` |
+
+### Setup And Diagnostic Errors
 
 Important setup/diagnostic errors include:
 
@@ -2531,6 +2573,8 @@ Important setup/diagnostic errors include:
 - `schema_too_new`
 - `unsupported_journal_mode`
 - `database_busy`
+
+### Task Review And Handoff Errors
 
 Important task/review/handoff errors include:
 
@@ -2574,6 +2618,8 @@ retains the sole narrower exception: only stored Task `verification`
 privacy/capacity failure is candidate-local; all other Task faults remain
 whole-set fatal, including every Contract-pointer relationship fault.
 
+### Stored Input Privacy
+
 Privacy validation is deny-by-default for stored free-form input. Never submit
 secrets, tokens, authorization headers, raw stdout/stderr, stack traces,
 environment dumps, private prompts/reasoning, full chats/reviews, or large raw
@@ -2586,6 +2632,9 @@ Normal/new input rejects the equality form
 `"dispatch_authorization":<value>`, including numeric values. Use
 `operation_sequence=<positive canonical integer>` for future
 external-operation correlation or idempotency evidence. It is not authority.
+
+#### Legacy Stored Counter Compatibility
+
 The sole legacy reader is confined to already-stored bounded lowercase
 `dispatch_authorization` positive-canonical-integer equality and numeric JSON
 counter forms in Contract constraints and checkpoint summaries. It preserves their original text, performs

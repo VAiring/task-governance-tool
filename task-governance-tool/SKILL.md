@@ -36,8 +36,9 @@ When assigned an independent review with generated read/save instructions,
 follow that self-contained request and its output; no additional Skill procedure
 read is needed. Read Skill material when it is actually authority or part of the
 reviewed target. The parent's Task loop below is not your workflow. For direct
-complete-Packet transport or an unclear role, use the conditional
-[reviewer procedure](references/task_workflow.md#independent-reviewer).
+complete-Packet transport, use the conditional
+[direct Packet reviewer procedure](references/task_workflow.md#direct-packet-reviewer).
+For an unclear role, use the [reviewer boundary](references/task_workflow.md#independent-reviewer).
 
 ## Start Or Resume
 
@@ -79,12 +80,15 @@ confirmation is required.
 
 | Existing operation or condition | Read when applicable |
 |---|---|
-| First use, upgrade, or setup/migration required | [Setup and diagnosis](references/task_workflow.md#first-use-and-optional-diagnosis) |
-| Explicit introduction or diagnosis of numerical usage hooks | [Optional collection hooks](references/usage_hooks.md#optional-usage-collection-hooks) |
+| First use or setup required | [Initial Setup](references/task_workflow.md#first-use-and-optional-diagnosis) |
+| Explicit optional-feature choices | [Optional Setup choices](references/task_workflow.md#choose-optional-setup-features) |
+| Upgrade or migration required | [Upgrade and recovery](references/task_workflow.md#upgrade-and-recovery) |
+| Explicit introduction of numerical usage hooks | [Installation and trust](references/usage_hooks.md#installation-and-trust) |
+| Missing or incomplete numerical collection | [Collection coverage and recovery](references/usage_hooks.md#coverage-and-recovery) |
 | Authorized reviews that outlive the parent turn | [Normal review waiting](references/review_wait.md#normal-wait) |
 | Explicit review-wait Setup | [Setup and connection](references/review_wait.md#setup-and-connection) |
 | Review-wait failure, stop, diagnosis, or old association | [Wait recovery and compatibility](references/review_wait.md#failures-stop-and-diagnosis) |
-| `project_relocation_required` | [Relocation preview and approval](references/cli_contracts.md#setup) |
+| `project_relocation_required` | [Relocation preview and approval](references/cli_contracts.md#relocation-preview-and-approval) |
 | Explicit diagnosis or state/package error | [Doctor](references/cli_contracts.md#doctor) |
 | Explicit introduction/diagnosis of ordinary-Task host preapproval | [Optional preapproval](references/cli_contracts.md#optional-task-preapproval) |
 | Explicit taskization | [Completion-based Task boundaries and registration](references/task_workflow.md#taskize-or-add-scope) |
@@ -147,7 +151,7 @@ Keep secrets, tokens, authorization data, raw output, stack traces, environment
 dumps, private prompts/reasoning, full chat/review transcripts, and large diffs
 out of taskgov inputs. If handoff input is privacy-rejected, never repeat,
 quote, log, store, or forward the rejected raw content; make at most one fresh
-attempt with a concise sanitized abstraction. See [input errors and privacy](references/cli_contracts.md#errors-and-privacy).
+attempt with a concise sanitized abstraction. See [stored-input privacy](references/cli_contracts.md#stored-input-privacy).
 
 Taskgov does not stage files, create branches, push, open PRs, create Issues,
 or authorize target/external mutation. The [integrated review finish](references/cli_contracts.md#integrated-review-finalization)

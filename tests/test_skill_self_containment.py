@@ -390,7 +390,8 @@ class SkillSelfContainmentTests(unittest.TestCase):
             package = copy_skill_to(Path(tmp))
             relatives = ("SKILL.md", "references/task_workflow.md",
                          "references/cli_contracts.md", "references/reconciliation.md",
-                         "references/usage_hooks.md", "references/review_wait.md")
+                         "references/usage_hooks.md", "references/review_wait.md",
+                         "references/runner_application.md")
             issues = []
             scans = {
                 relative: _scan(relative, (package / relative).read_text(encoding="utf-8"), issues)
@@ -1690,6 +1691,161 @@ print(json.dumps(results, ensure_ascii=False))
         import read_reference
         return read_reference
 
+    def test_privacy_routes_keep_common_input_rules_without_error_catalogues(self):
+        source = 'references/task_workflow.md'
+        for operation, destination in (
+            ('task-contract', 'stored-input-privacy'),
+            ('contract-revision', 'legacy-stored-counter-compatibility'),
+            ('optional-continuation-checkpoint', 'legacy-stored-counter-compatibility'),
+        ):
+            entry = self.reader().read_reference(source + '#' + operation, SKILL_ROOT)
+            _, privacy = self.linked_output(source, entry, destination)
+            for marker in ('dispatch_authorization', 'operation_sequence',
+                           '### Stored Input Privacy'):
+                self.assertIn(marker, privacy)
+            for unrelated in ('### Command And Argument Errors', '### Relocation Errors',
+                              '### Setup And Diagnostic Errors', '### Task Review And Handoff Errors'):
+                self.assertNotIn(unrelated, privacy)
+            if destination == 'legacy-stored-counter-compatibility':
+                self.assertIn('#### Legacy Stored Counter Compatibility', privacy)
+
+    def test_setup_routes_keep_selected_inputs_and_separate_exceptional_work(self):
+        source = 'references/task_workflow.md'
+        initial = self.reader().read_reference(source + '#first-use-and-optional-diagnosis', SKILL_ROOT)
+        self.assertIn('taskgov.py setup --json', initial)
+        self.assertNotIn('--confirm-relocation', initial)
+        self.assertNotIn('## Choose Optional Setup Features', initial)
+        _, optional = self.linked_output(source, initial, 'choose-optional-setup-features')
+        self.assertIn('data.optional_features.offer', optional)
+        cli, choices = self.linked_output(source, optional, 'optional-setup-features')
+        for option in ('--usage-collection', '--verification-runner', '--effort-advisory',
+                       '--viewer-reload', '--review-wait'):
+            self.assertIn(option, choices)
+        self.assertIn('selection_source', choices)
+        self.assertIn('effective=on|off|unknown', choices)
+        self.assertNotIn('### Offline Upgrade And Recovery', choices)
+        self.assertNotIn('"confirmation_token"', choices)
+        _, failure = self.linked_output(cli, choices, 'setup-outcomes-and-recovery')
+        self.assertIn('data.completed_writes', failure)
+        self.assertIn('setup_incomplete', failure)
+        _, upgrade = self.linked_output(source, initial, 'upgrade-and-recovery')
+        _, offline = self.linked_output(source, upgrade, 'offline-upgrade-and-recovery')
+        self.assertIn('setup_restore_failed', offline)
+        self.assertNotIn('### Optional Setup Features', offline)
+        skill = (SKILL_ROOT / 'SKILL.md').read_text(encoding='utf-8')
+        _, relocation = self.linked_output('SKILL.md', skill, 'relocation-preview-and-approval')
+        for field in ('setup --read-only', 'data.relocation.confirmation_token',
+                      'data.relocation.expires_at'):
+            self.assertIn(field, relocation)
+        self.assertNotIn('### Offline Upgrade And Recovery', relocation)
+        _, results = self.linked_output(cli, relocation, 'setup-result-fields')
+        self.assertIn('"confirmation_token"', results)
+
+    def test_usage_entries_separate_trust_recovery_and_self_host_detail(self):
+        skill = (SKILL_ROOT / 'SKILL.md').read_text(encoding='utf-8')
+        source, install = self.linked_output('SKILL.md', skill, 'installation-and-trust')
+        _, recovery = self.linked_output('SKILL.md', skill, 'coverage-and-recovery')
+        self.assertIn('data.usage_hooks', install)
+        self.assertIn('review_and_trust_hooks', install)
+        self.assertNotIn('task-governance-tool/scripts/usage_hook.py', install)
+        self.assertNotIn('SessionStart can register', install)
+        _, development = self.linked_output(source, install, 'development-self-host')
+        self.assertIn('task-governance-tool/scripts/usage_hook.py --repo', development)
+        self.linked_output(source, development, 'installation-and-trust')
+        self.linked_output(source, development, 'hook-execution-boundary')
+        self.assertIn('prefix_verification_deferred', recovery)
+        _, coverage = self.linked_output(source, recovery, 'collection-scope')
+        self.assertIn('archived_sessions', coverage)
+        self.assertNotIn('## Development Self-Host', recovery)
+        for entry in (install, recovery):
+            _, selection = self.linked_output(source, entry, 'collection-selection')
+            self.assertIn('setup --usage-collection on|off', selection)
+            _, evidence = self.linked_output(source, entry, 'host-delivery-evidence')
+            self.assertNotIn('## Host Delivery Evidence', entry)
+            self.assertIn('## Host Delivery Evidence', evidence)
+
+    def test_usage_introduction_and_on_routes_reach_scope_in_package_only_copy(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            package = copy_skill_to(Path(tmp))
+            skill = (package / 'SKILL.md').read_text(encoding='utf-8')
+            source, install = self.linked_output(
+                'SKILL.md', skill, 'installation-and-trust', package)
+            _, selection = self.linked_output(source, install, 'collection-selection', package)
+            for entry in (install, selection):
+                _, coverage = self.linked_output(source, entry, 'collection-scope', package)
+                for condition in ('continuous inclusive-turn interval',
+                                  'even for unrelated discussion',
+                                  'Explicit release or completion ends coverage',
+                                  'validated same-project logs',
+                                  'physical path and header validation',
+                                  'No unrelated chat headers or bodies'):
+                    self.assertIn(condition, coverage)
+                for unrelated in ('## Coverage And Recovery', '## Development Self-Host',
+                                  'prefix_verification_deferred'):
+                    self.assertNotIn(unrelated, coverage)
+
+    def test_structured_results_route_to_submit_with_common_paths_and_recovery(self):
+        source = 'references/cli_contracts.md'
+        results = self.reader().read_reference(source + '#structured-review-results', SKILL_ROOT)
+        _, submit = self.linked_output(source, results, 'submit-review-originals')
+        self.assertIn('submit --repo . --packet', submit)
+        self.assertNotIn('#### Prepare Review Handoff', submit)
+        self.assertNotIn('wait-ended --repo .', submit)
+        _, paths = self.linked_output(source, submit, 'handoff-path-and-validation')
+        for field in ('32,768', '--user-approved-reviewer', 'Git-ignored', '.json'):
+            self.assertIn(field, paths)
+        _, save = self.linked_output(source, results, 'save-review-original')
+        self.assertIn('--output reviews/review-a.json', save)
+        _, recovery = self.linked_output(source, submit, 'recover-review-handoff')
+        self.assertIn('registration_status=not_started|unknown', recovery)
+
+    def test_runner_and_generated_setup_notice_resolve_in_package_only_copy(self):
+        from task_governance_tool.setup_features import feature_notice
+        with tempfile.TemporaryDirectory() as tmp:
+            package = copy_skill_to(Path(tmp))
+            source = 'references/runner_application.md'
+            for fragment in ('decide-whether-the-approved-checks-fit', 'a-target-owned-unittest-entry',
+                             'prepare-once-bind-each-task-then-use-the-returned-route',
+                             'maintain-the-mapping-and-assess-the-cost'):
+                output = self.reader().read_reference(source + '#' + fragment, package)
+                for link in _scan(source, output, []).links:
+                    resolved = _resolve(package, source, link.target)
+                    if resolved:
+                        path, anchor = resolved
+                        self.assertTrue(self.reader().read_reference(path + '#' + anchor, package))
+            notice = feature_notice({'features': {'review_wait': {
+                'selection': 'on', 'effective': 'on', 'status': 'applied'}}, 'offer': []})
+            targets = re.findall(r'references/[a-z_]+\.md#[a-z-]+', notice)
+            self.assertEqual(len(targets), 1)
+            setup = self.reader().read_reference(targets[0], package)
+            self.assertIn('--timezone', setup)
+            self.assertNotIn('## Normal Wait', setup)
+
+    def test_direct_reviewer_gets_common_judgment_without_shared_file_operations(self):
+        source = 'references/task_workflow.md'
+        skill = (SKILL_ROOT / 'SKILL.md').read_text(encoding='utf-8')
+        _, direct = self.linked_output('SKILL.md', skill, 'direct-packet-reviewer')
+        shared = self.reader().read_reference(source + '#shared-file-reviewer', SKILL_ROOT)
+        for output in (direct, shared):
+            for field in ('result_template', 'result_instructions', 'changed_paths_truncated',
+                          '## Independent Reviewer'):
+                self.assertIn(field, output)
+        for shared_only in ('collect_command', 'verification_workspace', 'ok=true,status=saved',
+                            'review_handoff.py read --repo'):
+            self.assertIn(shared_only, shared)
+            self.assertNotIn(shared_only, direct)
+        self.assertNotIn('### Direct Packet Reviewer', shared)
+        self.assertNotIn('### Shared-File Reviewer', direct)
+
+    def test_selection_compatibility_entry_routes_back_to_existing_loop(self):
+        source = 'references/task_workflow.md'
+        boundary = self.reader().read_reference(source + '#selection-and-execution-boundary', SKILL_ROOT)
+        _, loop = self.linked_output(source, boundary, 'bounded-operating-loop')
+        self.assertNotIn('#selection-and-execution-boundary', loop)
+        self.assertIn('data.selected.task.status=ready', loop)
+        self.assertIn('data.selected.task.task_id', loop)
+        self.assertIn('task current --repo <target-project> --status paused', boundary)
+
     def test_subtree_preserves_examples_conditions_and_ancestor_introductions(self):
         text = ('# Guide\n\nShared rule.\n\n## Other\nUnrelated.\n'
                 '## Operation\nConditional entry.\n\n<a id="input"></a>\n\n'
@@ -1732,7 +1888,7 @@ print(json.dumps(results, ensure_ascii=False))
                     self.assertIn(''.join(lines[position:end]).rstrip(), output)
 
     def test_package_links_can_be_passed_without_line_number_search(self):
-        for name in ('SKILL.md', 'references/task_workflow.md', 'references/cli_contracts.md'):
+        for name in ('SKILL.md', *(f'references/{name}' for name in sorted(self.reader().REFERENCES))):
             source = (SKILL_ROOT / name).read_text(encoding='utf-8')
             scan = _scan(name, source, [])
             for link in scan.links:
@@ -1769,13 +1925,13 @@ print(json.dumps(results, ensure_ascii=False))
             self.reader().section('# A\n<a id="same"></a>\n## B\n'
                                   '<a id="same"></a>\n## C\n', 'same')
 
-    def linked_output(self, source, text, fragment):
-        targets = {_resolve(SKILL_ROOT, source, link.target)
+    def linked_output(self, source, text, fragment, package=SKILL_ROOT):
+        targets = {_resolve(package, source, link.target)
                    for link in _scan(source, text, []).links
                    if link.target.endswith('#' + fragment)}
         self.assertEqual(len(targets), 1, (source, fragment))
         path, resolved_fragment = targets.pop()
-        return path, self.reader().read_reference(f'{path}#{resolved_fragment}', SKILL_ROOT)
+        return path, self.reader().read_reference(f'{path}#{resolved_fragment}', package)
 
     def test_normal_and_conditional_links_keep_shared_conditions_reachable(self):
         cli_path = 'references/cli_contracts.md'
@@ -1831,6 +1987,7 @@ print(json.dumps(results, ensure_ascii=False))
             package = copy_skill_to(root)
             before = tree_snapshot(root)
             for target, expected in (('references/task_workflow.md#bounded-operating-loop', 0),
+                                     ('references/runner_application.md#decide-whether-the-approved-checks-fit', 0),
                                      ('references/cli_contracts.md#missing', 2)):
                 result = subprocess.run([sys.executable, str(package / 'scripts/read_reference.py'), target],
                                         cwd=root, capture_output=True, check=False)
@@ -1839,7 +1996,7 @@ print(json.dumps(results, ensure_ascii=False))
                     self.assertEqual(result.stdout, b'')
                     self.assertNotIn(b'missing', result.stderr)
                 else:
-                    self.assertIn(b'Bounded Operating Loop', result.stdout)
+                    self.assertIn(('Source: ' + target).encode('utf-8'), result.stdout)
                     result.stdout.decode('utf-8', errors='strict')
             self.assertEqual(tree_snapshot(root), before)
 
@@ -1885,10 +2042,11 @@ print(json.dumps(results, ensure_ascii=False))
         _, revised = self.linked_output("SKILL.md", skill, "contract-revision")
         self.assertNotIn("## Contract Revision", initial)
         self.assertNotIn("--contract-change-reason", initial)
-        for body in (initial, revised):
+        for body, privacy_route in ((initial, 'stored-input-privacy'),
+                                    (revised, 'legacy-stored-counter-compatibility')):
             for field in ("--contract-scope", "--contract-acceptance", "data.selected.task.task_id"):
                 self.assertIn(field, body)
-            self.linked_output(source, body, "errors-and-privacy")
+            self.linked_output(source, body, privacy_route)
         self.assertIn("--status in_progress", initial)
         self.assertIn("--contract-change-reason", revised)
         self.assertIn("user_instruction:<task-id>:<revision>", revised)
@@ -2014,7 +2172,8 @@ print(json.dumps(results, ensure_ascii=False))
             self.assertIn(value, legacy)
             self.assertNotIn(value, normal)
         usage = self.reader().read_reference("references/usage_hooks.md#coverage-and-recovery", SKILL_ROOT)
-        _, usage_legacy = self.linked_output("references/usage_hooks.md", usage, "record-review-wait-decision")
+        _, coverage = self.linked_output("references/usage_hooks.md", usage, "collection-scope")
+        _, usage_legacy = self.linked_output("references/usage_hooks.md", coverage, "record-review-wait-decision")
         self.assertEqual(usage_legacy, legacy)
 
     def test_receipt_input_routes_share_basis_and_recovery_without_other_input_body(self):

@@ -866,8 +866,8 @@ without making both guides ordinary reviewer prerequisites.
 `scripts/read_reference.py` is a standalone standard-library document reader,
 not a taskgov command or runtime dependency. It resolves an existing
 package-relative reference filename and heading/explicit-anchor fragment in
-the shipped workflow, CLI contracts, reconciliation, optional usage-hook and
-review-wait references. It returns the selected heading subtree plus
+the shipped workflow, CLI contracts, reconciliation, optional usage-hook,
+review-wait and Runner-application references. It returns the selected heading subtree plus
 ancestor introductions verbatim (line endings normalized to LF), retaining
 links and their source-relative interpretation. Fenced examples are not
 headings. Unknown or ambiguous fragments, invalid filenames, and unreadable

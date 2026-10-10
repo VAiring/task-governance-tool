@@ -184,5 +184,5 @@ def feature_notice(result):
     if result["offer"]:
         lines.append("Optional choices (ON/OFF or defer): " + ", ".join(result["offer"]))
     if result["features"].get("review_wait", {}).get("effective") == "on":
-        lines.append("Review wait: local policy enabled; host MCP configuration, authorization and connection remain separate. See references/review_wait.md.")
+        lines.append("Review wait: local policy enabled; host MCP configuration, authorization and connection remain separate. See references/review_wait.md#setup-and-connection.")
     return "\n".join(lines)

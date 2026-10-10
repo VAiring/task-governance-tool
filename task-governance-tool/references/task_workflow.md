@@ -10,6 +10,9 @@ with `python3`. `<task-id>` comes from `task context` at
 
 - [Source Of Truth And Install Boundary](#source-of-truth-and-install-boundary)
 - [First Use And Optional Diagnosis](#first-use-and-optional-diagnosis)
+- [Choose Optional Setup Features](#choose-optional-setup-features)
+- [Upgrade And Recovery](#upgrade-and-recovery)
+- [Read-Only Diagnosis](#read-only-diagnosis)
 - [Bounded Operating Loop](#bounded-operating-loop)
 - [Selection And Execution Boundary](#selection-and-execution-boundary)
 - [Task Contract](#task-contract)
@@ -40,7 +43,7 @@ and current user instructions outrank local Task state. Before changing
 material, read their relevant current responsibilities and exceptions.
 The [Skill invocation](../SKILL.md#scope-and-invocation) owns the physical
 project-scoped install and execution-directory rules. If state reports
-`project_relocation_required`, use the [explicit preview/approval procedure](cli_contracts.md#setup);
+`project_relocation_required`, use the [explicit preview/approval procedure](cli_contracts.md#relocation-preview-and-approval);
 never infer move/copy/fork intent or confirm automatically.
 
 ## First Use And Optional Diagnosis
@@ -57,8 +60,16 @@ local continuity and repairs canonical offline projections, noninteractively
 and idempotently. The normal Skill flow supplies no maintenance-policy options.
 When the database is missing, setup selects valid managed recovery material;
 it does not ask the LLM for a path or generation or silently replace invalid
-recovery material with empty state. See [setup results and failure handling](cli_contracts.md#setup)
+recovery material with empty state. See [setup results and failure handling](cli_contracts.md#setup-result-fields)
 when previewing or interpreting setup.
+
+After core success, use [optional choices](#choose-optional-setup-features) for
+unresolved offers. For an upgrade or recovery, use [that procedure](#upgrade-and-recovery)
+before changing the package; for explicit diagnosis or a returned readiness
+error, use [read-only diagnosis](#read-only-diagnosis). These are conditional
+entries, not extra normal-loop steps.
+
+## Choose Optional Setup Features
 
 After core success, use `data.optional_features.offer` to ask only the unresolved
 ON/OFF choices together (or accept deferral). Preserve existing choices; reuse
@@ -66,7 +77,7 @@ answers already given. Explain that new Viewer reload uses 30 seconds, Runner
 ON still needs a separate Task Plan, and usage collection requires user-operated
 hook trust. Review wait ON enables local policy only and separately needs the
 [project MCP connection](review_wait.md#setup-and-connection). Apply only explicit answers with the corresponding
-[Setup options](cli_contracts.md#setup), using that same answer as authorization;
+[Setup options](cli_contracts.md#optional-setup-features), using that same answer as authorization;
 no second confirmation is required. Report per-feature selection, effective
 configuration and outcome, not just core `ok`. Unavailable settings need
 inspection, never a success claim or automatic retry of the entire workflow.
@@ -81,19 +92,23 @@ another Task write. Use [hook guidance](usage_hooks.md#installation-and-trust)
 only for introduction or diagnosis. Trust is user-operated and never a normal
 Task-loop prerequisite.
 
+## Upgrade And Recovery
+
 For an upgrade, preserve project-local state and run explicit setup. When
 the review-wait MCP is connected, also follow its
 [runtime upgrade procedure](review_wait.md#runtime-upgrade-and-reconnection):
 settle known waits before replacement and reload the existing reviewed service
 after Setup. A fresh CLI does not reload a resident MCP process. When
 moving from package-local state to `.taskgov/`, follow the
-[offline transition requirements](cli_contracts.md#setup); preserve the old
+[offline transition requirements](cli_contracts.md#offline-upgrade-and-recovery); preserve the old
 retirement marker and retained recovery material. This is not a normal-loop
 action or an invitation to select a storage path.
 There is no downgrade or restore command. Release rollback restores one
 matched pre-migration package, database, and managed-artifact set together;
 never run an older runtime against a newer schema, mix generations, or treat a
 Git checkout alone as state rollback.
+
+## Read-Only Diagnosis
 
 Only for explicit diagnosis, install/release validation, or a returned
 setup/migration/package/layout/state-readiness error, use the read-only
@@ -157,8 +172,11 @@ Caller declarations do not prove actual model/Skill use or review truth.
    needs no redundant start write. Selection and stored status do not grant
    implementation permission.
    State the intended outcome, write scope, verification gate, and review tier
-   from current authority before implementation. Respect
-   [selection and lane boundaries](#selection-and-execution-boundary).
+   from current authority before implementation. Ready optional Tasks are
+   actionable; a ready sequential Task also needs every earlier Task in its
+   lane done or cancelled. One blocked lane does not stop unrelated optional
+   Tasks or other lanes. Keep the CLI's deterministic priority/lane/order
+   selection; do not re-rank candidates semantically.
 3. Finish the exact governed material. Use [handoff](#scope-control-and-local-handoff)
    for out-of-scope discoveries and [checkpoint](#optional-continuation-checkpoint)
    only at a useful continuation boundary.
@@ -221,25 +239,15 @@ or routine user-return stop is added.
 
 ## Selection And Execution Boundary
 
-- Treat `optional` tasks as actionable when `status=ready`.
-- Treat `sequential` tasks as actionable only when they are ready and every
-  earlier task in the same lane is `done` or `cancelled`.
-- Keep unrelated optional tasks and other lanes actionable when one lane
-  blocks.
-- Preserve deterministic priority/lane/order selection from the CLI; do not
-  re-rank candidates semantically inside the Skill.
-- Treat `paused_tasks_present` from `task next` as an advisory recall hint.
-  In the normal context flow, use its returned recall without an additional
-  read. For explicit held-work inspection, the bounded paused subset remains
-  available without changing returned candidates:
+The [bounded operating loop](#bounded-operating-loop) owns selection, lane
+ordering and the before-start declaration; this compatibility entry adds no
+normal read. For explicit held-work inspection, `paused_tasks_present` from
+`task next` is an advisory recall hint. The bounded paused subset remains
+available without changing returned candidates:
 
-  ```powershell
-  python .agents/skills/task-governance-tool/scripts/taskgov.py task current --repo <target-project> --status paused --json
-  ```
-
-Before starting each execution unit, state its intended outcome, write scope,
-verification gate, and review tier. Update the task only after those values
-come from current authority.
+```powershell
+python .agents/skills/task-governance-tool/scripts/taskgov.py task current --repo <target-project> --status paused --json
+```
 
 
 
@@ -270,7 +278,7 @@ Alternatively, activate revision 1 only on an exact revision-zero
 python .agents/skills/task-governance-tool/scripts/taskgov.py task edit --repo <target-project> <task-id> --status in_progress --contract-scope "Authorized files and behavior" --contract-acceptance "Exact completion condition" --json
 ```
 
-Explicit constraints use strict normal [privacy validation](cli_contracts.md#errors-and-privacy).
+Explicit constraints use strict normal [privacy validation](cli_contracts.md#stored-input-privacy).
 Do not use a document produced by the current Task to authorize its own
 expansion; hand off proposed hardening outside the current Contract.
 Only for a later authorized change, use [Contract Revision](#contract-revision).
@@ -306,7 +314,7 @@ another scope question.
 
 Any explicitly supplied constraints use strict normal privacy validation.
 Omitting later constraints preserves the already-validated prior bytes,
-including [bounded legacy counter forms](cli_contracts.md#errors-and-privacy); that carry-forward is not acceptance
+including [bounded legacy counter forms](cli_contracts.md#legacy-stored-counter-compatibility); that carry-forward is not acceptance
 of caller-supplied legacy vocabulary and grants no authority. For future
 external-operation intent or evidence, use
 `operation_sequence=<positive canonical integer>` only as correlation or
@@ -399,7 +407,7 @@ detail from `task context` expose only the
 latest checkpoint; compact selection intentionally omits its content.
 New checkpoint content uses strict normal privacy validation. The bounded
 legacy reader exists only to return an already-stored checkpoint summary with
-[bounded legacy counter forms](cli_contracts.md#errors-and-privacy)
+[bounded legacy counter forms](cli_contracts.md#legacy-stored-counter-compatibility)
 unchanged; it creates no Task or external-operation authority.
 
 ## Pause, Resume, And Block
@@ -843,6 +851,52 @@ role is different or uncertain, ask the caller to use the applicable
 [full-Packet route](#direct-review-transport); do not infer independence.
 That conditional route is not an additional ordinary read.
 
+Read the applicable project authority and actual whole target according to the
+view's or supplied Packet's target-kind instruction, including necessary source and tests. Do not
+substitute ambient HEAD/worktree content or a prior review. A supplied
+fingerprint/external revision needs demonstrably bound material before PASS.
+Use the provided verification evidence; do not invent unobserved checks.
+Failure, missing text, output truncation or a target/material mismatch prevents
+judgment until the required material is recovered. A bounded
+`changed_paths_truncated` list never narrows your review to those paths.
+No normal `show`, `doctor`, format lookup or parent-guide read is needed.
+
+Each reviewer reads required common rules, procedure, and focus material
+themselves and judges the whole target independently. When locations and
+necessity are already known and no read depends on another read's result,
+retrieve them together in one supported tool invocation. Keep each source,
+complete text and individual outcome visible; no parent's or other reviewer's
+interpretation substitutes for your reading or judgment. For example, an
+already-required review rule and an already-identified API contract can be
+separate results in one invocation. Read newly discovered dependencies later,
+not as guessed inputs. Recover failed, missing or tool-truncated material in
+full; successful siblings need not be repeated. Use individual reads when
+batching cannot deliver complete material. Project AGENTS/authority reread
+rules remain; no fixed file/line cap, summary substitute, reading ledger or
+extra prerequisite is added.
+
+Fill the provided `result_template` using `result_instructions` and your actual
+judgment, provenance and every Finding, including exact file/line references.
+Use honest unknown model/Skill identity/version declarations when unavailable;
+do not search internals merely to fill them.
+Keep the supplied identity unchanged. Null claims and collections are unfinished,
+not defaults for independent, PASS or no Findings. Preserve the complete original
+JSON. Neither route authorizes you to invoke the parent's registration command.
+
+### Direct Packet Reviewer
+
+For direct transport without shared-file operations, read the supplied complete
+Packet itself; do not create a file or run a helper to relay it. Its format
+instructions already apply; parent registration and inapplicable format detail
+in the full Packet are not your operations. An absent/incomplete Packet is a failed
+handoff to report, not permission to reconstruct one or select another transport.
+Return the complete original through the caller's existing byte/reference
+channel; do not replace it with a summary or claim a saved-file acknowledgement.
+Report questions, missing material and uncertain delivery to the caller;
+preserve the original and do not blindly resend after an unknown outcome.
+
+### Shared-File Reviewer
+
 The generated shared-file request and its output are self-contained; this
 section is fallback/reference guidance, not an additional normal prerequisite.
 When the request supplies shared-file operations, use its fixed
@@ -893,48 +947,9 @@ parent choice, mandatory test or completion gate and is absent in records-only
 mode. It does not enable Runner, configure a Plan or grant execution trust.
 Opaque diff/external targets explicitly require supplied material and binding
 evidence; a successful read does not supply or verify that external content.
-For direct transport without those operations, read the supplied complete
-Packet itself; do not create a file or run a helper to relay it. Its format
-instructions already apply; parent registration and inapplicable format detail
-in the full Packet are not your operations. Neither transport requires the
-parent guide or a second format lookup. An absent/incomplete Packet is a failed
-handoff to report, not permission to reconstruct one or select another transport.
-No normal `show`, `doctor`, format lookup or parent-guide read is needed.
-Failure, missing text, output truncation or a target/material mismatch prevents
-judgment until the required material is recovered. A bounded
-`changed_paths_truncated` list never narrows your review to those paths.
-
-Read the applicable project authority and actual whole target according to the
-view's or supplied Packet's target-kind instruction, including necessary source and tests. Do not
-substitute ambient HEAD/worktree content or a prior review. A supplied
-fingerprint/external revision needs demonstrably bound material before PASS.
-Use the provided verification evidence; do not invent unobserved checks.
-
-Each reviewer reads required common rules, procedure, and focus material
-themselves and judges the whole target independently. When locations and
-necessity are already known and no read depends on another read's result,
-retrieve them together in one supported tool invocation. Keep each source,
-complete text and individual outcome visible; no parent's or other reviewer's
-interpretation substitutes for your reading or judgment. For example, an
-already-required review rule and an already-identified API contract can be
-separate results in one invocation. Read newly discovered dependencies later,
-not as guessed inputs. Recover failed, missing or tool-truncated material in
-full; successful siblings need not be repeated. Use individual reads when
-batching cannot deliver complete material. Project AGENTS/authority reread
-rules remain; no fixed file/line cap, summary substitute, reading ledger or
-extra prerequisite is added.
-
-Fill the provided `result_template` using `result_instructions` and your actual
-judgment, provenance and every Finding, including exact file/line references.
-Use honest unknown model/Skill identity/version declarations when unavailable;
-do not search internals merely to fill them.
-Keep the supplied identity unchanged. Null claims and collections are unfinished,
-not defaults for independent, PASS or no Findings. Preserve the complete original
-JSON. For shared-file transport, give it once to the request's fixed UTF-8 save
-operation, without writing save/validation code. For direct transport, return
-the complete original through the caller's existing byte/reference channel;
-do not replace it with a summary or claim a saved-file acknowledgement.
-Neither route authorizes you to invoke the parent's registration command.
+An absent/incomplete Packet is a failed handoff to report, not permission to
+reconstruct one or select another transport. Give the complete original once
+to the request's fixed UTF-8 save operation, without writing save/validation code.
 
 For shared files, only `ok=true,status=saved` confirms the saved original; it proves neither review
 truth, independence, registration nor completion. Read that acknowledgement and

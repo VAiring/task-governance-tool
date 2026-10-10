@@ -4,17 +4,14 @@ Read this only to introduce or diagnose automatic numerical collection. It is
 not a normal Task-loop procedure, and usage never changes completion gates.
 Observed shared-work totals are not exclusive Task costs or final billing.
 
-After core schema-26 Setup, the caller's in-progress and review-pending states
-share one held Task and continuous inclusive-turn interval. Actual responses
-while waiting count, even for unrelated discussion in that session; waiting
-time alone invents no usage. Explicit release or completion ends coverage.
-Setup preserves older closed intervals and legacy overlapping holdings. Use
-ordinary authorized state transitions to resolve those holdings, not a manual
-measurement command. Usage unavailability never blocks those transitions.
-
 ## Installation And Trust
 
-Use the existing explicit setup/upgrade procedure. It prepares core state,
+Before enabling or trusting collection, read the [collection scope](#collection-scope)
+for included responses, coverage endpoints and source/privacy boundaries.
+Use the existing explicit [Setup choices](cli_contracts.md#optional-setup-features)
+and, only for an upgrade, [upgrade procedure](task_workflow.md#upgrade-and-recovery).
+The [collection switch](#collection-selection) retains ON/OFF choices separately
+from host trust. Setup prepares core state,
 the numerical store, and, for selected-ON or existing hooks, the project's
 `.codex/hooks.json`, preserving unrelated
 hooks and avoiding duplicate taskgov handlers on repeat setup. Read
@@ -29,6 +26,13 @@ for inspection (for example, malformed JSON or a manual/inline usage hook that
 cannot be safely adopted). Do not blindly overwrite it or retry completed Task
 writes. A successful core setup with unavailable usage/hooks is not collection
 readiness. `setup --read-only` previews the preparation without writing.
+
+For handler behavior, use [the execution boundary](#hook-execution-boundary).
+Only this tool's source repository uses [development self-hosting](#development-self-host).
+When establishing a host-support claim, use [host evidence](#host-delivery-evidence);
+configuration alone does not establish delivery.
+
+## Hook Execution Boundary
 
 Setup owns four handlers, marked `taskgov: collect numerical usage`, for
 SessionStart, Stop, SubagentStop (30-second bounds), and SessionEnd (3 seconds).
@@ -46,6 +50,8 @@ continuation request, or a block decision. It modifies only canonical numerical
 state and usage projections, not Task state, original Evidence, Viewer or source.
 No daemon, external service or process termination is required.
 
+## Development Self-Host
+
 For this tool's own development repository, setup uses the physical source
 entrypoint `task-governance-tool/scripts/usage_hook.py --repo <project-root>`.
 Run from that same project root; `--repo` acknowledges
@@ -54,8 +60,12 @@ path. Omission keeps source-tree collection disabled. Ordinary project installs
 need no new argument. Copied/linked packages and competing installs remain
 unsupported; do not create a second install to enable development collection.
 
-## Coverage And Recovery
+Use the same [installation/trust](#installation-and-trust) and
+[handler boundaries](#hook-execution-boundary); this exception changes neither.
 
+## Collection Selection
+
+Before choosing ON, read the [collection scope](#collection-scope).
 Use explicit `setup --usage-collection on|off` for an approved change. OFF is
 remembered in the project package's local Setup choices and prevents subsequent
 collector calls before reading logs or writing usage, even with trusted hooks.
@@ -63,6 +73,15 @@ It preserves stored history, definitions and host trust. ON prepares definitions
 but does not prove trust or delivery. With no saved choice, legacy configured
 hooks retain prior behavior; fresh setup does not create them without ON.
 
+## Collection Scope
+
+After core schema-26 Setup, the caller's in-progress and review-pending states
+share one held Task and continuous inclusive-turn interval. Actual responses
+while waiting count, even for unrelated discussion in that session; waiting
+time alone invents no usage. Explicit release or completion ends coverage.
+Setup preserves older closed intervals and legacy overlapping holdings. Use
+ordinary authorized state transitions to resolve those holdings, not a manual
+measurement command. Usage unavailability never blocks those transitions.
 SessionStart can register its own session. Committed owner acquisition, actual
 Receipt binding and successful bound original-review save register participants
 without LLM-entered IDs or an extra command. The collector reads only their
@@ -82,6 +101,14 @@ not identity; physical path and header validation remain necessary. Unknown
 layouts, lost files or access failures stay unavailable, with observed totals
 preserved. No unrelated chat headers or bodies are collected.
 
+## Coverage And Recovery
+
+Use the [collection scope](#collection-scope) to identify included responses,
+participants, sources and coverage endpoints. If a configuration or trust change
+is needed, use the explicit [collection selection](#collection-selection) or
+[installation/trust](#installation-and-trust) procedure; diagnosis itself does
+not authorize those writes.
+
 Later events catch up registered participants, including completed Tasks and
 late endpoint-turn records. With hooks disabled/untrusted or no subsequent
 event, collection cannot catch up. Start/resume an ordinary session in that
@@ -100,6 +127,16 @@ byte validation remains intact. Budget or publication failure preserves prior
 progress/output and never asks to repeat Task completion. This is not a measured
 guarantee that every host invocation avoids its timeout.
 
-Host delivery and source format must be verified in an isolated approved
-project. Mocked tests or CLI help alone do not prove trust/delivery in Desktop,
-CLI, Windows, Linux or macOS. Do not infer unobserved host support.
+To establish support not already observed for the relevant host/source, use
+[host-delivery evidence](#host-delivery-evidence).
+
+## Host Delivery Evidence
+
+Claims about host delivery and source format require observation in an isolated
+approved project. Mocked tests or CLI help alone do not prove trust/delivery in
+Desktop, CLI, Windows, Linux or macOS. Do not infer unobserved host support.
+This distinguishes configuration from observed support; it does not require a
+new experiment for every installation or turn already covered by applicable
+evidence. Per-project trust and actual collection still cannot be inferred from
+another environment's result. Unobserved delivery remains unconfirmed and does
+not block ordinary Task work.

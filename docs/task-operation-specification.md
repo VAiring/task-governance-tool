@@ -1031,7 +1031,7 @@ existing evidence gates; review end, PASS and message acceptance are not done.
 Package explanation retrieval may replace whole-reference reads or line-range
 searches with `scripts/read_reference.py "references/<file>.md#<section>"`.
 The supported files are the shipped workflow, CLI contracts, conditional
-reconciliation, optional usage-hook and review-wait references. The complete
+reconciliation, optional usage-hook, review-wait and Runner-application references. The complete
 selected section and ancestor introductions are returned as UTF-8 text without truncation; applicable linked
 requirements still need reading. The caller chooses the existing link, not a
 new operation taxonomy. Invalid/unavailable sections return failure with no

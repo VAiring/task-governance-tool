@@ -8,7 +8,8 @@ import re
 import sys
 
 
-REFERENCES = {"task_workflow.md", "cli_contracts.md", "reconciliation.md", "usage_hooks.md", "review_wait.md"}
+REFERENCES = {"task_workflow.md", "cli_contracts.md", "reconciliation.md", "usage_hooks.md",
+              "review_wait.md", "runner_application.md"}
 
 
 def section(text: str, fragment: str) -> str:

@@ -2313,6 +2313,13 @@ Diff/external targets return `requires_supplied_material`; no content binding
 is inferred from a saved fingerprint or substituted from Git. Existing manifest
 bounds apply without a partial list. No blob, patch or additional file is saved.
 Sanitized public `warnings` remain visible. Save/submit validation is unchanged.
+For ordinary Git reads, `verification_workspace` is only a short optional notice.
+When already-authorized independent verification needs files, the same
+`recovery_command` supplies complete workspace instructions and a bound
+prepare/cleanup command pair before preparation has any effect. Keep that pair
+for cleanup even if preparation output is lost. Availability is checked by the
+detailed read; normal read does not allocate a handle or inspect the temporary
+location. Records-only and opaque-target reads omit this capability in both views.
 The display is compact UTF-8 JSON plus LF, independent of the shell code page.
 The generated request/output supplies the procedure without another guide read;
 the [reviewer procedure](task_workflow.md#independent-reviewer) remains fallback

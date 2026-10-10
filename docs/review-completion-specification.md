@@ -693,19 +693,30 @@ completion gate is added. Absent/truncated output itself remains unknown.
 
 ### Optional Reviewer Verification Workspace
 
-For Git material, the ordinary reviewer read may supply
-`review_material.verification_workspace` with literal `prepare_command`,
-`cleanup_command` and conditional instructions. Reading remains write-free.
+For Git material, the ordinary reviewer read supplies
+`review_material.verification_workspace` with only `status=optional` and short
+`instructions` describing applicability and directing needed use to the existing
+`review_material.recovery_command`. It does not allocate a workspace handle,
+inspect temporary-location availability, or return prepare/cleanup commands and
+lifecycle guidance. `optional` describes the capability, not admitted availability.
+The same validated read with `--material-details` supplies the complete existing
+workspace guidance: `status=available`, literal `prepare_command`,
+`cleanup_command` and instructions, or the existing `unavailable` diagnostic.
+This detail read revalidates the complete saved Packet and live target/context
+before returning any commands. It is conditional on needed retrieval or workspace
+use, never a prerequisite for ordinary read/collect/save. Reading remains write-free.
 No parent selection, extra argument, environment registration, mandatory test
-or additional completion gate is introduced. Records-only reads omit this
-capability and records-only invocation rejects both workspace operations.
+or additional completion gate is introduced. Both ordinary and detailed
+records-only reads omit this capability; opaque targets also omit it.
+Records-only invocation rejects both workspace operations.
 
 `workspace prepare|cleanup` requires explicit `--repo`, saved `--packet`, its
 `--packet-sha256`, a generated 32-lowercase-hex `--workspace-id` and generated
 `--temp-root-sha256` binding the selected OS temporary parent. A changed
 temporary environment fails rather than claiming the old workspace absent.
 The ID is
-allocated in the read response before any effect, so a lost prepare response
+allocated with both commands in the detailed read response before any effect,
+so a lost prepare response
 does not lose the cleanup handle. Prepare is exclusive, never replayed into an
 existing workspace. It validates the complete unchanged Packet, live Task,
 Contract and target generation, then the complete fixed Git material before

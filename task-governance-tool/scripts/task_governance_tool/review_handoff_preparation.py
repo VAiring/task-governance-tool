@@ -414,7 +414,7 @@ def read_for_reviewer(repo, packet_path, *, material_details=False, records_only
         files._fail("handoff_response_invalid")
     if material["status"] == "git_objects_verified" and not records_only:
         from task_governance_tool.review_workspace import workspace_guidance
-        material["verification_workspace"] = workspace_guidance(repo, packet_path, raw)
+        material["verification_workspace"] = workspace_guidance(repo, packet_path, raw, details=material_details)
     return {**independent_reviewer_view(packet), "review_material": material,
             "verification_evidence": current["data"]["verification_evidence"],
             "verification_guidance": GUIDANCE,

@@ -717,6 +717,9 @@ class ReviewerMaterialTests(PreparationFixture):
         self.assertEqual(displayed.returncode, 0, displayed.stdout)
         view = json.loads(displayed.stdout)
         material = view["review_material"]
+        self.assertEqual(material["verification_workspace"]["status"], "optional")
+        self.assertNotIn("prepare_command", material["verification_workspace"])
+        self.assertNotIn("cleanup_command", material["verification_workspace"])
         self.assertEqual(material["dependency_revision"], base)
         inventory = {row["path"]: row for row in material["unchanged_inventory"]["entries"]}
         self.assertEqual(held_agents, self.git("cat-file", "blob", inventory["AGENTS.md"]["object_id"]))

@@ -138,9 +138,27 @@ class ReviewerWorkspaceTests(fixtures.PreparationFixture):
     def test_generated_quoted_commands_and_read_is_write_free(self):
         args = self.prepared()
         before = fixtures.file_snapshot(self.root)
+        temporary_before = fixtures.file_snapshot(self.workspace_temp)
         read = self.invoke("read", "--repo", str(self.root), "--packet", args.packet)
         self.assertEqual(read.returncode, 0, read.stdout)
-        guidance = json.loads(read.stdout)["review_material"]["verification_workspace"]
+        normal = json.loads(read.stdout)
+        material = normal["review_material"]
+        notice = material["verification_workspace"]
+        self.assertEqual(set(notice), {"status", "instructions"})
+        self.assertEqual(notice["status"], "optional")
+        self.assertIn("review_material.recovery_command", notice["instructions"])
+        self.assertNotIn("workspace-id", read.stdout.decode())
+        details = self.material_read(material["recovery_command"])
+        self.assertEqual(details.returncode, 0, details.stdout or details.stderr)
+        detailed = json.loads(details.stdout)
+        guidance = detailed["review_material"]["verification_workspace"]
+        self.assertEqual(set(guidance), {"status", "prepare_command", "cleanup_command", "instructions"})
+        self.assertEqual(guidance["status"], "available")
+        for key in ("task", "contract", "review_target", "result_template", "result_instructions"):
+            self.assertEqual(normal[key], detailed[key])
+        self.assertEqual(normal["verification_evidence"]["source_kind"],
+                         detailed["verification_evidence"]["source_kind"])
+        self.assertEqual(fixtures.file_snapshot(self.workspace_temp), temporary_before)
         self.assertEqual(fixtures.file_snapshot(self.root), before)
         result = self.material_read(guidance["prepare_command"])
         try:
@@ -150,13 +168,59 @@ class ReviewerWorkspaceTests(fixtures.PreparationFixture):
             cleaned = self.material_read(guidance["cleanup_command"])
         self.assertEqual(cleaned.returncode, 0, cleaned.stdout or cleaned.stderr)
         self.assertEqual(fixtures.file_snapshot(self.root), before)
+        self.assertEqual(fixtures.file_snapshot(self.workspace_temp), temporary_before)
+
+    def test_normal_notice_does_not_probe_temp_or_allocate_handle(self):
+        with mock.patch.object(workspace, "_temporary_parent", side_effect=AssertionError("unused temp probe")), \
+             mock.patch.object(workspace.uuid, "uuid4", side_effect=AssertionError("unused handle")):
+            notice = workspace.workspace_guidance(self.root, "reviews/packet.json", b"unused")
+        self.assertEqual(set(notice), {"status", "instructions"})
+        self.assertEqual(notice["status"], "optional")
+
+    def test_details_keep_cleanup_handle_after_unobserved_prepare_output(self):
+        args = self.prepared()
+        before = fixtures.file_snapshot(self.workspace_temp)
+        normal = self.invoke("read", "--repo", str(self.root), "--packet", args.packet)
+        command = json.loads(normal.stdout)["review_material"]["recovery_command"]
+        details = self.material_read(command)
+        self.assertEqual(details.returncode, 0, details.stdout)
+        guidance = json.loads(details.stdout)["review_material"]["verification_workspace"]
+        cleanup_command = guidance["cleanup_command"]
+        try:
+            # Deliberately discard prepare output: cleanup uses only the
+            # command delivered before preparation, not a returned handle.
+            self.material_read(guidance["prepare_command"])
+            self.assertEqual(len(list(self.workspace_temp.glob("taskgov-review-*/target"))), 1)
+        finally:
+            cleaned = self.material_read(cleanup_command)
+        self.assertEqual(cleaned.returncode, 0, cleaned.stdout or cleaned.stderr)
+        self.assertEqual(json.loads(cleaned.stdout)["status"], "absent")
+        self.assertEqual(fixtures.file_snapshot(self.workspace_temp), before)
+
+    def test_opaque_material_omits_workspace_in_both_views(self):
+        task_id = self.task()
+        for kind, revision in (("diff_fingerprint", fixtures.FINGERPRINT),
+                               ("external_revision", "fixture:opaque-review")):
+            result, prepared = self.prepare(task_id, options=["--kind", kind, "--revision", revision],
+                                            directory="reviews/" + kind)
+            self.assertEqual(result.returncode, 0, result.stdout)
+            packet = prepared["handoff"]["packet_path"]
+            for options in ([], ["--material-details"]):
+                read = self.invoke("read", "--repo", str(self.root), "--packet", packet, *options)
+                self.assertEqual(read.returncode, 0, read.stdout)
+                material = json.loads(read.stdout)["review_material"]
+                self.assertEqual(material["status"], "requires_supplied_material")
+                self.assertNotIn("verification_workspace", material)
+                self.assertNotIn("workspace-id", read.stdout.decode())
 
     def test_record_scope_rejects_operations_and_omits_escape_command(self):
         args = self.prepared()
         before = fixtures.file_snapshot(self.root)
-        read = self.invoke("--records-only", "read", "--repo", str(self.root), "--packet", args.packet)
-        self.assertEqual(read.returncode, 0, read.stdout)
-        self.assertNotIn("verification_workspace", json.loads(read.stdout)["review_material"])
+        for options in ([], ["--material-details"]):
+            read = self.invoke("--records-only", "read", "--repo", str(self.root), "--packet", args.packet, *options)
+            self.assertEqual(read.returncode, 0, read.stdout)
+            self.assertNotIn("verification_workspace", json.loads(read.stdout)["review_material"])
+            self.assertNotIn("workspace-id", read.stdout.decode())
         for action in ("prepare", "cleanup"):
             result = self.invoke("--records-only", "workspace", action, "--repo", str(self.root),
                 "--packet", args.packet, "--packet-sha256", args.packet_sha256, "--workspace-id", args.workspace_id,
@@ -170,6 +234,10 @@ class ReviewerWorkspaceTests(fixtures.PreparationFixture):
         before = fixtures.file_snapshot(self.root)
         with mock.patch.dict(os.environ, {"TMPDIR": str(self.root)}):
             read = self.invoke("read", "--repo", str(self.root), "--packet", args.packet)
+            self.assertEqual(read.returncode, 0, read.stdout)
+            notice = json.loads(read.stdout)["review_material"]
+            self.assertEqual(notice["verification_workspace"]["status"], "optional")
+            read = self.material_read(notice["recovery_command"])
         self.assertEqual(read.returncode, 0, read.stdout)
         material = json.loads(read.stdout)["review_material"]
         self.assertEqual(material["status"], "git_objects_verified")
@@ -188,7 +256,7 @@ class ReviewerWorkspaceTests(fixtures.PreparationFixture):
         self.addCleanup(alias.unlink)
         before = fixtures.file_snapshot(self.workspace_temp)
         with mock.patch.dict(os.environ, {"TMPDIR": str(alias / self.workspace_temp.name)}):
-            read = self.invoke("read", "--repo", str(self.root), "--packet", args.packet)
+            read = self.invoke("read", "--repo", str(self.root), "--packet", args.packet, "--material-details")
             result = workspace.operate(self.root, args)
             self.assertEqual(read.returncode, 0, read.stdout)
             self.assertEqual(json.loads(read.stdout)["review_material"]["verification_workspace"]["status"], "available")

@@ -32,8 +32,14 @@ CLEANUP_ENTRIES = 60000
 CLEANUP_DEPTH = 66
 
 
-def workspace_guidance(repo, packet_path, raw):
-    """Offer literal optional operations; reading creates no directory or state."""
+def workspace_guidance(repo, packet_path, raw, *, details=False):
+    """Defer optional lifecycle instructions and handle allocation until needed."""
+    if not details:
+        return {"status": "optional", "instructions": (
+            "Only when independently selected, already-authorized verification needs files, use "
+            "review_material.recovery_command for complete workspace preparation and cleanup details. "
+            "Availability is checked there; this option grants no execution permission and adds no required test or review gate."
+        )}
     from task_governance_tool.review_handoff_preparation import _shell
     identity = uuid.uuid4().hex
     try:

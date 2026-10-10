@@ -957,8 +957,11 @@ Unchanged snapshot dependencies come from the base commit; changed ones
 use their listed after object. Commit dependencies use the exact commit.
 This is not a replacement Packet, future freshness guarantee or review PASS.
 When independently selected, already-authorized verification needs files, the
-ordinary Git view's optional `verification_workspace` supplies literal prepare
-and cleanup operations. Prepare restores the fixed target; it never executes
+ordinary Git view's short `verification_workspace` notice directs you to the
+existing `recovery_command`. Only when needed, that detailed read checks
+availability and supplies complete literal prepare and cleanup operations
+together, before any effect. This is not a normal read/collect/save prerequisite.
+Prepare restores the fixed target; it never executes
 code. Run the existing approved check only after ready, in its returned working
 directory, and inspect your own actual results. Do not reconstruct source or
 tests, substitute another reviewer's PASS, or treat failure/timeout/incomplete

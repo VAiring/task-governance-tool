@@ -420,7 +420,7 @@ def main(argv=None):
         reader.add_argument("--repo", required=True)
         reader.add_argument("--packet", required=True)
         reader.add_argument("--material-details", action="store_true",
-                            help="Show conditional individual retrieval, discovery and recovery guidance")
+                            help="Show conditional retrieval, discovery, recovery and optional verification workspace details")
         ended = commands.add_parser("wait-ended", help="Declare the bound supervisor's all-ended decision for optional numerical usage")
         ended.add_argument("--repo", required=True)
         packet_source = ended.add_mutually_exclusive_group(required=True)

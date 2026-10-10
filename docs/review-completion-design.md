@@ -468,8 +468,14 @@ result registration tests retain writer atomicity and concurrent-state checks.
 `review_workspace.py` owns optional caller-invoked restoration and cleanup,
 separate from review transport and Runner execution. The helper parser admits
 `workspace prepare|cleanup`; ordinary records-only policy rejects them before
-filesystem access. Read adds generated literal operations only for ordinary
-Git material, without creating anything. `validate_live_packet` shares the
+filesystem access. The default Git read adds only a short `status=optional`
+workspace notice routing to its existing `recovery_command`. It does not inspect
+the temporary selector or allocate an ID. The same `--material-details` read
+passes `details=True` to `workspace_guidance`, which checks availability and
+returns the complete literal prepare/cleanup pair and lifecycle guidance before
+any effect. Both views omit workspace guidance for records-only and opaque
+targets; neither creates anything or changes normal read/collect/save steps.
+`validate_live_packet` shares the
 existing complete saved/current public-Packet comparison between read and the
 two preparation boundaries; it adds no direct storage access.
 

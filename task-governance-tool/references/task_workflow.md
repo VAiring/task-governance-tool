@@ -543,6 +543,11 @@ unavailable does not itself require switching an integrated intent to manual
 completion. A failed wait or missing notification uses the existing
 [wait recovery](review_wait.md#failures-stop-and-diagnosis) and
 [result continuation](#continue-after-reviews), preserving successful stages.
+Confirmed wait readiness permits ending the turn with automatic waiting
+delegated. A failed wait also permits ordinary turn ending after reporting its
+limitation and resume condition under that recovery procedure; it does not
+promise automatic resumption or complete the Task. Do not keep retrying an
+unavailable service solely to keep this turn open.
 The [integrated contract](cli_contracts.md#integrated-review-finalization)
 defines supported material and effects. Preparation never starts a reviewer or
 wait worker. A preparation failure uses [bound recovery](cli_contracts.md#recover-review-handoff),
@@ -691,6 +696,12 @@ for an integrated intent, or [handoff recovery](#review-handoff-recovery) for
 parent registration. Recovery alone is not a reason for a new target or review;
 changed material/basis or failed reviewer observations retain their existing gates.
 No individual ACK, result re-query or routine status call is added.
+If waiting or notification failed, retain this same selected route and command.
+`host_mutation=not_dispatched` for the latest call does not settle prior effects.
+Unknown mutation or cleanup results use the applicable recovery before an
+effectful continuation; successful registration, commit and completion are not
+repeated. When recovery needs an external change, report the limitation and
+resume condition and end the ordinary turn without claiming Task completion.
 
 ### Complete Work
 

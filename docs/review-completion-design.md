@@ -791,9 +791,70 @@ observed stage outcomes; unknown effects remain distinct from stages not run.
 Missing originals produce an incomplete report with all-or-nothing registration.
 Healthy scheduled checks and conditional recovery retain their existing controls.
 
+The normal project's failure boundary adds the bounded diagnostic owned by
+[failure diagnosis and recovery](review-completion-specification.md#review-wait-failure-diagnosis-and-recovery).
+`failure_diagnostics` owns the fixed vocabulary, size bound and transient
+call-local projection; it reuses the existing typed bootstrap/host classifiers.
+`project_server` separates a valid disabled policy from policy-read failure,
+retains fixed project-admission reasons, and invokes that projection before its
+unknown fallback. It never derives a diagnostic
+code from arbitrary exception text. Successful readiness and the nine control
+inputs remain unchanged.
+
+Managed orchestration carries call-local evidence of local writes and host
+mutation dispatch separately from admitted retained effects. A failure before
+state inspection cannot certify absence. Preparation/start diagnostics survive
+the cleanup path, including fixed nested direct-state activation reasons.
+Authoritative rereads, supplemental direct/controller reads and journal writes
+invalidate earlier absence/settled observations. Supplemental reads restore the
+prior observation only on success; a session that returns a read failure instead
+of raising also leaves the observation invalid. The fixed `timer_cleanup_unknown`
+result separately confirms an unresolved timer read or saved unknown phase and
+retains `present_unresolved`; it never certifies settlement. Failed request-lease
+admission or exit invalidates observations made before that failure, including
+a distinct release failure while a body exception unwinds. Propagating the same
+body exception preserves that body's diagnostics. A possible local
+intent without a fresh observation selects
+existing-state inspection. Unconfirmed cleanup selects conservative recovery
+without overwriting the original failure boundary. The journal and direct-state owners
+retain intent-before-effect and all replay/competing-cleanup exclusions. These
+diagnostic projections do not settle, rewrite or migrate durable state.
+
+`runtime_identity` owns source-only identity for the review-wait server entry.
+It reuses the source-import loader to capture the startup inventory of Python
+sources immediately under `scripts`, `task_governance_tool` and
+`review_wait_runtime`, including lazy/helper sources. Loaded identity requires
+the captured import bytes to agree and the startup entry source to compile to
+the code object actually executing that entry. This establishes implementation
+equivalence, not recovery of the interpreter's original entry source bytes;
+missing or mismatching entry evidence, uncaptured or mixed imports leave
+comparison unknown. Inventory is bounded to 512 files, 4 MiB per
+file and 16 MiB total; unavailable or over-bound material yields unknown.
+Explicit inspect compares those bytes with current physical package sources,
+and reads only the literal schema value from deployed `storage.py` syntax.
+It publishes one loaded digest and a comparison enum, never an expected/actual
+hash pair, source text or filesystem path. It makes no Task DB access, external
+call, migration, process launch or worker recovery. The loaded schema ceiling is
+retained independently from deployed source inspection. Schema-only disagreement
+does not prove changed code, and a lower deployed ceiling cannot authorize a
+reload against newer state.
+
+The Skill's failure procedure consumes the bounded diagnostic and reports state,
+continuation, necessary action and resume condition together. Readiness permits
+delegating waiting before turn end; a failure instead permits ordinary turn end
+after reporting limitations, without automatic-resumption or completion claims.
+Unavailable MCP inspection is not a new recovery prerequisite. The retained
+Continue After Reviews route still owns completed-review processing and preserves
+successful stages. These changes add no normal call, polling, automatic restart
+or alternate route around unknown effects.
+
 Focused tests cover the single call, fixed destination, failures and unknowns at
 effect boundaries, duplicates, restart/OFF/cancel, healthy scheduled rewait,
-same-parent event observation without ACK and unchanged legacy paths. Physical
+same-parent event observation without ACK and unchanged legacy paths. Diagnostic
+tests cover stage propagation, policy OFF versus read failure, call-local versus
+retained effects, cleanup uncertainty, disclosure/size bounds and runtime source
+comparison without state writes. Packaged-reference retrieval checks the failure
+procedure and retained continuation. Physical
 installation and handoff, document/release/Skill checks and two independent
 Tier 2 reviews precede the bounded real-host validation. Accepted sending and
 offline fixtures never establish actual delivery.

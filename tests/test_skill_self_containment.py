@@ -2208,6 +2208,40 @@ print(json.dumps(results, ensure_ascii=False))
         _, usage_legacy = self.linked_output("references/usage_hooks.md", coverage, "record-review-wait-decision")
         self.assertEqual(usage_legacy, legacy)
 
+    def test_wait_failure_guidance_separates_turn_end_effects_and_original_continuation(self):
+        source = "references/review_wait.md"
+        normal = self.reader().read_reference(source + "#normal-wait", SKILL_ROOT)
+        _, failure = self.linked_output(source, normal, "failures-stop-and-diagnosis")
+        for condition in (
+            "Connection or tool unavailable", "Normal policy OFF",
+            "Configuration unreadable", "Runtime mismatch supported by evidence",
+            "Project/root/binding or access admission failed", "Read failed",
+            "Creation, activation, deletion, pause, send or cleanup unresolved",
+            "Actual reviewers ended", "Confirmed wait readiness",
+            "turn_end=report_limitation", "host_mutation=not_dispatched",
+            "retained_effects=not_inspected", "end the ordinary turn",
+            "Do not promise automatic", "No replay, replacement or competing cleanup",
+            "unavailable service's own inspect is not a prerequisite",
+        ):
+            self.assertIn(condition, failure)
+        _, upgrade = self.linked_output(source, failure, "runtime-upgrade-and-reconnection")
+        for condition in ("schema_too_new", "alone does not prove",
+                          "comparison=matching|different|unknown", "lower deployed ceiling",
+                          "Do not repeat successful Setup", "stored ACTIVE"):
+            self.assertIn(condition, upgrade)
+        continuation_source, continuation = self.linked_output(
+            source, failure, "continue-after-reviews")
+        for condition in ("finalization_command", "submit_command",
+                          "host_mutation=not_dispatched", "does not settle prior effects",
+                          "preserves every successful stage"):
+            self.assertIn(condition, continuation)
+        _, choice = self.linked_output(
+            continuation_source, continuation, "choose-the-completion-route")
+        self.assertIn("waiting OFF/unavailable", choice)
+        self.assertIn("does not itself require switching an integrated intent", choice)
+        self.assertIn("ok=true,status=waiting,parent_may_end=true", normal)
+        self.assertNotIn("review_wait_inspect(task_id)", normal)
+
     def test_receipt_input_routes_share_basis_and_recovery_without_other_input_body(self):
         source = "references/cli_contracts.md"
         manual = self.reader().read_reference(f"{source}#verification-receipt", SKILL_ROOT)

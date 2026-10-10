@@ -908,8 +908,11 @@ original Task/Packet, actual reviewer handles and result transport, and calls
 `review_wait_wait(task_id, reviewer_ids)` once. The service creates its fixed
 same-parent PAUSED heartbeat, prepares the association and starts the ten-minute
 check. It returns `{ok:true,status:"waiting",task_id,parent_may_end:true,
-replayed:false}` only after confirmed activation and a live worker. End the
-parent turn on that response. A matching duplicate in the same actual turn may
+replayed:false}` only after confirmed activation and a live worker. That response
+permits ending the parent turn with waiting delegated to the service. It is not
+Task completion. Failure reporting and ordinary turn ending are separate under
+[failure diagnosis and recovery](#review-wait-failure-diagnosis-and-recovery).
+A matching duplicate in the same actual turn may
 return the same readiness with `replayed:true`, without another host effect.
 
 Setup's explicit `--review-wait on` enables local policy only. Host connection,
@@ -1098,6 +1101,103 @@ dispatch, completion and CLI detail. It preserves all required report fields and
 successful stages, routes parent submission only from manual preparation, and
 keeps incomplete/unknown recovery conditional. Recovery alone does not require
 new review; changed basis and observed reviewer failures retain their gates.
+
+#### Review Wait Failure Diagnosis And Recovery
+
+Normal project-service failures preserve their existing `ok:false` and `error`
+and add one bounded `diagnostic` object. Successful wait readiness keeps its
+existing shape. The diagnostic is version 1, at most 2,048 UTF-8 bytes, and has
+only the following fixed fields and allowlisted values:
+
+| Field | Meaning |
+|---|---|
+| `version` | Integer `1`. |
+| `stage`, `reason` | Fixed failure boundary and reason. Existing typed bootstrap/host/direct-state reasons are retained, with bounded project, policy and managed-wait reasons. Unknown exceptions use a fixed fallback; exception text is never a code. |
+| `local_state` | `not_attempted` or `may_have_changed` for this call's local operational writes. |
+| `host_mutation` | `not_dispatched`, `may_have_occurred` or `confirmed` for mutations initiated by this call. Read-only host observations are not mutations. |
+| `retained_effects` | `not_inspected`, `absent`, `present_unresolved` or `settled`, based only on admitted observations of saved effects, including earlier calls and workers. |
+| `cleanup` | `not_attempted`, `unresolved` or `confirmed`; an attempted cleanup without confirmation remains unresolved. |
+| `recovery` | `respect_off`, `check_configuration`, `check_project`, `check_connection`, `correct_request`, `inspect_existing` or `report_and_resume`; these select the applicable recovery below and grant no operation permission. |
+| `turn_end` | `report_limitation`: an ordinary turn may end after reporting the limitation and retained continuation, without claiming successful waiting. |
+
+`not_dispatched` describes this call only. It never establishes that a previous
+reservation or send is absent. Failure before retained-state inspection, or an
+unreadable state, leaves `retained_effects=not_inspected`. `confirmed` describes
+only the specific host mutation confirmed during this call; it does not imply
+review PASS, parent receipt or Task completion. An error after local intent
+recording cannot be reported as `local_state=not_attempted`.
+Before a fresh retained-state read or an uncertain journal write, invalidate
+earlier absence/settled observations. A failed write that may have saved intent
+requires existing-state inspection; it cannot reuse a pre-write absence claim.
+
+Preparation and start failures retain their original safe stage/reason through
+the normal entry point, including an allowlisted failure reason carried by a
+successful direct-state summary whose activation failed. Unresolved cleanup or
+host effects take precedence when choosing recovery, even when the original
+failure was a request or configuration
+problem. Unknown creation, activation, deletion, pause and send continue to block
+replay, competing cleanup and replacement. Diagnosis never erases a saved intent
+or settles an unknown result. The general host-tool failure is not evidence of a
+permission denial.
+
+The response and caller guidance distinguish normal policy OFF from unreadable
+configuration; connection/discovery failure from project/root/binding admission;
+and a read failure from an unknown mutation result. No raw exception, path,
+provider body, environment value, executor metadata or rejected value enters the
+diagnostic. The existing [privacy contract](specification.md#privacy-safety-and-stable-errors)
+continues to apply.
+
+On a failed wait, report the known state, safe continuation, required action and
+condition for resuming together. Preserve the original Task/Packet, originals,
+reviewer identities and selected continuation. If safe authorized work remains,
+continue it. When recovery requires an external change or user action, the
+parent may end its ordinary turn after this report. `parent_may_end=false` or a
+missing readiness response forbids claiming delegated automatic resumption; it
+does not require repeated errors or an indefinitely open turn. Neither turn
+ending nor error diagnosis completes the Task or guarantees notification.
+
+Recovery guidance must preserve these distinctions:
+
+- Respect normal OFF; do not enable it or add Setup to the Task loop.
+- For unreadable configuration or project admission, identify the bounded
+  failed responsibility without disclosing values. Do not infer a connection
+  failure, alter ACLs, escalate, bypass checks or change binding automatically.
+- For a missing connection/tool, use available public connection evidence.
+  Calling the unavailable service's own inspect control is not a prerequisite.
+- Recommend reloading the same reviewed service only with runtime-mismatch
+  evidence or the established upgrade context. A schema error alone does not
+  distinguish a stale resident service from an old deployed package. Preserve
+  successful Setup and all saved effects; do not repeat migration.
+- When a read fails or a mutation/cleanup result is unknown, preserve that
+  uncertainty and use only applicable authorized diagnosis. Do not repeat the
+  same failed operation without a changed relevant condition or new evidence.
+- Actual all-ended reviews with no conflicting unresolved effects proceed
+  through the retained result-processing route. A failed wait never converts
+  integrated finalization into manual registration or a different commit route,
+  and never repeats successful registration, commit or completion.
+
+Optional inspection includes a read-only `runtime` object with `version:1`, one
+loaded-source `code_id` (SHA-256 or null), `supported_schema` and
+`deployed_supported_schema` (integers or null), and
+`comparison=matching|different|unknown`. It compares startup-captured source
+identity against the deployed package without exposing a second digest or path.
+The startup entry is bound by executing code-object equivalence; rereading its
+source alone cannot establish loaded identity. This identifies an equivalent
+implementation, without claiming recovery of the interpreter's original entry
+source bytes. Missing or mismatching entry evidence leaves comparison unknown.
+`different` establishes a code difference, not permission to reload. An
+incompatible or older deployed schema calls for package consistency diagnosis;
+it never recommends blindly loading that package. A schema difference alone,
+uncaptured imports, mixed source or unavailable reads leave comparison unknown.
+The diagnostic reads no Task DB, writes no state, runs no migration and starts
+no process or worker. The ordinary inspect path retains its own admitted
+read-only association inspection; a stored ACTIVE flag is never live readiness.
+
+Conditional diagnosis adds no normal-loop poll, doctor, status or ACK, automatic
+restart, alternate sender, private API or substitute supervisor. The development
+Hook relay remains separate. Connection, tool call, Hook result, worker readiness,
+timer deletion, host send acceptance, observed receipt and Task completion are
+distinct evidence; none substitutes for another.
 
 <a id="development-review-wait-relay"></a>
 

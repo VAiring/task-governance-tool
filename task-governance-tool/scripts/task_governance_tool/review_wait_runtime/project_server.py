@@ -24,6 +24,7 @@ from .review_wait_service import ServiceConfig
 from .managed_host import ManagedHost
 from .managed_direct import ManagedDirectProbe
 from .managed_wait import ManagedWait
+from .failure_diagnostics import CallDiagnostics, DiagnosticError, PROJECT_REASONS
 from . import review_wait_mcp_relay as protocol
 
 
@@ -67,7 +68,7 @@ class ProjectReviewWaitSession:
     operations = OPERATIONS
 
     def __init__(self, config, *, host_factory=None, basis_factory=None,
-                 session_factory=None, clock=None, managed_host_factory=None):
+                 session_factory=None, clock=None, managed_host_factory=None, runtime_identity=None):
         if type(config) is not ProjectConfig or any(
                 not path.is_absolute() for path in (config.repo, config.server_path, config.codex_home)):
             raise ValueError("invalid_configuration")
@@ -81,12 +82,13 @@ class ProjectReviewWaitSession:
         self.sessions = {}
         self.closed = False
         self.managed = ManagedWait(self)
+        self.runtime_identity = runtime_identity
 
     @staticmethod
     def catalogue():
         descriptions = {
-            "wait": "Wait for the original Task and actual returned reviewers using the authorized connected service. Creates and starts its same-parent timer; end the turn only on ok=true,status=waiting,parent_may_end=true. A matching prepare-finalization intent runs fixed registration, gates, local commit and completion before notification. Otherwise it notifies review end only. Sending is not PASS or Task completion. Follow references/review_wait.md#normal-wait for waiting and references/task_workflow.md#continue-after-reviews for result processing; no separate ACK or routine status call.",
-            "inspect": "Optional read-only diagnosis of this parent's Task wait; never starts or retries effects.",
+            "wait": "Wait for the original Task and actual returned reviewers using the authorized connected service. Creates and starts its same-parent timer; delegate waiting and end the turn on ok=true,status=waiting,parent_may_end=true. On failure, report the limitation and recovery condition before ordinary turn end; no automatic resumption is promised. A matching prepare-finalization intent runs fixed registration, gates, local commit and completion before notification. Otherwise it notifies review end only. Sending is not PASS or Task completion. Follow references/review_wait.md#normal-wait for waiting and references/task_workflow.md#continue-after-reviews for result processing; no separate ACK or routine status call.",
+            "inspect": "Optional read-only diagnosis of this parent's Task wait and runtime identity; never starts or retries effects, migrates state or establishes a live worker from saved flags.",
             "stop": "Explicitly stop this parent's Task wait and clean up only known effects; no unknown-operation retry.",
             "prepare": "Compatibility only: prepare the earlier per-reservation flow with an authorized PAUSED same-parent timer; no timer or send effect. Normal waiting uses review_wait_wait.",
             "view": "Compatibility/recovery only: inspect an earlier per-reservation wait without starting observation or host effects. Normal diagnosis uses review_wait_inspect.",
@@ -102,35 +104,42 @@ class ProjectReviewWaitSession:
                 for operation, fields in OPERATIONS.items()]
 
     def _enabled(self):
+        return read_choices(self.skill)[1].get("review_wait") is True
+
+    def _policy_enabled(self):
         try:
-            return read_choices(self.skill)[1].get("review_wait") is True
+            return self._enabled()
         except Exception:
-            return False
+            raise DiagnosticError("policy_unreadable") from None
 
     def _location(self, *, enabling):
         inspection = inspect_project_scope(repo=self.config.repo, repo_explicit=True,
             script_path=self.skill / "scripts/review_wait_server.py",
             include_runtime=False, include_package=False, include_ignore=enabling)
         codes = STRUCTURAL_CODES | ({"state_ignore_required"} if enabling else set())
-        if inspection.first_issue(allowed_codes=codes) or inspection.scope is None:
-            raise ValueError("project_unavailable")
+        issue = inspection.first_issue(allowed_codes=codes)
+        if issue or inspection.scope is None:
+            raise DiagnosticError(issue.code if issue and issue.code in PROJECT_REASONS else "project_unavailable")
         resolution = resolve_project_state(skill_root=inspection.scope.skill_root,
                                            repo=inspection.scope.canonical_repo)
         if (resolution.error_code or resolution.binding != "matching"
                 or resolution.layout != "fixed_current_v1" or resolution.target is None):
-            raise ValueError("project_unavailable")
+            reason = resolution.error_code
+            if reason is None and resolution.binding != "matching":
+                reason = "project_relocation_required"
+            raise DiagnosticError(reason if reason in PROJECT_REASONS else "project_unavailable")
         return resolution.paths
 
     def _reader(self, repo, task, parent, wait_id, **kwargs):
         reader = self.basis_factory(repo, task, parent, wait_id, **kwargs)
         def current():
-            if not self._enabled():
+            if not self._policy_enabled():
                 raise BasisError()
             return reader()
         return current
 
     def _finalizer(self, binding):
-        if not self._enabled():
+        if not self._policy_enabled():
             raise BasisError()
         paths = self._location(enabling=False)
         intent = paths.review_finalization_store(binding.parent_thread_id,
@@ -150,10 +159,10 @@ class ProjectReviewWaitSession:
         if automation_id in self.sessions:
             session = self.sessions[automation_id]
             if session.config.task_id != task_id:
-                raise ValueError("binding_mismatch")
+                raise DiagnosticError("binding_mismatch")
             return session
         if len(self.sessions) >= 64:
-            raise ValueError("session_limit")
+            raise DiagnosticError("session_limit")
         service = ServiceConfig(path, self.config.server_path, self.config.codex_home,
                                 self.config.timezone, "host_node_intl")
         config = SessionConfig(service, self.config.repo, task_id, automation_id,
@@ -177,43 +186,90 @@ class ProjectReviewWaitSession:
         inspect_physical_directory(paths.review_wait_root, root=paths.fixed_root)
 
     def handle(self, operation, arguments, metadata):
+        diagnostic = CallDiagnostics()
+        admitted = False
+        try:
+            result = self._handle(operation, arguments, metadata, diagnostic)
+            admitted = diagnostic.stage != "executor_admission" and diagnostic.stage != "request"
+        except Exception as exc:
+            result = diagnostic.failure({"ok": False, "error": "review_wait_unavailable"}, error=exc)
+            admitted = diagnostic.stage not in {"request", "executor_admission"}
+        if result.get("ok") is not True and "diagnostic" not in result:
+            result = diagnostic.failure(result)
+        if operation == "inspect" and admitted and self.runtime_identity is not None:
+            from task_governance_tool.state_resolver import SCHEMA_VERSION
+            try:
+                runtime = self.runtime_identity.inspect(loaded_schema=SCHEMA_VERSION)
+            except Exception:
+                # Diagnosis never turns a readable wait into a failed operation.
+                runtime = {"version": 1, "code_id": None, "supported_schema": None,
+                           "deployed_supported_schema": None, "comparison": "unknown"}
+            result = {**result, "runtime": runtime}
+        return result
+
+    def _handle(self, operation, arguments, metadata, diagnostic):
         try:
             if self.closed:
                 return {"ok": False, "error": "service_closed"}
             if (operation not in OPERATIONS or type(arguments) is not dict
                     or set(arguments) != set(OPERATIONS[operation])):
                 return {"ok": False, "error": "invalid_request"}
+            diagnostic.stage = "executor_admission"
             actual = admit_executor_metadata(metadata)
             enabling = operation in {"wait", "prepare", "direct_delete_start"}
             if enabling:
                 executor_turn_id(actual)
-                if not self._enabled():
+                diagnostic.stage = "policy"
+                try:
+                    enabled = self._policy_enabled()
+                except DiagnosticError as exc:
+                    diagnostic.capture(error=exc)
                     return {"ok": False, "error": "review_wait_not_enabled"}
+                if not enabled:
+                    return {"ok": False, "error": "review_wait_not_enabled"}
+            diagnostic.stage = "project_admission"
             paths = self._location(enabling=enabling)
             if operation in {"wait", "inspect", "stop"}:
+                diagnostic.stage = "request"
                 validate_task_id(arguments["task_id"])
-                return self.managed.handle(operation, arguments, actual, paths)
+                return self.managed.handle(operation, arguments, actual, paths, diagnostic)
             automation = arguments["automation_id"]
             path = paths.review_wait_store(automation)
             if operation == "prepare":
+                diagnostic.stage = "request"
                 task_id = validate_task_id(arguments["task_id"])
                 # Validate live ownership before creating even an empty directory.
+                diagnostic.stage = "basis_before"
                 self._reader(self.config.repo, task_id, actual["threadId"], "prepare",
                              helper=self.skill / "scripts/review_handoff.py")()
+                diagnostic.stage = "state_create"
+                diagnostic.local_state = "may_have_changed"
                 self._ensure_root(paths)
                 session = self._session(path, task_id, automation)
                 args = {"reviewer_ids": arguments["reviewer_ids"]}
             else:
+                diagnostic.stage = "request_read"
                 controller = ReviewWaitRepository.open_existing(path).read().controller
+                diagnostic.retained_effects = "present_unresolved"
                 if (controller.binding.parent_thread_id != actual["threadId"]
                         or controller.reservation.timer_id != automation):
                     return {"ok": False, "error": "caller_mismatch"}
                 session = self._session(path, controller.binding.task_id, automation)
                 args = {key: value for key, value in arguments.items() if key != "automation_id"}
+            diagnostic.stage = "operation"
+            if operation not in {"view", "direct_status"}:
+                diagnostic.local_state = "may_have_changed"
+            if operation in {"direct_delete_start", "direct_cancel"}:
+                diagnostic.host_mutation = "may_have_occurred"
+            observed_effects = diagnostic.retained_effects
+            diagnostic.invalidate_record()
             result = session.handle(operation, args, metadata)
+            diagnostic.observe_operation(result, observed_effects)
+            if result.get("ok") is not True:
+                diagnostic.capture(result=result)
             return {**result, "automation_id": automation}
         except Exception:
-            return {"ok": False, "error": "review_wait_unavailable"}
+            raise
 
     def close(self):
         self.closed = True
@@ -226,7 +282,7 @@ class ProjectReviewWaitSession:
         return {"ok": True} if succeeded else {"ok": False, "error": "observer_cleanup_unknown"}
 
 
-def main(argv=None):
+def main(argv=None, *, runtime_identity=None):
     parser = protocol._ArgumentParser(description=__doc__)
     parser.add_argument("--repo", required=True)
     parser.add_argument("--server", required=True)
@@ -235,7 +291,7 @@ def main(argv=None):
     try:
         args = parser.parse_args(argv)
         config = ProjectConfig(Path(args.repo), Path(args.server), Path(args.codex_home), args.timezone)
-        return serve(sys.stdin.buffer, sys.stdout.buffer, ProjectReviewWaitSession(config))
+        return serve(sys.stdin.buffer, sys.stdout.buffer, ProjectReviewWaitSession(config, runtime_identity=runtime_identity))
     except (Exception, KeyboardInterrupt):
         sys.stderr.write("Review-wait server unavailable.\n")
         return 1

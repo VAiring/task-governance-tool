@@ -43,12 +43,21 @@ records and never retry unknown timer/send effects. After successful explicit
 Setup, restart/reconnect the same reviewed MCP service, preserving its host
 configuration and trust. CLI success alone does not prove service compatibility.
 
-If migration already succeeded and the old service returns
-`review_wait_unavailable`, reload that service before inspecting the retained
-associations. Do not repeat Setup, infer no previous effects, or create a
-replacement timer. Restart/inspection never replays a worker; use the existing
-failure/recovery procedure for each known state. This upgrade instruction adds
-no ordinary Task-loop call or permission to change host settings/trust.
+If migration already succeeded and the service is known to retain the old
+runtime, reload that same reviewed service before inspecting retained
+associations. `review_wait_unavailable` or `schema_too_new` alone does not prove
+this condition: an old deployed package can also be incompatible. Optional
+inspection reports loaded source identity, loaded/deployed schema ceilings and
+`comparison=matching|different|unknown`. A code difference is evidence to assess
+against the intended upgrade; a lower deployed ceiling requires package
+consistency diagnosis, not blind reload. Unknown comparison is not evidence
+that a restart will fix the error.
+
+Do not repeat successful Setup, infer no previous effects, or create a
+replacement timer. Restart/inspection never replays a worker; stored ACTIVE is
+not live readiness. Use the [failure procedure](#failures-stop-and-diagnosis)
+for each known state. This upgrade instruction adds no ordinary Task-loop call,
+automatic restart or permission to change host settings/trust.
 
 ## Normal Wait
 
@@ -85,9 +94,12 @@ justify further discovery; this adds no lookup or confirmation prerequisite.
    The service resolves the parent-scoped structured identities and internally
    creates, prepares and starts its fixed same-parent ten-minute reservation.
    Supply no automation/probe IDs, prompt, schedule or destination.
-3. End this turn only on `ok=true,status=waiting,parent_may_end=true`.
+3. Delegate waiting and end this turn on
+   `ok=true,status=waiting,parent_may_end=true` only.
    The service then owns observation, deletion confirmation and one same-parent
-   send when every exact reviewer ends and the original parent is idle.
+   send when every exact reviewer ends and the original parent is idle. This is
+   readiness, not Task completion. For a failed call, the linked failure
+   procedure distinguishes ordinary turn ending after reporting a limitation.
 4. On resumption or an all-ended result, follow
    [Continue after reviews](task_workflow.md#continue-after-reviews), the single
    result-processing procedure for integrated, parent-managed and direct routes.
@@ -111,13 +123,44 @@ manually create another heartbeat.
 
 ## Failures, Stop And Diagnosis
 
-A failed call or `parent_may_end=false` never grants permission to end the turn
-as a ready wait. Unknown creation, activation, deletion, pause or send prevents
-replay and replacement. Preserve the original wait/results and report the
-specific limitation; do not infer success from an accepted host send.
-An unavailable policy, connection or required public operation does not prevent
-other permitted review transport and does not authorize enabling settings,
-another sender or a substitute supervisor.
+A failed call or `parent_may_end=false` does not confirm delegated waiting.
+It does not require keeping the turn open indefinitely. Report the known state,
+safe continuation, necessary action and condition for resuming together. Continue
+safe authorized work when available; when recovery needs an external change or
+user action, end the ordinary turn after this report. Do not promise automatic
+resumption or mark the Task complete. Do not repeat the same failed operation
+without a changed relevant condition or new evidence.
+
+Normal service failures retain `ok/error` and provide a fixed `diagnostic`:
+`stage/reason` identify the failure; `local_state` and `host_mutation` describe
+this call; `retained_effects` describes admitted saved-state observations;
+`cleanup` and `recovery` identify the applicable recovery boundary.
+`turn_end=report_limitation` means the ordinary reporting branch above.
+`host_mutation=not_dispatched` never proves earlier effects absent, and
+`retained_effects=not_inspected` is not absence. Even a confirmed operation does
+not establish review PASS, message receipt or Task completion. Unresolved
+cleanup takes priority when choosing the next action without erasing the original
+failure. A general host tool error is not proof of permission denial.
+
+Use the following branch once, based on available evidence. Missing diagnostics
+do not justify inventing a cause or inferring that effects were absent.
+
+| Known condition | Safe continuation, necessary action and resume condition |
+|---|---|
+| Connection or tool unavailable | Use available public connection evidence. The unavailable service's own inspect is not a prerequisite. Report the unavailable operation; resume after the same reviewed service is available, without replaying uncertain effects. |
+| Normal policy OFF | Respect OFF. Continue the retained review route when its prerequisites hold; do not enable settings or run Setup. |
+| Configuration unreadable | Report configuration-read failure separately from OFF. Diagnose the admitted configuration responsibility without exposing values; repair requires its existing authority. |
+| Runtime mismatch supported by evidence | Use the [upgrade procedure](#runtime-upgrade-and-reconnection). Reload only the intended reviewed runtime, then inspect retained effects; do not repeat successful Setup. |
+| Project/root/binding or access admission failed | Use the returned bounded project reason. This is not proof of MCP disconnection. Do not auto-elevate, change ACLs, bypass admission or change binding. |
+| Read failed | Keep retained effects unconfirmed where unreadable. Continue unrelated permitted work or report the concrete recovery prerequisite; retry only after relevant conditions or evidence change. |
+| Creation, activation, deletion, pause, send or cleanup unresolved | Preserve the original wait and outcomes. No replay, replacement or competing cleanup; use only applicable authorized diagnosis. If uncertainty remains, report it and the resume condition, then end the ordinary turn. |
+| Actual reviewers ended, with no conflicting unresolved effects | Use [Continue after reviews](task_workflow.md#continue-after-reviews) with the original route and retained command. |
+| Confirmed wait readiness | Use [Normal wait](#normal-wait); the service owns waiting after the parent turn ends. |
+
+Preserve the original Task/Packet, reviewer identities, originals and selected
+continuation command. An unavailable policy, connection or required public
+operation does not prevent other permitted review transport and does not
+authorize enabling settings, another sender or a substitute supervisor.
 For a prepared integrated intent, waiting OFF/unavailable permits the existing
 workerless continuation after all reviewers end; it does not require manual
 registration or a different commit route. Use
@@ -136,6 +179,11 @@ Inspection is read-only. Stop cannot recall a dispatched message or retry an
 unknown effect. Restart is inspection-only; no active flag alone proves a live
 worker. Changed Task basis or actual reviewer turns require recovery of the old
 wait before a new association.
+Inspect is conditional diagnosis, not a required extra call after every failure;
+do not loop on it when the connection or service itself cannot answer. Runtime
+identity diagnosis reads package sources only and never migrates state or starts
+a worker. Keep the existing normal single wait call; add no routine doctor,
+polling, status, ACK or automatic restart.
 
 The six earlier per-reservation controls remain available for old associations
 and explicit diagnosis: `review_wait_prepare`, `review_wait_view`,
@@ -150,6 +198,9 @@ The service retains the existing 64-association bound and 64 request attempts
 per parent/Task; capacity failures preserve history and never evict workers.
 
 Timer deletion, host acceptance and actual new-turn receipt remain separate.
+Connection, a tool call, Hook success, worker readiness and Task completion also
+require their own evidence. The development JSON Hook relay is not a required
+normal-wait recovery path and must not be re-enabled by ordinary Task work.
 The worker uses bounded public observation. A truncated structured event may
 establish notification correlation when the complete identity and host evidence
 match; unknown reads or incomplete identity cannot. Correlation does not prove

@@ -272,8 +272,18 @@ state. A fresh CLI's success does not prove that the resident service reloaded.
 Restart and inspection never replay an old worker or authorize a replacement
 reservation. Inspect retained associations through the reloaded service and
 follow only the applicable known-state recovery. If Setup already succeeded but
-the stale service returns `review_wait_unavailable`, reload it before diagnosis;
-do not repeat Setup or infer that the old wait never ran.
+the known stale service returns `review_wait_unavailable`, reload that same
+reviewed service before inspecting retained waits; do not repeat Setup or infer
+that the old wait never ran. That general error or `schema_too_new` alone does
+not prove stale runtime: a deployed old package can also be incompatible.
+Optional review-wait inspection reports loaded source identity, loaded/deployed
+schema ceilings and `matching|different|unknown` comparison without migrations or
+worker restart. A lower deployed ceiling requires package-consistency diagnosis,
+not a blind reload. When the service is unavailable, its own inspection is not a
+prerequisite to reporting the limitation and ordinary turn end. Follow the
+[failure and recovery contract](review-completion-specification.md#review-wait-failure-diagnosis-and-recovery);
+no automatic restart, configuration/trust change or additional normal-loop
+diagnostic is authorized.
 
 Setup reports `schema_to=27` and `evidence_status` as `not_present`, `current`,
 `published`, or `repair_required`. Its ordered write vocabulary includes

@@ -127,9 +127,14 @@ class ProjectWaitTests(PreparationFixture):
             if old_ceiling >= state_resolver.SCHEMA_VERSION:
                 continue
             with self.subTest(old_ceiling=old_ceiling), mock.patch.object(state_resolver, "SCHEMA_VERSION", old_ceiling):
-                self.assertEqual(self.call("view"), {"ok": False, "error": "review_wait_unavailable"})
-                self.assertEqual(self.session.handle("inspect", {"task_id": self.task_id}, self.metadata),
-                                 {"ok": False, "error": "review_wait_unavailable"})
+                for result in (self.call("view"),
+                               self.session.handle("inspect", {"task_id": self.task_id}, self.metadata)):
+                    self.assertFalse(result["ok"])
+                    self.assertEqual("review_wait_unavailable", result["error"])
+                    self.assertEqual("project_admission", result["diagnostic"]["stage"])
+                    self.assertEqual("schema_too_new", result["diagnostic"]["reason"])
+                    self.assertEqual("not_dispatched", result["diagnostic"]["host_mutation"])
+                    self.assertEqual("not_inspected", result["diagnostic"]["retained_effects"])
                 self.assertEqual(before, file_snapshot(self.root))
         self.session.close()
         reloaded = self.make()

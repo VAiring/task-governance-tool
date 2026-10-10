@@ -64,7 +64,10 @@ def _bootstrap_failure(stage: str, error: Exception) -> dict:
     from task_governance_tool.review_wait_runtime.review_wait_host import HOST_BOUNDARY_REASONS, HostAdapterError
     from task_governance_tool.review_wait_runtime.review_wait_repository import RepositoryError
     from task_governance_tool.review_wait_runtime.review_wait_service import ServiceError
+    from task_governance_tool.review_wait_runtime.failure_diagnostics import DiagnosticError
     reason = "candidate_unavailable"
+    if type(error) is DiagnosticError:
+        reason = error.reason
     if type(error) in (BasisError, HostAdapterError, RepositoryError, ServiceError):
         code = getattr(error, "code", None)
         if type(code) is str and code in _BOOTSTRAP_REASONS:

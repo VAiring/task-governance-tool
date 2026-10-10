@@ -1082,8 +1082,8 @@ class ReviewerMaterialTests(PreparationFixture):
         from task_governance_tool.artifact_manifest import observe_staged_git_manifest
 
         self.committed_fixture()
-        for path in ("checks/behavior.py", "nested/local.py"):
-            (self.root / path).parent.mkdir()
+        for path in ("checks/behavior.py", "nested/local.py", "nested/checks/behavior.py"):
+            (self.root / path).parent.mkdir(parents=True, exist_ok=True)
             (self.root / path).write_bytes(b"original = True\n")
         self.git("add", "--", "checks", "nested")
         self.git("commit", "--quiet", "-m", "Nested project and sibling checks")
@@ -1096,7 +1096,7 @@ class ReviewerMaterialTests(PreparationFixture):
             {"kind": "git_snapshot", "value": snapshot.target_value,
              "base_revision": snapshot.target_base_revision},
         ]
-        # Neither the caller's nested cwd nor ambient dependency edits select material.
+        # The governed project fixes coordinates; ambient edits select no material.
         (self.root / "checks/behavior.py").write_bytes(b"ambient = False\n")
         before = file_snapshot(self.root)
         for target in targets:
@@ -1106,11 +1106,112 @@ class ReviewerMaterialTests(PreparationFixture):
                 with self.subTest(kind=target["kind"], directory=directory):
                     command = material["directory_command"].replace("<project-relative-directory>", directory)
                     actual = self.material_read(command)
-                    expected = self.git("ls-tree", "--full-tree", "--no-abbrev", revision + ":" + directory, "--")
+                    expected = self.git("ls-tree", "--full-tree", "--no-abbrev", revision + ":nested/" + directory, "--")
                     self.assertTrue(expected)
                     self.assertEqual(actual.returncode, 0, actual.stderr)
                     self.assertEqual(actual.stdout, expected)
         self.assertEqual(file_snapshot(self.root), before)
+
+    def test_nested_material_and_manual_completion_use_only_governed_paths(self):
+        self.committed_fixture()
+        nested = make_physical_install(self.root / "nested")
+        project = nested.project_root
+        helper = nested.skill_root / "scripts/review_handoff.py"
+        prefix = project.relative_to(self.root).as_posix()
+        (project / ".gitignore").write_text("/.taskgov/\n/.agents/\n/reviews/\n", encoding="utf-8")
+
+        def cli(*args, success=True):
+            result = nested.run(*args, "--json")
+            self.assertEqual(result.returncode == 0, success, result.stdout or result.stderr)
+            return json.loads(result.stdout)
+
+        def invoke(*args, raw=None):
+            return subprocess.run([sys.executable, "-I", "-S", str(helper), args[0],
+                                   "--repo", str(project), *args[1:]], input=raw, capture_output=True,
+                                  cwd=self.root, check=False)
+
+        for name, body in {"AGENTS.md": "Nested rules.\n", "only-sub.md": "Only here.\n",
+                           "source.py": "before\n", "remove.py": "removed\n",
+                           "old.py": "renamed\n"}.items():
+            (project / name).write_text(body, encoding="utf-8")
+        (self.root / "only-root.md").write_text("Outside rules.\n", encoding="utf-8")
+        self.git("add", "--", prefix, "only-root.md")
+        self.git("commit", "--quiet", "-m", "Nested authority and sources")
+        base = self.git("rev-parse", "HEAD").decode().strip()
+        cli("setup")
+        task_id = cli("task", "add", "--title", "Nested completion", "--status", "in_progress",
+                      "--review-tier", "1", "--verification", "Focused nested fixture")["data"]["task"]["task_id"]
+        (project / "source.py").write_text("after\n", encoding="utf-8")
+        (project / "remove.py").unlink()
+        (project / "old.py").rename(project / "new.py")
+        (self.root / "source.py").write_text("outside change\n", encoding="utf-8")
+        self.git("add", "--", prefix, "source.py")
+        target = cli("review", "target", "set", task_id, "--kind", "git_snapshot")["data"]
+        generation = target["task"]["review_target_generation"]
+        prepared = invoke("prepare", "--directory", "reviews/snapshot", "receipt", task_id,
+                          "--result", "pass", "--duration-ms", "1", "--scope-coverage", "full",
+                          "--expected-target-generation", str(generation))
+        self.assertEqual(prepared.returncode, 0, prepared.stdout)
+        snapshot_packet = json.loads(prepared.stdout)["handoff"]["packet_path"]
+
+        def inspect(packet):
+            from task_governance_tool import review_workspace
+            with self.assertRaises(handoff.HandoffError) as unsupported:
+                review_workspace._observation(project, json.loads((project / packet).read_bytes()))
+            self.assertEqual(unsupported.exception.code, "review_workspace_nested_git_unsupported")
+            read = invoke("read", "--packet", packet, "--material-details")
+            self.assertEqual(read.returncode, 0, read.stdout)
+            material = json.loads(read.stdout)["review_material"]
+            self.assertEqual({(row["kind"], row["old_path"], row["new_path"]) for row in material["changes"]},
+                             {("modify", "source.py", "source.py"), ("delete", "remove.py", None),
+                              ("rename", "old.py", "new.py")})
+            inventory = {row["path"] for row in material["unchanged_inventory"]["entries"]}
+            self.assertIn("AGENTS.md", inventory)
+            self.assertIn("only-sub.md", inventory)
+            self.assertNotIn("only-root.md", inventory)
+            self.assertNotIn("SPEC.md", inventory)
+            revision = material["dependency_revision"]
+            for name, body in (("AGENTS.md", b"Nested rules.\n"), ("only-sub.md", b"Only here.\n")):
+                result = invoke("material", "dependency", revision, "--path=" + name)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(result.stdout, body)
+            absent = invoke("material", "dependency", revision, "--path=only-root.md")
+            self.assertNotEqual(absent.returncode, 0)
+            listing = invoke("material", "directory", revision, "--path=")
+            self.assertEqual(listing.returncode, 0, listing.stderr)
+            self.assertIn(b"only-sub.md", listing.stdout)
+            self.assertNotIn(b"only-root.md", listing.stdout)
+            original = (project / packet).read_bytes()
+            delivery = invoke("material", "collect", "--packet", packet,
+                              "--packet-sha256", hashlib.sha256(original).hexdigest(),
+                              raw=encode(["AGENTS.md", "only-sub.md", "only-root.md", "source.py",
+                                          "remove.py", "old.py", "new.py"]))
+            self.assertEqual(delivery.returncode, 1, delivery.stdout)
+            body = json.loads(delivery.stdout)
+            deps = {row["path"]: row for row in body["dependencies"]}
+            for name, text in (("AGENTS.md", "Nested rules.\n"), ("source.py", "after\n"),
+                               ("new.py", "renamed\n")):
+                self.assertEqual(body["bodies"][deps[name]["body_id"]]["text"], text)
+            for name in ("only-root.md", "remove.py", "old.py"):
+                self.assertEqual(deps[name]["status"], "absent_at_target")
+
+        inspect(snapshot_packet)
+        cli("review", "receipt", "add", task_id, "--reviewer", "fixture-human", "--kind", "independent",
+            "--verdict", "pass", "--reviewer-class", "human", "--model-state", "not_applicable",
+            "--skill-state", "not_applicable", "--context-relation", "external_context")
+        self.git("commit", "--quiet", "-m", "Reviewed nested and unrelated changes")
+        revision = self.git("rev-parse", "HEAD").decode().strip()
+        completed = cli("task", "complete", task_id, "--completion-evidence-kind", "git_commit",
+                        "--completion-revision", revision, "--verification-complete", "--review-complete")
+        self.assertEqual(completed["data"]["task"]["status"], "done")
+        self.assertEqual(self.git("rev-parse", "HEAD^").decode().strip(), base)
+
+        commit_task = cli("task", "add", "--title", "Nested immutable commit", "--status", "in_progress",
+                          "--review-tier", "1", "--verification-not-required", "Read-only fixture")["data"]["task"]["task_id"]
+        prepared = invoke("prepare", "--directory", "reviews/commit", "target", commit_task,
+                          "--kind", "git_commit", "--revision", revision)
+        self.assertEqual(prepared.returncode, 0, prepared.stdout)
+        inspect(json.loads(prepared.stdout)["handoff"]["packet_path"])
 
     def test_bounded_inventory_can_discover_omitted_new_dependency_at_fixed_revision(self):
         self.committed_fixture()

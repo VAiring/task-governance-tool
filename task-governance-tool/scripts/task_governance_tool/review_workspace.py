@@ -208,8 +208,8 @@ def _observation(repo, packet):
     from task_governance_tool.verification_runner_git import (
         observe_commit_runner_target, observe_staged_runner_target,
     )
-    # Existing index and commit observers use different Git path projections
-    # beneath an enclosing worktree. Admit only identical root coordinates.
+    # This optional materializer's supported layout remains the Git root;
+    # nested manual review/completion support does not expand its admission.
     prefix = run_git_bytes(repo, ["rev-parse", "--show-prefix"], output_limit=4096)
     if prefix != b"\n":
         files._fail("review_workspace_nested_git_unsupported")

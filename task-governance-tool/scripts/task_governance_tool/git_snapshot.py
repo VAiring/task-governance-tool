@@ -552,7 +552,7 @@ def stream_index_fingerprint(
     record_overflow_error: Callable[[], Exception] | None = None,
     consume_entry: Callable[[GitSnapshotEntry], None] | None = None,
 ) -> GitIndexObservation:
-    """Hash one complete stage-0 index while retaining at most one record."""
+    """Hash the governed project's stage-0 index in project-relative coordinates."""
 
     if (
         not FULL_GIT_OBJECT_ID.fullmatch(base_revision)
@@ -641,7 +641,7 @@ def stream_tree_entries(
     record_overflow_error: Callable[[], Exception] | None = None,
     consume_entry: Callable[[GitSnapshotEntry], None] | None = None,
 ) -> GitTreeObservation:
-    """Validate one recursive tree while retaining at most one record."""
+    """Validate a Git-root tree's governed subtree, using project-relative paths."""
 
     if object_id_length not in {40, 64}:
         raise snapshot_error(code, message, field)
@@ -687,7 +687,6 @@ def stream_tree_entries(
             "ls-tree",
             "-r",
             "-z",
-            "--full-tree",
             "--no-abbrev",
             tree_id,
             "--",
@@ -705,6 +704,7 @@ def read_intent_to_add_views(repo: Path, base_revision: str) -> tuple[bytes, byt
     common = [
         *_FS_MONITOR_DISABLED,
         "diff-index",
+        "--relative",
         "--cached",
         "--raw",
         "-z",
@@ -826,7 +826,7 @@ def verify_git_snapshot_commit(
         )
     tree_payload = run_git_bytes(
         repo,
-        ["ls-tree", "-r", "-z", "--full-tree", "--no-abbrev", tree_id, "--"],
+        ["ls-tree", "-r", "-z", "--no-abbrev", tree_id, "--"],
         code="review_target_mismatch",
         field="completion_revision",
         message="completion commit tree could not be inspected",

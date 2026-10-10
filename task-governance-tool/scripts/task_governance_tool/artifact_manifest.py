@@ -1067,6 +1067,7 @@ def _initial_staged_material(repo: Path) -> tuple[_StagedMaterial, tuple[Artifac
     head_tree = _stream_tree_material(repo, tree_id, object_format, stale=False)
     common = [
         "diff-index",
+        "--relative",
         "--cached",
         "--raw",
         "-z",
@@ -1129,6 +1130,7 @@ def _repeat_staged_material(repo: Path, initial: _StagedMaterial) -> _StagedMate
     tree = _stream_tree_material(repo, tree_id, object_format, stale=True)
     common = [
         "diff-index",
+        "--relative",
         "--cached",
         "--raw",
         "-z",
@@ -1295,6 +1297,7 @@ def _capture_commit_material(
         repo,
         [
             "diff-tree",
+            "--relative",
             "-r",
             "--raw",
             "-z",

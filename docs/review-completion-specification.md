@@ -450,6 +450,12 @@ in the Packet or retained. A bounded Packet path list does not bound this delta;
 overflow fails, never silently truncates. Snapshot changed files use the listed
 after objects (or are deleted); unchanged dependencies use the base commit.
 Commit dependencies use that immutable commit, never ambient HEAD/index/worktree.
+All manifest, dependency and inventory paths are relative to the governed
+project, including when it is below a Git worktree root. An empty directory
+selector names that project's root at the selected revision; directory results
+remain relative to the requested directory. Individual reads and collection
+resolve the same project subtree. A missing project document stays unavailable;
+an enclosing Git root's same-named document is never substituted.
 The transient display also includes `unchanged_inventory`: bytewise ordered
 `entries` (`path`, `mode`, `object_id`), `total`, `returned` and `truncated` only.
 Its revision is the enclosing `review_material.dependency_revision`; the inventory
@@ -848,6 +854,8 @@ Ordinary index/HEAD writers are excluded during this final comparison and ref
 publication. It does not execute hooks, signing, editors or filters; callers
 whose project requires them use manual Git completion. Detached HEAD and nested
 project-relative snapshots also retain the manual path.
+Their existing manual completion and material reads use the governed-subtree
+binding below; this does not extend integrated finalization to nested projects.
 
 Registration, commit publication, completion and notification have separate
 not-started, successful and uncertain outcomes. A failed later stage never undoes
@@ -1636,6 +1644,17 @@ zero-object intent-to-add, and sparse-directory entries. A canonical manifest
 binds base commit, mode, object ID, and raw path bytes; its SHA-256 plus base
 are stored. No Git state, hook, config, worktree, object, index, or ref changes.
 Unstaged/untracked content is outside the snapshot.
+
+The governed project fixes the index/tree scope and raw path origin. At the
+Git root this is the complete Git index/tree. For a nested project it is the
+complete subtree under that project, with project-relative paths, for capture,
+artifact differences and completion comparison alike. The base and sole-parent
+check still use the enclosing repository's full commit IDs. Changes outside
+the governed subtree are outside this target and cannot be represented as
+reviewed project material; they neither enter its manifest nor change its
+snapshot fingerprint. Such unrelated commit content does not waive the exact
+parent or in-project tree match, verification or review gates. No operation
+silently changes the governed root or expands its mutation permission.
 
 Every newly set target is capture version 1 and atomically binds the current
 authority snapshot, nullable acceptance and verification criterion IDs, and

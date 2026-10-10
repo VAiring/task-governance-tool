@@ -2364,7 +2364,10 @@ the sanitized/no-fetch Git environment in a child,
 without changing your shell environment; missing objects remain unavailable.
 Use listed objects for changed snapshot files,
 base-commit paths for unchanged dependencies, and exact commit paths for commit
-targets. Required submodule or unreadable material must be supplied before PASS.
+targets. Delta, dependency and inventory paths are relative to the governed
+project, even below a Git worktree root; an empty directory selector names that
+project's root. Missing project files are not replaced by enclosing documents.
+Required submodule or unreadable material must be supplied before PASS.
 Diff/external targets return `requires_supplied_material`; no content binding
 is inferred from a saved fingerprint or substituted from Git. Existing manifest
 bounds apply without a partial list. No blob, patch or additional file is saved.

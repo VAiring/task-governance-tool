@@ -120,6 +120,15 @@ for mode/object/path entries sorted by raw path bytes:
 The target value is its SHA-256 fingerprint and base is HEAD. It excludes
 unstaged and untracked content.
 
+The existing `git -C <governed-project>` fixes subtree scope without rerooting
+the project or adding a caller coordinate. Index entries use `ls-files`'s
+project-relative default. Recursive tree reads omit `--full-tree` so that
+Git applies the same subtree and path origin. Raw `diff-index` and `diff-tree`
+observations explicitly use `--relative`, excluding outside changes and
+stripping the enclosing prefix. Capture and completion retain the same digest
+format and enclosing full base/parent IDs; only the governed subtree's leaves
+contribute. Root-project observations keep their existing whole-tree behavior.
+
 Target setting first performs bounded Git observation outside SQLite. A short
 writer then rereads Task, Contract, current authority snapshot/criteria, and
 expected generation and atomically inserts one capture-version-1 target,
@@ -365,7 +374,14 @@ The same module's `read_material` dispatches collection to
 diff, dependency and directory. Those raw reads reuse `completion.FULL_GIT_OBJECT_ID`,
 manifest path validation and `completion.safe_git_command/safe_git_environment`;
 no configurable runner or stored wrapper is introduced. Named `--path=` keeps
-an empty root argument intact on PowerShell 5.1. Batch validates each bounded
+an empty root argument intact on PowerShell 5.1.
+Dependency and directory selectors use `<revision>:./<validated-path>` under
+the governed `-C` directory. An empty directory selects that project's tree;
+`ls-tree --full-tree` then lists that already selected directory, with paths
+relative to it. Inventory and collection use the shared project-scoped tree
+stream, so all retrieval forms exclude enclosing same-named documents and
+preserve absence. Object-ID blob/batch reads retain their exact selectors.
+Batch validates each bounded
 ID line before forwarding it to `cat-file --batch`, streams output directly,
 and closes/reaps the child, terminating it on invalid input or interruption.
 It retains no bodies or ID list and adds no batch-count cap. A stream failure

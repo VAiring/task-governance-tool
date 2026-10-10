@@ -245,7 +245,9 @@ def read_material(repo, args):
                 validate_artifact_path(args.path)
         except ArtifactManifestError as exc:
             files._fail(exc.code)
-        spec = revision + ":" + args.path
+        # Git's explicit ./ treeish resolves from the governed project passed
+        # through -C, including an empty directory root; never fall back upward.
+        spec = revision + ":./" + args.path
         arguments = (["show", spec] if action == "dependency" else
                      ["-c", "core.quotePath=false", "ls-tree", "--full-tree", "--no-abbrev", spec, "--"])
     elif action == "batch":

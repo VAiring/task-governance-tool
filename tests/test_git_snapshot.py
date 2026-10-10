@@ -95,6 +95,48 @@ def stage_tree_change(repo: Path, change: str) -> None:
 
 
 class GitSnapshotTests(unittest.TestCase):
+    def test_nested_snapshot_and_completion_share_project_scope(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "repo"
+            base = init_git_repo(root)
+            project = root / "nested"
+            project.mkdir()
+            (project / "reviewed.txt").write_text("reviewed\n", encoding="utf-8")
+            (root / "outside.txt").write_text("outside before review\n", encoding="utf-8")
+            git(root, "add", "--all")
+            snapshot = capture_git_snapshot(project)
+            root_snapshot = capture_git_snapshot(root)
+            self.assertEqual(snapshot.entry_count, 1)
+            self.assertEqual(snapshot.changed_paths, (b"reviewed.txt",))
+            self.assertNotEqual(snapshot.fingerprint, root_snapshot.fingerprint)
+
+            # Outside changes are not part of a nested project's reviewed tree.
+            (root / "outside.txt").write_text("outside after review\n", encoding="utf-8")
+            git(root, "add", "outside.txt")
+            self.assertEqual(capture_git_snapshot(project), snapshot)
+            tree = git(root, "write-tree").stdout.strip()
+            candidate = commit_tree(root, tree, base, message="nested completion")
+            before = repository_file_state(root)
+            verified = verify_git_snapshot_commit(
+                project, candidate, expected_base_revision=base,
+                expected_fingerprint=snapshot.fingerprint)
+            self.assertEqual(verified.fingerprint, snapshot.fingerprint)
+            self.assertEqual(repository_file_state(root), before)
+            with self.assertRaises(GitSnapshotError):
+                verify_git_snapshot_commit(root, candidate, expected_base_revision=base,
+                                           expected_fingerprint=root_snapshot.fingerprint)
+            wrong_parent = commit_tree(root, tree, candidate, message="wrong parent")
+            with self.assertRaises(GitSnapshotError):
+                verify_git_snapshot_commit(project, wrong_parent, expected_base_revision=base,
+                                           expected_fingerprint=snapshot.fingerprint)
+            (project / "reviewed.txt").write_text("changed after review\n", encoding="utf-8")
+            git(root, "add", "nested/reviewed.txt")
+            changed = commit_tree(root, git(root, "write-tree").stdout.strip(), base,
+                                  message="changed nested content")
+            with self.assertRaises(GitSnapshotError):
+                verify_git_snapshot_commit(project, changed, expected_base_revision=base,
+                                           expected_fingerprint=snapshot.fingerprint)
+
     def test_manifest_v1_is_fixed_and_sorts_raw_path_bytes(self):
         base = "1" * 40
         entries = [

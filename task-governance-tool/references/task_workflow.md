@@ -229,8 +229,12 @@ Caller declarations do not prove actual model/Skill use or review truth.
    blindly register the result again.
 7. [Record the actual reviews](#prepare-and-record-reviews) using the returned
    Packet; neither successful route needs standalone Packet preparation.
-8. [Continue after reviews](#continue-after-reviews) using the selected route's
-   actual results. An integrated completed report already includes Task completion;
+8. A received integrated report matching the original Task/target generation,
+   with `status=completed`, successful stages, actual Task done and sufficient
+   visible reporting facts, can be reported directly when no contradiction or
+   action remains; no extra guide read, routine query or replay is required.
+   Preserve Findings, warnings, limitations and `not_recorded` facts in the report.
+   For other results use [Continue after reviews](#continue-after-reviews);
    use [explicit manual completion](#manual-completion) only when applicable.
 
 `doctor`, completion `--check`, and `task checkpoint` are optional and absent
@@ -648,7 +652,9 @@ registration. Neither confirms review truth, independence or completion. The fix
 [save operation](cli_contracts.md#save-review-original) documents UTF-8 input
 when needed; its command is already in each generated request.
 
-After all dispatched reviewers end, use [Continue after reviews](#continue-after-reviews).
+After all dispatched reviewers end, report an already received complete integrated
+success directly under the normal loop's conditions; otherwise use
+[Continue after reviews](#continue-after-reviews).
 Missing, failed or uncertain handoff/registration uses [handoff recovery](#review-handoff-recovery).
 If shared ignored files are unavailable, use the [direct route](#direct-review-transport).
 
@@ -656,17 +662,28 @@ If shared ignored files are unavailable, use the [direct route](#direct-review-t
 
 This section owns result processing for both same-turn completion and resumption.
 Keep the original Task/Packet, originals and selected route's continuation command.
-An ended reviewer, a save acknowledgement or an accepted notification is not
-PASS, registration success or Task completion. Resolve previously reported
-material or judgment questions; do not infer unseen results from a short message.
+An ended reviewer, a save acknowledgement, `ok=true`, review PASS,
+`reviews_ended`, accepted sending, notification correlation or a
+`delivery.source_body=complete` label alone does not establish Task completion
+or unseen content. Resolve previously reported material or judgment questions.
 
-- **Integrated report available:** use its actual Task/target, work coverage,
+- **Complete integrated success received:** when the body actually available
+  matches the original Task/target generation, shows `status=completed` with
+  successful stages and actual Task done, and provides the facts needed to
+  report without unresolved contradiction or action, report directly. No extra
+  guide read, routine state retrieval/check or successful-operation replay is
+  required. Use its actual Task/target, work coverage,
   verification, original and registered reviews, every Finding/ID (including low
   and resolved Findings), gates, stage outcomes, confirmed commit, limitations,
-  warnings and next action. Report confirmed completion or handle the named
-  blocker. Do not repeat successful registration, commit or completion, or add a
-  routine retrieval/check. An `ok` result alone is not done; `status=completed`
-  confirms the integrated stages.
+  warnings and next action. Findings, warnings, limitations or
+  `recorded_work.status=not_recorded` alone do not exclude this path: disclose
+  them faithfully, including the absence of a recorded work summary. Do not
+  invent missing work details. This is a reporting shortcut, not a reading ban
+  or a waiver of the next Task's authority reads, review or completion gates.
+- **Other integrated report available:** handle the named blocker or judgment
+  using the applicable routes below. Preserve all actual results and successful
+  stages; incomplete, unknown, failed or contradictory results never become
+  success from a label. Do not replay successful registration, commit or completion.
 - **Integrated explicit continuation:** when waiting was unnecessary or a worker
   was not used under the [applicable exception](#choose-the-completion-route), or
   a scheduled wait returned `reviews_ended` without a finalization report, run the retained
@@ -690,7 +707,7 @@ material or judgment questions; do not infer unseen results from a short message
 
 When Findings require judgment, use [Repair Findings](#repair-findings).
 A partial success preserves every successful stage; resolve the reported blocker
-and continue only the remaining tail. An incomplete, lost or uncertain report
+and continue only the remaining tail. An incomplete, lost, uncertain or contradictory report
 uses [finalization recovery](cli_contracts.md#recover-integrated-finalization)
 for an integrated intent, or [handoff recovery](#review-handoff-recovery) for
 parent registration. Recovery alone is not a reason for a new target or review;
@@ -705,7 +722,8 @@ resume condition and end the ordinary turn without claiming Task completion.
 
 ### Complete Work
 
-Use [Continue after reviews](#continue-after-reviews) to interpret actual outcomes.
+Report a complete received integrated success directly under the normal loop's
+conditions; otherwise use [Continue after reviews](#continue-after-reviews).
 Integrated completion already includes the confirmed commit and native Task
 completion. Only the parent-managed route or an applicable explicit alternative
 uses [manual completion](#manual-completion); review PASS alone is not Task done.

@@ -68,7 +68,17 @@ class ManagedHost(PublicMcpHost):
             raise HostAdapterError("host_call_failed")
         if probe in self._receipt_headers and self._receipt_headers[probe] != prefix:
             raise HostAdapterError("host_call_failed")  # Refresh never rebinds the target.
-        suffix = "\n成功済みの処理を繰り返さず、この実結果で報告・必要な対応を続けてください。個別ACKや通知の再送は不要です。"
+        suffix = (
+            "\n実際に届いた本文で元Task・対象世代の一致、status=completed、各段階の成功とTaskのdone、"
+            "報告に必要な実結果が確認でき、未解決の矛盾や要対応事項がなければ、追加のガイド読取り・"
+            "定例状態照会・成功済み処理の再実行なしで直接報告してください。"
+            "低重大度・解消済みも含む全Finding、警告、制限、not_recordedの事実を隠さず伝えてください。"
+            "それらの存在だけで直接報告の対象外にはなりません。ok=true、レビュー終了やPASS、送信受付、"
+            "通知照合、delivery.source_body=completeというラベルだけでは完了や未読内容を証明できません。"
+            "不完全・不明・失敗・矛盾・判断や修正が必要な結果は"
+            "references/task_workflow.md#continue-after-reviews の既存手順を使ってください。"
+            "個別ACKや通知の再送は不要です。次のTaskの正本読取りと既存ゲートは引き続き必要です。"
+        )
         raw = json.dumps(value, ensure_ascii=False, allow_nan=False, separators=(",", ":"))
         (prefix + raw + suffix).encode("utf-8")  # Reject invalid text before size-only fallback.
         try:

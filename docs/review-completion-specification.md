@@ -1096,8 +1096,17 @@ or configuration is added to the normal request.
 
 The MCP description identifies effects, readiness and the existing guide links;
 the Skill owns caller sequencing. The workflow's Continue After Reviews section
-is the single consumer procedure for result handling, linked from waiting,
-dispatch, completion and CLI detail. It preserves all required report fields and
+is the single consumer procedure for result handling. Entries expose its direct
+reporting condition: a received body matching the original Task/target generation
+with `status=completed`, successful stages, actual Task done and sufficient
+reporting facts, without unresolved contradiction or action, needs no extra
+guide read, routine query or replay. Findings (including low/resolved), warnings,
+limitations and `not_recorded` remain reported and alone do not require recovery.
+Source labels, correlation, `ok=true`, review end/PASS and send acceptance are
+insufficient; incomplete, unknown, failed, conflicting or action-requiring
+results use the existing result/recovery routes. This is instruction guidance,
+not a change to report fields, runtime completion/delivery or any existing gate.
+The procedure preserves all required report fields and
 successful stages, routes parent submission only from manual preparation, and
 keeps incomplete/unknown recovery conditional. Recovery alone does not require
 new review; changed basis and observed reviewer failures retain their gates.

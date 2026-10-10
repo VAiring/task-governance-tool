@@ -739,6 +739,16 @@ the unseen suffix. The leading identity is limited to 2,000 UTF-16 units and mus
 fit completely inside the returned prefix. Ordinary fixed review-only notices
 retain their 4,096-unit exact whole-event comparison.
 
+The fixed notification suffix and MCP description expose the Skill's compact
+direct-report condition: an actually received matching Task/target generation,
+`status=completed`, successful stages, actual Task done and sufficient reporting
+facts without unresolved contradiction or action. They preserve disclosure of
+all Findings (also low/resolved), warnings, limitations and `not_recorded` work;
+these alone do not exclude direct reporting. Labels and correlation never certify
+unseen results. Other outcomes link conditionally to Continue After Reviews.
+This guidance applies to the visible body, including the incomplete-delivery
+notice below, without adding a runtime classifier or changing any existing gate.
+
 The shared public adapter encodes the actual tool-call frame for effect-free
 admission against the existing local relay's 262,144-byte bound. This includes
 JSON framing, UTF-8 text and genuine executor metadata; it is not a guessed host

@@ -73,8 +73,18 @@ and direct transports remain available. When reviews need waiting and the
 authorized service is enabled and available, use automatic waiting and end the
 parent turn after confirmed readiness. The linked procedure retains waiting-free
 continuation and the existing exceptions. Use the [review workflow](references/task_workflow.md#prepare-and-record-reviews)
-for dispatch and [continue after reviews](references/task_workflow.md#continue-after-reviews)
-for returned results or resumption. Assigned independent reviewers use the separate entry above.
+for dispatch. Assigned independent reviewers use the separate entry above.
+
+When a received integrated report's visible body matches the original Task/target
+generation, shows `status=completed` with successful stages and actual Task done,
+and supplies the reporting facts without unresolved contradiction or action,
+report directly without another guide read, routine query or successful-operation
+replay. Include Findings (also low/resolved), warnings, limitations and work
+reported as `not_recorded`; their presence alone does not exclude this path.
+Labels, review PASS or `reviews_ended` alone do not prove completion or unseen
+content. For other results, including incomplete, unknown, failed, conflicting
+or action-requiring reports, use [Continue after reviews](references/task_workflow.md#continue-after-reviews).
+Starting the next Task still requires its normal authority reads and gates.
 
 Read only the linked responsibility needed for the operation or returned
 condition, including its applicable exceptions and input rules. References

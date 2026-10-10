@@ -244,6 +244,39 @@ class ManagedHostTests(unittest.TestCase):
         with mock.patch.object(host, "_json_call", return_value=value), self.assertRaises(HostAdapterError):
             host.observe_receipt(OTHER, ORIGINAL)
 
+    def test_report_guidance_preserves_completed_details_and_attention_facts(self):
+        import re
+        from read_reference import read_reference
+
+        completed = {**self.report("独立レビュー合格"), "ok": True, "status": "completed",
+            "task_status": "done", "completion_gate": {"ready": True},
+            "recorded_work": {"status": "not_recorded", "checkpoint": None, "recent_notes": [],
+                              "coverage": "latest_checkpoint_and_recent_task_events"},
+            "stages": {"registration": "succeeded", "commit": "succeeded", "completion": "succeeded"},
+            "commit_id": "c" * 40, "blocking_code": None,
+            "maintenance_warnings": [{"code": "viewer_refresh_failed"}],
+            "next_action": "Report completion; do not repeat registration, commit or completion."}
+        completed["originals"][1] = {"reviewer": "two", "verdict": "pass", "summary": "合格",
+            "findings": [{"severity": "low", "summary": "補足の指摘"}]}
+        completed["registered_findings"] = [{"review_finding_id": "finding-one", "severity": "low",
+            "status": "resolved", "summary": "補足の指摘", "resolution_summary": "説明に反映済み"}]
+        attention = {**copy.deepcopy(completed), "ok": False, "status": "attention_required",
+                     "blocking_code": "finalization_unavailable", "next_action": "Inspect the retained result."}
+        conflicting = {**copy.deepcopy(completed), "task_status": "in_progress",
+                       "stages": {"registration": "succeeded", "commit": "succeeded", "completion": "unknown"}}
+        for report in (completed, attention, conflicting):
+            with self.subTest(status=report["status"], completion=report["stages"]["completion"]):
+                host = self.host()
+                host.set_finalization_result(OTHER, report)
+                prompt = host._direct_prompt(OTHER)
+                payload = json.loads(prompt.splitlines()[2])
+                # Guidance never filters evidence or classifies completion from
+                # status alone; all observed facts reach the caller unchanged.
+                self.assertEqual({k: v for k, v in payload.items() if k != "delivery"}, report)
+                links = re.findall(r"references/[a-z_]+\.md#[a-z-]+", "\n".join(prompt.splitlines()[3:]))
+                self.assertEqual(links, ["references/task_workflow.md#continue-after-reviews"])
+                self.assertTrue(read_reference(links[0], Path(__file__).resolve().parents[1] / "task-governance-tool"))
+
     def test_truncated_correlation_does_not_claim_unseen_body_integrity(self):
         host = self.host()
         host.set_finalization_result(OTHER, self.report("x" * 25000))

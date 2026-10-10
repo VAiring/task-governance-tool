@@ -2163,11 +2163,19 @@ the complete report without creating state or replaying effects. Reports contain
 Task/target, recorded work with coverage or `not_recorded`, verification, original
 and registered reviews, every registered Finding/ID, gates, stage intent and
 observed results, confirmed commit, missing fields, warnings and next action.
-`ok` means the operation had no processing error; only `status=completed` confirms
-all stages, not a successful check, registration or message delivery alone.
+`ok` means the operation had no processing error; completion reporting requires
+the actual completed result below, not a successful check, registration or
+message delivery alone.
 
-Use [Continue after reviews](task_workflow.md#continue-after-reviews) for result
-processing and the applicable next action. Use [integrated recovery](#recover-integrated-finalization)
+A received report whose visible body matches the original Task/target generation,
+shows `status=completed` with successful stages and actual Task done, and contains
+the reporting facts without unresolved contradiction or action can be reported
+directly without an extra guide read, routine query or replay. Preserve Findings
+(including low/resolved), warnings, limitations and `not_recorded` facts; their
+presence alone does not require recovery. Labels and review/message success alone
+do not establish completion or unseen content. For other results, use
+[Continue after reviews](task_workflow.md#continue-after-reviews).
+Use [integrated recovery](#recover-integrated-finalization)
 only for a blocker, partial success or missing/uncertain result.
 
 #### Recover Integrated Finalization

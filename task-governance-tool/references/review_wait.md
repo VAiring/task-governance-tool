@@ -69,8 +69,7 @@ this service and end the parent turn after confirmed readiness. An explicit
 user request for parent-managed waiting remains an exception; otherwise do not
 substitute a parent-side wait by preference. This applies to both integrated
 and manual completion transports. If existing dispatch/results already show
-all reviewers ended, go directly to
-[Continue after reviews](task_workflow.md#continue-after-reviews); no reservation
+all reviewers ended, process the actual result under step 4 below; no reservation
 or extra status query is needed just to establish that branch.
 If a prerequisite is unavailable or an operation fails, use
 [failure and recovery guidance](#failures-stop-and-diagnosis); never retry an
@@ -100,9 +99,17 @@ justify further discovery; this adds no lookup or confirmation prerequisite.
    send when every exact reviewer ends and the original parent is idle. This is
    readiness, not Task completion. For a failed call, the linked failure
    procedure distinguishes ordinary turn ending after reporting a limitation.
-4. On resumption or an all-ended result, follow
-   [Continue after reviews](task_workflow.md#continue-after-reviews), the single
-   result-processing procedure for integrated, parent-managed and direct routes.
+4. On resumption, a received integrated report whose visible body matches the
+   original Task/target generation, shows `status=completed` with successful
+   stages and actual Task done, and supplies the reporting facts without
+   unresolved contradiction or action can be reported directly. No extra guide
+   read, routine query or successful-operation replay is needed. Preserve
+   Findings (including low/resolved), warnings, limitations and `not_recorded`
+   facts; their presence alone does not require recovery. Labels, correlation,
+   PASS or `reviews_ended` alone do not prove completion or unseen content.
+   For other results, including incomplete, unknown, failed, conflicting or
+   action-requiring reports, use
+   [Continue after reviews](task_workflow.md#continue-after-reviews).
    The worker observes the matching incoming event and records receipt; no
    individual ACK, reservation management or `wait-ended` call is needed.
 

@@ -814,7 +814,17 @@ each rule or internal detail to be repeated in every consumer document.
 Review handoff routing is chosen before the first preparation in the bounded
 loop. The workflow's Choose The Completion Route section owns applicability,
 Prepare And Record Reviews owns dispatch, and Continue After Reviews owns the
-shared post-review/resumption procedure. Manual Completion and CLI recovery
+shared post-review/resumption procedure. Skill, waiting, helper, MCP and notification
+entries state its compact direct-report condition rather than requiring that
+procedure's retrieval after every successful notification. The condition uses
+the actually visible matching Task/target generation, `status=completed`,
+successful stages, actual Task done and sufficient reporting facts, with no
+unresolved contradiction or action. Findings (also low/resolved), warnings,
+limitations and `not_recorded` remain visible without automatically excluding
+success. Labels or message/review success never stand in for unseen results.
+All other outcomes retain conditional result/recovery links. No prose classifier,
+runtime branch, new gate, blanket reading ban or next-Task authority exemption
+is introduced. Manual Completion and CLI recovery
 detail are linked conditional siblings, excluded from normal subtrees. The
 Review/completion owners retain output contracts and runtime behavior. The bundled fixed handoff
 helper replaces caller-generated Packet extraction, directory preparation,
@@ -829,7 +839,8 @@ for both transport routes. The parent dispatches unchanged independent-review
 requests directly; the project MCP runtime owns the ten-minute check and
 same-parent resumption. The workflow supplies applicability and a direct link
 to `references/review_wait.md#normal-wait`, the single home for waiting itself;
-its resumption step links directly to Continue After Reviews. Explicit Setup and
+its resumption step permits reporting a complete actual success directly and
+links other outcomes to Continue After Reviews. Explicit Setup and
 failure/compatibility paths have separate entries.
 The older `wait-across-parent-turns` anchor remains compatible; ordinary
 transport entries do not route through it. Selection/ownership response use

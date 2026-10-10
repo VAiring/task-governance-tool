@@ -738,6 +738,29 @@ validation prove their bounded contracts, not live Guardian reduction. Report
 actual host activation/results separately; no token, billing or savings claim
 follows from examples, local timing or `project_root_uninspectable` alone.
 
+Normal use retains the configured absolute Python/package/project, shell,
+isolated `-I -S -B` flags and `--records-only` from introduction or handoff,
+without rereading the full hooks file, bootstrap or approval guide. Generated
+restricted continuations are reused unchanged. Introduction/update guidance
+passes these already-known inputs and the separately observed host activation
+outcome onward; this requires no new configuration store or per-Task record.
+
+For a session missing that information, the optional read-only
+`scripts/task_preapproval.py invocation --repo <project> --existing-hooks <file>`
+returns only `python`, `package`, `repo`, `shell`, `python_flags`, `records_only`,
+`task_context_command`, `handoff_prefix`, and `host_activation="not_checked"`.
+An available Python 3.12+ can run the reader; the returned interpreter is the
+configured one. The output describes one current generated definition, not host
+trust, loading, permission or execution evidence. It requires an unambiguous
+exact match to the current package's proposal and pins, never executes hook
+code or the returned invocation, and makes no state/configuration/trust writes.
+Missing, stale, ambiguous, invalid or uninspectable input yields only
+`{"error":"preapproval_invocation_unavailable"}` with exit 1. It preserves the
+existing approval route; neither success nor failure authorizes setup, re-trust
+or blind retry. Full hook inspection belongs to introduction, update or explicit
+diagnosis. Existing known information needs no retrieval command or question,
+and `propose` retains its preserving candidate-only output.
+
 ## Reduced Loop Discipline
 
 <a id="reduced-loop-discipline"></a>

@@ -513,6 +513,21 @@ trust, invokes setup nor grants future package revisions. The target physical
 package must be the project's supported install or development self-host path.
 The host must load and trust the concrete proposed definition separately.
 
+The same helper's optional `invocation` operation reads at most the existing
+1-MiB JSON limit from an explicitly supplied physical hooks file. It decodes
+literal generated PowerShell or POSIX command syntax as data, extracts the
+interpreter and shell, and compares the complete group with a reconstructed
+current proposal. It never evaluates the embedded bootstrap. Unrelated groups
+are ignored; zero or multiple distinct matching bindings fail with the fixed
+unavailable result. Current pins and physical package/project/interpreter checks
+remain required. Success renders only the bounded invocation fields and literal
+commands defined by the specification, with host activation explicitly unchecked.
+No stored summary, Task record, normal-loop prerequisite, hook allow case or
+trust/configuration mutation is added. Known introduction inputs and generated
+restricted continuations are the ordinary handoff; extraction is only a missing-
+information fallback. Tests cover both shells, candidate preservation, ambiguity,
+drift, hostile/unrelated hooks, no writes and the actual restricted call shape.
+
 The core target handler passes `allow_runner=False` only for restricted calls.
 The Runner service retains its ordinary eligibility/preflight, then rejects an
 eligible execution before any Runner lock, cleanup, T1 or target persistence.

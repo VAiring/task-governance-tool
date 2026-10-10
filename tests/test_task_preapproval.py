@@ -160,6 +160,100 @@ class HookFixtureTests(unittest.TestCase):
         self.assertEqual(len(existing["hooks"]["PermissionRequest"]), 1)
         self.assertEqual(before, file_snapshot(self.repo))
 
+    def test_configured_invocation_recovers_only_reusable_binding_for_each_shell(self):
+        before = file_snapshot(self.repo)
+        for shell in ("powershell", "posix"):
+            candidate = policy.propose({}, repo=self.repo, python=self.python, package=self.package, shell=shell)
+            original = copy.deepcopy(candidate)
+            info = policy.configured_invocation(candidate, repo=self.repo, package=self.package)
+            self.assertEqual(set(info), {"python", "package", "repo", "shell", "python_flags",
+                                         "records_only", "task_context_command", "handoff_prefix", "host_activation"})
+            self.assertEqual(info["python"], str(self.python))
+            self.assertEqual(info["package"], str(self.package))
+            self.assertEqual(info["repo"], str(self.repo))
+            self.assertEqual(info["shell"], shell)
+            self.assertEqual(info["python_flags"], ["-I", "-S", "-B"])
+            self.assertIs(info["records_only"], True)
+            # A matching definition may still be untrusted or disabled in the host.
+            self.assertEqual(info["host_activation"], "not_checked")
+            words = policy.literal_command(info["task_context_command"], shell)
+            self.assertEqual(words, [str(self.python), "-I", "-S", "-B", str(self.install.entrypoint),
+                                     "--records-only", "task", "context", "--repo", str(self.repo), "--json"])
+            self.assertEqual(policy.literal_command(info["handoff_prefix"], shell),
+                             [str(self.python), "-I", "-S", "-B", str(self.package / "scripts/review_handoff.py"),
+                              "--records-only"])
+            event = self.event()
+            event["tool_input"]["command"] = info["task_context_command"]
+            self.assertEqual(policy.decide(event, repo=self.repo, python=self.python, package=self.package,
+                                          digest=self.digest, shell=shell)["hookSpecificOutput"]["decision"],
+                             {"behavior": "allow"})
+            self.assertEqual(candidate, original)
+            self.assertNotIn("EncodedCommand", json.dumps(info))
+            self.assertNotIn("bootstrap", json.dumps(info))
+        self.assertEqual(before, file_snapshot(self.repo))
+
+    def test_invocation_ignores_unrelated_hooks_and_rejects_ambiguous_or_stale_bindings(self):
+        candidate = policy.propose({"hooks": {"Stop": [{"private": "do not disclose"}]}},
+            repo=self.repo, python=self.python, package=self.package, shell="powershell")
+        groups = candidate["hooks"]["PermissionRequest"]
+        groups.insert(0, {"matcher": "^Bash$", "hooks": [{"type": "command", "command": "arbitrary private hook"}]})
+        self.assertEqual(policy.configured_invocation(candidate, repo=self.repo, package=self.package)["shell"], "powershell")
+        ambiguous = policy.propose(candidate, repo=self.repo, python=self.python, package=self.package, shell="posix")
+        with self.assertRaises(ValueError):
+            policy.configured_invocation(ambiguous, repo=self.repo, package=self.package)
+        duplicate = copy.deepcopy(candidate)
+        duplicate["hooks"]["PermissionRequest"].append(copy.deepcopy(groups[-1]))
+        self.assertEqual(policy.configured_invocation(duplicate, repo=self.repo, package=self.package)["shell"], "powershell")
+        changed = self.package / "SKILL.md"
+        changed.write_bytes(changed.read_bytes() + b"\nChanged package\n")
+        with self.assertRaises(ValueError):
+            policy.configured_invocation(candidate, repo=self.repo, package=self.package)
+        refresh_test_manifest(self.package)
+        with self.assertRaises(ValueError):
+            policy.configured_invocation(candidate, repo=self.repo, package=self.package)
+
+    def test_invocation_never_executes_bootstrap_and_requires_complete_current_group(self):
+        marker = self.repo / "must-not-execute"
+        candidate = policy.propose({}, repo=self.repo, python=self.python, package=self.package, shell="posix")
+        changed = copy.deepcopy(candidate)
+        changed["hooks"]["PermissionRequest"][0]["hooks"][0]["command"] = policy.shell_command(
+            [str(self.python), "-I", "-S", "-B", "-c", f"from pathlib import Path; Path({str(marker)!r}).touch()"], "posix")
+        bad_timeout = copy.deepcopy(candidate)
+        bad_timeout["hooks"]["PermissionRequest"][0]["hooks"][0]["timeout"] = 999
+        for value in ({}, {"hooks": []}, changed, bad_timeout):
+            with self.subTest(value=value), self.assertRaises(ValueError):
+                policy.configured_invocation(value, repo=self.repo, package=self.package)
+        self.assertFalse(marker.exists())
+
+    def test_invocation_cli_reads_existing_definition_without_python_or_shell_inputs(self):
+        self.assertEqual(self.install.run("setup", "--repo", str(self.repo), "--json").returncode, 0)
+        shell = "powershell" if os.name == "nt" else "posix"
+        hooks_file = self.repo / "hooks-input.json"
+        candidate = policy.propose({}, repo=self.repo, python=self.python, package=self.package, shell=shell)
+        hooks_file.write_text(json.dumps(candidate), encoding="utf-8")
+        before = file_snapshot(self.repo)
+        command = [str(self.python), "-I", "-S", "-B", str(self.package / "scripts/task_preapproval.py"),
+                   "invocation", "--repo", str(self.repo), "--existing-hooks", str(hooks_file)]
+        result = subprocess.run(command, capture_output=True, check=False, timeout=30)
+        self.assertEqual(result.returncode, 0, result.stdout or result.stderr)
+        info = json.loads(result.stdout)
+        self.assertEqual(info["host_activation"], "not_checked")
+        self.assertEqual(before, file_snapshot(self.repo))
+        # Exercise the actual returned restricted invocation, rather than only its formatting.
+        result = subprocess.run(policy.literal_command(info["task_context_command"], shell),
+                                cwd=self.repo, capture_output=True, check=False, timeout=30)
+        self.assertEqual(result.returncode, 0, result.stdout or result.stderr)
+        self.assertEqual(json.loads(result.stdout)["command"], "task.context")
+        self.assertEqual(before, file_snapshot(self.repo))
+        for raw in (b"{\"private\":\"never echo this\"}", b"{" + b" " * policy.LIMIT):
+            hooks_file.write_bytes(raw)
+            invalid_before = file_snapshot(self.repo)
+            result = subprocess.run(command, capture_output=True, check=False, timeout=30)
+            self.assertEqual(result.returncode, 1, result.stdout or result.stderr)
+            self.assertEqual(json.loads(result.stdout), {"error": "preapproval_invocation_unavailable"})
+            self.assertEqual(result.stderr, b"")
+            self.assertEqual(invalid_before, file_snapshot(self.repo))
+
     def test_generated_trusted_bootstrap_runs_and_declines_changed_policy_before_import(self):
         shell = "powershell" if os.name == "nt" else "posix"
         candidate = policy.propose({}, repo=self.repo, python=self.python, package=self.package, shell=shell)

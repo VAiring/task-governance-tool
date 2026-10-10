@@ -8,6 +8,7 @@ detail are not prerequisites for normal Task work.
 
 - [Invocation And Public Inventory](#invocation-and-public-inventory)
 - [Optional Task Preapproval](#optional-task-preapproval)
+- [Configured Preapproval Invocation](#configured-preapproval-invocation)
 - [Envelope And Read/Write Boundary](#envelope-and-readwrite-boundary)
 - [`setup`](#setup)
 - [`doctor`](#doctor)
@@ -128,11 +129,46 @@ Applicable common options may appear before or after command groups as shown by
 `data.selected.task.task_id` from `task context`. Use returned values, not the
 illustrative IDs in JSON examples.
 
+## Configured Preapproval Invocation
+
+Use this only when the configured invocation is missing from the session.
+Reuse a complete introduction/handoff summary or generated restricted continuation
+when already available; no hook read, extra command or question is needed then.
+
+If needed, the read-only helper below extracts only the invocation information
+from an existing project hook definition. Use an available local Python 3.12+
+to run the reader at the known package; its returned `python` is the configured
+interpreter, which need not be the reader's interpreter. Do not print the whole
+hooks file or decode its embedded bootstrap into the conversation.
+
+```powershell
+& '<available-python>' '-I' '-S' '-B' '<absolute-package>/scripts/task_preapproval.py' 'invocation' '--repo' '<absolute-project>' '--existing-hooks' '<absolute-project>/.codex/hooks.json'
+```
+
+It returns `python`, `package`, `repo`, `shell`, `python_flags`, `records_only`,
+the literal `task_context_command`, `handoff_prefix`, and
+`host_activation="not_checked"`. Use that shell and those paths/flags for existing
+authorized records, retaining the explicit `--repo`; generated restricted
+continuations remain ready to use unchanged. This retrieves data, does not run
+the returned command, and adds no normal-loop step or saved configuration.
+
+The reader accepts one unambiguous definition matching this package's current
+generated proposal and pins. Missing, stale, ambiguous or uninspectable input
+returns `preapproval_invocation_unavailable` without hook content. Obtain the
+known introduction/handoff information if available, or retain the ordinary
+approval route for authorized work; do not guess the binding, remove a denied
+restriction and retry, or silently reconfigure/retrust. Even successful extraction
+does not establish host loading, trust, permission or actual Guardian behavior.
+Only introduction, package update or explicit diagnosis calls for the full
+[preapproval procedure](#optional-task-preapproval).
+
 ## Optional Task Preapproval
 
 Read this section only for explicit introduction or diagnosis of host preapproval.
 Normal work reuses the already configured invocation, without a permission-guide
 read, new command, approval question or per-Task authorization record.
+Missing invocation information uses the separate
+[bounded retrieval](#configured-preapproval-invocation), not this full procedure.
 
 There are two classes: already-authorized ordinary Task records, and operations
 that retain their existing rules. Preapproval never authorizes unsolicited Task
@@ -198,6 +234,13 @@ decline to the existing approval flow. Package
 changes require a fresh reviewed proposal; there is no automatic trust refresh.
 The physical interpreter is trusted local infrastructure, not a command-wide
 Python permission. These checks do not provide a hostile-process execution lease.
+
+After approved introduction or update, hand off the known absolute Python,
+package and project paths, shell, `-I -S -B` and `--records-only` invocation,
+separately from the observed host activation/trust outcome. Reuse the inputs
+already used for the proposal; no new settings file or helper call is required.
+`propose` still emits only the preserving candidate JSON. A later session can
+receive this short summary or use the conditional reader above.
 
 The hook admits only the configured literal invocation, exact supported
 arguments and one bound project. It declines unknown syntax, substitutions,

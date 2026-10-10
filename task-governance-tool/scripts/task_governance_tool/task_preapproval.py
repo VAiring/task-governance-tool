@@ -271,19 +271,81 @@ def propose(existing, *, repo, python, package, shell):
     return candidate
 
 
+def configured_invocation(existing, *, repo, package):
+    """Read one current generated binding without executing or returning hook code.
+
+    Rebuilding the candidate verifies its entire definition and current pins;
+    it says nothing about whether the host has loaded or trusted that definition.
+    Unrelated hooks are not interpreted, and competing bindings are ambiguous.
+    """
+    if type(existing) is not dict or type(existing.get("hooks")) is not dict:
+        raise ValueError
+    groups = existing["hooks"].get("PermissionRequest")
+    if type(groups) is not list:
+        raise ValueError
+    matches = set()
+    encoded_prefix = "powershell.exe -NoProfile -NonInteractive -EncodedCommand "
+    for group in groups:
+        try:
+            if type(group) is not dict or group.get("matcher") != "^Bash$":
+                continue
+            hooks = group.get("hooks")
+            if type(hooks) is not list or len(hooks) != 1 or type(hooks[0]) is not dict:
+                continue
+            command = hooks[0]["command"]
+            if not isinstance(command, str) or len(command.encode("utf-8")) > LIMIT:
+                continue
+            shell = "powershell" if command.startswith(encoded_prefix) else "posix"
+            if shell == "powershell":
+                command = base64.b64decode(command[len(encoded_prefix):], validate=True).decode("utf-16le")
+            words = literal_command(command, shell)
+            if len(words) != 6 or words[1:5] != ["-I", "-S", "-B", "-c"]:
+                continue
+            python = Path(words[0])
+            expected = propose({}, repo=repo, python=python, package=package, shell=shell)
+            if group == expected["hooks"]["PermissionRequest"][0]:
+                matches.add((str(python), shell))
+        except (OSError, ValueError, KeyError, TypeError, RecursionError):
+            continue
+    if len(matches) != 1:
+        raise ValueError
+    python, shell = matches.pop()
+    prefix = [python, "-I", "-S", "-B"]
+    return {
+        "python": python, "package": str(package), "repo": str(repo), "shell": shell,
+        "python_flags": ["-I", "-S", "-B"], "records_only": True,
+        "task_context_command": shell_command([
+            *prefix, str(package / "scripts/taskgov.py"), "--records-only",
+            "task", "context", "--repo", str(repo), "--json"], shell),
+        "handoff_prefix": shell_command([
+            *prefix, str(package / "scripts/review_handoff.py"), "--records-only"], shell),
+        "host_activation": "not_checked",
+    }
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__, allow_abbrev=False)
-    parser.add_argument("operation", choices=("hook", "propose"))
+    parser.add_argument("operation", choices=("hook", "propose", "invocation"))
     parser.add_argument("--repo", required=True)
-    parser.add_argument("--python", required=True)
-    parser.add_argument("--shell", choices=("powershell", "posix"), required=True)
+    parser.add_argument("--python")
+    parser.add_argument("--shell", choices=("powershell", "posix"))
     parser.add_argument("--runtime-digest")
     parser.add_argument("--existing-hooks", help="read existing hooks.json; propose emits a merged candidate only")
     args = parser.parse_args(argv)
+    if args.operation == "invocation":
+        if not args.existing_hooks or any((args.python, args.shell, args.runtime_digest)):
+            parser.error("invocation requires --existing-hooks and no --python, --shell or --runtime-digest")
+    elif not args.python or not args.shell:
+        parser.error("hook and propose require --python and --shell")
     package = Path(__file__).absolute().parents[2]
     try:
-        repo, python = Path(args.repo), Path(args.python)
-        if args.operation == "hook":
+        repo = Path(args.repo)
+        python = Path(args.python) if args.python else None
+        if args.operation == "invocation":
+            with physical(Path(args.existing_hooks)).open("rb") as stream:
+                existing = _json(stream.read(LIMIT + 1))
+            value = configured_invocation(existing, repo=repo, package=package)
+        elif args.operation == "hook":
             value = decide(_json(sys.stdin.buffer.read(LIMIT + 1)), repo=repo, python=python,
                            package=package, digest=args.runtime_digest, shell=args.shell)
         else:
@@ -292,5 +354,7 @@ def main(argv=None):
         print(json.dumps(value, ensure_ascii=True, indent=2))
         return 0
     except (OSError, ValueError, KeyError, TypeError, RecursionError):
-        print("{}" if args.operation == "hook" else '{"error":"preapproval_proposal_unavailable"}')
+        errors = {"hook": "{}", "propose": '{"error":"preapproval_proposal_unavailable"}',
+                  "invocation": '{"error":"preapproval_invocation_unavailable"}'}
+        print(errors[args.operation])
         return 0 if args.operation == "hook" else 1

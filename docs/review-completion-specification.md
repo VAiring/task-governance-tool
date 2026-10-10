@@ -491,7 +491,10 @@ delivery. It neither queries Task state again nor replaces first-read/live-submi
 validation. An opaque target has no collect command.
 
 Collection returns transient UTF-8 JSON with `review_target`, the complete
-`changes`, selected `dependencies`, `bodies`, `status` and recovery instructions.
+`changes`, selected `dependencies`, `bodies`, `patches`, `status` and recovery instructions.
+Each change has `ordinal`, `kind`, `before`, `after` and `diff`; absent sides are
+null. Path, mode and object ID occur on their source side rather than being
+repeated on the enclosing change. The first read's manifest remains unchanged.
 Each present changed side and dependency preserves `path`, `revision`,
 `revision_kind`, `side`, `mode`, `object_id`, `body_id` and `status`. Before sides
 use the observed comparison treeish; after sides use the exact target kind/value
@@ -502,14 +505,25 @@ collapse in first-selection order. Bodies are keyed by immutable blob ID, so
 identical content is supplied once without losing any path/revision/side mapping.
 `provided` bodies include exact UTF-8 text and original byte count, preserving
 CRLF and missing final newline. Links are text, submodules remain unavailable.
-Two present supplied sides receive the existing safe Git blob patch. A full
+Two present supplied sides receive the existing safe Git blob patch. Each
+provided `git_patch` diff has a `patch_id` into the same response's `patches`
+table, whose rows contain `status`, exact `text` and `byte_count`. Complete,
+byte-identical patches share one row, including headers and line endings;
+different patches never share merely because their hunks or source text match.
+IDs are response-local, not persisted identities. Unavailable patches retain
+their inline status without a reference. Reading either table is one direct
+lookup, without another selection, command, calculation or patch reconstruction.
+This removes repeated source attributes in ordinary deliveries; patch sharing
+adds savings only when identical patches recur, with a small table/reference
+overhead for unique patches. It establishes no token, latency or quality gain.
+A full
 addition/deletion has `format=whole_file`, its operation and a reference to the
 complete supplied body; it does not manufacture an empty object or duplicate
 the body. Modes/renames remain explicit in each change independently of its diff.
 
 The transient collector accepts at most the existing 16 MiB manifest byte bound
 of JSON input and validates every path before material reads. Delivery holds at
-most 1 MiB per text body/patch and 4 MiB total supplied text bytes; these are
+most 1 MiB per text body/patch and 4 MiB total supplied unique text bytes; these are
 transport limits, not review-scope limits. Oversized text is `too_large` or
 `delivery_limit`, invalid UTF-8/NUL data is `non_text`, failed reads are
 `unavailable`, and gitlinks are `submodule_unavailable`; an undeliverable side

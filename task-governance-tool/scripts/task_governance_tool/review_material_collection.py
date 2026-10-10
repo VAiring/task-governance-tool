@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-from dataclasses import asdict
 
 from task_governance_tool import review_handoff as files
 from task_governance_tool.artifact_manifest import (
@@ -26,6 +25,9 @@ class _Bodies:
         self.repo = repo
         self.remaining = TOTAL_BYTE_LIMIT
         self.values = {}
+        self.patches = {}
+        self._patch_ids = {}
+        self._patch_pairs = {}
 
     def text(self, arguments):
         limit = min(BODY_BYTE_LIMIT, self.remaining)
@@ -51,6 +53,24 @@ class _Bodies:
         self.remaining -= len(payload)
         return {"status": "provided", "byte_count": len(payload), "text": text}
 
+    def patch(self, before, after):
+        pair = (before, after)
+        if pair not in self._patch_pairs:
+            body = self.text(["diff", "--no-ext-diff", "--no-textconv", before, after, "--"])
+            if body["status"] == "provided":
+                # Compare complete text, including headers and line endings. The
+                # table and equality index reference the same retained string.
+                patch_id = self._patch_ids.get(body["text"])
+                if patch_id is None:
+                    patch_id = f"p{len(self.patches) + 1}"
+                    self._patch_ids[body["text"]] = patch_id
+                    self.patches[patch_id] = body
+                else:
+                    self.remaining += body["byte_count"]
+                body = {"status": "provided", "patch_id": patch_id}
+            self._patch_pairs[pair] = {"format": "git_patch", **body}
+        return self._patch_pairs[pair]
+
     def source(self, path, revision, revision_kind, side, mode, object_id):
         row = {"path": path, "revision": revision, "revision_kind": revision_kind,
                "side": side, "mode": mode, "object_id": object_id, "body_id": None}
@@ -66,8 +86,7 @@ def _diff(bodies, before, after):
     if any(side["status"] != "provided" for side in sides):
         return {"status": "source_unavailable"}
     if before is not None and after is not None:
-        return {"format": "git_patch", **bodies.text([
-            "diff", "--no-ext-diff", "--no-textconv", before["object_id"], after["object_id"], "--"])}
+        return bodies.patch(before["object_id"], after["object_id"])
     # A full addition/deletion is exactly the supplied body plus its operation.
     # Refer to it, without manufacturing an empty Git object or duplicating text.
     return {"status": "provided", "format": "whole_file",
@@ -118,7 +137,8 @@ def collect_material(repo, packet_path, packet_sha256, stream):
                                entry.before_mode, entry.before_object_id) if entry.old_path is not None else None)
         after = (bodies.source(entry.new_path, target["value"], target["kind"], "after",
                               entry.after_mode, entry.after_object_id) if entry.new_path is not None else None)
-        changes.append({**asdict(entry), "before": before, "after": after, "diff": _diff(bodies, before, after)})
+        changes.append({"ordinal": entry.ordinal, "kind": entry.kind,
+                        "before": before, "after": after, "diff": _diff(bodies, before, after)})
     dependencies = []
     for selected_path in dict.fromkeys(selected):
         leaf = after_leaves.get(selected_path)
@@ -135,5 +155,6 @@ def collect_material(repo, packet_path, packet_sha256, stream):
     rows = [*dependencies, *(row["diff"] for row in changes),
             *(row[key] for row in changes for key in ("before", "after") if row[key] is not None)]
     return {"status": "complete" if all(row["status"] == "provided" for row in rows) else "incomplete",
-            "review_target": target, "changes": changes, "dependencies": dependencies, "bodies": bodies.values,
-            "instructions": ["Only provided bodies/diffs are supplied. Read their complete text and reuse it for authority checks and review with the exact path/revision/side mappings; another purpose does not require another copy. Do not treat missing, mismatched, unknown or tool-truncated text as already read. Use the first read's recovery_command (or its already supplied individual commands) when individual/additional reads or discovery are needed; recover only affected material and follow new dependencies without collecting successful siblings again. This is material delivery, not review coverage or PASS."]}
+            "review_target": target, "changes": changes, "dependencies": dependencies,
+            "bodies": bodies.values, "patches": bodies.patches,
+            "instructions": ["Only provided bodies/diffs are supplied. Read complete bodies[body_id] for each source and patches[patch_id] for each provided git_patch. Reuse that text for authority checks and review with the exact path/revision/side mappings; another purpose does not require another copy. Do not treat missing, mismatched, unknown or tool-truncated text as already read. Use the first read's recovery_command (or its already supplied individual commands) when individual/additional reads or discovery are needed; recover only affected material and follow new dependencies without collecting successful siblings again. This is material delivery, not review coverage or PASS."]}

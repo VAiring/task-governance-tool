@@ -381,10 +381,19 @@ old/new paths suppress base lookup, preserving snapshot overlays and deletions;
 the shared tree reader keeps nested project coordinates. No parent input or new
 public Task query is added.
 `_Bodies` deduplicates blob IDs in memory while source rows retain path, revision,
-kind, side and mode. Fixed `run_git_stream` calls inherit sanitized Git and
+kind, side and mode. Changed rows retain ordinal/kind and before/after/diff,
+without duplicating source fields at the enclosing level. Fixed `run_git_stream` calls inherit sanitized Git and
 bounded timeout/cleanup. Per-text and aggregate byte budgets bound retention;
 oversized/failed/binary records are explicit, with no partial text. Git patches
-use the existing no-external-diff/no-textconv operation. Whole-file add/delete
+use the existing no-external-diff/no-textconv operation. `_Bodies` reuses a
+before/after blob pair's outcome, and indexes complete patch text by exact
+equality into a response-local `patches` table. Provided diffs reference that
+table once; unavailable outcomes stay inline. A different pair may share a row
+only after complete bounded retrieval establishes equality, refunding the
+duplicate text's byte charge. Each unique emitted text is charged once; a
+budget-limited read remains unavailable even if unobserved text might duplicate
+an existing patch. No hash approximation, fragment graph or new caller work is
+introduced. Whole-file add/delete
 diffs reference the provided body and operation; no temporary files or Git objects
 are written. All rows and byte-preserving UTF-8 bodies are emitted together as
 transient JSON after final Packet validation. Available siblings remain usable

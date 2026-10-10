@@ -613,7 +613,7 @@ class ReviewerMaterialTests(PreparationFixture):
         changed, = delivery["changes"]
         for side, text in (("before", "value = 1\n"), ("after", "value = 2\n")):
             self.assertEqual(delivery["bodies"][changed[side]["body_id"]]["text"], text)
-        self.assertIn("+value = 2", changed["diff"]["text"])
+        self.assertIn("+value = 2", delivery["patches"][changed["diff"]["patch_id"]]["text"])
         self.assertEqual(file_snapshot(self.root), before)
         self.assertEqual(view["result_instructions"], review_result_instructions(independent=True))
         payload = copy.deepcopy(view["result_template"])
@@ -738,10 +738,11 @@ class ReviewerMaterialTests(PreparationFixture):
         self.assertEqual(actual.returncode, 0, actual.stderr)
         collected = json.loads(actual.stdout)
         self.assertEqual(collected["status"], "complete")
+        self.assert_lossless_collection(collected, material["changes"])
         self.assertEqual(collected["review_target"], view["review_target"])
         self.assertEqual(len(collected["dependencies"]), 4)
         change, = collected["changes"]
-        oid = change["after_object_id"]
+        oid = change["after"]["object_id"]
         self.assertEqual(collected["bodies"][oid], {"status": "provided", "text": text, "byte_count": len(text.encode())})
         self.assertEqual(len(collected["bodies"]), 3)
         for dep in collected["dependencies"][:3]:
@@ -751,11 +752,88 @@ class ReviewerMaterialTests(PreparationFixture):
         self.assertEqual(collected["dependencies"][2]["revision"], view["review_target"]["value"])
         self.assertEqual(change["before"]["revision"], base)
         self.assertEqual(change["after"]["side"], "after")
-        self.assertEqual(collected["bodies"][change["before_object_id"]]["text"].encode(),
-                         self.git("cat-file", "blob", change["before_object_id"]))
-        self.assertEqual(change["diff"]["text"].encode(), self.git("diff", "--no-ext-diff", "--no-textconv",
-                         change["before_object_id"], oid, "--"))
+        self.assertEqual(collected["bodies"][change["before"]["object_id"]]["text"].encode(),
+                         self.git("cat-file", "blob", change["before"]["object_id"]))
+        self.assertEqual(collected["patches"][change["diff"]["patch_id"]]["text"].encode(),
+                         self.git("diff", "--no-ext-diff", "--no-textconv", change["before"]["object_id"], oid, "--"))
         self.assertEqual(file_snapshot(self.root), before)
+
+    def assert_lossless_collection(self, collected, manifest):
+        """Compare with the prior presentation, not another product consumer."""
+        old = copy.deepcopy(collected)
+        del old["patches"]
+        for row, old_row, entry in zip(collected["changes"], old["changes"], manifest, strict=True):
+            self.assertEqual(set(row), {"ordinal", "kind", "before", "after", "diff"})
+            self.assertEqual((row["ordinal"], row["kind"]), (entry["ordinal"], entry["kind"]))
+            for side, path_key in (("before", "old_path"), ("after", "new_path")):
+                source = row[side]
+                if entry[path_key] is None:
+                    self.assertIsNone(source)
+                    continue
+                self.assertEqual(set(source), {"path", "revision", "revision_kind", "side",
+                                               "mode", "object_id", "body_id", "status"})
+                self.assertEqual((source["path"], source["mode"], source["object_id"], source["side"]),
+                                 (entry[path_key], entry[side + "_mode"], entry[side + "_object_id"], side))
+            old_row.update(entry)
+            if row["diff"].get("patch_id"):
+                patch = collected["patches"][row["diff"]["patch_id"]]
+                expected = self.git("diff", "--no-ext-diff", "--no-textconv",
+                                    row["before"]["object_id"], row["after"]["object_id"], "--")
+                self.assertEqual(patch, {"status": "provided", "byte_count": len(expected),
+                                         "text": expected.decode("utf-8")})
+                old_row["diff"] = {"format": "git_patch", **patch}
+        # Compare structural UTF-8 delivery bytes with identical guidance. This
+        # is not a tokenizer measurement or a general performance assertion.
+        sizes = tuple(len(json.dumps(value, ensure_ascii=False, separators=(",", ":")).encode())
+                      for value in (old, collected))
+        self.assertLess(sizes[1], sizes[0])
+        return sizes
+
+    def test_collect_shares_only_complete_identical_patches_with_all_source_mappings(self):
+        from task_governance_tool import review_material_collection as collection
+        self.committed_fixture()
+        initial = {"a.txt": b"same old\r\n", "b.txt": b"same old\r\n",
+                   "c.txt": b"different old\n", "d.txt": b"mode one\n", "e.txt": b"mode two\n"}
+        for path, raw in initial.items():
+            (self.root / path).write_bytes(raw)
+        self.git("-c", "core.autocrlf=false", "add", "--", *initial)
+        self.git("commit", "--quiet", "-m", "Duplicate and distinct patch sources")
+        base = self.git("rev-parse", "HEAD").decode().strip()
+        for path in ("a.txt", "b.txt", "c.txt"):
+            (self.root / path).write_bytes(b"same new\r\nwithout final newline")
+        self.git("-c", "core.autocrlf=false", "add", "--", "a.txt", "b.txt", "c.txt")
+        self.git("update-index", "--chmod=+x", "d.txt", "e.txt")
+        _, prepared = self.prepare(self.task(), options=["--kind", "git_snapshot"])
+        packet = prepared["handoff"]["packet_path"]
+        view = json.loads(self.displayed(packet).stdout)
+        material = view["review_material"]
+        actual = self.material_read(material["collect_command"].replace(
+            "<selected dependency paths as JSON array>", '["a.txt","b.txt","c.txt","AGENTS.md"]'))
+        self.assertEqual(actual.returncode, 0, actual.stderr)
+        collected = json.loads(actual.stdout)
+        self.assert_lossless_collection(collected, material["changes"])
+        rows = {row["after"]["path"]: row for row in collected["changes"]}
+        self.assertEqual(len(collected["patches"]), 3)
+        self.assertEqual(rows["a.txt"]["diff"], rows["b.txt"]["diff"])
+        self.assertNotEqual(rows["a.txt"]["diff"], rows["c.txt"]["diff"])
+        self.assertEqual(rows["d.txt"]["diff"], rows["e.txt"]["diff"])
+        self.assertEqual(collected["patches"][rows["d.txt"]["diff"]["patch_id"]]["text"], "")
+        for row in rows.values():
+            self.assertEqual((row["before"]["revision"], row["before"]["revision_kind"]), (base, "git_treeish"))
+            self.assertEqual((row["after"]["revision"], row["after"]["revision_kind"]),
+                             (view["review_target"]["value"], "git_snapshot"))
+        self.assertEqual(len({row["body_id"] for row in collected["dependencies"][:3]}), 1)
+        digest = hashlib.sha256((self.root / packet).read_bytes()).hexdigest()
+        unique_bytes = sum(row["byte_count"] for table in ("bodies", "patches") for row in collected[table].values())
+        # Exact capacity admits duplicate references without charging or reading
+        # their patch twice. One byte less preserves explicit incomplete delivery.
+        with mock.patch.object(collection, "TOTAL_BYTE_LIMIT", unique_bytes):
+            bounded = collection.collect_material(self.root, packet, digest, io.BytesIO(b'["a.txt","b.txt","c.txt","AGENTS.md"]'))
+        self.assertEqual(bounded, collected)
+        with mock.patch.object(collection, "TOTAL_BYTE_LIMIT", unique_bytes - 1):
+            limited = collection.collect_material(self.root, packet, digest, io.BytesIO(b'["a.txt","b.txt","c.txt","AGENTS.md"]'))
+        self.assertEqual(limited["status"], "incomplete")
+        self.assertEqual(limited["dependencies"][-1]["status"], "delivery_limit")
 
     def test_collect_modes_rename_deleted_paths_and_whole_file_diffs(self):
         base = self.committed_fixture()
@@ -772,6 +850,7 @@ class ReviewerMaterialTests(PreparationFixture):
         actual = self.material_read(command)
         collected = json.loads(actual.stdout)
         self.assertEqual(collected["status"], "incomplete")
+        self.assert_lossless_collection(collected, material["changes"])
         deps = {row["path"]: row for row in collected["dependencies"]}
         self.assertEqual(deps["source.py"]["status"], "absent_at_target")
         self.assertEqual(deps["SPEC.md"]["status"], "absent_at_target")
@@ -779,10 +858,10 @@ class ReviewerMaterialTests(PreparationFixture):
         self.assertEqual(deps["link-text"]["mode"], "120000")
         self.assertEqual(collected["bodies"][blob]["text"], "The value must be 2.\n")
         changes = collected["changes"]
-        rename = next(row for row in changes if row["kind"] == "rename" and row["new_path"] == "renamed.py")
+        rename = next(row for row in changes if row["kind"] == "rename" and row["after"]["path"] == "renamed.py")
         self.assertEqual((rename["before"]["path"], rename["after"]["path"]), ("source.py", "renamed.py"))
         self.assertEqual(rename["before"]["body_id"], rename["after"]["body_id"])
-        submodule = next(row for row in changes if row["new_path"] == "submodule")
+        submodule = next(row for row in changes if row["after"] and row["after"]["path"] == "submodule")
         self.assertEqual(submodule["after"]["status"], "submodule_unavailable")
         self.assertEqual(submodule["diff"]["status"], "source_unavailable")
 
@@ -1181,8 +1260,9 @@ class ReviewerMaterialTests(PreparationFixture):
 
     def test_commit_root_and_first_parent_material_ignore_new_head(self):
         root = self.committed_fixture()
+        task = self.task()
         for index, revision in enumerate((root,)):
-            _, prepared = self.prepare(self.task(), options=["--kind", "git_commit", "--revision", revision],
+            _, prepared = self.prepare(task, options=["--kind", "git_commit", "--revision", revision],
                                        directory=f"reviews/commit{index}")
             (self.root / "source.py").write_text("value = 2\n", encoding="utf-8")
             self.git("add", "--", "source.py")
@@ -1198,7 +1278,7 @@ class ReviewerMaterialTests(PreparationFixture):
             self.assertTrue(all(entry["diff"]["format"] == "whole_file"
                                 for entry in json.loads(collected.stdout)["changes"]))
         current = self.git("rev-parse", "HEAD").decode().strip()
-        _, prepared = self.prepare(self.task(), options=["--kind", "git_commit", "--revision", current],
+        _, prepared = self.prepare(task, options=["--kind", "git_commit", "--revision", current],
                                    directory="reviews/second")
         result = self.displayed(prepared["handoff"]["packet_path"])
         self.assertEqual(result.returncode, 0, result.stdout)
@@ -1257,7 +1337,8 @@ class ReviewerMaterialTests(PreparationFixture):
         self.assertEqual((mode["before_mode"], mode["after_mode"]), ("100644", "100755"))
 
     def test_unavailable_response_or_git_material_returns_no_partial_view(self):
-        _, prepared = self.prepare(self.task())
+        task = self.task()
+        _, prepared = self.prepare(task)
         packet = prepared["handoff"]["packet_path"]
         for raw in (None, b"{", b"{}"):
             with mock.patch.object(preparation, "_capture", return_value=(0, raw)):
@@ -1266,7 +1347,7 @@ class ReviewerMaterialTests(PreparationFixture):
         self.committed_fixture()
         (self.root / "source.py").write_text("value = 2\n", encoding="utf-8")
         self.git("add", "--", "source.py")
-        _, prepared = self.prepare(self.task(), options=["--kind", "git_snapshot"], directory="reviews/git")
+        _, prepared = self.prepare(task, options=["--kind", "git_snapshot"], directory="reviews/git")
         from task_governance_tool.artifact_manifest import ArtifactManifestError
         with mock.patch("task_governance_tool.artifact_manifest.observe_staged_git_manifest",
                         side_effect=ArtifactManifestError("artifact_manifest_stale", "fixture")):
@@ -1301,6 +1382,9 @@ class ReviewerMaterialTests(PreparationFixture):
             self.assertEqual(submitted.returncode, 0, submitted.stdout)
             self.assertEqual(json.loads(submitted.stdout)["data"]["receipts"][0]["receipt"]["receipt_kind"], kind)
             self.cli("task", "edit", task, "--status", "review_pending")
+            # End this fixture's execution before acquiring the next tier case;
+            # review-pending retains the same session/project slot as execution.
+            self.cli("task", "edit", task, "--status", "ready")
 
 
 class DirectPacketReviewerTests(unittest.TestCase):
@@ -1559,6 +1643,42 @@ class PreparationFailureTests(PreparationFixture):
         self.assertIsNone(raw)
         launch.assert_called_once()
         process.wait.assert_called_once()
+
+
+class SharedPatchDeliveryTests(unittest.TestCase):
+    def test_exact_equality_keeps_headers_line_endings_and_unique_budget(self):
+        from task_governance_tool import review_material_collection as collection
+        payloads = iter((b"header A\n+same\n", b"header A\n+same\n",
+                         b"header B\n+same\n", b"header A\r\n+same\r\n"))
+        def stream(repo, arguments, consume):
+            consume(next(payloads))
+        bodies = collection._Bodies(Path("unused"))
+        with mock.patch.object(collection, "run_git_stream", side_effect=stream) as read:
+            first = bodies.patch("a", "b")
+            self.assertEqual(first, bodies.patch("a", "b"))
+            self.assertEqual(first, bodies.patch("c", "d"))
+            self.assertNotEqual(first, bodies.patch("e", "f"))
+            self.assertNotEqual(first, bodies.patch("g", "h"))
+        self.assertEqual(read.call_count, 4)
+        self.assertEqual(len(bodies.patches), 3)
+        self.assertEqual(collection.TOTAL_BYTE_LIMIT - bodies.remaining,
+                         sum(row["byte_count"] for row in bodies.patches.values()))
+
+    def test_failed_patch_has_no_shared_or_partial_text_and_keeps_status(self):
+        from task_governance_tool import review_material_collection as collection
+        cases = ((b"long", 10, 3, "too_large"), (b"long", 3, 10, "delivery_limit"),
+                 (b"\xff", 10, 10, "non_text"), (b"\0", 10, 10, "non_text"))
+        for raw, total, per_body, status in cases:
+            with self.subTest(status=status), mock.patch.object(collection, "BODY_BYTE_LIMIT", per_body):
+                bodies = collection._Bodies(Path("unused"))
+                bodies.remaining = total
+                with mock.patch.object(collection, "run_git_stream", side_effect=lambda repo, args, consume: consume(raw)) as read:
+                    expected = {"format": "git_patch", "status": status}
+                    self.assertEqual(bodies.patch("a", "b"), expected)
+                    self.assertEqual(bodies.patch("a", "b"), expected)
+                read.assert_called_once()
+                self.assertEqual(bodies.patches, {})
+                self.assertEqual(bodies.remaining, total)
 
 
 class LegacyPacketPreparationTests(unittest.TestCase):

@@ -88,7 +88,8 @@ class TaskStatusFixtureTests(unittest.TestCase):
                     pending = run_taskgov("task", "edit", stored["task_id"], "--repo", str(repo),
                                           "--db", str(db), "--status", "review_pending", "--json")
                     self.assertEqual(pending.returncode, 0, pending.stdout)
-                    stored = json.loads(pending.stdout)["data"]["task"]
+                    # Write acknowledgements omit unchanged Task context.
+                    stored.update(json.loads(pending.stdout)["data"]["task"])
                 if target_status == "done":
                     seed_review_evidence(db, stored["task_id"])
                     shown = run_taskgov(
@@ -145,7 +146,7 @@ class TaskStatusFixtureTests(unittest.TestCase):
                         "--json",
                     )
                     self.assertEqual(completed.returncode, 0, completed.stderr)
-                    stored = json.loads(completed.stdout)["data"]["task"]
+                    stored.update(json.loads(completed.stdout)["data"]["task"])
                 seeded.append(stored)
 
             self.assertEqual(len(seeded), 7)
@@ -175,6 +176,12 @@ class TaskStatusFixtureTests(unittest.TestCase):
             self.assertEqual(list_result.returncode, 0, list_result.stderr)
             payload = json.loads(list_result.stdout)
             self.assertEqual(payload["data"]["count"], 7)
+            listed = {task["task_id"]: task for task in payload["data"]["tasks"]}
+            self.assertEqual(set(listed), {task["task_id"] for task in seeded})
+            for task in seeded:
+                with self.subTest(task_id=task["task_id"]):
+                    for field in ("status", "kind", "lane", "lane_order"):
+                        self.assertEqual(listed[task["task_id"]][field], task[field])
             self.assertFalse(repo.exists())
 
 

@@ -224,6 +224,18 @@ verification or review evidence. Only the existing closed outcome and bounded
 structural evidence may be retained. Cleanup or privacy uncertainty is a
 blocking failure.
 
+### Existing Verification Application
+
+The optional [application guide](../task-governance-tool/references/runner_application.md)
+maps existing checks to this boundary without extending it. A replacement
+target-owned entrypoint requires a demonstrated match in test discovery,
+scope, configuration and success/failure detection under the fixed runtime and
+clean environment; successful process exit alone never establishes coverage.
+Unsupported prescribed checks retain manual verification until an authorized
+project decision changes the mapping. Initial Setup/trust, per-Task Plan
+authoring and basis updates remain distinct from prepared target execution;
+neither a guide nor another Task's successful run supplies those permissions.
+
 ### Runner Policy And Accounting
 
 The separate [reviewer workspace](review-completion-specification.md#optional-reviewer-verification-workspace)

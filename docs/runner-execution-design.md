@@ -86,6 +86,14 @@ between bounded adapter calls where applicable, and after the returned result.
 
 ### Target-Plan Implementation
 
+`tests/test_runner_application.py` exercises the conditional application guide
+through a physical temporary install and public CLI: identical six-test manual
+module/script discovery, real Runner success/failure, fixed-target exclusion of
+ambient files, Setup/no-entry and Plan update/rejection routes, and Packet and
+sealed Evidence bindings. It adds no production execution adapter. Fixtures
+declare test-only review provenance; they do not claim independent review of
+the host project or measured response/token savings.
+
 The `target_plan` registry row owns
 `verification_runner_git.py` and `verification_runner_plan.py`; it does not add
 or change CLI dispatch, the parent service, SQLite, Evidence, completion,

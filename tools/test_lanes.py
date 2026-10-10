@@ -254,6 +254,7 @@ LANE_MODULES: dict[str, tuple[str, ...]] = {
         "test_review_wait_server",
         "test_review_wait_service",
         "test_routine_backup",
+        "test_runner_application",
         "test_session_slot_migration",
         "test_session_slot_reacquisition",
         "test_setup",

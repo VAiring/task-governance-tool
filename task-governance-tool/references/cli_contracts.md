@@ -1181,6 +1181,11 @@ never contains draft bytes, Plan bytes, argv, paths, or publisher detail.
 
 #### Runner Plan Example And OS Limits
 
+For an approved existing verification command, first use the conditional
+[Runner application guide](runner_application.md) to assess equivalent target
+entrypoints, initial/per-Task preparation, updates and the returned result route.
+Its unittest example is not a blanket conversion of arbitrary checks.
+
 After ordinary physical installation, setup, and ignore protection, this
 optional v2 draft works on Windows, Linux, and macOS for a nonterminal Task
 with a current Contract and verification criterion. Adapt the entrypoint and

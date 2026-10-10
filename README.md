@@ -570,6 +570,11 @@ decisions remain authoritative.
 
 ### Explicit Runner Plan authoring
 
+The [Runner application guide](task-governance-tool/references/runner_application.md)
+shows how to preserve existing unittest discovery, bind each Task, update a
+Plan and use execution/evidence/Packet results without manual result re-entry.
+It distinguishes initial preparation cost from savings in a prepared flow.
+
 Runner Plan authoring is optional and is not part of the normal Skill loop. It
 uses the existing `task edit` command and never launches the Runner or sets a
 review target. The first explicit `replace` against an absent Plan creates the

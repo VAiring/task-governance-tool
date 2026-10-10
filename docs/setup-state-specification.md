@@ -144,6 +144,21 @@ preflight precedence remain in force. Neither result authorizes automatic
 elevation, ACL changes, setup, or an extra doctor call on a successful path.
 Messages never include an OS exception, path, or environment value.
 
+Strict path observations prefer the platform's standard resolver. On Windows
+only, its access-denied error (5) may use one bounded, read-only native
+alternative: the normalized NT target must belong to the observed direct
+volume root of the input drive, its reconstructed ordinary DOS path must
+reopen to the same normalized target, and that drive root must remain the same
+on a second observation. The result must also agree with the existing
+`canonical_path_v1` nonstrict spelling. An uncertain mapping, unsupported
+namespace, unsafe suffix, native failure, or mismatch preserves the original
+fixed failure classification. A lexical spelling alone never establishes
+success. Standard-success paths are not subject to these fallback restrictions.
+This internal observation is shared by root validation and strict state
+containment; it neither relaxes metadata/directory/ancestor-link/reparse checks
+nor replaces the Packet's public CLI live validation. It adds no CLI retry,
+argument, doctor step, permission change, or stored native diagnostic data.
+
 Maintenance codes are `not_opted_in` before setup and, once enabled,
 `current`, `due`, `deferred`, or `failed` for current runtime state.
 Readable maintenance never becomes an envelope warning/error. Deferred means
@@ -394,6 +409,12 @@ requiring existence, platform-normalizes absolute spelling, UTF-8 encodes, and
 hashes. Display uses the root basename, replaces controls/line separators with
 U+FFFD, falls back to `project`, and is at most 200 code points. Neither is
 identity.
+
+The strict Windows alternative above does not change existence-independent
+`canonical_path_v1`, rewrite a stored ID/hash/generation or binding history,
+or authorize relocation. It verifies consistency with the existing spelling;
+it does not claim general drive-alias uniqueness. Unverified fallback forms
+fail closed, while standard-success forms retain their existing behavior.
 
 `project_meta` plus append-only binding history records ID, generation,
 old/new hashes, display, UTC time, fixed reason (`legacy_migration`,

@@ -129,6 +129,7 @@ class WindowsPreparationTests(PreparationFixture):
         displayed = shell(read, reviewer=0)
         self.assertEqual(displayed.returncode, 0, displayed.stdout or displayed.stderr)
         view = json.loads(displayed.stdout)
+        self.assertEqual(view["context_check"], "matched_at_read")
         self.assertEqual(view["result_template"], packet["result_template"])
         self.assertNotIn("receipt_command", view)
         payload = view["result_template"]

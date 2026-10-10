@@ -3,12 +3,15 @@ from __future__ import annotations
 import hashlib
 import shutil
 import sqlite3
+import stat
 import sys
 import tempfile
 import unittest
 from contextlib import closing
 from dataclasses import replace
 from pathlib import Path
+from types import SimpleNamespace
+from unittest import mock
 
 from tests.m14_test_support import SOURCE_SCRIPTS_ROOT, create_v14_target
 
@@ -16,6 +19,7 @@ from tests.m14_test_support import SOURCE_SCRIPTS_ROOT, create_v14_target
 if str(SOURCE_SCRIPTS_ROOT) not in sys.path:
     sys.path.insert(0, str(SOURCE_SCRIPTS_ROOT))
 
+from task_governance_tool import strict_path  # noqa: E402
 from task_governance_tool.state_resolver import (  # noqa: E402
     canonical_state_paths,
     consumer_error_code,
@@ -499,6 +503,96 @@ class StateResolverTests(unittest.TestCase):
             self.assertEqual(resolution.source_schema_version, 27)
             self.assertIsNone(consumer_error_code(resolution))
             self.assertEqual(before, tree_snapshot(fixture.root))
+
+    def test_windows_containment_fallback_preserves_stored_identity_and_binding(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            fixture = ResolverFixture(Path(temporary))
+            fixture.initialize_fixed_uuid()
+            expected = resolve_project_state(skill_root=fixture.skill_root, repo=fixture.repo)
+            before = tree_snapshot(fixture.root)
+            original = Path.resolve
+            guarded_paths = {fixture.paths.fixed_root, fixture.paths.state_root}
+            denied = PermissionError("private-detail")
+            denied.winerror = 5
+
+            def resolve(path, strict=False):
+                if strict and path in guarded_paths:
+                    raise denied
+                return original(path, strict=strict)
+
+            with (
+                mock.patch.object(Path, "resolve", resolve),
+                mock.patch.object(strict_path, "os", SimpleNamespace(name="nt")),
+                mock.patch.object(strict_path, "_resolve_windows",
+                                  side_effect=lambda path: original(path, strict=True)) as native,
+            ):
+                resolution = resolve_project_state(skill_root=fixture.skill_root, repo=fixture.repo)
+                self.assertIsNone(resolution.error_code)
+                self.assertEqual(resolution.layout, "fixed_current_v1")
+                self.assertEqual(resolution.binding, "matching")
+                self.assertEqual(resolution.project_id, UUID_PROJECT_ID)
+                self.assertEqual(resolution.current_root, expected.current_root)
+                self.assertEqual(resolution.stored_project, expected.stored_project)
+                self.assertEqual(resolution.target, expected.target)
+                self.assertEqual({call.args[0] for call in native.call_args_list}, guarded_paths)
+            self.assertEqual(before, tree_snapshot(fixture.root))
+
+    def test_windows_containment_fallback_failure_or_escape_is_read_only(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            fixture = ResolverFixture(Path(temporary))
+            fixture.initialize_fixed_uuid()
+            outside = fixture.root / "outside"
+            outside.mkdir()
+            before = tree_snapshot(fixture.root)
+            original = Path.resolve
+            denied = PermissionError("private-detail")
+            denied.winerror = 5
+
+            def resolve(path, strict=False):
+                if strict and path == fixture.paths.fixed_root:
+                    raise denied
+                return original(path, strict=strict)
+
+            for candidate in (OSError("private-detail"), outside):
+                options = ({"side_effect": candidate} if isinstance(candidate, OSError)
+                           else {"return_value": candidate})
+                with (
+                    self.subTest(candidate=type(candidate).__name__),
+                    mock.patch.object(Path, "resolve", resolve),
+                    mock.patch.object(strict_path, "os", SimpleNamespace(name="nt")),
+                    mock.patch.object(strict_path, "_resolve_windows", **options) as native,
+                ):
+                    resolution = resolve_project_state(skill_root=fixture.skill_root, repo=fixture.repo)
+                    self.assertEqual(resolution.error_code, "project_state_unreadable")
+                    self.assertIsNone(resolution.project_id)
+                    self.assertIsNone(resolution.target)
+                    native.assert_called_once_with(fixture.paths.fixed_root)
+                self.assertEqual(before, tree_snapshot(fixture.root))
+
+    def test_state_links_and_reparse_points_are_rejected_before_resolution_fallback(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            fixture = ResolverFixture(Path(temporary))
+            fixture.initialize_fixed_uuid()
+            before = tree_snapshot(fixture.root)
+            original = Path.lstat
+
+            for mode, attributes in ((stat.S_IFLNK, 0), (stat.S_IFDIR, stat.FILE_ATTRIBUTE_REPARSE_POINT)):
+                def lstat(path, *args, **kwargs):
+                    if path == fixture.paths.fixed_root:
+                        return SimpleNamespace(st_mode=mode, st_file_attributes=attributes)
+                    return original(path, *args, **kwargs)
+
+                with (
+                    self.subTest(mode=mode, attributes=attributes),
+                    mock.patch.object(Path, "lstat", lstat),
+                    mock.patch.object(strict_path, "_resolve_windows") as native,
+                ):
+                    resolution = resolve_project_state(skill_root=fixture.skill_root, repo=fixture.repo)
+                    self.assertEqual(resolution.error_code, "project_state_unreadable")
+                    self.assertIsNone(resolution.project_id)
+                    self.assertIsNone(resolution.target)
+                    native.assert_not_called()
+                self.assertEqual(before, tree_snapshot(fixture.root))
 
     def test_fixed_primary_consumer_ignores_non_authoritative_artifact_damage(self):
         for shape in ("corrupt_backup", "invalid_viewer_lock"):

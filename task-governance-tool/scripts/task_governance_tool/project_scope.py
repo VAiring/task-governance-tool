@@ -14,6 +14,7 @@ from task_governance_tool import __version__
 from task_governance_tool.completion import safe_git_command, safe_git_environment
 from task_governance_tool.self_status import PackageSelfStatus, inspect_local_package
 from task_governance_tool.state_resolver import canonical_state_paths
+from task_governance_tool.strict_path import resolve_strict_path
 from task_governance_tool.storage import (
     DATABASE_BUSY_MESSAGE,
     lexical_skill_root_from_script,
@@ -356,7 +357,7 @@ def inspect_project_scope(
         if not _physical_directory(lexical_repo):
             add_issue("invalid_project_root")
         else:
-            canonical_repo = lexical_repo.resolve(strict=True)
+            canonical_repo = resolve_strict_path(lexical_repo)
             if _has_linklike_component(lexical_repo):
                 if not linked_layout:
                     add_issue("unsupported_install_layout")

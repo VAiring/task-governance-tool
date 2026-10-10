@@ -153,6 +153,7 @@ LANE_MODULES: dict[str, tuple[str, ...]] = {
         "test_session_slot",
         "test_session_slot_cli",
         "test_storage_paths",
+        "test_strict_path",
         "test_target_review_preparation",
         "test_task_add",
         "test_task_batch",

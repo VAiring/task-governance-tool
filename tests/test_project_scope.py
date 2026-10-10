@@ -2,6 +2,7 @@ import errno
 import io
 import json
 import os
+import stat
 import subprocess
 import tempfile
 import unittest
@@ -30,6 +31,7 @@ from task_governance_tool import doctor as doctor_service
 from task_governance_tool import cli
 from task_governance_tool import project_scope as project_scope_service
 from task_governance_tool import setup as setup_service
+from task_governance_tool import strict_path
 from task_governance_tool.completion import safe_git_environment
 
 
@@ -181,6 +183,112 @@ class ProjectRootDiagnosisTests(unittest.TestCase):
                     for guarded in (state, ignore, resolver, doctor_resolver, setup_resolver):
                         guarded.assert_not_called()
                 self.assertEqual(tree_snapshot(install.project_root), before)
+
+    def test_windows_access_denied_resolution_preserves_public_context_and_state(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            install = make_physical_install(Path(tmp))
+            code, output, _ = self.run_cli(install, ("setup",), install.project_root)
+            self.assertEqual(code, 0, output)
+            code, expected, _ = self.run_cli(install, ("task", "context"), install.project_root)
+            self.assertEqual(code, 0, expected)
+            before = tree_snapshot(install.project_root)
+            original = Path.resolve
+            denied = PermissionError("private-detail")
+            denied.winerror = 5
+
+            def resolve(path, strict=False):
+                if path == install.project_root and strict:
+                    raise denied
+                return original(path, strict=strict)
+
+            with (
+                mock.patch.object(Path, "resolve", resolve),
+                mock.patch.object(strict_path, "os", SimpleNamespace(name="nt")),
+                mock.patch.object(strict_path, "_resolve_windows",
+                                  side_effect=lambda path: original(path, strict=True)) as native,
+                mock.patch.object(doctor_service, "run_doctor") as doctor,
+                mock.patch.object(project_scope_service, "_state_is_ignored") as ignore,
+            ):
+                code, output, error = self.run_cli(install, ("task", "context"), install.project_root)
+                self.assertEqual(code, 0, output)
+                self.assertEqual(error, "")
+                self.assertEqual(json.loads(output), json.loads(expected))
+                self.assertTrue(native.called)
+                self.assertEqual({call.args[0] for call in native.call_args_list}, {install.project_root})
+                doctor.assert_not_called()
+                ignore.assert_not_called()
+            self.assertEqual(tree_snapshot(install.project_root), before)
+
+    def test_windows_candidate_failure_keeps_fixed_root_error_and_state_unreached(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            install = make_physical_install(Path(tmp))
+            before = tree_snapshot(install.project_root)
+            original = Path.resolve
+            denied = PermissionError("private-detail")
+            denied.winerror = 5
+
+            def resolve(path, strict=False):
+                if path == install.project_root and strict:
+                    raise denied
+                return original(path, strict=strict)
+
+            with (
+                mock.patch.object(Path, "resolve", resolve),
+                mock.patch.object(strict_path, "os", SimpleNamespace(name="nt")),
+                mock.patch.object(strict_path, "_resolve_windows", side_effect=OSError("private-detail")) as native,
+                mock.patch.object(project_scope_service, "_state_path_is_valid") as state,
+                mock.patch.object(project_scope_service, "_state_is_ignored") as ignore,
+                mock.patch.object(cli, "resolve_project_state") as resolver,
+                mock.patch.object(doctor_service, "resolve_project_state") as doctor_resolver,
+                mock.patch.object(setup_service, "resolve_setup_project_state") as setup_resolver,
+            ):
+                for command in self.commands:
+                    with self.subTest(command=command):
+                        self.assert_failure(install, command, install.project_root, "project_root_uninspectable")
+                self.assertEqual(native.call_count, len(self.commands))
+                for guarded in (state, ignore, resolver, doctor_resolver, setup_resolver):
+                    guarded.assert_not_called()
+            self.assertEqual(tree_snapshot(install.project_root), before)
+
+    def test_windows_candidate_success_does_not_bypass_ancestor_link_rejection(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            install = make_physical_install(Path(tmp))
+            before = tree_snapshot(install.project_root)
+            original_resolve = Path.resolve
+            original_lstat = project_scope_service.os.lstat
+            denied = PermissionError("private-detail")
+            denied.winerror = 5
+
+            def resolve(path, strict=False):
+                if path == install.project_root and strict:
+                    raise denied
+                return original_resolve(path, strict=strict)
+
+            for mode, attributes in ((stat.S_IFLNK, 0), (stat.S_IFDIR, stat.FILE_ATTRIBUTE_REPARSE_POINT)):
+                def lstat(path, *args, **kwargs):
+                    if Path(path) == install.project_root.parent:
+                        return SimpleNamespace(st_mode=mode, st_file_attributes=attributes)
+                    return original_lstat(path, *args, **kwargs)
+
+                with (
+                    self.subTest(mode=mode, attributes=attributes),
+                    mock.patch.object(Path, "resolve", resolve),
+                    mock.patch.object(strict_path, "os", SimpleNamespace(name="nt")),
+                    mock.patch.object(strict_path, "_resolve_windows",
+                                      side_effect=lambda path: original_resolve(path, strict=True)) as native,
+                    mock.patch.object(project_scope_service, "os", SimpleNamespace(
+                        path=project_scope_service.os.path, lstat=lstat)),
+                    mock.patch.object(project_scope_service, "_state_path_is_valid") as state,
+                ):
+                    inspection = project_scope_service.inspect_project_scope(
+                        repo=install.project_root, repo_explicit=True, script_path=install.entrypoint,
+                        include_runtime=False, include_package=False, include_ignore=False,
+                    )
+                    self.assertIsNone(inspection.scope)
+                    self.assertEqual(inspection.first_issue().code, "unsupported_install_layout")
+                    native.assert_called_once_with(install.project_root)
+                    state.assert_not_called()
+            self.assertEqual(tree_snapshot(install.project_root), before)
 
     @unittest.skipUnless(os.name == "nt", "Windows native invalid-name semantics")
     def test_windows_invalid_names_return_invalid_root_without_changes(self):

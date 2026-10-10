@@ -18,6 +18,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Literal
 
+from task_governance_tool.strict_path import resolve_strict_path
+
 from task_governance_tool.state_paths import (
     EVIDENCE_BUNDLE_MAX_BYTES,
     EVIDENCE_BUNDLES_DIRECTORY_NAME,
@@ -757,7 +759,7 @@ def _validate_optional_regular_file(path: Path) -> bool:
 
 def _require_contained(path: Path, parent: Path) -> None:
     try:
-        path.resolve(strict=True).relative_to(parent.resolve(strict=True))
+        resolve_strict_path(path).relative_to(resolve_strict_path(parent))
     except (OSError, RuntimeError, ValueError) as exc:
         raise _ResolverFailure("project_state_unreadable") from exc
 

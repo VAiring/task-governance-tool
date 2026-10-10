@@ -575,8 +575,35 @@ never reaches state-path, ignore, or database resolution. The new code is in
 the shared structural allow-list and follows the same preflight priority as
 root validity, before state/package/ignore failures. Doctor maps it to
 `project_uninspectable`; setup and ordinary CLI commands reuse the fixed
-message. No exception text, retry, permission change, or new normal-loop
+message. No exception text, CLI retry, permission change, or new normal-loop
 diagnostic operation is added.
+
+`strict_path.resolve_strict_path` owns the bounded internal alternative used
+only at the root's strict observation and `state_resolver._require_contained`.
+It first calls `Path.resolve(strict=True)`. Only Windows `winerror=5` enters
+native observation; other platforms, successful results, and other failures
+retain standard behavior. Ordinary DOS input is normalized with public path
+functions. Access-zero `CreateFileW` handles (`OPEN_EXISTING`,
+`FILE_FLAG_BACKUP_SEMANTICS`, no sharing) supply
+`GetFinalPathNameByHandleW(FILE_NAME_NORMALIZED | VOLUME_NAME_NT)` observations
+in a fixed 32,768-character buffer, with every acquired handle closed.
+The input drive's root must be a direct `HarddiskVolume` root; the normalized
+target must share that exact volume component boundary. Only the drive comes
+from the input: the suffix comes from native data. Ambiguous ordinary-DOS
+suffixes, subdirectory drive mappings, and unsupported namespaces refuse.
+Reopening that DOS candidate must yield the identical NT target, and a second
+drive-root observation must match. The candidate must also match the existing
+nonstrict canonical spelling under Windows case normalization. Any native or
+consistency failure re-raises the original standard exception for existing
+sanitized root/state classification.
+
+These successive observations do not promise atomic namespace stability or
+general drive-alias equivalence. Existing physical/ancestor and containment
+checks remain required. `storage.canonicalize_repo`, identity hashing and
+SQLite URI construction keep their nonstrict, existence-independent contracts;
+Packet validation still performs its single existing public live read. No
+private Python resolver hook, global monkeypatch, OS configuration, persistent
+cache, path logging, or new caller decision is involved.
 
 Setup and doctor validate a physical target directory, canonical package,
 layout, state ownership, and package identity. If the target or an ancestor

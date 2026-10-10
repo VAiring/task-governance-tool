@@ -2717,7 +2717,10 @@ Normal/new input rejects the equality form
 `operation_sequence=<positive canonical integer>` for future
 external-operation correlation or idempotency evidence. It is not authority.
 
-#### Legacy Stored Counter Compatibility
+### Legacy Stored Counter Compatibility
+
+The common [stored-input privacy rules](#stored-input-privacy) still apply;
+this read-only compatibility grants no exception for new input.
 
 The sole legacy reader is confined to already-stored bounded lowercase
 `dispatch_authorization` positive-canonical-integer equality and numeric JSON

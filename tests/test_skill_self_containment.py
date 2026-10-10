@@ -1693,21 +1693,34 @@ print(json.dumps(results, ensure_ascii=False))
 
     def test_privacy_routes_keep_common_input_rules_without_error_catalogues(self):
         source = 'references/task_workflow.md'
+        normal = self.reader().read_reference(
+            'references/cli_contracts.md#stored-input-privacy', SKILL_ROOT)
+        self.assertNotIn('Legacy Stored Counter Compatibility', normal)
+        self.assertNotIn('The sole legacy reader', normal)
         for operation, destination in (
             ('task-contract', 'stored-input-privacy'),
             ('contract-revision', 'legacy-stored-counter-compatibility'),
             ('optional-continuation-checkpoint', 'legacy-stored-counter-compatibility'),
         ):
             entry = self.reader().read_reference(source + '#' + operation, SKILL_ROOT)
-            _, privacy = self.linked_output(source, entry, destination)
+            target, privacy = self.linked_output(source, entry, destination)
+            common = privacy
+            if destination == 'legacy-stored-counter-compatibility':
+                self.assertIn('### Legacy Stored Counter Compatibility', privacy)
+                self.assertIn('already-stored bounded lowercase', privacy)
+                self.assertIn('Contract constraints and checkpoint summaries', privacy)
+                self.assertIn('no write', privacy)
+                self.assertIn('no exception for new input', privacy)
+                self.assertNotIn('### Stored Input Privacy', privacy)
+                _, common = self.linked_output(target, privacy, 'stored-input-privacy')
+            self.assertEqual(common, normal)
             for marker in ('dispatch_authorization', 'operation_sequence',
                            '### Stored Input Privacy'):
-                self.assertIn(marker, privacy)
+                self.assertIn(marker, common)
             for unrelated in ('### Command And Argument Errors', '### Relocation Errors',
                               '### Setup And Diagnostic Errors', '### Task Review And Handoff Errors'):
                 self.assertNotIn(unrelated, privacy)
-            if destination == 'legacy-stored-counter-compatibility':
-                self.assertIn('#### Legacy Stored Counter Compatibility', privacy)
+                self.assertNotIn(unrelated, common)
 
     def test_setup_routes_keep_selected_inputs_and_separate_exceptional_work(self):
         source = 'references/task_workflow.md'

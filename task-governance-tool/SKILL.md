@@ -69,7 +69,10 @@ this context; all changed values are returned and no extra read is needed.
 
 Before review preparation, [choose the completion route](references/task_workflow.md#choose-the-completion-route):
 authorized supported snapshots use `prepare-finalization`; conditional manual
-and direct transports remain available. Use the [review workflow](references/task_workflow.md#prepare-and-record-reviews)
+and direct transports remain available. When reviews need waiting and the
+authorized service is enabled and available, use automatic waiting and end the
+parent turn after confirmed readiness. The linked procedure retains waiting-free
+continuation and the existing exceptions. Use the [review workflow](references/task_workflow.md#prepare-and-record-reviews)
 for dispatch and [continue after reviews](references/task_workflow.md#continue-after-reviews)
 for returned results or resumption. Assigned independent reviewers use the separate entry above.
 

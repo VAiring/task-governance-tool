@@ -2107,7 +2107,8 @@ used as a Packet. Packet/result files alone are persisted.
 
 For authorized supported completion, use `prepare-finalization` from the first
 target call and for any required Receipt call, with the same source arguments
-as `prepare`. Choose the route [before preparation](task_workflow.md#choose-the-completion-route).
+as `prepare`. Apply the normal priority and exceptions
+[before preparation](task_workflow.md#choose-the-completion-route).
 There is no approval flag, second material list or extra normal preparation call.
 Manual `prepare` retains its existing behavior where this operation is not
 authorized or applicable, or the user explicitly chooses manual completion.
@@ -2135,8 +2136,12 @@ failed/interrupted, unavailable or changed reviewer turn remains a blocker on
 this intent across `--check` and retries; obtain fresh reviews under a new target
 generation/intent instead of treating missing host information as success.
 
-After all reviewers end, workerless explicit continuation uses the retained
-command once. This is an ordinary completion path as well as the recovery entry:
+When waiting is unnecessary because reviews already ended, or an existing
+exception prevents worker use, explicit continuation after all reviewers end
+uses the retained command once. The [waiting procedure](review_wait.md#normal-wait)
+owns normal service use and confirmed turn exit; workerless continuation is
+available under the [existing exceptions](task_workflow.md#choose-the-completion-route),
+as well as through conditional recovery:
 
 ```powershell
 python .agents/skills/task-governance-tool/scripts/review_handoff.py finalize --repo . --task-id <task-id> --target-generation <generation>

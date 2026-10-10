@@ -55,6 +55,14 @@ no ordinary Task-loop call or permission to change host settings/trust.
 Use the already selected local policy and connected project MCP service with
 its existing host/timezone/send authorization. Ordinary waiting adds no Setup
 or approval step. For an explicit setup request, use [Setup and connection](#setup-and-connection).
+When dispatched reviews still need waiting and these prerequisites hold, use
+this service and end the parent turn after confirmed readiness. An explicit
+user request for parent-managed waiting remains an exception; otherwise do not
+substitute a parent-side wait by preference. This applies to both integrated
+and manual completion transports. If existing dispatch/results already show
+all reviewers ended, go directly to
+[Continue after reviews](task_workflow.md#continue-after-reviews); no reservation
+or extra status query is needed just to establish that branch.
 If a prerequisite is unavailable or an operation fails, use
 [failure and recovery guidance](#failures-stop-and-diagnosis); never retry an
 unknown effect or infer readiness from a failed call.
@@ -110,6 +118,14 @@ specific limitation; do not infer success from an accepted host send.
 An unavailable policy, connection or required public operation does not prevent
 other permitted review transport and does not authorize enabling settings,
 another sender or a substitute supervisor.
+For a prepared integrated intent, waiting OFF/unavailable permits the existing
+workerless continuation after all reviewers end; it does not require manual
+registration or a different commit route. Use
+[Continue after reviews](task_workflow.md#continue-after-reviews) with the
+retained command and outcomes. A failed wait or missing notification alone
+does not establish that prior effects were absent; preserve known successes
+and inspect unknown outcomes through the applicable recovery there. Missing
+Git or send permission remains a boundary on every route.
 
 Use `review_wait_inspect(task_id)` only for requested diagnosis or a failure,
 and `review_wait_stop(task_id)` for explicit cancellation or known-state recovery.

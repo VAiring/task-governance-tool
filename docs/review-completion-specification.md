@@ -775,10 +775,20 @@ metadata nor enabled review waiting creates permission. Ordinary `prepare`,
 unauthorized integrated operation is not invoked; the caller uses the manual
 route and reports the outstanding permission boundary.
 
-Consumer guidance chooses this route before the first target/Receipt preparation.
-Authorized supported snapshot work uses `prepare-finalization` for both source
-actions. Explicit manual selection, unsupported targets/environments and required
-hooks/signing retain `prepare` and manual completion. The ready integrated
+Consumer guidance applies the normal priority before the first target/Receipt
+preparation. Authorized supported snapshot work uses `prepare-finalization` for
+both source actions. When reviews still need waiting and the selected service
+is enabled, available and authorized, the caller delegates through the existing
+[normal wait](#host-owned-review-waiting) and ends its turn on confirmed readiness.
+It does not omit the worker merely by preference. Waiting OFF/unavailable,
+already-ended reviews or an explicit user request for parent-managed waiting
+retain workerless continuation of the same integrated intent. No unnecessary
+wait reservation or additional status query is required for already-ended reviews.
+Explicit manual completion selection, unsupported targets/environments and required
+hooks/signing retain `prepare` and manual completion. Missing permission remains
+required on every route; only already-authorized steps may proceed. Manual Git
+completion and direct transport do not themselves disable permitted automatic
+waiting. The ready integrated
 handoff includes `finalization={status:prepared,task_id,target_generation}` and
 `finalization_command`, and omits `submit_command`; ordinary `prepare` retains
 its submit field and behavior. The finalizer owns registration for its intent,
@@ -844,8 +854,9 @@ therefore cannot bypass an already observed failure through retained `finalize`.
 
 The retained `finalization_command` invokes `finalize --repo <project>
 --task-id <task> --target-generation <generation>` without selecting new material.
-After all reviewers end, it is the ordinary explicit continuation when no worker
-was used or a scheduled wait returned review end without a finalization report,
+After all reviewers end, it is the ordinary explicit continuation when waiting
+was unnecessary or no worker was used under the exceptions above, or a scheduled
+wait returned review end without a finalization report,
 as well as the recovery entry. Missing notification is not evidence of no effect.
 `--check` returns the complete bound report without registration, Git or completion
 writes. Explicit recovery first observes immutable receipt bindings, the saved
@@ -865,7 +876,13 @@ current data is named, and no unknown effect is presented as successful.
 ### Host-Owned Review Waiting
 
 The optional project MCP service owns deterministic waiting for authorized
-independent reviews. The parent dispatches the unchanged requests, retains the
+independent reviews. When its existing policy, availability and authorization
+prerequisites hold and dispatched reviews still need waiting, use this service
+normally and end the parent turn after confirmed readiness. An explicit user
+request for parent-managed waiting remains an exception. Existing dispatch or
+result information showing all reviewers ended leads directly to result
+processing; do not create a wait or add a status call for that case. The parent
+dispatches the unchanged requests, retains the
 original Task/Packet, actual reviewer handles and result transport, and calls
 `review_wait_wait(task_id, reviewer_ids)` once. The service creates its fixed
 same-parent PAUSED heartbeat, prepares the association and starts the ten-minute

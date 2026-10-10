@@ -508,6 +508,14 @@ is implemented in focused orchestration, operational repository, Git adapter and
 delivery responsibilities. The existing manual helper remains independent.
 The retained `finalize` invocation is both workerless explicit continuation and
 conditional recovery; it is not restricted to failed worker operations.
+Consumer guidance normally selects integrated preparation for authorized
+supported snapshots and delegates unfinished reviews to the enabled, available
+and authorized wait service, ending the parent turn on confirmed readiness.
+Workerless continuation covers already-ended reviews, waiting OFF/unavailable
+and explicit parent-managed waiting; it is not the normal preference-based
+substitute for the service. Existing manual/direct transports retain their
+conditions and required permissions. This sequencing uses the existing helper
+commands and runtime; no automatic route selector or fallback is introduced.
 Integrated invocation carries the caller's project-authorized intent, not an
 approval boolean. Current typed caller identity and structural generation checks
 remain mandatory; no parent ID is inferred from prose or numerical records.
@@ -756,6 +764,11 @@ file/stdin invocation remains available for retained supervisor contexts.
 Installed guidance replaces create/prepare/start/ACK duties with one normal
 wait call and existing result processing after resumption. Non-review waiting
 and actual parent/reviewer numerical attribution are unaffected.
+Already-ended reviews proceed to result processing using existing observations,
+without a new wait or status query. If service prerequisites are unavailable,
+the retained integrated continuation remains available after review end;
+unknown host effects still require the existing recovery and never imply that
+registration, Git or completion should be repeated through a different route.
 The catalogue describes wait effects/readiness and links to the wait protocol
 and workflow's Continue After Reviews owner. It does not duplicate the result
 processing procedure. That owner branches on the selected preparation route and

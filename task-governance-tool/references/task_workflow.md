@@ -520,18 +520,30 @@ non-review waiting.
 
 ### Choose The Completion Route
 
-Choose once before target/Receipt preparation, using the project's rules and
-existing user intent. This is an instruction decision, not another command,
-approval flag, material list or repeat permission question.
+Apply this priority before target/Receipt preparation, using the project's
+rules and existing user intent. Authorized supported snapshots normally use
+integrated completion. When reviews still need waiting and the authorized
+service is enabled and available, use [automatic waiting](review_wait.md#normal-wait)
+and end the parent turn on confirmed readiness. Do not skip an available worker
+merely to keep waiting in the parent. This adds no command, approval flag,
+material list or repeat permission question.
 
 | Applicable case | Preparation and continuation |
 |---|---|
-| Authorized local `git_snapshot` completion at the Git root on an existing attached branch, without required commit hooks/signing | Use `prepare-finalization` for target and, if required, Receipt preparation. Retain `finalization_command`. A matching wait worker may finish the fixed stages; without that worker, `finalize` is the ordinary explicit continuation. |
+| Authorized local `git_snapshot` completion at the Git root on an existing attached branch, without required commit hooks/signing | Use `prepare-finalization` for target and, if required, Receipt preparation. Retain `finalization_command`. Use the enabled, available and authorized wait service when reviews need waiting; the matching worker runs the fixed stages to their success or blocking boundary before notification. |
+| The integrated case above, with waiting OFF/unavailable, an explicit user request for parent-managed waiting, or reviews already ended | Keep `prepare-finalization`. After all reviewers end, use the retained `finalization_command` for the same integrated finish. Already-ended reviews need no wait reservation or extra status query. |
 | Unsupported target/environment, project-required hooks/signing, missing commit authority, or explicit user choice of manual completion | Use `prepare`, retain `submit_command`, then follow [manual completion](#manual-completion) when its gates and authority permit. Detached HEAD and nested project snapshots use this route. |
 | Complete Packet/result bytes instead of shared ignored files | Use [direct transport](#direct-review-transport) and its existing explicit completion path. |
 
 Review PASS, enabled waiting and commit-required metadata do not grant Git
-authority. The [integrated contract](cli_contracts.md#integrated-review-finalization)
+authority. Missing permission remains required on the manual route too; continue
+only the already authorized operations. Manual Git completion and direct
+transport still use automatic waiting when its conditions hold. Waiting OFF or
+unavailable does not itself require switching an integrated intent to manual
+completion. A failed wait or missing notification uses the existing
+[wait recovery](review_wait.md#failures-stop-and-diagnosis) and
+[result continuation](#continue-after-reviews), preserving successful stages.
+The [integrated contract](cli_contracts.md#integrated-review-finalization)
 defines supported material and effects. Preparation never starts a reviewer or
 wait worker. A preparation failure uses [bound recovery](cli_contracts.md#recover-review-handoff),
 not a second target/Receipt write or silent route switch.
@@ -650,8 +662,9 @@ material or judgment questions; do not infer unseen results from a short message
   blocker. Do not repeat successful registration, commit or completion, or add a
   routine retrieval/check. An `ok` result alone is not done; `status=completed`
   confirms the integrated stages.
-- **Integrated explicit continuation:** when no worker was used, or a scheduled
-  wait returned `reviews_ended` without a finalization report, run the retained
+- **Integrated explicit continuation:** when waiting was unnecessary or a worker
+  was not used under the [applicable exception](#choose-the-completion-route), or
+  a scheduled wait returned `reviews_ended` without a finalization report, run the retained
   `finalization_command` once. This is an ordinary supported continuation;
   `finalize` observes the original intent and preserved stages before acting.
   Missing notification alone does not prove stages were never run. A lost or

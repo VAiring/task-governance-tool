@@ -2126,6 +2126,38 @@ print(json.dumps(results, ensure_ascii=False))
         self.assertNotIn('## Manual Completion', normal)
         self.assertIn('--completion-revision', manual)
 
+    def test_completion_priority_retains_exceptions_and_bound_recovery_in_package_copy(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            package = copy_skill_to(Path(tmp))
+            skill = (package / 'SKILL.md').read_text(encoding='utf-8')
+            source, choice = self.linked_output(
+                'SKILL.md', skill, 'choose-the-completion-route', package)
+            for condition in ('prepare-finalization', 'enabled and available',
+                              'confirmed readiness', 'waiting OFF/unavailable',
+                              'reviews already ended', 'parent-managed waiting',
+                              'hooks/signing', 'Detached HEAD', 'nested project',
+                              'Missing permission remains required'):
+                self.assertIn(condition, choice)
+            wait_source, waiting = self.linked_output(source, choice, 'normal-wait', package)
+            for condition in ('still need waiting', 'explicit', 'all reviewers ended',
+                              'ok=true,status=waiting,parent_may_end=true'):
+                self.assertIn(condition, waiting)
+            _, continuation = self.linked_output(
+                wait_source, waiting, 'continue-after-reviews', package)
+            self.assertIn('waiting was unnecessary', continuation)
+            self.assertIn('finalization_command', continuation)
+            self.assertIn('preserves every successful stage', continuation)
+            _, retained_choice = self.linked_output(
+                source, continuation, 'choose-the-completion-route', package)
+            self.assertEqual(retained_choice, choice)
+            _, recovery = self.linked_output(
+                source, continuation, 'recover-integrated-finalization', package)
+            for condition in ('--check', 'not a normal', 'saved candidate',
+                              'Successful completion is not repeated'):
+                self.assertIn(condition, recovery)
+            self.linked_output(source, choice, 'manual-completion', package)
+            self.linked_output(source, choice, 'direct-review-transport', package)
+
     def test_both_parent_transports_route_to_complete_wait_protocol(self):
         source = "references/task_workflow.md"
         waiting = self.reader().read_reference("references/review_wait.md#normal-wait", SKILL_ROOT)

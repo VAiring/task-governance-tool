@@ -406,7 +406,13 @@ write setup creates and persists the UUID once.
 Binding is separate: positive generation, 64-lowercase-hex canonical-path
 SHA-256, and bounded display name. `canonical_path_v1` resolves without
 requiring existence, platform-normalizes absolute spelling, UTF-8 encodes, and
-hashes. Display uses the root basename, replaces controls/line separators with
+hashes. Relative input is made absolute before nonstrict resolution. After
+structural preflight, ordinary consumers use its inspected absolute project
+root for state selection and binding observation, rather than resolving the
+original relative argument again. Omitted repo, equivalent relative input and
+absolute input select the same existing state and binding; this neither waives
+physical-root checks nor authorizes relocation or stored-hash repair.
+Display uses the root basename, replaces controls/line separators with
 U+FFFD, falls back to `project`, and is at most 200 code points. Neither is
 identity.
 

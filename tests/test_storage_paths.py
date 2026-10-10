@@ -1,6 +1,7 @@
 import sys
 import tempfile
 import unittest
+from contextlib import chdir
 from pathlib import Path
 from unittest import mock
 
@@ -13,6 +14,7 @@ sys.path.insert(0, str(SCRIPTS_PATH))
 try:
     from task_governance_tool.storage import (
         UnboundDatabaseTarget,
+        canonicalize_repo,
         default_db_path,
         default_viewer_output_path,
         initialize_database,
@@ -31,6 +33,31 @@ from tests.m14_test_support import make_physical_install
 
 
 class StoragePathTests(unittest.TestCase):
+    def test_relative_roots_keep_absolute_binding_when_nonstrict_relative_resolution_is_wrong(self):
+        with tempfile.TemporaryDirectory() as tmp, chdir(tmp):
+            root = Path(tmp).resolve()
+            real_resolve = Path.resolve
+
+            def corrupt_relative(path, strict=False):
+                if not strict and not path.is_absolute():
+                    return root / root.name / path
+                return real_resolve(path, strict=strict)
+
+            for relative in (Path("."), Path("absent") / ".." / "future-project"):
+                with self.subTest(repo=str(relative)):
+                    absolute = root / relative
+                    expected = project_identity(absolute)
+                    with mock.patch.object(Path, "resolve", corrupt_relative):
+                        self.assertEqual(canonicalize_repo(relative), expected.canonical_repo)
+                        self.assertEqual(project_identity(relative), expected)
+                        observed = observe_current_root(relative)
+                    self.assertEqual(observed.canonical_repo, expected.canonical_repo)
+                    self.assertEqual(observed.canonical_path_hash, expected.canonical_path_hash)
+                    self.assertEqual(observed.display_name, expected.display_name)
+            self.assertFalse((root / "absent").exists())
+            self.assertFalse((root / "future-project").exists())
+            self.assertFalse((root / root.name).exists())
+
     def test_skill_root_is_inferred_from_script_path(self):
         self.assertEqual(skill_root_from_script(SCRIPT), SKILL_ROOT.resolve())
 

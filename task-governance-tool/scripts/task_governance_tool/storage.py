@@ -928,7 +928,10 @@ def uses_unsupported_linked_install(script_path: str | os.PathLike[str]) -> bool
 
 
 def canonicalize_repo(repo: str | os.PathLike[str]) -> Path:
-    return Path(repo).expanduser().resolve(strict=False)
+    # Give the nonstrict resolver an absolute input: Windows access-denied
+    # fallback can otherwise append a relative component to cwd twice.
+    # absolute() preserves '..' for the resolver and does not require existence.
+    return Path(repo).expanduser().absolute().resolve(strict=False)
 
 
 def normalized_path_for_hash(path: Path) -> str:

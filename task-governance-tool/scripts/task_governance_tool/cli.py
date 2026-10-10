@@ -90,6 +90,7 @@ from task_governance_tool.storage import (
 )
 from task_governance_tool.doctor import run_doctor
 from task_governance_tool.project_scope import (
+    PREFLIGHT_MESSAGES,
     PROJECT_STATE_MESSAGES,
     STRUCTURAL_CODES,
     inspect_project_scope,
@@ -337,9 +338,17 @@ def handle_command(context: CommandContext) -> CommandResult:
                 message=scope_issue.message,
                 project_id=None,
             )
+        scope = scope_inspection.scope
+        if scope is None:
+            return state_resolution_failure_result(
+                context,
+                code="unsupported_install_layout",
+                message=PREFLIGHT_MESSAGES["unsupported_install_layout"],
+                project_id=None,
+            )
         resolution = resolve_project_state(
-            skill_root=skill_root_from_script(cli_script_path()),
-            repo=Path(context.repo),
+            skill_root=scope.skill_root,
+            repo=scope.canonical_repo,
             retain_read_connection=(
                 context.command
                 in {

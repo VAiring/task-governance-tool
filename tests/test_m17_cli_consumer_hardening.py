@@ -7,7 +7,7 @@ import sqlite3
 import subprocess
 import tempfile
 import unittest
-from contextlib import closing, redirect_stderr, redirect_stdout
+from contextlib import chdir, closing, redirect_stderr, redirect_stdout
 from pathlib import Path
 from unittest import mock
 
@@ -16,6 +16,7 @@ from tests.m14_test_support import make_physical_install
 from task_governance_tool import cli as cli_service
 from task_governance_tool.cli_parser import build_parser
 from task_governance_tool import setup as setup_service
+from task_governance_tool.project_scope import ProjectScopeInspection
 from task_governance_tool.storage import StorageError, connect
 
 
@@ -87,10 +88,13 @@ def _setup(install) -> None:
 def _run_cli(
     install,
     *args: str,
+    repo_arguments: tuple[str, ...] | None = None,
 ) -> subprocess.CompletedProcess[str]:
     stdout = io.StringIO()
     stderr = io.StringIO()
-    argv = [*args, "--repo", str(install.project_root), "--json"]
+    if repo_arguments is None:
+        repo_arguments = ("--repo", str(install.project_root))
+    argv = [*args, *repo_arguments, "--json"]
     with (
         mock.patch.object(
             cli_service,
@@ -135,6 +139,78 @@ def _capture_resolutions(real_resolve, captured: list[sqlite3.Connection]):
 
 
 class M17CliConsumerHardeningTests(unittest.TestCase):
+    def test_relative_and_omitted_repo_use_validated_root_for_reads_and_records(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            install = make_physical_install(Path(tmp))
+            _setup(install)
+            root = install.project_root.resolve()
+            skill_root = install.skill_root.resolve()
+            (root / "child").mkdir()
+            real_resolve_path = Path.resolve
+            real_resolve_state = cli_service.resolve_project_state
+            expected = real_resolve_state(skill_root=skill_root, repo=root)
+            resolutions = []
+
+            def corrupt_relative(path, strict=False):
+                if not strict and not path.is_absolute():
+                    return root / root.name / path
+                return real_resolve_path(path, strict=strict)
+
+            def capture_resolution(**kwargs):
+                self.assertEqual(kwargs["repo"], root)
+                self.assertEqual(kwargs["skill_root"], skill_root)
+                result = real_resolve_state(**kwargs)
+                resolutions.append(result)
+                self.assertEqual(result.paths, expected.paths)
+                self.assertEqual(result.stored_project, expected.stored_project)
+                self.assertEqual(result.binding, "matching")
+                return result
+
+            options = ((), ("--repo", "."), ("--repo", "child/.."), ("--repo", str(root)))
+            with (
+                chdir(root),
+                mock.patch.object(Path, "resolve", corrupt_relative),
+                mock.patch.object(cli_service, "resolve_project_state", side_effect=capture_resolution),
+            ):
+                for index, repo_arguments in enumerate(options):
+                    with self.subTest(repo_arguments=repo_arguments):
+                        before = install.state_snapshot()
+                        context = _run_cli(install, "task", "context", repo_arguments=repo_arguments)
+                        self.assertEqual(context.returncode, 0, context.stdout)
+                        self.assertEqual(_payload(context)["project_id"], expected.project_id)
+                        self.assertEqual(before, install.state_snapshot())
+                        added = _run_cli(
+                            install, "task", "add", "--title", f"Relative root {index}",
+                            repo_arguments=repo_arguments,
+                        )
+                        self.assertEqual(added.returncode, 0, added.stdout)
+                        self.assertEqual(_payload(added)["project_id"], expected.project_id)
+                listed = _run_cli(install, "task", "list")
+            self.assertEqual(listed.returncode, 0, listed.stdout)
+            self.assertEqual(len(resolutions), 9)
+            self.assertEqual(
+                {item["title"] for item in _payload(listed)["data"]["tasks"]},
+                {f"Relative root {index}" for index in range(4)},
+            )
+            self.assertFalse((root / root.name).exists())
+
+    def test_missing_validated_scope_never_reaches_state_resolver(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            install = make_physical_install(Path(tmp))
+            with (
+                mock.patch.object(
+                    cli_service, "inspect_project_scope",
+                    return_value=ProjectScopeInspection(scope=None, package_status=None, issues=()),
+                ),
+                mock.patch.object(cli_service, "resolve_project_state") as resolve,
+            ):
+                result = _run_cli(install, "task", "context")
+            self.assertEqual(result.returncode, 2)
+            self.assertEqual(_payload(result)["errors"][0]["code"], "unsupported_install_layout")
+            self.assertIsNone(_payload(result)["project_id"])
+            resolve.assert_not_called()
+            self.assertFalse(install.db_path.exists())
+
     def test_production_consumers_do_not_import_legacy_target_resolvers(self):
         package_root = Path(cli_service.__file__).resolve().parent
         forbidden = {

@@ -81,7 +81,16 @@ Before a preview's core initialization/relocation is admitted, numerical status
 is `pending_core_setup`, not a guessed binding or claim that a file is absent.
 
 `canonical_state_paths(skill_root, repo=...)` takes the validated governed root
-explicitly. `package_state_paths(skill_root)` is limited to the old migration
+explicitly. Normal CLI dispatch forwards both `ProjectScope.canonical_repo` and
+`ProjectScope.skill_root` from successful structural preflight; absent scope
+fails closed before resolution. It never reintroduces the raw relative repo
+argument. Both path derivation and `observe_current_root` use
+`storage.canonicalize_repo`, which expands the user prefix, makes the input
+absolute without collapsing `..`, then resolves nonstrictly. This avoids the
+Windows relative-input access-denied fallback duplicating a directory while
+preserving existence-independent `canonical_path_v1` and normal resolution
+semantics. Stored identities, hashes and binding generations are unchanged.
+`package_state_paths(skill_root)` is limited to the old migration
 source and marker. `DatabaseTarget` transports the generated paths while its
 actual physical Skill root continues to own config/templates. Private staged
 validation receives both roots explicitly; it never infers Skill ownership

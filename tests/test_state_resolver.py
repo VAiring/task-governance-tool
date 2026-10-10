@@ -7,7 +7,7 @@ import stat
 import sys
 import tempfile
 import unittest
-from contextlib import closing
+from contextlib import chdir, closing
 from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
@@ -295,6 +295,34 @@ class ResolverFixture:
 
 
 class StateResolverTests(unittest.TestCase):
+    def test_relative_roots_select_activated_state_without_rebinding_or_reading_retired_marker(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            fixture = ResolverFixture(Path(tmp))
+            fixture.initialize_fixed_uuid()
+            (fixture.repo / "child").mkdir()
+            expected = resolve_project_state(skill_root=fixture.skill_root, repo=fixture.repo)
+            before = tree_snapshot(fixture.root)
+            real_resolve = Path.resolve
+
+            def corrupt_relative(path, strict=False):
+                if not strict and not path.is_absolute():
+                    return fixture.repo / fixture.repo.name / path
+                return real_resolve(path, strict=strict)
+
+            with chdir(fixture.repo), mock.patch.object(Path, "resolve", corrupt_relative):
+                for repo in (Path("."), Path("child") / "..", fixture.repo):
+                    with self.subTest(repo=str(repo)):
+                        actual = resolve_project_state(skill_root=fixture.skill_root, repo=repo)
+                        self.assertIsNone(consumer_error_code(actual))
+                        self.assertEqual(actual.project_id, UUID_PROJECT_ID)
+                        self.assertEqual(actual.binding, "matching")
+                        self.assertEqual(actual.paths, expected.paths)
+                        self.assertEqual(actual.current_root, expected.current_root)
+                        self.assertEqual(actual.stored_project, expected.stored_project)
+                        self.assertEqual(actual.target, expected.target)
+            self.assertEqual(before, tree_snapshot(fixture.root))
+            self.assertFalse((fixture.repo / fixture.repo.name).exists())
+
     def test_old_package_current_is_setup_source_never_an_ordinary_target(self):
         for backup_only in (False, True):
             with self.subTest(backup_only=backup_only), tempfile.TemporaryDirectory() as tmp:

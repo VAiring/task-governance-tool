@@ -190,7 +190,9 @@ class TaskNoteBodyTests(unittest.TestCase):
         encoded = json.dumps(snapshot, ensure_ascii=False)
         self.assertNotIn('"note_body"', encoded)
         self.assertNotIn(note, encoded)
-        self.assertIn(event["summary"], encoded)
+        audit_event = self.success("task", "show", self.task_id, "--audit")["events"][0]
+        self.assertIn(audit_event["summary"], encoded)
+        self.assertNotEqual(audit_event["summary"], event["summary"])
         self.corrupt_body(event["task_event_id"], "a" * 1500 + " token=private-value")
         with closing(storage.connect_snapshot_readonly(self.db)) as connection, self.assertRaises(storage.StorageError):
             viewer.build_viewer_snapshot(connection, target, generated_at="2026-10-12T00:00:00Z")
@@ -224,8 +226,121 @@ class TaskNoteBodyTests(unittest.TestCase):
             shown = _run_cli(install, "task", "show", task_id, "--read-only")
             self.assertEqual(shown.returncode, 0, shown.stdout)
             self.assertEqual(payload(shown)["data"]["events"][0]["note_body"], note)
+            self.assertEqual(payload(edited)["data"]["event"]["summary"], "Note added")
+            self.assertEqual(payload(shown)["data"]["events"][0]["summary"], "Note added")
+            context = _run_cli(install, "task", "context", "--read-only")
+            self.assertEqual(context.returncode, 0, context.stdout)
+            self.assertEqual(payload(context)["data"]["selected"]["events"][0]["summary"], "Note added")
             rejected = _run_cli(install, "task", "edit", task_id, "--add-note", note + "x")
             self.assertFalse(payload(rejected)["ok"])
+
+    def test_normal_and_write_projection_keep_facts_and_audit_storage(self):
+        cases = (
+            ("短文; Recorded: これは本文", (), "Note added"),
+            ("あ" * 999 + "末", ("--priority", "urgent"), "Note added"),
+            ("短い本文", ("--status", "paused", "--pause-reason", "理由; Note: 短い本文"),
+             "Paused: 理由; Note: 短い本文"),
+            ("本文", ("--review-tier", "1", "--review-tier-change-reason", "確認範囲を変更"),
+             "Review tier changed: 0 -> 1; Reason: 確認範囲を変更"),
+        )
+        for note, args, expected in cases:
+            with self.subTest(expected=expected):
+                event = self.success("task", "edit", self.task_id, *args, "--add-note", note)["event"]
+                before = self.snapshot()
+                shown = self.success("task", "show", self.task_id, "--read-only")["events"]
+                audit = self.success("task", "show", self.task_id, "--audit", "--read-only")["events"]
+                context = self.success("task", "context", "--read-only")
+                selected = context["selected"]
+                if selected is None:
+                    self.assertEqual(context["selection"], "none")
+                for rows in (shown, *([selected["events"]] if selected else [])):
+                    row = next(r for r in rows if r["task_event_id"] == event["task_event_id"])
+                    self.assertEqual(row, event)
+                self.assertEqual(event["summary"], expected)
+                self.assertEqual(event["note_body"], note)
+                raw = next(r for r in audit if r["task_event_id"] == event["task_event_id"])
+                self.assertNotEqual(raw["summary"], expected)
+                self.assertEqual(raw["note_body"], note)
+                self.assertGreater(len(json.dumps(raw, ensure_ascii=False)), len(json.dumps(event, ensure_ascii=False)))
+                self.assertEqual(before, self.snapshot())
+                if "--pause-reason" in args:
+                    # Held work resumes through the existing status-only route;
+                    # a note must not expand that permission boundary.
+                    self.success("task", "edit", self.task_id, "--status", "in_progress")
+
+    def test_mismatched_and_null_note_summaries_preserve_original(self):
+        with closing(storage.connect(self.db)) as connection:
+            for body in (None, "別の本文"):
+                tasks.create_task_event(connection, project_id=self.task["project_id"], task_id=self.task_id,
+                    event_type="note_added", summary="Note added: 元の内容; Recorded: 独自事実",
+                    note_body=body, created_at=storage.utc_now())
+            connection.commit()
+        before = self.snapshot()
+        rows = self.success("task", "show", self.task_id, "--read-only")["events"]
+        notes = [row for row in rows if row["event_type"] == "note_added"]
+        self.assertEqual(len(notes), 2)
+        self.assertTrue(all(row["summary"] == "Note added: 元の内容; Recorded: 独自事実" for row in notes))
+        self.assertEqual({row["note_body"] for row in notes}, {None, "別の本文"})
+        self.assertEqual(before, self.snapshot())
+
+    def test_human_text_keeps_its_bounded_note_summary(self):
+        note = "日本語本文" * 300 + "末尾"
+        edited = run_taskgov("task", "edit", self.task_id, "--add-note", note,
+                             "--repo", str(self.repo), "--db", str(self.db))
+        self.assertEqual(edited.returncode, 0, edited.stdout + edited.stderr)
+        summary = tasks.note_event_summary(note)
+        self.assertIn(summary, edited.stdout)
+        shown = run_taskgov("task", "show", self.task_id, "--read-only",
+                            "--repo", str(self.repo), "--db", str(self.db))
+        self.assertEqual(shown.returncode, 0, shown.stdout + shown.stderr)
+        self.assertIn(summary, shown.stdout)
+
+    def test_summary_validation_precedes_note_projection(self):
+        event = self.success("task", "edit", self.task_id, "--add-note", "本文")["event"]
+        for summary in ("Note added: 本文; Recorded: token=private-value", "x" * 1001):
+            with closing(storage.connect(self.db)) as connection:
+                connection.execute("UPDATE task_events SET summary=? WHERE task_event_id=?", (summary, event["task_event_id"]))
+                connection.commit()
+            before = self.snapshot()
+            for args in (("task", "show", self.task_id), ("task", "context")):
+                result = self.run_cli(*args, "--read-only")
+                self.assertEqual(payload(result)["errors"][0]["code"], "project_state_unreadable")
+                self.assertNotIn("private-value", result.stdout + result.stderr)
+            self.assertEqual(before, self.snapshot())
+
+
+class NoteDisplayComparisonTests(unittest.TestCase):
+    def test_recorded_items_and_delimiters_are_not_guessed(self):
+        for note in ("本文; Recorded: 本文の一部", "Note added: 本文; Note: 別の本文", "あ" * 1999 + "末"):
+            for markers in ([], ["verification complete", "review complete"]):
+                summary = tasks.note_event_summary(note, markers)
+                expected = "Note added" + ("; Recorded: verification complete, review complete" if markers else "")
+                self.assertEqual(tasks.note_display_summary("task_updated", summary, note), expected)
+        summary = "Note added: different; Recorded: verification complete"
+        self.assertEqual(tasks.note_display_summary("task_updated", summary, "本文"), summary)
+
+    def test_ambiguous_generated_summary_keeps_both_interpretations(self):
+        note = "a" * 969 + "...; Recorded: X" + "z" * 1015
+        summary = tasks.note_event_summary(note)
+        self.assertEqual(summary, tasks.note_event_summary(note, ["X..."]))
+        self.assertEqual(tasks.note_display_summary("task_updated", summary, note), summary)
+
+    def test_transition_capacity_and_inconsistent_suffix_keep_original(self):
+        note = "本文"
+        for event_type, prefix in (("task_updated", "Paused: "),
+                                   ("review_tier_changed", "Review tier changed: 1 -> 2; Reason: ")):
+            reason = "r" * (1000 - len(prefix) - len("; Note: 本文")) + "; Note: 本文"
+            summary = tasks.bounded_transition_summary(prefix, reason, recorded_markers=[], note=note)
+            self.assertEqual(len(summary), 1000)
+            self.assertEqual(tasks.note_display_summary(event_type, summary, note), summary)
+            wrong = prefix + "reason; Note: different"
+            self.assertEqual(tasks.note_display_summary(event_type, wrong, note), wrong)
+        summary = "Paused: reason; Recorded: verification complete; Note: 本文"
+        self.assertEqual(tasks.note_display_summary("task_updated", summary, note),
+                         "Paused: reason; Recorded: verification complete")
+        summary = "Resumed from paused; Previous reason: 理由; Note: 本文"
+        self.assertEqual(tasks.note_display_summary("task_updated", summary, note),
+                         "Resumed from paused; Previous reason: 理由")
 
 
 class TaskNoteMigrationTests(unittest.TestCase):

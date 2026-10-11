@@ -74,6 +74,16 @@ Task/project IDs; null describes unretained legacy bodies. Other consumers keep
 the six-field `PUBLIC_EVENT_FIELDS` converter. Initialized storage, Viewer and
 backup/recovery validate all retained bodies and their parent relationships.
 
+The converter's explicit `deduplicate_note_summary` option is used only by
+normal detail and CLI JSON body-bearing write acknowledgements. It validates the original
+summary before `note_display_summary` compares it against the existing bounded
+generator and retained body. A unique exact note-summary interpretation keeps
+the recorded suffix; ambiguity keeps the original. Complete transition suffixes
+below capacity may be removed without changing their reason prefix; capacity
+boundary cases remain intact. Services retain the original event, so human text,
+Audit and other consumers retain stored summaries.
+This is a pure display projection, with no schema, storage or extra read change.
+
 ### Shared Stored Task Row/Batch Validator
 
 `session_identity.py` captures only the invocation's validated thread UUID.

@@ -135,7 +135,8 @@ grow with genuine operation history. Audit events keep the previous newest-ten
 window; normal events are not derived by filtering that window.
 Additional event summaries exposed beyond that former window must satisfy the
 existing event-summary text/privacy limits before output. Their original bytes
-are returned unchanged; rejection uses the existing sanitized
+are preserved in storage; normal display may apply the exact note comparison
+below. Rejection uses the existing sanitized
 `project_state_unreadable` failure without a partial result or write. This local
 output check does not change audit reads or global state admission.
 
@@ -145,6 +146,18 @@ a full body was not retained. Normal detail retains every body-bearing event,
 including one outside the recent-event window. Stored body type, text/privacy,
 capacity, event type and Task/project binding are checked before output;
 invalid content fails with the existing sanitized unreadable-state error.
+Normal detail and note-bearing edit acknowledgements retain the body once and
+remove its proven generated repetition from `summary`. Note-added summaries
+must exactly match the existing bounded generator, including any complete
+recorded-item suffix; competing interpretations preserve the original summary.
+For pause/resume/reason and Tier-change summaries, only a complete matching
+note suffix below the summary capacity is removed, retaining all reason and
+recorded-item text. At the capacity boundary, absent bodies, unmatched formats
+and other ambiguous cases preserve the original summary. No natural-language
+classification, delimiter-only deletion or missing-body reconstruction occurs.
+Stored summaries, concise human text, audit detail, list/latest-event and Viewer projections stay
+unchanged. Every body and emitted summary still receives its applicable safety
+validation before deduplication; IDs, ordering and gates remain unchanged.
 Note-bearing edit acknowledgements also include their full body. The Task edit,
 ownership/transition changes and body-bearing event are one atomic write;
 rejected input or failed body storage leaves no partial edit. Display summaries,

@@ -129,6 +129,7 @@ from task_governance_tool.tasks import (
     list_current_tasks,
     list_tasks,
     read_internal_task,
+    row_to_event,
     validate_current_status_filter,
 )
 from task_governance_tool.task_values import (
@@ -1831,7 +1832,9 @@ def handle_task_edit(context: CommandContext) -> CommandResult:
             exit_code=EXIT_TOOL_ERROR,
         )
 
-    data = {"task": write_task_projection(result.task, result.changed_fields), "changed_fields": result.changed_fields, "event": result.event}
+    event = (row_to_event(result.event, include_note_body="note_body" in result.event,
+                         deduplicate_note_summary=True) if result.event is not None else None)
+    data = {"task": write_task_projection(result.task, result.changed_fields), "changed_fields": result.changed_fields, "event": event}
     if result.task["status"] == "done":
         data["usage"] = {"status": "pending", "coverage": "registered_only"}
     if result.contract_write is not None:

@@ -486,7 +486,14 @@ class TaskEditTests(unittest.TestCase):
 
             self.assertEqual(payload["data"]["changed_fields"], [])
             self.assertEqual(payload["data"]["event"]["event_type"], "note_added")
-            self.assertEqual(payload["data"]["event"]["summary"], "Note added: Checked current blocker")
+            self.assertEqual(payload["data"]["event"]["summary"], "Note added")
+            self.assertEqual(payload["data"]["event"]["note_body"], "Checked current blocker")
+            with closing(sqlite3.connect(db)) as connection:
+                saved = connection.execute(
+                    "SELECT summary, note_body FROM task_events WHERE task_event_id = ?",
+                    (payload["data"]["event"]["task_event_id"],),
+                ).fetchone()
+            self.assertEqual(saved, ("Note added: Checked current blocker", "Checked current blocker"))
             self.assertEqual(table_count(db, "task_events"), 2)
 
     def test_task_edit_accepts_note_up_to_2000_chars_with_concise_event_summary(self):
@@ -500,8 +507,17 @@ class TaskEditTests(unittest.TestCase):
             summary = payload["data"]["event"]["summary"]
             self.assertEqual(payload["data"]["event"]["event_type"], "note_added")
             self.assertLessEqual(len(summary), 1000)
-            self.assertTrue(summary.startswith("Note added: "))
-            self.assertTrue(summary.endswith("..."))
+            self.assertEqual(summary, "Note added")
+            self.assertEqual(payload["data"]["event"]["note_body"], "x" * 1500)
+            with closing(sqlite3.connect(db)) as connection:
+                saved = connection.execute(
+                    "SELECT summary, note_body FROM task_events WHERE task_event_id = ?",
+                    (payload["data"]["event"]["task_event_id"],),
+                ).fetchone()
+            self.assertTrue(saved[0].startswith("Note added: "))
+            self.assertTrue(saved[0].endswith("..."))
+            self.assertLessEqual(len(saved[0]), 1000)
+            self.assertEqual(saved[1], "x" * 1500)
             self.assertEqual(table_count(db, "task_events"), 2)
 
     def test_task_edit_rejects_oversized_note_without_event(self):

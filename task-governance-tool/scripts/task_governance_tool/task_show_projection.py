@@ -219,6 +219,7 @@ def show_task(
                         "project state could not be read safely",
                     ) from exc
             current_events.append(row_to_event(row, include_note_body=True,
+                deduplicate_note_summary=True,
                 expected_project_id=project.project_id, expected_task_id=normalized_task_id))
     else:
         audit_event_rows = fetch_task_event_rows(connection,

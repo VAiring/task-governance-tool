@@ -392,6 +392,7 @@ def row_to_event(
     row: dict[str, Any] | sqlite3.Row,
     *,
     include_note_body: bool = False,
+    deduplicate_note_summary: bool = False,
     expected_project_id: str | None = None,
     expected_task_id: str | None = None,
 ) -> dict[str, Any]:
@@ -399,6 +400,14 @@ def row_to_event(
     if include_note_body:
         event["note_body"] = validated_event_note(row, expected_project_id=expected_project_id,
                                                   expected_task_id=expected_task_id)
+        if deduplicate_note_summary and event["note_body"] is not None:
+            if type(event["summary"]) is not str or len(event["summary"]) > TEXT_LIMITS["event_summary"]:
+                raise StorageError("project_state_unreadable", "project state could not be read safely")
+            try:
+                validate_event_summary(event["summary"])
+            except TaskValidationError as exc:
+                raise StorageError("project_state_unreadable", "project state could not be read safely") from exc
+            event["summary"] = note_display_summary(event["event_type"], event["summary"], event["note_body"])
     return event
 
 
@@ -973,6 +982,40 @@ def note_event_summary(note: str, recorded_markers: list[str] | None = None) -> 
     if note_limit <= 3:
         return prefix + note[:note_limit] + suffix
     return prefix + note[: note_limit - 3] + "..." + suffix
+
+
+def note_display_summary(event_type: str, summary: str, note: str) -> str:
+    """Project only provable generated duplicates; keep ambiguous stored prose."""
+    if event_type in {"note_added", "task_updated"}:
+        candidates = set()
+        if summary == note_event_summary(note):
+            candidates.add("Note added")
+        marker = "; Recorded: "
+        position = summary.find(marker)
+        while position >= 0:
+            # A delimiter may be part of caller text. Accept only an exact
+            # regeneration with the entire suffix, and preserve ambiguity.
+            suffix = summary[position:]
+            if summary == note_event_summary(note, [suffix[len(marker):]]):
+                candidates.add("Note added" + suffix)
+            position = summary.find(marker, position + 1)
+        if len(candidates) == 1:
+            return candidates.pop()
+
+    transition = (
+        event_type == "task_updated" and summary.startswith((
+            "Paused: ", "Resumed from paused; Previous reason: ", "Pause reason updated: "))
+        or event_type == "review_tier_changed" and re.match(
+            r"^Review tier changed: [012] -> [012]; Reason: ", summary) is not None
+    )
+    suffix = f"; Note: {note}"
+    # At the capacity boundary a reason can itself end with a matching note
+    # fragment while the actual suffix was omitted. Do not infer that boundary.
+    if transition and len(summary) < TEXT_LIMITS["event_summary"] and summary.endswith(suffix):
+        base = summary[:-len(suffix)]
+        if summary == bounded_transition_summary(base, "", recorded_markers=[], note=note):
+            return base
+    return summary
 
 
 def bounded_event_summary(prefix: str, value: str, suffix: str = "") -> str:

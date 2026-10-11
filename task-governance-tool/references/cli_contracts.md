@@ -997,7 +997,11 @@ under `task context`'s `data.selected`; no follow-up read is needed:
 Keep the selected route's generated continuation or direct-transport instructions.
 Each returned event has `note_body`, the complete validated text accepted by
 `--add-note` (up to 2,000 characters), or null when a full body was not retained.
-The separate display `summary` remains bounded to 1,000 characters. Null does
+The separate display `summary` remains bounded to 1,000 characters. Normal
+detail and note-bearing edit acknowledgements omit only strictly matched
+generated note repetition, keeping reasons and recorded items. Ambiguous,
+mismatched or capacity-bound transition summaries remain intact; audit retains
+the stored summary. No comparison or follow-up read is required. Null does
 not prove that an older event had no note; do not reconstruct its missing body.
 Normal detail retains all body-bearing events. Audit keeps its newest-ten window.
 These bodies are already available in `task context.selected`; no extra read

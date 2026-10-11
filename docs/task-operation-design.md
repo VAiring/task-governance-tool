@@ -921,6 +921,16 @@ Reader implementation and output semantics stay unchanged; focused retrieval
 checks exercise the actual public output and conditional link reachability,
 with semantic scenario review rather than natural-language matching rules.
 
+Taskize Or Add Scope keeps its common Select-Split-Merge, final viability,
+Contract, ordering and Tier children together. Its trigger links go directly to
+the sibling Split And Merge Cases, Design-First Registration and optional
+Registration Example sections, outside that reader subtree. Conditional sections
+link back to their required common rules, not to another index. Scope addition
+and partial-add recovery keep their existing direct routes. A single resulting
+Task does not bypass classification or gates. Retrieval tests cover ordinary
+registration and the split, design-first and scope-addition routes through the
+unchanged reader, including retained failure/question boundaries.
+
 Single-add and batch schema are sibling CLI sections sharing explicit links to
 the existing registration conditions/result. Initial Contract guidance keeps a
 conditional link to its sibling revision procedure. Review target, shared-file

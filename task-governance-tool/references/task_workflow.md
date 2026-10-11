@@ -30,6 +30,9 @@ from `data.selected.task.task_id` (`task context`) or `data.task.task_id`
 - [Repair Findings](#repair-findings)
 - [Reopen](#reopen)
 - [Taskize Or Add Scope](#taskize-or-add-scope)
+- [Split And Merge Cases](#split-and-merge-cases)
+- [Design-First Registration](#design-first-registration)
+- [Registration Example](#registration-example)
 - [Explicit Mid-Task Scope Addition](#explicit-mid-task-scope-addition)
 - [Partial-Add Recovery](#partial-add-recovery)
 - [Safety Boundary](#safety-boundary)
@@ -1070,14 +1073,15 @@ recovery read.
 
 ### One-Pass Select-Split-Merge
 
-Apply this fixed sequence once:
+Apply this fixed sequence once, including when the result is one Task:
 
 1. **Select** one authority envelope containing the complete authorized
    outcome, its permission boundary, binding order, explicit Contract facts,
    and binding Review Tier mappings.
 2. **Split** once into flat candidate responsibilities where separate completion
    has a concrete purpose: separate approval, usable early handoff, or finishing
-   one outcome while another is held. Being separately implementable or testable,
+   one outcome while another is held, or a foundation releasing already-authorized
+   downstream work. Being separately implementable or testable,
    or having different files, modules, or feature names, is not enough. Conserve
    the complete, non-overlapping scope and explicit permission unions without
    omission or expansion; use only order representable by existing lane/order.
@@ -1093,23 +1097,17 @@ Apply this fixed sequence once:
 
 A provisional candidate states one bounded responsibility, its authorized
 consumed inputs and produced outputs, and any concrete fragment-to-owner
-coupling. It may expose that it cannot yet stand alone; final viability is
-judged only after Merge. Each final group must own its bounded responsibility,
-leave a correct repository state after represented predecessors, carry locally
+coupling; judge final viability only after Merge. Each final group must own its
+bounded responsibility, leave a correct repository state after represented predecessors, carry locally
 attributable verification and review, use existing lane/order, and be resumable
 by a fresh agent from its Contract, routed authority, and predecessor outputs.
-A foundation need not provide standalone user value: its separate completion
-must enable already-authorized downstream work to proceed, not merely anticipate
-a possible future consumer. Every group keeps verification and review sufficient
-for its entire combined scope. Use these criteria in the existing pass, without
+Every group keeps verification and review sufficient for its entire combined
+scope. Use these criteria in the existing pass, without
 scores, token estimates, recorded split reasons, or extra confirmation steps.
 
-For example, a JSON contract needed for an approved consumer team's early start
-may remain separate from its later CLI consumer. If both only complete one
-feature with no separate decision or use, their different tests do not justify
-separate Tasks. A fixture-only fragment Merges into its concrete consumer. A
-tutorial with a separately scheduled handoff can remain independent even when
-it shares files or checks with the feature.
+For fragments, enabling foundations, or uncertainty about separate-completion
+benefit, use [Split And Merge Cases](#split-and-merge-cases). These cases apply
+the same pass; they do not authorize another classification.
 
 ### Registration, Contract, And Ordering
 
@@ -1129,21 +1127,18 @@ edit. An unknown requirement may remain unspecified during work, but cannot
 complete. Acceptance prose and `--verification-complete` do not declare it.
 Use no extra read or question solely to repeat already-authorized requirements.
 
-When registration **and immediate implementation** are already authorized and
-the Task can start without bypassing existing selection or predecessor order,
-record that decision with `task add --status in_progress` (or the item's
-`status` in batch input). Otherwise retain the appropriate initial state,
-normally `ready`. Do not mark new work active to displace an existing active
-Task or an earlier selected ready candidate. Registration-only authority,
-`selection=none`, and omitted candidate rows do not establish start permission
-or absence of competing work; paused/blocked rows alone do not prevent unrelated
-ready work. Use the registration response's ready `data.context_preparation.context`
-for the selected Task's full Contract and current gates, without another context
-read or a separate start edit for an already active Task. Use its selected ID,
-which need not be a newly registered Task. If preparation failed, registration
-still committed: recover with `task context`, not another add. See the exact
-[registration result](cli_contracts.md#task-add). Neither initial status nor
-context selection authorizes the work.
+Use initial `in_progress` only when registration **and immediate implementation**
+are authorized and existing selection/predecessor order permits starting it;
+never displace active work or an earlier ready candidate. Otherwise use the
+appropriate initial state, normally `ready`. Registration-only authority,
+`selection=none`, omitted candidates, initial status and context selection grant
+no start permission or proof that competing work is absent. Paused/blocked work
+alone does not prevent unrelated ready work. Use the response's ready
+`data.context_preparation.context` for the selected ID, complete Contract and
+gates; that selection need not be newly registered. No second context read or
+redundant start edit is needed. Failed context preparation follows a committed
+registration: recover with `task context`, not another add. See the exact
+[registration result](cli_contracts.md#task-add).
 
 When the outcome and registration permission are clear but the authority lacks
 truthful split or complete Contract detail, register one whole-outcome
@@ -1153,20 +1148,10 @@ be represented truthfully or the outcome or permission boundary is too unclear
 for one honest whole-outcome Task. Missing size, implementation, path, or test
 detail alone does not cross that sole question boundary.
 
-When binding authority requires a design decision first, register only the
-design responsibility unless the same authority already states truthful ordered
-design and implementation Contracts. Register later implementation only in a
-later explicit event based on the produced design authority. Every final Task
-retains its own locally attributable verification and review; a later
-integration review never excuses a deficient slice.
-
-For a bounded non-mechanical contributor-guide update with no protected delta,
-Tier 1, explicit registration and immediate-work permission, and all earlier
-Tasks in its lane complete, an eligible registration may be:
-
-```powershell
-python .agents/skills/task-governance-tool/scripts/taskgov.py task add --repo <target-project> --title "Clarify localized contributor guide" --kind sequential --lane TG-EXAMPLE --order 20 --priority normal --status in_progress --review-tier 1 --json
-```
+When binding authority requires a design decision before an implementation
+Contract can be truthful, apply [Design-First Registration](#design-first-registration)
+before writing. For an illustrative initial-state command, see the optional
+[Registration Example](#registration-example).
 
 Do not invent dependency graphs or import a project plan. Initial `done` and
 initial `paused` are rejected. For an initially blocked task, supply
@@ -1190,6 +1175,51 @@ difficulty, duration, failure count, safety wording, or reviewer availability
 never alone selects Tier 2. Splitting cannot lower a Task's applicable floor,
 and a sibling Task's Tier does not propagate. Every final Task must satisfy its
 own gate rather than relying on later integration review.
+
+## Split And Merge Cases
+
+Use with the [one-pass rules](#one-pass-select-split-merge) when candidate
+fragments, enabling foundations or separate-completion benefit need resolution.
+A provisional fragment may expose that it cannot stand alone; do not reject it
+before the global Merge. A foundation need not provide standalone user value,
+but its separate completion must release already-authorized downstream work,
+not anticipate an imagined future consumer.
+
+For example, a JSON contract needed for an approved consumer team's early start
+may remain separate from its later CLI consumer. If both only complete one
+feature with no separate decision or use, their different tests do not justify
+separate Tasks. A fixture-only fragment Merges into its concrete consumer. A
+tutorial with a separately scheduled handoff can remain independent even when
+it shares files or checks with the feature. These examples add no outcome or
+permission beyond the selected authority envelope.
+
+## Design-First Registration
+
+When explicit authority or an implementation-binding owner requires a design
+decision before an implementation Contract can be truthful, apply the
+[common registration rules](#taskize-or-add-scope) and register only the bounded
+design responsibility unless existing authority already states truthful ordered
+design and implementation Contracts. The produced decision is authority and a
+declared input for a later explicit implementation-registration event; do not
+invent an implementation Task. If already-authorized design and implementation
+cannot each satisfy the final-group conditions, the same global Merge keeps
+them together. Each Task retains its own verification and review gate.
+
+## Registration Example
+
+This optional example illustrates the [common registration rules](#taskize-or-add-scope).
+For a bounded non-mechanical contributor-guide update with no protected delta,
+Tier 1, explicit registration and immediate-work permission, and all earlier
+Tasks in its lane complete, an eligible revision-zero registration may be:
+
+```powershell
+python .agents/skills/task-governance-tool/scripts/taskgov.py task add --repo <target-project> --title "Clarify localized contributor guide" --kind sequential --lane TG-EXAMPLE --order 20 --priority normal --status in_progress --review-tier 1 --json
+```
+
+The example leaves verification unspecified; declare its actual requirement
+before completion. Contract revision zero remains valid under the existing
+gates and does not itself require later Contract creation. The example creates
+no permission to start other work.
 
 ## Explicit Mid-Task Scope Addition
 

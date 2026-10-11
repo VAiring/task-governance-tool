@@ -522,7 +522,7 @@ class SkillSelfContainmentTests(unittest.TestCase):
             "one grouped question",
             "add only groups proven missing",
             "do not reconstruct or rerun it",
-            "integration review never",
+            "own gate rather than relying on later integration review",
         ):
             self.assertIn(boundary, taskization)
         self.assertNotIn('--title "Implement bounded change"', workflow)
@@ -2051,6 +2051,9 @@ print(json.dumps(results, ensure_ascii=False))
         for normal, conditional in (
             ('taskize-or-add-scope', 'explicit-mid-task-scope-addition'),
             ('taskize-or-add-scope', 'partial-add-recovery'),
+            ('taskize-or-add-scope', 'split-and-merge-cases'),
+            ('taskize-or-add-scope', 'design-first-registration'),
+            ('taskize-or-add-scope', 'registration-example'),
             ('review-and-completion', 'repair-findings'),
             ('review-and-completion', 'reopen'),
             ('task-contract', 'concise-contracts-with-current-owners'),
@@ -2493,6 +2496,49 @@ print(json.dumps(results, ensure_ascii=False))
         self.linked_output(source, body, "contract-revision")
         self.linked_output(source, body, "partial-add-recovery")
         self.assertNotIn('"common"', body)
+
+    def test_registration_scenarios_keep_common_judgment_and_direct_conditional_routes(self):
+        source = "references/task_workflow.md"
+        normal = self.reader().read_reference(f"{source}#taskize-or-add-scope", SKILL_ROOT)
+        # A single Task still receives the whole classifier, final conditions,
+        # registration boundary, fallback and Tier table. Examples are not
+        # silently inherited through the reader's descendant semantics.
+        for required in ("**Select**", "**Split**", "**Merge**",
+                         "including when the result is one Task",
+                         "locally", "revision-zero Task", "one grouped question",
+                         "### Registration, Contract, And Ordering",
+                         "### Review Tier Selection", "| Tier 2 |", "| Tier 0 |", "| Tier 1 |"):
+            self.assertIn(required, normal)
+        self.assertNotIn("TG-EXAMPLE", normal)
+        self.assertNotIn("approved consumer team's early start", normal)
+
+        for route, shared in (("split-and-merge-cases", "one-pass-select-split-merge"),
+                              ("design-first-registration", "taskize-or-add-scope"),
+                              ("registration-example", "taskize-or-add-scope"),
+                              ("explicit-mid-task-scope-addition", "taskize-or-add-scope")):
+            with self.subTest(route=route):
+                _, detail = self.linked_output(source, normal, route)
+                _, common = self.linked_output(source, detail, shared)
+                self.assertEqual(common, self.reader().read_reference(f"{source}#{shared}", SKILL_ROOT))
+                if route == "design-first-registration":
+                    self.assertIn("later explicit implementation-registration event", detail)
+                    self.assertIn("truthful ordered", detail)
+                    self.assertIn("global Merge", detail)
+                elif route == "registration-example":
+                    self.assertIn("--status in_progress", detail)
+                    self.assertIn("--review-tier 1", detail)
+                    self.assertIn("verification unspecified", detail)
+                    self.assertIn("does not itself require later Contract creation", detail)
+                    # The illustrative active revision-zero Task must not gain
+                    # a later Contract-activation requirement from its prose.
+                    _, contract = self.linked_output(source, normal, "task-contract")
+                    self.assertIn("Never ask for missing Contract fields", contract)
+                    self.assertIn("ready|blocked -> in_progress", contract)
+                elif route == "explicit-mid-task-scope-addition":
+                    self.assertIn("raise the Tier first", detail)
+        _, recovery = self.linked_output(source, normal, "partial-add-recovery")
+        self.assertIn("missing response is not a confirmed rollback", recovery)
+        self.assertIn("do not reconstruct or rerun it", recovery)
 
     def test_edit_guidance_routes_to_typed_completion(self):
         source = 'references/cli_contracts.md'

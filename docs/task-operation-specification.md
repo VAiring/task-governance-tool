@@ -1110,6 +1110,14 @@ document organization only: no extra normal-path call, search, reread, choice,
 reader behavior, or gate is introduced. Compare actual reader output, including
 ancestor introductions and descendants, rather than file length alone.
 
+The registration entry retains both explicit triggers, the complete one-pass
+decision and final-group conditions (also for a one-Task result), Contract and
+permission rules, Tier floors, ordering, and the sole question boundary.
+Fragment/foundation cases, design-first detail and command examples are direct
+conditional siblings. Their applicability is visible before a registration
+write; examples are optional. This placement never skips a required judgment or
+adds an intermediate index, routine question, or normal read.
+
 Operation entries distinguish single registration from structured batch input,
 initial Contract creation from later semantic revision, manual Verification
 Receipt input from an already structured verifier result, and shared-file review

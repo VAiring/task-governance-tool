@@ -1906,6 +1906,57 @@ print(json.dumps(results, ensure_ascii=False))
         self.assertNotIn('Unrelated.', output)
         self.assertNotIn('Do not load.', output)
 
+    def test_fence_boundaries_preserve_subtree_and_ancestor_examples(self):
+        for character in ('`', '~'):
+            for length in (4, 5):
+                for indent in ('', '   '):
+                    for closing in (character * length,
+                                    '   ' + character * (length + 1) + ' \t'):
+                        with self.subTest(character=character, length=length,
+                                          indent=indent, closing=closing):
+                            marker = character * length
+                            other = '~' if character == '`' else '`'
+                            example = (indent + marker + 'text\n'
+                                       + character * 3 + '\n# Short fence content\n'
+                                       + other * (length + 1) + '\n# Other fence content\n'
+                                       + marker + ' suffix\n# Suffix content\n'
+                                       + '    ' + marker + '\n# Indented content\n'
+                                       + '<a id="selected"></a>\n## Code heading\n'
+                                       + closing + '\n')
+                            text = ('# Guide\nAncestor requirement.\n' + example
+                                    + 'Ancestor tail.\n## Other\nExcluded other.\n'
+                                    + '<a id="selected"></a>\n## Selected\n'
+                                    + example + 'Required tail.\n'
+                                    + '### Child\nChild condition.\n'
+                                    + '## Sibling\nExcluded sibling.\n')
+                            output = self.reader().section(text, 'selected')
+                            self.assertEqual(output.count(example), 2)
+                            for required in ('Ancestor requirement.', 'Ancestor tail.',
+                                             'Required tail.', 'Child condition.'):
+                                self.assertIn(required, output)
+                            self.assertNotIn('Excluded other.', output)
+                            self.assertNotIn('Excluded sibling.', output)
+                            for code_fragment in ('code-heading', 'short-fence-content',
+                                                  'other-fence-content', 'suffix-content',
+                                                  'indented-content'):
+                                with self.assertRaises(ValueError):
+                                    self.reader().section(text, code_fragment)
+
+    def test_long_fenced_reference_normalizes_crlf_without_losing_body(self):
+        text = ('# Guide\r\n## Selected\r\n````text\r\n```\r\n'
+                '# Code heading\r\n````suffix\r\n<a id="selected"></a>\r\n'
+                '## Code anchor\r\n`````\r\nRequired tail.\r\n'
+                '## Sibling\r\nExcluded sibling.\r\n')
+        with tempfile.TemporaryDirectory() as directory:
+            package = Path(directory)
+            (package / 'references').mkdir()
+            (package / 'references/task_workflow.md').write_bytes(text.encode('utf-8'))
+            output = self.reader().read_reference('references/task_workflow.md#selected', package)
+            self.assertNotIn('\r', output)
+            self.assertIn('# Code heading\n````suffix\n', output)
+            self.assertIn('Required tail.', output)
+            self.assertNotIn('Excluded sibling.', output)
+
     def test_every_shipped_heading_returns_its_complete_source_subtree(self):
         for name in sorted(self.reader().REFERENCES):
             source = (SKILL_ROOT / 'references' / name).read_text(encoding='utf-8')

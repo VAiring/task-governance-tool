@@ -12,6 +12,22 @@ REFERENCES = {"task_workflow.md", "cli_contracts.md", "reconciliation.md", "usag
               "review_wait.md", "runner_application.md"}
 
 
+def _fence_opener(line: str) -> str:
+    stripped = line.lstrip(" ")
+    if len(line) - len(stripped) > 3 or not stripped.startswith(("```", "~~~")):
+        return ""
+    run = len(stripped) - len(stripped.lstrip(stripped[0]))
+    return stripped[:run]
+
+
+def _fence_closes(line: str, marker: str) -> bool:
+    stripped = line.lstrip(" ")
+    if len(line) - len(stripped) > 3 or not stripped.startswith(marker):
+        return False
+    run = len(stripped) - len(stripped.lstrip(marker[0]))
+    return not stripped[run:].strip()
+
+
 def section(text: str, fragment: str) -> str:
     """Keep the selected subtree and ancestor introductions, without siblings."""
     lines = text.splitlines(keepends=True)
@@ -21,13 +37,11 @@ def section(text: str, fragment: str) -> str:
     fence = ""
     for position, line in enumerate(lines):
         stripped = line.strip()
-        if stripped.startswith(("```", "~~~")):
-            marker = stripped[:3]
-            if not fence:
-                fence = marker
-            elif fence == marker:
+        if fence:
+            if _fence_closes(line, fence):
                 fence = ""
             continue
+        fence = _fence_opener(line)
         if fence:
             continue
         anchor = re.fullmatch(r'<a id="([\w-]+)"></a>', stripped)

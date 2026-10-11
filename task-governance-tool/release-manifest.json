@@ -10,7 +10,7 @@
     "references/runner_application.md": "sha256:32acee0294427670c43b34597091106184a26a7ef47c79f892ac2f1c4e132ac5",
     "references/task_workflow.md": "sha256:206569a2352783b3739990364a12ccd9dab3b6a579a3ba04ade3a66b84296291",
     "references/usage_hooks.md": "sha256:2e992f79536ba57a922e9fbc391c3a066582f4c1097afe5e3e8d562756bf0297",
-    "scripts/read_reference.py": "sha256:b086e1074c72337ba0e1ac5e5d971f4578b130724b978b3002dcb168cfcfac4f",
+    "scripts/read_reference.py": "sha256:19a87ed685c1e4540f50eabb751ac28b9c3e7cd12ae67b280122464dc54dfa3a",
     "scripts/review_handoff.py": "sha256:ae996ec5ba7c76d4f23c31a6a9e73497fbbb81a447f3afcb61e3e3be9cadee03",
     "scripts/review_wait_server.py": "sha256:d6b1da9ff1d298150d2d05575cd2085af9b3faeee354ba1690aea06097055b3e",
     "scripts/source_imports.py": "sha256:527b4e064682f34a892537d5094f8f10f5ee1e9e4332dee0441941c88e86c056",

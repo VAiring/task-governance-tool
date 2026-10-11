@@ -479,16 +479,8 @@ def _requests(repo, args, packet_path):
             invocation = save + " <<'TASKGOV_REVIEW_RESULT'\n<completed original JSON>\nTASKGOV_REVIEW_RESULT"
         reviewers.append({"result_path": path, "request": (
             "You are assigned an independent review of the complete exact target under current project authority. "
-            "This request and its read output supply your procedure and result format; no Skill operating guide or internal fingerprint implementation is a prerequisite. "
-            "Read Skill files when they are actually governing or reviewed material, not to learn Task management. "
-            "Run the read-only operation below. Follow review_material for target-bound project AGENTS.md, applicable authority, required source/tests, discovered dependencies and retrieval exceptions. "
-            "Independently judge the whole target against its scope, acceptance, constraints and verification expectation; verification_guidance explains the supplied verification_evidence and its limits. "
-            "Complete result_template according to required_output and result_instructions. "
-            "Replace only the JSON placeholder below; run this fixed save operation, not new save/validation code. "
-            "On saved acknowledgement return path, verdict and Finding count once in the final response; "
-            "do not echo JSON or send a duplicate normal-success notification. "
-            "Report questions, read mismatch, unavailable/truncated material, save failure or lost acknowledgement to the caller; do not claim PASS from incomplete inspection or success from an unknown outcome. "
-            "Preserve failed residue; do not overwrite or blindly repeat a save. Do not manage Tasks, reset targets, register DB evidence, complete work or implement transport/recovery code."
+            "Run the fixed read below and follow its result_instructions with the supplied material and verification guidance. "
+            "If read fails or its output is mismatched, unavailable or truncated, stop and report to the caller; do not judge from incomplete information."
             + "\n\nRead command:\n" + read + "\n\nSave command:\n" + invocation
         )})
     from task_governance_tool.setup_feature_config import read_choices

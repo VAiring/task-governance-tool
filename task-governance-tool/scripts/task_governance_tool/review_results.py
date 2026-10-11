@@ -149,6 +149,12 @@ def review_result_instructions(*, independent: bool = False) -> list[str]:
         ("provenance.method_codes (0-8 unique codes)", REVIEW_METHODS),
     )
     return [
+        *(["Independently judge the whole target against scope, acceptance, constraints "
+           "and verification expectation. Follow review_material for target-bound AGENTS.md, "
+           "authority/source/test reads and dependency/retrieval rules, and verification_guidance "
+           "for verification_evidence and its limits. No Skill operating guide or fingerprint "
+           "implementation read is required; Skill files remain required when governing or reviewed."]
+          if independent else []),
         "Complete result_template from the actual review. Nulls are unfinished, "
         "not defaults; the unfilled template cannot be registered. Keep version, "
         "task_id, contract_revision and every review_target field unchanged; "
@@ -199,6 +205,15 @@ def review_result_instructions(*, independent: bool = False) -> list[str]:
         "documents together in a JSON array without regenerating their content; "
         "identity and target must match. ") + "Use sanitized summaries, "
         "never secrets, raw output, prompts, transcripts or raw review reasoning.",
+        *(["Use the fixed save command, replacing only its JSON placeholder with the complete "
+           "original result; do not write save/validation code. On ok=true,status=saved return "
+           "path, verdict and Finding count once in your final response, without JSON or a "
+           "duplicate normal-success notification. Report questions, unresolved material/read "
+           "issues, save failure or lost acknowledgement to the caller. Incomplete inspection "
+           "cannot justify PASS; unknown outcomes do not prove success. Preserve failed residue; "
+           "never overwrite or blindly repeat save. Do not manage Tasks, reset targets, register "
+           "DB evidence, complete work or implement transport/recovery code."]
+          if independent else []),
     ]
 
 

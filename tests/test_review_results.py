@@ -89,6 +89,36 @@ class BinaryInput(io.BytesIO):
 
 
 class ReviewResultsInputTests(unittest.TestCase):
+    def test_independent_read_owns_procedure_without_changing_direct_packet_route(self):
+        independent = " ".join(result_service.review_result_instructions(independent=True))
+        full = " ".join(result_service.review_result_instructions())
+        for rule in (
+            "Independently judge the whole target",
+            "scope, acceptance, constraints and verification expectation",
+            "target-bound AGENTS.md", "authority/source/test reads",
+            "dependency/retrieval rules", "verification_guidance", "verification_evidence and its limits",
+            "No Skill operating guide or fingerprint implementation read is required",
+            "Skill files remain required when governing or reviewed",
+            "fixed save command", "replacing only its JSON placeholder",
+            "complete original result", "do not write save/validation code",
+            "ok=true,status=saved", "path, verdict and Finding count once",
+            "final response, without JSON", "duplicate normal-success notification",
+            "Report questions", "unresolved material/read issues",
+            "save failure or lost acknowledgement", "Incomplete inspection cannot justify PASS",
+            "unknown outcomes do not prove success", "Preserve failed residue",
+            "never overwrite or blindly repeat save",
+            "Do not manage Tasks, reset targets, register DB evidence, complete work or implement transport/recovery code",
+        ):
+            with self.subTest(rule=rule):
+                self.assertIn(rule, independent)
+        for shared_file_only in ("fixed save command", "ok=true,status=saved", "JSON placeholder"):
+            self.assertNotIn(shared_file_only, full)
+        # Direct consumers keep their own original-byte transport and actual
+        # fallback/Tier-0 permissions; they are not routed through shared save.
+        for direct_rule in ("self_review_fallback", "not_required", "--user-approved-reviewer",
+                            "original documents together in a JSON array"):
+            self.assertIn(direct_rule, full)
+
     def test_generated_guidance_retains_closed_choices_for_both_review_routes(self):
         # The fixed vocabulary is a reviewer input contract, independent of
         # how surrounding explanatory sentences are split or consolidated.

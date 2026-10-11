@@ -116,27 +116,17 @@ class ReviewRequestLayoutTests(unittest.TestCase):
                     expected_calls.append([*base, "submit", *common, "--", *(row["result_path"] for row in result["review_requests"])])
                     self.assertEqual([call.args[0] for call in shell.call_args_list], expected_calls)
         self.assertEqual(len(set(prefixes)), 1)
-        # The request routes format questions to the paired read while retaining
-        # authority/judgment and transport duties. It does not repeat the schema.
-        for field in ("review_material", "verification_guidance", "verification_evidence",
-                      "result_template", "required_output", "result_instructions"):
-            self.assertIn(field, prefixes[0])
+        # The entry binds the role, read/save and failures before the first read
+        # can supply the shared procedure. It no longer repeats that procedure.
+        self.assertIn("result_instructions", prefixes[0])
         for result_detail in ("provenance.model_state", "declared_model_id", "file/line",
-                              "severity order", "model/Skill identity or version"):
+                              "severity order", "model/Skill identity or version",
+                              "save/validation code", "Finding count", "reset targets"):
             self.assertNotIn(result_detail, prefixes[0])
         for rule in ("complete exact target under current project authority",
-                     "no Skill operating guide or internal fingerprint implementation is a prerequisite",
-                     "scope, acceptance, constraints and verification expectation",
-                     "required source/tests, discovered dependencies and retrieval exceptions",
-                     "when they are actually governing or reviewed material",
-                     "Independently judge the whole target",
-                     "run this fixed save operation, not new save/validation code",
-                     "return path, verdict and Finding count once in the final response",
-                     "do not echo JSON or send a duplicate normal-success notification",
-                     "read mismatch, unavailable/truncated material, save failure or lost acknowledgement",
-                     "do not claim PASS from incomplete inspection or success from an unknown outcome",
-                     "Preserve failed residue; do not overwrite or blindly repeat a save",
-                     "Do not manage Tasks, reset targets, register DB evidence, complete work or implement transport/recovery code"):
+                     "Run the fixed read below",
+                     "If read fails", "mismatched, unavailable or truncated",
+                     "stop and report to the caller", "do not judge from incomplete information"):
             self.assertIn(rule, prefixes[0])
 
 
@@ -626,7 +616,10 @@ class ReviewerDisplayTests(PreparationFixture):
         self.assertIn("result_instructions", output_route)
         instructions = " ".join(view["result_instructions"])
         for preserved in ("all Findings", "including low", "file/line", "risks",
-                          "corrections", "role is uncertain", "unknown declarations unknown"):
+                          "corrections", "role is uncertain", "unknown declarations unknown",
+                          "review_material", "verification_guidance", "verification_evidence",
+                          "fixed save command", "ok=true,status=saved", "lost acknowledgement",
+                          "never overwrite or blindly repeat save"):
             self.assertIn(preserved, instructions)
         self.assertEqual(view["review_material"]["status"], "requires_supplied_material")
         self.assertEqual(view["result_template"]["receipts"], packet["result_template"]["receipts"])

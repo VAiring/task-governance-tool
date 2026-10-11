@@ -343,13 +343,15 @@ optional `--material-details` selects the conditional retrieval explanation,
 never a role. Arguments, tier and slots do not establish actual independence.
 Generated ordinary review
 requests supply that read command instead of raw-file reading and contain the
-ordinary procedure themselves. Each row has only `result_path` and `request`;
+independent assignment and first-read failure boundary. Each row has only `result_path` and `request`;
 the request embeds both fixed read/save invocations and remains directly
 forwardable without separate command keys or parent reconstruction.
-`_requests` places all shared procedure text before the bound read/save command
-sections, in that order. It owns the independent assignment, whole-target
-judgment and transport procedure, routing format/provenance/Finding declarations
-to the paired read's `result_instructions`. Material read guidance owns
+`_requests` places that stable entry before the bound read/save command sections,
+in that order. The paired read's independent `result_instructions` supplies
+whole-target judgment, routes to material/verification guidance, result
+declarations, and fixed-save/acknowledgement/failure/permission rules. The full
+Packet's direct-transport explanation receives no shared-file procedure.
+Material read guidance owns
 collection selection, exact mappings, reuse and conditional recovery; collection
 output explains its tables and incomplete-delivery recovery without repeating
 result-format rules. Host-native quoting, UTF-8 data carriers and the
@@ -472,7 +474,7 @@ Saved evidence is shape-checked but never trusted in place of the current read;
 old Packets without it remain accepted. Existing identity/Contract/target/path
 comparison precedes projection, without another CLI capture. A changed summary
 or observation time alone does not rewrite the saved Packet or invalidate a
-review target. Request prose points to the supplied summary and its limits,
+review target. The independent procedure points to the supplied summary and its limits,
 without a normal parent-transcription or reviewer-query step.
 
 The transport module owns bounded physical reads, explicit ignored-path checks,
@@ -1299,9 +1301,10 @@ the applicable result explanation. It never mutates the original Packet or
 fills claims. Helper tests exercise complete-before-display validation, original
 byte and Finding conservation, stale registration rejection and read/save
 failure paths; retrieval tests check the reviewer route without importing the
-parent operation subtree. Generated request prose covers reviewer judgment and
-result return; the paired read output covers exact material retrieval and its
-exceptions. Their shared explanations can be consolidated while the transient
+parent operation subtree. Generated request prose supplies the role, fixed
+commands and first-read failure boundary; the paired read output supplies the
+common review/save procedure and exact material retrieval with its exceptions.
+Their shared explanations can be consolidated while the transient
 material display selects normal or conditional detail. Saved Packet/result
 shapes, immutable selectors and review/save/registration checks stay unchanged.
 Local bytes/call observations are not token savings.

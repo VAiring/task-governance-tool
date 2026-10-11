@@ -944,6 +944,10 @@ not PASS. Independently judge quality; investigate or ask when needed.
 
 The generated shared-file request and its output are self-contained; this
 section is fallback/reference guidance, not an additional normal prerequisite.
+The request supplies the role and fixed commands; its read output's
+`result_instructions` supplies the review/save procedure. Failed, mismatched,
+unavailable or truncated first-read output requires stopping and reporting to
+the caller before judgment.
 When the request supplies shared-file operations, use its fixed
 `review_handoff.py read --repo <root> --packet <path>` command in place of reading the raw
 saved Packet. Its output retains Task/Contract/target,

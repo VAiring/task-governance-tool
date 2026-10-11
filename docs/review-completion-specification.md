@@ -399,10 +399,11 @@ direct storage access, writes nothing and creates no second Packet. Its display 
 UTF-8 JSON plus LF, without shell-codepage conversion or
 ASCII escaping of non-ASCII Contract prose. The generated ordinary
 independent-review row contains only `result_path` and a self-contained `request`.
-The request embeds the exact read and save commands with their procedure and is
+The request embeds the exact read and save commands and is
 directly forwardable; separate `read_command`/`save_command` keys do not repeat
 them. No extraction, reconstruction or command matching is required of the parent.
-Common rules and procedure form the request's stable opening; the bound read
+The independent assignment and first-read failure boundary form its stable
+opening; the bound read
 command and then the save invocation follow in labeled sections. Paths and
 commands retain their exact arguments and correspondence. This presentation
 does not change steps or require an extra read. A stable request prefix may
@@ -595,11 +596,15 @@ saved, no parent environment is changed, and no network or Git write is added.
 Diff-fingerprint/external targets instead return `requires_supplied_material`
 with no Git-derived delta. The caller must provide complete material and evidence
 binding it to the exact value; display success is not that evidence. The generated
-request and read output are self-contained together: the request assigns
-whole-target independent judgment under project authority and supplies fixed
-read/save, acknowledgement and incomplete/uncertain-outcome handling. It routes
-result declarations to the supplied `result_instructions`, rather than repeating
-their format, provenance and Finding rules.
+request and read output are self-contained together. The request assigns the
+independent role under current project authority, supplies fixed read/save, and
+requires stopping and reporting failed, mismatched, unavailable or truncated
+first-read output before judgment. The existing read's `result_instructions`
+owns whole-target judgment, routes to material and verification guidance, and
+supplies format/provenance/Finding declarations plus fixed-save, acknowledgement,
+uncertain-outcome and reviewer permission rules. No extra normal read, argument
+or parent reconstruction is needed. Moving instructions between these two
+already consumed surfaces alone is not a total-input or token-saving claim.
 The default read output owns concrete artifact/dependency selectors, normal
 collection, reuse conditions and the conditions requiring its optional detailed
 read. Collection explains its body/patch tables and recovery of incomplete
@@ -1860,6 +1865,9 @@ unchanged except `receipt_command` (omitted) and `result_instructions` (the
 explicit independent-role explanation). The latter retains exact binding,
 actual claims, independent verdicts, provenance vocabulary/matrix, identifier
 grammars, one-original/one-Receipt capacity, all Finding limits and privacy.
+It also supplies the shared-file procedure described in
+[caller-owned review handoff](#caller-owned-review-handoff), including its
+material/verification routes and save/report/failure/permission boundaries.
 It omits parent batch-registration and inapplicable fallback/Tier-0/approval
 details. No null is filled or identity, verdict, method or independence inferred.
 The complete Packet on disk is preserved. Existing save/submit consume only the full Packet and preserve

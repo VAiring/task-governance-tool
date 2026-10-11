@@ -431,7 +431,7 @@ and retry using [outcome and retry rules](#setup-outcomes-and-recovery):
     "state_layout_activate"
   ],
   "schema_from": null,
-  "schema_to": 27,
+  "schema_to": 28,
   "maintenance_enabled": true,
   "backup_interval_minutes": 30,
   "backup_generations": 3,
@@ -606,8 +606,8 @@ A ready result has this structure:
     },
     "project_state": {
       "code": "ready",
-      "schema_version": 27,
-      "required_schema_version": 27
+      "schema_version": 28,
+      "required_schema_version": 28
     },
     "task_summary": {
       "code": "ready",

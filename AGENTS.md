@@ -509,6 +509,23 @@ Use this structure for independent reviews:
 - Tests must run without network access and without real target-project
   mutation by default.
 
+### Measurement Policy
+
+- Use GPT-6.1 Sol (`gpt-6.1-sol`), Medium effort (`medium`), for future
+  validation runs unless the user explicitly selects otherwise. This does not
+  set the model for specification discussions or ordinary development.
+- Use the same setting for measured parents and independent reviewers, with
+  and without the Skill. Set it in each environment's `AGENTS.md` and actual
+  launch settings; documentation alone does not select the runtime model.
+- Normally measure the latest Skill version and compare it with the previous
+  measured version and retained Skill-free baseline. Repeat Skill-free runs
+  only when test conditions (including model/effort) or the Codex version
+  change, or when the user explicitly requests them; a Skill update alone
+  does not require another Skill-free run.
+- Preserve comparison logs, evidence and summaries with their actual Skill,
+  Codex, model and effort versions/settings. Identify changed conditions in
+  comparisons; never relabel historical measurements as matching a new setup.
+
 ## Git Rules
 
 - Verify whether `C:\WorkSpace\task-governance-tool` is under git control and

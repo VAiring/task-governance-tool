@@ -44,6 +44,7 @@ EXPECTED_CANONICAL_DOCS = (
     "docs/verification-declaration-plan.md",
     "docs/session-usage-plan.md",
     "docs/review-finalization-plan.md",
+    "docs/competitive-evaluation-execution.md",
     "docs/history/README.md",
 )
 EXPECTED_METRIC_DOCS = EXPECTED_CANONICAL_DOCS + (
@@ -51,6 +52,7 @@ EXPECTED_METRIC_DOCS = EXPECTED_CANONICAL_DOCS + (
     "docs/artifact-authoring.md",
 )
 FIXTURE_LINK_TARGETS = (
+    "docs/proposals/competitive-evaluation-plan.md",
     "LICENSE",
     "docs/proposals/review-wait-notification.md",
     "docs/releases/v0.10.0.md",
@@ -248,9 +250,9 @@ class DocumentContractTests(unittest.TestCase):
         self.assertNotIn(secret, serialized)
         self.assertNotIn("Traceback", serialized)
 
-    def test_registry_v19_is_closed(self):
+    def test_registry_v20_is_closed(self):
         expected = {
-            "schema": "taskgov-document-authority-v19",
+            "schema": "taskgov-document-authority-v20",
             "mandatory_start": [
                 "AGENTS.md",
                 "docs/authority.md",
@@ -275,7 +277,7 @@ class DocumentContractTests(unittest.TestCase):
                 "docs/database-design.md",
             ],
             "mixed_execution": [],
-            "conditional": ["docs/state-layout-separation-plan.md", "docs/verification-declaration-plan.md", "docs/session-usage-plan.md", "docs/review-finalization-plan.md"],
+            "conditional": ["docs/state-layout-separation-plan.md", "docs/verification-declaration-plan.md", "docs/session-usage-plan.md", "docs/review-finalization-plan.md", "docs/competitive-evaluation-execution.md"],
             "history_index": "docs/history/README.md",
         }
         with self.fixture() as root:
@@ -441,6 +443,11 @@ class DocumentContractTests(unittest.TestCase):
         self.assertEqual(
             contract.ROUTE_SECTIONS,
             (
+                (
+                    contract.AUTHORITY,
+                    "## Conditional Comparative Evaluation",
+                    ("competitive-evaluation-execution.md",),
+                ),
                 (
                     contract.AUTHORITY,
                     "## Conditional Review Finalization Plan",

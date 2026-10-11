@@ -20,17 +20,10 @@ workspace.
 - The intended repository root is `C:\WorkSpace\task-governance-tool`.
 - The installable package, CLI, migrations, tests, and formal documents already
   exist; inspect them before changing an established contract.
-- `docs/authority.md` is the concise repository authority index. It routes
-  product behavior to `docs/specification.md`, implementation structure to
-  `docs/design.md`, current decisions, open issues, cross-sequence gateways,
-  and non-delegated static contracts to `plan.md`, and each indexed execution
-  unit's exact detail to its routed current-or-conditional contract. The
-  project-local Task database, inspected
-  through the public CLI, owns live Task state and evidence. Published artifact
-  and install identity belongs in `docs/release-install.md`; completed
-  milestone narratives and superseded evidence are indexed as
-  non-authoritative lineage by `docs/history/README.md`. Consult those owners
-  instead of mirroring volatile status here.
+- The [repository authority index](docs/authority.md) routes current and
+  conditional owners; Source Of Truth below defines precedence. Live Task
+  state and evidence belong in the project-local database through the public
+  CLI, not in this file.
 - The workspace is Git-managed. The checked-out committed lineage determines
   which revision of the active governing documents applies locally; a default
   or legacy branch name is not authority by itself. Continue to verify Git
@@ -198,16 +191,11 @@ The product must not become:
   links.
 - Do not install or overwrite a user or project skill directory without
   explicit user approval and a shown destination path.
-- Ordinary governed-project stateful use supports only one physical
-  project-scoped copy under the target project's
-  `.agents/skills/task-governance-tool` directory. The task-governance-tool
-  repository itself has one bounded development-only self-host exception: an
-  explicit `--repo` may use a physical package exactly at
-  `<repo>/task-governance-tool` when the governing source documents and package
-  manifest identify that source-tree layout and no competing project-scoped
-  install exists. It uses the governed project's existing canonical state; it
-  is not install guidance, relocation, or a second state mode. User-wide,
-  symbolic-link, and Windows junction layouts remain unsupported.
+- Use one physical project-scoped install. User-wide, symbolic-link, and
+  Windows junction layouts are unsupported. The development-only self-host
+  exception requires explicit `--repo`, the recognized physical source package,
+  no competing install, and the same canonical project state; follow the exact
+  [package layout and admission contract](docs/specification.md#package-runtime-and-generated-state).
 
 ## Architecture Rules
 
@@ -219,11 +207,9 @@ The product must not become:
 - Any command that writes to the task-governance-tool database must say what it
   will record. Any command that writes to a target project must require explicit
   user intent and should offer a dry-run first.
-- Explicit setup opt-in authorizes only the canonical bounded post-commit
-  Viewer maintenance and idempotent setup repair defined in the current
-  specification and design. There is no public Viewer/export command or custom
-  output. Inspection commands, including `doctor`, never authorize a Viewer
-  write.
+- Follow the bounded [same-process maintenance contract](docs/setup-state-specification.md#same-process-maintenance)
+  after explicit setup opt-in. Inspection, including `doctor`, never authorizes
+  Viewer writes; there is no public Viewer/export command or custom output.
 - Profile detection must emit evidence, confidence, matched governing docs,
   reference-only exclusions, and an `unknown` or `needs_user_confirmation`
   state when confidence is low.
@@ -245,16 +231,10 @@ The product must not become:
 
 ## Product Contract Routing And Durable Agent Guardrails
 
-- Do not duplicate release- or milestone-specific product contracts, status,
-  command inventories, schemas, constants, truth tables, acceptance matrices,
-  or history in this file. Product behavior belongs in `docs/specification.md`,
-  implementation structure in `docs/design.md`, current decisions, open issues,
-  cross-sequence gateways, and non-delegated static contracts in `plan.md`,
-  exact indexed execution-unit purpose, scope, order, dependency, permission,
-  and gates in the current or conditional formal document selected by
-  `docs/authority.md`, live Task
-  state and evidence in the project-local Task database through the public CLI,
-  and immutable non-authoritative lineage behind `docs/history/README.md`.
+- Do not duplicate release- or milestone-specific contracts, status, command
+  inventories, schemas, constants, truth tables, acceptance matrices, or
+  history here. Use the owners routed by Source Of Truth and the authority
+  index, including the exact execution-unit owner and live Task evidence.
 - Treat the current CLI, storage, setup/doctor, maintenance, Viewer, and output
   contracts as established. Read their exact current formal sections and
   directly coupled code and tests before changing them; do not reconstruct them
@@ -264,7 +244,8 @@ The product must not become:
   paths. `doctor` is read-only and not a normal Task-loop prerequisite;
   initialization, migration, maintenance opt-in, and Viewer repair require
   explicit `setup`.
-- Optional same-file Viewer reload and its one-shot UI-state handoff are
+- [Optional same-file Viewer reload](docs/viewer-specification.md#optional-visibility-aware-reload)
+  and its one-shot UI-state handoff are
   presentation-only. They authorize no Skill trigger, normal Task-loop call,
   automatic browser launch, network action, or target-project/config write.
 - Approved but not-yet-implemented agent guidance is an acceptance boundary,
@@ -286,42 +267,26 @@ The product must not become:
 
 ## SQLite And State Rules
 
-- The runtime uses only the canonical `.taskgov/` state path under the validated
-  governed project. Public `--db` is removed; storage/repository constructors and tests
-  retain explicit path injection.
-- Because the skill is installed per governed project, generated local
-  state belongs under that governed project's `.taskgov/`
-  directory. The public CLI does not expose an alternate state path.
-- One shared storage resolver owns the canonical project-local database,
-  backup, and Viewer targets. Feature code must not reconstruct a project ID
-  or state path, and approved future layout contracts remain inactive until
-  their owning resolver-activation unit is complete.
-- Package-local state is only a supported migration source and retirement
-  boundary. Only explicit setup may perform the separation/repair owned by
-  the current Setup/state contract; ordinary operations never rewrite that
-  material or select it as a fallback. Keep code/config and generated-state
-  permissions distinct.
-- Generated state under the governed project must be ignored or otherwise
-  kept out of source commits before `setup` or other write commands are used.
-- The canonical static Viewer produced by explicit setup and opted-in bounded
-  post-commit maintenance lives under that ignored project-specific `.taskgov/`
-  directory. It is a local projection of SQLite state, not an additional
-  source of truth, and must remain out of source commits and release artifacts.
-- The optional `config/viewer.json` presentation policy is separate from
-  SQLite backup policy and generated `.taskgov/`. Its absence is a valid
-  disabled state; only explicit optional-feature Setup selection may create or
-  toggle it under the current Setup/state contract.
+- Runtime state uses only the validated governed project's canonical `.taskgov/`;
+  no public alternate path or `--db` is supported. Internal repositories and
+  tests retain path injection. Use the shared [fixed state resolver](docs/setup-state-design.md#fixed-state-resolver);
+  feature code must not reconstruct identity or paths. Future layouts stay
+  inactive until their owning activation unit is complete.
+- Only explicit setup may perform [state separation and source retirement](docs/setup-state-specification.md#project-state-separation).
+  Package-local state is migration material, never an ordinary-write target
+  or fallback. Keep code/config and generated-state permissions distinct.
+- Keep generated state ignored or otherwise out of source commits before any
+  write, and out of release artifacts. The canonical Viewer is only a SQLite
+  projection. Its optional presentation policy is separate from backup/state;
+  only [explicit Setup selection](docs/setup-state-specification.md#optional-feature-selection)
+  may create or toggle it, and absence means disabled.
 - The SQLite database is a helper state store, not the source of truth for a
   target project's decisions.
 - Store references to governing files, command names, hashes, timestamps,
   status codes, and sanitized summaries.
-- Verification Receipt retention is deny-by-default. Store only the exact
-  bounded Receipt fields and structural binding metadata defined by the current
-  specification: a preserved version-zero sanitized legacy caller label or the
-  fixed internal compatibility value for a tool-owned version-one structural
-  subject, result, duration, scope coverage, ownership, current
-  Contract/authority/criterion/target basis, and recording time. Never accept
-  a caller label or caller-supplied subject for a version-one Receipt.
+- Verification Receipt retention is deny-by-default: only the bounded fields
+  and structural binding metadata in [Receipt meaning and record](docs/review-completion-specification.md#receipt-meaning-and-record).
+  Version-one subjects are tool-owned; never accept a caller label or subject.
 - Never store the verification command body or arguments, exit code,
   stdout/stderr, stack trace, environment, log, exception, prompt, diff,
   credential, arbitrary coverage prose, or debug-retention variant.
@@ -335,47 +300,32 @@ The product must not become:
 ## Target Project Safety
 
 - Inspect target projects read-only by default.
-- Taskgov-managed Task-entry Runner Plan publication is authorized only by an explicit
-  `task edit --runner-plan-action` invocation and is bounded to the one
-  canonical ignored physical
-  `config/verification-runner.json` (and its canonical `config` directory when
-  initially absent); it authorizes no other target file, setup side effect,
-  Runner launch, Skill trigger, Git write, or external mutation. No setup,
-  inspection, Task-only edit, or other command authorizes Plan publication. A
-  separately and concretely user-approved direct local edit is not
-  taskgov-managed publication and remains governed by the general target-project
-  mutation rules below.
-  Separately, explicit Setup optional-feature selection may toggle global
-  Runner trust or create an empty Plan under the Setup/state owner. It may also
-  save/apply the other approved optional choices. Ordinary Task work never
-  authorizes these configuration writes, host trust, or feature execution.
+- Taskgov-managed Runner Plan publication requires explicit
+  `task edit --runner-plan-action` and the exact [closed action/write boundary](docs/runner-plan-authoring-specification.md#closed-draft-and-actions).
+  It grants no other target/config, setup, Runner launch, Skill trigger, Git,
+  or external mutation. Other commands cannot authorize that publication.
+  Separately approved direct local edits follow the general rules below.
+  Explicit [Setup optional-feature selection](docs/setup-state-specification.md#optional-feature-selection)
+  may save/apply approved choices, including global Runner trust and an empty
+  Plan; ordinary Task work grants no config, host-trust, or execution permission.
 - Do not modify a target project simply because task-governance-tool inspected
   it.
-- A changed project path is not evidence of move, copy, or fork intent.
-  Inspection may report a sanitized binding mismatch, but no path, hash,
-  identity, database, artifact, or target-project write is authorized until
-  the user invokes the exact explicit setup confirmation flow.
+- A changed project path is not move/copy/fork intent. A sanitized inspection
+  mismatch grants no writes; use the exact explicit
+  [setup identity/binding confirmation flow](docs/setup-state-specification.md#identity-binding-resolver-and-source-selection).
 - Installing the skill into a target project's `.agents/skills` directory is a
   target-project mutation and requires explicit user approval for that
   destination. Ordinary writes use only the canonical generated database, and
   setup or bounded post-commit maintenance may publish only the canonical
   Viewer under the governed project's ignored `.taskgov/` directory. Inspection
   alone never authorizes either write.
-  Explicit setup's additional source-retention and retirement writes are
-  limited to the current Setup/state separation contract; package inspection
-  or an ordinary Task write does not authorize them.
-- Explicit setup may also prepare the project-local usage hook definition as
-  bounded by the Setup/state owner. This never authorizes host trust changes,
-  user-wide settings, hook execution, or config writes from ordinary Task work.
-- A governed target remains the project-identity and state-ownership root when
-  it is nested inside an enclosing Git worktree. When the target or an ancestor
-  has a Git administrative marker, setup and doctor must use one bounded,
-  shell-free effective-ignore check for the canonical project `.taskgov/`
-  directory. Only an ignored result is accepted; an unignored, timed-out, or
-  uninspectable result fails closed with the existing sanitized
-  `state_ignore_required` contract and no target-project write. A physical
-  target with no Git marker in its ancestor chain remains a valid non-Git
-  project without invoking the ignore subprocess.
+- Explicit setup may prepare [project-local usage hook definitions](docs/setup-state-specification.md#optional-lifecycle-usage-collection).
+  This never authorizes host trust, user-wide settings, hook execution, or
+  config writes from ordinary Task work.
+- A nested governed target remains the identity/state root. Follow the
+  [effective Git-ignore preflight](docs/setup-state-specification.md#effective-git-ignore-preflight):
+  only confirmed ignore permits writes under a Git ancestor; failure is closed
+  and sanitized. A physical non-Git project remains valid without that subprocess.
 - Do not create commits, branches, tags, issue comments, PRs, or file edits in a
   target project unless the user explicitly approves that concrete mutation in
   the current task. Target-project governance rules may tell

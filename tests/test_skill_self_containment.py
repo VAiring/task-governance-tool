@@ -113,6 +113,19 @@ def git_is_ignored(path: str) -> bool:
 
 
 class SkillSelfContainmentTests(unittest.TestCase):
+    def linked_inventory(self, relative: str, text: str, contracts: str) -> str:
+        """Repository summaries may delegate command detail to the shipped guide."""
+        target = ("task-governance-tool/references/cli_contracts.md", "invocation-and-public-inventory")
+        issues = []
+        scan = _scan(relative, text, issues)
+        self.assertFalse(issues)
+        self.assertIn(target, {
+            _resolve(ROOT, relative, link.target)
+            for link in scan.links if link.route_eligible
+        })
+        from read_reference import section
+        return section(contracts, target[1])
+
     def test_fixture_snapshots_detect_new_state_and_old_marker_changes(self):
         with tempfile.TemporaryDirectory() as temporary:
             install = make_physical_install(Path(temporary))
@@ -427,11 +440,13 @@ class SkillSelfContainmentTests(unittest.TestCase):
             encoding="utf-8"
         )
 
-        for text in (skill_md + workflow + contracts, readme):
+        readme_inventory = self.linked_inventory("README.md", readme, contracts)
+        for text in (skill_md + workflow + contracts, readme_inventory):
             self.assertIn("task context", text)
             self.assertIn("task current", text)
+        for text in (skill_md + workflow + contracts, readme):
             self.assertIn("Tier 2", text)
-        for text in (workflow + contracts, readme):
+        for text in (workflow + contracts, readme_inventory):
             self.assertIn("review target set", text)
             self.assertIn("review receipt add", text)
         self.assertIn("task add --status done", skill_md)
@@ -900,7 +915,8 @@ class SkillSelfContainmentTests(unittest.TestCase):
         release_note = (ROOT / "docs" / "release-install.md").read_text(
             encoding="utf-8"
         )
-        for text in (skill_md, workflow, contracts, readme, release_note):
+        release_inventory = self.linked_inventory("docs/release-install.md", release_note, contracts)
+        for text in (skill_md, workflow, contracts, readme, release_inventory):
             self.assertIn("handoff record", text)
         for text in (skill_md, workflow, contracts, readme):
             self.assertIn("pending_handoff", text)
@@ -1019,7 +1035,7 @@ class SkillSelfContainmentTests(unittest.TestCase):
             self.assertIn("--status paused", text)
             self.assertIn("paused_tasks_present", text)
             self.assertIn("bounded", text.lower())
-        self.assertIn("task current", readme)
+        self.assertIn("task current", self.linked_inventory("README.md", readme, contracts))
         self.assertIn("paused", readme.lower())
         self.assertIn("advisory", skill_md.lower())
         self.assertIn("advisory", workflow.lower())

@@ -1032,6 +1032,34 @@ class DocumentContractTests(unittest.TestCase):
             path.write_bytes(("\n".join(lines) + "\n").encode("utf-8"))
             self.assertTrue(contract.check_document_contract(root).ok)
 
+    def test_agent_feature_detail_routes_retain_current_owners(self):
+        required = {
+            ("docs/specification.md", "package-runtime-and-generated-state"),
+            ("docs/setup-state-specification.md", "same-process-maintenance"),
+            ("docs/setup-state-specification.md", "project-state-separation"),
+            ("docs/setup-state-specification.md", "optional-feature-selection"),
+            ("docs/setup-state-specification.md", "identity-binding-resolver-and-source-selection"),
+            ("docs/setup-state-specification.md", "optional-lifecycle-usage-collection"),
+            ("docs/setup-state-specification.md", "effective-git-ignore-preflight"),
+            ("docs/setup-state-design.md", "fixed-state-resolver"),
+            ("docs/review-completion-specification.md", "receipt-meaning-and-record"),
+            ("docs/runner-plan-authoring-specification.md", "closed-draft-and-actions"),
+            ("docs/viewer-specification.md", "optional-visibility-aware-reload"),
+        }
+        issues = []
+        scan = contract._scan("AGENTS.md", (ROOT / "AGENTS.md").read_text(encoding="utf-8"), issues)
+        observed = {
+            contract._resolve(ROOT, "AGENTS.md", link.target)
+            for link in scan.links if link.route_eligible
+        }
+        self.assertFalse(issues)
+        self.assertLessEqual(required, observed)
+        for relative, fragment in required:
+            with self.subTest(owner=relative, fragment=fragment):
+                target = contract._scan(relative, (ROOT / relative).read_text(encoding="utf-8"), issues)
+                self.assertIn(fragment, set(target.anchors) | contract._heading_slugs(target))
+        self.assertFalse(issues)
+
     def test_active_owner_roles_and_live_state_exclusion_are_structural(self):
         for relative in EXPECTED_METRIC_DOCS:
             with self.subTest(owner=relative), self.fixture() as root:

@@ -461,31 +461,10 @@ and [one-shot UI-state contract](docs/viewer-specification.md#one-shot-automatic
 
 ## Public Commands
 
-The 0.13.0 local candidate exposes exactly these 23 command leaves:
-
-1. `taskgov setup`
-2. `taskgov doctor`
-3. `taskgov task add`
-4. `taskgov task list`
-5. `taskgov task next`
-6. `taskgov task current`
-7. `taskgov task effort`
-8. `taskgov task show`
-9. `taskgov task edit`
-10. `taskgov task complete`
-11. `taskgov task checkpoint`
-12. `taskgov handoff record`
-13. `taskgov handoff list`
-14. `taskgov handoff show`
-15. `taskgov handoff withdraw`
-16. `taskgov review prepare`
-17. `taskgov review target set`
-18. `taskgov review receipt add`
-19. `taskgov review finding add`
-20. `taskgov review finding resolve`
-21. `taskgov verification receipt add`
-22. `taskgov task context`
-23. `taskgov review result add`
+See the [formal command inventory](docs/specification.md#command-inventory)
+for the complete public surface and the
+[standalone CLI guide](task-governance-tool/references/cli_contracts.md#invocation-and-public-inventory)
+for invocation and options.
 
 Applicable commands accept `--repo`, `--json`, and `--read-only`; the root also
 accepts `--version`. Storage paths and maintenance internals are not public CLI

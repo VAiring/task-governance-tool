@@ -27,97 +27,77 @@ contracts. Read the coupled code, schemas, tests, configuration, examples, and
 fixtures. These routes are a starting set, not a maximum: follow concrete
 dependencies that reveal further impact under AGENTS.md's Reread Rule.
 
-The specification and design retain their product and implementation roles.
-Their Task operation, Viewer, Runner execution, Runner Plan authoring, Evidence,
-Review/completion, Setup/state operation, and database persistence/migration sections
-delegate only the corresponding detail below; product and implementation ownership remain distinct.
+The detail pairs below are the current delegated owners of their named
+responsibilities; specification and design roles remain distinct. Shared and
+coupled contracts stay with their existing owners and are linked directly from
+the applicable detail. The trigger table selects a root responsibility; these
+links locate its detail. The machine registry validates the same authority graph.
 
 ## Viewer Detail Authority
 
 - [Viewer product behavior](viewer-specification.md)
 - [Viewer implementation structure](viewer-design.md)
 
-These are the current owners of the delegated Viewer detail. Shared contracts
-remain with their existing owners and are linked directly from the detail.
-
 ## Runner Plan Authoring Detail Authority
 
 - [Runner Plan authoring behavior](runner-plan-authoring-specification.md)
 - [Runner Plan authoring structure](runner-plan-authoring-design.md)
 
-These are the current owners of the delegated authoring/control detail. Shared
-Plan values and target admission belong to the Runner execution owners below;
-maintenance belongs to the Setup/state operation owners below. Task Contract detail belongs
-to the Task operation owners below. The authoring/control documents link directly
-to each applicable owner.
+Authoring/control is separate from Runner execution's Plan values and target
+admission, Setup/state maintenance, and Task operation's Contract detail.
 
 ## Task Operation Detail Authority
 
 - [Task operation behavior](task-operation-specification.md)
 - [Task operation structure](task-operation-design.md)
 
-These are the current owners of Task selection/state, Contract, Checkpoint,
-Handoff, Advisory, and instruction-layer detail. Shared CLI/output, privacy,
-connection/transaction, review/completion, Evidence, and Runner contracts remain
-with their existing owners and are linked directly from the detail.
+Task selection/state, Contract, Checkpoint, Handoff, Advisory, and instruction layer.
 
 ## Runner Execution Detail Authority
 
 - [Runner execution behavior](runner-execution-specification.md)
 - [Runner execution structure](runner-execution-design.md)
 
-These are the current owners of trusted-local eligibility, Plan values, target
+Trusted-local eligibility, Plan values, target
 materialization, process, cleanup, parent-service audit, and the closed Runner
-module registry. Runner Plan authoring/control remains separate. Shared
-review/completion, persistence and schema-v21/v22 gate protocol, privacy,
-connection/transaction, maintenance, and global test contracts remain with their
-existing owners and are linked directly from the detail.
+module registry. Runner Plan authoring/control remains separate.
 
 ## Evidence Detail Authority
 
 - [Evidence behavior](evidence-specification.md)
 - [Evidence structure](evidence-design.md)
 
-These are the current owners of provenance, authority snapshots, whole-field
+Provenance, authority snapshots, whole-field
 criteria, References, Bundle/Finding snapshots, canonical Evidence JSON,
 publication, and the test-only independent reader. Review and Verification
-operations, completion gates, and ordinary Task state remain separate. Shared
-schema-v21/v22 Runner protocol, persistence, privacy, connection/transaction,
-maintenance, and global test contracts remain with their existing owners and
-are linked directly from the detail.
+operations, completion gates, and ordinary Task state remain separate.
 
 ## Review And Completion Detail Authority
 
 - [Review and completion behavior](review-completion-specification.md)
 - [Review and completion structure](review-completion-design.md)
 
-These are the current owners of Review targets, receipts, Findings, Packets,
+Review targets, receipts, Findings, Packets,
 Verification Receipt operations and eligibility, completion evidence, cycles,
 and reopen integration. Evidence formats/provenance and ordinary Task state,
-Contracts, and Checkpoints remain separate. Shared CLI/output, persistence,
-migration, schema-v21/v22 Runner protocol, privacy, connection/transaction,
-maintenance, and global test contracts remain with their existing owners and
-are linked directly from the detail.
+Contracts, and Checkpoints remain separate.
 
 ## Setup And State Operation Detail Authority
 
 - [Setup and state operation behavior](setup-state-specification.md)
 - [Setup and state operation structure](setup-state-design.md)
 
-These are the current owners of Doctor/effective-ignore preflight, recovery
+Doctor/effective-ignore preflight, recovery
 candidate validity, fixed state resolution, identity/binding/relocation, and
-setup/backup/maintenance detail. Shared CLI/output, package layout, persistence,
-migration, privacy, connection/transaction, and global test contracts remain
-with their existing owners. Stored Task validation, Evidence publication, and
-Viewer publication remain separate coupled responsibilities and are linked
-directly from the detail.
+setup/backup/maintenance. Stored Task validation, Evidence publication, and
+Viewer publication remain separate coupled responsibilities.
 
 ## Database Persistence And Migration Detail Authority
 
 - [Database persistence and migration behavior](database-specification.md)
 - [Database persistence and migration structure](database-design.md)
 
-These are the current owners of supported schemas, physical structures,
+Supported schemas, physical structures,
 migration, admission, reentry, and row preservation. The shared current Runner
 protocol and operational read/write boundary remain in the product specification;
 runtime ownership and connection/transaction rules remain in the implementation
@@ -179,8 +159,8 @@ current gate.
 
 | Trigger | Required selective route |
 |---|---|
-| Supported product behavior, public CLI/JSON, persistence, privacy, setup, Viewer, or current gate | Exact section in `docs/specification.md`; Viewer detail in `docs/viewer-specification.md`; Runner Plan authoring detail in `docs/runner-plan-authoring-specification.md`; Task operation detail in `docs/task-operation-specification.md`; Runner execution detail in `docs/runner-execution-specification.md`; Evidence detail in `docs/evidence-specification.md`; Review/completion detail in `docs/review-completion-specification.md`; Setup/state operation detail in `docs/setup-state-specification.md`; database detail in `docs/database-specification.md` |
-| Module ownership, storage/process boundary, migration mechanics, or test architecture | Exact section in `docs/design.md`; Viewer detail in `docs/viewer-design.md`; Runner Plan authoring detail in `docs/runner-plan-authoring-design.md`; Task operation detail in `docs/task-operation-design.md`; Runner execution detail in `docs/runner-execution-design.md`; Evidence detail in `docs/evidence-design.md`; Review/completion detail in `docs/review-completion-design.md`; Setup/state operation detail in `docs/setup-state-design.md`; database detail in `docs/database-design.md` |
+| Supported product behavior, public CLI/JSON, persistence, privacy, setup, Viewer, or current gate | Exact section in `docs/specification.md` or its applicable delegated behavior owner above |
+| Module ownership, storage/process boundary, migration mechanics, or test architecture | Exact section in `docs/design.md` or its applicable delegated structure owner above |
 | Current decision, open issue, cross-sequence gateway, or static contract | Exact section in `plan.md` |
 | Published artifact, install, upgrade, tag, or Release identity | `docs/release-install.md` |
 | Live status, blocker, target, evidence, review, or completion history | Public CLI and live Task Contract; no Git-document mirror |

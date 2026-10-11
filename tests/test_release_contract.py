@@ -65,7 +65,7 @@ def copy_release_fixture(destination: Path) -> Path:
     )
 
     (fixture / "tools").mkdir()
-    for name in ("release_contract.py", "test_lanes.py"):
+    for name in ("release_contract.py", "document_contract.py", "test_lanes.py"):
         shutil.copy2(ROOT / "tools" / name, fixture / "tools" / name)
 
     (fixture / "docs" / "releases").mkdir(parents=True)
@@ -294,19 +294,8 @@ class ReleaseContractCheckerTests(unittest.TestCase):
 
     def test_each_command_inventory_and_release_identity_drift_fail(self):
         command_documents = (
-            ("README.md", "`taskgov task show`", "`taskgov task bogus`"),
             (
                 "docs/specification.md",
-                "`taskgov task show`",
-                "`taskgov task bogus`",
-            ),
-            (
-                "docs/design.md",
-                "\ntask show\n",
-                "\ntask bogus\n",
-            ),
-            (
-                "docs/release-install.md",
                 "`taskgov task show`",
                 "`taskgov task bogus`",
             ),
@@ -351,6 +340,82 @@ class ReleaseContractCheckerTests(unittest.TestCase):
                 result = check_fixture(fixture)
 
                 self.assertIn("documented_runtime_mismatch", issue_codes(result))
+
+    def test_command_reference_sections_reject_missing_wrong_and_hidden_routes(self):
+        routes = (
+            ("README.md", "## Public Commands", "docs/specification.md"),
+            ("docs/design.md", "### Command Surface", "specification.md"),
+            ("docs/release-install.md", "## Public CLI Surface", "specification.md"),
+        )
+        mutations = (
+            "missing", "wrong_owner", "wrong_anchor", "outside_section",
+            "fenced", "comment", "inline_code", "quoted", "indented",
+        )
+        for relative, heading, owner in routes:
+            for mutation in mutations:
+                with self.subTest(relative=relative, mutation=mutation), tempfile.TemporaryDirectory() as temporary:
+                    fixture = copy_release_fixture(Path(temporary))
+                    path = fixture / relative
+                    text = path.read_text(encoding="utf-8")
+                    original = f"[formal command inventory]({owner}#command-inventory)"
+                    self.assertIn(original, text)
+                    replacement = {
+                        "missing": "formal command inventory",
+                        "wrong_owner": f"[formal command inventory]({owner.replace('specification', 'design')}#command-inventory)",
+                        "wrong_anchor": f"[formal command inventory]({owner}#missing-inventory)",
+                        "outside_section": "formal command inventory",
+                        "fenced": f"\n\n```markdown\n{original}\n```\n\n",
+                        "comment": f"<!-- {original} -->",
+                        "inline_code": f"`{original}`",
+                        "quoted": f"\n\n> {original}\n\n",
+                        "indented": f"\n\n    {original}\n\n",
+                    }[mutation]
+                    text = text.replace(original, replacement, 1)
+                    if mutation == "outside_section":
+                        text = text.replace(heading, f"{original}\n\n{heading}", 1)
+                    path.write_text(text, encoding="utf-8")
+                    result = check_fixture(fixture)
+                    self.assertIn(
+                        ("documented_cli_reference_invalid", relative),
+                        {(issue.code, issue.subject) for issue in result.issues},
+                    )
+
+    def test_command_routes_require_package_guide_and_existing_target_heading(self):
+        for relative in ("README.md", "docs/design.md", "docs/release-install.md"):
+            with self.subTest(source=relative), tempfile.TemporaryDirectory() as temporary:
+                fixture = copy_release_fixture(Path(temporary))
+                path = fixture / relative
+                text = path.read_text(encoding="utf-8")
+                self.assertIn("#invocation-and-public-inventory", text)
+                path.write_text(text.replace("#invocation-and-public-inventory", "#contents"), encoding="utf-8")
+                self.assertIn(
+                    ("documented_cli_reference_invalid", relative),
+                    {(issue.code, issue.subject) for issue in check_fixture(fixture).issues},
+                )
+        for relative, heading in (
+            ("docs/specification.md", "### Command Inventory"),
+            ("task-governance-tool/references/cli_contracts.md", "## Invocation And Public Inventory"),
+        ):
+            with self.subTest(target=relative), tempfile.TemporaryDirectory() as temporary:
+                fixture = copy_release_fixture(Path(temporary))
+                path = fixture / relative
+                text = path.read_text(encoding="utf-8")
+                path.write_text(text.replace(heading, heading + " Removed"), encoding="utf-8")
+                result = check_fixture(fixture)
+                self.assertIn("documented_cli_mismatch", issue_codes(result))
+                self.assertEqual(
+                    {issue.subject for issue in result.issues if issue.code == "documented_cli_reference_invalid"},
+                    {"README.md", "docs/design.md", "docs/release-install.md"},
+                )
+
+    def test_shared_document_scanner_is_a_required_checker_dependency(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            fixture = copy_release_fixture(Path(temporary))
+            (fixture / "tools" / "document_contract.py").unlink()
+            self.assertIn(
+                ("required_file_missing", "tools/document_contract.py"),
+                {(issue.code, issue.subject) for issue in check_fixture(fixture).issues},
+            )
 
     def test_project_root_generated_state_is_excluded_from_tracked_source(self):
         forbidden = (

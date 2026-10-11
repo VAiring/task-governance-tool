@@ -184,6 +184,13 @@ new normal Task-loop command. Writable workspace state is not tamper-proof.
 
 ### Command Inventory
 
+This section owns the complete public inventory. The
+[standalone CLI guide](../task-governance-tool/references/cli_contracts.md#invocation-and-public-inventory)
+keeps the same complete list so the installed package needs no repository docs.
+README, design, and release/install documentation refer to these sections rather
+than maintaining additional lists. Repository validation compares both lists
+with the parser and checks those references.
+
 The public CLI has exactly 23 command leaves:
 
 1. `taskgov setup`

@@ -420,33 +420,9 @@ implementation is an acceptance condition.
 
 ### Command Surface
 
-The parser exposes exactly 23 command leaves:
-
-```text
-setup
-doctor
-task add
-task list
-task next
-task current
-task effort
-task show
-task edit
-task complete
-task checkpoint
-handoff record
-handoff list
-handoff show
-handoff withdraw
-review prepare
-review target set
-review receipt add
-review finding add
-review finding resolve
-verification receipt add
-task context
-review result add
-```
+The parser implements the [formal command inventory](specification.md#command-inventory).
+The [standalone CLI guide](../task-governance-tool/references/cli_contracts.md#invocation-and-public-inventory)
+also retains a complete inventory for the distributed package.
 
 There are no public `db`, `self`, `web`, export, repair, maintenance, backup,
 restore, relocation, or adapter commands. Public `--db` is rejected. Internal
@@ -974,7 +950,15 @@ Repository release consistency uses the same offline read-only checker from
 focused unit fixtures and CI. Negative fixtures independently cover a missing
 manifest or declared file, extra packaged core, digest mismatch, license or
 manifest-license mismatch, invalid Skill/agent/manifest metadata, parser-to-
-document drift, and tracked generated artifacts. The checker does not replace
+document drift, missing or incorrect command-inventory references, and tracked
+generated artifacts. Only the specification and standalone CLI guide carry
+complete command lists; both must match the parser exactly, without duplicates.
+README, design, and release/install command sections must link to both inventories
+and their existing anchors. Link checks reuse the document checker's visible
+Markdown scanner and local-target resolver; hidden examples cannot satisfy a
+required route. The authority index keeps its closed detail routes and semantic
+registry; its trigger table selects the product or structure root without
+repeating the detail inventory. These checks do not replace
 installed-CLI, no-write, physical-isolation, migration, upgrade/rollback, or
 release-acceptance behavior tests.
 

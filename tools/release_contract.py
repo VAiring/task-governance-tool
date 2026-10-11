@@ -26,6 +26,7 @@ EXPECTED_RELEASE_ORIGIN = "github:VAiring/task-governance-tool"
 if str(DEFAULT_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(DEFAULT_REPO_ROOT))
 
+from tools import document_contract  # noqa: E402
 from tools.test_lanes import (  # noqa: E402
     CI_CHECK_INVOCATION,
     CI_EVENTS,
@@ -748,6 +749,63 @@ def _metadata_checks(
             )
 
 
+def _command_reference_checks(
+    repo_root: Path,
+    documents: dict[str, str | None],
+    issues: list[ContractIssue],
+) -> None:
+    """Validate visible local routes without copying the Markdown parser."""
+    required = {
+        ("docs/specification.md", "command-inventory"),
+        (
+            f"{SKILL_DIRECTORY}/references/cli_contracts.md",
+            "invocation-and-public-inventory",
+        ),
+    }
+    scans = {}
+    malformed = set()
+    for relative, text in documents.items():
+        if text is not None:
+            scan_issues = []
+            scans[relative] = document_contract._scan(relative, text, scan_issues)
+            if scan_issues:
+                malformed.add(relative)
+    for relative, heading in (
+        ("README.md", "## Public Commands"),
+        ("docs/design.md", "### Command Surface"),
+        ("docs/release-install.md", "## Public CLI Surface"),
+    ):
+        scan = scans.get(relative)
+        bounds = document_contract._section_bounds(scan, heading) if scan else None
+        observed = set()
+        if bounds is not None and relative not in malformed:
+            for link in scan.links:
+                if not (link.route_eligible and bounds[0] < link.line < bounds[1]):
+                    continue
+                target = document_contract._resolve(repo_root, relative, link.target)
+                if target not in required:
+                    continue
+                target_path, fragment = target
+                target_scan = scans.get(target_path)
+                if (
+                    target_scan is not None
+                    and target_path not in malformed
+                    and (
+                        fragment in target_scan.anchors
+                        or fragment in document_contract._heading_slugs(target_scan)
+                    )
+                ):
+                    observed.add(target)
+        if observed != required:
+            issues.append(
+                ContractIssue(
+                    "documented_cli_reference_invalid",
+                    relative,
+                    "command section must visibly link to both existing inventory sections",
+                )
+            )
+
+
 def _documentation_checks(
     repo_root: Path,
     runtime: RuntimeContract,
@@ -770,10 +828,7 @@ def _documentation_checks(
         )
 
     command_sections = (
-        ("README.md", "## Public Commands"),
         ("docs/specification.md", "### Command Inventory"),
-        ("docs/design.md", "### Command Surface"),
-        ("docs/release-install.md", "## Public CLI Surface"),
         (
             f"{SKILL_DIRECTORY}/references/cli_contracts.md",
             "## Invocation And Public Inventory",
@@ -799,6 +854,8 @@ def _documentation_checks(
                     "documented public command inventory differs from the parser",
                 )
             )
+
+    _command_reference_checks(repo_root, documents, issues)
 
     release_record = documents.get("docs/release-install.md")
     if release_record is not None:
@@ -1163,7 +1220,9 @@ def check_release_contract(
         subject=".github/workflows/ci.yml",
         issues=issues,
     )
-    for relative in ("tools/release_contract.py", "tools/test_lanes.py"):
+    for relative in (
+        "tools/release_contract.py", "tools/document_contract.py", "tools/test_lanes.py"
+    ):
         _read_utf8(
             root / Path(*relative.split("/")),
             subject=relative,

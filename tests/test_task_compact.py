@@ -1,4 +1,5 @@
 import json
+from tests.registration_output_support import registration_task
 import subprocess
 import sys
 import tempfile
@@ -136,7 +137,7 @@ def add_task(db, repo, title, *extra):
     )
     if result.returncode != 0:
         raise AssertionError(result.stderr or result.stdout)
-    return json.loads(result.stdout)["data"]["task"]
+    return registration_task(json.loads(result.stdout))
 
 
 class CompactTaskProjectionTests(unittest.TestCase):

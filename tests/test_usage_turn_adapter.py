@@ -1,6 +1,7 @@
 """Only structured turn identities and known successful CLI acknowledgements."""
 
 from dataclasses import replace
+import copy
 import json
 from pathlib import Path
 import sys
@@ -8,7 +9,7 @@ import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "task-governance-tool" / "scripts"))
 from task_governance_tool.usage_turn_adapter import OperationObservation, TurnObservation, project_record
-from task_governance_tool.cli import write_task_projection
+from task_governance_tool.cli import write_task_projection, registration_context_projection
 from tests.test_usage_attribution import THREAD, turn
 
 
@@ -33,6 +34,62 @@ def tool_record(ack, number=2, *, wrapped=True):
 
 
 class UsageTurnAdapterTests(unittest.TestCase):
+    def registration(self, *, batch=False):
+        ack = acknowledgement()
+        ack["command"] = "task.add"
+        entry = ack["data"]
+        selected = {"task": copy.deepcopy(entry["task"]), "events": [copy.deepcopy(entry["event"])]}
+        projected = registration_context_projection(entry, selected)
+        context = {"status": "ready", "context": {"selected": selected}, "errors": []}
+        if batch:
+            ready = acknowledgement("ready")["data"]
+            ack["data"] = {"tasks": [{"input_index": 0, **ready}, {"input_index": 1, **projected}],
+                           "context_preparation": context}
+        else:
+            ack["data"] = {**projected, "context_preparation": context}
+        return ack, entry
+
+    def test_registration_references_preserve_single_and_batch_operation_metadata(self):
+        for batch in (False, True):
+            for referenced_fields in ((), ("task",), ("event",), ("task", "event")):
+                with self.subTest(batch=batch, referenced_fields=referenced_fields):
+                    ack, original = self.registration(batch=batch)
+                    entry = ack["data"]["tasks"][1] if batch else ack["data"]
+                    for field in ("task", "event"):
+                        if field not in referenced_fields:
+                            entry[field] = original[field]
+                    expected = OperationObservation(THREAD, turn(2), "fixture-project", TASK, EVENT, 1, "in_progress")
+                    self.assertEqual(project_record(tool_record(ack), THREAD), (expected,))
+
+    def test_registration_rejects_unavailable_malformed_and_mismatched_references(self):
+        for batch in (False, True):
+            changes = (
+                ("task", "task_ref", "/data/task"),
+                ("task", "task_id", "tg_task_ffffffffffffffff"),
+                ("task", "ownership", {"generation": 1}),
+                ("event", "task_event_id", "tg_event_ffffffffffffffff"),
+                *(("event", "event_ref", "/data/context_preparation/context/selected/events/" + index)
+                  for index in ("-1", "1", "00", "true", "0/extra", "９", "9" * 5000)),
+                ("event", "event_ref", None),
+            )
+            for field, key, value in changes:
+                with self.subTest(batch=batch, field=field, key=key, value_type=type(value).__name__):
+                    ack, _ = self.registration(batch=batch)
+                    entry = ack["data"]["tasks"][1] if batch else ack["data"]
+                    entry[field][key] = value
+                    self.assertEqual(project_record(tool_record(ack), THREAD), ())
+            for preparation in (None, {"status": "failed", "context": None},
+                                {"status": "ready", "context": {"selected": None}}):
+                ack, _ = self.registration(batch=batch)
+                ack["data"]["context_preparation"] = preparation
+                self.assertEqual(project_record(tool_record(ack), THREAD), ())
+            for field, key in (("task", "project_id"), ("event", "project_id"), ("event", "task_id")):
+                ack, _ = self.registration(batch=batch)
+                selected = ack["data"]["context_preparation"]["context"]["selected"]
+                body = selected["task"] if field == "task" else selected["events"][0]
+                body[key] = "another-identity"
+                self.assertEqual(project_record(tool_record(ack), THREAD), ())
+
     def test_compact_write_acknowledgements_preserve_actual_turn_and_ownership_binding(self):
         for command, status in (("task.edit", "in_progress"), ("task.complete", "done")):
             ack = acknowledgement(status)

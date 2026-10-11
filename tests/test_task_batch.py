@@ -10,6 +10,7 @@ import unittest
 from contextlib import closing, redirect_stderr, redirect_stdout
 from pathlib import Path
 from unittest import mock
+from tests.registration_output_support import registration_body
 
 from tests.m14_test_support import (
     file_snapshot, initialize_taskgov_internal, make_physical_install,
@@ -147,7 +148,11 @@ class TaskBatchCliTests(unittest.TestCase):
     def success(self, *arguments):
         response = run_taskgov_internal(*arguments, "--repo", str(self.repo), "--db", str(self.db), "--json", maintenance_enabled=False)
         self.assertEqual(response.returncode, 0, response.stdout or response.stderr)
-        return json.loads(response.stdout)["data"]
+        data = json.loads(response.stdout)["data"]
+        if arguments[:2] == ("task", "add"):
+            return {**data, "task": registration_body(data, data, "task"),
+                    "event": registration_body(data, data, "event")}
+        return data
 
     def invoke(self, candidate=None, *arguments, stdin=None, maintenance_enabled=False, json_output=True):
         stream = stdin if stdin is not None else BinaryInput(encode(document() if candidate is None else candidate))
@@ -179,7 +184,9 @@ class TaskBatchCliTests(unittest.TestCase):
         ])
         code, stdout, stderr = self.invoke(candidate)
         self.assertEqual((code, stderr), (0, ""), stdout)
-        rows = json.loads(stdout)["data"]["tasks"]
+        data = json.loads(stdout)["data"]
+        rows = [{**entry, "task": registration_body(data, entry, "task"),
+                 "event": registration_body(data, entry, "event")} for entry in data["tasks"]]
         self.assertEqual([row["input_index"] for row in rows], [0, 1])
         self.assertEqual(len({row["task"]["task_id"] for row in rows}), 2)
         self.assertEqual(set(rows[0]), {"input_index", "task", "event", "contract_write"})
@@ -233,7 +240,8 @@ class TaskBatchCliTests(unittest.TestCase):
         registered = self.success("task", "list")["tasks"]
         self.assertEqual(len(registered), 3)
         self.assertEqual(next(row for row in registered if row["task_id"] == existing["task_id"]), existing)
-        self.assertEqual({row["task"]["title"] for row in json.loads(stdout)["data"]["tasks"]}, {"First new group", "Second new group"})
+        data = json.loads(stdout)["data"]
+        self.assertEqual({registration_body(data, row, "task")["title"] for row in data["tasks"]}, {"First new group", "Second new group"})
 
     def test_adding_incomplete_predecessor_ahead_of_active_work_rolls_back_batch(self):
         self.success("task", "add", "--title", "Active successor", "--kind", "sequential", "--lane", "Lane", "--order", "20", "--status", "in_progress")
@@ -381,7 +389,8 @@ class TaskBatchCliTests(unittest.TestCase):
                 cwd=install.project_root, input=encode(candidate), capture_output=True, timeout=30, check=False,
             )
             self.assertEqual((result.returncode, result.stderr), (0, b""), result.stdout.decode("utf-8"))
-            rows = json.loads(result.stdout)["data"]["tasks"]
+            data = json.loads(result.stdout)["data"]
+            rows = [{**entry, "task": registration_body(data, entry, "task")} for entry in data["tasks"]]
             self.assertEqual([row["task"]["title"] for row in rows], [item["title"] for item in candidate["tasks"]])
             self.assertEqual([row["input_index"] for row in rows], [0, 1])
             self.assertEqual(file_snapshot(install.project_root, exclude_state=True), before)

@@ -1,4 +1,5 @@
 import json
+from tests.registration_output_support import registration_task
 import os
 import sqlite3
 import subprocess
@@ -53,7 +54,7 @@ def add_task(db, repo, title, *extra):
     )
     if result.returncode != 0:
         raise AssertionError(result.stderr or result.stdout)
-    task = json.loads(result.stdout)["data"]["task"]
+    task = registration_task(json.loads(result.stdout))
     if review_fixture:
         task = edit_task(db, repo, task["task_id"], "--status", "review_pending")["data"]["task"]
     return task

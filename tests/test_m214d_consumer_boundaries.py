@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from tests.registration_output_support import registration_task
 import sqlite3
 import sys
 import tempfile
@@ -83,7 +84,7 @@ def add_contract_task(
     )
     if result.returncode != 0:
         raise AssertionError(result.stdout or result.stderr)
-    return json.loads(result.stdout)["data"]["task"]
+    return registration_task(json.loads(result.stdout))
 
 
 class StoredContractPointerConsumerTests(unittest.TestCase):

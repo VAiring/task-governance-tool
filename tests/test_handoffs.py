@@ -8,6 +8,7 @@ from concurrent.futures import ThreadPoolExecutor
 from contextlib import closing
 from pathlib import Path
 from unittest import mock
+from tests.registration_output_support import registration_body
 
 from tests.m14_test_support import (
     initialize_taskgov_internal,
@@ -62,7 +63,7 @@ def add_task(db, repo, title="Source task"):
     )
     if result.returncode != 0:
         raise AssertionError(result.stderr or result.stdout)
-    return payload["data"]["task"]
+    return registration_body(payload["data"], payload["data"], "task")
 
 
 def record(db, repo, task_id, summary="Out-of-scope improvement", *extra):

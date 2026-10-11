@@ -6,6 +6,7 @@ import tempfile
 import json
 from unittest import mock
 from pathlib import Path
+from tests.registration_output_support import registration_body
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "task-governance-tool" / "scripts"))
 
@@ -73,7 +74,7 @@ class VerificationDeclarationWorkflowTests(unittest.TestCase):
     def add(self, *args):
         result = self.call("task", "add", "--title", "declaration test", "--status", "in_progress", "--review-tier", "0", *args)
         self.assertTrue(result["ok"], result)
-        return result["data"]["task"]
+        return registration_body(result["data"], result["data"], "task")
 
     def test_omission_blocks_before_and_after_target(self):
         task = self.add()

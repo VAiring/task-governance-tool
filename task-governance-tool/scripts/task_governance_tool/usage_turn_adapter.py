@@ -85,6 +85,44 @@ not Task prose. Unknown wrappers yield no binding instead of heuristic parsing.
                 yield from _objects(value[key], depth + 1)
 
 
+def _registration_body(data, entry, field):
+    """Resolve only the closed registration references inside this acknowledgement."""
+    body = entry.get(field)
+    if not isinstance(body, dict) or f"{field}_ref" not in body:
+        return body
+    identity = "task_id" if field == "task" else "task_event_id"
+    if set(body) != {identity, f"{field}_ref"}:
+        return None
+    preparation = data.get("context_preparation")
+    if not isinstance(preparation, dict) or preparation.get("status") != "ready":
+        return None
+    context = preparation.get("context")
+    selected = context.get("selected") if isinstance(context, dict) else None
+    if not isinstance(selected, dict):
+        return None
+    reference = body[f"{field}_ref"]
+    if field == "task":
+        if reference != "/data/context_preparation/context/selected/task":
+            return None
+        destination = selected.get("task")
+    else:
+        prefix = "/data/context_preparation/context/selected/events/"
+        if not isinstance(reference, str) or not reference.startswith(prefix):
+            return None
+        suffix = reference[len(prefix):]
+        events = selected.get("events")
+        if (not isinstance(events, list) or not suffix.isascii() or not suffix.isdecimal()
+                or len(suffix) > len(str(len(events)))):
+            return None
+        index = int(suffix)
+        if str(index) != suffix or index >= len(events):
+            return None
+        destination = events[index]
+    if not isinstance(destination, dict) or destination.get(identity) != body.get(identity):
+        return None
+    return destination
+
+
 def project_record(record: dict, thread_id: str, *, project_id: str | None = None):
     """Return numerical metadata only from one already admitted source record."""
     payload = record.get("payload")
@@ -116,11 +154,13 @@ def project_record(record: dict, thread_id: str, *, project_id: str | None = Non
         if command == "task.add" and isinstance(data.get("tasks"), list):
             for entry in data["tasks"]:
                 if isinstance(entry, dict) and "task" in entry:
-                    single = {"task": entry.get("task"), "event": entry.get("event")}
+                    single = {field: _registration_body(data, entry, field) for field in ("task", "event")}
                     nested = {"type": "response_item", "payload": {**payload, "output": {**item, "data": single}}}
                     result.extend(project_record(nested, thread_id, project_id=project_id))
             continue
         task, event = data.get("task"), data.get("event")
+        if command == "task.add":
+            task, event = (_registration_body(data, data, field) for field in ("task", "event"))
         if not isinstance(task, dict) or not isinstance(event, dict):
             continue
         if command != "task.add":

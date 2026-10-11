@@ -9,6 +9,7 @@ import tempfile
 import unittest
 from contextlib import closing
 from pathlib import Path
+from tests.registration_output_support import registration_body
 
 from tests.m14_test_support import (
     PhysicalInstall,
@@ -153,7 +154,7 @@ class M215VerificationInputCapacityTests(unittest.TestCase):
                         title=f"Add boundary {length} {ord(character)}",
                     )
                     self.assertEqual(result.returncode, 0, result.stdout)
-                    self.assertEqual(payload["data"]["task"]["verification"], value)
+                    self.assertEqual(registration_body(payload["data"], payload["data"], "task")["verification"], value)
 
             before_bytes = install.db_path.read_bytes()
             before_counts = table_counts(install.db_path)

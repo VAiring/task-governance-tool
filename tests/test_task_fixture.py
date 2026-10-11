@@ -7,6 +7,7 @@ import unittest
 import uuid
 from unittest import mock
 from pathlib import Path
+from tests.registration_output_support import registration_body
 
 from tests.review_test_helpers import seed_review_evidence
 from tests.m14_test_support import (
@@ -63,7 +64,8 @@ def add_fixture_task(db, repo, task):
     result = run_taskgov(*args)
     if result.returncode != 0:
         raise AssertionError(result.stderr or result.stdout)
-    return json.loads(result.stdout)["data"]["task"]
+    data = json.loads(result.stdout)["data"]
+    return registration_body(data, data, "task")
 
 
 class TaskStatusFixtureTests(unittest.TestCase):

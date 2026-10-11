@@ -218,7 +218,8 @@ class TaskContractCliTests(unittest.TestCase):
                     payload["data"]["contract_write"],
                     {"recorded": True, "revision": 1},
                 )
-                self.assertEqual(payload["data"]["event"]["event_type"], "task_added")
+                from tests.registration_output_support import registration_body
+                self.assertEqual(registration_body(payload["data"], payload["data"], "event")["event_type"], "task_added")
                 task_id = payload["data"]["task"]["task_id"]
                 _, shown = json_command(
                     "task",

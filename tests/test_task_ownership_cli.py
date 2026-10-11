@@ -13,6 +13,7 @@ from tests.test_m242_r3b_schema20_activation import _SCHEMA20_RUNTIME_PATCH_TARG
 from tests.verification_receipt_test_support import initialize, run_taskgov, payload, target_for
 from task_governance_tool import storage
 from tests.test_review_results import BinaryInput, document, receipt
+from tests.registration_output_support import registration_body
 
 
 class TaskOwnershipCliTests(unittest.TestCase):
@@ -38,7 +39,8 @@ class TaskOwnershipCliTests(unittest.TestCase):
 
     def add(self, title="Ownership task", status="ready", caller=X, verification=None):
         args = ("--verification", verification) if verification is not None else ("--verification-not-required", "Test-only no executable change")
-        return self.invoke("task", "add", "--title", title, "--status", status, "--review-tier", "0", *args, caller=caller)["data"]["task"]
+        data = self.invoke("task", "add", "--title", title, "--status", status, "--review-tier", "0", *args, caller=caller)["data"]
+        return registration_body(data, data, "task")
 
     def edit(self, task, status, caller=X, *extra, code=None):
         return self.invoke("task", "edit", task["task_id"], "--status", status, *extra, caller=caller, code=code)

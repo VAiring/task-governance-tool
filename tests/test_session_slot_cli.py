@@ -5,6 +5,7 @@ from tests import test_task_ownership_cli as support
 from tests.test_review_session_migration import candidate_runtime
 from tests.verification_receipt_test_support import target_for
 from task_governance_tool import storage
+from tests.registration_output_support import registration_body
 
 
 class SessionSlotCliTests(support.TaskOwnershipCliTests):
@@ -56,9 +57,10 @@ class SessionSlotCliTests(support.TaskOwnershipCliTests):
             storage.validate_current_database(connection, target_for(self.db, self.repo))
 
     def test_contract_revision_reacquires_slot_atomically_and_pending_noop_does_not(self):
-        first = self.invoke("task", "add", "--title", "Contract task", "--status", "in_progress",
+        data = self.invoke("task", "add", "--title", "Contract task", "--status", "in_progress",
             "--contract-scope", "Original scope", "--contract-acceptance", "Original acceptance",
-            "--contract-authority-ref", "test authority")["data"]["task"]
+            "--contract-authority-ref", "test authority")["data"]
+        first = registration_body(data, data, "task")
         self.edit(first, "review_pending")
         self.edit(first, "review_pending", support.Y, code="task_not_owned")
         other = self.add("Other ready")

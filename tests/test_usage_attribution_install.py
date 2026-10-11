@@ -14,6 +14,7 @@ from tests.m14_test_support import make_physical_install, refresh_test_manifest
 from tests.test_usage_turn_adapter import tool_record
 from tests.test_usage_collection import event, usage
 from tests.test_usage_attribution import THREAD, turn
+from tests.registration_output_support import registration_body
 from task_governance_tool.session_identity import CallerIdentity
 from task_governance_tool.state_resolver import observe_current_root
 from task_governance_tool.usage_adapter import SourceInput
@@ -42,7 +43,7 @@ class UsageAttributionInstallTests(unittest.TestCase):
             cli("setup")
             added = cli("task", "add", "--title", "Inclusive-turn fixture", "--kind", "optional",
                         "--status", "in_progress", "--review-tier", "0", "--verification-not-required", "Isolated fixture")
-            task = added["data"]["task"]
+            task = registration_body(added["data"], added["data"], "task")
             ready = cli("task", "edit", task["task_id"], "--status", "ready")
             resumed = cli("task", "edit", task["task_id"], "--status", "in_progress")
             pending = cli("task", "edit", task["task_id"], "--status", "review_pending")

@@ -274,7 +274,9 @@ class CliEnvelopeTests(unittest.TestCase):
                 )
                 self.assertEqual(added.returncode, 0, added.stdout or added.stderr)
                 self.assertEqual(added.stderr, "")
-                task = json.loads(added.stdout)["data"]["task"]
+                from tests.registration_output_support import registration_body
+                data = json.loads(added.stdout)["data"]
+                task = registration_body(data, data, "task")
                 self.assertEqual(task["verification"], verification)
                 self.assertEqual(task["title"], title)
 

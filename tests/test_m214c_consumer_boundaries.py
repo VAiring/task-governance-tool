@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from tests.registration_output_support import registration_task
 import os
 import sqlite3
 import sys
@@ -93,7 +94,7 @@ def add_another_task(
     )
     if result.returncode != 0:
         raise AssertionError(result.stdout or result.stderr)
-    return json.loads(result.stdout)["data"]["task"]
+    return registration_task(json.loads(result.stdout))
 
 
 class StoredTaskConsumerBoundaryTests(unittest.TestCase):

@@ -13,6 +13,7 @@ from tests.m14_test_support import (
     run_taskgov_internal,
 )
 from tests.review_test_helpers import FINGERPRINT, seed_review_evidence
+from tests.registration_output_support import registration_body
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -78,7 +79,7 @@ def add_task(db: Path, repo: Path, title: str, *, tier: int = 1):
     )
     if result.returncode != 0:
         raise AssertionError(result.stderr or result.stdout)
-    return payload["data"]["task"]
+    return registration_body(payload["data"], payload["data"], "task")
 
 
 def completion_args(

@@ -1,4 +1,5 @@
 import json
+from tests.registration_output_support import registration_task
 import sqlite3
 import subprocess
 import sys
@@ -51,7 +52,7 @@ def init_db(db, repo):
 
 
 def add_task(db, repo, title="Contention task"):
-    return successful_json(
+    return registration_task(successful_json(
         "task",
         "add",
         "--repo",
@@ -60,7 +61,7 @@ def add_task(db, repo, title="Contention task"):
         str(db),
         "--title",
         title,
-    )["data"]["task"]
+    ))
 
 
 def set_review_target(db, repo, task_id):

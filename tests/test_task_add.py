@@ -6,6 +6,7 @@ import tempfile
 import unittest
 from contextlib import closing
 from pathlib import Path
+from tests.registration_output_support import registration_body
 
 from tests.m14_test_support import (
     initialize_taskgov_internal,
@@ -54,8 +55,8 @@ class TaskAddTests(unittest.TestCase):
             payload = json.loads(result.stdout)
             self.assertTrue(payload["ok"])
             self.assertEqual(payload["command"], "task.add")
-            task = payload["data"]["task"]
-            event = payload["data"]["event"]
+            task = registration_body(payload["data"], payload["data"], "task")
+            event = registration_body(payload["data"], payload["data"], "event")
             self.assertTrue(task["task_id"].startswith("tg_task_"))
             self.assertEqual(task["title"], "Review CLI help text")
             self.assertEqual(task["kind"], "optional")
@@ -113,8 +114,10 @@ class TaskAddTests(unittest.TestCase):
 
             self.assertEqual(first.returncode, 0, first.stderr)
             self.assertEqual(second.returncode, 0, second.stderr)
-            first_task = json.loads(first.stdout)["data"]["task"]
-            second_task = json.loads(second.stdout)["data"]["task"]
+            first_data = json.loads(first.stdout)["data"]
+            second_data = json.loads(second.stdout)["data"]
+            first_task = registration_body(first_data, first_data, "task")
+            second_task = registration_body(second_data, second_data, "task")
             self.assertEqual(first_task["lane"], "default")
             self.assertEqual(first_task["lane_order"], 1)
             self.assertEqual(second_task["lane"], "default")
@@ -140,8 +143,8 @@ class TaskAddTests(unittest.TestCase):
 
             self.assertEqual(result.returncode, 0, result.stderr)
             payload = json.loads(result.stdout)
-            self.assertEqual(payload["data"]["task"]["title"], "Command output: improve formatting")
-            self.assertEqual(payload["data"]["event"]["summary"], "Task registered")
+            self.assertEqual(registration_body(payload["data"], payload["data"], "task")["title"], "Command output: improve formatting")
+            self.assertEqual(registration_body(payload["data"], payload["data"], "event")["summary"], "Task registered")
 
     def test_task_add_stores_explicit_fields_and_blocked_reason(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -402,7 +405,7 @@ class TaskAddTests(unittest.TestCase):
             self.assertEqual(result.stderr, "")
             registration, prepared = result.stdout.split("\nContext preparation: ready\n", 1)
             self.assertLessEqual(len(registration.strip().splitlines()), 7)
-            self.assertIn("Ownership:", registration)
+            self.assertIn("Registered Task fields match", registration)
             context = run_taskgov("task", "context", "--repo", str(repo), "--db", str(db))
             self.assertEqual(context.returncode, 0, context.stderr)
             self.assertEqual(prepared.strip(), context.stdout.strip())

@@ -8,6 +8,7 @@ import unittest
 from contextlib import closing, redirect_stderr, redirect_stdout
 from pathlib import Path
 from unittest import mock
+from tests.registration_output_support import registration_body, registration_task
 
 from tests.m14_test_support import (
     SOURCE_SKILL_ROOT,
@@ -83,7 +84,7 @@ def add_contract_task(target, title: str = "Maintenance source") -> dict:
     )
     if code != 0:
         raise AssertionError(stderr or stdout)
-    return json.loads(stdout)["data"]["task"]
+    return registration_task(json.loads(stdout))
 
 
 class PostCommitMaintenanceTests(unittest.TestCase):
@@ -246,7 +247,7 @@ class PostCommitMaintenanceTests(unittest.TestCase):
             payload = json_payload(added)
             self.assertTrue(payload["ok"])
             self.assertEqual(
-                payload["data"]["task"]["title"],
+                registration_body(payload["data"], payload["data"], "task")["title"],
                 "Primary mutation survives invalid Viewer config",
             )
             self.assertEqual(
@@ -518,7 +519,7 @@ class PostCommitMaintenanceTests(unittest.TestCase):
                     self.assertEqual(payload["command"], "task.add")
                     self.assertEqual(payload["warnings"], warnings)
                     self.assertEqual(
-                        payload["data"]["task"]["title"],
+                        registration_body(payload["data"], payload["data"], "task")["title"],
                         f"Warning task {index}",
                     )
                 else:

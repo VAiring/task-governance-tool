@@ -428,7 +428,8 @@ and no-partial-result failures remain unchanged.
 set. It is an input mode of the existing leaf, not a splitter, authority
 resolver, implementation-start permission, or new normal-loop step. Individual
 Task/Contract options cannot accompany this mode; the combination is rejected
-before state access. Single-Task flags, defaults, and existing result fields remain valid.
+before state access. Single-Task flags and defaults remain valid; the result
+uses the exact same-response references below for duplicated bodies.
 
 Stdin is one UTF-8 JSON object, at most 262,144 bytes, with exactly required
 `version=1`, `common` (object), and `tasks` (array of 1 through 64 objects).
@@ -470,6 +471,20 @@ read-only context preparation uses the ordinary global state admission and the
 existing fixed `task context` composition. Success adds exactly one
 `data.context_preparation={status:"ready",context:<task.context data>,errors:[]}`,
 not one copy per batch item. Component warnings appear once in the outer warnings.
+After both validated observations are available, the registration projection
+compares every writer-returned Task field, including nested scalar types, with
+the selected Task's corresponding fields. Only an exact match replaces that
+registration `task` with `{task_id,task_ref}`. The JSON Pointer `task_ref` is
+`/data/context_preparation/context/selected/task`; additional show-only fields
+at that destination describe the read, not an expanded writer observation.
+An exact registration event match at precisely one selected `events` index
+similarly becomes `{task_event_id,event_ref}`, pointing to that same-response
+event. Task and event comparisons are independent. IDs alone never imply
+equality; missing, changed or ambiguous bodies remain in full. Batch input
+indices and Contract recording results are retained. The selected context
+remains complete and unchanged. Text identifies the registered ID and matching
+selected details once; different registration observations remain explicit.
+No comparison, reconstruction or extra read is required of the LLM consumer.
 Selection, held-work recall, complete Contract/checkpoint/gates, validation,
 privacy and live Runner read-release behavior are unchanged. The new Task is
 not necessarily selected. Use this actual context without a separate context

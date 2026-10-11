@@ -13,6 +13,7 @@ from unittest import mock
 
 from tests.m14_test_support import make_physical_install, refresh_test_manifest
 from tests.test_task_ownership import X, Y, UNKNOWN
+from tests.registration_output_support import registration_body
 
 
 class TaskOwnershipInstallTests(unittest.TestCase):
@@ -45,9 +46,10 @@ class TaskOwnershipInstallTests(unittest.TestCase):
         self.assertFalse(self.install.db_path.exists())
         self.invoke("setup", caller=UNKNOWN)
         self.assertTrue(self.install.viewer_path.is_file())
-        task = self.invoke("task", "add", "--title", "Physical owner test",
+        data = self.invoke("task", "add", "--title", "Physical owner test",
                            "--status", "in_progress", "--review-tier", "0",
-                           "--verification-not-required", "Fixture-only work")["data"]["task"]
+                           "--verification-not-required", "Fixture-only work")["data"]
+        task = registration_body(data, data, "task")
         task_id = task["task_id"]
         self.assertEqual(task["ownership"]["owner_session_id"], X.session_id)
         self.assertEqual(task["ownership"]["state"], "owned")

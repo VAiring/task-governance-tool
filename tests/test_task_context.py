@@ -8,6 +8,7 @@ import unittest
 from contextlib import closing
 from pathlib import Path
 from unittest import mock
+from tests.registration_output_support import registration_body
 
 from tests.m14_test_support import (
     file_snapshot,
@@ -55,7 +56,8 @@ class TaskContextTests(unittest.TestCase):
         return payload
 
     def add(self, title, *arguments):
-        return self.success("task", "add", "--title", title, *arguments)["data"]["task"]
+        data = self.success("task", "add", "--title", title, *arguments)["data"]
+        return registration_body(data, data, "task")
 
     def legacy_current_pair(self, title, *arguments):
         # Pre-v26 overlap remains readable; current commands cannot create it.
@@ -428,7 +430,8 @@ class TaskContextCompactSelectionTests(unittest.TestCase):
         return payload
 
     def add(self, title, *arguments):
-        return self.success("task", "add", "--title", title, *arguments)["data"]["task"]
+        data = self.success("task", "add", "--title", title, *arguments)["data"]
+        return registration_body(data, data, "task")
 
     def assert_empty_compact_preserves_selection(self, component, selected, selection):
         before = file_snapshot(self.install.project_root)

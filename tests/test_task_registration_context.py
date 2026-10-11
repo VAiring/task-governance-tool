@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import copy
 import sqlite3
 import sys
 import tempfile
@@ -15,6 +16,7 @@ from tests.test_task_batch import BinaryInput, document, encode
 from task_governance_tool import cli
 from task_governance_tool.cli_output import CommandResult
 from task_governance_tool.storage import StorageError
+from tests.registration_output_support import registration_body
 
 
 class RegistrationContextTests(unittest.TestCase):
@@ -65,6 +67,77 @@ class RegistrationContextTests(unittest.TestCase):
         self.assertEqual(context["selected"]["task"]["status"], "ready")
         self.assertFalse(context["selected"]["review_evidence"]["gate"]["satisfied"])
         self.assertFalse(context["selected"]["verification_evidence"]["gate"]["satisfied"])
+        data = added["data"]
+        self.assertEqual(set(data["task"]), {"task_id", "task_ref"})
+        self.assertEqual(set(data["event"]), {"task_event_id", "event_ref"})
+        self.assertEqual(registration_body(data, data, "task")["title"], "Scoped work")
+        self.assertEqual(registration_body(data, data, "event")["event_type"], "task_added")
+        self.assertEqual(data["contract_write"], {"recorded": True, "revision": 1})
+
+    def test_parallel_change_preserves_registered_snapshot_and_independent_event_match(self):
+        original = cli.prepare_registered_task_context
+
+        def concurrent_edit(context, target):
+            with closing(sqlite3.connect(self.db)) as reader:
+                task_id = reader.execute("SELECT task_id FROM tasks").fetchone()[0]
+            edited = run(self.db, self.repo, "task", "edit", task_id, "--title", "Concurrent title",
+                         "--add-note", "Keep this concurrent change")
+            self.assertEqual(edited.returncode, 0, edited.stdout)
+            return original(context, target)
+
+        with mock.patch.object(cli, "prepare_registered_task_context", side_effect=concurrent_edit):
+            payload = self.add("Registered title")
+        data = payload["data"]
+        self.assertEqual(data["task"]["title"], "Registered title")
+        self.assertNotIn("task_ref", data["task"])
+        selected = data["context_preparation"]["context"]["selected"]
+        self.assertEqual(selected["task"]["title"], "Concurrent title")
+        self.assertEqual(selected["events"][0]["note_body"], "Keep this concurrent change")
+        # The original add event is no longer retained by normal detail.
+        self.assertEqual(data["event"]["event_type"], "task_added")
+        self.assertNotIn("event_ref", data["event"])
+
+    def test_batch_references_only_selected_item_and_retains_mapping(self):
+        payload = self.batch()
+        data = payload["data"]
+        selected_id = data["context_preparation"]["context"]["selected"]["task"]["task_id"]
+        for index, entry in enumerate(data["tasks"]):
+            self.assertEqual(entry["input_index"], index)
+            self.assertEqual("task_ref" in entry["task"], entry["task"]["task_id"] == selected_id)
+            self.assertEqual(registration_body(data, entry, "task")["title"], f"Batch {'AB'[index]}")
+            self.assertEqual(registration_body(data, entry, "event")["task_id"], entry["task"]["task_id"])
+
+    def test_identical_registration_output_is_smaller_without_changing_service_bodies(self):
+        original_add = cli.add_task
+        saved = []
+
+        def capture(*args, **kwargs):
+            result = original_add(*args, **kwargs)
+            saved.append((result, copy.deepcopy((result.task, result.event))))
+            return result
+
+        with mock.patch.object(cli, "add_task", side_effect=capture) as writer:
+            payload = self.add("Response size fixture", "--description", "Approved outcome. " * 30)
+        writer.assert_called_once()
+        result, before = saved[0]
+        self.assertEqual((result.task, result.event), before)
+        baseline = {**payload, "data": {**payload["data"], "task": result.task, "event": result.event}}
+        size = lambda value: len(json.dumps(value, ensure_ascii=False, separators=(",", ":")))
+        self.assertLess(size(payload), size(baseline))
+        self.assertEqual(registration_body(payload["data"], payload["data"], "task"), result.task)
+        self.assertEqual(registration_body(payload["data"], payload["data"], "event"), result.event)
+
+    def test_text_identical_details_appear_once_and_other_selection_stays_explicit(self):
+        result = run_taskgov_internal("task", "add", "--title", "First text title", "--repo", str(self.repo),
+                                     "--db", str(self.db), maintenance_enabled=False)
+        self.assertEqual(result.returncode, 0, result.stdout)
+        self.assertEqual(result.stdout.count("Title: First text title"), 1)
+        self.assertIn("Registered Task fields match", result.stdout)
+        later = run_taskgov_internal("task", "add", "--title", "Later text title", "--repo", str(self.repo),
+                                    "--db", str(self.db), maintenance_enabled=False)
+        self.assertIn("Title: First text title", later.stdout)
+        self.assertIn("Title: Later text title", later.stdout)
+        self.assertNotIn("Registered Task fields match", later.stdout)
 
     def test_single_and_batch_keep_existing_active_selection(self):
         active = self.add("Existing active", "--status", "in_progress")["data"]["task"]
@@ -139,6 +212,8 @@ class RegistrationContextTests(unittest.TestCase):
         self.assertEqual(payload["warnings"], [])
         self.assertEqual(payload["data"]["context_preparation"]["status"], "failed")
         self.assertIsNone(payload["data"]["context_preparation"]["context"])
+        self.assertEqual([entry["task"]["title"] for entry in payload["data"]["tasks"]], ["Batch A", "Batch B"])
+        self.assertTrue(all(entry["event"]["event_type"] == "task_added" for entry in payload["data"]["tasks"]))
         self.assertEqual(self.invoke("task", "list")["data"]["count"], 2)
 
     def test_unexpected_read_failure_does_not_leak_exception_or_invite_retry(self):
@@ -192,6 +267,34 @@ class RegistrationContextTests(unittest.TestCase):
                 self.assertLess(size(payload), size(old_add) + size(separate))
                 # Remaining identical target/verify/review/complete outputs
                 # cancel in the whole-loop comparison; no token claim follows.
+
+
+class RegistrationProjectionTests(unittest.TestCase):
+    def test_exact_values_types_event_identity_and_ambiguity_without_mutation(self):
+        entry = {"input_index": 0, "task": {"task_id": "t1", "title": "Title", "status": "ready",
+                 "ownership": {"generation": 1, "is_owner": False}},
+                 "event": {"task_event_id": "e1", "task_id": "t1", "summary": "Registered"},
+                 "contract_write": {"recorded": True, "revision": 1}}
+        selected = {"task": {**copy.deepcopy(entry["task"]), "review_target_generation": 0},
+                    "events": [{**entry["event"], "note_body": None}]}
+        before = copy.deepcopy((entry, selected))
+        projected = cli.registration_context_projection(entry, selected)
+        self.assertEqual((entry, selected), before)
+        self.assertEqual(projected["task"], {"task_id": "t1", "task_ref": "/data/context_preparation/context/selected/task"})
+        self.assertEqual(projected["event"]["event_ref"], "/data/context_preparation/context/selected/events/0")
+        self.assertEqual(projected["contract_write"], entry["contract_write"])
+        for field, value in (("title", "Changed"), ("task_id", "t2"), ("ownership", {"generation": True, "is_owner": False})):
+            different = copy.deepcopy(selected)
+            different["task"][field] = value
+            result = cli.registration_context_projection(entry, different)
+            self.assertEqual(result["task"], entry["task"])
+        for events in ([], [{**entry["event"], "summary": "Changed"}],
+                       [{**entry["event"], "task_event_id": "e2"}], [entry["event"], entry["event"]]):
+            different = {**selected, "events": events}
+            result = cli.registration_context_projection(entry, different)
+            self.assertEqual(result["event"], entry["event"])
+            self.assertIn("task_ref", result["task"])
+        self.assertEqual(cli.registration_context_projection(entry, None), entry)
 
 
 class RegistrationRunnerContextTests(unittest.TestCase):

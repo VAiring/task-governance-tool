@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from tests.registration_output_support import registration_task
 import sqlite3
 from contextlib import closing
 from pathlib import Path
@@ -81,7 +82,7 @@ def add_task(
     )
     if result.returncode != 0:
         raise AssertionError(result.stderr or result.stdout)
-    return payload(result)["data"]["task"]
+    return registration_task(payload(result))
 
 
 def set_target(

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import sqlite3
 import sys
@@ -551,6 +552,33 @@ def validation_failure_result(
     )
 
 
+def registration_context_projection(entry: dict[str, Any], selected: dict[str, Any] | None) -> dict[str, Any]:
+    """Reference only exact validated registration fields in this response's read."""
+    if selected is None:
+        return entry
+
+    def matches(original: dict[str, Any], observed: dict[str, Any]) -> bool:
+        if not all(key in observed for key in original):
+            return False
+        # JSON equality preserves scalar types, including nested ownership flags.
+        return json.dumps(original, sort_keys=True) == json.dumps(
+            {key: observed[key] for key in original}, sort_keys=True,
+        )
+
+    result = dict(entry)
+    task = entry["task"]
+    if matches(task, selected["task"]):
+        result["task"] = {"task_id": task["task_id"],
+                          "task_ref": "/data/context_preparation/context/selected/task"}
+    event = entry["event"]
+    matching_events = [index for index, observed in enumerate(selected["events"])
+                       if matches(event, observed)]
+    if len(matching_events) == 1:
+        result["event"] = {"task_event_id": event["task_event_id"],
+                           "event_ref": f"/data/context_preparation/context/selected/events/{matching_events[0]}"}
+    return result
+
+
 def handle_task_add(context: CommandContext) -> CommandResult:
     target = resolve_context_target(context)
     if context.read_only:
@@ -635,13 +663,10 @@ def handle_task_add(context: CommandContext) -> CommandResult:
                 entry["contract_write"] = item.contract_write
             entries.append(entry)
         data = {"tasks": entries}
-        text = "\n".join(f"Input {entry['input_index']}:\n" + task_add_text(
-            entry["task"], entry["event"], entry.get("contract_write")) for entry in entries)
     else:
         data = {"task": result.task, "event": result.event}
         if result.contract_write is not None:
             data["contract_write"] = result.contract_write
-        text = task_add_text(result.task, result.event, result.contract_write)
     # Registration is committed and its writer is closed. Preparation failure
     # must not turn a durable registration into an apparent failed write.
     prepared = prepare_registered_task_context(context, target)
@@ -650,6 +675,17 @@ def handle_task_add(context: CommandContext) -> CommandResult:
         "context": prepared.data if prepared.ok else None,
         "errors": prepared.errors,
     }
+    original_entries = entries if batch else [data]
+    selected = prepared.data["selected"] if prepared.ok else None
+    projected = [registration_context_projection(entry, selected) for entry in original_entries]
+    text = "\n".join((f"Input {entry['input_index']}:\n" if batch else "") + task_add_text(
+        entry["task"], entry["event"], entry.get("contract_write"),
+        task_in_context="task_ref" in projection["task"],
+    ) for entry, projection in zip(original_entries, projected))
+    if batch:
+        data["tasks"] = projected
+    else:
+        data = projected[0]
     text += "\nContext preparation: " + ("ready\n" + prepared.text if prepared.ok else
         "failed; registration committed. Retry task context, not task add.\n" +
         "\n".join(f"{error['code']}: {error['message']}" for error in prepared.errors))

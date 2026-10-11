@@ -1154,6 +1154,10 @@ gates; that selection need not be newly registered. No second context read or
 redundant start edit is needed. Failed context preparation follows a committed
 registration: recover with `task context`, not another add. See the exact
 [registration result](cli_contracts.md#task-add).
+Registration `task_ref` and `event_ref`, when present, point to the proven
+identical content within that same response. Use the destination directly;
+do not compare, rebuild, reread or register again. Registered IDs and batch
+input indices remain explicit even when the selected work differs.
 
 When the outcome and registration permission are clear but the authority lacks
 truthful split or complete Contract detail, register one whole-outcome

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from tests.registration_output_support import registration_task
 import sqlite3
 from contextlib import closing
 from pathlib import Path
@@ -91,7 +92,7 @@ def seed_current_task(
     result = run_taskgov_internal(*command)
     if result.returncode != 0:
         raise AssertionError(result.stderr or result.stdout)
-    return repo, db, json.loads(result.stdout)["data"]["task"]
+    return repo, db, registration_task(json.loads(result.stdout))
 
 
 def inject_task_fault(

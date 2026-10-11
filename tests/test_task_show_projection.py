@@ -12,6 +12,7 @@ from unittest import mock
 from tests.m14_test_support import file_snapshot, initialize_taskgov_internal, make_physical_install
 from tests.test_m17_cli_consumer_hardening import _run_cli, _setup
 from tests.test_task_context import run
+from tests.registration_output_support import registration_body
 
 from task_governance_tool import storage
 from task_governance_tool import verification_receipt_repository as receipt_repository
@@ -52,10 +53,11 @@ class TaskShowProjectionTests(unittest.TestCase):
         return payload
 
     def add(self, *arguments):
-        return self.success(
+        data = self.success(
             "task", "add", "--title", "Working projection", "--status", "in_progress",
             "--review-tier", "2", *arguments,
-        )["data"]["task"]
+        )["data"]
+        return registration_body(data, data, "task")
 
     def show(self, task_id, *, audit=False):
         options = ("--audit",) if audit else ()

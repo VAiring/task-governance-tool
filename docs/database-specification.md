@@ -466,8 +466,11 @@ preserves schema-1 observations, conflicts and cursors; old readers reject the
 new structure. A numerical migration failure cannot roll back core Task state.
 
 Only a structured host turn identity plus a known successful public CLI Task
-acknowledgement can propose a boundary. Revalidate the exact event, project,
-Task, owner generation, status and actor against the committed core transition.
+acknowledgement can propose a boundary.
+Task registration's closed same-response references may supply their matching
+Task/event bodies; malformed or identity-mismatched references remain unbound.
+Revalidate the exact event, project, Task, owner generation, status and actor
+against the committed core transition.
 Missing/restored-away or contradictory references remain unbound. Never parse
 event summary prose, command arguments or adjacent response timestamps to infer
 which Task was active. The projection is not an authorization or quality gate.

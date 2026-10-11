@@ -281,6 +281,12 @@ no Task operation, completion callback or host-settings writer is added here.
 allowlisted fields of successful Task acknowledgements from structured tool
 results. It accepts the observed `input_text`/text blocks and exec output
 container, not command arguments or general natural-language relations.
+For registration it accepts full bodies or the closed same-response Task/event
+references. Only the fixed selected Task path or canonical selected-event index
+is resolved, after ready preparation and matching identity checks. Batch entries
+resolve against their one original response context before the same operation
+projection. Unknown paths, malformed indices and mismatches yield no boundary;
+no arbitrary pointer traversal, additional read or context-body retention occurs.
 `usage_adapter.py` includes this projection only in attribution mode. The
 sanitized prefix version distinguishes the two adapters, so switching mode
 replays old numerical observations idempotently rather than losing boundaries.

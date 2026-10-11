@@ -730,6 +730,28 @@ It returns no partial context and triggers no retry or writer. Existing common
 post-commit maintenance remains once, after command preparation; the embedded
 context claims neither write/read atomicity nor a post-maintenance snapshot.
 
+`registration_context_projection` is a pure CLI projection after that read.
+It compares all validated writer-returned Task fields against the corresponding
+selected fields with exact JSON scalar types, retaining the complete registration
+body on any difference. A matching Task uses its stable ID and a fixed same-response
+`task_ref`; extra show-only destination fields remain read observations. A
+registration event uses its stable ID and `event_ref` only when exactly one
+selected event matches every returned field. These comparisons are independent,
+retain batch indices/Contract write acknowledgements, and never mutate service
+results or the complete prepared context. Failed preparation preserves every
+registration body. Text uses the same proven Task match to avoid repeating
+selected details, retaining registration identity, event and Contract outcome.
+There is no storage access, new validation bypass, mode, retry or consumer restore
+step in this projection.
+
+The numerical `usage_turn_adapter.py` consumer accepts these closed same-response
+references for both single and batch registration. It resolves only the fixed
+selected Task or canonical selected-event index, checks the referenced identity,
+then projects its existing allowlisted operation metadata. Invalid references
+remain unbound; core event/ownership revalidation and transcript exclusion remain
+unchanged. Tests that need original registration fields use a test-only accessor;
+ordinary LLM consumption adds no restoration step or read.
+
 `tasks.py` factors single-add preparation from its existing row writer. Both
 single and batch registration use that same row writer, Contract activation,
 authority snapshot, events, stored validation, and sequential checks. Batch

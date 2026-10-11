@@ -30,6 +30,8 @@ def task_add_text(
     task: dict[str, Any],
     event: dict[str, Any],
     contract_write: dict[str, Any] | None = None,
+    *,
+    task_in_context: bool = False,
 ) -> str:
     lines = [
         f"Task added: {task['task_id']}",
@@ -41,6 +43,10 @@ def task_add_text(
     if task["kind"] == "sequential":
         lines.insert(3, f"Lane: {task['lane']}  Order: {task['lane_order']}")
     lines.extend(ownership_text(task))
+    if task_in_context:
+        lines = [f"Task added: {task['task_id']}",
+                 "Registered Task fields match the selected context below.",
+                 f"Event: {event['event_type']} ({event['task_event_id']})"]
     if contract_write is not None:
         lines.append(
             "Contract: "

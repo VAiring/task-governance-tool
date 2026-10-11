@@ -14,6 +14,7 @@ import unittest
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import closing
 from pathlib import Path
+from tests.registration_output_support import registration_body
 
 from tests.m14_test_support import make_physical_install, refresh_test_manifest
 from tests.test_review_results import encode, receipt, FINGERPRINT
@@ -155,8 +156,9 @@ class ReviewSessionInstallTests(unittest.TestCase):
                 "review_receipts", "review_receipt_sessions", "review_findings", "task_events"))
 
     def test_parent_forwards_two_real_sessions_and_preserves_bytes_and_no_slot(self):
-        other = self.cli("task", "add", "--title", "Reviewer own work", "--kind", "optional",
-            "--status", "in_progress", "--review-tier", "0", "--verification-not-required", "Fixture", caller=REVIEWER)["data"]["task"]
+        data = self.cli("task", "add", "--title", "Reviewer own work", "--kind", "optional",
+            "--status", "in_progress", "--review-tier", "0", "--verification-not-required", "Fixture", caller=REVIEWER)["data"]
+        other = registration_body(data, data, "task")
         first = self.save("child", REVIEWER)
         second = self.save("root", SECOND)
         result = self.helper("submit", "--packet", self.packet_path, first, second)

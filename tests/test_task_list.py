@@ -1,4 +1,5 @@
 import json
+from tests.registration_output_support import registration_task
 import sqlite3
 import subprocess
 import sys
@@ -39,7 +40,7 @@ def add_task(db, repo, title, *extra):
     )
     if result.returncode != 0:
         raise AssertionError(result.stderr or result.stdout)
-    return json.loads(result.stdout)["data"]["task"]
+    return registration_task(json.loads(result.stdout))
 
 
 def init_db(db, repo):

@@ -733,6 +733,18 @@ requires both scope and acceptance and never gets inferred from missing input.
 Success data contains `task`, `event`, and `context_preparation`, plus
 `contract_write={"recorded":true,"revision":1}` when a Contract was recorded.
 `data.task.task_id` identifies the registered Task; it need not be the selected work.
+When every registered Task field exactly matches the corresponding selected
+context field, `task` is `{task_id,task_ref}` instead of a duplicate body.
+`task_ref` is the same-response JSON Pointer
+`/data/context_preparation/context/selected/task`; the destination's extra
+show-only fields describe the read. An event matching exactly one selected
+event becomes `{task_event_id,event_ref}`, with a pointer to that `events` index.
+Task/event matching is independent and includes values and scalar types, never
+just IDs. Changed, missing or ambiguous information stays in full. Use the
+referenced content within this response; no comparison, restoration or extra
+read is needed. The selected context, registration IDs, batch input indices
+and Contract recording results remain complete. Text states the registered ID
+and proven matching selected details once, preserving different observations.
 
 Initial `done`, `paused`, and `review_pending` are rejected without writes as
 `initial_done_forbidden`, `initial_paused_forbidden`, and
@@ -808,8 +820,8 @@ it without consuming stdin.
 
 Success data contains `tasks=[{"input_index":0,"task":{},"event":{},"contract_write":{"recorded":true,"revision":1}}]`
 and one `context_preparation`,
-where Task/event are the existing projections and `contract_write` is absent
-for null Contracts. The response maps every input in order; no per-Task follow-up
+where Task/event use the shared exact-match reference conditions above and
+`contract_write` is absent for null Contracts. The response maps every input in order; no per-Task follow-up
 confirmation is required. Match `data.tasks[].input_index` to the input and use
 that item's `task.task_id` for later operations. All entries commit together or all roll back;
 handled batch input/storage errors return `tasks=[]`. Parse/read-only errors

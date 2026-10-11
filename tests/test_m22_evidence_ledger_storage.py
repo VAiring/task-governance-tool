@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sqlite3
+from tests.registration_output_support import registration_task
 import tempfile
 import unittest
 from contextlib import closing
@@ -406,7 +407,7 @@ def add_contract_task(db: Path, repo: Path, *, scope: str, acceptance: str) -> d
     )
     if result.returncode != 0:
         raise AssertionError(result.stderr or result.stdout)
-    return json_payload(result)["data"]["task"]
+    return registration_task(json_payload(result))
 
 
 def seed_v17_contract_constraints(
@@ -661,7 +662,7 @@ def seed_historical_authority_receipt(root: Path):
     )
     if added.returncode != 0:
         raise AssertionError(added.stderr or added.stdout)
-    task = json_payload(added)["data"]["task"]
+    task = registration_task(json_payload(added))
     generation = set_target(db, repo, task["task_id"])
     recorded = add_receipt(db, repo, task["task_id"], generation)
     if recorded.returncode != 0:

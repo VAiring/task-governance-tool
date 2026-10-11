@@ -201,7 +201,8 @@ It never starts a Task or changes state, evidence, or gate requirements.
 
 Success data is exactly `selection`, `current`, `next`, and `selected`.
 `selection` is `current`, `next`, or `none`; `current` is the existing compact
-current data; `next` is the existing compact next data only when fallback ran,
+current data with the same-response projection below; `next` is the existing
+compact next data only when fallback ran,
 otherwise null; `selected` is the complete normal show data or null when no candidate
 exists. Each compact component is projected from the same batch used for
 selection; an omitted display row may still be the selected Task. Component
@@ -210,6 +211,24 @@ component warnings are retained once. Any read failure stops without another
 candidate and preserves its sanitized code/exit status, with no warnings and
 exact empty data `{selection: "none", current: null, next: null, selected: null}`.
 Thus successful absence is distinct from failure through `ok`.
+
+After those reads and compact omission decisions, only a visible candidate
+with the exact selected Task ID may share repeated Task fields. Every candidate
+retains `task_id`, its current/next position and its candidate-only fields.
+A Task field present on both sides is omitted from that candidate only when
+its exact JSON value and types match `selected.task`; a retained differing
+field is the candidate's own observation, not an override of the selected
+detail. A row with any such omissions adds `task_ref`, the unique same-response
+JSON Pointer `/data/selected/task`. In `task add`'s embedded context that pointer
+is `/data/context_preparation/context/selected/task`. Omitted compact Task
+fields are supplied at this destination; they are not missing or null.
+`suggested_next_action` and `latest_event` keep their candidate meaning and
+remain on the candidate, even if their wording matches detail. Other Task IDs,
+unmatched fields, absent selected detail and omitted display rows receive no
+reference or inference. The complete selected detail, warnings, counts, order,
+truncation and original omission budgets remain unchanged. This presentation
+requires no extra LLM read, reconciliation or restoration procedure and does
+not change standalone current/next/show or their validation.
 
 The public operation reuses the resolver's retained read for selection and
 detail. Live marker-2 show retains its existing release, physical Runner-basis

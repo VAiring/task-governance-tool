@@ -19,6 +19,18 @@ from task_governance_tool.storage import StorageError
 from tests.registration_output_support import registration_body
 
 
+def embedded_context(standalone):
+    """Keep complete observations, adjusting only the enclosing response path."""
+    embedded = copy.deepcopy(standalone)
+    for component in ("current", "next"):
+        if embedded[component] is not None:
+            for row in embedded[component]["tasks"]:
+                if "task_ref" in row:
+                    assert row["task_ref"] == "/data/selected/task"
+                    row["task_ref"] = "/data/context_preparation/context/selected/task"
+    return embedded
+
+
 class RegistrationContextTests(unittest.TestCase):
     def setUp(self):
         temporary = tempfile.TemporaryDirectory()
@@ -50,7 +62,7 @@ class RegistrationContextTests(unittest.TestCase):
         self.assertEqual(file_snapshot(self.root), before)
         prepared = payload["data"]["context_preparation"]
         self.assertEqual(prepared, {
-            "status": "ready", "context": standalone["data"], "errors": [],
+            "status": "ready", "context": embedded_context(standalone["data"]), "errors": [],
         })
         self.assertEqual(payload["warnings"], standalone["warnings"])
         if selected_id:
@@ -65,6 +77,11 @@ class RegistrationContextTests(unittest.TestCase):
         context = self.assert_context(added, added["data"]["task"]["task_id"])
         self.assertEqual(context["selected"]["contract"]["revision"], 1)
         self.assertEqual(context["selected"]["task"]["status"], "ready")
+        candidate = context["next"]["tasks"][0]
+        self.assertEqual(candidate["task_id"], context["selected"]["task"]["task_id"])
+        self.assertEqual(candidate["task_ref"], "/data/context_preparation/context/selected/task")
+        self.assertNotIn("title", candidate)
+        self.assertIn("suggested_next_action", candidate)
         self.assertFalse(context["selected"]["review_evidence"]["gate"]["satisfied"])
         self.assertFalse(context["selected"]["verification_evidence"]["gate"]["satisfied"])
         data = added["data"]
@@ -128,7 +145,7 @@ class RegistrationContextTests(unittest.TestCase):
         self.assertEqual(registration_body(payload["data"], payload["data"], "event"), result.event)
 
     def test_text_identical_details_appear_once_and_other_selection_stays_explicit(self):
-        result = run_taskgov_internal("task", "add", "--title", "First text title", "--repo", str(self.repo),
+        result = run_taskgov_internal("task", "add", "--title", "First text title", "--priority", "urgent", "--repo", str(self.repo),
                                      "--db", str(self.db), maintenance_enabled=False)
         self.assertEqual(result.returncode, 0, result.stdout)
         self.assertEqual(result.stdout.count("Title: First text title"), 1)
@@ -171,7 +188,7 @@ class RegistrationContextTests(unittest.TestCase):
     def test_context_read_starts_after_writer_commit_and_close(self):
         original = cli.handle_task_context
 
-        def inspect(context):
+        def inspect(context, **kwargs):
             self.assertTrue(context.read_only)
             self.assertIsNotNone(context.read_connection_override)
             self.assertEqual(context.read_connection_override.execute("PRAGMA query_only").fetchone()[0], 1)
@@ -179,7 +196,7 @@ class RegistrationContextTests(unittest.TestCase):
                 other.execute("BEGIN IMMEDIATE")
                 self.assertEqual(other.execute("SELECT count(*) FROM tasks").fetchone()[0], 1)
                 other.rollback()
-            return original(context)
+            return original(context, **kwargs)
 
         with mock.patch.object(cli, "handle_task_context", side_effect=inspect):
             payload = self.add()
@@ -315,7 +332,7 @@ class RegistrationRunnerContextTests(unittest.TestCase):
                 self.assertEqual(added.returncode, 0, added.stdout)
                 preparation = json.loads(added.stdout)["data"]["context_preparation"]
                 self.assertEqual(preparation["status"], "ready", preparation)
-                self.assertEqual(preparation["context"], json.loads(expected.stdout)["data"])
+                self.assertEqual(preparation["context"], embedded_context(json.loads(expected.stdout)["data"]))
                 physical.assert_called_once()
 
     def test_unrelated_runner_corruption_after_commit_is_still_globally_rejected(self):

@@ -930,6 +930,14 @@ explicit current/show still inspect held and other-owner Tasks. Missing identity
 adds `session_identity_required` and permits only ready fallback inspection.
 Successful component warnings are retained once.
 
+A visible selected candidate keeps its Task ID and candidate-only observations;
+matching Task fields are supplied once at `selected.task` through `task_ref`.
+The pointer is `/data/selected/task`, or
+`/data/context_preparation/context/selected/task` inside registration. Differing
+values remain on the candidate. Use complete `selected` directly; no restoration,
+comparison or additional command is required. Candidate order, counts and
+omission information and standalone current/next/show remain unchanged.
+
 For `selection=current|next`, use `data.selected.task.task_id` as `<task-id>` in
 the next Task-specific command. `selection=next` does not start the Task; start
 it with `task edit <task-id> --status in_progress --json`. No ID is appended to

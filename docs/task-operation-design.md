@@ -297,6 +297,18 @@ the existing live marker-2 show path still closes it before physical selection
 and checks the observed Task on its final Task-local read. The aggregate does
 not add global Runner validation or infer cross-phase snapshot atomicity.
 
+After successful composition, `context_candidate_projection` compares visible
+same-ID candidates with the complete selected Task using exact JSON equality,
+including nested scalar types. It removes only matching Task fields and keeps
+identity and all differing or candidate-only observations. A fixed `task_ref`
+points to that selected Task within the enclosing response; registration passes
+its embedded destination to the same context handler. The projection copies
+component/row dictionaries without modifying the read models, selected detail,
+compact budgets or human-text inputs. It performs no I/O or selection and is
+also used by registration's prepared context. Numerical usage attribution reads
+the existing complete selected Task through its separate registration-reference
+contract; it does not consume or restore candidate fields.
+
 ### Done Immutability And Reopen
 
 Every task/review mutation loads the owner and applies the shared done guard.

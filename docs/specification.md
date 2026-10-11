@@ -337,7 +337,9 @@ must retain unchanged fields from their working context, not replace that
 context with the write acknowledgement or add a routine read. Registration retains
 all observations through full bodies or the exact same-response references in
 the [registration owner](task-operation-specification.md#structured-task-registration).
-Context and Packet projections retain their full content. Audit recovery and
+Context retains its full same-response content through the exact candidate
+references in the [Task read owner](task-operation-specification.md#task-selection-and-read-commands);
+Packet projections retain their full content. Audit recovery and
 target-set partial success follow the [Review/completion owner](review-completion-specification.md#git-snapshot-and-target-binding). Complete
 stored-row validation still precedes this presentation-only omission.
 

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import copy
 import os
 import sqlite3
 import tempfile
@@ -109,12 +110,26 @@ class TaskContextTests(unittest.TestCase):
         self.assertEqual(actual["project_id"], current["project_id"])
         self.assertEqual(actual["warnings"], warnings)
         self.assertEqual(actual["errors"], [])
-        self.assertEqual(actual["data"], {
+        expected = {
             "selection": selection,
             "current": current["data"],
             "next": next_payload["data"] if next_payload else None,
             "selected": shown["data"] if shown else None,
-        })
+        }
+        restored = copy.deepcopy(actual["data"])
+        for component in ("current", "next"):
+            if expected[component] is None:
+                continue
+            for row, original in zip(restored[component]["tasks"], expected[component]["tasks"], strict=True):
+                if "task_ref" in row:
+                    self.assertEqual(row.pop("task_ref"), "/data/selected/task")
+                    self.assertEqual(row["task_id"], shown["data"]["task"]["task_id"])
+                    # Restore only the known compact schema for this test's
+                    # comparison; ordinary clients use complete selected.
+                    for key in original:
+                        if key not in row:
+                            row[key] = shown["data"]["task"][key]
+        self.assertEqual(restored, expected)
         self.assertEqual(file_snapshot(self.root), before)
         return actual
 
@@ -290,6 +305,55 @@ class TaskContextTests(unittest.TestCase):
         self.assertIsNotNone(selected["verification_evidence"]["gate"]["blocking_code"])
         self.assertEqual(selected["review_evidence"]["gate"]["required_independent_passes"], 2)
 
+    def test_same_id_observation_change_retains_candidate_value_and_action(self):
+        task = self.add("Candidate observation", "--status", "in_progress")
+        original_show = cli_service.handle_task_show
+
+        def changed_observation(context):
+            result = original_show(context)
+            changed = copy.deepcopy(result.data)
+            changed["task"]["title"] = "Later detail observation"
+            changed["suggested_next_action"] = "A distinct detail action"
+            return cli_service.replace(result, data=changed)
+
+        with mock.patch.object(cli_service, "handle_task_show", side_effect=changed_observation) as show:
+            payload = self.success("task", "context")
+        show.assert_called_once()
+        data = payload["data"]
+        candidate = data["current"]["tasks"][0]
+        self.assertEqual(candidate["task_id"], task["task_id"])
+        self.assertEqual(candidate["title"], "Candidate observation")
+        self.assertNotEqual(candidate["suggested_next_action"], data["selected"]["suggested_next_action"])
+        self.assertIn("latest_event", candidate)
+        self.assertEqual(candidate["task_ref"], "/data/selected/task")
+        self.assertNotIn("status", candidate)
+        self.assertEqual(data["selected"]["task"]["title"], "Later detail observation")
+
+    def test_context_shares_only_selected_candidate_and_reduces_response_bytes(self):
+        selected = self.add("Selected 日本語", "--priority", "urgent")
+        other = self.add("Other candidate", "--priority", "low")
+        captured = []
+        original_next = cli_service._task_next_result
+
+        def capture(*args):
+            result = original_next(*args)
+            captured.append(copy.deepcopy(result.data))
+            return result
+
+        with mock.patch.object(cli_service, "_task_next_result", side_effect=capture):
+            payload = self.assert_matches_selection_and_display()
+        data = payload["data"]
+        first, second = data["next"]["tasks"]
+        self.assertEqual(first["task_id"], selected["task_id"])
+        self.assertEqual(first["task_ref"], "/data/selected/task")
+        self.assertNotIn("title", first)
+        self.assertEqual(second["task_id"], other["task_id"])
+        self.assertEqual(second, captured[-1]["tasks"][1])
+        self.assertNotIn("task_ref", second)
+        baseline = {**payload, "data": {**data, "next": captured[-1]}}
+        size = lambda value: len(json.dumps(value, ensure_ascii=False, separators=(",", ":")).encode("utf-8"))
+        self.assertLess(size(payload), size(baseline))
+
     def test_invalid_profile_warning_is_carried_once_without_enabling_advisory(self):
         self.add("Ready work")
         with mock.patch.object(
@@ -412,6 +476,43 @@ class TaskContextTests(unittest.TestCase):
         self.assertIn(task_id, text.stdout)
         self.assertIn("Physical selection", text.stdout)
         self.assertEqual(file_snapshot(install.project_root), before)
+
+
+class ContextCandidateProjectionTests(unittest.TestCase):
+    def test_reference_preserves_differing_types_nulls_and_candidate_only_fields(self):
+        row = {"task_id": "t1", "title": "Title", "lane_order": None,
+               "review_tier": 1, "ownership": {"generation": 1},
+               "suggested_next_action": "Candidate action", "latest_event": None}
+        selected = {"task": {"task_id": "t1", "title": "Title", "lane_order": None,
+                             "review_tier": True, "ownership": {"generation": True}},
+                    "suggested_next_action": "Candidate action", "latest_event": None}
+        component = {"tasks": [row], "limit": 20, "returned_count": 1,
+                     "total_matching": 2, "truncated": True}
+        before = copy.deepcopy((component, selected))
+        projected = cli_service.context_candidate_projection(
+            component, selected, selected_task_ref="/data/selected/task",
+        )
+        self.assertEqual((component, selected), before)
+        self.assertEqual(projected, {**component, "tasks": [{
+            "task_id": "t1", "task_ref": "/data/selected/task", "review_tier": 1,
+            "ownership": {"generation": 1}, "suggested_next_action": "Candidate action",
+            "latest_event": None,
+        }]})
+        self.assertIs(type(projected["tasks"][0]["review_tier"]), int)
+        self.assertIsNone(selected["task"]["lane_order"])
+
+    def test_absent_detail_other_id_and_no_equal_fields_receive_no_reference(self):
+        component = {"tasks": [{"task_id": "t1", "title": "Candidate"}],
+                     "returned_count": 1, "truncated": False}
+        for selected in (None, {"task": {"task_id": "t2", "title": "Candidate"}},
+                         {"task": {"task_id": "t1", "title": "Changed"}}):
+            with self.subTest(selected=selected):
+                self.assertEqual(cli_service.context_candidate_projection(
+                    component, selected, selected_task_ref="/data/selected/task",
+                ), component)
+        self.assertIsNone(cli_service.context_candidate_projection(
+            None, {"task": {"task_id": "t1"}}, selected_task_ref="/data/selected/task",
+        ))
 
 
 class TaskContextCompactSelectionTests(unittest.TestCase):

@@ -714,7 +714,7 @@ def prepare_registered_task_context(
             return handle_task_context(replace(
                 context, command="task.context", args=argparse.Namespace(),
                 read_only=True, read_connection_override=connection,
-            ))
+            ), selected_task_ref="/data/context_preparation/context/selected/task")
     except StorageError as exc:
         errors = [{"code": exc.code, "message": exc.message}]
     except sqlite3.Error as exc:
@@ -1431,7 +1431,42 @@ def task_context_failure_result(
     )
 
 
-def handle_task_context(context: CommandContext) -> CommandResult:
+def context_candidate_projection(
+    component: dict[str, Any] | None,
+    selected: dict[str, Any] | None,
+    *,
+    selected_task_ref: str,
+) -> dict[str, Any] | None:
+    """Share exact Task fields only; retain candidate-only observations."""
+    if component is None or selected is None:
+        return component
+    selected_task = selected["task"]
+    projected = []
+    for row in component["tasks"]:
+        if row["task_id"] != selected_task["task_id"]:
+            projected.append(row)
+            continue
+        repeated = {
+            key for key, value in row.items()
+            if key != "task_id" and key in selected_task
+            and json.dumps(value, sort_keys=True)
+            == json.dumps(selected_task[key], sort_keys=True)
+        }
+        if repeated:
+            projected.append({
+                **{key: value for key, value in row.items() if key not in repeated},
+                "task_ref": selected_task_ref,
+            })
+        else:
+            projected.append(row)
+    return {**component, "tasks": projected}
+
+
+def handle_task_context(
+    context: CommandContext,
+    *,
+    selected_task_ref: str = "/data/selected/task",
+) -> CommandResult:
     """Select from bounded read batches, not their compact display prefixes."""
     current_context = replace(
         context,
@@ -1499,8 +1534,15 @@ def handle_task_context(context: CommandContext) -> CommandResult:
         project_id=resolve_context_target(context).project.project_id,
         data={
             "selection": selection,
-            "current": current.data,
-            "next": next_result.data if next_result is not None else None,
+            "current": context_candidate_projection(
+                current.data, selected.data if selected is not None else None,
+                selected_task_ref=selected_task_ref,
+            ),
+            "next": context_candidate_projection(
+                next_result.data if next_result is not None else None,
+                selected.data if selected is not None else None,
+                selected_task_ref=selected_task_ref,
+            ),
             "selected": selected.data if selected is not None else None,
         },
         warnings=warnings,

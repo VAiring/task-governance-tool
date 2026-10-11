@@ -887,6 +887,11 @@ partial successes remain visible. Ordinary manual completion is unchanged.
 This retention begins with the integrated wait's admission and ordinary child
 observations, before another child/parent read, cancellation or scheduled-turn
 handoff can interrupt dispatch. A healthy unfinished child is not a failure.
+Within each finalization guard check, the same fresh child observation serves
+readiness and immediate retention; no separate reviewer-set read precedes it.
+Every subsequent effect boundary still obtains fresh observations, including
+after deferral. This shares neither observations across boundaries nor a batch
+saved only after all children have been read.
 Preparation's fresh child reads belong to the same admission and retain the
 captured pairs even if later startup fails. A closed ordinary manual wait without
 an integrated intent does not pin reviewer turns for a new explicit association.

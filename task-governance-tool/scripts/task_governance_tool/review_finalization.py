@@ -218,7 +218,7 @@ class Finalizer:
                 available.append({"path": path, "status": "unavailable", "code": _code(exc)})
         return available
 
-    def execute(self, *, check=False, reviewer_observer=None, guard=lambda observe: None):
+    def execute(self, *, check=False, guard=lambda observe: None):
         if self.journal is None:
             _fail("finalization_not_prepared")
         available, state, error, gate = [], None, None, None
@@ -232,10 +232,8 @@ class Finalizer:
                 record = self.journal.observe_reviewers(lease, tuple(observations.values()))
             def guarded(*, require_success=True):
                 nonlocal record
-                if reviewer_observer is not None:
-                    record = self.journal.observe_reviewers(lease, reviewer_observer())
-                # Guard reads are fresh observations too. Retain each one before
-                # a later child/parent read or cancellation can interrupt it.
+                # One fresh guard read serves both readiness and retention at
+                # this boundary. Save each child before another read or halt.
                 guard(retain_reviewer)
                 if require_success and record.reviewer_blocker:
                     _fail(record.reviewer_blocker)

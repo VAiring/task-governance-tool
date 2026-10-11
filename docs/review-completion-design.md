@@ -626,6 +626,12 @@ Closed manual requests without an integrated intent release their old pairs for
 explicit new association; active requests and integrated intents retain them.
 The worker refreshes these observations at each effect boundary;
 failed/interrupted, unavailable or changed turns latch a blocker for this intent.
+`ManagedDirectProbe` supplies only its guard to `Finalizer.execute`.
+Each guard check uses `_read_reviewer`'s one fresh `ChildTurn` for both the
+status/thread-status readiness decision and the immediate observation callback.
+There is no preceding batch observer, cross-boundary cache or delayed batch
+save. Busy-parent retries and later registration, commit and completion guards
+still read anew; the existing native writer checks remain independent.
 The finalization guard uses its existing journal lease for those callbacks;
 earlier wait reads take their own short journal lease without nested acquisition.
 Parent-turn changes, parent-read failures and cancellation do not create reviewer

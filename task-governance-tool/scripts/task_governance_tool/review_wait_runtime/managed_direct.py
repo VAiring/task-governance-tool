@@ -98,18 +98,7 @@ class ManagedDirectProbe(DirectProbe):
                 if self._stop.wait(self._cycle):
                     break
             raise DirectError("parent_turn_changed")
-        def reviewers():
-            observed = []
-            for reviewer in controller.reviewers:
-                try:
-                    child = host.read_child(reviewer.reviewer_id)
-                    status = child.status if (child.child_id == reviewer.reviewer_id and child.turn_id == reviewer.turn_id
-                        and child.status in {"completed", "failed", "interrupted"}) else "unknown"
-                except Exception:
-                    status = "unknown"
-                observed.append((reviewer.reviewer_id, reviewer.turn_id, status))
-            return tuple(observed)
-        result = finalizer.execute(reviewer_observer=reviewers, guard=guard)
+        result = finalizer.execute(guard=guard)
         host.set_finalization_result(record.probe_id, result)
         self._receipt_finalizer = finalizer
         self._finalization_result = result

@@ -7,6 +7,7 @@ import threading
 import time
 from uuid import uuid4
 from dataclasses import replace
+from datetime import timedelta
 from unittest import mock
 
 from tests import test_review_handoff_preparation as fixtures
@@ -208,7 +209,7 @@ class InstalledFinalizationTests(fixtures.PreparationFixture):
         observations = tuple((self.review_environment(i)["CODEX_THREAD_ID"], TURN,
                               "failed" if i else "completed") for i in range(2))
         before = self.git("rev-parse", "HEAD")
-        result = service.execute(reviewer_observer=lambda: observations)
+        result = service.execute(guard=lambda observe: [observe(item) for item in observations])
         self.assertEqual(result["blocking_code"], "finalization_reviewer_failed", result)
         self.assertEqual(result["stages"]["registration"], "succeeded")
         self.assertEqual(result["stages"]["commit"], "not_started")
@@ -301,7 +302,7 @@ class InstalledFinalizationTests(fixtures.PreparationFixture):
             observations[1] = (*observations[1][:2], "unknown")
             return candidate
         with mock.patch.object(finalization.git, "create_candidate", side_effect=race):
-            result = service.execute(reviewer_observer=lambda: tuple(observations))
+            result = service.execute(guard=lambda observe: [observe(item) for item in observations])
         self.assertEqual(result["blocking_code"], "finalization_reviewer_unknown", result)
         _, recovered = self.finalize(task)
         self.assertEqual(recovered["blocking_code"], "finalization_reviewer_unknown", recovered)
@@ -340,28 +341,46 @@ class InstalledFinalizationTests(fixtures.PreparationFixture):
 
     def worker_guard_race(self, change):
         from tests.test_review_wait_direct import ORIGINAL
-        from tests.test_review_wait_service import TURN, OTHER
+        from tests.test_review_wait_service import NOW, TURN, OTHER
         from task_governance_tool.review_wait_runtime.review_wait_host import ChildTurn
         from task_governance_tool.review_wait_runtime.managed_direct import ManagedDirectProbe
         class BoundaryProbe(ManagedDirectProbe):
             def _before_send(self, host, *args):
-                host.finalizing_reads = 0
+                host.finalizing = True
                 return super()._before_send(host, *args)
+
+            def _idle_and_ended(self, host, *args, **kwargs):
+                host.in_finalization_guard = getattr(host, "finalizing", False)
+                try:
+                    return super()._idle_and_ended(host, *args, **kwargs)
+                finally:
+                    host.in_finalization_guard = False
         task, service = self.ready()
         before = self.git("rev-parse", "HEAD")
         direct, host, parent = self.wait_fixture(task, service, probe_class=BoundaryProbe)
         def child(child_id):
-            if hasattr(host, "finalizing_reads"):
-                host.finalizing_reads += 1
-                # The initial observer reads both children as completed; change
-                # the next read made by the real effect-boundary guard.
-                if host.finalizing_reads == 3:
+            if getattr(host, "in_finalization_guard", False):
+                if change == "partial" and getattr(host, "injected", False):
+                    retained = service.journal.read()
+                    self.assertEqual(retained.reviewer_blocker, "finalization_reviewer_failed")
+                    self.assertIn((host.reviewer_ids[0], TURN, "failed"), retained.reviewer_observations)
+                    raise ValueError("private second child read failure")
+                # Inject at the first actual finalization guard, independent of
+                # any preflight or removed duplicate-observer call count.
+                if not getattr(host, "injected", False):
+                    host.injected = True
                     if change == "turn":
                         return ChildTurn(child_id, OTHER, "completed", "idle")
                     if change == "unavailable":
                         raise ValueError("private read failure")
                     if change in {"failed", "interrupted"}:
                         return ChildTurn(child_id, TURN, change, "idle")
+                    if change == "partial":
+                        return ChildTurn(child_id, TURN, "failed", "idle")
+                    if change == "active":
+                        return ChildTurn(child_id, TURN, "completed", "active")
+                    if change == "expired":
+                        direct.clock = lambda: NOW + timedelta(hours=1)
                     if change == "parent":
                         host.parent = ChildTurn(parent, OTHER, "completed", "idle")
                     if change == "parent_unavailable":
@@ -390,7 +409,7 @@ class InstalledFinalizationTests(fixtures.PreparationFixture):
         self.assertEqual(report["stages"]["completion"], "not_started", report)
         self.assertEqual(self.git("rev-parse", "HEAD"), before)
         self.assertEqual(self.cli("task", "show", task)["task"]["status"], "review_pending")
-        if change in {"parent", "parent_unavailable", "cancel"}:
+        if change in {"parent", "parent_unavailable", "cancel", "expired"}:
             self.assertIsNone(report["reviewer_blocking_code"], report)
             self.assertEqual(report["stages"]["registration"], "not_started")
             _, checked = self.finalize(task, check=True)
@@ -398,7 +417,7 @@ class InstalledFinalizationTests(fixtures.PreparationFixture):
             _, recovered = self.finalize(task)
             self.assertEqual(recovered["status"], "completed", recovered)
         else:
-            expected = "finalization_reviewer_" + ("failed" if change in {"failed", "interrupted"} else "unknown")
+            expected = "finalization_reviewer_" + ("failed" if change in {"failed", "interrupted", "partial"} else "unknown")
             self.assertEqual(report["reviewer_blocking_code"], expected, report)
             for check in (True, False):
                 _, recovered = self.finalize(task, check=check)
@@ -432,6 +451,70 @@ class InstalledFinalizationTests(fixtures.PreparationFixture):
 
     def test_worker_guard_cancellation_does_not_latch_reviewer_failure(self):
         self.worker_guard_race("cancel")
+
+    def test_worker_guard_expiry_does_not_latch_reviewer_failure(self):
+        self.worker_guard_race("expired")
+
+    def test_worker_guard_active_completed_child_does_not_qualify_as_ended(self):
+        self.worker_guard_race("active")
+
+    def test_worker_guard_retains_first_failure_before_second_child_read_fails(self):
+        self.worker_guard_race("partial")
+
+    def test_worker_reads_each_child_once_per_guard_and_fresh_at_later_effects(self):
+        from tests.test_review_wait_direct import ORIGINAL
+        from tests.test_review_wait_service import TURN
+        from task_governance_tool.review_wait_runtime.review_wait_host import ChildTurn
+        from task_governance_tool.review_wait_runtime.managed_direct import ManagedDirectProbe
+        boundaries = []
+        class BoundaryProbe(ManagedDirectProbe):
+            def _before_send(self, host, *args):
+                host.finalizing = True
+                return super()._before_send(host, *args)
+
+            def _idle_and_ended(self, host, *args, **kwargs):
+                if not getattr(host, "finalizing", False):
+                    return super()._idle_and_ended(host, *args, **kwargs)
+                record = service.journal.read()
+                boundary = {"stages": (record.registration, record.commit, record.completion), "reads": []}
+                boundaries.append(boundary)
+                host.boundary = boundary
+                if len(boundaries) == 1:
+                    host.parent = ChildTurn(parent, ORIGINAL, "inProgress", "active")
+                try:
+                    return super()._idle_and_ended(host, *args, **kwargs)
+                finally:
+                    host.boundary = None
+                    if len(boundaries) == 1:
+                        host.parent = ChildTurn(parent, ORIGINAL, "completed", "idle")
+        task, service = self.ready()
+        direct, host, parent = self.wait_fixture(task, service, probe_class=BoundaryProbe)
+        def child(child_id):
+            if getattr(host, "finalizing", False):
+                self.assertIsNotNone(host.boundary, "Child read outside the effect guard")
+                host.boundary["reads"].append(child_id)
+            return ChildTurn(child_id, TURN, "completed", "idle")
+        host.read_child = child
+        reports = []
+        host.set_finalization_result = lambda probe, result: reports.append(result)
+        host.observe_receipt = lambda *args, **kwargs: None
+        self.assertTrue(direct.handle("direct_delete_start", {}, {"threadId": parent, "turnId": ORIGINAL})["ok"])
+        host.parent = ChildTurn(parent, ORIGINAL, "completed", "idle")
+        deadline = time.monotonic() + 30
+        while not reports and time.monotonic() < deadline:
+            time.sleep(0.02)
+        direct.close()
+        self.assertEqual(len(reports), 1)
+        self.assertEqual(reports[0]["status"], "completed", reports)
+        self.assertTrue(boundaries)
+        self.assertEqual(boundaries[0]["stages"], boundaries[1]["stages"])
+        for boundary in boundaries:
+            self.assertEqual(boundary["reads"], list(host.reviewer_ids), boundary)
+        stages = {boundary["stages"] for boundary in boundaries}
+        for stage in (("dispatching", "not_started", "not_started"),
+                      ("succeeded", "dispatching", "not_started"),
+                      ("succeeded", "succeeded", "dispatching")):
+            self.assertIn(stage, stages)
 
     def scheduled_handoff(self, status):
         from tests.test_review_wait_direct import ORIGINAL, NEW_TURN

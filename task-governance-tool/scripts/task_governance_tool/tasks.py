@@ -1428,11 +1428,16 @@ def _list_tasks_for_viewer(
             task_rows=task_rows,
         )
 
-    from task_governance_tool.reviews import read_review_evidence
+    from task_governance_tool.reviews import _read_viewer_review_evidence
+
+    review_evidence = _read_viewer_review_evidence(
+        connection, project.project_id, task_rows,
+        source_schema_version=source_schema_version,
+    )
 
     tasks: list[dict[str, Any]] = []
     event_count = 0
-    for task_row in task_rows:
+    for task_row, evidence in zip(task_rows, review_evidence, strict=True):
         task = row_to_viewer_task(task_row)
         event_rows = connection.execute(
             """
@@ -1447,13 +1452,7 @@ def _list_tasks_for_viewer(
         ).fetchall()
         events = [row_to_event(row) for row in event_rows]
         task["events"] = events
-        task["review_evidence"] = read_review_evidence(
-            connection,
-            project.project_id,
-            str(task["task_id"]),
-            validated_task=task_row,
-            source_schema_version=source_schema_version,
-        )
+        task["review_evidence"] = evidence
         for receipt in task["review_evidence"]["recent_receipts"]:
             receipt.pop("review_provenance", None)
         tasks.append(task)

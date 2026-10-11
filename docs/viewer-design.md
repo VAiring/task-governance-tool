@@ -51,6 +51,22 @@ lists. It excludes repository/database paths, tool events, handoffs,
 checkpoints, maintenance state, internal generation, event-cycle links,
 environment, and raw review material.
 
+Within that transaction, `reviews.py` enumerates the Finding inventory once
+for the complete validated Task batch, ordered by Task list position and
+Finding rowid. The selection retains TEXT/BLOB Task aliases and the global
+orphan branch, including exact parent identity and alias-candidate counts.
+A private cursor view passes each Task's complete stream through the existing
+owner, domain, privacy, Reference/provenance validation and gate aggregation
+in bounded chunks. It retains only one lookahead row, not a project-wide
+Finding cache or a validation proof. Orphans enter the first Task's validation
+and fail closed; no recent-ten limit filters validation. The enclosing batch
+closes the shared cursor on success or failure. Receipt and Reference streams,
+all-generation counts, gates, and timestamp/rowid recent ordering are unchanged.
+An empty Task batch opens no inventory. Ordinary repository callers without
+an existing transaction retain scalar reads rather than sharing observations
+across SQLite snapshots. This adds no transaction, schema, public argument,
+maintenance trigger, or publication permission.
+
 Schema 28 additionally validates every retained Task note and parent binding
 before projection, while the event allow-list remains summary-only. Full note
 bodies never enter Viewer snapshot JSON or generated HTML.

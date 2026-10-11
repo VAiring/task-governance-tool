@@ -285,6 +285,7 @@ LANE_MODULES: dict[str, tuple[str, ...]] = {
         "test_viewer_config",
         "test_viewer_maintenance",
         "test_viewer_renderer",
+        "test_viewer_review_inventory",
         "test_viewer_snapshot",
         "test_write_contention",
     ),

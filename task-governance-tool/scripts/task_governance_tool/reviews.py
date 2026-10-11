@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import re
 import secrets
 import sqlite3
@@ -1846,6 +1847,120 @@ def _retain_recent_candidate(
     del candidates[limit:]
 
 
+class _ViewerFindingStream:
+    """Partition one ordered inventory without retaining all Finding rows.
+
+    The batch owns the real cursor; scalar readers close only their view.
+    Orphans sort first and enter the first Task's unchanged owner validation.
+    """
+
+    def __init__(self, cursor: sqlite3.Cursor) -> None:
+        self.cursor = cursor
+        self.pending: sqlite3.Row | None = None
+        self.task_id = ""
+
+    def fetchmany(self, size: int) -> list[sqlite3.Row]:
+        rows = []
+        aliases = (self.task_id, self.task_id.encode("utf-8"))
+        while len(rows) < size:
+            row = self.pending
+            if row is None:
+                row = self.cursor.fetchone()
+            if row is None:
+                break
+            if (
+                row["parent_receipt_id"] is not None
+                and row["receipt_task_id"] not in aliases
+            ):
+                self.pending = row
+                break
+            self.pending = None
+            rows.append(row)
+        return rows
+
+    def close(self) -> None:
+        # The enclosing batch closes the cursor even on validation failure.
+        pass
+
+
+def _read_viewer_review_evidence(
+    connection: sqlite3.Connection,
+    project_id: str,
+    task_rows: list[sqlite3.Row],
+    *,
+    source_schema_version: int,
+) -> list[dict[str, Any]]:
+    """Share Finding enumeration, never validation, inside an existing snapshot."""
+    if not task_rows:
+        return []
+    if not connection.in_transaction:
+        # Preserve ordinary callers that have not established a snapshot;
+        # sharing material across separate SQLite observations is unsafe.
+        return [
+            read_review_evidence(
+                connection, project_id, row["task_id"],
+                validated_task=row, source_schema_version=source_schema_version,
+            )
+            for row in task_rows
+        ]
+    cursor = None
+    try:
+        cursor = connection.execute(
+            """
+            WITH selected_task_ids(value, ordinal) AS (
+                SELECT value, CAST(key AS INTEGER) FROM json_each(?)
+            ), selected_task_aliases(value, ordinal) AS (
+                SELECT value, ordinal FROM selected_task_ids
+                UNION ALL
+                SELECT CAST(value AS BLOB), ordinal FROM selected_task_ids
+            )
+            SELECT finding.*, finding.rowid AS inventory_rowid,
+                   receipt.review_receipt_id AS parent_receipt_id,
+                   receipt.project_id AS receipt_project_id,
+                   receipt.task_id AS receipt_task_id,
+                   receipt.target_generation, receipt.reviewer_key,
+                   (
+                     SELECT COUNT(*) FROM review_receipts AS candidate
+                      WHERE candidate.review_receipt_id IN (
+                            finding.review_receipt_id,
+                            CAST(finding.review_receipt_id AS TEXT),
+                            CAST(finding.review_receipt_id AS BLOB)
+                      )
+                   ) AS parent_candidate_count
+              FROM review_findings AS finding
+              LEFT JOIN review_receipts AS receipt
+                ON typeof(finding.review_receipt_id) = 'text'
+               AND typeof(receipt.review_receipt_id) = 'text'
+               AND receipt.review_receipt_id = finding.review_receipt_id
+              LEFT JOIN selected_task_aliases AS selected
+                ON receipt.task_id = selected.value
+             WHERE receipt.review_receipt_id IS NULL
+                OR selected.ordinal IS NOT NULL
+             ORDER BY selected.ordinal, finding.rowid
+            """,
+            (json.dumps([row["task_id"] for row in task_rows]),),
+        )
+        stream = _ViewerFindingStream(cursor)
+        evidence = []
+        for row in task_rows:
+            stream.task_id = row["task_id"]
+            evidence.append(_read_review_evidence(
+                connection, project_id, row["task_id"],
+                validated_task=row, source_schema_version=source_schema_version,
+                finding_stream=stream,
+            ))
+        return evidence
+    except sqlite3.Error as exc:
+        if is_sqlite_busy_or_locked(exc):
+            raise operational_sqlite_error(
+                exc, fallback_message="could not read review evidence",
+            ) from exc
+        raise _review_inventory_inconsistent() from exc
+    finally:
+        if cursor is not None:
+            cursor.close()
+
+
 def read_review_evidence(
     connection: sqlite3.Connection,
     project_id: str,
@@ -1856,6 +1971,26 @@ def read_review_evidence(
     validated_task: dict[str, Any] | sqlite3.Row | None = None,
     source_schema_version: int = SCHEMA_VERSION,
     task_show_details: TaskShowReviewDetails | None = None,
+) -> dict[str, Any]:
+    return _read_review_evidence(
+        connection, project_id, task_id, review_tier=review_tier,
+        recent_limit=recent_limit, validated_task=validated_task,
+        source_schema_version=source_schema_version,
+        task_show_details=task_show_details,
+    )
+
+
+def _read_review_evidence(
+    connection: sqlite3.Connection,
+    project_id: str,
+    task_id: str,
+    *,
+    review_tier: int | None = None,
+    recent_limit: int = 10,
+    validated_task: dict[str, Any] | sqlite3.Row | None = None,
+    source_schema_version: int = SCHEMA_VERSION,
+    task_show_details: TaskShowReviewDetails | None = None,
+    finding_stream: _ViewerFindingStream | None = None,
 ) -> dict[str, Any]:
     if not 1 <= recent_limit <= 10:
         raise review_error("invalid_review_evidence", "recent review evidence limit must be 1 to 10")
@@ -1924,7 +2059,7 @@ def read_review_evidence(
     current_finding_candidates: list[tuple[str, int, dict[str, Any]]] = []
     receipt_inventory_cursor: sqlite3.Cursor | None = None
     receipt_reference_cursor: sqlite3.Cursor | None = None
-    finding_inventory_cursor: sqlite3.Cursor | None = None
+    finding_inventory_cursor: sqlite3.Cursor | _ViewerFindingStream | None = None
     finding_reference_cursor: sqlite3.Cursor | None = None
     legacy_base_projection = (
         "receipt.target_base_revision"
@@ -1986,7 +2121,7 @@ def read_review_evidence(
                     "review_receipt",
                 ),
             )
-        finding_inventory_cursor = connection.execute(
+        finding_inventory_cursor = finding_stream or connection.execute(
             """
             WITH selected_task_ids(value) AS (
                 VALUES (?), (CAST(? AS BLOB))

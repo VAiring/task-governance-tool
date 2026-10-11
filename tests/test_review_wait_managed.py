@@ -187,6 +187,26 @@ class ManagedHostTests(unittest.TestCase):
                           truncated=True, originalChars=len(raw) // 2)
         return value
 
+    def test_same_response_summary_reference_and_precompletion_observation_survive_delivery(self):
+        result = self.report("保持するレビュー本文")
+        result["reviews"] = {"current_receipts": [{"review_receipt_id": "receipt-one",
+                             "summary": "保持するレビュー本文"}]}
+        result["originals"][0] = {"path": "reviews/one.json", "status": "available",
+            "registered_receipt_id": "receipt-one", "review": {"reviewer": "one", "verdict": "pass",
+            "summary_ref": "/reviews/current_receipts/0/summary", "provenance": {"model_state": "unknown"},
+            "findings": [{"severity": "low", "summary": "原本Finding"}]}}
+        result["completion_gate"] = {"observation": "before_completion", "status": "in_progress", "ready": True}
+        host = self.host()
+        host.set_finalization_result(OTHER, result)
+        prompt = host._direct_prompt(OTHER)
+        delivered = json.loads(prompt.splitlines()[2])
+        self.assertEqual({key: value for key, value in delivered.items() if key != "delivery"}, result)
+        self.assertEqual(delivered["originals"][0]["review"]["summary_ref"], "/reviews/current_receipts/0/summary")
+        self.assertIn("completion_gateは完了前の観測", prompt)
+        self.assertIn("追加読取りは不要", prompt)
+        with self.history(host, self.receipt(host)):
+            self.assertEqual(host.observe_receipt(OTHER, ORIGINAL), NEW_TURN)
+
     def test_full_results_survive_read_boundaries_and_all_outcomes(self):
         for outcome in ("completed", "findings", "failed", "interrupted", "missing", "partial"):
             for size in (17999, 18000, 18001, 19999, 20000, 20001, 36000):

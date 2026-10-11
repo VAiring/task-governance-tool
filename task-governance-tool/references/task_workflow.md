@@ -661,6 +661,14 @@ An ended reviewer, a save acknowledgement, `ok=true`, review PASS,
 `delivery.source_body=complete` label alone does not establish Task completion
 or unseen content. Resolve previously reported material or judgment questions.
 
+The report's `completion_gate.observation=before_completion` labels its retained
+check, not current Task status or an instruction to complete again. Use current
+`task_status`, stages and root `next_action`. An original's `review.summary_ref`
+is a JSON Pointer to its exact matched summary in the same response, with
+`registered_receipt_id` preserving the link. Use that body directly without
+another read or restoration code; keep original provenance, all Findings and
+resolution states, warnings and unavailable facts in the report.
+
 - **Complete integrated success received:** when the body actually available
   matches the original Task/target generation, shows `status=completed` with
   successful stages and actual Task done, and provides the facts needed to

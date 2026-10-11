@@ -2286,6 +2286,14 @@ or unseen content. For all other results use
 Use [integrated recovery](#recover-integrated-finalization)
 only for a blocker, partial success or missing/uncertain result.
 
+`completion_gate.observation=before_completion` labels the retained historical
+check; current `task_status`, stages and root `next_action` govern continuation.
+An original's `registered_receipt_id` and `review.summary_ref` identify its exact
+matched Receipt and summary in this same response. The JSON Pointer needs no
+additional read; provenance, Findings and resolution states remain visible.
+Unmatched or unavailable originals are not combined. Saved originals and gates
+remain unchanged.
+
 #### Explicit Integrated Continuation
 
 Use when reviews already ended, or worker use is excluded under the

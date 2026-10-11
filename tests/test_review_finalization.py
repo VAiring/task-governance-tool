@@ -5,6 +5,9 @@ import shlex
 import subprocess
 import threading
 import time
+import unittest
+from copy import deepcopy
+from types import SimpleNamespace
 from uuid import uuid4
 from dataclasses import replace
 from datetime import timedelta
@@ -14,6 +17,87 @@ from tests import test_review_handoff_preparation as fixtures
 from tests.test_review_results import encode, receipt
 from task_governance_tool import review_finalization as finalization, review_wait_basis
 from task_governance_tool.session_identity import capture_caller_identity
+
+
+class FinalizationReportProjectionTests(unittest.TestCase):
+    def fixture(self):
+        originals = [{"path": "reviews/" + name, "status": "available", "review": receipt(name)}
+                     for name in ("one", "two")]
+        for original in originals:
+            original["review"]["summary"] += "確認結果を保持" * 100
+        receipts = [{"review_receipt_id": "receipt-" + name, "reviewer_key": name,
+                     "receipt_kind": "independent", "verdict": "pass",
+                     "summary": original["review"]["summary"], "user_approved": 0, "created_at": "now"}
+                    for name, original in zip(("one", "two"), originals)]
+        return ({"originals": originals, "reviews": {"current_receipts": receipts[::-1]}},
+                SimpleNamespace(result_paths=("reviews/one", "reviews/two")))
+
+    def test_exact_bound_summaries_use_unique_same_response_pointers_without_mutation(self):
+        result, record = self.fixture()
+        result["originals"][0]["review"]["findings"] = [{"severity": "low", "summary": "Preserve this fact"}]
+        before = deepcopy(result)
+        originals = finalization.project_original_summaries(result, record, ("receipt-one", "receipt-two"))
+        for index, original in enumerate(originals):
+            self.assertNotIn("summary", original["review"])
+            pointer = original["review"]["summary_ref"]
+            receipt_index = int(pointer.split("/")[3])
+            matched = result["reviews"]["current_receipts"][receipt_index]
+            self.assertEqual(matched["review_receipt_id"], original["registered_receipt_id"])
+            self.assertEqual(matched["summary"], before["originals"][index]["review"]["summary"])
+            self.assertEqual(pointer, f"/reviews/current_receipts/{receipt_index}/summary")
+            self.assertEqual(original["review"]["provenance"], before["originals"][index]["review"]["provenance"])
+            self.assertEqual(original["review"]["findings"], before["originals"][index]["review"]["findings"])
+        projected = {**result, "originals": originals}
+        self.assertLess(len(json.dumps(projected)), len(json.dumps(before)))
+        self.assertEqual(result, before)
+
+    def test_unconfirmed_unavailable_ambiguous_and_unequal_results_keep_body(self):
+        mutations = (
+            lambda result: result.update(reviews=None),
+            lambda result: result["originals"][0].update(status="unavailable"),
+            lambda result: result["originals"][0].update(path="reviews/elsewhere"),
+            lambda result: result["reviews"]["current_receipts"].append(deepcopy(result["reviews"]["current_receipts"][1])),
+            *(lambda result, field=field: result["originals"][0]["review"].update({field: "different"})
+              for field in ("reviewer", "kind", "verdict", "summary")),
+        )
+        for mutate in mutations:
+            result, record = self.fixture()
+            mutate(result)
+            original = deepcopy(result["originals"][0])
+            with self.subTest(mutate=mutate):
+                projected = finalization.project_original_summaries(result, record, ("receipt-one", "receipt-two"))
+                self.assertEqual(projected[0], original)
+        for actual in ((), ("receipt-one",), ("receipt-one", "receipt-one")):
+            result, record = self.fixture()
+            self.assertEqual(finalization.project_original_summaries(result, record, actual), result["originals"])
+
+    def test_precompletion_check_is_distinct_from_current_state_and_action(self):
+        record = SimpleNamespace(basis={key: 1 for key in ("task_id", "contract_revision", "target_kind",
+                "target_value", "target_base_revision", "target_generation")}, completion="succeeded",
+                registration="succeeded", commit="succeeded", candidate="candidate", receipt_ids=(),
+                reviewer_observations=(), reviewer_blocker=None)
+        state = {"task": {"title": "Task", "status": "done"}, "events": [], "latest_checkpoint": None,
+                 "verification_evidence": {"fact": "verification"}, "review_evidence": {"fact": "review"}}
+        gate = {"status": "in_progress", "ready": True, "blocking_codes": [],
+                "suggested_action": "run task complete with the same evidence and confirmations"}
+        before = deepcopy(gate)
+        complete = finalization.report(record, state, [], None, gate)
+        self.assertEqual(complete["status"], "completed")
+        self.assertEqual(complete["task_status"], "done")
+        self.assertEqual(complete["completion_gate"], {"observation": "before_completion",
+                         "status": "in_progress", "ready": True, "blocking_codes": []})
+        self.assertNotIn("run task complete", json.dumps(complete))
+        self.assertEqual(complete["recorded_work"]["status"], "not_recorded")
+        self.assertEqual(gate, before)
+        record.completion = "dispatching"
+        state["task"]["status"] = "in_progress"
+        partial = finalization.report(record, state, [], "completion_ack_unknown", gate)
+        self.assertEqual(partial["status"], "attention_required")
+        self.assertFalse(partial["ok"])
+        self.assertEqual(partial["stages"]["commit"], "succeeded")
+        self.assertEqual(partial["stages"]["completion"], "dispatching")
+        self.assertEqual(partial["blocking_code"], "completion_ack_unknown")
+        self.assertEqual(partial["completion_gate"]["observation"], "before_completion")
 
 
 class InstalledFinalizationTests(fixtures.PreparationFixture):
@@ -82,6 +166,14 @@ class InstalledFinalizationTests(fixtures.PreparationFixture):
         self.assertEqual(report["stages"], dict(registration="succeeded", commit="succeeded", completion="succeeded"))
         self.assertEqual(len(report["registered_receipt_ids"]), 2)
         self.assertEqual(report["verification"]["counts"]["qualifying_exact_current"], 1)
+        self.assertEqual(report["completion_gate"]["observation"], "before_completion")
+        self.assertNotIn("suggested_action", report["completion_gate"])
+        for original in report["originals"]:
+            matched = report["reviews"]["current_receipts"][int(original["review"]["summary_ref"].split("/")[3])]
+            self.assertEqual(original["registered_receipt_id"], matched["review_receipt_id"])
+            self.assertEqual(matched["summary"], receipt()["summary"])
+            self.assertEqual(original["review"]["provenance"], receipt()["provenance"])
+            self.assertNotIn("summary", original["review"])
         self.assertEqual(self.git("show", "HEAD:source.py"), b"value = 2\n")
         commit = self.git("rev-parse", "HEAD")
         self.assertEqual(self.cli("task", "show", task)["task"]["status"], "done")
@@ -100,6 +192,8 @@ class InstalledFinalizationTests(fixtures.PreparationFixture):
         self.assertEqual(report["blocking_code"], "finalization_originals_unavailable", report)
         self.assertEqual([r["status"] for r in report["originals"]], ["available", "unavailable"])
         self.assertEqual(report["stages"]["registration"], "not_started")
+        self.assertEqual(report["originals"][0]["review"]["summary"], receipt()["summary"])
+        self.assertNotIn("summary_ref", report["originals"][0]["review"])
         self.assertEqual(self.cli("task", "show", task)["review_evidence"]["counts"]["receipts_current_generation"], 0)
         self.assertEqual(self.git("rev-parse", "HEAD"), before)
         self.save(context, 1)
@@ -128,6 +222,9 @@ class InstalledFinalizationTests(fixtures.PreparationFixture):
         self.assertEqual(recovered["reviews"]["current_findings"], [])
         self.assertEqual(recovered["registered_findings"][0]["review_finding_id"], finding)
         self.assertEqual(recovered["registered_findings"][0]["status"], "resolved")
+        self.assertEqual(recovered["originals"][0]["review"]["findings"],
+                         [{"severity": "low", "summary": "source.py:1 Confirm the documented choice"}])
+        self.assertIn("summary_ref", recovered["originals"][0]["review"])
 
     def test_lost_registration_ack_recovers_actual_batch_without_replay(self):
         task, service = self.ready()
@@ -139,6 +236,7 @@ class InstalledFinalizationTests(fixtures.PreparationFixture):
             first = service.execute()
         self.assertEqual(first["stages"]["registration"], "dispatching")
         self.assertEqual(len(first["observed_registered_receipt_ids"]), 2, first)
+        self.assertTrue(all("summary_ref" in item["review"] for item in first["originals"]))
         with mock.patch.object(service.core, "register", side_effect=AssertionError("duplicate")):
             second = service.execute()
         self.assertEqual(second["status"], "completed", second)

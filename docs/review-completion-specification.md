@@ -915,7 +915,24 @@ is reconciled through the exact completion revision and released original owner.
 
 Reports distinguish journal intent from observed registration IDs, Git publication
 and Task status. They include every registered Finding, including resolved low
-Findings, and all available original verdicts/summaries. Recorded work uses the
+Findings, and all available original verdicts/summaries. `completion_gate`, when
+present, carries `observation=before_completion`: its retained status/decision
+describes the pre-completion check, not the current Task. Its old
+`suggested_action` is omitted; current `task_status`, stages, observations and
+root `next_action` remain distinct and control continuation.
+Only after the existing immutable session/original-digest/execution bindings
+confirm the complete original batch's registered Receipt IDs may an exact
+matching original summary be replaced by `originals[].review.summary_ref`.
+That JSON Pointer resolves to one `/reviews/current_receipts/<index>/summary`
+in the same response; the original descriptor also carries
+`registered_receipt_id`. Reviewer, kind, verdict and summary must match exactly
+and the Receipt must appear once. Paths, availability, original provenance and
+Findings, registered Findings and resolution states remain visible. Unmatched,
+unregistered, unavailable or ambiguous results retain their complete available
+summary. This projection never rewrites originals, adds a state read or changes
+registration/gates. Direct CLI results and same-parent notifications use the
+same report; consumers need no restoration code or follow-up read.
+Recorded work uses the
 latest checkpoint and recent Task notes with explicit coverage or `not_recorded`;
 it never invents a work summary. Maintenance warnings remain visible. Missing
 current data is named, and no unknown effect is presented as successful.

@@ -349,6 +349,7 @@ class Finalizer:
             actual = registered_originals(self.resolution.target, record, ids) if record.originals and state else ()
             result["observed_registered_receipt_ids"] = list(actual)
             result["registered_findings"] = registered_findings(self.resolution.target, record, actual)
+            result["originals"] = project_original_summaries(result, record, actual)
         except Exception:
             result["observed_registered_receipt_ids"] = None
             result["registered_findings"] = None
@@ -374,6 +375,37 @@ def _code(exc):
     return code if type(code) is str and code and all(c.islower() or c.isdigit() or c == "_" for c in code) else "finalization_unavailable"
 
 
+def project_original_summaries(result, record, matched_receipt_ids):
+    """Reference only exact summaries with already observed immutable bindings.
+
+    No state read or original rewrite: provenance, Findings and unavailable or
+    unequal originals remain visible. Pointers resolve within this response.
+    """
+    originals = result["originals"]
+    if (len(matched_receipt_ids) != len(record.result_paths)
+            or len(originals) != len(record.result_paths)
+            or len(set(matched_receipt_ids)) != len(matched_receipt_ids)
+            or result["reviews"] is None):
+        return originals
+    receipts = result["reviews"]["current_receipts"]
+    projected = []
+    for path, original, receipt_id in zip(record.result_paths, originals, matched_receipt_ids):
+        matches = [(index, receipt) for index, receipt in enumerate(receipts)
+                   if receipt["review_receipt_id"] == receipt_id]
+        review = original.get("review")
+        if (original.get("path") == path and original.get("status") == "available"
+                and review is not None and len(matches) == 1):
+            index, receipt = matches[0]
+            if all(review.get(source) == receipt[target] for source, target in (
+                    ("reviewer", "reviewer_key"), ("kind", "receipt_kind"),
+                    ("verdict", "verdict"), ("summary", "summary"))):
+                review = {key: value for key, value in review.items() if key != "summary"}
+                review["summary_ref"] = f"/reviews/current_receipts/{index}/summary"
+                original = {**original, "registered_receipt_id": receipt_id, "review": review}
+        projected.append(original)
+    return projected
+
+
 def report(record, state, available, error, gate):
     task = state["task"] if state else None
     completed = bool(task and task["status"] == "done" and record.completion == "succeeded")
@@ -394,7 +426,9 @@ def report(record, state, available, error, gate):
                                   for item in record.reviewer_observations],
         "reviewer_blocking_code": record.reviewer_blocker,
         "stages": {key: getattr(record, key) for key in ("registration", "commit", "completion")},
-        "registered_receipt_ids": list(record.receipt_ids), "completion_gate": gate,
+        "registered_receipt_ids": list(record.receipt_ids),
+        "completion_gate": ({"observation": "before_completion", **{
+            key: value for key, value in gate.items() if key != "suggested_action"}} if gate is not None else None),
         "commit_id": record.candidate if record.commit == "succeeded" else None,
         "candidate_commit_id": record.candidate, "task_status": task["status"] if task else None,
         "blocking_code": error, "unavailable": [] if state else ["current_task_and_evidence"],

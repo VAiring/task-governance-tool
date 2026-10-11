@@ -641,6 +641,17 @@ reviews under a new target generation/intent. Complete saved originals can still
 be registered as one batch; the blocker prevents automatic Git/Task completion.
 No earlier intent missing these closed fields is silently upgraded or repaired.
 No prose, result bodies, raw Git output or variable notification is journaled.
+The report labels a retained completion check `observation=before_completion`
+and omits that check's obsolete action hint; current Task/stage observations and
+the root next action retain their own meaning. After the existing
+`registered_originals` reconciliation and Finding projection succeed,
+`project_original_summaries` uses their ordered immutable Receipt bindings and
+exact reviewer/kind/verdict/summary equality to emit same-response JSON Pointers
+with explicit Receipt IDs. It copies only the affected output dictionaries;
+original files, stored rows, provenance, Findings and mismatch/unavailable
+branches are unchanged. No extra database/host read or new journal field is
+introduced. `ManagedHost` transports this same report and explains the pointer
+and observation meanings without changing delivery or completion gates.
 Unknown registration/completion acknowledgements are settled by observed immutable
 bindings and exact native completion state. A new target cannot overwrite an intent.
 

@@ -366,11 +366,11 @@ def _review_material(repo, target, *, records_only=False):
             "dependency_command": _material_command(repo, "dependency", dependency_revision, "--path=<project-relative-path>", records_only=records_only),
             "directory_command": _material_command(repo, "directory", dependency_revision, "--path=<project-relative-directory>", records_only=records_only),
             "instructions": [
-                "Run collect_command, replacing only its JSON-array placeholder with the dependency paths you have selected (for example [\"AGENTS.md\",\"docs/authority.md\"], or []). It retrieves every changed before/after body and diff automatically, plus those dependencies; no OID list or parent selection is needed. Its bodies table supplies each blob once and preserves every path/revision/side association. Reuse provided complete bodies; do not reread merely because they were supplied. Status incomplete/nonzero, unavailable/large/non-text records or tool truncation require affected-material recovery, not repetition of successful siblings or PASS.",
-                "changes is the complete delta even when Packet paths are bounded. Inspect every entry and mode. Mode 120000 is link text, never followed; 160000 is unavailable submodule material to obtain from the caller. Whole-file add/delete diffs refer to the complete supplied body; two-sided diffs are Git patches. Delivery is not review coverage, quality or provenance.",
+                "Run collect_command with only its JSON-array placeholder replaced by the selected dependency paths (for example [\"AGENTS.md\",\"docs/authority.md\"], or []). All changed before/after bodies and diffs are automatic. Read governing text before judgment, then follow its routes and discovered dependencies.",
+                "changes is the complete delta even when Packet paths are bounded. Inspect every entry and mode. Mode 120000 is link text, never followed; 160000 is unavailable submodule material to obtain from the caller.",
                 "unchanged_inventory is bounded location guidance, not selected relevance or proof of availability. Use actual authority/import references to select dependencies; follow newly discovered ones afterward. Snapshot changed paths use after objects, removed/renamed old paths are absent, unchanged paths use the base commit; commit targets use their exact commit. Never substitute ambient HEAD/index/worktree content.",
                 "If locations are omitted or more discovery is needed, directory_command lists that exact revision's directory (empty placeholder for root; otherwise path without trailing slash, escaped by the same path rule). Its paths are relative to that directory; mode 040000 entries can be explored with the same command. Apply changes over this base listing: changed snapshot files use after objects, removed/renamed old paths are absent. Recover tool-truncated listings by requesting sufficient output or exploring narrower directories; report unresolved omissions, never use ambient file search as target material.",
-                "Recovery/additional reads use blob_command, diff_command (both sides present), dependency_command (unchanged paths at dependency_revision), or blob_batch_command (listed full IDs, one per stdin line). Batch returns '<id> blob <byte-count>\\n', exactly that many bytes, then LF, per input. Check each record: exit zero may still report missing/non-blob content. The fixed commands disable fetch, replacement refs, locks and prompts; no body enters the Packet or Task DB. Nonzero or incomplete delivery is not success.",
+                "Recovery/additional reads use blob_command, diff_command (both sides present), dependency_command (unchanged paths at dependency_revision), or blob_batch_command (listed full IDs, one per stdin line). Batch returns '<id> blob <byte-count>\\n', exactly that many bytes, then LF, per input. Check each record: exit zero may still report missing/non-blob content. Incomplete/nonzero, unavailable/large/non-text or tool-truncated delivery requires affected-material recovery or a report to the caller, not repetition of successful siblings or PASS. The fixed commands disable fetch, replacement refs, locks and prompts; no body enters the Packet or Task DB.",
                 "For the individual dependency/directory recovery templates only: " + path_quoting]}
 
 
@@ -390,7 +390,7 @@ def read_for_reviewer(repo, packet_path, *, material_details=False, records_only
             "$OutputEncoding = [Console]::InputEncoding = [System.Text.UTF8Encoding]::new($false)\n@'\n"
             + placeholder + "\n'@ | " + command if os.name == "nt" else
             command + " <<'TASKGOV_MATERIAL_PATHS'\n" + placeholder + "\nTASKGOV_MATERIAL_PATHS")
-        reuse_guidance = "Reuse a body already received completely only when its immutable object identity or exact revision/path matches this target's mapping. An ambient filename, summary, prior review or incomplete/unknown delivery is not proof. Omit already-held matching dependencies from collection; use returned bodies for both authority reading and review, without repeating them for a different purpose. A changed file's before/after sides and diff remain necessary. Project reread obligations still apply. Each reviewer independently reads and judges the complete scope; no hash calculation or reading ledger is needed."
+        reuse_guidance = "Reuse a body already received completely only when its immutable object identity or exact revision/path matches this target's mapping. An ambient filename, summary, prior review or incomplete/unknown delivery is not proof. Omit already-held matching dependencies from collection; use the same text for authority reading and review. A changed file's before/after sides and diff remain necessary. Project reread obligations still apply."
         if material_details:
             material["instructions"].insert(1, reuse_guidance)
         else:
@@ -408,7 +408,7 @@ def read_for_reviewer(repo, packet_path, *, material_details=False, records_only
                 "Use collect_command for the first required project AGENTS, authority, source and test reads, selecting the dependency paths you need as its JSON array ([] for none). All changed before/after bodies and diffs are automatic. Read the returned governing text before judging code, then follow its routes and discovered dependencies. The parent does not select material.",
                 reuse_guidance,
                 "changes is complete even if Packet paths are bounded; unchanged_inventory is only bounded location guidance, not selected relevance or availability. Snapshot changed paths use after objects, deleted/renamed old paths are absent, unchanged paths use the base commit; commit targets use their exact commit. Never substitute ambient HEAD/index/worktree content. Modes, path/side mappings and whole-file diff body references remain part of the material.",
-                "Collection complete/exit zero means delivery, not review coverage or PASS. Missing, mismatched, unknown, tool-truncated, large/non-text or unavailable material still needs retrieval; submodule material must be supplied. Use recovery_command only when individual/additional reads or discovery are needed; it supplies their commands and quoting rules. Recover affected material without repeating successful siblings. Keep unknown provenance unknown and use the complete result_instructions below for normal save.",
+                "Collection complete/exit zero means delivery, not review coverage or PASS. Missing, mismatched, unknown, tool-truncated, large/non-text or unavailable material still needs retrieval; submodule material must be supplied. Use recovery_command only when individual/additional reads or discovery are needed; it supplies their commands and quoting rules. Recover affected material without repeating successful siblings.",
             ]
     current = validate_live_packet(repo, path, raw, packet, records_only=records_only)
     from task_governance_tool.review_verification import GUIDANCE
@@ -478,19 +478,14 @@ def _requests(repo, args, packet_path):
         reviewers.append({"result_path": path, "request": (
             "You are assigned an independent review of the complete exact target under current project authority. "
             "This request and its read output supply your procedure and result format; no Skill operating guide or internal fingerprint implementation is a prerequisite. "
-            "Obtain the Task/Contract, criteria, exact material access and result template with the read-only operation below. "
-            "Its verification_evidence supplies the current saved verification summary; follow verification_guidance for its source and limits. "
-            "Use review_material to obtain or reuse complete target-bound project AGENTS.md and applicable authority before judging the whole target against its scope, acceptance, constraints and verification expectation. "
-            "Follow review_material for exact artifacts, required source/tests, discovered dependencies and retrieval exceptions. "
             "Read Skill files when they are actually governing or reviewed material, not to learn Task management. "
-            "If this role does not match actual work, ask the caller, "
-            "do not infer independence. "
-            "Complete the view's result_template using result_instructions, actual judgment and provenance, and all Findings with severity, exact file/line, risks and recommended correction in bounded summaries. "
-            "Do not search internals to guess unknown model/Skill identity or version. "
+            "Run the read-only operation below. Follow review_material for target-bound project AGENTS.md, applicable authority, required source/tests, discovered dependencies and retrieval exceptions. "
+            "Independently judge the whole target against its scope, acceptance, constraints and verification expectation; verification_guidance explains the supplied verification_evidence and its limits. "
+            "Complete result_template according to required_output and result_instructions. "
             "Replace only the JSON placeholder below; run this fixed save operation, not new save/validation code. "
             "On saved acknowledgement return path, verdict and Finding count once in the final response; "
             "do not echo JSON or send a duplicate normal-success notification. "
-            "Report questions, read mismatch, unavailable/truncated material, unknown role, save failure or lost acknowledgement to the caller; do not claim PASS from incomplete inspection or success from an unknown outcome. "
+            "Report questions, read mismatch, unavailable/truncated material, save failure or lost acknowledgement to the caller; do not claim PASS from incomplete inspection or success from an unknown outcome. "
             "Preserve failed residue; do not overwrite or blindly repeat a save. Do not manage Tasks, reset targets, register DB evidence, complete work or implement transport/recovery code."
             + "\n\nRead command:\n" + read + "\n\nSave command:\n" + invocation
         )})

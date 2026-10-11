@@ -116,21 +116,24 @@ class ReviewRequestLayoutTests(unittest.TestCase):
                     expected_calls.append([*base, "submit", *common, "--", *(row["result_path"] for row in result["review_requests"])])
                     self.assertEqual([call.args[0] for call in shell.call_args_list], expected_calls)
         self.assertEqual(len(set(prefixes)), 1)
-        # Conditions and prohibitions stay ahead of dynamic material. Independent
-        # review checks full meaning; these guard the clauses most easily lost.
+        # The request routes format questions to the paired read while retaining
+        # authority/judgment and transport duties. It does not repeat the schema.
+        for field in ("review_material", "verification_guidance", "verification_evidence",
+                      "result_template", "required_output", "result_instructions"):
+            self.assertIn(field, prefixes[0])
+        for result_detail in ("provenance.model_state", "declared_model_id", "file/line",
+                              "severity order", "model/Skill identity or version"):
+            self.assertNotIn(result_detail, prefixes[0])
         for rule in ("complete exact target under current project authority",
                      "no Skill operating guide or internal fingerprint implementation is a prerequisite",
                      "scope, acceptance, constraints and verification expectation",
                      "required source/tests, discovered dependencies and retrieval exceptions",
                      "when they are actually governing or reviewed material",
-                     "ask the caller, do not infer independence",
-                     "result_instructions, actual judgment and provenance, and all Findings",
-                     "severity, exact file/line, risks and recommended correction",
-                     "Do not search internals to guess unknown model/Skill identity or version",
+                     "Independently judge the whole target",
                      "run this fixed save operation, not new save/validation code",
                      "return path, verdict and Finding count once in the final response",
                      "do not echo JSON or send a duplicate normal-success notification",
-                     "read mismatch, unavailable/truncated material, unknown role, save failure or lost acknowledgement",
+                     "read mismatch, unavailable/truncated material, save failure or lost acknowledgement",
                      "do not claim PASS from incomplete inspection or success from an unknown outcome",
                      "Preserve failed residue; do not overwrite or blindly repeat a save",
                      "Do not manage Tasks, reset targets, register DB evidence, complete work or implement transport/recovery code"):
@@ -616,6 +619,15 @@ class ReviewerDisplayTests(PreparationFixture):
         self.assertFalse(view["verification_evidence"]["gate"]["required"])
         self.assertIsNone(view["verification_evidence"]["current_receipt"])
         self.assertEqual(view["result_instructions"], review_result_instructions(independent=True))
+        # required_output is only a route to the complete format instructions;
+        # the generated read already supplies them without another lookup.
+        output_route, = view["required_output"]
+        self.assertIn("result_template", output_route)
+        self.assertIn("result_instructions", output_route)
+        instructions = " ".join(view["result_instructions"])
+        for preserved in ("all Findings", "including low", "file/line", "risks",
+                          "corrections", "role is uncertain", "unknown declarations unknown"):
+            self.assertIn(preserved, instructions)
         self.assertEqual(view["review_material"]["status"], "requires_supplied_material")
         self.assertEqual(view["result_template"]["receipts"], packet["result_template"]["receipts"])
         self.assertIsNone(view["result_template"]["receipts"][0]["kind"])
@@ -816,7 +828,7 @@ class ReviewerMaterialTests(PreparationFixture):
             self.assertIn(name, details)
         self.assertLess(len(normal_result.stdout), len(detailed_result.stdout))
         for condition in ("immutable object identity", "incomplete/unknown", "mismatched", "tool-truncated",
-                          "Project reread obligations", "before/after sides", "independently"):
+                          "Project reread obligations", "before/after sides"):
             self.assertIn(condition, " ".join(material["instructions"]))
         # Wrong-version, unknown, missing or truncated prior text cannot replace
         # the selected immutable body. Recovery returns it without successful siblings.

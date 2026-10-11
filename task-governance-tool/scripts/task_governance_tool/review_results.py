@@ -151,11 +151,15 @@ def review_result_instructions(*, independent: bool = False) -> list[str]:
     return [
         "Complete result_template from the actual review. Nulls are unfinished, "
         "not defaults; the unfilled template cannot be registered. Keep version, "
-        "task_id, contract_revision and every review_target field unchanged.",
+        "task_id, contract_revision and every review_target field unchanged; "
+        "never rebind old results.",
         "All shown keys are required; no extra keys. reviewer/kind/verdict/summary "
         "are strings. reviewer is nonempty, at most 500 characters; summary at "
         "most 1000. findings must be an array of {severity, summary}; each summary "
-        "is nonempty, at most 1000 characters. Use [] only after finding no issues. "
+        "is nonempty, at most 1000 characters. Include all Findings, including low "
+        "severity, in severity order with exact project-relative file/line references. "
+        "Use concise summaries for remaining risks and recommended corrections. "
+        "Use [] only after finding no issues. "
         "Duplicate normalized findings within one Receipt are invalid.",
         *(f"{field}: {' | '.join(values)}" for field, values in choices),
         ("For an assigned independent review, declare kind=independent only if "
@@ -177,7 +181,9 @@ def review_result_instructions(*, independent: bool = False) -> list[str]:
         "declared requires both Skill ID and version, while not_used/unknown "
         "require both null. reviewer_class unknown requires both states unknown "
         "and all identifiers null. Context, methods, model/Skill use and "
-        "independence must reflect actual work, not inference from this template.",
+        "independence must reflect actual work, not inference from this template. "
+        "Keep unknown declarations unknown; do not search internals to guess "
+        "model/Skill identity or version.",
         f"Non-null declared_model_id/declared_skill_id must match ASCII "
         f"{DECLARED_IDENTIFIER_PATTERN.pattern}; declared_skill_version must match "
         f"ASCII {DECLARED_SKILL_VERSION_PATTERN.pattern}. Code collections are "
@@ -191,7 +197,7 @@ def review_result_instructions(*, independent: bool = False) -> list[str]:
         f"{REVIEW_RESULTS_FINDING_LIMIT} Findings total. Return one reviewer's "
         "Receipt as a complete version-1 document. The caller can pass original "
         "documents together in a JSON array without regenerating their content; "
-        "identity and target must match. ") + "Old results must not be rebound. Use sanitized summaries, "
+        "identity and target must match. ") + "Use sanitized summaries, "
         "never secrets, raw output, prompts, transcripts or raw review reasoning.",
     ]
 

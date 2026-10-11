@@ -347,7 +347,12 @@ ordinary procedure themselves. Each row has only `result_path` and `request`;
 the request embeds both fixed read/save invocations and remains directly
 forwardable without separate command keys or parent reconstruction.
 `_requests` places all shared procedure text before the bound read/save command
-sections, in that order. Host-native quoting, UTF-8 data carriers and the
+sections, in that order. It owns the independent assignment, whole-target
+judgment and transport procedure, routing format/provenance/Finding declarations
+to the paired read's `result_instructions`. Material read guidance owns
+collection selection, exact mappings, reuse and conditional recovery; collection
+output explains its tables and incomplete-delivery recovery without repeating
+result-format rules. Host-native quoting, UTF-8 data carriers and the
 existing invocation arguments remain unchanged. Focused tests compare the
 common opening across cases and retain native command/Packet/result bindings;
 this layout is not an observation of host prompt caching.
@@ -452,8 +457,9 @@ new file or role classifier is added. Opaque targets explicitly require supplied
 material/binding, not inferred Git content. Existing observation limits and
 sanitized failure codes apply without partial material. `review_results.py` renders the applicable independent
 format branch from the existing vocabulary owners; it does not filter prose
-with patterns or change the decoder/normalizer. Default full result instructions
-remain unchanged for existing consumers and alternative review paths.
+with patterns or change the decoder/normalizer. The full result explanation
+retains the existing vocabulary, limits, approval and fallback conditions for
+direct consumers and alternative review paths.
 
 The first read also projects `verification_evidence` from that validated current
 public Packet and fixed `verification_guidance` from `review_verification.py`.
@@ -1262,7 +1268,12 @@ combination rules do not implement another validator. `review_packet.py` adds
 these projections only after its existing revalidation and renders the same
 template as compact ASCII JSON in text output. The unchanged CLI Packet-size
 boundary includes both fields. Template/instruction rendering adds no DB/Git
-read or write. The builder
+read or write. `required_output` is the short route to the template and its
+instructions; `review_result_instructions` owns exact binding, actual and unknown
+provenance, every Finding, reporting detail and privacy. Both full and independent
+explanations retain their applicable requirements without a new format lookup.
+Earlier complete saved Packets and their explanatory rows remain accepted by the
+unchanged validator and preserved by the independent projection. The builder
 does not launch a reviewer, execute/import a receipt, store a packet, or
 include a diff, transcript, prompt, stdout/stderr, secret, or absolute path.
 

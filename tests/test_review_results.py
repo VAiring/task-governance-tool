@@ -89,6 +89,45 @@ class BinaryInput(io.BytesIO):
 
 
 class ReviewResultsInputTests(unittest.TestCase):
+    def test_generated_guidance_retains_closed_choices_for_both_review_routes(self):
+        # The fixed vocabulary is a reviewer input contract, independent of
+        # how surrounding explanatory sentences are split or consolidated.
+        expected = {
+            "findings[].severity": "high medium low",
+            "provenance.reviewer_class": "human llm deterministic_tool hybrid unknown",
+            "provenance.model_state": "declared not_applicable unknown",
+            "provenance.skill_state": "declared not_applicable not_used unknown",
+            "provenance.context_relation": "same_context forked_context fresh_context external_context not_applicable unknown",
+            "provenance.review_profiles (0-4 unique codes)": "general authority_contract implementation verification migration_compatibility privacy_safety release_acceptance",
+            "provenance.review_lenses (0-8 unique codes)": "correctness contract_compliance state_completion_integrity privacy target_safety verification_regression migration_compatibility maintainability accessibility performance release_integrity",
+            "provenance.method_codes (0-8 unique codes)": "review_packet_inspection authority_cross_check diff_inspection source_inspection test_inspection verification_evidence_inspection artifact_inspection runtime_observation deterministic_rule_check",
+        }
+        for independent in (False, True):
+            with self.subTest(independent=independent):
+                instructions = result_service.review_result_instructions(independent=independent)
+                choices = {row.partition(": ")[0]: row.partition(": ")[2].split(" | ")
+                           for row in instructions if row.partition(": ")[0] in
+                           {*expected, "kind", "verdict"}}
+                expected_route = {**expected,
+                    "kind": "independent" if independent else "independent self_review_fallback not_required",
+                    "verdict": "pass changes_requested" if independent else "pass changes_requested not_required"}
+                self.assertEqual(choices, {field: values.split() for field, values in expected_route.items()})
+                if independent:
+                    for parent_only in ("self_review_fallback", "--user-approved-reviewer", "not_required"):
+                        self.assertNotIn(parent_only, " ".join(instructions))
+                # Existing literal matrix fixtures exercise actual claims
+                # against the unchanged decoder/normalizer, not prose alone.
+                for case in REVIEW_PROVENANCE_V1_CASES:
+                    template = result_service.review_result_template(TASK_ID, 1, document()["review_target"])
+                    entry = template["receipts"][0]
+                    entry.update(receipt())
+                    entry["provenance"] = case.expected_normalized()
+                    for field in ("reviewer_class", "model_state", "skill_state", "context_relation"):
+                        self.assertIn(entry["provenance"][field], choices["provenance." + field])
+                    normalized = result_service.normalize_review_results(
+                        result_service.decode_review_results(encode(template)), review_tier=2)
+                    self.assertEqual(normalized["receipts"][0]["provenance"], case.expected_normalized())
+
     def test_known_input_diagnostics_use_schema_paths_and_fixed_reasons(self):
         cases = [
             (lambda p: p.pop("contract_revision"), "contract_revision", "missing"),

@@ -590,13 +590,16 @@ saved, no parent environment is changed, and no network or Git write is added.
 Diff-fingerprint/external targets instead return `requires_supplied_material`
 with no Git-derived delta. The caller must provide complete material and evidence
 binding it to the exact value; display success is not that evidence. The generated
-request and read output are self-contained together: the request explains
-whole-target independent judgment under project authority, actual provenance and
-all Findings, fixed save/acknowledgement and reporting incomplete/uncertain outcomes.
+request and read output are self-contained together: the request assigns
+whole-target independent judgment under project authority and supplies fixed
+read/save, acknowledgement and incomplete/uncertain-outcome handling. It routes
+result declarations to the supplied `result_instructions`, rather than repeating
+their format, provenance and Finding rules.
 The default read output owns concrete artifact/dependency selectors, normal
 collection, reuse conditions and the conditions requiring its optional detailed
-read. That detailed read owns individual discovery/retrieval commands and their
-quoting and mode exceptions. Keep cautions at
+read. Collection explains its body/patch tables and recovery of incomplete
+delivery using the first read's binding/reuse guidance. The detailed read owns
+individual discovery/retrieval commands and their quoting and mode exceptions. Keep cautions at
 their applicable retrieval step rather than requiring each explanation exactly
 once; neither scope nor material is reduced. Skill guides/internal fingerprint
 or version code are not normal
@@ -1833,7 +1836,14 @@ The existing registration validator remains the only input decision point.
 
 `result_instructions` is fixed format guidance using the existing validator's
 closed vocabularies and identifier grammars, with its Receipt/provenance
-combinations, limits, privacy and exact-binding rules. It adds no reviewer
+combinations, limits, privacy and exact-binding rules. It owns the result's
+actual declarations, unknown-identity handling, every Finding (including low
+severity), severity order, exact project-relative file/line references, remaining
+risks and recommended corrections in bounded summaries. `required_output`
+routes to that supplied guidance and the unfinished `result_template`; it does
+not repeat those rules or require another document read. Existing complete saved
+Packets with the earlier explanatory rows remain valid and are not rewritten.
+This organization adds no reviewer
 method, adapter, user decision, external verification fact, or normal-loop
 call. Format guidance does not replace inspection of exact artifacts and
 applicable authority. Template and instructions count toward the unchanged
@@ -1866,11 +1876,11 @@ checks to establish current verification context; it never launches verification
 Four common focus rows are Contract compliance; state/completion integrity;
 privacy/target safety; and verification/regression. The fifth mechanically
 states the exact snapshot, commit, supplied diff-fingerprint material, or
-supplied external material boundary. Required output requests the version-1
-structured result by completing the template without changing its identity,
-containing one reviewer's Receipt and severity-ordered Findings. Bounded summaries carry exact
-file/line references, remaining risks and recommended changes, not raw review
-reasoning. Receipt command is the non-executed `review result add` shape; the
+supplied external material boundary. Required output requests completion of the
+template according to its supplied result instructions. Those instructions
+retain one reviewer's version-1 result, unchanged identity and all reporting
+requirements above; no raw review reasoning is requested. Receipt command is
+the non-executed `review result add` shape; the
 packet itself never imports or records results.
 
 Text order is `Task`, `Status`, `Verification`, `Verification not required reason`, `Contract revision`, `Scope`,

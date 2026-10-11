@@ -99,24 +99,8 @@ TARGET_INSPECTION_FOCUS = {
     ),
 }
 REQUIRED_OUTPUT = (
-    (
-        "Return one version-1 JSON result by completing result_template "
-        "according to result_instructions"
-    ),
-    "Preserve the template's exact Task ID, Contract revision, and complete review_target",
-    (
-        "Include one Receipt with reviewer, kind, verdict, summary, provenance, "
-        "and findings; return the actual verdict allowed for its kind and Task tier"
-    ),
-    (
-        "Use concise sanitized summaries for remaining risks and recommended "
-        "changes; each severity-ordered Finding has severity and summary "
-        "including exact project-relative file/line; no raw review reasoning"
-    ),
-    (
-        "Declare actual provenance using the closed existing fields and codes; "
-        "do not infer identity, context, methods, or user approval"
-    ),
+    "Return one version-1 JSON result by completing result_template "
+    "according to result_instructions",
 )
 
 

@@ -139,6 +139,18 @@ are returned unchanged; rejection uses the existing sanitized
 `project_state_unreadable` failure without a partial result or write. This local
 output check does not change audit reads or global state admission.
 
+Both detail modes additionally return each event's `note_body`: the complete
+normalized text accepted by `--add-note`, at most 2,000 characters, or null when
+a full body was not retained. Normal detail retains every body-bearing event,
+including one outside the recent-event window. Stored body type, text/privacy,
+capacity, event type and Task/project binding are checked before output;
+invalid content fails with the existing sanitized unreadable-state error.
+Note-bearing edit acknowledgements also include their full body. The Task edit,
+ownership/transition changes and body-bearing event are one atomic write;
+rejected input or failed body storage leaves no partial edit. Display summaries,
+compact/list/latest-event and Viewer fields retain their existing bounds and
+shape. No additional normal-loop read, operation or gate is introduced.
+
 The read is query-only. Both modes return exactly one routing Boolean
 `effort_advisory_enabled`; invalid advisory configuration returns false plus
 the existing continuation warning. Human text remains concise and does not
@@ -285,7 +297,7 @@ Typed completion storage is exactly `completion_evidence_kind`,
 `review_target_kind`, `review_target_value`,
 `review_target_base_revision`, and generation. Values and their legacy
 projection must satisfy one cross-field matrix before storage or output.
-For a supported schema-v18-through-v27 source, every complete loaded Task row is validated
+For a supported schema-v18-through-v28 source, every complete loaded Task row is validated
 for exact SQLite/Python storage class, bounded text/privacy, closed enums, and
 all Task cross-field matrices before any field can be omitted or exposed.
 Stored values are never coerced, trimmed, repaired, or rewritten by a read.

@@ -179,7 +179,7 @@ class Schema22StoredValidationTests(unittest.TestCase):
                 )
                 self.assertEqual(retained, original)
             self.assertEqual(logical_database_digest(connection), snapshot)
-            self.assertEqual(storage.SCHEMA_VERSION, 27)
+            self.assertEqual(storage.SCHEMA_VERSION, 28)
             return after
         finally:
             connection.execute("PRAGMA query_only = OFF")

@@ -59,6 +59,21 @@ allow-list explicitly. Latest-event ordering is
 `created_at DESC, rowid DESC`. Tool events remain bounded operational records,
 not raw logs.
 
+Schema 28 adds `note_body` to the same Task event. `create_task_event` stores the
+validated accepted body separately from `note_event_summary`; it does not widen
+the summary limit. Every note-bearing edit creates its event, rereads its Task
+and records ownership transitions inside the existing Task-edit savepoint.
+Failure rolls back that complete slice even if the outer caller later commits.
+
+`validated_event_note` checks stored text without trimming or reconstructing it,
+using the existing note limit/privacy validator and closed event types. The
+event fetch boundary sanitizes SQLite/text decode errors. Detail queries include
+body-bearing events even if an invalid project/type binding would otherwise
+hide them. Normal/audit detail use the full-body converter with expected
+Task/project IDs; null describes unretained legacy bodies. Other consumers keep
+the six-field `PUBLIC_EVENT_FIELDS` converter. Initialized storage, Viewer and
+backup/recovery validate all retained bodies and their parent relationships.
+
 ### Shared Stored Task Row/Batch Validator
 
 `session_identity.py` captures only the invocation's validated thread UUID.
@@ -169,7 +184,7 @@ source-capacity failure remains candidate-local; every other Task fault is
 structural and set-fatal.
 
 Viewer supplies the source version returned by snapshot validation. For exact
-schema v18-v27, that validation completes the full Evidence Ledger and Task batch
+schema v18-v28, that validation completes the full Evidence Ledger and Task batch
 checks before issuing one private, one-shot batch proof bound to the same
 query-only connection and transaction, project, source version, exact sorted
 Task IDs/count, issuance data version, and a fixed nested savepoint held only

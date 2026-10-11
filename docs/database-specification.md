@@ -49,8 +49,8 @@ Missing state is `db_not_initialized`; supported older state is
 `migration_required`; a newer schema is `schema_too_new`. Old binaries reject
 newer state and never downgrade/write it.
 
-Fresh setup creates schema v27. Structurally complete contiguous source schemas
-v1-v26 are setup-only migration inputs; v27 is idempotent current state.
+Fresh setup creates schema v28. Structurally complete contiguous source schemas
+v1-v27 are setup-only migration inputs; v28 is idempotent current state.
 Schema sequence is:
 
 | Version | Durable addition |
@@ -79,6 +79,7 @@ Schema sequence is:
 | v25 | immutable reviewer-session bindings in the core Receipt transaction |
 | v26 | combined executing/review-pending session slot and versioned interval semantics |
 | v27 | forward repair of the legacy pending-to-active acquisition guard |
+| v28 | validated Task note bodies retained separately from event summaries |
 
 Each migration is transactional, idempotent, rollback-tested, validates
 contiguous history and required objects/rows, preserves project/business IDs
@@ -86,6 +87,28 @@ and durable records, and passes `quick_check` and foreign keys. Acceptance
 retains the realistic 12-Task/191-event fixture and historical completion/
 review trace through every supported source version. No migration parses
 private prose to invent structure.
+
+### Schema-v28 Task Note Bodies
+
+Explicit Setup migrates schema 27 to 28 by adding nullable `task_events.note_body`
+and three ownership/immutability guards. Current core state has 40 tables,
+46 indexes and 76 triggers. Each accepted `task edit --add-note` body is retained
+in full, up to 2,000 characters, on its corresponding event; the existing display
+summary remains bounded to 1,000 characters. Note-bearing `note_added`,
+`task_updated`, and `review_tier_changed` events save their body atomically with
+Task edits, ownership changes and transition history. Body, event identity, Task,
+project and event-type bindings cannot be rewritten, and retained bodies cannot
+be deleted. Ingress and stored reads retain the common privacy validation.
+
+Predecessor events receive null, explicitly meaning that a full body was not
+retained, not that no note was supplied. No summary parsing or guessed recovery
+is permitted. Migration preserves all predecessor column values, stable IDs,
+unrelated objects and sealed Evidence payload bytes before and after its final
+marker; failure rolls back the complete delta. Reentry validates without repair.
+Hybrid predecessor schemas fail closed. Native source schema becomes 28 while
+Bundle format remains 2; existing source versions and completion gates remain
+unchanged. This adds no history expiry, reduced history window or required
+caller operation. Old binaries reject schema 28.
 
 <a id="schema-v20-foundation-and-admission"></a>
 
@@ -145,10 +168,10 @@ every cycle/Bundle Runner-observation pointer remains null; native Bundle-v2
 This check occurs before any database or sidecar write, migration backup,
 recovery copy/publication, Viewer publication, or managed-backup write. A complete v19 source alone may invoke migration
 20; a complete v20 source continues through migrations 21 and 22, and a complete
-v21 source invokes migration 22, followed by 23 through 27. Complete v22 invokes 23
-through 27; complete v23 invokes 24 through 27; complete v24 invokes 25 through 27;
-complete v25 invokes 26 and 27, complete v26 invokes 27, and exact v27
-receives validation-only reentry. Unrelated extra
+v21 source invokes migration 22, followed by 23 through 28. Complete v22 invokes 23
+through 28; complete v23 invokes 24 through 28; complete v24 invokes 25 through 28;
+complete v25 invokes 26 through 28, complete v26 invokes 27 and 28, complete v27
+invokes 28, and exact v28 receives validation-only reentry. Unrelated extra
 objects retain the existing policy, including deliberate removal of
 unsupported unowned indexes/triggers attached to the rebuilt Bundle table and
 preservation of unrelated standalone objects.
@@ -164,9 +187,11 @@ qualifying Runner protocol with explicit manual fallback.
 
 <a id="current-schema-v25-persistence-contract"></a>
 
-## Current Schema-v27 Persistence Contract
+<a id="current-schema-v27-persistence-contract"></a>
 
-Schema v27 is the public setup target. Its predecessor migration `24/task_session_ownership`
+## Current Schema-v28 Persistence Contract
+
+Schema v28 is the public setup target. Its predecessor migration `24/task_session_ownership`
 adds `task_executions`, `task_ownership`, `task_owner_transitions` and
 `task_execution_cycles` (39 tables, 45 explicit indexes, 67 triggers).
 Execution/transition/cycle links are append-only. The one current ownership row
@@ -185,7 +210,7 @@ Only the Bundle table and its coupled native-cycle guard are rebuilt to admit
 source 24/format 2. New native completion must link its execution to its exact cycle
 within the same transaction. Older Bundles/cycles remain unlinked and unchanged;
 format 2 is retained and the index reports the actual container. No per-caller display or
-usage fields are added to sealed Evidence or Viewer v4. Viewer accepts v5-v27.
+usage fields are added to sealed Evidence or Viewer v4. Viewer accepts v5-v28.
 Reentry validates exact DDL, markers, retained graph and integrity without repair.
 Setup retains its existing backup/rollback protocol; no normal command migrates.
 Unsupported attached residue/hybrid state fails closed before writes. Global
@@ -283,7 +308,7 @@ reason. Its supported Viewer projection adds no fields or calls.
 Schema v22 is a supported predecessor. Setup reaches it
 through the existing ordered migrations from complete v1-v21 sources; v20
 continues through 21 and then 22 rather than returning early. Exact-v22
-storage-helper reentry is validation-only; public setup continues through 23 to 27.
+storage-helper reentry is validation-only; public setup continues through 23 to 28.
 Ordinary commands never migrate or repair state.
 
 Migration 22 is exactly `evidence_reservation_cleanup`. It rebuilds only
@@ -567,6 +592,6 @@ Capture and display revalidate immutable execution/cycle/reviewer identities.
 A core-basis mismatch after restore or later transitions returns unavailable
 until replay; missing references are never rebound to the newest Task cycle.
 Restored numerical state with a different project/path binding stays unavailable.
-The main schema is independently versioned (currently 27); no numerical table joins a core transaction or gate.
+The main schema is independently versioned (currently 28); no numerical table joins a core transaction or gate.
 Optional lifecycle invocation follows the separate Setup/state contract and
 cannot alter these quality or completion boundaries.

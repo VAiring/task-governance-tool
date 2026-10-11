@@ -179,7 +179,7 @@ class RelocationTokenCodecTests(unittest.TestCase):
         context = legacy_context(source_layout="fixed_current_v1", source_schema_version=27)
         token = encode_relocation_token(context, issued_at=ISSUED_AT)
         self.assertEqual(decode_relocation_token(token, now=ISSUED_AT).context, context)
-        self.assert_invalid(legacy_context, source_layout="fixed_current_v1", source_schema_version=28)
+        self.assert_invalid(legacy_context, source_layout="fixed_current_v1", source_schema_version=29)
 
     def test_context_rejects_invalid_scheme_specific_values_and_ranges(self):
         cases = (
@@ -220,7 +220,7 @@ class RelocationTokenCodecTests(unittest.TestCase):
         self.assert_invalid(
             legacy_context,
             source_layout="fixed_current_v1",
-            source_schema_version=28,
+            source_schema_version=29,
         )
 
     def test_current_schema_context_roundtrip(self):

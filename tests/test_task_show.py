@@ -194,6 +194,7 @@ class TaskShowTests(unittest.TestCase):
                         "event_type",
                         "summary",
                         "created_at",
+                        "note_body",
                     },
                 )
                 self.assertNotIn("completion_cycle_id", event)

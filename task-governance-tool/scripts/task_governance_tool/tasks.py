@@ -76,6 +76,7 @@ from task_governance_tool.stored_task_validation import (
     fetch_stored_task_row,
     fetch_stored_task_rows,
     fetch_validated_current_task_row,
+    stored_task_sqlite_error,
     validate_current_stored_task_rows,
     validate_stored_task_rows,
 )
@@ -389,8 +390,44 @@ def row_to_internal_task(row: sqlite3.Row) -> dict[str, Any]:
 
 def row_to_event(
     row: dict[str, Any] | sqlite3.Row,
+    *,
+    include_note_body: bool = False,
+    expected_project_id: str | None = None,
+    expected_task_id: str | None = None,
 ) -> dict[str, Any]:
-    return {field: row[field] for field in PUBLIC_EVENT_FIELDS}
+    event = {field: row[field] for field in PUBLIC_EVENT_FIELDS}
+    if include_note_body:
+        event["note_body"] = validated_event_note(row, expected_project_id=expected_project_id,
+                                                  expected_task_id=expected_task_id)
+    return event
+
+
+def validated_event_note(row: dict[str, Any] | sqlite3.Row, *,
+                         expected_project_id: str | None = None,
+                         expected_task_id: str | None = None) -> str | None:
+    """Null means no retained full body; never reconstruct it from summary prose."""
+    if "note_body" not in row.keys() or row["note_body"] is None:
+        return None
+    body = row["note_body"]
+    if (type(body) is not str or row["event_type"] not in {"note_added", "task_updated", "review_tier_changed"}
+            or (expected_project_id is not None and row["project_id"] != expected_project_id)
+            or (expected_task_id is not None and row["task_id"] != expected_task_id)):
+        raise StorageError("project_state_unreadable", "project state could not be read safely")
+    try:
+        validate_text("add_note", body, limit=TEXT_LIMITS["add_note"])
+        if not body.strip():
+            raise StorageError("project_state_unreadable", "project state could not be read safely")
+    except TaskValidationError as exc:
+        raise StorageError("project_state_unreadable", "project state could not be read safely") from exc
+    return body
+
+
+def fetch_task_event_rows(connection: sqlite3.Connection, query: str,
+                          parameters: tuple) -> list[sqlite3.Row]:
+    try:
+        return connection.execute(query, parameters).fetchall()
+    except (sqlite3.Error, UnicodeError) as exc:
+        raise stored_task_sqlite_error(exc) from exc
 
 
 def find_task_ids_by_completion_commit_hash(
@@ -434,6 +471,7 @@ def create_task_event(
     summary: str,
     created_at: str,
     completion_cycle_id: str | None = None,
+    note_body: str | None = None,
 ) -> dict[str, Any]:
     if completion_cycle_id is not None:
         cycle = connection.execute(
@@ -493,21 +531,25 @@ def create_task_event(
     }
     link_column = ", completion_cycle_id" if completion_cycle_id else ""
     link_value = ", :completion_cycle_id" if completion_cycle_id else ""
+    note_column = ", note_body" if note_body is not None else ""
+    note_value = ", :note_body" if note_body is not None else ""
+    if note_body is not None:
+        event["note_body"] = validate_text("add_note", note_body, required=True, limit=TEXT_LIMITS["add_note"])
     connection.execute(
         f"""
         INSERT INTO task_events(
           task_event_id, task_id, project_id, event_type, summary, created_at
-          {link_column}
+          {link_column}{note_column}
         )
         VALUES (
           :task_event_id, :task_id, :project_id, :event_type, :summary,
           :created_at
-          {link_value}
+          {link_value}{note_value}
         )
         """,
         event,
     )
-    return row_to_event(event)
+    return row_to_event(event, include_note_body=note_body is not None)
 
 
 def begin_task_write(
@@ -3433,7 +3475,7 @@ def edit_task(
                 "sequential_predecessor_incomplete",
                 "sequential lane contains active, review-pending, or done work with an incomplete predecessor",
             )
-        if completing:
+        if completing or add_note is not None:
             event = create_task_event(
                 connection,
                 project_id=project.project_id,
@@ -3442,6 +3484,7 @@ def edit_task(
                 summary=summary,
                 created_at=now,
                 completion_cycle_id=completion_cycle_id,
+                note_body=add_note,
             )
             task = read_task(
                 connection,
@@ -3478,7 +3521,7 @@ def edit_task(
     else:
         connection.execute(f"RELEASE SAVEPOINT {savepoint}")
 
-    if not completing:
+    if not completing and add_note is None:
         event = create_task_event(
             connection,
             project_id=project.project_id,

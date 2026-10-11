@@ -552,7 +552,7 @@ Preview reports current durable state, not planned state:
 `completed_writes=[]`, and a fresh preview keeps
 `maintenance_enabled=false`. A healthy replay has empty write lists. Every
 error has `status=null`; preflight/policy failures use empty write lists and
-null observed values except `schema_to=27`. A later-stage failure reports only
+null observed values except `schema_to=28`. A later-stage failure reports only
 the durable ordered prefix. Inspect `data.completed_writes` before retrying;
 `setup_incomplete` permits a retry that recomputes from durable state rather
 than repeating an assumed failed stage; it does not guarantee automatic repair
@@ -995,6 +995,14 @@ under `task context`'s `data.selected`; no follow-up read is needed:
 | `suggested_next_action` | A next-action hint, not authority or proof of completion. In review-pending detail, satisfied required verification and only missing independent PASS reviews yield a remaining count; otherwise the status-based hint remains. Obtain any unperformed reviews, then process actual results through the already selected completion route and retained continuation instructions. This does not request separate parent registration for integrated completion or another guide/state read. |
 
 Keep the selected route's generated continuation or direct-transport instructions.
+Each returned event has `note_body`, the complete validated text accepted by
+`--add-note` (up to 2,000 characters), or null when a full body was not retained.
+The separate display `summary` remains bounded to 1,000 characters. Null does
+not prove that an older event had no note; do not reconstruct its missing body.
+Normal detail retains all body-bearing events. Audit keeps its newest-ten window.
+These bodies are already available in `task context.selected`; no extra read
+or new completion gate is needed. Invalid stored bodies fail safely before output.
+
 The existing [result continuation](task_workflow.md#continue-after-reviews) owns
 integrated, manual/shared-file, direct and recovery processing when applicable;
 the hint does not replace those instructions or require rereading them.
@@ -1188,6 +1196,15 @@ Only `in_progress|review_pending -> paused` is valid and requires
 `--pause-reason`. Resume explicitly to `in_progress`. Sequential transitions
 to active or review-pending use the same predecessor rule as
 `task next`.
+
+`--add-note` accepts at most 2,000 characters after the existing normalization
+and privacy checks. Its full accepted body is saved on the same event and
+returned in that edit's acknowledgement. The display summary stays at most
+1,000 characters even with other edits or state transitions. Body storage,
+Task and ownership/transition updates are atomic; a failure leaves no partial
+edit. Previous events remain intact, including explicitly unretained legacy
+bodies. List, compact/latest-event and Viewer projections retain their existing
+summary-only fields.
 
 Lower a review tier only before any target has been set and provide
 `--review-tier-change-reason`. A done task rejects every write except an
@@ -1780,7 +1797,7 @@ python .agents/skills/task-governance-tool/scripts/taskgov.py review target set 
 generation. Git commits are resolved read-only and stored canonically. A diff
 fingerprint is `sha256:` plus 64 lowercase hexadecimal characters.
 
-At schema v21 through v27, this same target-set operation may use the explicitly opted-in
+At schema v21 through v28, this same target-set operation may use the explicitly opted-in
 trusted-local Runner route. It adds no argument or public Runner command. JSON
 success data is `task`, `changed_fields`, `event`, `verification_route`,
 `blocking_code`, and `review_preparation`; failure

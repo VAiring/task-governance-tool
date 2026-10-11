@@ -152,16 +152,18 @@ def remove_v24_ownership_for_test(connection: sqlite3.Connection) -> None:
     from task_governance_tool import schema_review_sessions as reviewer
     from task_governance_tool import schema_session_slot as slot
     from task_governance_tool import schema_session_slot_reacquisition as reacquisition
+    from task_governance_tool import schema_task_event_notes as notes
     version = storage.current_schema_version(connection)
-    if version not in (24, 25, 26, 27):
+    if version not in (24, 25, 26, 27, 28):
         return
     connection.commit()
-    (reacquisition if version == 27 else slot if version == 26 else reviewer if version == 25 else ownership).validate_storage(connection)
+    (notes if version == 28 else reacquisition if version == 27 else slot if version == 26 else reviewer if version == 25 else ownership).validate_storage(connection)
     if (any(connection.execute(f"SELECT 1 FROM {table} LIMIT 1").fetchone()
             for table in ("task_executions", "task_owner_transitions", "task_execution_cycles"))
         or connection.execute("SELECT 1 FROM task_ownership WHERE generation != 0 LIMIT 1").fetchone()
         or connection.execute("SELECT 1 FROM completion_evidence_bundles WHERE source_schema_version>=24").fetchone()
-        or (version >= 25 and connection.execute("SELECT 1 FROM review_receipt_sessions LIMIT 1").fetchone())):
+        or (version >= 25 and connection.execute("SELECT 1 FROM review_receipt_sessions LIMIT 1").fetchone())
+        or (version >= 28 and connection.execute("SELECT 1 FROM task_events WHERE note_body IS NOT NULL LIMIT 1").fetchone())):
         raise AssertionError("old fixture cannot discard ownership or completion history")
     foreign_keys = connection.execute("PRAGMA foreign_keys").fetchone()[0]
     legacy_alter = connection.execute("PRAGMA legacy_alter_table").fetchone()[0]
@@ -169,6 +171,10 @@ def remove_v24_ownership_for_test(connection: sqlite3.Connection) -> None:
     connection.execute("PRAGMA legacy_alter_table=ON")
     try:
         connection.execute("BEGIN IMMEDIATE")
+        if version >= 28:
+            for name in ("owner_insert", "immutable", "no_delete"):
+                connection.execute(f"DROP TRIGGER trg_task_events_note_body_{name}")
+            connection.execute("ALTER TABLE task_events DROP COLUMN note_body")
         if version >= 25:
             connection.execute("DROP TABLE review_receipt_sessions")
         for table in ("task_execution_cycles", "task_owner_transitions", "task_ownership", "task_executions"):
@@ -184,7 +190,7 @@ def remove_v24_ownership_for_test(connection: sqlite3.Connection) -> None:
         for sql in statements:
             if storage._schema20_statement_identity(sql)[0] != "table":
                 connection.execute(sql)
-        connection.execute("DELETE FROM schema_migrations WHERE version IN (24, 25, 26, 27)")
+        connection.execute("DELETE FROM schema_migrations WHERE version IN (24, 25, 26, 27, 28)")
         declaration.validate_storage(connection)
         connection.commit()
     except Exception:

@@ -54,6 +54,7 @@ Current sequential migrations are:
 | 25 | `review_receipt_sessions`: immutable actual-reviewer/execution binding |
 | 26 | `review_pending_session_slot`: combined slot acquisition guards and transition policy version |
 | 27 | `review_pending_reacquisition_guard`: forward correction of legacy pending reacquisition |
+| 28 | `task_event_note_bodies`: nullable full-body retention on Task events |
 
 Every migration is ordered, idempotent on reentry, transactional, and
 rollback-tested. Reentry validates rather than synthesizing missing data.
@@ -66,10 +67,10 @@ checkpoint, maintenance, identity, and completion traces. The sole current
 exception is migration 20's Bundle-rebuild retirement of the
 unsupported attached residue defined below; it changes no other migration.
 
-The fixed-state setup migrator accepts complete source schemas v1-v26 and
-treats v27 as current. Legacy `state/projects` discovery is intentionally
+The fixed-state setup migrator accepts complete source schemas v1-v27 and
+treats v28 as current. Legacy `state/projects` discovery is intentionally
 narrower: v1-v13 plus the explicit schema-v14 legacy-layout transition.
-Viewer compatibility is independent and accepts source schemas v5-v27.
+Viewer compatibility is independent and accepts source schemas v5-v28.
 Incomplete history, a missing required object/row, a later marker, too-new
 state, unsupported layout, foreign identity, or corrupt integrity fails closed.
 
@@ -129,7 +130,7 @@ reject schema 25 rather than dropping its registration constraints.
 ### Combined Session Slot Migration
 
 `schema_session_slot.py` owns Setup-only 25→26 migration and its exact DDL/fingerprint.
-The public runtime constant is 27. Schema 26 retains the original ownership states
+The public runtime constant is 28. Schema 26 retains the original ownership states
 and active partial index. New insert/acquisition triggers check the combined
 owner/completion-owner session/project slot. A retained legacy overlap is not
 rewritten or arbitrarily assigned: only continuations/releases of its existing
@@ -154,6 +155,27 @@ the final migration marker. DDL/copy/marker failures roll back to exact schema 2
 reentry validates exact schema 27 without repair. Both supported source definitions
 remain independently validated. Numerical schema and policy-zero/one meanings do
 not change, and retained overlaps still require explicit release/completion.
+
+<a id="task-event-note-body-migration"></a>
+
+### Task Event Note Body Migration
+
+`schema_task_event_notes.py` owns explicit 27→28 migration and exact owned SQL
+fingerprint. `task_events.note_body` is nullable TEXT, constrained to at most
+2,000 characters. Three triggers restrict body-bearing inserts to the parent
+Task/project and the three editable event types, freeze the body and its
+event/Task/project/type binding, and reject deletion of retained bodies. No
+extra event or table is created. Null remains an explicit unretained-body value
+for predecessor events; the migrator never parses their summaries.
+
+The Bundle source discriminator widens to 28 and its native-cycle guard selects
+28; format-2 payload members and digests remain unchanged. All predecessor
+column projections and unrelated objects are compared before and after the
+marker-last migration, with DDL/copy/marker rollback and read-only reentry.
+Storage, Evidence, Viewer, backup/recovery, relocation and Runner consumers use
+the same source ceiling. Stored note validation remains structural even for
+recovery; it is not the Task-local verification rejection exception. The
+numerical schema and frozen predecessor schema definitions remain unchanged.
 
 ## Numerical Collection Persistence
 

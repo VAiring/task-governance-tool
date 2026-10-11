@@ -28,6 +28,7 @@ from task_governance_tool.stored_task_validation import (
 )
 from task_governance_tool.tasks import (
     TaskRepositoryError,
+    fetch_task_event_rows,
     row_to_event,
     row_to_internal_task,
     row_to_show_task,
@@ -163,17 +164,18 @@ def show_task(
         raise TaskRepositoryError("not_found", "task was not found")
     task = project_tasks(connection, [row_to_show_task(task_row)], caller)[0]
     internal_task = row_to_internal_task(task_row)
+    note_selection = " OR note_body IS NOT NULL" if source_schema_version >= 28 else ""
     if include_current_context:
         # Keep the old audit window and all typed resume context in one read.
         # A single ordered selection cannot duplicate an event in both sets.
-        event_rows = connection.execute(
-            """
+        event_rows = fetch_task_event_rows(connection,
+            f"""
             SELECT *
               FROM task_events
-             WHERE project_id = ?
+             WHERE (project_id = ?{note_selection})
                AND task_id = ?
                AND (
-                 event_type IN (?, ?, ?, ?)
+                 event_type IN (?, ?, ?, ?){note_selection}
                  OR rowid IN (
                    SELECT rowid
                      FROM task_events
@@ -190,11 +192,12 @@ def show_task(
                 project.project_id, normalized_task_id,
                 max(1, event_limit) if event_limit >= 0 else event_limit,
             ),
-        ).fetchall()
+        )
         audit_event_rows = event_rows[:event_limit] if event_limit >= 0 else event_rows
         current_events = []
         for index, row in enumerate(event_rows):
-            if index != 0 and row["event_type"] not in CURRENT_CONTEXT_EVENT_TYPES:
+            if (index != 0 and row["event_type"] not in CURRENT_CONTEXT_EVENT_TYPES
+                    and ("note_body" not in row.keys() or row["note_body"] is None)):
                 continue
             if event_limit >= 0 and index >= event_limit:
                 # Only these rows are newly exposed beyond the prior read window.
@@ -215,19 +218,20 @@ def show_task(
                         "project_state_unreadable",
                         "project state could not be read safely",
                     ) from exc
-            current_events.append(row_to_event(row))
+            current_events.append(row_to_event(row, include_note_body=True,
+                expected_project_id=project.project_id, expected_task_id=normalized_task_id))
     else:
-        audit_event_rows = connection.execute(
-            """
+        audit_event_rows = fetch_task_event_rows(connection,
+            f"""
             SELECT *
               FROM task_events
-             WHERE project_id = ?
+             WHERE (project_id = ?{note_selection})
                AND task_id = ?
              ORDER BY created_at DESC, rowid DESC
              LIMIT ?
             """,
             (project.project_id, normalized_task_id, event_limit),
-        ).fetchall()
+        )
         current_events = []
     from task_governance_tool.contracts import read_current_contract
     from task_governance_tool.checkpoints import read_latest_checkpoint
@@ -288,7 +292,8 @@ def show_task(
     )
     return TaskShowResult(
         task=task,
-        events=[row_to_event(row) for row in audit_event_rows],
+        events=[row_to_event(row, include_note_body=True, expected_project_id=project.project_id,
+                            expected_task_id=normalized_task_id) for row in audit_event_rows],
         suggested_next_action=suggested_next_action(
             task,
             review_evidence=review_evidence,

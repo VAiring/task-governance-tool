@@ -51,6 +51,10 @@ lists. It excludes repository/database paths, tool events, handoffs,
 checkpoints, maintenance state, internal generation, event-cycle links,
 environment, and raw review material.
 
+Schema 28 additionally validates every retained Task note and parent binding
+before projection, while the event allow-list remains summary-only. Full note
+bodies never enter Viewer snapshot JSON or generated HTML.
+
 Source schemas v5-v14 synthesize empty/incomplete completion history;
 v15-v22 use stored cycles, reading completion histories in batches of at most
 500 Task IDs. Sources v17-v22 validate version-1 cycle Receipt links; v19-v22

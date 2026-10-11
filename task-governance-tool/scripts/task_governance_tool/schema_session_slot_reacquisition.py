@@ -25,19 +25,25 @@ def replacement_statements() -> tuple[str, ...]:
                  for statement in predecessor())
 
 
-def validate_owned_contract(connection: sqlite3.Connection) -> None:
+def expected_objects() -> dict:
     from task_governance_tool import storage as s
     from task_governance_tool.schema_verification_declaration import replacement_statements as v23
     from task_governance_tool.schema_task_ownership import ownership_statements
     from task_governance_tool.schema_review_sessions import binding_statements
     from task_governance_tool.schema_session_slot import policy_statements
-    if s._owned_schema_sql_fingerprint(connection, schema_version=VERSION) != OWNED_FINGERPRINT:
-        raise s._unreadable_project_state()
     expected = dict(s._SCHEMA22_EXPECTED_OBJECTS)
     for statement in (*v23(), *ownership_statements(), *replacement_statements(),
                       *binding_statements(), *policy_statements()[1:], slot_update_statement()):
         kind, name, owner = s._schema20_statement_identity(statement)
         expected[name] = (kind, owner, s._normalized_schema_sql(statement))
+    return expected
+
+
+def validate_owned_contract(connection: sqlite3.Connection) -> None:
+    from task_governance_tool import storage as s
+    if s._owned_schema_sql_fingerprint(connection, schema_version=VERSION) != OWNED_FINGERPRINT:
+        raise s._unreadable_project_state()
+    expected = expected_objects()
     for name, (kind, owner, sql) in expected.items():
         # ADD COLUMN SQL is checked by the exact fingerprint above.
         if name in {"tasks", "task_completion_cycles", "task_owner_transitions"}:

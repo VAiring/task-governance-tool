@@ -5,8 +5,8 @@ keeping long-running work resumable, reviewable, and bounded. It stores local
 task state without replacing the target project's `AGENTS.md`, specifications,
 design documents, tests, or current user decisions.
 
-Release `0.13.0` uses SQLite schema v27 and Viewer snapshot v4 with
-source schemas 5 through 27 as the current unpublished local candidate contract. No
+Release `0.13.0` uses SQLite schema v28 and Viewer snapshot v4 with
+source schemas 5 through 28 as the current unpublished local candidate contract. No
 exact final candidate commit, tag, archive, checksum, or GitHub Release identity
 is fixed. An ordinary push to `main` is CI input, not release publication. The
 immutable published release remains v0.10.0 at its recorded commit, tag, and
@@ -126,7 +126,7 @@ declaration and current evidence, including after reopening an old Task.
 
 For a migration investigation, use the current
 [supported-schema contract](docs/database-specification.md#initialization-and-supported-schemas)
-and [persistence contract](docs/database-specification.md#current-schema-v27-persistence-contract).
+and [persistence contract](docs/database-specification.md#current-schema-v28-persistence-contract).
 The [upgrade and paired rollback boundary](docs/release-install.md#release-upgrade-and-paired-rollback)
 owns preservation of the matching package, state and managed artifacts.
 Package updates also preserve inert old artifacts and the supported local
@@ -176,9 +176,9 @@ single bounded effective-ignore preflight may inspect Git. Doctor is optional
 and is not a prerequisite for setup or normal task work.
 
 Candidate validation rehearses the isolated transition from the exact legacy
-v0.1.0/schema-v2 baseline to v0.13.0/schema v27. Paired rollback restores the
+v0.1.0/schema-v2 baseline to v0.13.0/schema v28. Paired rollback restores the
 matched pre-migration package, database, and managed artifacts together; it
-never runs legacy code against schema v27 or treats a Git checkout alone as
+never runs legacy code against schema v28 or treats a Git checkout alone as
 state rollback. The published v0.10.0/schema-v16 and unpublished
 v0.11.0/schema-v17 and v0.12.0/schema-v21 rehearsal records remain immutable
 lineage and do not satisfy the current candidate gate. See
@@ -430,7 +430,7 @@ bounded newest-first completion history as `task show --audit`. Sources 5-14 are
 honestly as empty legacy-incomplete history. The Viewer contains only sanitized
 task/review/audit projections and has no write controls or network dependency.
 It validates schema-v18+ subject/provenance/capture bindings, the schema-v19
-through schema-v27 Bundle discriminators, and the source-appropriate Bundle-v2
+through schema-v28 Bundle discriminators, and the source-appropriate Bundle-v2
 and Runner tagged graph, but adds no provenance/Bundle field, panel, filter, or
 other snapshot-v4 UI surface.
 

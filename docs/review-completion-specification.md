@@ -1584,7 +1584,7 @@ repeating timer changes, Task completion or review registration.
 
 ### Reviewer Session Binding
 
-This section applies from schema 25 (retained by current schema 27) under the
+This section applies from schema 25 (retained by current schema 28) under the
 [approved participation design](session-usage-plan.md#reviewer-participation-without-new-manual-steps)
 and preserves the version-1 reviewer's judgment template. Schema migration
 remains setup-only; numerical collection and lifecycle integration are separate.

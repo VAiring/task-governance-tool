@@ -2066,6 +2066,47 @@ print(json.dumps(results, ensure_ascii=False))
         _, routed = self.linked_output(source, initial, "contract-revision")
         self.assertEqual(routed, revised)
 
+    def test_legacy_target_rules_are_shared_outside_fresh_target_subtrees(self):
+        cli = "references/cli_contracts.md"
+        workflow = "references/task_workflow.md"
+        legacy_outputs = []
+        for source, fragment in ((cli, "review-target"),
+                                 (workflow, "set-the-review-target")):
+            body = self.reader().read_reference(f"{source}#{fragment}", SKILL_ROOT)
+            target_source, legacy = self.linked_output(source, body, "legacy-review-targets")
+            self.assertEqual(target_source, cli)
+            self.assertNotIn("#### Legacy Review Targets", body)
+            self.assertIn("#### Legacy Review Targets", legacy)
+            self.linked_output(target_source, legacy, "review-target")
+            legacy_outputs.append(legacy)
+        self.assertEqual(*legacy_outputs)
+        for field in ("capture_version=0", "evidence_basis_stale", "review\nprepare"):
+            self.assertIn(field, legacy_outputs[0])
+
+    def test_conditional_continuation_and_notification_details_are_directly_reachable(self):
+        for source, normal, detail, title in (
+            ("references/cli_contracts.md", "integrated-review-finalization",
+             "explicit-integrated-continuation", "#### Explicit Integrated Continuation"),
+            ("references/review_wait.md", "normal-wait",
+             "retained-wait-notifications", "## Retained Wait Notifications"),
+            ("references/cli_contracts.md", "task-add",
+             "task-ownership-and-read-failures", "### Task Ownership And Read Failures"),
+        ):
+            with self.subTest(normal=normal):
+                body = self.reader().read_reference(f"{source}#{normal}", SKILL_ROOT)
+                _, conditional = self.linked_output(source, body, detail)
+                self.assertNotIn(title, body)
+                self.assertIn(title, conditional)
+        cli = "references/cli_contracts.md"
+        continuation = self.reader().read_reference(
+            f"{cli}#explicit-integrated-continuation", SKILL_ROOT)
+        for field in ("finalization_command", "--task-id", "--target-generation", "--check",
+                      "status=completed", "not_recorded"):
+            self.assertIn(field, continuation)
+        for fragment in ("choose-the-completion-route", "continue-after-reviews",
+                         "recover-integrated-finalization"):
+            self.linked_output(cli, continuation, fragment)
+
     def test_review_transports_share_gates_but_not_transport_subtrees(self):
         source = "references/task_workflow.md"
         shared = self.reader().read_reference(f"{source}#prepare-and-record-reviews", SKILL_ROOT)
@@ -2103,6 +2144,7 @@ print(json.dumps(results, ensure_ascii=False))
             ('references/task_workflow.md', 'complete-work'),
             ('references/review_wait.md', 'normal-wait'),
             ('references/cli_contracts.md', 'integrated-review-finalization'),
+            ('references/cli_contracts.md', 'explicit-integrated-continuation'),
         ):
             entry = self.reader().read_reference(source + '#' + section, SKILL_ROOT)
             _, linked = self.linked_output(source, entry, 'continue-after-reviews')

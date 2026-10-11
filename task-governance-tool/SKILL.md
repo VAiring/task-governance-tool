@@ -75,15 +75,14 @@ parent turn after confirmed readiness. The linked procedure retains waiting-free
 continuation and the existing exceptions. Use the [review workflow](references/task_workflow.md#prepare-and-record-reviews)
 for dispatch. Assigned independent reviewers use the separate entry above.
 
-When a received integrated report's visible body matches the original Task/target
-generation, shows `status=completed` with successful stages and actual Task done,
-and supplies the reporting facts without unresolved contradiction or action,
-report directly without another guide read, routine query or successful-operation
-replay. Include Findings (also low/resolved), warnings, limitations and work
-reported as `not_recorded`; their presence alone does not exclude this path.
-Labels, review PASS or `reviews_ended` alone do not prove completion or unseen
-content. For other results, including incomplete, unknown, failed, conflicting
-or action-requiring reports, use [Continue after reviews](references/task_workflow.md#continue-after-reviews).
+Report a received integrated body directly when it matches the original
+Task/target generation, has `status=completed`, successful stages, actual Task
+done and sufficient reporting facts, without unresolved contradiction or action.
+No extra guide read, routine query or replay is needed. Disclose Findings (also
+low/resolved), warnings, limitations and `not_recorded`; these alone do not
+exclude success. Labels, review PASS or `reviews_ended` cannot establish
+completion or unseen content. For all other results use
+[Continue after reviews](references/task_workflow.md#continue-after-reviews).
 Starting the next Task still requires its normal authority reads and gates.
 
 Read only the linked responsibility needed for the operation or returned

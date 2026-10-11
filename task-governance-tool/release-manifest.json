@@ -1,14 +1,14 @@
 {
   "core_files": {
     "LICENSE": "sha256:cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
-    "SKILL.md": "sha256:5423510058728c8e13b26f3b5a288457a07997ad9f568b8923adfeb5eb011b4a",
+    "SKILL.md": "sha256:1df3ab65c3395631b609179c17a3898ed40f7ebcc504c029cc369667664a1212",
     "agents/openai.yaml": "sha256:088f6070969a6ff72d09a7d1bfc059c1ab7c0e490c54931d8dae354cad925402",
     "assets/task-viewer.template.html": "sha256:64d79314178a60e61dba47943c86649d0330e3264736d22995f80714fdde41f2",
-    "references/cli_contracts.md": "sha256:740aa44c5b1e8a8d566ba28000b4d6d7e3a1462ffff16d63a01a4c0f9b9f6df6",
+    "references/cli_contracts.md": "sha256:aad256e63a8eae165975dabeeecb7eb9823a89cd6f49ca452abe1d5c33449cba",
     "references/reconciliation.md": "sha256:8ab7b5e734034a8dc186b274de5c1ce65eb17496e7a5690011585292670688aa",
-    "references/review_wait.md": "sha256:18311283c26617202f4140f729d6a94faf0e8c7e08b3bd3e92dee9de50178bad",
+    "references/review_wait.md": "sha256:11c3440c37970b987f5ae52d61a260f1ab2da111cb1b801d6ff158d7544b03e8",
     "references/runner_application.md": "sha256:32acee0294427670c43b34597091106184a26a7ef47c79f892ac2f1c4e132ac5",
-    "references/task_workflow.md": "sha256:917c34176e394151f6b8a94d4607829b9e2386baa51e9bf08ef16e6ae436cd5e",
+    "references/task_workflow.md": "sha256:266776b4e0c06260a2abd961f15f434b7c2952dcb1ac323b5998fca061f079f5",
     "references/usage_hooks.md": "sha256:2e992f79536ba57a922e9fbc391c3a066582f4c1097afe5e3e8d562756bf0297",
     "scripts/read_reference.py": "sha256:b086e1074c72337ba0e1ac5e5d971f4578b130724b978b3002dcb168cfcfac4f",
     "scripts/review_handoff.py": "sha256:ae996ec5ba7c76d4f23c31a6a9e73497fbbb81a447f3afcb61e3e3be9cadee03",

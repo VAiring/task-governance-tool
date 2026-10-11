@@ -912,6 +912,11 @@ Conditional workflow detail uses directly linked sibling sections outside
 ordinary retrieval subtrees. Each route retains its applicability and stop
 condition; each moved section keeps its required shared-rule links. Concise
 Contract examples are likewise separate from the operative Contract rules.
+Legacy target restrictions, explicit integrated continuation and retained-wait
+notification detail have conditional sibling entries. Common ancestor text
+keeps only shared applicability and routing; the detailed report field guidance
+stays in Continue After Reviews. Each success entry still states the complete
+short direct-report condition without requiring another read.
 Reader implementation and output semantics stay unchanged; focused retrieval
 checks exercise the actual public output and conditional link reachability,
 with semantic scenario review rather than natural-language matching rules.

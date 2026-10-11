@@ -1,8 +1,7 @@
 # CLI Contracts
 
-Use the contents to read the section for the current command, input, or error,
-including its directly linked requirements. Unrelated operations and audit-only
-detail are not prerequisites for normal Task work.
+Read the applicable operation and its linked requirements; unrelated and
+audit-only detail is conditional.
 
 ## Contents
 
@@ -13,6 +12,7 @@ detail are not prerequisites for normal Task work.
 - [`setup`](#setup)
 - [`doctor`](#doctor)
 - [Task Commands](#task-commands)
+  - [Ownership and read failures](#task-ownership-and-read-failures)
   - [`task add`](#task-add)
   - [Batch Task Registration](#batch-task-registration)
   - [`task list`](#task-list)
@@ -36,6 +36,7 @@ detail are not prerequisites for normal Task work.
   - [`review prepare`](#review-prepare)
   - [Review Evidence](#review-evidence)
     - [Set the exact target](#review-target)
+    - [Legacy targets](#legacy-review-targets)
     - [Receipt input and provenance](#review-provenance)
     - [Finding creation and resolution](#finding-resolution)
     - [Structured Finding Resolutions](#structured-finding-resolutions)
@@ -43,6 +44,8 @@ detail are not prerequisites for normal Task work.
   - [Caller-Owned Review Handoff](#caller-owned-review-handoff)
     - [Shared path and validation boundary](#handoff-path-and-validation)
     - [Prepare](#prepare-review-handoff)
+    - [Integrated finalization](#integrated-review-finalization)
+    - [Explicit integrated continuation](#explicit-integrated-continuation)
     - [Read](#read-review-packet)
     - [Save](#save-review-original)
     - [Submit](#submit-review-originals)
@@ -683,6 +686,13 @@ content, exception, or raw state.
 
 ## Task Commands
 
+Caller ownership is automatic; supply no session ID or routine ownership read.
+For held/unknown work use [recovery](task_workflow.md#pause-resume-and-block).
+For ownership fields or `project_state_unreadable`, see
+[ownership and read failures](#task-ownership-and-read-failures).
+
+### Task Ownership And Read Failures
+
 All returned Task records, including compact and write results, carry
 `ownership={state,owner_session_id,completion_session_id,execution_id,generation,
 is_owner,is_completion_owner}`. State is `none|owned|completion_only|unknown`;
@@ -721,9 +731,9 @@ Success data contains `task`, `event`, and `context_preparation`, plus
 `contract_write={"recorded":true,"revision":1}` when a Contract was recorded.
 `data.task.task_id` identifies the registered Task; it need not be the selected work.
 
-Initial `done` returns `initial_done_forbidden`; specifically,
-`task add --status done` never stores a task or event. Initial `paused` returns
-`initial_paused_forbidden`. Initial `review_pending` returns `invalid_status_transition`.
+Initial `done`, `paused`, and `review_pending` are rejected without writes as
+`initial_done_forbidden`, `initial_paused_forbidden`, and
+`invalid_status_transition`, respectively.
 Initial `in_progress` acquires the caller's single active slot.
 Initial `blocked` requires `--blocked-reason`.
 Sequential adds preserve the same predecessor rule used for selection and
@@ -743,8 +753,7 @@ invalid. `--verification ""` resets to unspecified; omission preserves both.
 Changing the declaration invalidates the current target and evidence. Old done
 history remains valid, but reopening an old blank Task does not infer a waiver.
 
-For multiple finalized groups, use [batch registration](#batch-task-registration)
-instead of these single-Task flags. Both forms use the result below.
+For multiple finalized groups, use [batch registration](#batch-task-registration).
 
 For single and batch success, `context_preparation` has exactly `status`,
 `context`, and `errors`. `status=ready` carries the complete ordinary
@@ -1753,19 +1762,24 @@ pass remain outer-operation concerns. Use the Packet only when `ready`; the
 Packet component retains its existing bounds. `blocked` requires its non-null code and stops this completion path;
 a missing or inconsistent route/code pair also stops closed.
 
-A target retained by schema-v18 migration with `capture_version=0` is read-only
-lineage. Verification Receipt add, Review Receipt add, Review Finding add, and
-both completion paths fail `evidence_basis_stale` with
-`current evidence basis must be captured again`. Set a fresh target to create
-capture version 1; no operation upgrades the old target in place. `review
-prepare` and resolving an existing Finding remain allowed because they create
-no new evidence source.
+For a retained `capture_version=0` target or its `evidence_basis_stale` rejection, apply the
+[legacy target restrictions](#legacy-review-targets).
 
 For `git_snapshot`, stage exactly intended files first. Capture observes
 canonical HEAD and only the stage-0 index; unstaged and untracked files are
 excluded. Completion requires a single-parent commit whose parent equals the
 captured base and whose tree matches the fingerprint. A changed candidate
 needs a new target and fresh receipts.
+
+#### Legacy Review Targets
+
+A target retained by schema-v18 migration with `capture_version=0` is read-only
+lineage. Verification Receipt add, Review Receipt add, Review Finding add, and
+both completion paths fail `evidence_basis_stale` with
+`current evidence basis must be captured again`. Set a fresh target to create
+capture version 1; no operation upgrades the old target in place. `review
+prepare` and resolving an existing Finding remain allowed because they create
+no new evidence source. Use the existing [target-setting procedure](#review-target).
 
 <a id="review-provenance"></a>
 
@@ -2078,13 +2092,11 @@ or independence. The existing single-item commands remain available.
 
 ### Caller-Owned Review Handoff
 
-The bundled `scripts/review_handoff.py` is separate from taskgov. Use `python3`
-on Linux/macOS. It needs Python 3.12+ and explicit `--repo`.
-Use the relevant operation below; generated read/save/submit commands already
-supply their actual paths and need no routine reference lookup. Stop on failed,
-missing or uncertain output and follow [handoff recovery](#recover-review-handoff),
-preserving originals/residue without overwriting or blindly repeating writes.
-Each operation retains the [shared path and validation boundary](#handoff-path-and-validation).
+`scripts/review_handoff.py` is separate from taskgov; use Python 3.12+ (`python3`
+on Linux/macOS) and explicit `--repo`. Generated commands need no routine lookup.
+All operations retain the [path/validation boundary](#handoff-path-and-validation).
+Failed, missing or uncertain output stops for [recovery](#recover-review-handoff);
+preserve originals/residue without overwriting or blindly repeating writes.
 
 #### Handoff Path And Validation
 
@@ -2194,37 +2206,47 @@ failed/interrupted, unavailable or changed reviewer turn remains a blocker on
 this intent across `--check` and retries; obtain fresh reviews under a new target
 generation/intent instead of treating missing host information as success.
 
-When waiting is unnecessary because reviews already ended, or an existing
-exception prevents worker use, explicit continuation after all reviewers end
-uses the retained command once. The [waiting procedure](review_wait.md#normal-wait)
-owns normal service use and confirmed turn exit; workerless continuation is
-available under the [existing exceptions](task_workflow.md#choose-the-completion-route),
-as well as through conditional recovery:
+Use [normal waiting](review_wait.md#normal-wait) when its conditions hold.
+If reviews already ended or an existing exception prevents worker use, retain
+the same intent and use [explicit continuation](#explicit-integrated-continuation)
+after all reviewers end. This remains an ordinary supported route, not only recovery.
+
+Report a received integrated body directly when it matches the original
+Task/target generation, has `status=completed`, successful stages, actual Task
+done and sufficient reporting facts, without unresolved contradiction or action.
+No extra guide read, routine query or replay is needed. Disclose Findings (also
+low/resolved), warnings, limitations and `not_recorded`; these alone do not
+exclude success. Labels and review/message success cannot establish completion
+or unseen content. For all other results use
+[Continue after reviews](task_workflow.md#continue-after-reviews).
+Use [integrated recovery](#recover-integrated-finalization)
+only for a blocker, partial success or missing/uncertain result.
+
+#### Explicit Integrated Continuation
+
+Use when reviews already ended, or worker use is excluded under the
+[existing exceptions](task_workflow.md#choose-the-completion-route).
+After all reviewers end, run the retained `finalization_command` once:
 
 ```powershell
 python .agents/skills/task-governance-tool/scripts/review_handoff.py finalize --repo . --task-id <task-id> --target-generation <generation>
 ```
 
 The generated command includes its exact generation; omission uses the current
-Task generation, never another stored intent. `--check` is read-only and returns
-the complete report without creating state or replaying effects. Reports contain
-Task/target, recorded work with coverage or `not_recorded`, verification, original
-and registered reviews, every registered Finding/ID, gates, stage intent and
-observed results, confirmed commit, missing fields, warnings and next action.
-`ok` means the operation had no processing error; completion reporting requires
-the actual completed result below, not a successful check, registration or
-message delivery alone.
+Task generation, never another stored intent. `--check` returns the complete
+report read-only, without creating state or replaying effects; it is optional,
+not a prerequisite. `ok` means no processing error, not Task completion.
 
-A received report whose visible body matches the original Task/target generation,
-shows `status=completed` with successful stages and actual Task done, and contains
-the reporting facts without unresolved contradiction or action can be reported
-directly without an extra guide read, routine query or replay. Preserve Findings
-(including low/resolved), warnings, limitations and `not_recorded` facts; their
-presence alone does not require recovery. Labels and review/message success alone
-do not establish completion or unseen content. For other results, use
+Report a received integrated body directly when it matches the original
+Task/target generation, has `status=completed`, successful stages, actual Task
+done and sufficient reporting facts, without unresolved contradiction or action.
+No extra guide read, routine query or replay is needed. Disclose Findings (also
+low/resolved), warnings, limitations and `not_recorded`; these alone do not
+exclude success. Labels and review/message success cannot establish completion
+or unseen content. For all other results use
 [Continue after reviews](task_workflow.md#continue-after-reviews).
-Use [integrated recovery](#recover-integrated-finalization)
-only for a blocker, partial success or missing/uncertain result.
+For lost/unknown outcomes or partial success, follow
+[integrated recovery](#recover-integrated-finalization) before another effectful call.
 
 #### Recover Integrated Finalization
 

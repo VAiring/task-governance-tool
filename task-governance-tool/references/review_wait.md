@@ -1,11 +1,9 @@
 # Review Wait And Same-Parent Resumption
 
-Use this only for authorized independent reviews that may outlive the parent
-turn. The optional project service owns reservations and observation. The parent
-keeps review judgment and Task decisions. Integrated preparation delegates only
-its fixed registration/commit/completion; manual preparation keeps those steps
-with the parent.
-Non-review waiting is unchanged; no resident coordinating LLM is needed.
+For authorized independent reviews across parent turns only. The optional
+service owns waiting; the parent keeps judgment and Task decisions. Integrated
+preparation delegates fixed registration/commit/completion, manual preparation
+does not. Non-review waits are unchanged; no resident coordinating LLM is needed.
 
 ## Setup And Connection
 
@@ -99,27 +97,21 @@ justify further discovery; this adds no lookup or confirmation prerequisite.
    send when every exact reviewer ends and the original parent is idle. This is
    readiness, not Task completion. For a failed call, the linked failure
    procedure distinguishes ordinary turn ending after reporting a limitation.
-4. On resumption, a received integrated report whose visible body matches the
-   original Task/target generation, shows `status=completed` with successful
-   stages and actual Task done, and supplies the reporting facts without
-   unresolved contradiction or action can be reported directly. No extra guide
-   read, routine query or successful-operation replay is needed. Preserve
-   Findings (including low/resolved), warnings, limitations and `not_recorded`
-   facts; their presence alone does not require recovery. Labels, correlation,
-   PASS or `reviews_ended` alone do not prove completion or unseen content.
-   For other results, including incomplete, unknown, failed, conflicting or
-   action-requiring reports, use
+4. Report a received integrated body directly when it matches the original
+   Task/target generation, has `status=completed`, successful stages, actual
+   Task done and sufficient reporting facts, without unresolved contradiction
+   or action. No extra guide read, routine query or replay is needed. Disclose
+   Findings (also low/resolved), warnings, limitations and `not_recorded`; these
+   alone do not exclude success. Labels, correlation, PASS or `reviews_ended`
+   cannot establish completion or unseen content. For all other results use
    [Continue after reviews](task_workflow.md#continue-after-reviews).
    The worker observes the matching incoming event and records receipt; no
    individual ACK, reservation management or `wait-ended` call is needed.
 
-Other permitted work, such as read-only Task inspection, or a retained Task's
-notification may advance this same parent's turn without cancelling existing
-managed waits. The combined session slot still prevents starting a second Task
-in that session while its current Task awaits review. Each wait remains bound to its original Task and
-reviewers; the service defers while the parent is busy and coordinates its sends.
-It finds the first actual receiving turn through bounded public history even if
-newer turns already exist. No parent-side history correlation or extra call is needed.
+Other permitted work or retained notifications do not cancel a managed wait;
+the session slot still prevents starting a second Task while the current Task
+awaits review. For overlapping retained notifications, see
+[retained wait notifications](#retained-wait-notifications).
 
 At a scheduled ten-minute check, handle actual review results normally. If the
 same reviewers are healthy but unfinished, repeat only the same wait request.
@@ -127,6 +119,18 @@ It settles known cleanup and prepares the next reservation internally.
 `status=reviews_ended,parent_may_end=false` means continue result processing.
 Do not redispatch reviewers merely to wait again, choose reservation phases or
 manually create another heartbeat.
+
+## Retained Wait Notifications
+
+Other permitted work, such as read-only Task inspection, or a retained Task's
+notification may advance this same parent's turn without cancelling existing
+managed waits. The combined session slot still prevents starting a second Task
+in that session while its current Task awaits review. Each wait remains bound
+to its original Task and reviewers; the service defers while the parent is busy
+and coordinates its sends. It finds the first actual receiving turn through
+bounded public history even if newer turns already exist. No parent-side history
+correlation or extra call is needed. Apply the [normal resumption step](#normal-wait)
+to the original Task's actual report; a notification is not completion evidence.
 
 ## Failures, Stop And Diagnosis
 

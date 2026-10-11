@@ -1,10 +1,8 @@
 # Task Workflow
 
-Use the section for the current operation; unrelated sections are not prerequisites.
-Examples run from the target-project root. On Linux/macOS replace `python`
-with `python3`. `<task-id>` comes from `task context` at
-`data.selected.task.task_id`, or from a successful `task add` at
-`data.task.task_id`; never substitute a title or invent an ID.
+Examples use the target-project root (`python3` on Linux/macOS). Task IDs come
+from `data.selected.task.task_id` (`task context`) or `data.task.task_id`
+(successful `task add`), never titles or invented IDs.
 
 ## Contents
 
@@ -547,11 +545,10 @@ unavailable does not itself require switching an integrated intent to manual
 completion. A failed wait or missing notification uses the existing
 [wait recovery](review_wait.md#failures-stop-and-diagnosis) and
 [result continuation](#continue-after-reviews), preserving successful stages.
-Confirmed wait readiness permits ending the turn with automatic waiting
-delegated. A failed wait also permits ordinary turn ending after reporting its
-limitation and resume condition under that recovery procedure; it does not
-promise automatic resumption or complete the Task. Do not keep retrying an
-unavailable service solely to keep this turn open.
+Confirmed wait readiness delegates waiting and permits turn exit. On failure,
+the linked recovery procedure permits ordinary turn exit after reporting the
+limitation and resume condition, without promising resumption or completion;
+do not retry an unchanged unavailable service solely to keep the turn open.
 The [integrated contract](cli_contracts.md#integrated-review-finalization)
 defines supported material and effects. Preparation never starts a reviewer or
 wait worker. A preparation failure uses [bound recovery](cli_contracts.md#recover-review-handoff),
@@ -611,10 +608,8 @@ Every successful set advances the generation. Retain
 `source.review_target.generation` and apply that response's
 `source.verification_route` / `source.blocking_code` in the normal loop
 (the direct CLI's corresponding fields are listed above).
-A migrated capture-version-0 target is read-only lineage: new Verification
-Receipts, Review Receipts, Findings, and completion require a fresh target.
-Preparing its packet and resolving an existing Finding remain allowed;
-the old target is never upgraded in place.
+For a migrated capture-version-0 target, apply the
+[legacy target restrictions](cli_contracts.md#legacy-review-targets).
 
 ### Prepare And Record Reviews
 
@@ -675,7 +670,7 @@ or unseen content. Resolve previously reported material or judgment questions.
   required. Use its actual Task/target, work coverage,
   verification, original and registered reviews, every Finding/ID (including low
   and resolved Findings), gates, stage outcomes, confirmed commit, limitations,
-  warnings and next action. Findings, warnings, limitations or
+  missing fields, warnings and next action. Findings, warnings, limitations or
   `recorded_work.status=not_recorded` alone do not exclude this path: disclose
   them faithfully, including the absence of a recorded work summary. Do not
   invent missing work details. This is a reporting shortcut, not a reading ban

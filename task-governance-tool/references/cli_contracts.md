@@ -2400,7 +2400,9 @@ needed to obtain the normal summary. Relevant investigation and questions remain
 permitted, and independent quality judgment remains required.
 `review_material` lists the complete Git delta (not the Packet's bounded list),
 immutable before/after object IDs and modes, comparison/dependency revisions,
-and a `collect_command` bound to the saved Packet. Replace its single placeholder
+and a `collect_command` bound to the saved Packet. Normal read omits the
+unchanged-file inventory, not evidence of absence or irrelevance. Collect known
+dependency paths directly, without first requesting a listing. Replace its single placeholder
 with a JSON array of the dependency paths still needed (`[]` for none); all
 changed before/after bodies and diffs are included automatically. No parent
 selection or OID assembly is required. The returned `bodies` table supplies each
@@ -2420,8 +2422,11 @@ unavailable, binary or oversized material (1 MiB per text, 4 MiB total). Tool
 truncation also requires recovery; newly discovered dependencies still need reads.
 Only when individual/additional retrieval or discovery is needed, run the
 returned `recovery_command`: it repeats the same validated read with optional
-`--material-details` and supplies individual read/diff/directory commands and
-their complete quoting and recovery guidance. Recover affected material rather
+`--material-details` and supplies a bounded `unchanged_inventory`, directory
+discovery at the exact dependency revision, individual read/diff commands and
+their complete quoting and recovery guidance. Inventory omissions do not prevent
+direct collection; unknown locations can be explored at that revision when needed.
+Recover affected material rather
 than collecting successful siblings again. Normal read retains all judgment,
 format and provenance information needed for save; the detailed read is not a
 normal prerequisite. Retrieval reuses

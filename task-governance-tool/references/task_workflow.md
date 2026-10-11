@@ -957,12 +957,14 @@ require parent transcription or routine extra lookup for already supplied
 information. Evidence availability is not execution authentication, sufficient
 testing or review PASS; necessary investigation and questions remain allowed.
 For Git, that material lists every changed entry with machine-verified immutable
-before/after object IDs, modes, comparison base, bounded location hints, normal
+before/after object IDs, modes, comparison base, dependency revision, normal
 `collect_command` and conditional `recovery_command`. Use collection for the
 first required project AGENTS, authority, source and test reads instead of
 automatically reading ambient copies first. Read governing text before judging
 code and follow its routes. Select only dependencies still needed as the
-collect command's JSON array. It automatically
+collect command's JSON array. The unchanged-file inventory is omitted from normal
+read, not evidence of absence or irrelevance; collect known paths directly.
+It automatically
 supplies all changed before/after bodies and diffs, plus your selected dependencies,
 deduplicating bodies while retaining path/revision/side correspondence. Explicitly
 provided complete bodies can be reused when their immutable object identity or
@@ -974,7 +976,10 @@ Keep both required changed sides and the diff. No manual hash calculation or
 reading ledger is needed, and project reread obligations still apply.
 Only for individual/additional reads, discovery or recovery, use
 `recovery_command` (the same validated read with optional `--material-details`).
-It supplies the individual templates, quoting rules and retrieval exceptions.
+It supplies a bounded unchanged-file inventory, directory discovery at the exact
+dependency revision, individual templates, quoting rules and retrieval exceptions.
+Paths omitted from the inventory remain collectible. Discover unknown locations
+only when needed; the listing does not select relevant material.
 Recover unavailable/large/non-text or tool-truncated material and newly discovered
 dependencies without collecting successful siblings again. Normal judgment and
 save need no extra guide/format lookup; applicable result rules remain in read.

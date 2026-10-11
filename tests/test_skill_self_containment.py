@@ -851,9 +851,19 @@ class SkillSelfContainmentTests(unittest.TestCase):
             self.assertIn("git_snapshot", text)
         for text in (skill_md, workflow, contracts, readme):
             self.assertIn("reopen", text.lower())
+        # README routes snapshot capture to the package procedure instead of
+        # duplicating its command example. Verify the direct, existing anchor
+        # while retaining command/behavior checks in the package's own guides.
+        capture_route = ("task-governance-tool/references/task_workflow.md", "set-the-review-target")
+        self.assertIn(capture_route, {
+            _resolve(ROOT, "README.md", link.target) for link in _scan("README.md", readme, []).links
+        })
+        from read_reference import section
+        self.assertIn("--kind git_snapshot", section(workflow, capture_route[1]))
+        for text in (workflow, contracts):
+            self.assertIn("--kind git_snapshot", text)
         for text in (workflow, contracts, readme):
             normalized = " ".join(text.lower().split())
-            self.assertIn("--kind git_snapshot", text)
             self.assertIn("--reopen-reason", text)
             self.assertIn("unstaged", normalized)
             self.assertIn("untracked", normalized)

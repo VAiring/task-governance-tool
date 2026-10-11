@@ -748,6 +748,7 @@ class ReviewerMaterialTests(PreparationFixture):
         # This already-held complete authority has an exact immutable source,
         # unlike an ambient file or inherited prose with no version binding.
         held_agents = self.git("show", base + ":AGENTS.md")
+        held_agents_id = self.git("rev-parse", base + ":AGENTS.md").decode().strip()
         (self.root / "source.py").write_bytes(b"value = 2\n")
         self.git("add", "--", "source.py")
         _, prepared = self.prepare(self.task(), options=["--kind", "git_snapshot"])
@@ -763,15 +764,20 @@ class ReviewerMaterialTests(PreparationFixture):
         self.assertNotIn("prepare_command", material["verification_workspace"])
         self.assertNotIn("cleanup_command", material["verification_workspace"])
         self.assertEqual(material["dependency_revision"], base)
-        inventory = {row["path"]: row for row in material["unchanged_inventory"]["entries"]}
-        self.assertEqual(held_agents, self.git("cat-file", "blob", inventory["AGENTS.md"]["object_id"]))
+        self.assertNotIn("unchanged_inventory", material)
+        self.assertEqual(held_agents, b"Read SPEC.md.\n")
+        # Normal material does not depend on the optional inventory traversal.
+        with mock.patch.object(preparation, "_dependency_inventory", side_effect=AssertionError("unexpected inventory scan")):
+            selectors = preparation._review_material(self.root, view["review_target"])
+        self.assertEqual(selectors["changes"], material["changes"])
+        self.assertNotIn("unchanged_inventory", selectors)
         # Omit the matching complete body; retrieve the still-needed rule and
         # all changed sides/diffs through the unchanged normal collect command.
         collected = self.material_read(material["collect_command"].replace(
             "<selected dependency paths as JSON array>", '["SPEC.md"]'))
         self.assertEqual(collected.returncode, 0, collected.stderr)
         delivery = json.loads(collected.stdout)
-        self.assertNotIn(inventory["AGENTS.md"]["object_id"], delivery["bodies"])
+        self.assertNotIn(held_agents_id, delivery["bodies"])
         spec, = delivery["dependencies"]
         self.assertEqual((spec["path"], spec["revision"]), ("SPEC.md", base))
         self.assertEqual(delivery["bodies"][spec["body_id"]]["text"], "The value must be 2.\n")
@@ -821,14 +827,18 @@ class ReviewerMaterialTests(PreparationFixture):
                                 normal["verification_evidence"].pop("observed_at"))
         self.assertEqual({k: v for k, v in normal.items() if k != "review_material"},
                          {k: v for k, v in detailed.items() if k != "review_material"})
-        for name in ("changes", "comparison_base", "dependency_revision", "unchanged_inventory", "collect_command"):
+        self.assertNotIn("unchanged_inventory", material)
+        self.assertEqual(set(details["unchanged_inventory"]), {"entries", "total", "returned", "truncated"})
+        for name in ("changes", "comparison_base", "dependency_revision", "collect_command"):
             self.assertEqual(material[name], details[name])
         for name in ("blob_command", "blob_batch_command", "diff_command", "dependency_command", "directory_command"):
             self.assertNotIn(name, material)
             self.assertIn(name, details)
         self.assertLess(len(normal_result.stdout), len(detailed_result.stdout))
         for condition in ("immutable object identity", "incomplete/unknown", "mismatched", "tool-truncated",
-                          "Project reread obligations", "before/after sides"):
+                          "Project reread obligations", "before/after sides", "inventory is omitted",
+                          "not proof of absence or irrelevance", "collect known dependency paths directly",
+                          "directory discovery at dependency_revision"):
             self.assertIn(condition, " ".join(material["instructions"]))
         # Wrong-version, unknown, missing or truncated prior text cannot replace
         # the selected immutable body. Recovery returns it without successful siblings.
@@ -1263,25 +1273,41 @@ class ReviewerMaterialTests(PreparationFixture):
         (self.root / "later/needed.py").write_text("required = True\n", encoding="utf-8")
         self.git("add", "--", "later", *(f"aaa-{index:03}.py" for index in range(135)))
         self.git("commit", "--quiet", "-m", "Larger dependency tree")
+        revision = self.git("rev-parse", "HEAD").decode().strip()
         (self.root / "source.py").write_text("from later.needed import required\n", encoding="utf-8")
         self.git("add", "--", "source.py")
         _, prepared = self.prepare(self.task(), options=["--kind", "git_snapshot"])
-        material = json.loads(self.displayed(prepared["handoff"]["packet_path"], details=True).stdout)["review_material"]
+        packet = prepared["handoff"]["packet_path"]
+        material = json.loads(self.displayed(packet).stdout)["review_material"]
+        self.assertNotIn("unchanged_inventory", material)
+        self.assertEqual(material["dependency_revision"], revision)
+        # A known path is usable before any inventory or discovery operation;
+        # ambient edits/new files cannot replace or extend its immutable tree.
+        (self.root / "later/needed.py").write_text("ambient = True\n", encoding="utf-8")
+        (self.root / "later/ambient.py").write_text("not in target\n", encoding="utf-8")
+        collected = self.material_read(material["collect_command"].replace(
+            "<selected dependency paths as JSON array>", '["later/needed.py"]'))
+        self.assertEqual(collected.returncode, 0, collected.stderr)
+        delivery = json.loads(collected.stdout)
+        dependency, = delivery["dependencies"]
+        self.assertEqual(dependency["revision"], revision)
+        self.assertEqual(delivery["bodies"][dependency["body_id"]]["text"], "required = True\n")
+        detailed = self.material_read(material["recovery_command"])
+        self.assertEqual(detailed.returncode, 0, detailed.stderr)
+        material = json.loads(detailed.stdout)["review_material"]
         inventory = material["unchanged_inventory"]
         self.assertTrue(inventory["truncated"])
         self.assertLess(inventory["returned"], inventory["total"])
         self.assertLessEqual(inventory["returned"], preparation.INVENTORY_ENTRY_LIMIT)
         self.assertLessEqual(len(encode(inventory["entries"])), preparation.INVENTORY_BYTE_LIMIT)
         self.assertNotIn("later/needed.py", [row["path"] for row in inventory["entries"]])
-        collected = self.material_read(material["collect_command"].replace(
-            "<selected dependency paths as JSON array>", '["later/needed.py"]'))
-        self.assertEqual(collected.returncode, 0, collected.stderr)
-        delivery = json.loads(collected.stdout)
-        dependency, = delivery["dependencies"]
-        self.assertEqual(delivery["bodies"][dependency["body_id"]]["text"], "required = True\n")
+        root = self.material_read(material["directory_command"].replace("<project-relative-directory>", ""))
+        self.assertEqual(root.returncode, 0, root.stderr)
+        self.assertIn(b"later", root.stdout)
         actual = self.material_read(material["directory_command"].replace("<project-relative-directory>", "later"))
         self.assertEqual(actual.returncode, 0, actual.stderr)
         self.assertIn(b"needed.py", actual.stdout)
+        self.assertNotIn(b"ambient.py", actual.stdout)
         expected_id = self.git("rev-parse", material["dependency_revision"] + ":later/needed.py").strip()
         self.assertIn(expected_id, actual.stdout)
         actual = self.material_read(material["blob_command"].replace("<object_id>", expected_id.decode()))
@@ -1303,7 +1329,7 @@ class ReviewerMaterialTests(PreparationFixture):
         self.git("rm", "--", "SPEC.md")
         self.git("update-index", "--chmod=+x", "AGENTS.md")
         _, prepared = self.prepare(self.task(), options=["--kind", "git_snapshot"])
-        material = json.loads(self.displayed(prepared["handoff"]["packet_path"]).stdout)["review_material"]
+        material = json.loads(self.displayed(prepared["handoff"]["packet_path"], details=True).stdout)["review_material"]
         rows = {row["path"]: row for row in material["unchanged_inventory"]["entries"]}
         self.assertEqual(rows["link-text"]["mode"], "120000")
         self.assertEqual(rows["submodule"]["mode"], "160000")
@@ -1553,7 +1579,11 @@ class ReviewerMaterialTests(PreparationFixture):
         self.assertEqual(json.loads(result.stdout)["review_material"]["comparison_base"], root)
         material = json.loads(result.stdout)["review_material"]
         self.assertEqual(material["dependency_revision"], current)
-        self.assertIn("SPEC.md", [row["path"] for row in material["unchanged_inventory"]["entries"]])
+        self.assertNotIn("unchanged_inventory", material)
+        detailed = self.material_read(material["recovery_command"])
+        self.assertEqual(detailed.returncode, 0, detailed.stderr)
+        inventory = json.loads(detailed.stdout)["review_material"]["unchanged_inventory"]
+        self.assertIn("SPEC.md", [row["path"] for row in inventory["entries"]])
 
     def test_live_contract_and_generation_drift_and_opaque_targets(self):
         task = self.cli("task", "add", "--title", "Contract drift", "--status", "in_progress",

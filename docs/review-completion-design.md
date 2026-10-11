@@ -359,13 +359,15 @@ this layout is not an observation of host prompt caching.
 `_review_material` reuses `artifact_manifest.py`
 observers and entry builder, without another fingerprint algorithm, to return
 the complete immutable-object delta and dependency/read command templates.
-The same module streams the immutable dependency revision through the existing
+Only when `material_details` is requested, the same module streams the immutable dependency revision through the existing
 `git_snapshot.stream_tree_entries`, excluding delta paths and retaining only a
 count/byte-bounded inventory prefix while counting omitted entries. The inventory
 returns only `entries`, `total`, `returned` and `truncated`, sharing its revision
 with the enclosing `dependency_revision`. The existing count/byte constants
 still bound collection but are not repeated in the display. It does not
-infer relevance, scan the worktree or retain blob content. The additional
+infer relevance, scan the worktree or retain blob content. Default read neither
+builds nor emits this inventory; its guidance makes omission explicit and routes
+known paths directly to collection. The additional
 directory-list and `cat-file --batch` templates reuse `_material_command`:
 it now emits short calls to the existing helper's closed `material` operation.
 Discovery and selected multi-blob reads keep the existing safe-Git environment.
@@ -425,13 +427,16 @@ are written. All rows and byte-preserving UTF-8 bodies are emitted together as
 transient JSON after final Packet validation. Available siblings remain usable
 when another row fails; unchanged raw operations recover large or unavailable
 material and discover later dependencies. Default `read_for_reviewer` projects
-the complete target/location data, normal collect invocation and reuse rules,
+the complete target data, normal collect invocation and reuse rules,
 replacing individual command templates and their detailed instructions with
 one fully bound `recovery_command`. That command selects `--material-details`
 on the same read, retaining all physical, exact-target and live-context checks.
 Result templates, applicable format/provenance instructions and warnings remain
 in both projections, so ordinary save requires no extra lookup. The detailed
-view restores the existing five raw templates and their complete guidance.
+view adds the bounded inventory and restores the existing five raw templates
+and their complete guidance. Unknown locations use conditional directory
+discovery at the fixed dependency revision; the inventory never restricts
+collection or determines relevance.
 The owning specification defines
 statuses/limits; these never substitute for review scope, current-state checks,
 or independently reading and judging all necessary material. Nothing is stored

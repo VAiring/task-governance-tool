@@ -430,10 +430,12 @@ exact stable index fingerprint/base or canonical commit/first-parent (root:
 empty tree), with its existing object-presence, path, entry and size bounds.
 Normal material contains the complete delta as existing manifest entry fields,
 immutable before/after object IDs and modes, comparison base, dependency revision,
-bounded inventory, `collect_command` and a conditional `recovery_command`.
+`collect_command` and a conditional `recovery_command`. The default display omits
+the unchanged-file inventory and explicitly says that this is not absence or
+irrelevance. Known dependency paths can be collected directly without a listing.
 The latter is the same saved-Packet `read` with optional `--material-details`:
 it retains complete physical, target and live-context validation and supplies
-the individual blob/batch/diff/path/directory commands, quoting rules and retrieval
+the bounded unchanged-file inventory, individual blob/batch/diff/path/directory commands, quoting rules and retrieval
 exceptions only when needed. It adds no normal prerequisite or format lookup;
 all information required for ordinary independent judgment and save remains in
 the default request/read pair. It does not change the saved Packet or result format.
@@ -456,7 +458,7 @@ selector names that project's root at the selected revision; directory results
 remain relative to the requested directory. Individual reads and collection
 resolve the same project subtree. A missing project document stays unavailable;
 an enclosing Git root's same-named document is never substituted.
-The transient display also includes `unchanged_inventory`: bytewise ordered
+Only the conditional detailed display includes `unchanged_inventory`: bytewise ordered
 `entries` (`path`, `mode`, `object_id`), `total`, `returned` and `truncated` only.
 Its revision is the enclosing `review_material.dependency_revision`; the inventory
 does not repeat that revision or display the fixed count/byte limits.
@@ -465,7 +467,10 @@ excludes every old/new delta path, and returns at most 128 entries and 16,384
 UTF-8 bytes of compact entry-array JSON. It counts all remaining paths even
 after the prefix fills. No body, relevance inference, test-name heuristic or
 new persistent index is included. These are location hints, not proof that a
-blob exists or that all required material was selected or read.
+blob exists or that all required material was selected or read. An omitted path
+remains directly collectible; an unknown location or further dependency can be
+discovered from the same exact revision when needed, without parent selection
+or a mandatory extra discovery step.
 In that conditional display, `directory_command` provides nonrecursive discovery at the same dependency
 revision (empty directory means root). Nested tree entries can be explored by
 the same template and path-quoting rule; paths in its result are directory-relative.

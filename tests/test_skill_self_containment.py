@@ -2133,15 +2133,66 @@ print(json.dumps(results, ensure_ascii=False))
         for field in ("handoff.status=ready", "review_requests[].request", "ok=true,status=saved"):
             self.assertIn(field, shared)
         _, continuation = self.linked_output(source, shared, "continue-after-reviews")
+        _, manual = self.linked_output(source, continuation, "manual-completion")
         for field in ("submit_command", "data.receipts[].findings", "data.review_gate"):
-            self.assertIn(field, continuation)
+            self.assertIn(field, manual)
+        self.assertNotIn("data.receipts[].findings", continuation)
+        self.assertNotIn("data.review_gate", continuation)
+        self.linked_output(source, manual, "review-handoff-recovery")
+        self.linked_output(source, manual, "repair-findings")
         for field in ("data.review_preparation.packet", "result_template", "result_instructions",
                       "review_target", "contract.revision", "task.task_id"):
             self.assertIn(field, direct)
         self.linked_output(source, direct, "structured-review-results")
+        _, direct_completion = self.linked_output(source, direct, "manual-completion")
+        self.assertEqual(direct_completion, manual)
         _, recovery = self.linked_output(source, shared, "review-handoff-recovery")
         self.linked_output(source, recovery, "review-provenance")
         self.linked_output(source, recovery, "recover-review-handoff")
+
+    def test_selected_transport_keeps_its_response_fields_and_conditional_routes(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            package = copy_skill_to(Path(tmp))
+            source = "references/task_workflow.md"
+            loop = self.reader().read_reference(f"{source}#bounded-operating-loop", package)
+            _, direct = self.linked_output(source, loop, "direct-review-transport", package)
+            for field in ("source.review_target.generation", "source.verification_route",
+                          "source.blocking_code", "handoff.status=ready"):
+                self.assertIn(field, loop)
+            for field in ("data.task.review_target_generation", "data.verification_route",
+                          "data.blocking_code", "data.review_preparation.packet",
+                          "data.review_preparation.status=ready"):
+                self.assertNotIn(field, loop)
+                self.assertIn(field, direct)
+            for body in (loop, direct):
+                for route in ("not_required", "runner_pass", "receipt_required", "blocked"):
+                    self.assertIn(route, body)
+                # The repository scanner treats deeply indented list prose as
+                # code; check this nested inline link in the actual reader text.
+                self.assertIn("(cli_contracts.md#review-prepare)", body)
+            self.assertTrue(self.reader().read_reference(
+                "references/cli_contracts.md#review-prepare", package))
+            _, choice = self.linked_output(source, loop, "choose-the-completion-route", package)
+            for operation in ("prepare-finalization", "prepare", "submit_command", "finalization_command"):
+                self.assertIn(f"`{operation}`", choice)
+
+    def test_skill_entry_keeps_direct_condition_links_and_known_preapproval_inputs(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            package = copy_skill_to(Path(tmp))
+            skill = (package / "SKILL.md").read_text(encoding="utf-8")
+            for fragment in ("bounded-operating-loop", "choose-the-completion-route",
+                             "continue-after-reviews", "normal-wait", "failures-stop-and-diagnosis",
+                             "optional-task-preapproval", "configured-preapproval-invocation"):
+                self.linked_output("SKILL.md", skill, fragment, package)
+            for field in ("Python/package/repo/shell", "-I -S -B", "--records-only",
+                          "status=completed", "not_recorded"):
+                self.assertIn(field, skill)
+            source, invocation = self.linked_output(
+                "SKILL.md", skill, "configured-preapproval-invocation", package)
+            for field in ("host_activation=\"not_checked\"", "preapproval_invocation_unavailable",
+                          "task_context_command", "handoff_prefix"):
+                self.assertIn(field, invocation)
+            self.linked_output(source, invocation, "optional-task-preapproval", package)
 
     def test_review_resumption_has_one_retrievable_owner_and_conditional_details(self):
         from task_governance_tool.review_wait_runtime.project_server import ProjectReviewWaitSession

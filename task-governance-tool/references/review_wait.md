@@ -73,14 +73,10 @@ If a prerequisite is unavailable or an operation fails, use
 [failure and recovery guidance](#failures-stop-and-diagnosis); never retry an
 unknown effect or infer readiness from a failed call.
 
-Use the available `review_wait_wait` definition. If discovery is needed, search
-that exact tool in the connected review-wait MCP namespace, rather than general
-`wait` or `task` terms. Host-qualified names may look like
-`mcp__taskgov_review_wait__review_wait_wait`; use the actual returned name and
-schema, since the server registration can differ. Reuse a complete definition
-already returned instead of displaying the same candidates again. Missing,
-incomplete or changed definitions, or recovery needing another control, can
-justify further discovery; this adds no lookup or confirmation prerequisite.
+Reuse the complete available `review_wait_wait` definition. Only a missing,
+incomplete or changed definition, or recovery needing another control, calls for
+discovery in the connected review-wait MCP namespace. Use its actual returned
+name and schema; no routine lookup or confirmation is needed.
 
 1. Dispatch the unchanged independent-review requests through the authorized
    subagent facility. Retain the original Task/Packet, actual returned handles,
@@ -88,15 +84,12 @@ justify further discovery; this adds no lookup or confirmation prerequisite.
    whose outcome is unknown.
 2. Call `review_wait_wait(task_id, reviewer_ids)` once with that original Task
    and the actual returned `/root/...` handles (canonical UUIDs also work).
-   The service resolves the parent-scoped structured identities and internally
-   creates, prepares and starts its fixed same-parent ten-minute reservation.
    Supply no automation/probe IDs, prompt, schedule or destination.
 3. Delegate waiting and end this turn on
    `ok=true,status=waiting,parent_may_end=true` only.
-   The service then owns observation, deletion confirmation and one same-parent
-   send when every exact reviewer ends and the original parent is idle. This is
-   readiness, not Task completion. For a failed call, the linked failure
-   procedure distinguishes ordinary turn ending after reporting a limitation.
+   The service owns waiting and same-parent notification. Readiness is not Task
+   completion; failed calls use the linked failure procedure for ordinary turn
+   ending after reporting a limitation.
 4. Report a received integrated body directly when it matches the original
    Task/target generation, has `status=completed`, successful stages, actual
    Task done and sufficient reporting facts, without unresolved contradiction
@@ -105,8 +98,7 @@ justify further discovery; this adds no lookup or confirmation prerequisite.
    alone do not exclude success. Labels, correlation, PASS or `reviews_ended`
    cannot establish completion or unseen content. For all other results use
    [Continue after reviews](task_workflow.md#continue-after-reviews).
-   The worker observes the matching incoming event and records receipt; no
-   individual ACK, reservation management or `wait-ended` call is needed.
+   No individual ACK, reservation management or `wait-ended` call is needed.
 
 Other permitted work or retained notifications do not cancel a managed wait;
 the session slot still prevents starting a second Task while the current Task
@@ -115,7 +107,6 @@ awaits review. For overlapping retained notifications, see
 
 At a scheduled ten-minute check, handle actual review results normally. If the
 same reviewers are healthy but unfinished, repeat only the same wait request.
-It settles known cleanup and prepares the next reservation internally.
 `status=reviews_ended,parent_may_end=false` means continue result processing.
 Do not redispatch reviewers merely to wait again, choose reservation phases or
 manually create another heartbeat.

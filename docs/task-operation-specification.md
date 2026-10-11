@@ -1117,8 +1117,14 @@ from direct complete-byte transport. Receipt input routes link directly to share
 basis, coverage, result and recovery rules. Shared rules remain on the applicable
 path; conditional input, correction and recovery detail is linked at its trigger
 rather than inherited by unrelated ordinary operations. Helper preparation,
-reviewer read/save and parent submission have separate detail entries. This
-is routing of existing operations, not a new taxonomy or permission decision;
+reviewer read/save and parent submission have separate detail entries. The normal
+shared-file sequence uses helper response fields; direct CLI field mappings stay
+with direct transport. Parent-managed registration detail belongs on the manual
+completion path. Existing direct links and compact success conditions remain at
+entry points; consolidation adds no intermediate index or success-path read.
+Configured preapproval reuse retains its known invocation and conditional missing-
+information route, without normal bootstrap or host-implementation explanation.
+This is routing of existing operations, not a new taxonomy or permission decision;
 Select-Split-Merge, Tier floors, exact-target review, original-result retention
 and uncertain-outcome recovery retain their full force.
 

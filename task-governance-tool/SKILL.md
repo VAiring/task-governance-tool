@@ -51,21 +51,16 @@ python .agents/skills/task-governance-tool/scripts/read_reference.py "references
 
 Use the existing link's package-relative `file#section` for other operations;
 links inside the returned text resolve relative to its printed source file.
-The reader returns the complete section, its subsections and ancestor
-introductions. Follow applicable linked requirements; it does not infer which
-conditional operations apply or recursively load them. Missing/invalid links
-fail without a whole-file fallback. This replaces a document read, not a
-taskgov call or additional prerequisite. Direct file reading remains valid.
+Read the complete returned section, subsections and ancestor introductions,
+then follow applicable linked requirements. This optional reader replaces a
+document read; direct file reading remains valid.
 
 Read the [bounded operating loop](references/task_workflow.md#bounded-operating-loop)
 for ordinary work, from selection through verification and review gates to completion.
 `task context` takes **no Task ID**; the loop owns its response use, automatic
-ownership and conditional recovery. Retain the selected context for later
-operations.
-
-Edit, completion, and target-set acknowledgements omit unchanged description,
-verification, kind/lane/order, priority, tags and creation time. Retain them from
-this context; all changed values are returned and no extra read is needed.
+ownership and conditional recovery. Retain the selected context for unchanged
+fields omitted by later write acknowledgements; changed values are returned
+and no extra read is needed.
 
 Before review preparation, [choose the completion route](references/task_workflow.md#choose-the-completion-route):
 authorized supported snapshots use `prepare-finalization`; conditional manual
@@ -120,14 +115,13 @@ confirmation is required.
 For exact options, fields, bounds, and errors, use the matching command in the
 [CLI contents](references/cli_contracts.md#contents), not unrelated commands.
 Verification without explicit Runner opt-in remains manual.
-When ordinary-Task preapproval is explicitly activated, reuse its configured
-literal invocation with `--records-only` for ordinary records. Keep the known
-Python/package/repo/shell and `-I -S -B` from introduction or handoff; reuse
-generated restricted continuations unchanged. Do not reread hook definitions,
-embedded bootstrap or the approval guide for normal use. If invocation information
-is missing, use the conditional recovery link above; it is not a per-Task check
-or proof of host trust. Existing Contract/configuration, Runner, Git and integrated
-finalization operations retain their current authorization route.
+When ordinary-Task preapproval is explicitly activated, reuse the known literal
+Python/package/repo/shell invocation with `-I -S -B` and `--records-only` from
+introduction or handoff; use generated restricted continuations unchanged.
+No normal hook/bootstrap/approval-guide read is needed. Only missing invocation
+information uses the recovery link above, which does not prove host trust.
+Contract/configuration, Runner, Git and integrated finalization retain their
+current authorization route.
 At registration or an existing edit, state the required verification or use
 `--verification-not-required` with an authorized short reason. Omission is
 unspecified, not waived, and blocks completion; do not infer a waiver from prose.
@@ -182,4 +176,3 @@ acceptance conditions, or project-specific test strategy is added by this Skill.
 
 Original copyrightable package material owned by Omoronine is licensed under
 the Apache License, Version 2.0 (`Apache-2.0`). See [LICENSE](LICENSE).
-No `NOTICE` is shipped because no concrete attribution duty was identified.

@@ -930,7 +930,15 @@ links from its introduction to a shared path/validation child, so recovery can
 read that boundary without loading operation-specific prepare/read/save/submit
 or compatibility siblings. Manual and structured Verification Receipt entries
 are siblings linked to common basis, coverage, result and recovery rules.
-Normal links select the needed child, not all sibling modes. Retrieval tests exercise these actual
+Normal links select the needed child, not all sibling modes. Shared-file examples
+use the operation selected once by Choose The Completion Route, with helper
+`source`/`handoff` fields. Direct Review Transport owns direct CLI response fields;
+Manual Completion owns parent-managed submission inputs and result handling.
+The Skill retains direct condition links and known preapproval invocation reuse;
+its reader introduction need not repeat the reader's implementation contract.
+Normal waiting retains the caller protocol, while service mechanics stay with
+Review/completion. These placements preserve applicable gates and recovery
+without a new index level or mandatory read. Retrieval tests exercise these actual
 routes, input/ID/result fields and failure links; semantic review checks the
 retained rules, without a prose classifier or wording-lock tests.
 README operation links use those same section destinations. The repository

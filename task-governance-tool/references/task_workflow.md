@@ -182,17 +182,14 @@ Caller declarations do not prove actual model/Skill use or review truth.
    [Effort observation](#optional-effort-advisory) at the verification/review boundary.
 5. [Choose the completion route](#choose-the-completion-route) **before the first
    preparation**, then [set the exact review target](#set-the-review-target).
-   The shared-file examples use `prepare-finalization` for authorized supported
-   `git_snapshot` completion. For the conditional parent-managed route, substitute
-   `prepare` in both target and Receipt calls; do not run both preparations.
+   Use the shared-file operation selected there in the target and Receipt
+   examples below; [direct transport](#direct-review-transport) owns its alternative
+   calls and response fields. Never run both preparations for one operation.
    Keep its `source.review_target.generation`, `source.verification_route` and
    `source.blocking_code`; no post-target show or inferred route is needed.
-   Direct-CLI transport instead uses `data.task.review_target_generation`,
-   `data.verification_route` and `data.blocking_code` from that same response.
 6. Apply that response:
    - `not_required` or `runner_pass`, with null `blocking_code`: use the returned
-     complete Packet only when `handoff.status=ready` (direct CLI:
-     `data.review_preparation.packet` with status `ready`), without another
+     complete Packet only when `handoff.status=ready`, without another
      prepare, external verification, or Verification Receipt. On failure use
      [bound preparation recovery](cli_contracts.md#review-prepare);
    - `receipt_required`, with null code: run the governed verification against
@@ -217,10 +214,8 @@ Caller declarations do not prove actual model/Skill use or review truth.
    See [Receipt conditions](cli_contracts.md#verification-receipt-rules) only for their
    exact bounds or a rejected/stale basis.
    The helper replaces the direct Receipt command, not an additional call.
-   If direct complete-byte transport is used instead, the existing
-   `verification receipt add` command remains available with the same inputs.
    Source registration success does not mean verification passed. Continue only
-   with `handoff.status=ready` (direct CLI: `data.review_preparation.status=ready`); do not
+   with `handoff.status=ready`; do not
    run a second prepare/show/context. `blocked` or `failed` does not permit
    review continuation. For preparation-only failure or an uncertain response,
    follow [same-Receipt retry](cli_contracts.md#verification-receipt-rules); never
@@ -532,9 +527,9 @@ material list or repeat permission question.
 
 | Applicable case | Preparation and continuation |
 |---|---|
-| Authorized local `git_snapshot` completion at the Git root on an existing attached branch, without required commit hooks/signing | Use `prepare-finalization` for target and, if required, Receipt preparation. Retain `finalization_command`. Use the enabled, available and authorized wait service when reviews need waiting; the matching worker runs the fixed stages to their success or blocking boundary before notification. |
+| Authorized local `git_snapshot` completion at the Git root on an existing attached branch, without required commit hooks/signing | Use `prepare-finalization` for target and any required Receipt preparation. Retain `finalization_command`. |
 | The integrated case above, with waiting OFF/unavailable, an explicit user request for parent-managed waiting, or reviews already ended | Keep `prepare-finalization`. After all reviewers end, use the retained `finalization_command` for the same integrated finish. Already-ended reviews need no wait reservation or extra status query. |
-| Unsupported target/environment, project-required hooks/signing, missing commit authority, or explicit user choice of manual completion | Use `prepare`, retain `submit_command`, then follow [manual completion](#manual-completion) when its gates and authority permit. Detached HEAD and nested project snapshots use this route. |
+| Unsupported target/environment, project-required hooks/signing, missing commit authority, or explicit user choice of manual completion | Use `prepare` in place of `prepare-finalization` in both target and Receipt examples; retain `submit_command`, then follow [manual completion](#manual-completion) when its gates and authority permit. Detached HEAD and nested project snapshots use this route. |
 | Complete Packet/result bytes instead of shared ignored files | Use [direct transport](#direct-review-transport) and its existing explicit completion path. |
 
 Review PASS, enabled waiting and commit-required metadata do not grant Git
@@ -545,10 +540,6 @@ unavailable does not itself require switching an integrated intent to manual
 completion. A failed wait or missing notification uses the existing
 [wait recovery](review_wait.md#failures-stop-and-diagnosis) and
 [result continuation](#continue-after-reviews), preserving successful stages.
-Confirmed wait readiness delegates waiting and permits turn exit. On failure,
-the linked recovery procedure permits ordinary turn exit after reporting the
-limitation and resume condition, without promising resumption or completion;
-do not retry an unchanged unavailable service solely to keep the turn open.
 The [integrated contract](cli_contracts.md#integrated-review-finalization)
 defines supported material and effects. Preparation never starts a reviewer or
 wait worker. A preparation failure uses [bound recovery](cli_contracts.md#recover-review-handoff),
@@ -556,9 +547,8 @@ not a second target/Receipt write or silent route switch.
 
 ### Set The Review Target
 
-Use the [route already chosen](#choose-the-completion-route); these examples
-use `prepare-finalization`. For parent-managed registration/manual completion,
-replace that operation with `prepare` before running either example.
+Use the operation from the [route already chosen](#choose-the-completion-route)
+in these examples.
 Only after the exact material is ready, stage precisely the intended Git files
 through the project's approved Git workflow. Confirm that staging itself
 succeeded before capturing the staged candidate. When the specific files and
@@ -606,8 +596,7 @@ See [target input](cli_contracts.md#review-target) for those forms.
 
 Every successful set advances the generation. Retain
 `source.review_target.generation` and apply that response's
-`source.verification_route` / `source.blocking_code` in the normal loop
-(the direct CLI's corresponding fields are listed above).
+`source.verification_route` / `source.blocking_code` in the normal loop.
 For a migrated capture-version-0 target, apply the
 [legacy target restrictions](cli_contracts.md#legacy-review-targets).
 
@@ -687,16 +676,7 @@ or unseen content. Resolve previously reported material or judgment questions.
   Missing notification alone does not prove stages were never run. A lost or
   unknown operation result uses the conditional recovery below, not blind replay.
 - **Parent-managed shared-file registration:** only for the `prepare` route,
-  run the retained `submit_command` once. It confirms the Packet, complete
-  originals, bindings and bytes before registration. Do not first obtain save
-  reports with `list_agents`/`read_thread`, display original JSON or add a
-  routine show/check. Missing/invalid files stop the whole batch. Use the
-  returned `data.receipts[].findings`, summaries, IDs and `data.review_gate`,
-  including every low Finding and older blocker. Registration with
-  `changes_requested` is a result to judge, not a transport failure; a short
-  acknowledgement cannot replace Findings. The observed review gate neither
-  asserts verification PASS nor completes the Task. If eligible, proceed to
-  [manual completion](#manual-completion).
+  use the retained `submit_command` under [manual completion](#manual-completion).
 - **Direct complete-byte transport:** use its retained originals and
   [registration procedure](#direct-review-transport).
 
@@ -731,13 +711,21 @@ owns the shared current-target independence and Finding gates. Follow it
 with direct `review target set <task-id> --kind git_snapshot --json` and, only
 for `receipt_required`, `verification receipt add` instead of the helper.
 Use the returned target generation and route; never invoke both transports for
-one operation. See [target inputs](cli_contracts.md#review-target) or
+one operation. Retain `data.task.review_target_generation`,
+`data.verification_route` and `data.blocking_code` from the target response:
+`not_required` or `runner_pass` with null code uses its Packet;
+`receipt_required` with null code requires verification and one aggregate Receipt
+under the normal loop's result/duration/coverage rules. `blocked` with a non-null
+code, or any missing/other pair, stops closed. See [target inputs](cli_contracts.md#review-target) or
 [Receipt inputs](cli_contracts.md#verification-receipt) when those forms are needed.
 
 Use the actual
-`data.review_preparation.packet` returned with status `ready`
+`data.review_preparation.packet` only with `data.review_preparation.status=ready`
 by Receipt registration, or directly by target setting for `not_required` or
-`runner_pass`. Pass the complete obtained object directly when the review
+`runner_pass`. No second prepare/show/context, extra verification or Receipt is
+needed on those successful routes. Source registration success alone is not
+verification PASS; `blocked` or `failed` preparation stops review continuation.
+Pass the complete obtained object directly when the review
 transport supports it; do not save and reread a Packet merely to relay it.
 A shared Packet file is optional when the transport needs one: preserve the
 complete obtained object mechanically, without reconstructing it from displayed
@@ -784,6 +772,7 @@ Findings and `review_gate`, not a routine confirmation read. If the source
 instead supplies actual single-Receipt declarations or requires correction,
 use [handoff recovery and alternative results](#review-handoff-recovery);
 never invent missing claims or use single calls to bypass a rejected batch.
+Then use [manual completion](#manual-completion) when its gates and authority permit.
 
 ## Manual Completion
 
@@ -791,6 +780,19 @@ Use only for the parent-managed route, explicit user choice, or an unsupported
 integrated target/environment. Existing authorization and current verification,
 review and evidence gates still apply. A completed integrated report needs no
 manual tail; use [Continue after reviews](#continue-after-reviews).
+
+For shared-file `prepare` only, after all reviewers end, run the retained
+`submit_command` once. It confirms the Packet, complete originals, bindings and
+bytes before registration. Do not first obtain save reports with
+`list_agents`/`read_thread`, display original JSON or add a routine show/check.
+Missing/invalid files stop the whole batch; failed or unknown registration uses
+[handoff recovery](#review-handoff-recovery). Use the returned
+`data.receipts[].findings`, summaries, IDs and `data.review_gate`, including every
+low Finding and older blocker. `changes_requested` is a result to judge with
+[Repair Findings](#repair-findings), not a transport failure; a short
+acknowledgement cannot replace Findings. The review gate neither asserts
+verification PASS nor completes the Task. Direct transport performs its own
+registration before reaching this completion step.
 
 For manual completion of a reviewed `git_snapshot`, create the completion commit through the
 project's approved Git workflow without changing the reviewed staged tree.

@@ -1032,10 +1032,17 @@ class SkillSelfContainmentTests(unittest.TestCase):
             self.assertIn("--completion-evidence-kind", text)
             self.assertIn("--completion-revision", text)
             self.assertIn("--commit-not-required", text)
-        self.assertIn("--verification-complete", readme)
-        self.assertIn("--review-complete", readme)
-        self.assertIn("--completion-evidence-kind git_commit", readme)
-        self.assertIn("--completion-revision", readme)
+        # README routes the conditional manual operation to its executable
+        # package procedure instead of duplicating that command's flags.
+        manual_links = [link for link in _scan("README.md", readme, []).links
+                        if link.target.endswith("#manual-completion")]
+        self.assertEqual(len(manual_links), 1)
+        manual_path, fragment = _resolve(ROOT, "README.md", manual_links[0].target)
+        from read_reference import section
+        manual = section((ROOT / manual_path).read_text(encoding="utf-8"), fragment)
+        for option in ("--verification-complete", "--review-complete",
+                       "--completion-evidence-kind git_commit", "--completion-revision"):
+            self.assertIn(option, manual)
         for text in (skill_md, workflow, contracts, readme):
             normalized = " ".join(text.split())
             self.assertRegex(
@@ -2315,7 +2322,7 @@ print(json.dumps(results, ensure_ascii=False))
             _, common = self.linked_output(source, body, "verification-receipt-rules")
             rules.append(common)
             for value in ("data.task.task_id", "data.task.review_target_generation",
-                          "receipt_required", "m21_fallback", "`full`", "`partial`",
+                          "receipt_required", "`full`", "`partial`",
                           "64-bit", "evidence_basis_stale", "data.review_preparation",
                           "--verification-receipt-id <recorded-id>"):
                 self.assertIn(value, common)
@@ -2325,6 +2332,34 @@ print(json.dumps(results, ensure_ascii=False))
         loop = self.reader().read_reference("references/task_workflow.md#bounded-operating-loop", SKILL_ROOT)
         _, from_loop = self.linked_output("references/task_workflow.md", loop, "verification-receipt-rules")
         self.assertEqual(from_loop, rules[0])
+
+    def test_receipt_diagnosis_and_packet_schema_are_conditional_siblings(self):
+        source = "references/cli_contracts.md"
+        rules = self.reader().read_reference(f"{source}#verification-receipt-rules", SKILL_ROOT)
+        _, diagnosis = self.linked_output(source, rules, "receipt-basis-diagnosis")
+        _, edits = self.linked_output(source, rules, "verification-declaration-edits")
+        _, legacy = self.linked_output(source, rules, "legacy-review-targets")
+        for field in ("m21_fallback", "marker-`0`", "marker-`2`"):
+            self.assertNotIn(field, rules)
+            self.assertIn(field, diagnosis)
+        self.assertNotIn("## Verification Declaration Edits", rules)
+        self.assertIn("completion_evidence_conflict", edits)
+        self.assertIn("--verification-not-required", edits)
+        self.assertIn("capture_version=0", legacy)
+        task_edit = self.reader().read_reference(f"{source}#task-edit", SKILL_ROOT)
+        _, edit_route = self.linked_output(source, task_edit, "verification-declaration-edits")
+        self.assertEqual(edit_route, edits)
+
+        prepare = self.reader().read_reference(f"{source}#review-prepare", SKILL_ROOT)
+        _, schema = self.linked_output(source, prepare, "packet-format-for-integration")
+        for field in ("changed_paths_total", "changed_paths_truncated", "32,768"):
+            self.assertNotIn(field, prepare)
+            self.assertIn(field, schema)
+        for code in ("--expected-binding", "--verification-receipt-id",
+                     "review_packet_stale", "review_packet_path_unsafe", "review_packet_too_large"):
+            self.assertIn(code, prepare)
+        _, operation = self.linked_output(source, schema, "review-prepare")
+        self.assertEqual(operation, prepare)
 
     def test_helper_stages_keep_common_paths_and_recovery_without_sibling_examples(self):
         source = "references/cli_contracts.md"

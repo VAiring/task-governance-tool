@@ -934,8 +934,9 @@ Normal links select the needed child, not all sibling modes. Retrieval tests exe
 routes, input/ID/result fields and failure links; semantic review checks the
 retained rules, without a prose classifier or wording-lock tests.
 README operation links use those same section destinations. The repository
-document checker admits the two shipped workflow/CLI references only as link
-targets, with its existing physical-file, encoding and Markdown checks. Their
+document checker admits the shipped workflow, CLI, usage-hook and review-wait
+references only as link targets, with its existing physical-file, encoding and
+Markdown checks. Their
 headings do not join the repository authority routes or document metrics;
 missing sections still fail closed. Package-internal link checks remain separate.
 

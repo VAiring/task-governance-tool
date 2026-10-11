@@ -30,10 +30,13 @@ audit-only detail is conditional.
   - [`task complete`](#task-complete)
 - [Verification Receipt](#verification-receipt)
 - [Verification Receipt Rules](#verification-receipt-rules)
+- [Receipt Basis Diagnosis](#receipt-basis-diagnosis)
+- [Verification Declaration Edits](#verification-declaration-edits)
 - [Structured Verification Result](#structured-verification-result)
 - [Local Handoff Commands](#local-handoff-commands)
 - [Review Commands](#review-commands)
   - [`review prepare`](#review-prepare)
+  - [Packet Format For Integration](#packet-format-for-integration)
   - [Review Evidence](#review-evidence)
     - [Set the exact target](#review-target)
     - [Legacy targets](#legacy-review-targets)
@@ -1195,6 +1198,9 @@ completion/review eligibility, and requires fresh gates.
 For completion, use [task complete](#task-complete) with its typed evidence,
 confirmations, and current gates. Read [Runner Plan Actions](#runner-plan-actions) only for an explicit Runner Plan action or
 `runner_plan_action_required`, not for ordinary metadata/state edits.
+When changing the verification expectation or waiver, apply
+[Verification Declaration Edits](#verification-declaration-edits); a semantic
+change invalidates the existing target and evidence.
 
 <a id="runner-plan-actions"></a>
 
@@ -1414,9 +1420,8 @@ input route instead; do not transcribe its fields or combine the two forms.
 These rules apply to both [manual input](#verification-receipt) and an already
 [structured verifier result](#structured-verification-result). After setting the
 exact review target, record one caller-attested aggregate result only after
-running the governed verification outside taskgov on marker `0` or the
-exact-current closed no-launch `m21_fallback`, for a Task with a verification
-expectation that is nonempty after trimming.
+running the governed verification outside taskgov on the returned manual
+verification route, for a Task with a nonempty verification expectation.
 
 The normal trigger is `data.verification_route=receipt_required` in the
 successful `review target set` response. Take `<task-id>` from its
@@ -1436,29 +1441,20 @@ target and generates the subject, Receipt ID, and recording time; do not supply
 or reconstruct them.
 
 Receipt recording is allowed only for `in_progress` or `review_pending`,
-requires verification that is nonempty after trimming and a current marker-`0`
-target or exact-current closed no-launch `m21_fallback`, writes no Task event or
-timestamp, and permits one immutable row per target generation. A marker-`2`
-qualifying Runner pass, pending basis, stale basis, cleanup-only basis, or any
-other structurally valid terminal result rejects Receipt add with
-`evidence_basis_stale`. A retry after `fail`, `timeout`, or `partial` requires
-an explicitly fresh target.
+requires verification that is nonempty after trimming, writes no Task event or
+timestamp, and permits one immutable row per target generation. Never use a
+manual Receipt to override a Runner result or an ineligible/stale basis.
+For `evidence_basis_stale`, use [Receipt Basis Diagnosis](#receipt-basis-diagnosis);
+do not reconstruct eligibility from internal markers. A retry after `fail`,
+`timeout`, or `partial` requires an explicitly fresh target.
 Taskgov does not execute a command for this manual verification branch, infer coverage,
 authenticate the external runner, or retain a command body, arguments, exit
 code, stdout/stderr, log, exception, environment, or result file.
 
-A migrated capture-version-0 target is read-only lineage. Receipt add fails
-`evidence_basis_stale` with `current evidence basis must be captured again`;
-setting a fresh target creates capture version 1 and restores the write. The
-old target is never upgraded in place.
-
-A semantic `task edit --verification` after targeting clears target and old
-completion evidence and advances generation. Without `--status`, a
-review-pending Task returns to in-progress. Explicit in-progress, pause, block,
-or cancellation follows normal transition rules; explicit review-pending/done
-is rejected until a fresh target exists. Do not combine that semantic edit
-with completion-evidence options; the command fails
-`completion_evidence_conflict` rather than discarding them.
+For a migrated target, use [Legacy Review Targets](#legacy-review-targets).
+For an authorized change to the verification expectation or waiver, use
+[Verification Declaration Edits](#verification-declaration-edits) before editing;
+it invalidates the target and old evidence.
 
 On registration success, `data.receipt` is the recorded result and its
 `verification_receipt_id` is the generated ID. `ok=true` means registration,
@@ -1489,6 +1485,35 @@ inspection, read [Receipt output detail](#receipt-output-for-integration-or-audi
 `--read-only` and every failed call perform no business or maintenance write.
 There is no Receipt list, show, import, export, Runner command, or Viewer panel.
 For explicit Receipt inspection use [task show](#task-show), not a new command.
+
+## Receipt Basis Diagnosis
+
+Use only for a rejected Receipt basis or explicit integration diagnosis.
+Normal recording follows the returned route and [shared Receipt rules](#verification-receipt-rules).
+
+Receipt recording requires a current marker-`0` target or the exact-current
+closed no-launch `m21_fallback`. A marker-`2` qualifying Runner pass, pending
+basis, stale basis, cleanup-only basis, or any other structurally valid terminal
+result rejects Receipt add with `evidence_basis_stale`. Internal markers do not
+authorize a manual override. A changed basis requires fresh targeting and
+verification; do not rebind or replay old evidence.
+Migrated targets use [Legacy Review Targets](#legacy-review-targets).
+
+## Verification Declaration Edits
+
+Use only for an explicitly authorized edit to the verification expectation or
+not-required reason. [Task edit](#task-edit) retains its existing permission and
+transition rules; this section adds no edit or normal-loop call.
+
+A semantic `task edit --verification` or `--verification-not-required` after
+targeting clears target and old completion evidence and advances generation.
+Without `--status`, a review-pending Task returns to in-progress. Explicit
+in-progress, pause, block, or cancellation follows normal transition rules;
+explicit review-pending/done is rejected until a fresh target exists. Fresh
+verification and review are required. Do not combine that semantic edit with
+completion-evidence options; the command fails `completion_evidence_conflict`
+rather than discarding them. Historical Receipts remain available as audit
+history, never current evidence.
 
 <a id="structured-verification-result"></a>
 
@@ -1652,6 +1677,31 @@ receipt-file, or output-destination argument. It launches no reviewer, imports
 no result, writes no packet, and changes neither local task state nor target
 Git.
 
+Use the complete returned Packet. A bounded changed-path list is not the entire
+review scope; inspect the exact material bound to its target. Complete the
+unfinished `result_template` using `result_instructions` and actual review facts,
+without inferring PASS, independence, provenance or an empty Findings array.
+Verification summaries do not authenticate a run or prove test sufficiency or
+review PASS. `contract.authority_ref` is a location hint, not proof of approval
+or validity; do not infer paths from opaque identifiers. Exact artifacts and
+governing documents still require inspection. Preparation records no result and
+launches no reviewer.
+
+Read [Packet Format For Integration](#packet-format-for-integration) only when
+integrating or inspecting the output schema; it is not another reviewer format
+lookup or preparation step.
+
+Missing, changed, unsafe-path, and oversized cases return no partial packet:
+
+- `review_target_missing`: `review target is required before preparing a review packet`
+- `review_packet_stale`: `review context changed while preparing the packet`
+- `review_packet_path_unsafe`: `review packet contains an unsafe project path`
+- `review_packet_too_large`: `review packet exceeds the supported size`
+
+### Packet Format For Integration
+
+Use only for explicit output integration or schema inspection. Operation,
+binding and retry conditions remain in [review prepare](#review-prepare).
 Success data keys are exactly:
 
 ```text
@@ -1705,13 +1755,6 @@ binds it to the canonical commit and first-parent/empty-tree comparison.
 `diff_fingerprint` and `external_revision` prohibit PASS unless exact material
 is supplied with evidence binding it to the stored value. Selecting the row
 adds no Git subprocess or caller/model choice.
-
-Missing, changed, unsafe-path, and oversized cases return no partial packet:
-
-- `review_target_missing`: `review target is required before preparing a review packet`
-- `review_packet_stale`: `review context changed while preparing the packet`
-- `review_packet_path_unsafe`: `review packet contains an unsafe project path`
-- `review_packet_too_large`: `review packet exceeds the supported size`
 
 ### Review Evidence
 

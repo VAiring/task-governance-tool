@@ -76,6 +76,8 @@ METRIC_DOCS = CANONICAL_DOCS + (RELEASE_INSTALL, ARTIFACT_AUTHORING)
 PACKAGE_LINK_TARGETS = (
     "task-governance-tool/references/task_workflow.md",
     "task-governance-tool/references/cli_contracts.md",
+    "task-governance-tool/references/usage_hooks.md",
+    "task-governance-tool/references/review_wait.md",
 )
 
 # These sections are closed authority edges. Their prose and link order are not

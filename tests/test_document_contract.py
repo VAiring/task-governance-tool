@@ -63,6 +63,7 @@ FIXTURE_LINK_TARGETS = (
     "task-governance-tool/references/runner_application.md",
     "task-governance-tool/references/task_workflow.md",
     "task-governance-tool/references/usage_hooks.md",
+    "task-governance-tool/references/review_wait.md",
     "task-governance-tool/scripts/task_governance_tool/tasks.py",
     "task-governance-tool/scripts/task_governance_tool/verification_runner_service.py",
     "tests/evidence_reader_oracle.py",
@@ -208,14 +209,17 @@ class DocumentContractTests(unittest.TestCase):
         )
 
     def test_package_operation_links_validate_real_sections_without_changing_authority(self):
-        with self.fixture() as root:
-            result = contract.check_document_contract(root)
-            self.assertTrue(result.ok, result.issues)
-            self.assertEqual({metric.path for metric in result.metrics}, set(EXPECTED_METRIC_DOCS))
-            self.replace(root, "README.md",
-                         "task-governance-tool/references/task_workflow.md#set-the-review-target",
-                         "task-governance-tool/references/task_workflow.md#missing-operation")
-            self.assertIn("link_anchor", self.codes(contract.check_document_contract(root)))
+        for name, fragment in (("task_workflow", "set-the-review-target"),
+                               ("usage_hooks", "installation-and-trust"),
+                               ("review_wait", "normal-wait")):
+            with self.subTest(reference=name), self.fixture() as root:
+                result = contract.check_document_contract(root)
+                self.assertTrue(result.ok, result.issues)
+                self.assertEqual({metric.path for metric in result.metrics}, set(EXPECTED_METRIC_DOCS))
+                self.replace(root, "README.md",
+                             f"task-governance-tool/references/{name}.md#{fragment}",
+                             f"task-governance-tool/references/{name}.md#missing-operation")
+                self.assertIn("link_anchor", self.codes(contract.check_document_contract(root)))
         with self.fixture() as root:
             self.replace(root, "task-governance-tool/references/cli_contracts.md",
                          "### Runner Plan Actions", "### Renamed Plan Operations")

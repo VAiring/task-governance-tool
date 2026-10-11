@@ -87,7 +87,7 @@ unambiguous same-binding legacy backup-only
 source: recovery occurs in the private fixed-layout stage and never recreates
 the old legacy primary. A moved legacy backup-only source is not a relocation
 candidate and fails no-write as `project_state_unreadable`. It does not add a
-recovery command or accept a recovery path. After core setup, it offers four
+recovery command or accept a recovery path. After core setup, it offers
 [optional feature choices](docs/setup-state-specification.md#optional-feature-selection).
 For example, after the user selects these values:
 
@@ -117,67 +117,25 @@ Fresh setup creates a UUID-backed identity. Explicit setup mechanically moves
 a supported schema-v1-through-v13 legacy database to the fixed layout when its
 stored binding still matches the current project.
 
-Existing fixed state migrates transactionally through append-only completion
-cycle storage in schema v15 and marker-only native-capture activation in schema
-v16. Schema v17 adds immutable Verification Receipts and an explicit
-completion-cycle verification basis. Schema v18 adds capture-versioned
-authority/criterion ledger bindings, tool-owned verification subjects,
-versioned Review provenance, and 1,000-character durable/read verification
-capacity. Explicit public Task add/edit admission is also 1,000 characters.
-Migrated capture-version-0 targets remain read-only lineage and require a fresh
-target before new evidence-source writes. Legacy gaps remain marked incomplete
-rather than being inferred.
+Setup preserves stored history; it does not turn legacy gaps into current
+evidence. Migrated capture-version-0 targets need a fresh target before new
+evidence writes. Migrated active work with an unknown owner requires the
+[pause and resume recovery procedure](task-governance-tool/references/task_workflow.md#pause-resume-and-block),
+not a guessed assignment. Every new completion needs an explicit verification
+declaration and current evidence, including after reopening an old Task.
 
-Schema v19 adds immutable criterion links and Finding snapshots, seals one
-version-1 Bundle with each native completion, and maintains deterministic
-Evidence JSON at fixed `.taskgov/current/evidence/index.json` and
-`.taskgov/current/evidence/bundles/<completion-evidence-bundle-id>.json` paths,
-with its lock at `.taskgov/current/evidence/taskgov-evidence.lock`. Pre-v19 cycles remain
-index-only `legacy_unknown`. SQLite stays canonical and JSON is never imported.
-Schema v20 preserves existing Bundle-v1 bytes and digests, seals Bundle v2 with
-a derived verification basis and null Runner observation for each new native
-completion, and publishes Evidence index v2 with `bundle_format_version` null,
-1, or 2 for legacy, preserved-v1, or native-v2 entries. This activates no
-Runner, Analyzer, network/model invocation, Viewer Evidence surface, new public
-leaf, or new normal-loop call.
+For a migration investigation, use the current
+[supported-schema contract](docs/database-specification.md#initialization-and-supported-schemas)
+and [persistence contract](docs/database-specification.md#current-schema-v27-persistence-contract).
+The [upgrade and paired rollback boundary](docs/release-install.md#release-upgrade-and-paired-rollback)
+owns preservation of the matching package, state and managed artifacts.
+Package updates also preserve inert old artifacts and the supported local
+configuration; generated Evidence JSON is a projection, never imported state.
 
-Schema v21 adds the closed qualifying Runner completion branch without
-promoting schema-v20 audit history. Schema v22 retains that protocol
-and removes only the retired Analyzer reservations from the shared Evidence
-schema and current enums. Explicit setup migrates complete v21 state to v22;
-new native Bundles use source 22/format 2, while retained source-19/20/21
-Bundle payloads, bytes, and digests remain unchanged.
-
-Schema v23 adds an explicit verification declaration. Nonempty
-`--verification` requires passing evidence; `--verification-not-required <reason>`
-records an authorized waiver. Omission remains unspecified and blocks new
-completion, even with `--verification-complete`. Existing done history stays
-valid; reopening an old blank Task requires a declaration. Setup alone migrates
-old state, and source-23 native Bundles keep format 2 without rewriting old ones.
-
-Schema v27 retains automatic session ownership and combines `in_progress` and
-`review_pending` into one Task slot per session/project. Review-pending keeps
-completion responsibility and continuous usage coverage until explicit release
-or completion. Setup preserves legacy overlaps and old interval meanings;
-explicit recovery/release can resolve them. Public Task reads include full owner
-IDs and caller-relative flags; they do not authenticate a user or reviewer.
-Migrated active work has an explicitly unknown owner and needs reasoned pause
-and resume recovery, not a guessed assignment. New native Bundles use source
-27/format 2 and keep a separate immutable execution-to-cycle link; old history
-is unchanged. Schema 25's actual-reviewer bindings remain active through existing
-read/save and submission without an extra participation step. Explicit setup
-upgrades the separate numerical store to schema 5 for incremental collection, inclusive-turn attribution
-and immutable usage publication. Optional [project-local usage hooks](task-governance-tool/references/usage_hooks.md)
-collect registered participants after user review/trust in Codex. Explicit setup
-prepares selected-ON or existing definitions but never performs trust or claims
-collection was observed. Collection OFF prevents subsequent invocations while
-retaining recorded history. Late records remain pending until a later project event,
-and unavailable usage never blocks Task completion.
-
-The Analyzer runtime is retired. Independent Evidence reading/validation
-remains only in repository tests; no report or model runtime replaces it.
-Package updates preserve local state, including inert old analysis artifacts,
-and the supported configuration files described in `docs/release-install.md`.
+Optional [project-local usage hooks](task-governance-tool/references/usage_hooks.md#installation-and-trust)
+collect registered participants after user review/trust in Codex. Setup never
+performs host trust or claims collection was observed. Collection OFF retains
+recorded history, and unavailable usage never blocks Task completion.
 
 A binding mismatch is an exceptional relocation flow, not a normal Task-loop
 step. Normal commands and `doctor` never rebind state. Run
@@ -319,47 +277,56 @@ prioritize, synchronize, or create external Issues.
 
 ## Review And Completion
 
-For a review-before-commit Git workflow (`--kind git_snapshot`), stage exactly the intended project
-changes through the project's own Git process, capture the staged target, use
-the route returned by that same call, and prepare one bounded review packet.
-Use Set The Review Target in the [workflow reference](task-governance-tool/references/task_workflow.md#set-the-review-target)
-to combine already authorized staging and target capture with failure guards.
-Interpret its response before proceeding. Run the exact project verification
-outside Taskgov and record its bounded attestation only for
-`verification_route=receipt_required`. The following are conditional steps,
-not one script to execute without inspecting the intervening results:
+First [choose the completion route](task-governance-tool/references/task_workflow.md#choose-the-completion-route).
+Authorized local `git_snapshot` work at the Git root on an existing attached
+branch, without required hooks/signing, uses `prepare-finalization`. Stage only
+the intended changes through the project's own Git process, then
+[capture the exact review target](task-governance-tool/references/task_workflow.md#set-the-review-target)
+with that preparation route. Interpret its response before proceeding.
+
+Only for `source.verification_route=receipt_required` with null `blocking_code`,
+run the exact approved project verification outside Taskgov and record its actual
+result, duration and coverage. This example assumes it passed with full coverage:
 
 ```powershell
-# Inspect source.verification_route and source.blocking_code in this response.
-# Only for verification_route=receipt_required, run the exact approved verification here.
-# Taskgov never executes it.
-python .agents/skills/task-governance-tool/scripts/review_handoff.py prepare --repo . --directory reviews/g1 receipt <task-id> --result pass --duration-ms <milliseconds> --scope-coverage full --expected-target-generation <generation-from-target-set>
-# Use handoff only when its status is ready.
-# For not_required or runner_pass, use the ready Packet from target setting instead.
-# Packet capture, saving and exact commands are already prepared by the helper.
-# Pass each handoff.review_requests[].request to its independent reviewer.
-# After confirmed handoffs, execute the returned handoff.submit_command:
-python .agents/skills/task-governance-tool/scripts/review_handoff.py submit --repo . --packet reviews/g1/packet.json reviews/g1/review-1.json reviews/g1/review-2.json
+python .agents/skills/task-governance-tool/scripts/review_handoff.py prepare-finalization --repo . --directory reviews/g1 receipt <task-id> --result pass --duration-ms <milliseconds> --scope-coverage full --expected-target-generation <generation-from-target-set>
 ```
 
-After successful verification and reviews, use the executable
-Complete Work example in the [workflow reference](task-governance-tool/references/task_workflow.md#complete-work)
-for an already authorized commit. It passes the full commit ID to
-`--completion-evidence-kind git_commit --completion-revision` with
-`--verification-complete --review-complete`. A failed completion retains the
-successful commit; recover only the remaining tail after inspecting state.
-Combining caller tool invocations does not grant Git permission or weaken gates.
+The `not_required` and `runner_pass` routes with null `blocking_code` skip that
+manual verification/Receipt step and use the ready Packet from target setting.
+The `blocked` route stops on its returned code; missing or unknown routes stop
+closed too. Continue only with `handoff.status=ready`. Dispatch each returned
+`handoff.review_requests[].request` to its independent reviewer and retain the
+`finalization_command`. Integrated completion owns result registration, the fixed
+reviewed commit, and Task completion; do not separately submit those results.
+Any unresolved Finding, including low severity, stops integrated completion for
+parent judgment before committing.
 
-The `not_required` and `runner_pass` routes skip the verification and
-Verification Receipt lines above and use the ready Packet from target setting.
-For target preparation failure, retry read-only `review prepare` with the returned
-`--expected-binding`; after an uncertain response, inspect saved state first.
-Do not repeat target setting to recover a Packet. For Receipt
-registration, `ok=true` means the result was saved, not that verification passed.
-Preparation failure preserves that result; retry only preparation with
-`--verification-receipt-id <recorded-id>`, not the registration. An uncertain
-response requires inspecting saved state first. The `blocked` route stops closed and reports
-its existing gate code in `blocking_code`.
+When reviews need waiting and the authorized service is enabled and available,
+use [normal review waiting](task-governance-tool/references/review_wait.md#normal-wait)
+and end the parent turn after confirmed readiness. With waiting OFF/unavailable,
+an explicit parent-managed wait, or already-ended reviews, keep the integrated
+route and use its retained command after the reviewers end. Failed waiting
+allows ordinary turn end after reporting the limitation and resume condition;
+it does not promise automatic resumption.
+
+A received integrated body may be reported directly only when it matches the
+original Task/target generation, has `status=completed`, successful stages,
+actual Task done and sufficient reporting facts, without unresolved contradiction
+or action. Disclose Findings (also low/resolved), warnings, limitations and
+`not_recorded` work; these alone do not exclude success. Review PASS, message
+acceptance or labels cannot establish completion or unseen content. Other results
+use [Continue After Reviews](task-governance-tool/references/task_workflow.md#continue-after-reviews).
+
+Unsupported targets/environments, required Git hooks/signing, missing commit
+authority, or an explicit manual choice use `prepare` and its `submit_command`,
+then [Manual Completion](task-governance-tool/references/task_workflow.md#manual-completion)
+when authorized. Neither registration nor PASS grants Git permission.
+For failed preparation use [bound handoff recovery](task-governance-tool/references/cli_contracts.md#recover-review-handoff).
+Saved targets, Receipts and successful commits survive later failures. Inspect
+uncertain outcomes before retrying only the remaining step; never repeat target
+setting or Receipt registration merely to recover a Packet. `ok=true` on a
+Receipt means it was saved, not that verification passed.
 
 The staged snapshot excludes unstaged and untracked content. Taskgov records
 only the caller's bounded verification facts; it never executes the command or
@@ -372,15 +339,16 @@ Receipt assurance or proves reviewer identity, model/Skill execution,
 competence, independence, diversity, quality, or truth. The completion commit
 must have exactly one parent equal to the captured base and the same tree.
 Meaningful target changes require a new target and fresh verification and
-review receipts. The Skill validates Git evidence read-only; it never stages,
-commits, branches, pushes, opens a PR, or creates an Issue.
+review receipts. Taskgov never stages files, creates branches, pushes, opens a
+PR, or creates an Issue. Authorized integrated completion can commit only the
+fixed reviewed snapshot; other completion evidence is validated read-only.
 
 The packet tells each reviewer how to inspect the exact target rather than
 ambient `HEAD` or worktree content. The independent reviewer returns the
 complete versioned structured result. In a shared-file workflow, the helper
 captures the complete source response before display, prepares the explicit
 unused ignored area, Packet and distinct result paths, and supplies exact
-reviewer/save and parent/submit instructions before dispatch. No parent-LLM
+reviewer/save and route-specific parent continuation before dispatch. No parent-LLM
 extraction or command assembly is needed. Source mutation success is separate
 from handoff failure; only Packet and original results are saved, never raw
 envelopes/logs. Questions/failures may be reported as needed; a normal saved
@@ -389,13 +357,13 @@ Each reviewer pipes their completed original JSON to the bundled
 `review_handoff.py save` operation, which validates before exclusive creation,
 checks the saved bytes against the Packet, and returns a short acknowledgement.
 Failed or uncertain handoff is not ready; recover before registration. The
-parent uses `review_handoff.py submit` without regenerating original contents or
-writing a collector. It retains originals until the
-registration outcome is known and uses all returned Findings, including low
+integrated finalizer (or `review_handoff.py submit` on the manual route) consumes
+those originals without parent regeneration or a custom collector. Retain them until the
+registration outcome is known and use all returned Findings, including low
 severity, for repair. See Prepare And Record Reviews in the
 [workflow reference](task-governance-tool/references/task_workflow.md#prepare-and-record-reviews) for
-complete-Packet delivery and exceptional recovery. The command
-also continues to accept a single document. It validates each document's exact
+complete-Packet delivery and exceptional recovery. On the manual route, `submit`
+also accepts a single document. It validates each document's exact
 identity and combines only Receipts before the existing atomic writer. The
 [package CLI reference](task-governance-tool/references/cli_contracts.md#structured-review-results),
 under Structured Review Results,
@@ -452,11 +420,12 @@ renders at most twice to absorb one concurrent change. Backup and Viewer
 failures preserve the primary command result, keep maintenance due, and are
 reported only as bounded sanitized warnings.
 
-Taskgov starts no daemon, timer, background process, queue, service, browser,
-or maintenance command. Generated Evidence JSON, Viewer, and managed backups
+This maintenance starts no daemon, timer, background process, queue, service,
+browser, or maintenance command. Generated Evidence JSON, Viewer, and managed backups
 remain runtime artifacts under the ignored project `.taskgov/` directory. Evidence
 projection failure keeps the mutation successful and the last-good index,
-leaves work due, and emits only its fixed warning. Viewer snapshot v4 reads source schemas 5 through 24 and includes the same
+leaves work due, and emits only its fixed warning. Viewer snapshot v4 reads
+the [supported source schemas](docs/viewer-specification.md#snapshot-v4) and includes the same
 bounded newest-first completion history as `task show --audit`. Sources 5-14 are shown
 honestly as empty legacy-incomplete history. The Viewer contains only sanitized
 task/review/audit projections and has no write controls or network dependency.
@@ -465,39 +434,30 @@ through schema-v27 Bundle discriminators, and the source-appropriate Bundle-v2
 and Runner tagged graph, but adds no provenance/Bundle field, panel, filter, or
 other snapshot-v4 UI surface.
 
-Viewer auto-refresh is a separate opt-in browser presentation policy. Taskgov
-does not create or edit it. With no file at
-`.agents/skills/task-governance-tool/config/viewer.json`, the generated page
-creates no refresh timer and requires a normal browser reload. To opt in,
-create that exact regular project-local file with strict UTF-8 JSON:
+Viewer auto-refresh is an explicit optional Setup choice. After the user selects
+ON, preview and apply it from the target-project root:
 
-```json
-{
-  "schema_version": 1,
-  "profile": "visibility-refresh-v1",
-  "refresh_interval_seconds": 30
-}
+```powershell
+python .agents/skills/task-governance-tool/scripts/taskgov.py setup --viewer-reload on --read-only --json
+python .agents/skills/task-governance-tool/scripts/taskgov.py setup --viewer-reload on --json
 ```
 
-The interval must be an integer from 5 through 3,600 seconds. The file is
-limited to 16,384 bytes; links, reparse points, extra or duplicate fields, and
-invalid JSON are rejected. Run explicit `setup` to apply a changed profile
-immediately, or let the next Viewer-relevant task mutation publish it. A valid
-profile reloads only an already opened visible `file://` page, using at most
-one browser timeout. It does not launch a browser, watch the database, contact
-a network service, or use Web Storage. Immediately before that automatic
-reload only, the page may place one at-most-4,096-byte, five-minute envelope in
-the current History entry. It preserves status/kind/lane/priority/tag/terminal
-filters, selected Task, fixed filter-control focus, and document scroll; search
-text and task/snapshot content are never included. The page clears its owned
-envelope before restoration and never overwrites an unrelated `history.state`
-payload, changes the URL, or adds a history entry. Five minutes is the restore
-acceptance limit, not a promise that browser-managed state has been physically
-erased; a session-restored owned envelope is still consumed before validation.
-If the profile is invalid,
-`setup --read-only` reports planned Viewer repair without writing, actual setup
-fails with `setup_incomplete`, and routine task mutations retain their success
-plus the existing sanitized Viewer warning.
+Use `off` for an explicit OFF choice; omitted choices remain unchanged. Setup
+creates or toggles the physical package's `config/viewer.json`, retaining an
+existing interval and using 30 seconds for new ON. OFF retains the interval
+but disables reload. Check the per-feature outcome even when core setup succeeds.
+Already open pages need a browser reload to adopt the published setting.
+Ordinary Task commands do not change this configuration.
+
+Reload affects only an already opened visible `file://` Viewer; it pauses while
+search has focus or IME composition is active. It reloads the published HTML,
+not SQLite, and launches no browser or network request. Automatic reload can
+retain bounded search/filter state, selection, focus and scroll in the current
+browser History entry. That state may survive browser session restore; its
+five-minute validity limit is not a promise of physical erasure.
+For custom intervals, invalid-profile behavior and exact privacy bounds, use
+the current [reload policy](docs/viewer-specification.md#optional-visibility-aware-reload)
+and [one-shot UI-state contract](docs/viewer-specification.md#one-shot-automatic-reload-ui-state).
 
 ## Public Commands
 
@@ -561,12 +521,16 @@ constraints use the strict input guard. Completion-history public text has no
 legacy exception and is strictly revalidated before `task show` or Viewer
 output.
 
-It is local-first and uses no network service. Except for one explicit
-`task edit --runner-plan-action` write to the canonical ignored package-local
-Runner Plan, it does not mutate target-project files or Git state. It does not
-run project-specific verification automatically or create external Issues/PRs.
-SQLite remains helper state; governing project documents and current user
-decisions remain authoritative.
+It is local-first; ordinary Task operations need no network service. Writes
+stay within their authorized boundaries: canonical local Task state and
+[Setup/maintenance](docs/setup-state-specification.md#setup-recovery-evidence-backup-and-viewer-maintenance),
+explicit [Runner Plan authoring](#explicit-runner-plan-authoring), and the fixed
+reviewed local commit under [integrated completion](docs/review-completion-specification.md#integrated-review-finalization).
+Automatic verification requires the separately opted-in trusted-local Runner;
+otherwise verification remains manual. Optional host review waiting retains its
+separate connection and send authorization. Taskgov does not push or create
+external Issues/PRs. SQLite remains helper state; governing project documents
+and current user decisions remain authoritative.
 
 ### Explicit Runner Plan authoring
 

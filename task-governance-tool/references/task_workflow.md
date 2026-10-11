@@ -574,8 +574,15 @@ python3 .agents/skills/task-governance-tool/scripts/review_handoff.py prepare-fi
 ```
 
 This is caller composition, not a taskgov Git operation or permission grant.
-Resolve repository, file scope, and required approvals before the call. Stop at
-any failed, uncertain, or judgment-dependent step; do not append later commands
+Resolve repository, file scope, and required approvals before the call.
+If the current environment's `.git` write protection is already known, use the
+existing appropriate approval route for authorized `git add` or `git commit`
+without first repeating a predictable permission failure; Git does not always
+require elevation. For a separate subsequent Taskgov record or preparation call,
+including `prepare-finalization receipt`, judge the actual operation and current
+environment separately instead of inheriting Git's elevation requirement. This
+does not waive that operation's existing approval boundary.
+Stop at any failed, uncertain, or judgment-dependent step; do not append later commands
 that hide its exit status. Inspect the final JSON `ok`, `operation_status`, and
 `handoff.status` as well as the route below; an outer shell exit of zero alone
 does not establish readiness. A saved target with failed Packet preparation is

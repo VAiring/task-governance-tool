@@ -548,7 +548,11 @@ selects the existing failure outcome and stops the group with `SIGTERM`, a
 0.25-second grace, then `SIGKILL` if needed with up to five seconds to prove
 group absence. The final pipe drain has a separate five-second bound.
 Root exit or pipe EOF alone is not process-zero proof. Root reaping and a fresh
-group-absence observation are required; an unproved group, FD closure, or
+group-absence observation are required. A permission-denied or interrupted
+signal-zero probe is still unproved and is polled within the existing deadline;
+only a fresh no-such-process result proves absence. This also permits macOS's
+transient permission-denied result while an exiting group's zombies are reaped.
+An unproved group, FD closure, or
 output discard leaves its corresponding proof false. Cleanup success never
 turns the selected failure into PASS. No daemon inventory, subreaper, or
 supervisor is introduced.

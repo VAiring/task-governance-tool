@@ -304,16 +304,11 @@ class TaskNextTests(unittest.TestCase):
                 "--order",
                 "10",
             )
-            edit_task(
-                db,
-                repo,
-                done_earlier["task_id"],
-                "--status",
-                "done",
-                "--verification-complete",
-                "--review-complete",
-                "--commit-not-required",
-            )
+            with mock.patch.dict(os.environ, {"CODEX_THREAD_ID": "33333333-3333-4333-8333-333333333333"}):
+                edit_task(
+                    db, repo, done_earlier["task_id"], "--status", "done",
+                    "--verification-complete", "--review-complete", "--commit-not-required",
+                )
             add_task(
                 db,
                 repo,

@@ -85,7 +85,7 @@ class DirectProbeTests(unittest.TestCase):
 
     def make(self):
         instance = DirectProbe(self.path, lambda: self.current, lambda metadata: self.host,
-            lambda: self.now, cycle_seconds=0.01, join_seconds=0.1)
+            lambda: self.now, cycle_seconds=0.01, join_seconds=3)
         self.instances.append(instance)
         return instance
 
@@ -287,6 +287,7 @@ class DirectProbeTests(unittest.TestCase):
         self.assertEqual([], self.host.sends)
 
     def test_cancel_during_send_does_not_claim_effect_was_cancelled(self):
+        self.direct._join = 0.1  # This case deliberately exercises an expired join.
         self.host.block_send = True
         probe = self.start()
         self.ended()

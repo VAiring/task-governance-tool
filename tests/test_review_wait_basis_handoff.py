@@ -59,7 +59,8 @@ class WaitBasisHandoffTests(PreparationFixture):
 
     def test_reads_original_task_even_after_another_task_added_and_new_generation(self):
         _, old = self.read()
-        other = self.task()
+        with mock.patch.dict(os.environ, {"CODEX_THREAD_ID": "22222222-2222-4222-8222-222222222222"}):
+            other = self.task()
         self.assertNotEqual(other, self.task_id)
         self.cli("review", "target", "set", self.task_id, "--kind", "diff_fingerprint", "--revision", FINGERPRINT)
         result, new = self.read()
@@ -69,8 +70,8 @@ class WaitBasisHandoffTests(PreparationFixture):
         self.assertNotEqual(new["basis"]["artifact_manifest_id"], old["basis"]["artifact_manifest_id"])
 
     def test_inactive_missing_and_unprepared_tasks_fail_without_any_write(self):
-        no_target = self.task()
         self.cli("task", "edit", self.task_id, "--status", "blocked", "--blocked-reason", "Fixture paused work")
+        no_target = self.task()
         before = file_snapshot(self.root)
         for task, code in [(self.task_id, "wait_basis_inactive"),
                            (no_target, "wait_basis_target_required"), ("absent-task", "wait_basis_unavailable")]:

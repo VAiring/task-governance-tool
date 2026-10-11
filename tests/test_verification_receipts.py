@@ -246,7 +246,7 @@ class VerificationReceiptIntegrationTests(unittest.TestCase):
             )
 
             waiting = run_taskgov(
-                "task", "edit", empty["task_id"], "--status", "review_pending",
+                "task", "edit", empty["task_id"], "--status", "ready",
                 "--repo", str(repo), "--db", str(db), "--json",
             )
             self.assertEqual(waiting.returncode, 0, waiting.stdout)
@@ -279,7 +279,7 @@ class VerificationReceiptIntegrationTests(unittest.TestCase):
             )
 
             waiting = run_taskgov(
-                "task", "edit", targetless["task_id"], "--status", "review_pending",
+                "task", "edit", targetless["task_id"], "--status", "ready",
                 "--repo", str(repo), "--db", str(db), "--json",
             )
             self.assertEqual(waiting.returncode, 0, waiting.stdout)

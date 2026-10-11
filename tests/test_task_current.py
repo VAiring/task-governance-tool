@@ -91,8 +91,9 @@ def seed_current_states(db, repo):
     paused = edit_task(
         db, repo, paused["task_id"], "--status", "paused", "--pause-reason", "Waiting for a safe window"
     )
-    review = add_task(db, repo, "Review feature", "--status", "in_progress", "--priority", "urgent")
-    review = edit_task(db, repo, review["task_id"], "--status", "review_pending")
+    with mock.patch.dict(os.environ, {"CODEX_THREAD_ID": "22222222-2222-4222-8222-222222222222"}):
+        review = add_task(db, repo, "Review feature", "--status", "in_progress", "--priority", "urgent")
+        review = edit_task(db, repo, review["task_id"], "--status", "review_pending")
     blocked = add_task(
         db, repo, "Blocked feature", "--status", "blocked", "--blocked-reason", "User decision needed",
         "--priority", "urgent",

@@ -152,6 +152,10 @@ def _group_absent(pid: int) -> bool:
         os.killpg(pid, 0)
     except ProcessLookupError:
         return True
+    except (PermissionError, InterruptedError):
+        # Darwin can report EPERM while only unreaped zombies remain. Neither
+        # EPERM nor interruption proves absence; poll within the existing bound.
+        return False
     except OSError as exc:
         raise RunnerProcessError("process_tree_unproved") from exc
     return False

@@ -4333,9 +4333,10 @@ class EvidenceLedgerStorageTests(unittest.TestCase):
                 review_tier=1,
                 verification="",
             )
+            seed_current_review_evidence(db, repo, source_task["task_id"])
             waiting = run_taskgov(
                 "task", "edit", source_task["task_id"],
-                "--status", "review_pending", "--repo", str(repo),
+                "--status", "ready", "--repo", str(repo),
                 "--db", str(db), "--json",
             )
             self.assertEqual(waiting.returncode, 0, waiting.stdout)
@@ -4345,7 +4346,6 @@ class EvidenceLedgerStorageTests(unittest.TestCase):
                 review_tier=1,
                 verification="",
             )
-            seed_current_review_evidence(db, repo, source_task["task_id"])
             seed_current_review_evidence(db, repo, other_task["task_id"])
             with closing(connect(db)) as connection:
                 receipt = connection.execute(
@@ -4714,7 +4714,7 @@ class EvidenceLedgerStorageTests(unittest.TestCase):
                     seed_current_review_evidence(db, repo, task["task_id"])
                     waiting = run_taskgov(
                         "task", "edit", task["task_id"],
-                        "--status", "review_pending", "--repo", str(repo),
+                        "--status", "ready", "--repo", str(repo),
                         "--db", str(db), "--json",
                     )
                     self.assertEqual(waiting.returncode, 0, waiting.stdout)

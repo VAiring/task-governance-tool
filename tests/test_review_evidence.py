@@ -1,4 +1,5 @@
 import json
+import os
 import sqlite3
 import subprocess
 import sys
@@ -108,7 +109,7 @@ def add_task(db, repo, *, tier=2, title="Review task", declare_verification=True
     if result.returncode:
         raise AssertionError(result.stderr or result.stdout)
     task = payload(result)["data"]["task"]
-    # Review fixtures retain completion authority without occupying a work slot.
+    # Review-pending retains both completion authority and the owner's slot.
     pending = run_taskgov("task", "edit", task["task_id"], "--repo", str(repo),
                           "--db", str(db), "--status", "review_pending", "--json")
     if pending.returncode:
@@ -456,6 +457,9 @@ class ReviewEvidenceTests(unittest.TestCase):
                             receipt_search_steps[0],
                             review_plans[2],
                         )
+                        released = run_taskgov("task", "edit", task["task_id"],
+                            "--repo", str(repo), "--db", str(db), "--status", "ready", "--json")
+                        self.assertEqual(released.returncode, 0, released.stdout)
 
     def test_review_git_preflight_rejects_an_existing_database_transaction(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -1799,18 +1803,10 @@ class ReviewEvidenceTests(unittest.TestCase):
                     ]
                     foreign_receipt_id = None
                     if case == "parent_alias":
-                        foreign_task = add_task(
-                            db,
-                            repo,
-                            title="Foreign review task",
-                        )
-                        target_set(db, repo, foreign_task["task_id"])
-                        foreign_recorded = receipt_add(
-                            db,
-                            repo,
-                            foreign_task["task_id"],
-                            "foreign-reviewer",
-                        )
+                        with mock.patch.dict(os.environ, {"CODEX_THREAD_ID": "22222222-2222-4222-8222-222222222222"}):
+                            foreign_task = add_task(db, repo, title="Foreign review task")
+                            target_set(db, repo, foreign_task["task_id"])
+                            foreign_recorded = receipt_add(db, repo, foreign_task["task_id"], "foreign-reviewer")
                         self.assertEqual(
                             foreign_recorded.returncode,
                             0,
@@ -2619,16 +2615,17 @@ class ReviewEvidenceTests(unittest.TestCase):
             repo.mkdir()
             init_db(db, repo)
             first = add_task(db, repo, title="First")
-            second = add_task(db, repo, title="Second")
             target_set(db, repo, first["task_id"])
-            target_set(db, repo, second["task_id"])
             receipt = receipt_add(db, repo, first["task_id"], "reviewer-a")
             receipt_id = payload(receipt)["data"]["receipt"]["review_receipt_id"]
-            mismatch = run_taskgov(
-                "review", "finding", "add", "--repo", str(repo), "--db", str(db),
-                second["task_id"], "--receipt-id", receipt_id, "--severity", "medium",
-                "--summary", "Mismatch", "--json",
-            )
+            with mock.patch.dict(os.environ, {"CODEX_THREAD_ID": "22222222-2222-4222-8222-222222222222"}):
+                second = add_task(db, repo, title="Second")
+                target_set(db, repo, second["task_id"])
+                mismatch = run_taskgov(
+                    "review", "finding", "add", "--repo", str(repo), "--db", str(db),
+                    second["task_id"], "--receipt-id", receipt_id, "--severity", "medium",
+                    "--summary", "Mismatch", "--json",
+                )
             self.assertEqual(payload(mismatch)["errors"][0]["code"], "review_receipt_mismatch")
             private = receipt_add(
                 db, repo, first["task_id"], "reviewer-secret",
@@ -3273,11 +3270,10 @@ class ReviewEvidenceTests(unittest.TestCase):
             init_git_repo(repo)
             init_db(db, repo)
             task_id = add_task(db, repo)["task_id"]
-            unrelated_task_id = add_task(
-                db,
-                repo,
-                title="Unrelated task",
-            )["task_id"]
+            unrelated = run_taskgov("task", "add", "--repo", str(repo), "--db", str(db),
+                                    "--title", "Unrelated task", "--status", "ready", "--json")
+            self.assertEqual(unrelated.returncode, 0, unrelated.stdout)
+            unrelated_task_id = payload(unrelated)["data"]["task"]["task_id"]
             (repo / "reviewed.txt").write_text("reviewed\n", encoding="utf-8")
             subprocess.run(
                 ["git", "-C", str(repo), "add", "--", "reviewed.txt"],

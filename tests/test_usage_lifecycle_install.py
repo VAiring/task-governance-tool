@@ -158,13 +158,14 @@ class UsageLifecycleInstallTests(unittest.TestCase):
         evidence = file_snapshot(self.target.resolved_evidence_root)
         self.hook()
         result = self.cli("task", "show", task)["data"]["usage"]
-        self.assertEqual(result["periods"][0]["models"][0]["total_tokens"], 3 * 120)
+        # Review-pending retains the owner interval through the completion turn.
+        self.assertEqual(result["periods"][0]["models"][0]["total_tokens"], 4 * 120)
         cycle = result["cycle_links"][0]["completion_cycle_id"]
         with self.transcript.open("ab") as stream:
-            stream.write(json.dumps(usage("late-endpoint", turn=turn(4))).encode() + b"\n")
+            stream.write(json.dumps(usage("late-endpoint", turn=turn(5))).encode() + b"\n")
         self.hook("SessionStart", source="resume")
         result = self.cli("task", "show", task, "--audit")["data"]["usage"]
-        self.assertEqual(result["periods"][0]["models"][0]["total_tokens"], 4 * 120)
+        self.assertEqual(result["periods"][0]["models"][0]["total_tokens"], 5 * 120)
         self.assertEqual(result["cycle_links"][-1]["completion_cycle_id"], cycle)
         self.assertEqual(self.target.db_path.read_bytes(), core)
         self.assertEqual(file_snapshot(self.target.resolved_evidence_root), evidence)
@@ -264,7 +265,7 @@ class UsageLifecycleReviewInstallTests(unittest.TestCase):
         segment = logs / f"rollout-2026-10-02T00-00-00-{OWNER.session_id}_{THREAD}.jsonl"
         segment.write_bytes(rows(OWNER.session_id, "parent", acknowledgements, range(1, 6)))
         hook("SessionStart")
-        expected.update(("openai", f"parent-{n}") for n in (2, 3, 4))
+        expected.update(("openai", f"parent-{n}") for n in (2, 3, 4, 5))
 
         def assert_current():
             current = self.cli("task", "show", self.task)["data"]["usage"]
@@ -290,7 +291,7 @@ class UsageLifecycleReviewInstallTests(unittest.TestCase):
         self.assertEqual(assert_current(), recovered)
         self.assertEqual(file_snapshot(target.resolved_usage_root), stable)
         with segment.open("ab") as stream:
-            stream.write(json.dumps(usage("parent-late", thread=OWNER.session_id, turn=turn(4))).encode() + b"\n")
+            stream.write(json.dumps(usage("parent-late", thread=OWNER.session_id, turn=turn(5))).encode() + b"\n")
         expected.add(("openai", "parent-late"))
         hook()
         assert_current()

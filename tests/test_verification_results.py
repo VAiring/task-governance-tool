@@ -331,6 +331,7 @@ class VerificationResultCliTests(unittest.TestCase):
     def test_forbidden_statuses_empty_expectation_and_missing_target_do_not_write(self):
         self.success("task", "edit", self.task_id, "--status", "review_pending")
         self.assertEqual(self.invoke()[0], 0)
+        self.success("task", "edit", self.task_id, "--status", "ready")
         for status, arguments in (
             ("paused", ("--pause-reason", "Awaiting continuation")),
             ("blocked", ("--blocked-reason", "Awaiting dependency")),
@@ -356,7 +357,7 @@ class VerificationResultCliTests(unittest.TestCase):
                 self.assert_failure(self.invoke(), error)
                 self.assertEqual(file_snapshot(self.root), before)
                 if options.get("status") != "ready":
-                    self.success("task", "edit", self.task_id, "--status", "review_pending")
+                    self.success("task", "edit", self.task_id, "--status", "ready")
 
     def test_done_requires_reopen_and_historical_receipts_cannot_satisfy_it(self):
         self.generation = seed_current_review_evidence(self.db, self.repo, self.task_id)

@@ -185,6 +185,51 @@ class PosixRequestFailureTests(unittest.TestCase):
 
 
 class PosixStepFailureTests(unittest.TestCase):
+    def test_root_success_requires_fresh_absence_after_transient_probe_errors(self):
+        request = _request()
+        group_absent = posix._group_absent
+        native = SimpleNamespace(killpg=mock.Mock(side_effect=[
+            PermissionError("private zombie detail"), InterruptedError(), None, ProcessLookupError(),
+        ]))
+        with _step_resources(request), mock.patch.object(posix, "os", native), mock.patch.object(
+            posix, "_group_absent", side_effect=group_absent,
+        ):
+            execution = posix._execute_step(request, request.steps[0])
+        self.assertEqual((execution.result.outcome, execution.result.reason), ("pass", None))
+        self.assertTrue(execution.process_zero)
+        self.assertEqual(native.killpg.call_args_list, [mock.call(4123, 0)] * 4)
+
+    def test_persistent_permission_error_exhausts_bounds_without_process_zero(self):
+        request = _request()
+        group_absent, retire_group = posix._group_absent, posix._retire_group
+
+        def probe_or_signal(_pid, sig):
+            if sig == 0:
+                raise PermissionError("private permission detail")
+
+        native = SimpleNamespace(killpg=mock.Mock(side_effect=probe_or_signal))
+        with _step_resources(request), mock.patch.object(posix, "os", native), mock.patch.object(
+            posix, "signal", SimpleNamespace(SIGTERM=15, SIGKILL=9),
+        ), mock.patch.object(posix, "_group_absent", side_effect=group_absent), mock.patch.object(
+            posix, "_retire_group", side_effect=retire_group,
+        ):
+            execution = posix._execute_step(request, request.steps[0])
+        self.assertEqual((execution.result.outcome, execution.result.reason),
+                         ("cleanup_failed", "process_cleanup_failed"))
+        self.assertFalse(execution.process_zero)
+        self.assertTrue(execution.handles_closed)
+        self.assertEqual([call for call in native.killpg.call_args_list if call.args[1]],
+                         [mock.call(4123, 15), mock.call(4123, 9)])
+        self.assertLess(native.killpg.call_count, 50)
+
+    def test_other_group_probe_errors_remain_sanitized_failures(self):
+        with mock.patch.object(posix, "os", SimpleNamespace(
+            killpg=mock.Mock(side_effect=OSError("private probe detail")),
+        )), self.assertRaises(process.RunnerProcessError) as caught:
+            posix._group_absent(4123)
+        self.assertEqual(caught.exception.code, "process_tree_unproved")
+        self.assertNotIn("private", str(caught.exception))
+
     def test_setup_and_proven_creation_failure_are_no_launch(self):
         request = _request()
         with _step_resources(request) as resources:

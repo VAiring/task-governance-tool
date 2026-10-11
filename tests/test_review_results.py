@@ -432,7 +432,7 @@ class ReviewResultsTests(unittest.TestCase):
         return document(self.task_id, receipts=receipts)
 
     def add_review_task(self, *arguments):
-        self.success("task", "edit", self.task_id, "--status", "review_pending")
+        self.success("task", "edit", self.task_id, "--status", "ready")
         return self.success("task", "add", *arguments, "--status", "in_progress")["task"]["task_id"]
 
     def wire_payload(self, payload):
@@ -861,7 +861,9 @@ class ReviewResultsTests(unittest.TestCase):
         before = file_snapshot(self.root)
         self.assert_failure(self.invoke(document(self.task_id, revision=0)), "review_target_required")
         self.assertEqual(file_snapshot(self.root), before)
+        self.success("task", "edit", self.task_id, "--status", "ready")
         self.task_id = original_task_id
+        self.success("task", "edit", self.task_id, "--status", "in_progress")
         code, stdout, _ = self.invoke(self.payload(receipts=[receipt("reviewer-a"), receipt("reviewer-b")]))
         self.assertEqual(code, 0, stdout)
         self.success(
@@ -1124,7 +1126,7 @@ class ReviewResultOutputProcessTests(unittest.TestCase):
                 self.assertEqual(result.returncode, 2, result.stderr)
                 self.assertEqual(result.stderr.decode().strip(), "Review results recorded, but output failed. Do not resubmit; inspect recorded evidence before retrying.")
                 self.assertEqual(cli("task", "show", task)["review_evidence"]["counts"]["receipts_current_generation"], 1)
-                cli("task", "edit", task, "--status", "review_pending")
+                cli("task", "edit", task, "--status", "ready")
 
 
 class ReviewResultsDocumentArrayTests(ReviewResultsTests):

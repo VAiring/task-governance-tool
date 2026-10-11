@@ -434,7 +434,7 @@ class TaskContractCliTests(unittest.TestCase):
                 )
 
                 released, _ = json_command("task", "edit", task_id, "--repo", str(repo), "--db", str(db),
-                                           "--status", "review_pending")
+                                           "--status", "ready")
                 self.assertEqual(released.returncode, 0, released.stdout)
 
             _, added = add_task(db, repo, "Companion rejection")

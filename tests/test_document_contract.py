@@ -60,6 +60,7 @@ FIXTURE_LINK_TARGETS = (
     "task-governance-tool/LICENSE",
     "task-governance-tool/SKILL.md",
     "task-governance-tool/references/cli_contracts.md",
+    "task-governance-tool/references/runner_application.md",
     "task-governance-tool/references/task_workflow.md",
     "task-governance-tool/references/usage_hooks.md",
     "task-governance-tool/scripts/task_governance_tool/tasks.py",
@@ -755,7 +756,7 @@ class DocumentContractTests(unittest.TestCase):
                 ),
                 (
                     "docs/specification.md",
-                    "### Current Schema-v25 Persistence Contract",
+                    "### Current Schema-v27 Persistence Contract",
                     ("database-specification.md#current-schema-v22-persistence-contract",),
                 ),
                 (
@@ -770,8 +771,8 @@ class DocumentContractTests(unittest.TestCase):
                 ),
                 (
                     contract.DESIGN,
-                    "## Current Schema-v25 Ownership And Reviewer Binding Design",
-                    ("database-design.md#session-ownership-migration", "database-design.md#conditional-reviewer-binding-migration", "database-design.md#current-schema-v22-reservation-cleanup-design"),
+                    "## Current Schema-v27 Ownership And Reviewer Binding Design",
+                    ("database-design.md#session-ownership-migration", "database-design.md#conditional-reviewer-binding-migration", "database-design.md#combined-session-slot-migration", "database-design.md#current-schema-v22-reservation-cleanup-design"),
                 ),
                 (
                     contract.DESIGN,

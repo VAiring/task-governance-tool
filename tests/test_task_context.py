@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import sqlite3
 import tempfile
 import unittest
@@ -15,8 +16,10 @@ from tests.m14_test_support import (
     run_taskgov_internal,
 )
 from tests.test_m17_cli_consumer_hardening import _run_cli, _setup
+from tests.test_review_session_migration import candidate_runtime
 
 from task_governance_tool import cli as cli_service
+from task_governance_tool import storage
 from task_governance_tool.cli_output import CommandResult
 from task_governance_tool.effort import disabled_profile
 
@@ -53,6 +56,18 @@ class TaskContextTests(unittest.TestCase):
 
     def add(self, title, *arguments):
         return self.success("task", "add", "--title", title, *arguments)["data"]["task"]
+
+    def legacy_current_pair(self, title, *arguments):
+        # Pre-v26 overlap remains readable; current commands cannot create it.
+        self.db = self.root / "legacy.sqlite"
+        with candidate_runtime(25):
+            initialize_taskgov_internal(repo=self.repo, db=self.db)
+            pending = self.add(title, "--status", "in_progress", *arguments)
+            self.success("task", "edit", pending["task_id"], "--status", "review_pending")
+            active = self.add("First active", "--status", "in_progress", "--priority", "urgent")
+        with closing(storage.connect(self.db)) as connection:
+            storage.apply_migrations(connection)
+        return pending, active
 
     def assert_matches_selection_and_display(self):
         before = file_snapshot(self.root)
@@ -194,6 +209,8 @@ class TaskContextTests(unittest.TestCase):
         self.add("Urgent ready", "--priority", "urgent")
         for status in ("review_pending", "in_progress"):
             with self.subTest(status=status):
+                if status == "in_progress":
+                    self.success("task", "edit", review["task_id"], "--status", "ready")
                 selected = review if status == "review_pending" else self.add(
                     "Active work", "--status", "in_progress", "--priority", "low"
                 )
@@ -316,9 +333,7 @@ class TaskContextTests(unittest.TestCase):
                     self.assertEqual(show.call_args.args[0].args.task_id, first["task_id"])
 
     def test_complete_selected_current_batch_is_validated_before_selection(self):
-        corrupt = self.add("Malformed later row", "--status", "in_progress")
-        self.success("task", "edit", corrupt["task_id"], "--status", "review_pending")
-        self.add("Valid first", "--status", "in_progress", "--priority", "urgent")
+        corrupt, _first = self.legacy_current_pair("Malformed later row")
         with closing(sqlite3.connect(self.db)) as connection:
             connection.execute("PRAGMA ignore_check_constraints = ON")
             connection.execute("UPDATE tasks SET review_tier = 9 WHERE task_id = ?", (corrupt["task_id"],))
@@ -334,9 +349,7 @@ class TaskContextTests(unittest.TestCase):
         self.assertEqual(file_snapshot(self.root), before)
 
     def test_omitted_later_row_does_not_change_first_current_selection(self):
-        review = self.add("Omitted review", "--status", "in_progress", "--lane", "l" * 30000)
-        self.success("task", "edit", review["task_id"], "--status", "review_pending")
-        first = self.add("First active", "--status", "in_progress")
+        _review, first = self.legacy_current_pair("Omitted review", "--lane", "l" * 30000)
 
         data = self.assert_matches_selection_and_display()["data"]
 
@@ -523,10 +536,11 @@ class TaskContextRunnerTests(unittest.TestCase):
             _persist_terminal(fixture, intent, branch="pass")
             released = run(fixture.db, fixture.repo, "task", "edit", selected_id, "--status", "review_pending")
             self.assertEqual(released.returncode, 0, released.stdout)
-            unrelated_id = _add_runner_task(fixture, title="Unrelated corrupt Runner graph")
-            fixture.task_id = unrelated_id
-            _prepared, unrelated_intent = _launch(fixture)
-            _persist_terminal(fixture, unrelated_intent, branch="pass")
+            with mock.patch.dict(os.environ, {"CODEX_THREAD_ID": "22222222-2222-4222-8222-222222222222"}):
+                unrelated_id = _add_runner_task(fixture, title="Unrelated corrupt Runner graph")
+                fixture.task_id = unrelated_id
+                _prepared, unrelated_intent = _launch(fixture)
+                _persist_terminal(fixture, unrelated_intent, branch="pass")
             fixture.task_id = selected_id
             _corrupt_runner_observation_digest(fixture.db, task_id=unrelated_id)
             before = file_snapshot(Path(temporary))

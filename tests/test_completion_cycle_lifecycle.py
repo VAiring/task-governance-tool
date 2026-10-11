@@ -1410,7 +1410,7 @@ class CompletionCycleLifecycleTests(unittest.TestCase):
                     return "\n".join(connection.iterdump())
 
             released, _ = run_json("task", "edit", successful["task_id"], "--repo", str(repo),
-                                   "--db", str(db), "--status", "review_pending", "--json")
+                                   "--db", str(db), "--status", "ready", "--json")
             self.assertEqual(released.returncode, 0, released.stdout)
             before_failure = database_dump()
             with mock.patch(

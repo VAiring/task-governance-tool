@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import ast
 import json
+import os
 import sqlite3
 import tempfile
 import unittest
@@ -493,16 +494,12 @@ class M243CRunnerGateTests(unittest.TestCase):
             )
             self.assertEqual(waiting.returncode, 0, waiting.stdout)
 
-            unrelated_task_id = _add_runner_task(
-                fixture,
-                title="Unrelated Runner graph",
-            )
-            fixture.task_id = unrelated_task_id
-            try:
+            with mock.patch.dict(os.environ, {"CODEX_THREAD_ID": "22222222-2222-4222-8222-222222222222"}):
+                unrelated_task_id = _add_runner_task(fixture, title="Unrelated Runner graph")
+                fixture.task_id = unrelated_task_id
                 _prepared, unrelated_intent = _launch(fixture)
                 _persist_terminal(fixture, unrelated_intent, branch="pass")
-            finally:
-                fixture.task_id = selected_task_id
+            fixture.task_id = selected_task_id
             _corrupt_runner_observation_digest(
                 fixture.db,
                 task_id=unrelated_task_id,

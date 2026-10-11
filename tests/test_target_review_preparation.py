@@ -3,14 +3,16 @@
 import json
 import tempfile
 import unittest
+from dataclasses import replace
 from pathlib import Path
 from unittest import mock
 
 from tests.test_review_packet import (
     FINGERPRINT_A, FINGERPRINT_B, database_target,
 )
-from tests.m14_test_support import initialize_taskgov_internal, run_taskgov_internal
-from task_governance_tool import cli, review_packet, verification_runner_service as service
+from tests.m14_test_support import _copy_skill, initialize_taskgov_internal, run_taskgov_internal
+from task_governance_tool import cli, review_packet, review_verification, verification_runner_service as service
+from task_governance_tool import verification_runner_selection as selection
 
 
 class TargetReviewPreparationTests(unittest.TestCase):
@@ -40,7 +42,8 @@ class TargetReviewPreparationTests(unittest.TestCase):
         self.assertTrue(payload["ok"])
         return payload
 
-    def test_success_replaces_prepare_and_retry_is_read_only(self):
+    @mock.patch.object(review_verification, "utc_now", return_value="2026-10-11T00:00:00Z")
+    def test_success_replaces_prepare_and_retry_is_read_only(self, _clock):
         with tempfile.TemporaryDirectory() as tmp:
             db, repo, task_id = self.create(Path(tmp))
             with mock.patch.object(cli, "run_post_commit_maintenance", return_value=[]) as maintenance:
@@ -88,17 +91,26 @@ class TargetReviewPreparationTests(unittest.TestCase):
         for branch in ("pass", "blocking"):
             with self.subTest(branch=branch), tempfile.TemporaryDirectory() as tmp:
                 fixture = RunnerServiceFixture(Path(tmp))
-                _prepared, intent = _launch(fixture)
+                prepared, intent = _launch(fixture)
                 observation = _persist_terminal(fixture, intent, branch=branch)
                 routed = service._routed_runner_target(intent.review, intent.resolution, observation)
+                # The service fixture uses a synthetic Plan/implementation. Give
+                # Packet's independent read a real package and the same basis.
+                skill_parent = fixture.repo / ".agents" / "skills"
+                skill_parent.mkdir(parents=True)
+                target = replace(fixture.target, skill_root=_copy_skill(skill_parent))
                 with mock.patch.object(cli, "set_review_target_with_optional_runner", return_value=routed), \
+                     mock.patch("tests.m14_test_support.resolve_database_target", return_value=target), \
+                     mock.patch.object(selection, "capture_verification_runner_plan", return_value=None), \
+                     mock.patch.object(selection, "resolve_verification_runner_plan", return_value=prepared.plan), \
+                     mock.patch.object(selection, "capture_runner_implementation", return_value=prepared.implementation), \
                      mock.patch.object(cli, "handle_review_prepare", wraps=cli.handle_review_prepare) as prepare:
                     result, payload = self.invoke(fixture.db, fixture.repo, "review", "target", "set",
                                                    fixture.task_id, "--kind", "git_snapshot")
                 self.assertEqual(result.returncode, 0, result.stdout)
                 preparation = payload["data"]["review_preparation"]
                 self.assertEqual(prepare.call_count, 1 if branch == "pass" else 0)
-                self.assertEqual(preparation["status"], "ready" if branch == "pass" else "not_applicable")
+                self.assertEqual(preparation["status"], "ready" if branch == "pass" else "not_applicable", preparation)
                 if branch == "pass":
                     self.assertEqual(preparation["packet"]["review_target"]["value"], routed.task["review_target_value"])
 

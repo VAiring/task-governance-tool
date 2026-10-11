@@ -54,7 +54,7 @@ class TargetReviewPreparationTests(unittest.TestCase):
             self.assertEqual(prepared["errors"], [])
             self.assertEqual(prepared["packet"]["review_target"]["generation"], 1)
             before = db.read_bytes()
-            with mock.patch.object(cli, "set_review_target_with_optional_runner",
+            with mock.patch.object(service, "set_review_target_with_optional_runner",
                                    side_effect=AssertionError("retry cannot set or launch")), \
                  mock.patch.object(cli, "run_post_commit_maintenance",
                                    side_effect=AssertionError("retry cannot maintain")):
@@ -99,7 +99,7 @@ class TargetReviewPreparationTests(unittest.TestCase):
                 skill_parent = fixture.repo / ".agents" / "skills"
                 skill_parent.mkdir(parents=True)
                 target = replace(fixture.target, skill_root=_copy_skill(skill_parent))
-                with mock.patch.object(cli, "set_review_target_with_optional_runner", return_value=routed), \
+                with mock.patch.object(service, "set_review_target_with_optional_runner", return_value=routed), \
                      mock.patch("tests.m14_test_support.resolve_database_target", return_value=target), \
                      mock.patch.object(selection, "capture_verification_runner_plan", return_value=None), \
                      mock.patch.object(selection, "resolve_verification_runner_plan", return_value=prepared.plan), \

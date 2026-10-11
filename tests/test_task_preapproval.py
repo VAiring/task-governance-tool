@@ -400,6 +400,15 @@ class RecordFlowTests(PreparationFixture):
         return json.loads(completed.stdout)["data"]
 
     def test_two_tasks_initial_contract_progress_evidence_and_completion(self):
+        # Deferred imports must still obey the installed source-only finder.
+        # A valid unchecked cache would execute this failure with normal loading.
+        for module in ("verification_runner_plan_edit", "verification_runner_service", "completion_workflow"):
+            source = self.install.skill_root / "scripts/task_governance_tool" / (module + ".py")
+            original = source.read_bytes()
+            source.write_bytes(b"raise RuntimeError('stale deferred cache executed')\n")
+            py_compile.compile(str(source), doraise=True,
+                               invalidation_mode=py_compile.PycInvalidationMode.UNCHECKED_HASH)
+            source.write_bytes(original)
         registered = self.records("task", "add", "--from-stdin", raw=encode({"version": 1,
             "common": {"review_tier": 0, "verification": "Fixture assertions", "kind": "sequential", "lane": "records"},
             "tasks": [{"title": f"Mechanical fixture {index}", "contract": {"scope": "Fixture only", "acceptance": "Evidence and completion"}}

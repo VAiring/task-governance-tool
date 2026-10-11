@@ -138,6 +138,36 @@ class ReviewRequestLayoutTests(unittest.TestCase):
 
 
 class InstalledPreparationTests(PreparationFixture):
+    def test_review_prepare_skips_unrelated_command_imports_in_fresh_process(self):
+        task = self.task()
+        completed, prepared = self.prepare(task)
+        self.assertEqual(completed.returncode, 0, completed.stdout)
+        before = file_snapshot(self.root)
+        for restriction in ([], ["--records-only"]):
+            with self.subTest(restriction=restriction):
+                result = subprocess.run(
+                    [sys.executable, "-I", "-S", "-B", "-X", "importtime",
+                     str(self.install.entrypoint), *restriction,
+                     "review", "prepare", task, "--repo", str(self.root), "--json"],
+                    cwd=self.root, capture_output=True, check=False,
+                )
+                self.assertEqual(result.returncode, 0, result.stdout or result.stderr)
+                packet = json.loads(result.stdout)["data"]
+                saved = json.loads((self.root / prepared["handoff"]["packet_path"]).read_bytes())
+                self.assertEqual(packet["review_target"], saved["review_target"])
+                self.assertEqual(packet["contract"], saved["contract"])
+                imports = {line.rsplit(b"|", 1)[-1].strip().decode("ascii")
+                           for line in result.stderr.splitlines()
+                           if line.startswith(b"import time:") and b"|" in line}
+                self.assertIn("task_governance_tool.review_packet", imports)
+                self.assertTrue(imports.isdisjoint({
+                    "task_governance_tool.setup", "task_governance_tool.doctor",
+                    "task_governance_tool.verification_runner_plan_edit",
+                    "task_governance_tool.verification_runner_service",
+                    "task_governance_tool.completion_workflow",
+                }), imports)
+                self.assertEqual(before, file_snapshot(self.root))
+
     def test_native_directory_modes_preserve_existing_parent(self):
         parent = self.root / "reviews"
         parent.mkdir()

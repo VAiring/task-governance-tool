@@ -15,7 +15,7 @@ ROOT = Path(__file__).resolve().parents[1]
 SKILL_ROOT = ROOT / "task-governance-tool"
 sys.path.insert(0, str(SKILL_ROOT / "scripts"))
 try:
-    from task_governance_tool import cli as cli_service
+    from task_governance_tool import cli as cli_service, setup as setup_service
     from task_governance_tool.cli import make_context
     from task_governance_tool.cli_output import (
         CommandResult,
@@ -516,7 +516,7 @@ class CliEnvelopeTests(unittest.TestCase):
         )
 
         with mock.patch.object(
-            cli_service,
+            setup_service,
             "run_setup",
             return_value=service_result,
         ) as run_setup:

@@ -53,11 +53,6 @@ from task_governance_tool.completion import (
     COMPLETION_CHECK_MAX_BYTES,
     CompletionRequest,
 )
-from task_governance_tool.completion_workflow import (
-    COMPLETION_BLOCKING_CODES,
-    check_completion_request,
-    execute_completion_request,
-)
 from task_governance_tool.checkpoints import record_checkpoint
 from task_governance_tool.effort import (
     EffortAdvisoryError,
@@ -88,7 +83,6 @@ from task_governance_tool.storage import (
     operational_sqlite_error,
     skill_root_from_script,
 )
-from task_governance_tool.doctor import run_doctor
 from task_governance_tool.project_scope import (
     PREFLIGHT_MESSAGES,
     PROJECT_STATE_MESSAGES,
@@ -123,7 +117,6 @@ from task_governance_tool.review_results import (
     ReviewResultInputError,
     add_review_results,
 )
-from task_governance_tool.setup import run_setup
 from task_governance_tool.task_show_projection import build_task_show_data, show_task
 from task_governance_tool.tasks import (
     CURRENT_STATUSES,
@@ -147,13 +140,6 @@ from task_governance_tool.task_registration import (
     TASK_REGISTRATION_INPUT_LIMIT,
     decode_task_registration,
 )
-from task_governance_tool.verification_runner_plan_edit import (
-    PLAN_BLOB_UTF8_BYTE_LIMIT,
-    RUNNER_PLAN_ACTIONS,
-    VerificationRunnerPlanError,
-    edit_task_with_runner_plan,
-    validate_runner_plan_action_options,
-)
 from task_governance_tool.verification_receipts import (
     VerificationReceiptError,
     add_verification_receipt,
@@ -164,10 +150,6 @@ from task_governance_tool.verification_results import (
 )
 from task_governance_tool.verification_runner_selection import (
     select_current_verification_runner_basis,
-)
-from task_governance_tool.verification_runner_service import (
-    VerificationRunnerServiceError,
-    set_review_target_with_optional_runner,
 )
 RUNNER_PLAN_UNCONFIRMED_WARNING = {
     "code": "task_applied_runner_plan_unconfirmed",
@@ -453,6 +435,8 @@ def cli_script_path() -> Path:
 
 
 def handle_setup(context: CommandContext) -> CommandResult:
+    from task_governance_tool.setup import run_setup
+
     service_result = run_setup(
         repo=context.repo,
         repo_explicit=context.repo_explicit,
@@ -501,6 +485,8 @@ def handle_setup(context: CommandContext) -> CommandResult:
 
 
 def handle_doctor(context: CommandContext) -> CommandResult:
+    from task_governance_tool.doctor import run_doctor
+
     service_result = run_doctor(
         repo=context.repo,
         repo_explicit=context.repo_explicit,
@@ -1647,6 +1633,11 @@ def task_edit_input(args: argparse.Namespace) -> dict[str, Any]:
 
 
 def read_runner_plan_draft_stdin() -> bytes:
+    from task_governance_tool.verification_runner_plan_edit import (
+        PLAN_BLOB_UTF8_BYTE_LIMIT,
+        VerificationRunnerPlanError,
+    )
+
     stream = getattr(sys.stdin, "buffer", None)
     if stream is None:
         raise VerificationRunnerPlanError(
@@ -1698,6 +1689,13 @@ def write_task_projection(task: dict[str, Any], changed_fields: list[str]) -> di
 
 
 def handle_task_edit(context: CommandContext) -> CommandResult:
+    from task_governance_tool.verification_runner_plan_edit import (
+        RUNNER_PLAN_ACTIONS,
+        VerificationRunnerPlanError,
+        edit_task_with_runner_plan,
+        validate_runner_plan_action_options,
+    )
+
     target = resolve_context_target(context)
     if context.read_only:
         return task_edit_failure_result(
@@ -1990,6 +1988,12 @@ def completion_domain_error_result(
 
 
 def handle_task_complete(context: CommandContext, *, finalization_basis=None) -> CommandResult:
+    from task_governance_tool.completion_workflow import (
+        COMPLETION_BLOCKING_CODES,
+        check_completion_request,
+        execute_completion_request,
+    )
+
     raw_task_id = getattr(context.args, "task_id", "")
     check_only = bool(getattr(context.args, "check", False))
     input_preflight_error: TaskValidationError | TaskRepositoryError | None = None
@@ -2291,6 +2295,11 @@ def read_review_results_stdin():
 
 
 def handle_review_command(context: CommandContext, *, submission=None, finalization_basis=None) -> CommandResult:
+    from task_governance_tool.verification_runner_service import (
+        VerificationRunnerServiceError,
+        set_review_target_with_optional_runner,
+    )
+
     target = resolve_context_target(context)
     project_id = target.project.project_id
     if context.read_only:

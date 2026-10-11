@@ -148,6 +148,10 @@ The implementation keeps these narrow ownership boundaries:
   sanitized parser error types.
 - `cli.py` preprocesses lexical root options, uses that parser, orchestrates
   state and maintenance, and dispatches services and output emission.
+  Setup, Doctor, Task edit/Runner Plan, completion workflow, and Review write
+  services are imported inside their consuming handlers. Read-only Review
+  preparation does not load those unrelated command implementations; validation,
+  state resolution, source-only loading and operation order stay unchanged.
 - `cli_handoff.py` owns the Handoff command family and its fixed result shapes.
   It reuses CLI context/read helpers; state resolution, retained-read cleanup,
   dispatch, and post-commit coordination remain in `cli.py`.

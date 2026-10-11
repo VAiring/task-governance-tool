@@ -493,7 +493,7 @@ class VerificationRunnerServiceTests(unittest.TestCase):
                 "connect_initialized",
                 side_effect=AssertionError("CLI opened an outer transaction"),
             ), mock.patch.object(
-                cli_module,
+                service,
                 "set_review_target_with_optional_runner",
                 return_value=review,
             ):
@@ -535,7 +535,7 @@ class VerificationRunnerServiceTests(unittest.TestCase):
             )
 
             with mock.patch.object(
-                cli_module,
+                service,
                 "set_review_target_with_optional_runner",
                 side_effect=service.VerificationRunnerServiceError(
                     "runner_state_invalid",

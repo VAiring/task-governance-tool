@@ -26,6 +26,7 @@ from tests.test_m242_runner_plan_edit import (
 
 from task_governance_tool import cli as cli_service
 from task_governance_tool import verification_runner_plan_edit as edit_service
+from task_governance_tool import verification_runner_service as runner_service
 from task_governance_tool.verification_runner_plan import (
     PLAN_BLOB_UTF8_BYTE_LIMIT,
     VerificationRunnerPlanError,
@@ -196,7 +197,7 @@ class RunnerPlanCliTests(unittest.TestCase):
                     "select_current_verification_runner_basis",
                 ) as runner_selection,
                 mock.patch.object(
-                    cli_service,
+                    runner_service,
                     "set_review_target_with_optional_runner",
                 ) as review_target,
             ):

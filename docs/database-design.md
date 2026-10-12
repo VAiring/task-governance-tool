@@ -328,7 +328,7 @@ known save/direct-registration turn with explicit partial coverage.
 `usage_response_adapter.py` owns closed call/result/response metadata and
 bounded continuation (128 pending calls, handles and retired-handle entries,
 262,144 bytes). `usage_response_attribution.py` owns response ordering and
-whole-response start/completion partitions. `usage_response_repository.py`
+whole-response start/stop/resume/completion partitions. `usage_response_repository.py`
 owns numerical schema 6, current factories, core-reference resolution,
 partition snapshots and read projections. Neither parser nor classifier uses
 SQLite; SQL stays in the repository boundary.
@@ -353,6 +353,10 @@ be validated. Historical qualified event/call origins are compared across
 incarnations; a replacement cannot silently relabel an old success. Candidate
 read acknowledgements require the essential public selection/list/show shape,
 not merely a known command name with an arbitrary data object.
+The response adapter's sanitized prefix is `codex-response-relations-v2` for
+compact selection admission. Bounded audit/replay replaces an older prefix's
+discarded check results and continuation without changing numerical schema or
+deleting original counters/history; normal reads never perform that replay.
 Live session/cell handles retain the same unresolved origin between polls;
 call/handle aliases are deduplicated. A live handle collision invalidates the
 retained origin and already-issued poll aliases before future results can bind.
@@ -382,6 +386,20 @@ models and diagnostics for one admitted input/core basis. Core restore does
 not rebind missing executions, cycles or immutable wait/reviewer anchors.
 
 Snapshot v2 validation is closed and separate from retained v1 validation.
+The current `response-partitions-v2` policy applies confirmed pause/block exits
+and resume origins. Whole-response owner allocation is separate from applying
+the same response's committed state order, so a same-execution stop/resume
+leaves the correct final active state. Stopped gaps and previous-turn checks
+are not retrofilled. State/preparation resets match the affected execution,
+or its Task for a null-ID release; unrelated blocked organization preserves
+completion tails and selection series. An actor-changing release uses ordered
+core transitions to fence the former actor after its last qualified endpoint,
+until a local bound same-Task transition or new start/resume. This does not
+compare different threads' clocks or synthesize a Task transition. The original
+execution receives the qualified recovery stop response; ambiguous overlapping
+work retains partial membership. Retained `response-partitions-v1` snapshot bodies remain
+valid unchanged; algorithm identity is part of the capture and geometry basis,
+forcing new successors instead of reusing old-policy totals. No DDL changes.
 Task totals and work-unit parts union original keys; shared parts name actual
 Task/execution identities instead of displaying another period's shared total
 as an exclusive value. The v2 index exposes known-unassigned versus unknown

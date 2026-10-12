@@ -12,7 +12,8 @@ from task_governance_tool.usage_values import GAP_CODES, METRICS, UsageError, la
 FORMAT = "taskgov-usage-snapshot-v1"
 ALGORITHM = "inclusive-turn-components-v1"
 RESPONSE_FORMAT = "taskgov-usage-snapshot-v2"
-RESPONSE_ALGORITHM = "response-partitions-v1"
+RESPONSE_ALGORITHM = "response-partitions-v2"
+RESPONSE_ALGORITHMS = frozenset({"response-partitions-v1", RESPONSE_ALGORITHM})
 MAX_DOCUMENT_BYTES = 16_777_216
 GAPS = GAP_CODES | {"boundary_unknown", "review_boundary_unknown", "interval_open",
                     "collection_pending", "usage_pending", "operation_unbound"}
@@ -58,7 +59,7 @@ def validate(value, project_id):
         expected.add("assignment")
     if (not isinstance(value, dict) or set(value) != expected
             or (not response_format and (value["format"] != FORMAT or value["algorithm"] != ALGORITHM))
-            or (response_format and (value["algorithm"] != RESPONSE_ALGORITHM
+            or (response_format and (not isinstance(value["algorithm"], str) or value["algorithm"] not in RESPONSE_ALGORITHMS
                 or value["assignment"] not in {"exclusive", "shared", "partial"}))
             or value["project_id"] != project_id or value["coverage"] != "registered_only"
             or value["quality"] not in {"pending", "incomplete", "conflicting"}

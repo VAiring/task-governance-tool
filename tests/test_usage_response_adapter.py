@@ -130,6 +130,28 @@ class ResponseTransportTests(unittest.TestCase):
             found = self.feed(output("a", ack), 20)
             self.assertEqual(len(found), expected)
 
+    def test_context_and_compact_checks_use_public_returned_counts_and_closed_refs(self):
+        task_id = "tg_task_" + "a" * 16
+        selected = {"task": {"task_id": task_id, "project_id": "fixture-project"}}
+        current = {"tasks": [{"task_id": task_id, "task_ref": "/data/selected/task"}],
+                   "total_matching": 1, "returned_count": 1, "limit": 20, "truncated": False,
+                   "statuses": ["in_progress", "review_pending", "paused", "blocked"]}
+        data = {"selection": "current", "current": current, "next": None, "selected": selected}
+        for altered, expected in ((data, 1),
+                ({**data, "current": {**current, "returned_count": 0}}, 0),
+                ({**data, "current": {**current, "tasks": [{"task_id": task_id, "task_ref": "/private"}]}}, 0),
+                ({**data, "current": {**current, "tasks": [{"task_id": "tg_task_" + "b" * 16,
+                    "task_ref": "/data/selected/task"}]}}, 0)):
+            self.setUp()
+            self.feed(call("check", response_id="r1"), 10)
+            found = self.feed(output("check", {"ok": True, "command": "task.context", "project_id": "fixture-project", "data": altered}), 20)
+            self.assertEqual(len(found), expected)
+        self.setUp()
+        self.feed(call("check", response_id="r1"), 10)
+        compact = {"tasks": [], "total_matching": 0, "returned_count": 0, "limit": 5, "truncated": False}
+        found = self.feed(output("check", {"ok": True, "command": "task.next", "project_id": "fixture-project", "data": compact}), 20)
+        self.assertEqual(len(found), 1)
+
     def test_outer_cell_multiple_polls_and_terminal_handle_reuse(self):
         self.feed(call("origin", response_id="r1"), 10)
         self.feed(output("origin", "Script running with cell ID cell-a"), 20)

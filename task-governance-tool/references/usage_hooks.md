@@ -87,8 +87,13 @@ Response partitions identify each execution's exclusive and shared work. A
 response containing several successful starts is shared only by those starts;
 other responses remain separate. Unsupported or uncertain response/command
 relations retain observed numbers with unknown attribution, not zero or an
-exclusive estimate. Current start/completion classification does not yet
-activate the separately planned pause/block/resume response policy.
+exclusive estimate. Confirmed pause/block includes its operation response and
+stops coverage from the next response. Resume retains the same execution and
+starts at its eligible same-turn preparation or original operation response.
+Stopped gaps without another valid binding remain unassigned; missing or
+ambiguous boundaries stay unknown. Reviewers and real receipt bindings remain
+independently eligible. Numerical schema 6 is unchanged; retained prior-policy
+snapshots remain history and ordinary collection never migrates old stores.
 Setup preserves older closed intervals and legacy overlapping holdings. Use
 ordinary authorized state transitions to resolve those holdings, not a manual
 measurement command. Usage unavailability never blocks those transitions.

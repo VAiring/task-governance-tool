@@ -571,13 +571,35 @@ The eligible origin includes intermediate responses through the start, not
 only the confirmation records themselves. Confirmations are restricted to
 successful `task.context`, `task.current`, `task.next`, `task.show`, and
 `task.list` acknowledgements with their public selection, Task or list shape.
+Compact selection uses its existing `returned_count`, `total_matching`,
+`limit` and `truncated` fields, rather than the noncompact list's `count`.
+Context candidate references must use the closed same-response selected-Task
+pointer and match that selected Task ID; no arbitrary pointer traversal occurs.
 
 Response partitions use exact execution-owner sets. Reopened work has another
 execution and completion period; pause/resume identity is not changed by the
-collector. This first response policy supports start/completion and retained
-ready/cancelled exits. Pause/block/resume response classification is not yet
-activated: affected response boundaries remain unknown until its separately
-approved policy is implemented. Existing reviewer and wait-decision bindings
+collector. Successful pause/block responses remain in the stopped execution;
+subsequent responses are unassigned until another valid origin, unless an
+independent binding applies. Resume uses the same-turn eligible-selection
+rule as start, retains the original execution and does not adopt a stopped gap
+or earlier-turn preparation. A selection made while another execution is
+active cannot become the new Task's origin. Stop and a single next start/resume
+in one response give that whole response to the next execution; multiple
+distinct successful starts/resumes share only that response. Within-response
+state follows committed operation order, including stop/resume of the same
+execution. Failed operations do not cut intervals; unconfirmed, missing or
+ambiguous boundaries remain unknown rather than proving unassigned usage.
+An unrelated blocked Task's ready/cancelled exit does not clear another
+execution's completion tail or eligible preparation. Supported cross-session
+pause recovery includes its qualified stop response in the original execution
+(subject to next-origin priority). Core order proves release, but cannot supply
+a clock-based cutoff in the former actor's response stream. After its last
+independently bound active endpoint, possible continuation stays unknown until
+its next qualified same-Task boundary or new local start/resume. Another
+Task's organization update does not make that range exclusive. Independent
+review/receipt participation remains retained; ambiguous overlapping ownership
+is partial rather than a guessed exclusive or unassigned value.
+Existing reviewer and wait-decision bindings
 continue independently; overlapping original response keys are unioned once.
 Unobserved numerical values are not zero; unknown assignment is distinct from
 confirmed unassigned usage. Old unqualified history is not guessed into units.
@@ -679,7 +701,11 @@ Optional lifecycle invocation follows the separate Setup/state contract and
 cannot alter these quality or completion boundaries.
 
 Current response partitions emit `taskgov-usage-snapshot-v2` with algorithm
-`response-partitions-v1`. They keep the v1 fields and add `assignment`:
+`response-partitions-v2`. Retained `response-partitions-v1` snapshots preserve
+their start/completion-only meaning and remain validated immutable history.
+The physical numerical schema remains 6; changing the algorithm invalidates
+the capture basis and publishes successors without a schema migration or
+reinterpreting old snapshot bytes. Both algorithms keep the v1 fields and add `assignment`:
 `exclusive` has exactly one execution, `shared` at least two, and `partial`
 retains only known owners with explicit incomplete-boundary gaps. The canonical
 digest includes this field and format. Old v1 bytes, membership and cycle links

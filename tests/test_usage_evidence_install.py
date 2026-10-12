@@ -13,7 +13,7 @@ from unittest import mock
 
 from tests.m14_test_support import make_physical_install, file_snapshot
 from tests.test_usage_attribution import THREAD, turn
-from tests.test_usage_collection import event, usage
+from tests.test_usage_collection import PARENT, event, usage
 from tests.test_usage_turn_adapter import tool_record
 from task_governance_tool.session_identity import CallerIdentity
 from task_governance_tool.state_resolver import resolve_project_state
@@ -25,6 +25,174 @@ from task_governance_tool.usage_values import UsageError
 
 
 class UsageEvidenceInstallTests(unittest.TestCase):
+    def test_native_unrelated_blocked_release_preserves_other_completion_tail(self):
+        acknowledgements = {}
+        completed = []
+        for offset, status in ((0, "ready"), (6, "cancelled")):
+            b = self.add("Blocked organization " + status)
+            bid = b["data"]["task"]["task_id"]
+            blocked = self.cli("task", "edit", bid, "--status", "blocked", "--blocked-reason", "Isolated fixture")
+            a = self.add("Completed tail " + status)
+            aid = a["data"]["task"]["task_id"]
+            done = self.complete(aid)
+            released = self.cli("task", "edit", bid, "--status", status)
+            self.assertIsNone(released["data"]["task"]["ownership"]["execution_id"])
+            acknowledgements.update({offset: b, offset + 1: blocked, offset + 2: a,
+                                     offset + 3: done, offset + 4: released})
+            completed.append(aid)
+        logs = self.root / "logs"
+        logs.mkdir()
+        source = SourceInput(THREAD, logs / "organization.jsonl", logs, self.root)
+        register_source(self.repository, source, CallerIdentity(THREAD))
+        rows = self.response_header(THREAD, 1)
+        for number in range(12):
+            identity = "organization-" + str(number)
+            rows += self.response_rows(identity, 1, acknowledgements.get(number))
+        source.path.write_bytes(b"".join(json.dumps(row).encode() + b"\n" for row in rows))
+        core, sealed = self.target.db_path.read_bytes(), file_snapshot(self.target.resolved_evidence_root)
+        self.collect_responses(source)
+        for task in completed:
+            unit = self.cli("task", "show", task)["data"]["usage"]["periods"][0]["work_units"][0]
+            self.assertEqual(unit["exclusive"]["response_count"], 4)
+            self.assertFalse(unit["partial"] or unit["shared"])
+        with closing(connect_initialized_readonly(self.target)) as connection:
+            index = self.repository.read(connection)
+        self.assertFalse(index["unattributed"]["unassigned"]["response_count"])
+        self.assertFalse(index["unattributed"]["unknown"]["response_count"])
+        self.assertEqual(self.target.db_path.read_bytes(), core)
+        self.assertEqual(file_snapshot(self.target.resolved_evidence_root), sealed)
+
+    def test_native_cross_session_delayed_pause_and_resume_preserve_original_execution(self):
+        start = self.add("Cross-session recovery")
+        task = start["data"]["task"]["task_id"]
+        execution = self.cli("task", "context")["data"]["selected"]["task"]["ownership"]["execution_id"]
+        paused = self.cli("task", "edit", task, "--status", "paused",
+                          "--pause-reason", "Explicit isolated recovery", caller=PARENT)
+        self.assertEqual(paused["data"]["task"]["ownership"]["execution_id"], execution)
+        logs = self.root / "logs"
+        logs.mkdir()
+        former = SourceInput(THREAD, logs / "former.jsonl", logs, self.root)
+        recovery = SourceInput(PARENT, logs / "recovery.jsonl", logs, self.root)
+        for source in (former, recovery):
+            register_source(self.repository, source, CallerIdentity(source.thread_id))
+        old_rows = self.response_header(THREAD, 1) + self.response_rows("old-start", 1, start)
+        old_rows += self.response_header(THREAD, 2, session=False) + self.response_rows("old-late", 2)
+        new_rows = self.response_header(PARENT, 3)
+        new_rows += self.response_rows("recovery-stop", 3, {"session_id": 7, "output": ""}, name="exec_command", thread=PARENT)
+        new_rows += self.response_rows("recovery-gap", 3, thread=PARENT)
+        new_rows += self.response_header(PARENT, 4, session=False)
+        new_rows += self.response_rows("recovery-poll", 4, paused, name="write_stdin", arguments={"session_id": 7}, thread=PARENT)
+        for source, rows in ((former, old_rows), (recovery, new_rows)):
+            source.path.write_bytes(b"".join(json.dumps(row).encode() + b"\n" for row in rows))
+        self.collect_responses(former, recovery)
+        actual = self.cli("task", "show", task)["data"]["usage"]
+        unit = actual["periods"][0]["work_units"][0]
+        self.assertEqual(unit["execution_id"], execution)
+        self.assertEqual(unit["exclusive"]["response_count"], 2)
+        self.assertEqual(sum(part["response_count"] for part in unit["partial"]), 1)
+        resumed = self.cli("task", "edit", task, "--status", "in_progress", caller=PARENT)
+        self.assertEqual(resumed["data"]["task"]["ownership"]["execution_id"], execution)
+        append = self.response_header(PARENT, 5, session=False)
+        append += self.response_rows("recovery-resume", 5, resumed, thread=PARENT) + self.response_rows("recovery-after", 5, thread=PARENT)
+        with recovery.path.open("ab") as stream:
+            stream.write(b"".join(json.dumps(row).encode() + b"\n" for row in append))
+        core, sealed = self.target.db_path.read_bytes(), file_snapshot(self.target.resolved_evidence_root)
+        self.collect_responses(former, recovery)
+        actual = self.cli("task", "show", task)["data"]["usage"]
+        unit = actual["periods"][0]["work_units"][0]
+        self.assertEqual(unit["execution_id"], execution)
+        self.assertEqual(unit["exclusive"]["response_count"], 4)
+        self.assertEqual(sum(part["response_count"] for part in unit["partial"]), 1)
+        self.assertEqual(actual["total"]["response_count"], 5)
+        with closing(connect_initialized_readonly(self.target)) as connection:
+            index = self.repository.read(connection)
+        self.assertEqual(index["unattributed"]["unassigned"]["response_count"], 2)
+        self.assertEqual(index["unattributed"]["unknown"]["response_count"], 1)
+        self.assertEqual(self.target.db_path.read_bytes(), core)
+        self.assertEqual(file_snapshot(self.target.resolved_evidence_root), sealed)
+
+    def response_header(self, thread, number, *, session=True):
+        rows = [event("session_meta", id=thread, cwd=str(self.root), model_provider="openai",
+                      cli_version="0.162.0-alpha.17.2")] if session else []
+        return rows + [event("event_msg", type="task_started", turn_id=turn(number), started_at=number * 1000),
+                       event("turn_context", turn_id=turn(number), model="fixture-model")]
+
+    def response_rows(self, identity, number, acknowledgement=None, *, name="exec", arguments=None, thread=THREAD):
+        rows = []
+        if acknowledgement is not None:
+            rows.append(event("response_item", type="function_call", name=name, call_id=identity,
+                              arguments=json.dumps(arguments or {}),
+                              internal_chat_message_metadata_passthrough={"turn_id": turn(number), "response_id": identity}))
+        rows.append(usage(identity, turn=turn(number), thread=thread))
+        if acknowledgement is not None:
+            rows.append(event("response_item", type="function_call_output", call_id=identity,
+                              output=json.dumps(acknowledgement),
+                              internal_chat_message_metadata_passthrough={"turn_id": turn(number)}))
+        return rows
+
+    def collect_responses(self, *sources):
+        for source in sources:
+            while self.repository.cursor(source.source_id, source.thread_id).offset < source.path.stat().st_size:
+                self.repository.collect_source(source, max_records=1)
+        self.assertEqual(service.refresh_usage(self.target)["publication"], "current")
+
+    def test_native_pause_block_resume_keeps_execution_and_separates_stopped_gaps(self):
+        a = self.add("A pause/resume")
+        aid = a["data"]["task"]["task_id"]
+        prior_check = self.cli("task", "context")
+        paused = self.cli("task", "edit", aid, "--status", "paused", "--pause-reason", "Isolated fixture")
+        b = self.add("B during A pause")
+        bid = b["data"]["task"]["task_id"]
+        b_done = self.complete(bid)
+        new_check = self.cli("task", "show", bid)
+        resumed = self.cli("task", "edit", aid, "--status", "in_progress")
+        blocked = self.cli("task", "edit", aid, "--status", "blocked", "--blocked-reason", "Isolated fixture")
+        another_check = self.cli("task", "context")
+        resumed_again = self.cli("task", "edit", aid, "--status", "in_progress")
+        done = self.complete(aid)
+        execution = prior_check["data"]["selected"]["task"]["ownership"]["execution_id"]
+        self.assertTrue(all(ack["data"]["task"]["ownership"]["execution_id"] == execution
+                            for ack in (paused, resumed, blocked, resumed_again)))
+        acknowledgements = {0: a, 1: prior_check, 2: paused, 4: b, 5: b_done,
+                            7: new_check, 9: resumed, 11: blocked, 13: another_check, 15: resumed_again, 16: done}
+        logs = self.root / "logs"
+        logs.mkdir()
+        source = SourceInput(THREAD, logs / "native-stop.jsonl", logs, self.root)
+        register_source(self.repository, source, CallerIdentity(THREAD))
+        rows = [event("session_meta", id=THREAD, cwd=str(self.root), model_provider="openai", cli_version="0.162.0-alpha.17.2"),
+                event("event_msg", type="task_started", turn_id=turn(1), started_at=1000),
+                event("turn_context", turn_id=turn(1), model="fixture-model")]
+        for number in range(18):
+            identity = "stop-response-" + str(number)
+            if number in acknowledgements:
+                rows.append(event("response_item", type="function_call", name="exec", call_id=identity, input="",
+                    internal_chat_message_metadata_passthrough={"turn_id": turn(1), "response_id": identity}))
+            rows.append(usage(identity, turn=turn(1)))
+            if number in acknowledgements:
+                rows.append(event("response_item", type="function_call_output", call_id=identity,
+                    output=json.dumps(acknowledgements[number]), internal_chat_message_metadata_passthrough={"turn_id": turn(1)}))
+        source.path.write_bytes(b"".join(json.dumps(row).encode() + b"\n" for row in rows))
+        core, sealed = self.target.db_path.read_bytes(), file_snapshot(self.target.resolved_evidence_root)
+        while self.repository.cursor(source.source_id, THREAD).offset < source.path.stat().st_size:
+            self.repository.collect_source(source, max_records=1)
+        self.assertEqual(service.refresh_usage(self.target)["publication"], "current")
+        actual = self.cli("task", "show", aid, "--audit")["data"]["usage"]
+        self.assertEqual(actual["total"]["response_count"], 13)
+        self.assertEqual(actual["total"]["models"][0]["total_tokens"], 1560)
+        self.assertEqual(len(actual["periods"]), 1)
+        self.assertEqual(len(actual["periods"][0]["work_units"]), 1)
+        unit = actual["periods"][0]["work_units"][0]
+        self.assertEqual(unit["execution_id"], execution)
+        self.assertEqual(unit["exclusive"]["response_count"], 13)
+        self.assertFalse(unit["shared"] or unit["partial"])
+        self.assertEqual(self.cli("task", "show", bid)["data"]["usage"]["total"]["response_count"], 3)
+        with closing(connect_initialized_readonly(self.target)) as connection:
+            index = self.repository.read(connection)
+        self.assertEqual(index["unattributed"]["unassigned"]["response_count"], 2)
+        self.assertEqual(index["unattributed"]["unknown"]["response_count"], 0)
+        self.assertEqual(self.target.db_path.read_bytes(), core)
+        self.assertEqual(file_snapshot(self.target.resolved_evidence_root), sealed)
+
     def test_native_completion_cycles_are_exclusive_response_sets_in_one_turn(self):
         a = self.add("A")
         aid = a["data"]["task"]["task_id"]
@@ -77,8 +245,8 @@ class UsageEvidenceInstallTests(unittest.TestCase):
         self.target = resolution.target
         self.repository = service.repository_for(self.target)
 
-    def cli(self, *arguments, ok=True):
-        environment = {**os.environ, "CODEX_THREAD_ID": THREAD}
+    def cli(self, *arguments, ok=True, caller=THREAD):
+        environment = {**os.environ, "CODEX_THREAD_ID": caller}
         environment.pop("PYTHONPATH", None)
         result = subprocess.run([sys.executable, "-I", "-S", "-B", str(self.install.entrypoint),
                                  *arguments, "--json"], cwd=self.root, env=environment,

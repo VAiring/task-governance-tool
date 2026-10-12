@@ -16,7 +16,7 @@ from task_governance_tool.usage_values import RESPONSE_ID, UsageError, label
 from task_governance_tool.task_values import validate_task_id, TaskValidationError
 
 
-VERSION = "codex-response-relations-v1"
+VERSION = "codex-response-relations-v2"
 BRACKET_VERSIONS = frozenset({"0.162.0-alpha.17.2"})
 MAX_CONTEXT = 128
 MAX_TEXT = 2_097_152
@@ -190,25 +190,38 @@ def _check_shape(command, data, project):
                     and value.get("project_id", project) == project)
         except (TaskValidationError, TypeError, KeyError):
             return False
-    def listing(value):
-        return (isinstance(value, dict) and isinstance(value.get("tasks"), list)
-                and type(value.get("count")) is int and 0 <= value["count"] == len(value["tasks"])
-                and type(value.get("limit")) is int and value["limit"] >= value["count"]
-                and all(task(row) for row in value["tasks"]))
+    def listing(value, *, compact=False, selected=None):
+        if not isinstance(value, dict) or not isinstance(value.get("tasks"), list):
+            return False
+        count = value.get("returned_count") if compact else value.get("count")
+        if (type(count) is not int or not 0 <= count == len(value["tasks"])
+                or type(value.get("limit")) is not int or value["limit"] < count
+                or not all(task(row) for row in value["tasks"])):
+            return False
+        if compact and (type(value.get("total_matching")) is not int or value["total_matching"] < count
+                        or type(value.get("truncated")) is not bool):
+            return False
+        for row in value["tasks"]:
+            if "task_ref" in row and (selected is None or row["task_ref"] != "/data/selected/task"
+                    or row["task_id"] != selected["task_id"]):
+                return False
+        return True
     if not isinstance(data, dict):
         return False
     if command == "task.show":
         return task(data.get("task")) and isinstance(data.get("events"), list)
     if command in {"task.list", "task.current", "task.next"}:
-        return listing(data)
+        return listing(data, compact=command != "task.list" and "returned_count" in data)
     if command == "task.context":
         selection = data.get("selection")
         selected = data.get("selected")
+        selected_task = selected.get("task") if isinstance(selected, dict) else None
         return (set(data) >= {"selection", "current", "next", "selected"}
                 and selection in {"none", "current", "next"}
                 and ((selection == "none" and selected is None) or
                      (selection != "none" and isinstance(selected, dict) and task(selected.get("task"))))
-                and all(value is None or listing(value) for value in (data["current"], data["next"])))
+                and all(value is None or listing(value, compact=True, selected=selected_task)
+                        for value in (data["current"], data["next"])))
     return False
 
 

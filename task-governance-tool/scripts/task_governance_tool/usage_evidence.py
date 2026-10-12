@@ -11,9 +11,12 @@ from task_governance_tool.usage_values import GAP_CODES, METRICS, UsageError, la
 
 FORMAT = "taskgov-usage-snapshot-v1"
 ALGORITHM = "inclusive-turn-components-v1"
+RESPONSE_FORMAT = "taskgov-usage-snapshot-v2"
+RESPONSE_ALGORITHM = "response-partitions-v1"
 MAX_DOCUMENT_BYTES = 16_777_216
 GAPS = GAP_CODES | {"boundary_unknown", "review_boundary_unknown", "interval_open",
                     "collection_pending", "usage_pending", "operation_unbound"}
+RESPONSE_GAPS = GAPS | {"response_binding_unknown", "response_order_unknown"}
 _HEX = re.compile(r"[0-9a-f]{64}\Z")
 _EXECUTION = re.compile(r"tg_execution_[0-9a-f]{16}\Z")
 
@@ -39,6 +42,8 @@ def snapshot(project_id, component, predecessors=()):
             "response_count": len(component["response_keys"]), "models": component["models"],
             "coverage": "registered_only", "quality": quality, "gaps": gaps,
             "predecessors": sorted(predecessors)}
+    if "assignment" in component:
+        body.update(format=RESPONSE_FORMAT, algorithm=component["algorithm"], assignment=component["assignment"])
     result = {**body, "snapshot_id": digest(body)}
     validate(result, project_id)
     return result
@@ -48,8 +53,13 @@ def validate(value, project_id):
     """Stored JSON is untrusted: admit only this numerical format before display."""
     expected = {"format", "algorithm", "project_id", "executions", "response_set_digest",
                 "response_count", "models", "coverage", "quality", "gaps", "predecessors", "snapshot_id"}
+    response_format = isinstance(value, dict) and value.get("format") == RESPONSE_FORMAT
+    if response_format:
+        expected.add("assignment")
     if (not isinstance(value, dict) or set(value) != expected
-            or value["format"] != FORMAT or value["algorithm"] != ALGORITHM
+            or (not response_format and (value["format"] != FORMAT or value["algorithm"] != ALGORITHM))
+            or (response_format and (value["algorithm"] != RESPONSE_ALGORITHM
+                or value["assignment"] not in {"exclusive", "shared", "partial"}))
             or value["project_id"] != project_id or value["coverage"] != "registered_only"
             or value["quality"] not in {"pending", "incomplete", "conflicting"}
             or type(value["response_count"]) is not int or value["response_count"] < 0):
@@ -61,8 +71,12 @@ def validate(value, project_id):
             raise UsageError()
     if not value["executions"]:
         raise UsageError()
+    if response_format and ((value["assignment"] == "exclusive" and len(value["executions"]) != 1)
+            or (value["assignment"] == "shared" and len(value["executions"]) < 2)):
+        raise UsageError()
     gaps = value["gaps"]
-    if (not isinstance(gaps, list) or any(not isinstance(gap, str) or gap not in GAPS for gap in gaps)
+    allowed_gaps = RESPONSE_GAPS if response_format else GAPS
+    if (not isinstance(gaps, list) or any(not isinstance(gap, str) or gap not in allowed_gaps for gap in gaps)
             or gaps != sorted(set(gaps))):
         raise UsageError()
     quality = "conflicting" if "response_conflict" in gaps else "incomplete" if gaps else "pending"

@@ -25,6 +25,45 @@ from task_governance_tool.usage_values import UsageError
 
 
 class UsageEvidenceInstallTests(unittest.TestCase):
+    def test_native_completion_cycles_are_exclusive_response_sets_in_one_turn(self):
+        a = self.add("A")
+        aid = a["data"]["task"]["task_id"]
+        a_done = self.complete(aid)
+        b = self.add("B")
+        bid = b["data"]["task"]["task_id"]
+        b_done = self.complete(bid)
+        reopened = self.cli("task", "edit", aid, "--status", "in_progress", "--reopen-reason", "Approved isolated follow-up")
+        done_again = self.complete(aid)
+        logs = self.root / "logs"
+        logs.mkdir()
+        source = SourceInput(THREAD, logs / "native.jsonl", logs, self.root)
+        register_source(self.repository, source, CallerIdentity(THREAD))
+        rows = [event("session_meta", id=THREAD, cwd=str(self.root), model_provider="openai", cli_version="0.162.0-alpha.17.2"),
+                event("event_msg", type="task_started", turn_id=turn(1), started_at=1000),
+                event("turn_context", turn_id=turn(1), model="fixture-model")]
+        for index, ack in enumerate((a, a_done, b, b_done, reopened, done_again)):
+            identity = "native-" + str(index)
+            rows += [event("response_item", type="function_call", name="functions.exec", call_id=identity, arguments="",
+                        internal_chat_message_metadata_passthrough={"turn_id": turn(1), "response_id": identity}),
+                     usage(identity, turn=turn(1)),
+                     event("response_item", type="function_call_output", call_id=identity, output=json.dumps(ack),
+                        internal_chat_message_metadata_passthrough={"turn_id": turn(1)})]
+        source.path.write_bytes(b"".join(json.dumps(row).encode() + b"\n" for row in rows))
+        core = self.target.db_path.read_bytes()
+        sealed = file_snapshot(self.target.resolved_evidence_root)
+        while self.repository.cursor(source.source_id, THREAD).offset < source.path.stat().st_size:
+            self.repository.collect_source(source, max_records=1)
+        self.assertEqual(service.refresh_usage(self.target)["publication"], "current")
+        actual = self.cli("task", "show", aid, "--audit")["data"]["usage"]
+        self.assertEqual([period["models"][0]["total_tokens"] for period in actual["periods"]], [240, 240])
+        self.assertEqual(actual["total"]["models"][0]["total_tokens"], 480)
+        self.assertEqual(len({period["completion_cycle_id"] for period in actual["periods"]}), 2)
+        self.assertTrue(all(unit["exclusive"]["response_count"] == 2 and not unit["shared"] and not unit["partial"]
+                            for period in actual["periods"] for unit in period["work_units"]))
+        self.assertEqual(self.cli("task", "show", bid)["data"]["usage"]["total"]["response_count"], 2)
+        self.assertEqual(self.target.db_path.read_bytes(), core)
+        self.assertEqual(file_snapshot(self.target.resolved_evidence_root), sealed)
+
     def setUp(self):
         temporary = tempfile.TemporaryDirectory()
         self.addCleanup(temporary.cleanup)
@@ -90,9 +129,15 @@ class UsageEvidenceInstallTests(unittest.TestCase):
         evidence = file_snapshot(self.target.resolved_evidence_root) if self.target.resolved_evidence_root.exists() else {}
         self.assertEqual(service.refresh_usage(self.target)["publication"], "current")
         shown = self.cli("task", "show", task)["data"]["usage"]
-        self.assertEqual(shown["periods"][0]["models"][0]["total_tokens"], 7 * 120)
+        # Response partitions do not propagate the other Task's later turn 8
+        # through the overlapping turn 7. Turn-only observations stay partial.
+        self.assertEqual(shown["periods"][0]["models"][0]["total_tokens"], 6 * 120)
+        self.assertTrue(all(unit["exclusive"]["response_count"] == 0
+                            for unit in shown["periods"][0]["work_units"]))
         self.assertIn("interval_open", shown["periods"][0]["gaps"])
-        self.assertEqual(len(shown["cycle_links"]), 1)
+        self.assertEqual({link["snapshot_id"] for link in shown["cycle_links"]},
+                         set(shown["periods"][0]["snapshot_ids"]))
+        self.assertEqual(len(shown["cycle_links"]), 4)
         self.assertIsNotNone(shown["periods"][0]["completion_cycle_id"])
         self.assertEqual(self.target.db_path.read_bytes(), core)
         self.assertEqual(file_snapshot(self.target.resolved_evidence_root) if self.target.resolved_evidence_root.exists() else {}, evidence)
@@ -114,7 +159,7 @@ class UsageEvidenceInstallTests(unittest.TestCase):
         self.assertEqual(self.target.db_path.read_bytes(), core)
         self.assertEqual(service.refresh_usage(self.target)["publication"], "current")
         final = self.cli("task", "show", task, "--audit")["data"]["usage"]
-        self.assertEqual(final["periods"][0]["models"][0]["total_tokens"], 8 * 120)
+        self.assertEqual(final["periods"][0]["models"][0]["total_tokens"], 7 * 120)
         self.assertEqual(final["periods"][0]["completion_cycle_id"], shown["periods"][0]["completion_cycle_id"])
         index_data = json.loads(self.target.resolved_usage_index.read_bytes())
         for identity in index_data["snapshots"]:

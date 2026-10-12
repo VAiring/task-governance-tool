@@ -87,6 +87,7 @@ class UsageIncrementalRepository(UsageWaitRepository):
     migrations = (*UsageWaitRepository.migrations, (5, "incremental_collection"))
     connection_timeout = 0.05
     deadline = float("inf")
+    _previous_repositories = _PREVIOUS
 
     def check_budget(self):
         if monotonic() >= self.deadline:
@@ -102,7 +103,7 @@ class UsageIncrementalRepository(UsageWaitRepository):
         except UsageError as error:
             if error.code != "usage_schema_invalid":
                 raise
-        for previous in _PREVIOUS:
+        for previous in self._previous_repositories:
             try:
                 with previous(self.path, *self.basis).connection():
                     return "migration_required"
@@ -114,7 +115,7 @@ class UsageIncrementalRepository(UsageWaitRepository):
     def initialize(self):
         if self.inspect() != "migration_required":
             return UsageRepository.initialize(self)
-        for previous in _PREVIOUS:
+        for previous in self._previous_repositories:
             old = previous(self.path, *self.basis)
             try:
                 with old.connection(write=True) as connection:
@@ -122,7 +123,7 @@ class UsageIncrementalRepository(UsageWaitRepository):
                             or connection.execute("PRAGMA foreign_key_check").fetchone()):
                         raise UsageError()
                     connection.execute("ALTER TABLE usage_migrations RENAME TO usage_migrations_old")
-                    connection.execute(_MIGRATION)
+                    connection.execute(self.schema_statements[0])
                     connection.execute("INSERT INTO usage_migrations SELECT * FROM usage_migrations_old")
                     connection.execute("DROP TABLE usage_migrations_old")
                     for statement in self.schema_statements[1:]:
@@ -243,9 +244,11 @@ class UsageIncrementalRepository(UsageWaitRepository):
             goal = expected.offset if lane == "audit" and reset else (document["goal"] if lane == "audit" else None)
             goal_prefix = expected.prefix if lane == "audit" and reset else (document["goal_prefix"] if lane == "audit" else "")
             lookup = lambda turn: None if reset else self._model(connection, source.source_id, lane, turn)
+            response_context = self._response_context(connection, source.source_id, lane, reset)
             try:
                 result = scan(source, state, Models(lookup), file_id="" if reset and lane == "ingest" else expected.file_id,
-                              goal=goal, project_id=self.basis[0], deadline=self.deadline, **limits)
+                              goal=goal, project_id=self.basis[0], deadline=self.deadline,
+                              response_context=response_context, **limits)
             except UsageError as error:
                 if error.code != "source_replaced":
                     raise
@@ -269,6 +272,7 @@ class UsageIncrementalRepository(UsageWaitRepository):
         self._before_scan_write()
         with self.connection(write=True) as connection:
             self._cas(connection, source.source_id, expected, revision, lane)
+            self._save_response_context(connection, source.source_id, lane, result.response_context)
             if reset:
                 connection.execute("DELETE FROM usage_scan_models WHERE source_id=? AND lane=?", (source.source_id, lane))
             connection.executemany("INSERT INTO usage_scan_models VALUES (?,?,?,?,?) ON CONFLICT(source_id,lane,turn_id) "
@@ -303,6 +307,14 @@ class UsageIncrementalRepository(UsageWaitRepository):
         if row is not None and any(value is not None and label(value) != value for value in row):
             raise UsageError("usage_schema_invalid")
         return tuple(row) if row else None
+
+    def _response_context(self, connection, source, lane, reset):
+        """Later response policies extend the same CAS transaction, not schema 5."""
+        return None
+
+    def _save_response_context(self, connection, source, lane, context):
+        if context is not None:
+            raise UsageError("usage_schema_invalid")
 
     def _cas(self, connection, source, expected, revision, lane):
         row = connection.execute("SELECT * FROM usage_sources WHERE source_id=?", (source,)).fetchone()

@@ -118,7 +118,7 @@ def _projection(record: dict, thread: str, provider: str, models: dict):
 
 
 def read_batch(source: SourceInput, expected: Cursor = Cursor(), *, include_attribution=False,
-               attribution_project_id=None) -> CollectionBatch:
+               attribution_project_id=None, include_response_relations=False) -> CollectionBatch:
     """Read one stable physical segment without modifying it or any state.
 
 The prefix digest covers only accepted metadata and fixed markers plus record
@@ -136,13 +136,21 @@ numerical prefix replays idempotently in a new incarnation.
             first = stream.readline(MAX_LINE + 1)
             if len(first) > MAX_LINE or not first.endswith(b"\n"):
                 raise UsageError("source_unreadable")
-            provider = _header(_json(first), source)
+            header = _json(first)
+            provider = _header(header, source)
+            tracker = None
+            if include_response_relations:
+                from task_governance_tool.usage_response_adapter import ResponseTracker, VERSION, BRACKET_VERSIONS
+                tracker = ResponseTracker(source.thread_id, provider,
+                                          allow_bracket=header["payload"].get("cli_version") in BRACKET_VERSIONS)
             # Bounded, sanitized prefix scan, including model context before cursor.
             digest = hashlib.sha256()
             digest.update(json.dumps([ADAPTER_VERSION, source.thread_id, provider]).encode())
             if include_attribution:
                 from task_governance_tool.usage_turn_adapter import ADAPTER_VERSION as TURN_VERSION
                 digest.update(TURN_VERSION.encode())
+            if tracker is not None:
+                digest.update(json.dumps([VERSION, tracker.allow_bracket]).encode())
             models, rows, gaps = {}, [], set()
             attribution = []
             modern_turns, legacy_turns = set(), set()
@@ -184,9 +192,16 @@ numerical prefix replays idempotently in a new incarnation.
                         marker, response = _projection(decoded, source.thread_id, provider, models)
                         if include_attribution and context_owner == source.thread_id:
                             from task_governance_tool.usage_turn_adapter import project_record
-                            projected = project_record(decoded, source.thread_id, project_id=attribution_project_id)
+                            projected = project_record(decoded, source.thread_id, project_id=attribution_project_id) if (
+                                tracker is None or decoded.get("type") == "event_msg") else ()
+                            if tracker is not None:
+                                projected += tracker.consume(decoded, start, response, attribution_project_id)
                     except (UsageError, TypeError):
                         marker, response, code = ("invalid_record",), None, "invalid_record"
+                if tracker is not None and (code or context_owner != source.thread_id
+                        or marker == ("inherited",)
+                        or (isinstance(marker, tuple) and marker[0] == "session" and marker[1] != source.thread_id)):
+                    tracker.interrupt_relation()
                 boundary = stream.tell()
                 if isinstance(marker, tuple) and marker[0] == "session":
                     context_owner, context_turn = marker[1], None
@@ -227,7 +242,8 @@ numerical prefix replays idempotently in a new incarnation.
             raise UsageError("source_changed")
         if expected.incarnation and (replaced or not prior_matches):
             replay = read_batch(source, include_attribution=include_attribution,
-                                attribution_project_id=attribution_project_id)
+                                attribution_project_id=attribution_project_id,
+                                include_response_relations=include_response_relations)
             return CollectionBatch(source.source_id, source.thread_id, expected,
                                    Cursor(expected.incarnation + 1, replay.successor.offset,
                                           replay.successor.prefix, replay.successor.file_id),

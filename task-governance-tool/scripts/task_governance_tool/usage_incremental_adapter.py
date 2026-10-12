@@ -45,6 +45,7 @@ class Scan:
     legacy: frozenset
     bytes_read: int
     records: int
+    response_context: dict | None = None
 
 
 class Models(dict):
@@ -65,7 +66,7 @@ def chain(prefix, value):
 
 
 def scan(source, state, models, *, file_id="", goal=None, project_id=None,
-         max_bytes=SLICE_BYTES, max_records=SLICE_RECORDS, deadline=float("inf")):
+         max_bytes=SLICE_BYTES, max_records=SLICE_RECORDS, deadline=float("inf"), response_context=None):
     """Read a stable append/audit slice. Replacement is a replay signal.
 
     The caller owns independent ingest/audit contexts. Audit has a fixed goal,
@@ -86,14 +87,22 @@ def scan(source, state, models, *, file_id="", goal=None, project_id=None,
             first = stream.readline(MAX_LINE + 1)
             if len(first) > MAX_LINE or not first.endswith(b"\n"):
                 raise UsageError("source_unreadable")
-            provider = _header(_json(first), source)
+            header = _json(first)
+            provider = _header(header, source)
+            tracker = None
+            if response_context is not None:
+                from task_governance_tool.usage_response_adapter import ResponseTracker, VERSION, BRACKET_VERSIONS
+                tracker = ResponseTracker(source.thread_id, provider, response_context,
+                                          allow_bracket=header["payload"].get("cli_version") in BRACKET_VERSIONS)
             bytes_read = len(first)
             if state.offset:
                 if provider != state.provider or len(first) > state.offset:
                     raise UsageError("source_replaced")
             else:
-                state = ScanState(len(first), chain("", ["codex-incremental-v1", ADAPTER_VERSION,
-                                                         source.thread_id, provider]), provider, source.thread_id)
+                version = ["codex-incremental-v1", ADAPTER_VERSION, source.thread_id, provider]
+                if tracker is not None:
+                    version.extend([VERSION, tracker.allow_bracket])
+                state = ScanState(len(first), chain("", version), provider, source.thread_id)
             stream.seek(state.drain or state.offset)
             limit = before.size if goal is None else goal
             responses, attribution, gaps = [], [], set()
@@ -106,6 +115,7 @@ def scan(source, state, models, *, file_id="", goal=None, project_id=None,
                     break
                 projected = ()
                 code = None
+                record_start = state.offset
                 if state.drain:
                     raw = stream.readline(min(65536, limit - stream.tell()))
                 else:
@@ -127,9 +137,16 @@ def scan(source, state, models, *, file_id="", goal=None, project_id=None,
                         decoded = _json(raw)
                         marker, response = _projection(decoded, source.thread_id, provider, models)
                         if state.owner == source.thread_id:
-                            projected = project_record(decoded, source.thread_id, project_id=project_id)
+                            projected = project_record(decoded, source.thread_id, project_id=project_id) if (
+                                tracker is None or decoded.get("type") == "event_msg") else ()
+                            if tracker is not None:
+                                projected += tracker.consume(decoded, record_start, response, project_id)
                     except (UsageError, TypeError):
                         marker, response, code = ("invalid_record",), None, "invalid_record"
+                if tracker is not None and (code or state.owner != source.thread_id
+                        or marker == ("inherited",)
+                        or (isinstance(marker, tuple) and marker[0] == "session" and marker[1] != source.thread_id)):
+                    tracker.interrupt_relation()
                 owner, turn = state.owner, state.turn
                 if isinstance(marker, tuple) and marker[0] == "session":
                     owner, turn = marker[1], None
@@ -155,6 +172,7 @@ def scan(source, state, models, *, file_id="", goal=None, project_id=None,
         if after != before:
             raise UsageError("source_changed")
         return Scan(state, identity, tuple(responses), tuple(attribution), tuple(sorted(gaps)),
-                    pending, dict(models), frozenset(modern), frozenset(legacy), bytes_read, count)
+                    pending, dict(models), frozenset(modern), frozenset(legacy), bytes_read, count,
+                    tracker.state if tracker is not None else None)
     except (OSError, StatePathError):
         raise UsageError("source_unreadable") from None

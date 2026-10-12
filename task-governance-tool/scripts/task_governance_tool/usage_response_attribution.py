@@ -1,0 +1,295 @@
+"""Response-key attribution and exact owner-set partitions; no I/O or gates.
+
+Record order is local to an admitted source incarnation. Sources are combined
+only when their response-key ordering constraints have one consistent order.
+An uncertain endpoint never becomes a guessed interval or measured zero.
+"""
+
+from collections import defaultdict
+
+from task_governance_tool.usage_attribution import _models, _coverage
+
+
+ALGORITHM = "response-partitions-v1"
+
+
+def response_order(positions, turns, conflicting_turns=frozenset()):
+    starts, conflicts, by_turn, edges = {}, set(conflicting_turns), defaultdict(set), defaultdict(set)
+    orders = {}
+    for turn in turns:
+        key, clock = (turn.thread_id, turn.turn_id), (turn.thread_id, turn.started_at)
+        if key in starts and starts[key] != turn.started_at:
+            conflicts.add(key)
+        if clock in orders and orders[clock] != key:
+            conflicts.update((key, orders[clock]))
+        starts[key], orders[clock] = turn.started_at, key
+    lanes = defaultdict(list)
+    for source, incarnation, item in positions:
+        key = item.provider, item.response_id
+        turn = item.thread_id, item.turn_id
+        by_turn[turn].add(key)
+        lanes[source, incarnation, *turn].append((item.record_order, key))
+    for lane, values in lanes.items():
+        at = defaultdict(set)
+        for order, key in values:
+            at[order].add(key)
+        if any(len(keys) != 1 for keys in at.values()):
+            conflicts.add(lane[2:])
+            continue
+        chain = [next(iter(at[order])) for order in sorted(at)]
+        # Identical numerical replay is not another response/order boundary.
+        chain = list(dict.fromkeys(chain))
+        for left, right in zip(chain, chain[1:]):
+            edges[lane[2:]].add((left, right))
+    ordered, unknown = {}, set()
+    for turn, keys in by_turn.items():
+        remaining, result = set(keys), []
+        if turn not in starts or turn in conflicts:
+            unknown.update(keys)
+            continue
+        while remaining:
+            roots = remaining - {right for left, right in edges[turn] if left in remaining and right in remaining}
+            if len(roots) != 1:
+                unknown.update(keys)
+                break
+            current = roots.pop()
+            result.append(current)
+            remaining.remove(current)
+        else:
+            ordered[turn] = result
+    return starts, ordered, unknown
+
+
+def project_responses(transitions, bindings, checks, positions, turns, responses, *,
+                      additional=(), conflicting_responses=frozenset(), thread_diagnostics=None,
+                      conflicting_turns=frozenset(), unresolved=False, stops=False, geometry_only=False, pending=(), fallback=()):
+    """Every original key is exclusive, shared, unassigned, or unresolved.
+
+    The first policy implements start/completion only. Until the separate stop
+    policy is adopted, pause/block/resume boundaries remain explicit unknowns.
+    A shared response does not merge the owners' other exclusive responses.
+    """
+    starts, ordered, unknown = response_order(positions, turns, conflicting_turns)
+    unique, conflicts = {}, set(conflicting_responses)
+    for row in responses:
+        key = row.provider, row.response_id
+        if key in unique and unique[key] != row:
+            conflicts.add(key)
+        else:
+            unique[key] = row
+    good = {key: row for key, row in unique.items() if key not in conflicts}
+    unknown.update(set(good) - {key for keys in ordered.values() for key in keys})
+    owners, execution_gaps = defaultdict(set), defaultdict(set)
+    events = defaultdict(list)
+    executions = {}
+    valid_boundaries = {}
+    for index, change in enumerate(transitions):
+        if change.execution_id is not None:
+            executions[change.execution_id] = change
+        boundary = bindings.get(change.transition_id)
+        if boundary is None or boundary.response_id is None:
+            continue
+        key = boundary.provider, boundary.response_id
+        if boundary.thread_id != change.actor_session_id or (key in unique and
+                (unique[key].thread_id, unique[key].turn_id) != (boundary.thread_id, boundary.turn_id)):
+            unknown.add(key)
+            continue
+        if change.policy_version != 1:
+            unknown.add(key)
+            continue
+        valid_boundaries[index] = key
+        events[key].append((index, change))
+    check_keys = {(item.provider, item.response_id) for item in checks if item.response_id is not None}
+    per_thread = defaultdict(list)
+    for turn, keys in ordered.items():
+        per_thread[turn[0]].append((starts[turn], turn[1], keys))
+    # A validated actual parent receipt proves its receiving turn, including
+    # automatic completion whose owner-command turn is unavailable. It does
+    # not borrow a send/accepted turn or displace another active execution.
+    for index, change in enumerate(transitions):
+        if change.current_status != "done":
+            continue
+        receipts = {interval.start_turn for interval in additional if
+                    interval.execution_id == change.execution_id and interval.thread_id == change.actor_session_id
+                    and interval.start_turn is not None and interval.start_turn == interval.end_turn
+                    and not interval.diagnostics}
+        if len(receipts) == 1:
+            receipt_turn = next(iter(receipts))
+            sequence = ordered.get((change.actor_session_id, receipt_turn), [])
+            if sequence:
+                receipt_key = sequence[0]
+                if index not in valid_boundaries:
+                    valid_boundaries[index] = receipt_key
+                if (index, change) not in events[receipt_key]:
+                    events[receipt_key].append((index, change))
+    for thread, timelines in per_thread.items():
+        keys = [key for _, _, sequence in sorted(timelines) for key in sequence]
+        indices = {key: index for index, key in enumerate(keys)}
+        changes = [(index, change) for index, change in enumerate(transitions) if change.actor_session_id == thread]
+        located = [(index, change, indices[valid_boundaries[index]]) for index, change in changes
+                   if valid_boundaries.get(index) in indices]
+        for ordinal, (left, right) in enumerate(zip(located, located[1:])):
+            if left[2] <= right[2]:
+                continue
+            first = located[ordinal - 1][2] if ordinal else 0
+            later = [position for _, _, position in located[ordinal + 2:] if position > max(left[2], right[2])]
+            last = later[0] if later else len(keys)
+            unknown.update(keys[first:last])
+            for _, change, _ in (left, right):
+                if change.execution_id is not None:
+                    execution_gaps[change.execution_id].add("response_order_unknown")
+        for source, incarnation, origin_thread, origin_turn, provider, response_id, order in pending:
+            if origin_thread != thread:
+                continue
+            origin_key = provider, response_id
+            same_turn = origin_key in good and (good[origin_key].thread_id, good[origin_key].turn_id) == (thread, origin_turn)
+            first = indices.get(origin_key) if same_turn else None
+            if first is None:
+                clock = starts.get((thread, origin_turn))
+                before = [indices[item.provider, item.response_id] for sid, inc, item in positions
+                          if (sid, inc, item.thread_id, item.turn_id) == (source, incarnation, thread, origin_turn)
+                          and item.record_order < order and (item.provider, item.response_id) in indices]
+                lower = max(before) if before else -1
+                candidates = [indices[item.provider, item.response_id] for sid, inc, item in positions
+                    if item.thread_id == thread and (item.provider, item.response_id) in indices
+                    and indices[item.provider, item.response_id] > lower
+                    and (item.turn_id == origin_turn or (clock is not None
+                         and starts.get((thread, item.turn_id), -1) >= clock))
+                    and ((sid, inc) != (source, incarnation) or item.record_order >= order)]
+                if not candidates:
+                    continue
+                first = min(candidates)
+            next_known = [indices[key] for key in events if key in indices and indices[key] > first]
+            unknown.update(keys[first:min(next_known) if next_known else len(keys)])
+        for index, change in changes:
+            if index in valid_boundaries or change.execution_id is None:
+                continue
+            before = [item for item, _ in changes if item < index and valid_boundaries.get(item) in indices]
+            after = [item for item, _ in changes if item > index and valid_boundaries.get(item) in indices]
+            first = indices[valid_boundaries[max(before)]] if before else 0
+            last = indices[valid_boundaries[min(after)]] if after else len(keys)
+            beginning = change.current_status == "in_progress" and change.previous_status not in {"in_progress", "review_pending"}
+            if before and not beginning:
+                first += 1
+            unknown.update(keys[first:last])
+            execution_gaps[change.execution_id].add("response_binding_unknown")
+    for thread, timelines in per_thread.items():
+        active, completed, completion_turn, pending_checks, unknown_stop = None, None, None, [], False
+        for _, turn, keys in sorted(timelines):
+            if completion_turn != turn:
+                completed, pending_checks = None, []
+            for key in keys:
+                row_events = sorted(events[key])
+                beginning = []
+                for _, change in row_events:
+                    covered = change.current_status == "in_progress" or (
+                        change.policy_version == 1 and change.current_status == "review_pending")
+                    previous_covered = change.previous_status == "in_progress" or (
+                        change.policy_version == 1 and change.previous_status == "review_pending")
+                    if covered and not previous_covered:
+                        if change.previous_status in {"paused", "blocked"} and not stops:
+                            unknown.add(key)
+                            execution_gaps[change.execution_id].add("response_binding_unknown")
+                        else:
+                            beginning.append(change.execution_id)
+                beginning = list(dict.fromkeys(beginning))
+                if beginning:
+                    # A prior valid check series in this turn belongs wholly to
+                    # the chosen start, even if it inspected another candidate.
+                    for earlier in pending_checks:
+                        owners[earlier].difference_update({completed} if completed else set())
+                        owners[earlier].add(beginning[0])
+                    pending_checks = []
+                    owners[key].update(beginning)
+                    active, completed, completion_turn = beginning[-1], None, None
+                    unknown_stop = False
+                elif active is not None:
+                    owners[key].add(active)
+                elif completed is not None:
+                    owners[key].add(completed)
+                if unknown_stop:
+                    unknown.add(key)
+                if key in check_keys and active is None:
+                    pending_checks.append(key)
+                elif pending_checks and active is None:
+                    # The origin is the earliest check, not just the check
+                    # records; intermediate numerical responses are included.
+                    pending_checks.append(key)
+                for _, change in row_events:
+                    if change.current_status == "done":
+                        if not beginning and (active is None or active == change.execution_id):
+                            owners[key].add(change.execution_id)
+                        if active == change.execution_id or active is None:
+                            active, completed, completion_turn = None, change.execution_id, turn
+                    elif change.current_status in {"paused", "blocked", "ready", "cancelled"}:
+                        if stops or change.current_status in {"ready", "cancelled"}:
+                            if active == change.execution_id or (active is not None and change.execution_id is None
+                                    and executions[active].task_id == change.task_id):
+                                active = None
+                            completed, pending_checks = None, []
+                        else:
+                            unknown.add(key)
+                            active, completed, pending_checks = None, None, []
+                            unknown_stop = True
+                if active is not None:
+                    execution_gaps[active].update((thread_diagnostics or {}).get(thread, ()))
+
+    # Retained turn-only history preserves observed partial totals. This is
+    # deliberately restricted to unknown keys and never proves exclusive cost.
+    for interval in fallback:
+        covered, gaps = _coverage(interval, starts)
+        candidates = {key for key, row in good.items() if key in unknown
+                      and (row.thread_id, row.turn_id) in covered}
+        for key in candidates:
+            owners[key].add(interval.execution_id)
+        if candidates:
+            execution_gaps[interval.execution_id].update(gaps | set(interval.diagnostics))
+    # Independent reviewer/receipt relations remain valid even if owner-command
+    # observations are incomplete. Their response keys are unioned, never added.
+    for interval in additional:
+        covered, gaps = _coverage(interval, starts)
+        execution_gaps[interval.execution_id].update(gaps | set(interval.diagnostics))
+        owner = executions.get(interval.execution_id)
+        parent_receipt = (owner is not None and owner.current_status == "done"
+                          and owner.actor_session_id == interval.thread_id and interval.start_turn == interval.end_turn
+                          and interval.start_turn is not None)
+        trimmed = None
+        if parent_receipt:
+            sequence = ordered.get((interval.thread_id, interval.start_turn), [])
+            beginning_executions = {change.execution_id for key in sequence for _, change in events[key]
+                                   if change.current_status == "in_progress"
+                                   and change.previous_status not in {"in_progress", "review_pending"}}
+            cutoff = next((index for index, key in enumerate(sequence) if owners[key] & beginning_executions), len(sequence))
+            trimmed = set(sequence[:cutoff])
+        for key, row in good.items():
+            if (row.thread_id, row.turn_id) in covered and (trimmed is None or key in trimmed):
+                owners[key].add(interval.execution_id)
+    groups = defaultdict(set)
+    for key, members in owners.items():
+        if key not in good:
+            for member in members:
+                execution_gaps[member].add("response_conflict" if key in conflicts else "usage_pending")
+    for key, members in owners.items():
+        if key not in good or not members:
+            continue
+        assignment = "partial" if key in unknown else "exclusive" if len(members) == 1 else "shared"
+        groups[assignment, tuple(sorted(members))].add(key)
+    known = {execution for (_, members) in groups for execution in members}
+    for execution in executions.keys() - known:
+        groups["partial", (execution,)] = set()
+        execution_gaps[execution].update({"usage_pending", "response_binding_unknown"})
+    components = []
+    for (assignment, members), keys in sorted(groups.items()):
+        gaps = set().union(*(execution_gaps[member] for member in members))
+        if assignment == "partial":
+            gaps.add("response_binding_unknown")
+        if unresolved:
+            gaps.add("operation_unbound")
+        covered = sorted({(good[key].thread_id, good[key].turn_id) for key in keys})
+        components.append({"executions": list(members), "assignment": assignment, "algorithm": ALGORITHM,
+                           "turns": covered, "response_keys": sorted(keys), "diagnostics": sorted(gaps),
+                           "models": [] if geometry_only else _models(good[key] for key in keys)})
+    assigned = {key for component in components for key in component["response_keys"]}
+    return {"components": components, "unknown_response_keys": sorted(set(good) & unknown),
+            "unassigned_response_keys": sorted(set(good) - assigned - unknown),
+            "unresolved_operations": int(unresolved)}

@@ -2,7 +2,9 @@
 
 Read this only to introduce or diagnose automatic numerical collection. It is
 not a normal Task-loop procedure, and usage never changes completion gates.
-Observed shared-work totals are not exclusive Task costs or final billing.
+Observed totals do not prove final billing. Response partitions distinguish
+exclusive, shared and partial registered work; old shared-turn history remains
+shared and must not be read as exclusive cost.
 
 ## Installation And Trust
 
@@ -75,10 +77,18 @@ hooks retain prior behavior; fresh setup does not create them without ON.
 
 ## Collection Scope
 
-After core schema-26 Setup, the caller's in-progress and review-pending states
-share one held Task and continuous inclusive-turn interval. Actual responses
+The caller's in-progress and review-pending states share one held Task.
+Confirmed start/completion origins split the original response sets, with
+eligible same-turn preparation and completion reports included. Actual responses
 while waiting count, even for unrelated discussion in that session; waiting
-time alone invents no usage. Explicit release or completion ends coverage.
+time alone invents no usage. Explicit release or completion ends coverage,
+with observed completion-turn reports retained until the next eligible origin.
+Response partitions identify each execution's exclusive and shared work. A
+response containing several successful starts is shared only by those starts;
+other responses remain separate. Unsupported or uncertain response/command
+relations retain observed numbers with unknown attribution, not zero or an
+exclusive estimate. Current start/completion classification does not yet
+activate the separately planned pause/block/resume response policy.
 Setup preserves older closed intervals and legacy overlapping holdings. Use
 ordinary authorized state transitions to resolve those holdings, not a manual
 measurement command. Usage unavailability never blocks those transitions.
@@ -90,7 +100,7 @@ remains read-only, and a saved review counts only after its core binding exists.
 Only a retained legacy supervisor uses the
 [wait-decision marker](cli_contracts.md#record-review-wait-decision); normal
 deterministic waiting creates no supervisor usage turn. Actual parent/reviewer
-usage and existing marker history remain intact. Numerical schema 5 requires
+usage and existing marker history remain intact. Numerical schema 6 requires
 explicit setup to initialize or migrate; ordinary helpers and hooks never
 upgrade old stores. Usage unavailability does not prevent review or Task
 completion, and a marker does not prove collection.

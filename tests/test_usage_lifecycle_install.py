@@ -284,8 +284,12 @@ class UsageLifecycleReviewInstallTests(unittest.TestCase):
             return period
 
         recovered = assert_current()
-        successor = json.loads((target.resolved_usage_snapshots / (recovered["snapshot_ids"][0] + ".json")).read_bytes())
-        self.assertEqual(set(successor["predecessors"]), set(initial["periods"][0]["snapshot_ids"]))
+        successors = [json.loads((target.resolved_usage_snapshots / (identity + ".json")).read_bytes())
+                      for identity in recovered["snapshot_ids"]]
+        # Exact owner-set partitions can retain an unchanged reviewer snapshot
+        # instead of folding all independent work into one merged successor.
+        retained = set(recovered["snapshot_ids"]) | {identity for item in successors for identity in item["predecessors"]}
+        self.assertTrue(set(initial["periods"][0]["snapshot_ids"]) <= retained)
         stable = file_snapshot(target.resolved_usage_root)
         hook()
         self.assertEqual(assert_current(), recovered)

@@ -145,6 +145,11 @@ numerical schema-3 replay/links, and isolated publication/Task-detail reading,
 as specified in [immutable usage persistence](database-design.md#immutable-usage-persistence).
 Core completion never invokes that worker or opens its store.
 
+Current numerical factories select the schema-6 response repository. Closed
+transport relations and pure response partitions are delegated to
+[response attribution structure](database-design.md#response-relation-and-partition-structure);
+retained turn-policy modules continue to own historical interpretation.
+
 `usage_wait_attribution.py` and `usage_wait_repository.py` add the
 [schema-4 wait-decision projection](database-design.md#review-wait-decision-structure).
 `review_wait.py` captures its current core basis for the conditional handoff

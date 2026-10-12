@@ -907,7 +907,7 @@ Persisted complete records flow through the existing atomic cursor/observation
 writer and immutable usage publisher. Delayed endpoint records, completed Tasks
 and previous participants are retried at later events. Interrupted/concurrent
 work remains replayable; stale batches do not rerun a Task command. Missing or
-invalid sources preserve observed totals with gaps. Existing schema5 is required:
+invalid sources preserve observed totals with gaps. Existing schema6 is required:
 events never initialize, migrate, repair or rebind a database.
 
 Collection reserves bounded work for previous participants, old segments and

@@ -671,13 +671,15 @@ class SkillSelfContainmentTests(unittest.TestCase):
         self.assertEqual(setup_example["schema_to"], SCHEMA_VERSION)
         self.assertIn(f"`schema_to={SCHEMA_VERSION}`", setup_section)
 
-        from task_governance_tool.usage_incremental_repository import UsageIncrementalRepository
-        usage_schema = UsageIncrementalRepository.migrations[-1][0]
+        from task_governance_tool.usage_response_repository import UsageResponseRepository
+        usage_schema = UsageResponseRepository.migrations[-1][0]
         self.assertEqual(setup_example["usage"]["schema_to"], usage_schema)
         usage_contract = setup_section.split("`usage` reports separate", 1)[1].split(
             "`usage_hooks` separately reports", 1)[0]
         self.assertIn(f"`schema_to` is {usage_schema}", usage_contract)
-        self.assertIn(f"exact schema 1, 2, 3 or 4 to {usage_schema}", usage_contract)
+        self.assertIn(f"exact schema 1 through {usage_schema - 1} to {usage_schema}", usage_contract)
+        setup_owner = (ROOT / "docs/setup-state-specification.md").read_text(encoding="utf-8")
+        self.assertIn(f"Existing schema{usage_schema} is required", setup_owner)
 
         doctor_example_match = re.search(
             r"A ready result has this structure:\s*```json\s*(.*?)\s*```",
@@ -1819,7 +1821,7 @@ print(json.dumps(results, ensure_ascii=False))
             _, selection = self.linked_output(source, install, 'collection-selection', package)
             for entry in (install, selection):
                 _, coverage = self.linked_output(source, entry, 'collection-scope', package)
-                for condition in ('continuous inclusive-turn interval',
+                for condition in ('Confirmed start/completion origins split the original response sets',
                                   'even for unrelated discussion',
                                   'Explicit release or completion ends coverage',
                                   'validated same-project logs',

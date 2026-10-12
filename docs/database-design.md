@@ -297,9 +297,9 @@ Turn observations, response observations and source cursor commit atomically.
 `usage_review_boundaries` and `usage_review_receipt_turns`
 to numerical schema 1. Explicit initialization migrates the migration-marker
 table and adds the new relations in one short transaction, recording version 2
-last. No ordinary read or collector migrates. The setup factory selects schema 5
+last. No ordinary read or collector migrates. The setup factory selects schema 6
 for the current package. Preview returns `migration_required` and planned `usage_migrate` for
-an exact schema-1, schema-2, schema-3 or schema-4 store; explicit setup returns `migrated` and that completed
+an exact schema-1 through schema-5 store; explicit setup returns `migrated` and that completed
 write on success. Fresh-store creation keeps `usage_initialize`. Failure remains
 a separate numerical outcome, not rollback or rejection of core setup.
 
@@ -322,6 +322,73 @@ active execution can share the same turn; an unrelated parent's submission
 turn cannot stand in for the reviewer's read/save boundary. Legacy unbound
 Receipts add no inferred participation. Missing start history counts only a
 known save/direct-registration turn with explicit partial coverage.
+
+### Response Relation And Partition Structure
+
+`usage_response_adapter.py` owns closed call/result/response metadata and
+bounded continuation (128 pending calls, handles and retired-handle entries,
+262,144 bytes). `usage_response_attribution.py` owns response ordering and
+whole-response start/completion partitions. `usage_response_repository.py`
+owns numerical schema 6, current factories, core-reference resolution,
+partition snapshots and read projections. Neither parser nor classifier uses
+SQLite; SQL stays in the repository boundary.
+
+Schema 6 adds `usage_response_positions`, `usage_response_boundaries` and
+`usage_response_context`. Rows retain only source/incarnation identities,
+thread/turn/provider/response IDs, call ID, record order, closed command/method,
+and validated operation identities. Boundary digests hash only that closed
+metadata. No command, argument, warning, private body or body digest is saved.
+Contexts are independent for ingest/audit and commit under the same source
+cursor and continuation CAS as counters, coverage, relations and dirty marks.
+Unknown/foreign records break pending proofs without dropping numbers.
+Capacity exhaustion preserves one bounded earliest lost-origin frame in the
+continuation and projects its possible range as unknown after tracked calls
+drain, including after restart. It does not create an origin response, cover
+earlier independently confirmed work, or erase observed counters. The frame
+is retained until source replay can rebuild the trace; it is not cleared by a
+result for a call whose lifetime was lost. Opaque/unreadable results retain
+their unresolved frame until a supported terminal result is observed.
+Pending calls retain explicit unknown response coverage until their result can
+be validated. Historical qualified event/call origins are compared across
+incarnations; a replacement cannot silently relabel an old success. Candidate
+read acknowledgements require the essential public selection/list/show shape,
+not merely a known command name with an arbitrary data object.
+Live session/cell handles retain the same unresolved origin between polls;
+call/handle aliases are deduplicated. A live handle collision invalidates the
+retained origin and already-issued poll aliases before future results can bind.
+Unknown numerical origins are fenced
+using their own source incarnation, record order and explicit turn order,
+without retroactively covering earlier turns or preceding responses.
+
+Explicit Setup alone migrates schemas 1–5 atomically, preserving original
+observations, cursors, immutable snapshots, membership and cycle links. It
+marks old continuations for a new-incarnation replay; ordinary collection never
+interprets the old prefix as the new relation format. Missing/corrupt contexts
+fail numerical admission rather than silently starting a partial trace. The
+schema-5 class and its policy remain available for old-schema validation.
+
+Projection revalidates exact core operations and response identity, then uses
+one consistent source-order graph per turn; disconnected/conflicting order is
+unknown. Source positions are metadata, not inferred wall-clock Task duration.
+The geometry pass remains global. Exact partition identity, metadata basis and
+dirty turns select model aggregation; validated unchanged snapshots reuse their
+totals. Changed partitions preserve predecessor overlap through original keys.
+The capture basis includes closed ingest continuation and source cursor
+metadata, so an unresolved call alone can invalidate the previous projection.
+Snapshots whose relation was removed by restore or replay are retired through
+an overlapping execution's successor without deleting their immutable bytes.
+Full and sliced collection must yield the same relations, response sets,
+models and diagnostics for one admitted input/core basis. Core restore does
+not rebind missing executions, cycles or immutable wait/reviewer anchors.
+
+Snapshot v2 validation is closed and separate from retained v1 validation.
+Task totals and work-unit parts union original keys; shared parts name actual
+Task/execution identities instead of displaying another period's shared total
+as an exclusive value. The v2 index exposes known-unassigned versus unknown
+observed values without a completion gate or new hook/LLM action. Current
+factories select the schema-6 subclass through `usage_collection.py` and
+`usage_evidence_service.py`; lifecycle composition and source discovery stay
+with their existing owners.
 
 ### Review Wait Decision Structure
 

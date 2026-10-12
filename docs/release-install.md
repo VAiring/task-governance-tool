@@ -39,7 +39,7 @@ and resume. Task outputs include ownership IDs and per-caller flags; unknown ide
 cannot acquire or complete work. This adds no normal-loop command.
 Schema v25 adds automatic actual-reviewer binding through existing read/save and
 submission, including direct reviewers without acquiring Task ownership. Its
-separate numerical schema 5 supports incremental collection and deferred prefix
+separate numerical schema 6 supports response-boundary attribution, incremental collection and deferred prefix
 audits, inclusive-turn attribution, the supervisor's
 all-ended decision turn, and immutable cycle-linked snapshots. Task detail adds a non-gating `usage` summary and done
 acknowledgements report pending usage without opening the numerical store.
@@ -814,7 +814,7 @@ Schema v24 adds session ownership and separate immutable execution-cycle links.
 Schema v25 adds immutable actual-reviewer bindings. Current schema v28 retains combined
 executing/review-pending slots and versions interval semantics; it uses source-28/v2
 Bundles without changing the quality gates or old history. Explicit setup advances
-the independent numerical store to schema 5 for incremental collection and
+the independent numerical store to schema 6 for response-boundary attribution, incremental collection and
 deferred prefix audits, inclusive-turn and review-wait
 decision attribution and immutable usage publication. Lifecycle hooks require separate local approval
 and host trust; no setup side effect enables them.

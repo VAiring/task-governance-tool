@@ -182,7 +182,7 @@ class UsageEvidenceRepository(UsageAttributionRepository):
             for component in projected["components"]:
                 if projected["unresolved_operations"]:
                     component = {**component, "diagnostics": sorted(set(component["diagnostics"]) | {"operation_unbound"})}
-                overlaps = [item for item in previous if set(item["executions"]).intersection(component["executions"])]
+                overlaps = self._overlapping_snapshots(connection, previous, component)
                 candidate = snapshot(self.basis[0], component)
                 comparable = lambda value: {k: v for k, v in value.items() if k not in {"snapshot_id", "predecessors"}}
                 if len(overlaps) == 1 and comparable(candidate) == comparable(overlaps[0]):
@@ -208,6 +208,9 @@ class UsageEvidenceRepository(UsageAttributionRepository):
 
     def _project_for_refresh(self, core, connection, previous):
         return self.attribution(core, numerical_connection=connection)
+
+    def _overlapping_snapshots(self, connection, previous, component):
+        return [item for item in previous if set(item["executions"]).intersection(component["executions"])]
 
     def _adopt_projection(self, connection, projected, adopted):
         """Optional numerical cache adoption in the same immutable-evidence transaction."""

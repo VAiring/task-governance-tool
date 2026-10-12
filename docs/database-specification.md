@@ -359,9 +359,9 @@ or general migration framework is added.
 
 ## Numerical Usage Store
 
-Numerical collection uses independent schema 5 in the resolver-owned
+Numerical collection uses independent schema 6 in the resolver-owned
 `current/taskgov-usage.sqlite`, not the main schema sequence. Explicit setup
-initializes an absent store, migrates exact schema 1, 2, 3 or 4, and validates current state. Normal reads and
+initializes an absent store, migrates exact schema 1 through 5, and validates current state. Normal reads and
 collection never initialize, migrate or repair it. Incompatible structure,
 WAL, corruption, contention or project/binding mismatch produces unavailable
 usage, never a core admission failure or a weakened quality gate. Existing
@@ -459,6 +459,11 @@ The lifecycle adapter consumes this same numerical foundation and attribution.
 
 ### Inclusive-Turn Attribution
 
+This is the retained schema-2 through schema-5 policy and the meaning of
+`inclusive-turn-components-v1` history. Current response-boundary collection
+uses the following section; old snapshots and original counters are not
+rewritten or presented as exclusive response partitions.
+
 Schema-2 attribution follows the approved
 [turn interval contract](session-usage-plan.md#turn-intervals-and-attribution).
 Only explicit setup initializes or migrates the store. Explicit numerical migration
@@ -507,6 +512,80 @@ hashing or storage. Turn order comes from explicit host `task_started` records
 for known turn IDs, not an estimated Task-time interval. Conflicting identities
 are not last-writer-wins. A lost/cross-thread endpoint retains only a definite
 observed endpoint with an unknown boundary, never unbounded future-session usage.
+
+### Response-Boundary Attribution
+
+Schema 6 associates successful state operations with the numerical response
+containing their original command. A later result or poll is a confirmation,
+not a new start or a substitute origin. Exact event/project/Task/generation,
+status and actor are still revalidated against committed core; a missing or
+conflicting association stays unknown. Read-only selection acknowledgements
+(`task.context`, `task.current`, `task.next`, `task.show`, `task.list`) are
+separate observations and never synthesize a state transition.
+
+Only admitted registered source records supply this association. Explicit
+same-thread/turn response IDs may bind a call before its numerical values
+arrive. The source-order bracket adapter is closed to the observed Codex
+`0.162.0-alpha.17.2` format: exactly one response in the call's turn between
+its call and first matching result, without an invalid/foreign or conflicting
+record. This is a supported observed format, not a guarantee for every host or
+version. Other versions retain numerical values and may use explicit IDs;
+unsupported or nonunique brackets remain unknown. No proximity timestamp,
+ID prefix, command meaning or arbitrary transcript search supplies a link.
+
+Known direct JSON session/cell waits and a sole literal `tools.write_stdin`
+exec wrapper can trace a verified handle lifetime to its originating call.
+Variables, unsupported compositions, reused/conflicting or absent handles
+remain unbound, including retained origins and pending polls of a live
+colliding handle. Opaque results and bounded continuation exhaustion retain
+unknown coverage rather than establishing resolution or exclusive assignment.
+Only supported terminal evidence resolves a tracked operation; lost-lifetime
+coverage survives until safe source replay. Headers, whole JSON bodies, text/input_text blocks, existing
+exec output/content containers and the closed `{i,result:{status:"fulfilled",
+value:...}}` result wrapper are recognized within eight levels and 2 MiB per
+text. Separate complete blocks can remain usable when another block is opaque.
+Partial JSON and unknown text appended to one body never yield early success.
+Only the exact leading `Failed to find real location of <absolute Python
+executable>` warning grammar may be stripped (at most four lines); its text
+and path are never retained. Existing same-ack registration references remain
+closed and identity-checked. No JavaScript or shell body is evaluated.
+
+A successful start uses the first eligible selection response in its own
+turn, regardless of the selected candidate's Task ID. A confirmation made
+while another Task is active remains that Task's work. With no eligible
+separate confirmation, start uses its own whole response. A start cannot
+adopt another turn's preparation. Failed operations do not change the interval;
+unconfirmed/missing state boundaries make their affected scope unknown rather
+than proving failure or no assignment. Host interruption preserves observed
+numbers and confirmed operations; it is not a pause or cancellation.
+
+Manual completion retains the rest of its command turn until the next Task's
+eligible origin. A structurally validated parent receipt supplies the actual
+automatic-completion reporting turn under the same next-start cutoff. A next
+start owns its entire origin response, including any previous completion report.
+Multiple successful starts for distinct executions in that one response share
+only that indivisible response. Earlier eligible preparation belongs to the
+first successful start, not all starts in the shared response. Later
+exclusive responses never join transitively through that sharing edge.
+The eligible origin includes intermediate responses through the start, not
+only the confirmation records themselves. Confirmations are restricted to
+successful `task.context`, `task.current`, `task.next`, `task.show`, and
+`task.list` acknowledgements with their public selection, Task or list shape.
+
+Response partitions use exact execution-owner sets. Reopened work has another
+execution and completion period; pause/resume identity is not changed by the
+collector. This first response policy supports start/completion and retained
+ready/cancelled exits. Pause/block/resume response classification is not yet
+activated: affected response boundaries remain unknown until its separately
+approved policy is implemented. Existing reviewer and wait-decision bindings
+continue independently; overlapping original response keys are unioned once.
+Unobserved numerical values are not zero; unknown assignment is distinct from
+confirmed unassigned usage. Old unqualified history is not guessed into units.
+Closed historical acknowledgements without call/response relations still
+retain their verified turn interval. Observed values in that interval may
+appear only as partial, potentially overlapping membership with unknown
+assignment; they never establish exclusive response cost. Independently
+verified reviewer and actual-receipt relations remain eligible.
 
 ### Review Wait Decision Attribution
 
@@ -598,3 +677,21 @@ Restored numerical state with a different project/path binding stays unavailable
 The main schema is independently versioned (currently 28); no numerical table joins a core transaction or gate.
 Optional lifecycle invocation follows the separate Setup/state contract and
 cannot alter these quality or completion boundaries.
+
+Current response partitions emit `taskgov-usage-snapshot-v2` with algorithm
+`response-partitions-v1`. They keep the v1 fields and add `assignment`:
+`exclusive` has exactly one execution, `shared` at least two, and `partial`
+retains only known owners with explicit incomplete-boundary gaps. The canonical
+digest includes this field and format. Old v1 bytes, membership and cycle links
+remain immutable history. Supersession follows exact partition identity or
+overlapping original keys, not transitive execution-graph merging.
+
+The usage index is `taskgov-usage-index-v2`, retains existing index fields and
+adds `attribution` and `unattributed` with separate `unknown`/`unassigned`
+observed model totals. Existing Task usage detail retains its fields and adds
+`attribution`, a `total` union over that Task's original response keys, and
+per-period `work_units`. Each unit gives its `execution_id`, exclusive totals,
+and shared/partial parts with snapshot IDs, execution sets, actual
+`{execution_id,task_id}` members and observed model totals. These do not change
+sealed completion Evidence or create a public usage command. No value proves
+final coverage, billing, new ownership or permission.

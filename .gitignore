@@ -7,6 +7,10 @@
 # Independent local repositories used for Skill/no-Skill evaluation.
 /検証用プロジェクト/
 
+# Completed comparison plans remain local, outside source tracking.
+/docs/competitive-evaluation-execution.md
+/docs/proposals/competitive-evaluation-plan.md
+
 # Generated project state and retained package-local migration material.
 /.taskgov/
 /task-governance-tool/state/

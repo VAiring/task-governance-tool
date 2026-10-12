@@ -136,14 +136,6 @@ delivery before the corresponding reviewed implementation and host gates.
 Review/completion and the directly coupled current owners retain durable
 product and implementation authority.
 
-## Conditional Comparative Evaluation
-
-[First comparative evaluation](competitive-evaluation-execution.md) owns the
-approved E1 preparation, E2 first six trials and E3 report, with their permission
-and review gates. It changes no product contract and activates no additional
-scenario, installation, host trust or product repair. Exact deployment and
-budget approvals remain prerequisites as defined by that owner.
-
 ## Delegated Repository Operating Guides
 
 - [Artifact authoring](artifact-authoring.md)
@@ -202,11 +194,11 @@ enforced meaning.
 
 ```json
 {
-  "schema": "taskgov-document-authority-v20",
+  "schema": "taskgov-document-authority-v21",
   "mandatory_start": ["AGENTS.md", "docs/authority.md", "live_task_contract"],
   "current": ["docs/specification.md", "docs/design.md", "plan.md", "docs/viewer-specification.md", "docs/viewer-design.md", "docs/runner-plan-authoring-specification.md", "docs/runner-plan-authoring-design.md", "docs/task-operation-specification.md", "docs/task-operation-design.md", "docs/runner-execution-specification.md", "docs/runner-execution-design.md", "docs/evidence-specification.md", "docs/evidence-design.md", "docs/review-completion-specification.md", "docs/review-completion-design.md", "docs/setup-state-specification.md", "docs/setup-state-design.md", "docs/database-specification.md", "docs/database-design.md"],
   "mixed_execution": [],
-  "conditional": ["docs/state-layout-separation-plan.md", "docs/verification-declaration-plan.md", "docs/session-usage-plan.md", "docs/review-finalization-plan.md", "docs/competitive-evaluation-execution.md"],
+  "conditional": ["docs/state-layout-separation-plan.md", "docs/verification-declaration-plan.md", "docs/session-usage-plan.md", "docs/review-finalization-plan.md"],
   "history_index": "docs/history/README.md"
 }
 ```

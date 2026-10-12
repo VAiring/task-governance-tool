@@ -68,6 +68,11 @@ class DirectProbe:
         self._request = threading.RLock()
         self._worker = None
         self._owned_probe_id = None
+        self._owned_worker_id = None
+        self._worker_stop_persistence = "not_recorded"
+        self._termination_observer = None
+        self._reviewer_observations = {}
+        self._observations_lock = threading.Lock()
         self._host = None
         self._closed = False
 
@@ -123,10 +128,13 @@ class DirectProbe:
         record = self.repository.read()
         state = asdict(record)
         state.pop("binding_digest")
+        for field in ("worker_id", "worker_stopped_at", "worker_stop_basis", "worker_stop_identity"):
+            state.pop(field)
         if record.version == 1:
             for field in ("version", "timer_phase", "timer_rule", "timer_updated_at", "timer_due_at"):
                 state.pop(field)
-        alive = self._worker is not None and self._worker.is_alive()
+        alive = (self._worker is not None and self._owned_probe_id == record.probe_id
+                 and self._owned_worker_id == record.worker_id and self._worker.is_alive())
         if record.status == "dispatching" and not alive:
             state["status"] = "unknown"
         state["received"] = record.acknowledged_turn is not None
@@ -199,9 +207,11 @@ class DirectProbe:
                               timer_updated_at=before.updated_at, timer_due_at=instant(appointment.due_at))
             duration = 1200 if delete_timer else 600
             record = DirectRecord(str(uuid4()), binding_digest(controller), turn_id, "waiting",
-                                  instant(now), instant(now + timedelta(seconds=duration)), **extras)
+                                  instant(now), instant(now + timedelta(seconds=duration)),
+                                  worker_id=str(uuid4()) if delete_timer else None, **extras)
             self.repository.create_record(record)
             self._owned_probe_id = record.probe_id
+            self._owned_worker_id = record.worker_id
             self._host = host
             if delete_timer:
                 try:
@@ -220,7 +230,32 @@ class DirectProbe:
             self.repository.update(record.probe_id, status="abandoned")
             self._cleanup(host)
             raise DirectError("worker_unavailable") from None
+        # An external, bounded join observer records actual termination. The
+        # worker cannot certify its own exit from its target or finally block.
+        if record.worker_id is None:
+            return self._summary()
+        worker = self._worker
+        self._termination_observer = threading.Thread(
+            target=self._confirm_termination, args=(worker, record, duration + self._join),
+            name="review-worker-termination", daemon=True)
+        try:
+            self._termination_observer.start()
+        except Exception:
+            self._worker_stop_persistence = "failed"
         return self._summary()
+
+    def _confirm_termination(self, worker, record, timeout):
+        try:
+            if worker.ident is None or record.worker_id is None:
+                return
+            worker.join(timeout)
+            if worker.is_alive():
+                return
+            self.repository.confirm_worker_stopped(record.probe_id, record.worker_id,
+                                                   record.binding_digest, instant(self._now()))
+            self._worker_stop_persistence = "confirmed"
+        except Exception:
+            self._worker_stop_persistence = "failed"
 
     def _run(self, host, record, monotonic_deadline):
         try:
@@ -287,6 +322,14 @@ class DirectProbe:
             observe((expected.reviewer_id, expected.turn_id, "unknown"))
             raise
         exact = child.child_id == expected.reviewer_id and child.turn_id == expected.turn_id
+        with self._observations_lock:
+            if exact:
+                self._reviewer_observations[expected.reviewer_id] = {
+                    "reviewer_id": expected.reviewer_id, "turn_id": expected.turn_id,
+                    "observed_at": instant(self._now()), "status": child.status,
+                    "thread_status": child.thread_status, "ended": _terminal(child)}
+            else:
+                self._reviewer_observations.pop(expected.reviewer_id, None)
         if exact and (_terminal(child) or child.status in {"failed", "interrupted"}):
             observe((expected.reviewer_id, expected.turn_id, child.status))
         elif not exact or terminal:
@@ -343,6 +386,11 @@ class DirectProbe:
             if not self._idle_and_ended(host, controller, record, monotonic_deadline):
                 return False
             self._before_send(host, controller, record, monotonic_deadline)
+            self._notification_observation(host, controller, self.repository.read())
+            # Observation can read state/package sources. Renew the original
+            # effect guards after that work, before durable send intent.
+            if not self._idle_and_ended(host, controller, record, monotonic_deadline):
+                return False
             if self._halt_wait(record, monotonic_deadline):
                 return
             parent = host.read_parent()
@@ -376,6 +424,10 @@ class DirectProbe:
 
     def _before_send(self, host, controller, record, monotonic_deadline):
         """Legacy waiting has no Task/result effects at this extension point."""
+        return None
+
+    def _notification_observation(self, host, controller, record):
+        """Legacy sends retain their unchanged protocol."""
         return None
 
     def _cleanup(self, host):
@@ -415,6 +467,13 @@ class DirectProbe:
             worker.join(self._join)
         if worker is not None and worker.is_alive():
             return {"ok": False, "error": "observer_cleanup_unknown"}
+        if worker is not None and worker.ident is not None and self.repository.exists():
+            record = self.repository.read()
+            if record.probe_id == self._owned_probe_id and record.worker_id == self._owned_worker_id:
+                self._confirm_termination(worker, record, 0)
+            observer = self._termination_observer
+            if observer is not None and observer.ident is not None:
+                observer.join(1.1)
         if (not owned_only or self._owned_probe_id is not None) and self.repository.exists():
             record = self.repository.read()
             if record.status == "waiting" and (not owned_only or record.probe_id == self._owned_probe_id):

@@ -181,6 +181,21 @@ Inspection is read-only. Stop cannot recall a dispatched message or retry an
 unknown effect. Restart is inspection-only; no active flag alone proves a live
 worker. Changed Task basis or actual reviewer turns require recovery of the old
 wait before a new association.
+Inspect/stop and return notifications share a timestamped observation of the
+original Task/attempt/probe/worker. Keep request phase, worker
+`running|stopped|unknown`, timer/send/receipt, runtime and known work separate.
+Only an exact live owned thread proves running; actual joined exit or matching
+saved joined-exit evidence proves stopped, including after restart. Missing,
+old, unreadable or conflicting evidence stays unknown; cleanup success, timer
+deletion and Task done do not prove exit. Stop success survives later observation
+failure; unknown alone needs no re-stop. Report direct versus saved confirmation,
+persistence failure and observed scope; other children and verification process
+exit stay unknown. Old notifications are send-time snapshots, not current state.
+Only notification text explains remaining receipt observation: accepted/unknown
+send, at most 120 seconds within the original twenty-minute deadline, ending on
+confirmation or existing observation/stop/deadline conditions. This does not
+confirm future exit or its own send/receipt. No routine extra inspect/ACK/stop,
+exit notice or LLM turn is needed.
 Inspect is conditional diagnosis, not a required extra call after every failure;
 do not loop on it when the connection or service itself cannot answer. Runtime
 identity diagnosis reads package sources only and never migrates state or starts

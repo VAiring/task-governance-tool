@@ -1042,3 +1042,432 @@ class ManagedFlowTests(unittest.TestCase):
             with repository.serial():
                 self.fail("corrupt lock admitted")
         self.assertEqual(repository.lock_path.read_bytes(), b"")
+
+
+class WorkerObservationTests(unittest.TestCase):
+    # Reuse only the fixture, not its entire inherited regression test suite.
+    setUp = ManagedFlowTests.setUp
+    close_all = ManagedFlowTests.close_all
+    factory = ManagedFlowTests.factory
+    make = ManagedFlowTests.make
+    call = ManagedFlowTests.call
+    inspect = ManagedFlowTests.inspect
+    until = ManagedFlowTests.until
+    ended = ManagedFlowTests.ended
+
+    def worker(self):
+        return next(iter(self.session.sessions.values())).direct
+
+    def settled(self):
+        worker = self.worker()
+        worker._worker.join(5)
+        worker._termination_observer.join(5)
+        self.assertFalse(worker._worker.is_alive())
+        self.assertFalse(worker._termination_observer.is_alive())
+        return worker
+
+    def rewrite(self, record):
+        from task_governance_tool.review_wait_runtime.review_wait_direct_repository import _encode
+        with self.worker().repository._serial():
+            with self.worker().repository._connection(write=True) as connection:
+                connection.execute("UPDATE direct_probe SET payload=?", (_encode(record),))
+
+    def test_absent_request_is_not_stopped_and_has_no_effects(self):
+        before = list(self.paths.fixed_root.rglob("*"))
+        for operation in ("inspect", "stop"):
+            value = self.call(operation)
+            self.assertEqual("absent", value["status"])
+            self.assertEqual("absent", value["observation"]["request"]["status"])
+            self.assertEqual("unknown", value["observation"]["worker"]["status"])
+            self.assertEqual("unknown", value["observation"]["work"]["other_children"])
+            self.assertNotIn("120秒", json.dumps(value, ensure_ascii=False))
+        self.assertEqual(before, list(self.paths.fixed_root.rglob("*")))
+        self.assertEqual([], self.effects)
+
+    def test_running_is_exact_owned_thread_not_saved_started_phase(self):
+        self.assertTrue(self.call()["ok"])
+        observed = self.inspect()["observation"]
+        self.assertEqual(("present", "started", "running", "direct_thread"),
+            (observed["request"]["status"], observed["request"]["phase"],
+             observed["worker"]["status"], observed["worker"]["source"]))
+        self.assertEqual(TASK, observed["identity"]["task_id"])
+        self.assertEqual(1, observed["identity"]["attempt"])
+        self.assertEqual(self.worker()._owned_worker_id, observed["worker"]["worker_id"])
+        restarted = self.make()
+        value = self.call("inspect", session=restarted)
+        self.assertEqual("unknown", value["observation"]["worker"]["status"])
+        self.assertEqual({}, restarted.sessions)
+        self.assertEqual(["create", "arm"], self.effects)
+
+    def test_natural_join_is_persisted_and_read_only_after_restart(self):
+        self.call()
+        self.ended()
+        worker = self.settled()
+        record = worker.repository.read()
+        self.assertEqual("thread_join", record.worker_stop_basis)
+        original = self.inspect()["observation"]["worker"]
+        self.assertEqual(("stopped", "direct_thread", "confirmed"),
+                         (original["status"], original["source"], original["persistence"]))
+        restarted = self.make()
+        before = {path: path.read_bytes() for path in self.paths.review_wait_root.glob("*") if path.is_file()}
+        effects = list(self.effects)
+        self.now += timedelta(seconds=15)
+        value = self.call("inspect", session=restarted)
+        observed = value["observation"]
+        self.assertEqual(("stopped", "saved_thread_join", record.worker_stopped_at),
+                         (observed["worker"]["status"], observed["worker"]["source"], observed["worker"]["confirmed_at"]))
+        self.assertNotEqual(observed["observed_at"], observed["worker"]["confirmed_at"])
+        self.assertEqual(before, {path: path.read_bytes() for path in before})
+        self.assertEqual(effects, self.effects)
+        self.assertEqual({}, restarted.sessions)
+
+    def test_explicit_stop_reports_operation_and_exact_join_separately(self):
+        self.call()
+        value = self.call("stop")
+        self.assertEqual({"status": "succeeded", "cleanup": "confirmed"}, value["operation"])
+        self.assertEqual("stopped", value["observation"]["worker"]["status"])
+        restarted = self.make()
+        before = list(self.effects)
+        self.assertEqual("saved_thread_join", self.call("inspect", session=restarted)["observation"]["worker"]["source"])
+        self.assertEqual(before, self.effects)
+
+    def test_successful_stop_survives_later_observation_failure(self):
+        self.call()
+        with mock.patch.object(self.session.managed, "observe", side_effect=OSError("PRIVATE")):
+            value = self.call("stop")
+        self.assertTrue(value["ok"])
+        self.assertEqual("succeeded", value["operation"]["status"])
+        self.assertEqual("unknown", value["observation"]["worker"]["status"])
+        self.assertNotIn("PRIVATE", json.dumps(value))
+        self.assertEqual(["create", "arm", "pause", "delete"], self.effects)
+
+    def test_save_failure_keeps_direct_exit_but_restart_unknown(self):
+        self.call()
+        worker = self.worker()
+        with mock.patch.object(worker.repository, "confirm_worker_stopped", side_effect=OSError("PRIVATE")):
+            self.ended()
+            self.settled()
+        value = self.inspect()["observation"]["worker"]
+        self.assertEqual(("stopped", "direct_thread", "failed"),
+                         (value["status"], value["source"], value["persistence"]))
+        restarted = self.make()
+        self.assertEqual("unknown", self.call("inspect", session=restarted)["observation"]["worker"]["status"])
+        self.assertNotIn("PRIVATE", json.dumps(value))
+
+    def test_failure_after_saved_confirmation_does_not_erase_evidence(self):
+        self.call()
+        worker = self.worker()
+        original = worker.repository.confirm_worker_stopped
+        def after_commit(*args):
+            original(*args)
+            raise OSError("lost result")
+        with mock.patch.object(worker.repository, "confirm_worker_stopped", side_effect=after_commit):
+            self.ended()
+            self.settled()
+        self.assertEqual("confirmed", self.inspect()["observation"]["worker"]["persistence"])
+        self.assertEqual("stopped", self.call("inspect", session=self.make())["observation"]["worker"]["status"])
+
+    def test_unstarted_and_old_payload_never_supply_exit_evidence(self):
+        self.call()
+        self.call("stop")
+        worker = self.settled()
+        record = worker.repository.read()
+        self.rewrite(replace(record, worker_stopped_at=None, worker_stop_basis=None, worker_stop_identity=None))
+        worker._worker = threading.Thread(target=lambda: None)
+        self.assertEqual("unknown", self.inspect()["observation"]["worker"]["status"])
+        self.rewrite(replace(record, worker_id=None, worker_stopped_at=None, worker_stop_basis=None, worker_stop_identity=None))
+        self.assertEqual("unknown", self.call("inspect", session=self.make())["observation"]["worker"]["status"])
+
+    def test_saved_other_worker_and_controller_conflicts_are_unknown(self):
+        self.call()
+        self.call("stop")
+        worker = self.settled()
+        record = worker.repository.read()
+        from task_governance_tool.review_wait_runtime.review_wait_direct_repository import worker_stop_identity
+        other = str(uuid4())
+        self.rewrite(replace(record, worker_id=other,
+            worker_stop_identity=worker_stop_identity(record.probe_id, other, record.binding_digest)))
+        self.assertEqual("ownership_mismatch", self.inspect()["observation"]["worker"]["reason"])
+        self.rewrite(replace(record, binding_digest="f" * 64,
+            worker_stop_identity=worker_stop_identity(record.probe_id, record.worker_id, "f" * 64)))
+        self.assertEqual("binding_mismatch", self.call("inspect", session=self.make())["observation"]["worker"]["reason"])
+        self.rewrite(record)
+
+    def test_stopped_evidence_contradicting_live_thread_is_unknown(self):
+        self.call()
+        worker = self.worker()
+        record = worker.repository.read()
+        from task_governance_tool.review_wait_runtime.review_wait_direct_repository import worker_stop_identity
+        # Deliberately corrupt fixture claim; never made by the production writer.
+        self.rewrite(replace(record, worker_stopped_at=record.created_at, worker_stop_basis="thread_join",
+            worker_stop_identity=worker_stop_identity(record.probe_id, record.worker_id, record.binding_digest)))
+        value = self.inspect()["observation"]["worker"]
+        self.assertEqual(("unknown", "conflicting_evidence"), (value["status"], value["reason"]))
+        self.rewrite(record)
+
+    def test_unreadable_direct_evidence_is_unknown_without_read_side_effects(self):
+        self.call()
+        self.call("stop")
+        worker = self.settled()
+        from task_governance_tool.review_wait_runtime.review_wait_direct_repository import DirectRepository
+        before = worker.repository.path.read_bytes()
+        effects = list(self.effects)
+        with mock.patch.object(DirectRepository, "read", side_effect=OSError("PRIVATE")):
+            value = self.call("inspect", session=self.make())
+        self.assertFalse(value["ok"])
+        self.assertEqual("unknown", value["observation"]["worker"]["status"])
+        self.assertEqual(before, worker.repository.path.read_bytes())
+        self.assertEqual(effects, self.effects)
+        self.assertNotIn("PRIVATE", json.dumps(value))
+
+    def test_join_confirmation_is_idempotent_bound_and_not_a_self_marker(self):
+        self.call()
+        self.call("stop")
+        worker = self.settled()
+        record = worker.repository.read()
+        later = (self.now + timedelta(seconds=20)).isoformat()
+        actual = worker.repository.confirm_worker_stopped(record.probe_id, record.worker_id, record.binding_digest, later)
+        self.assertEqual(record.worker_stopped_at, actual.worker_stopped_at)
+        from task_governance_tool.review_wait_runtime.review_wait_repository import RepositoryError
+        for probe, identity, digest in ((str(uuid4()), record.worker_id, record.binding_digest),
+                                       (record.probe_id, str(uuid4()), record.binding_digest),
+                                       (record.probe_id, record.worker_id, "e" * 64)):
+            with self.assertRaises(RepositoryError):
+                worker.repository.confirm_worker_stopped(probe, identity, digest, later)
+        for basis in ("finally", "self_exiting", "expired"):
+            with self.assertRaises(RepositoryError):
+                replace(record, worker_stop_basis=basis)
+
+    def test_notification_observation_is_frozen_and_keeps_complete_results(self):
+        self.call()
+        worker = self.worker()
+        observed = self.inspect()["observation"]
+        host_tests = ManagedHostTests()
+        host = host_tests.host()
+        probe = worker.repository.read().probe_id
+        host.set_finalization_result(probe, host_tests.report("all original fields"))
+        worker._notification_observation(host, worker.wait.read().controller, worker.repository.read())
+        prompt = host._direct_prompt(probe)
+        value = json.loads(prompt.splitlines()[2])
+        self.assertEqual("running", value["wait_observation"]["worker"]["status"])
+        self.assertIsNone(value["wait_observation"]["delivery"]["acknowledged_turn"])
+        self.assertEqual("waiting", value["wait_observation"]["delivery"]["status"])
+        self.assertEqual("unknown", value["wait_observation"]["service"]["status"])
+        self.assertEqual(host_tests.report("all original fields"),
+                         {key: item for key, item in value.items() if key not in {"delivery", "wait_observation"}})
+        self.assertIn("120秒", prompt)
+        self.assertIn("終了確認ではありません", prompt)
+        self.assertNotIn("120秒", json.dumps(observed, ensure_ascii=False))
+        with mock.patch.object(host, "_request", return_value={}):
+            self.assertEqual("unknown", host.send_direct_probe(probe))
+        with self.assertRaises(HostAdapterError):
+            host.set_wait_observation(probe, observed)
+        self.call("stop")
+        self.assertEqual(prompt, host._direct_prompt(probe))
+
+    def test_review_only_notification_has_same_observation_and_no_extra_send(self):
+        self.call()
+        worker = self.worker()
+        host = ManagedHostTests().host()
+        record = worker.repository.read()
+        worker._notification_observation(host, worker.wait.read().controller, record)
+        prompt = host._direct_prompt(record.probe_id)
+        observed = json.loads(prompt.split("\n待機観測: ", 1)[1].splitlines()[0])
+        self.assertEqual(record.worker_id, observed["worker"]["worker_id"])
+        self.assertEqual("running", observed["worker"]["status"])
+        with mock.patch.object(host, "_request", return_value={"content": [], "isError": False}) as send:
+            self.assertEqual("accepted", host.send_direct_probe(record.probe_id))
+            with self.assertRaises(HostAdapterError):
+                host.send_direct_probe(record.probe_id)
+        self.assertEqual(1, send.call_count)
+
+    def test_saved_evidence_from_other_worker_or_probe_is_rejected_after_restart(self):
+        self.call()
+        self.call("stop")
+        worker = self.settled()
+        record = worker.repository.read()
+        from task_governance_tool.review_wait_runtime.review_wait_direct_repository import _encode
+        for field in ("worker_id", "probe_id", "binding_digest", "worker_stop_basis", "worker_stop_identity"):
+            value = json.loads(_encode(record))
+            value[field] = "f" * 64 if field in {"binding_digest", "worker_stop_identity"} else "finally" if field == "worker_stop_basis" else str(uuid4())
+            with worker.repository._serial():
+                with worker.repository._connection(write=True) as connection:
+                    connection.execute("UPDATE direct_probe SET payload=?", (json.dumps(value, sort_keys=True, separators=(",", ":")),))
+            result = self.call("inspect", session=self.make())
+            self.assertFalse(result["ok"])
+            self.assertEqual("unknown", result["observation"]["worker"]["status"])
+            self.rewrite(record)
+
+    def test_restart_in_separate_process_reads_exit_without_start_or_write(self):
+        import subprocess
+        import sys
+        self.call()
+        self.ended()
+        worker = self.settled()
+        before = {path: path.read_bytes() for path in self.paths.review_wait_root.glob("*") if path.is_file()}
+        script = '''import json, sys
+from pathlib import Path
+sys.path.insert(0, sys.argv[1])
+from task_governance_tool.review_wait_runtime.project_server import ProjectConfig, ProjectReviewWaitSession
+from task_governance_tool.state_resolver import canonical_state_paths
+root = Path(sys.argv[2])
+session = ProjectReviewWaitSession(ProjectConfig(root, root / "server.mjs", root, "UTC"))
+session._location = lambda **kwargs: canonical_state_paths(root / "skill", repo=root)
+result = session.handle("inspect", {"task_id": sys.argv[3]}, {"threadId": sys.argv[4]})
+print(json.dumps({"result": result, "loaded_sessions": len(session.sessions)}))
+'''
+        scripts = Path(__file__).absolute().parents[1] / "task-governance-tool" / "scripts"
+        result = subprocess.run([sys.executable, "-I", "-S", "-B", "-c", script,
+            str(scripts), str(self.root), TASK, PARENT], capture_output=True, text=True, timeout=20)
+        self.assertEqual(0, result.returncode, result.stderr)
+        value = json.loads(result.stdout)
+        self.assertTrue(value["result"]["ok"], value)
+        self.assertEqual("saved_thread_join", value["result"]["observation"]["worker"]["source"])
+        self.assertEqual("stopped", value["result"]["observation"]["worker"]["status"])
+        self.assertEqual(0, value["loaded_sessions"])
+        self.assertEqual(before, {path: path.read_bytes() for path in before})
+
+    def test_attempt_change_during_observation_cannot_rebind_old_stop(self):
+        self.call()
+        path = self.paths.review_wait_request_store(PARENT, TASK)
+        sequence, record = RequestRepository(path).read()
+        with mock.patch.object(RequestRepository, "read", return_value=(sequence + 1, record)):
+            value = self.session.managed.observe(TASK, META, self.paths, expected=(sequence, record))
+        self.assertEqual(sequence, value["identity"]["attempt"])
+        self.assertEqual("attempt_changed", value["worker"]["reason"])
+        self.assertEqual("unknown", value["worker"]["status"])
+
+    def test_unknown_send_stop_preserves_effect_uncertainty_and_live_observation(self):
+        self.auto_receive = False
+        self.call()
+        worker = self.worker()
+        worker._host.outcome = "unknown"
+        self.ended()
+        self.until(lambda: self.inspect()["delivery"]["status"] == "unknown")
+        before = list(self.effects)
+        value = self.call("stop")
+        self.assertFalse(value["ok"])
+        self.assertEqual("unresolved", value["operation"]["status"])
+        self.assertEqual("running", value["observation"]["worker"]["status"])
+        self.assertEqual(before, self.effects)
+
+    def test_partial_cleanup_reports_confirmed_exit_without_claiming_cleanup_success(self):
+        self.call()
+        self.fail_delete = True
+        value = self.call("stop")
+        self.assertFalse(value["ok"])
+        self.assertEqual("unresolved", value["operation"]["cleanup"])
+        self.assertEqual("stopped", value["observation"]["worker"]["status"])
+        self.assertEqual(["create", "arm", "pause", "delete"], self.effects)
+
+    def test_observation_failure_does_not_prevent_notification_or_create_effect(self):
+        self.call()
+        worker = self.worker()
+        host = ManagedHostTests().host()
+        worker.observation_factory = mock.Mock(side_effect=OSError("PRIVATE"))
+        worker.runtime_observer = mock.Mock(side_effect=OSError("PRIVATE"))
+        record = worker.repository.read()
+        worker._notification_observation(host, worker.wait.read().controller, record)
+        prompt = host._direct_prompt(record.probe_id)
+        observed = json.loads(prompt.split("\n待機観測: ", 1)[1].splitlines()[0])
+        self.assertEqual("unknown", observed["worker"]["status"])
+        self.assertEqual(record.probe_id, observed["identity"]["probe_id"])
+        self.assertNotIn("PRIVATE", prompt)
+        with mock.patch.object(host, "_request", return_value={"content": [], "isError": False}):
+            self.assertEqual("accepted", host.send_direct_probe(record.probe_id))
+
+    def test_large_review_only_observation_uses_public_read_bound_and_exact_body(self):
+        self.call()
+        worker = self.worker()
+        host_tests = ManagedHostTests()
+        host = host_tests.host()
+        record = worker.repository.read()
+        observed = self.inspect()["observation"]
+        observed["work"]["reviewers"] = [
+            {"reviewer_id": str(uuid4()), "turn_id": str(uuid4()), "observed_at": observed["observed_at"],
+             "status": "completed", "thread_status": "idle", "ended": True} for _ in range(64)]
+        host.set_wait_observation(record.probe_id, observed)
+        self.assertGreater(len(host._direct_prompt(record.probe_id)), 4096)
+        value = host_tests.receipt(host)
+        # The helper makes an event for OTHER; use this actual probe's body.
+        output = value["turns"][0]["items"][0]["output"]
+        output["text"] = output["text"].replace(host._direct_prompt(OTHER), host._direct_prompt(record.probe_id))
+        with host_tests.history(host, value) as read:
+            self.assertEqual(NEW_TURN, host.observe_receipt(record.probe_id, ORIGINAL))
+        self.assertEqual(20000, read.call_args.args[1]["maxOutputCharsPerItem"])
+
+    def test_production_caught_observation_read_failure_still_sends_unknown_snapshot(self):
+        self.call()
+        worker = self.worker()
+        real_host = ManagedHostTests().host()
+        worker._host.set_wait_observation = real_host.set_wait_observation
+        original = worker.observation_factory
+        from task_governance_tool.review_wait_runtime.review_wait_repository import ReviewWaitRepository, RepositoryError
+        def unavailable(controller):
+            with mock.patch.object(ReviewWaitRepository, "open_existing",
+                                   side_effect=RepositoryError("state_unreadable")) as read:
+                result = original(controller)
+            read.assert_called_once()
+            return result
+        worker.observation_factory = unavailable
+        probe = worker.repository.read().probe_id
+        self.ended()
+        self.settled()
+        self.assertEqual([probe], worker._host.sends)
+        self.assertEqual("accepted", worker.repository.read().status)
+        observed = json.loads(real_host._direct_prompt(probe).split("\n待機観測: ", 1)[1].splitlines()[0])
+        self.assertEqual("unknown", observed["worker"]["status"])
+        self.assertEqual(probe, observed["identity"]["probe_id"])
+        self.assertIsNone(observed["delivery"])
+
+    def test_notification_observation_cannot_send_after_original_deadline(self):
+        self.call()
+        worker = self.worker()
+        worker._notification_observation = lambda *args: setattr(self, "now", self.now + timedelta(seconds=1201))
+        self.ended()
+        self.settled()
+        self.assertEqual([], worker._host.sends)
+        self.assertEqual("expired", worker.repository.read().status)
+        self.assertEqual(["create", "arm", "delete"], self.effects)
+
+    def test_notification_observation_cancellation_prevents_send(self):
+        self.call()
+        worker = self.worker()
+        worker._notification_observation = lambda *args: worker._stop.set()
+        self.ended()
+        self.settled()
+        self.assertEqual([], worker._host.sends)
+        self.assertEqual(["create", "arm", "delete"], self.effects)
+
+    def test_notification_observation_basis_drift_prevents_send(self):
+        self.call()
+        worker = self.worker()
+        worker._notification_observation = lambda *args: setattr(self, "basis", replace(self.basis, ownership_generation=2))
+        self.ended()
+        self.settled()
+        self.assertEqual([], worker._host.sends)
+        self.assertEqual("suppressed", worker.repository.read().status)
+
+    def test_notification_observation_reviewer_drift_prevents_send(self):
+        self.call()
+        worker = self.worker()
+        worker._notification_observation = lambda *args: setattr(self, "child", ChildTurn(CHILD, OTHER, "completed", "idle"))
+        self.ended()
+        self.settled()
+        self.assertEqual([], worker._host.sends)
+        self.assertEqual("suppressed", worker.repository.read().status)
+
+    def test_notification_observation_busy_parent_defers_without_second_delete(self):
+        self.call()
+        worker = self.worker()
+        original = worker._notification_observation
+        worker._notification_observation = lambda *args: setattr(self, "current_parent", ChildTurn(PARENT, NEW_TURN, "inProgress", "active"))
+        self.ended()
+        self.until(lambda: self.current_parent.turn_id == NEW_TURN)
+        self.assertEqual([], worker._host.sends)
+        self.assertEqual(["create", "arm", "delete"], self.effects)
+        worker._notification_observation = original
+        self.current_parent = ChildTurn(PARENT, NEW_TURN, "completed", "idle")
+        self.settled()
+        self.assertEqual(1, len(worker._host.sends))
+        self.assertEqual(["create", "arm", "delete", "send"], self.effects)

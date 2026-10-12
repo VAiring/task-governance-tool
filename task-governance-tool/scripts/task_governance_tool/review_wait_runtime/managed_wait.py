@@ -17,6 +17,8 @@ from .review_wait_direct import _terminal
 from .review_wait_service import ten_minute_appointment
 from task_governance_tool.state_paths import path_lexically_exists
 from .failure_diagnostics import CallDiagnostics, DiagnosticError
+from .worker_observation import observation, delivery_projection
+from .review_wait_direct_repository import instant
 
 
 def basis_digest(binding):
@@ -43,6 +45,47 @@ class ManagedWait:
     def _current(self, task_id, metadata):
         return self.owner._reader(self.owner.config.repo, task_id, metadata["threadId"], "request",
             helper=self.owner.skill / "scripts/review_handoff.py")
+
+    def observe(self, task_id, metadata, paths, *, expected=None):
+        """Read only the same latest attempt; failure affects observation alone."""
+        now = instant((self.owner.clock or (lambda: datetime.now(timezone.utc)))())
+        arguments = dict(task_id=task_id, parent_id=metadata["threadId"], observed_at=now)
+        try:
+            path = paths.review_wait_request_store(metadata["threadId"], task_id)
+            if not path_lexically_exists(path):
+                return observation(**arguments)
+            attempt, record = RequestRepository(path).read()
+            if expected is not None:
+                previous_attempt, previous = expected
+                identity = lambda item: None if item is None else (
+                    item.automation_id, item.basis_digest, item.parent_turn, item.reviewers)
+                if previous_attempt != attempt or identity(previous) != identity(record):
+                    return observation(**arguments, request=previous, attempt=previous_attempt,
+                                       reason="attempt_changed")
+            arguments.update(request=record, attempt=attempt)
+            if record is not None and record.automation_id is not None:
+                wait_path = paths.review_wait_store(record.automation_id)
+                if marker_exists(wait_path):
+                    controller = ReviewWaitRepository.open_existing(wait_path).read().controller
+                    direct = DirectRepository.for_wait(wait_path).read()
+                    session = self.owner.sessions.get(record.automation_id)
+                    arguments.update(controller=controller, direct=direct,
+                                     owner=None if session is None else session.direct)
+            return observation(**arguments)
+        except Exception:
+            # Do not overwrite a successful stop or recommend another effect.
+            arguments.pop("controller", None)
+            arguments.pop("direct", None)
+            arguments.pop("owner", None)
+            return observation(**arguments, reason="observation_unavailable")
+
+    def observe_safely(self, task_id, metadata, paths, *, expected=None):
+        try:
+            return self.observe(task_id, metadata, paths, expected=expected)
+        except Exception:
+            attempt, record = (None, None) if expected is None else expected
+            return observation(task_id, metadata["threadId"], instant(datetime.now(timezone.utc)),
+                               request=record, attempt=attempt, reason="observation_unavailable")
 
     @staticmethod
     def _read_reviewer(host, reviewer, expected, finalizer):
@@ -206,7 +249,7 @@ class ManagedWait:
                 return {"ok": True, "status": "absent", "task_id": task_id}
             repository = RequestRepository(path)
             if operation == "inspect":
-                _, record = repository.read()
+                attempt, record = repository.read()
                 diagnostic.observe_record(record)
                 diagnostic.stage = "inspection"
                 result = {"ok": True, "task_id": task_id, "phase": None if record is None else record.phase}
@@ -216,17 +259,19 @@ class ManagedWait:
                         timer_path = paths.review_wait_store(record.automation_id)
                         if marker_exists(timer_path):
                             with diagnostic.reading_retained():
-                                state = asdict(DirectRepository.for_wait(timer_path).read())
-                            state.pop("binding_digest")
+                                state = delivery_projection(DirectRepository.for_wait(timer_path).read())
                             result["delivery"] = state
+                result["observation"] = self.observe_safely(task_id, metadata, paths, expected=(attempt, record))
                 return result
             with diagnostic.retained_context(repository.serial()) as lease:
-                _, record = repository.read()
+                attempt, record = repository.read()
                 diagnostic.observe_record(record)
                 if record is not None and not self._cleanup(repository, lease, record, task_id, metadata, paths, diagnostic):
                     diagnostic.reason = "cleanup_unresolved"
-                    return self._failure()
-            return {"ok": True, "status": "stopped", "task_id": task_id}
+                    return {**self._failure(), "observation": self.observe_safely(
+                        task_id, metadata, paths, expected=(attempt, record))}
+                observed = self.observe_safely(task_id, metadata, paths, expected=(attempt, record))
+            return {"ok": True, "status": "stopped", "task_id": task_id, "observation": observed}
 
         reader, binding, pairs, host, ended, finalizer = self._preflight(
             task_id, arguments["reviewer_ids"], metadata, paths, diagnostic)

@@ -1154,6 +1154,76 @@ successful stages, routes parent submission only from manual preparation, and
 keeps incomplete/unknown recovery conditional. Recovery alone does not require
 new review; changed basis and observed reviewer failures retain their gates.
 
+#### Review Wait Worker Observations
+
+Optional inspect, explicit stop and the one-shot managed return notification
+share `observation` version 1 (notification report: `wait_observation`, or a fixed
+labelled JSON line for review-only delivery). `observed_at` is UTC snapshot time,
+not the later receiving turn. `identity` retains Task, parent, request attempt
+number, automation and probe IDs; unavailable identities remain null.
+`request.status=present|absent|unknown` and saved `phase` are separate from
+`worker.status=running|stopped|unknown`. Absence, request phase, service response,
+Task done, timer deletion, send acceptance and receipt do not prove worker exit
+or each other's states. This is reporting, not future MCP availability or
+next-Task authorization.
+
+Running requires direct observation of the exact live owned thread and worker
+UUID, with matching immutable controller/request/reviewer binding. Stopped
+requires an actually started exact thread joined and observed not alive, or
+valid same-worker saved `thread_join` evidence. `worker.source` distinguishes
+`direct_thread|saved_thread_join|unavailable`; `confirmed_at` labels exit
+confirmation separately from snapshot time. `persistence=confirmed|not_recorded|
+failed|unknown` separates saving from direct observation. Saving failure does
+not negate directly confirmed exit; restart without valid saved confirmation
+remains unknown. Start intent, an unstarted thread, expiry, finally/self-exit
+markers and successful stop/cleanup alone never prove termination. Missing
+ownership, mismatched attempts/controllers/reviewers/workers, corrupt or
+unreadable records and contradictory live/exit evidence remain unknown.
+
+Version-two direct operational payloads may retain only an additional worker
+UUID, canonical UTC stopped time and fixed `thread_join` basis. Existing probe
+and binding digest link this evidence to Task/parent/reservation/reviewer turns.
+An additional structural checksum binds that confirmation to its original probe,
+worker UUID and binding digest; changing those fields cannot reuse older proof.
+This checksum is not authentication of local evidence.
+The same protected operational store remains outside core/usage schema and
+backup inventory. There is no migration or read repair; old payloads remain
+readable without supplying stopped evidence. Only a bounded external join
+observer or explicit stop after actual join may save confirmation, never the
+worker target or its finally block. Process loss before durable confirmation
+leaves unknown; after persistence another process can retrieve confirmation
+read-only. Same-worker concurrent confirmation preserves the first timestamp;
+different-worker or attempt evidence cannot overwrite or satisfy it.
+
+`delivery` retains timer/send/receipt independently. `runtime` keeps its existing
+source-comparison contract. `service` describes only the responding call, or
+unknown service availability from a notification worker. `work` is limited to
+last direct observations of bound reviewer turns, with their individual
+timestamps/status/thread status/ended fact. Other children and verification
+processes stay unknown: a Verification Receipt is not process-exit evidence.
+Synchronous finalization `postprocessing=returned` means only this worker's
+known call returned, not all background work ended. Unobserved work is never
+an empty global process inventory. Existing complete results, Findings,
+verification, warnings and limitations remain distinct and preserved.
+
+Stop preserves its original operation outcome, adds `operation.status` and
+`cleanup`, and observes the same latest attempt without starting/replacing it.
+Its legacy top-level stopped denotes cleanup success, not a worker exit claim.
+A later observation failure affects observation alone: successful cleanup
+remains successful, with no reason to stop again. Failed/partial, already-closed,
+absent and never-started attempts retain their actual operation and applicable
+unknown/running/stopped observation.
+
+Only return notifications explain that the sending worker remains running and
+accepted/unknown send settlement permits receipt observation for at most 120
+seconds within the original twenty-minute deadline. Receipt confirmation,
+unavailable observation, cancellation and existing deadline/state conditions
+end observation. This future rule is not observed exit. Snapshot precedes send
+intent: this notification's own send and receipt remain unconfirmed in its
+frozen body. No later rewrite, resend, exit-only notification, extra LLM turn,
+routine poll/inspect/ACK/stop or new completion gate is introduced. Inspect and
+stop do not include this notification-specific explanation.
+
 #### Review Wait Failure Diagnosis And Recovery
 
 Normal project-service failures preserve their existing `ok:false` and `error`

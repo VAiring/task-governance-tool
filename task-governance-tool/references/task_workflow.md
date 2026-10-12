@@ -660,6 +660,14 @@ An ended reviewer, a save acknowledgement, `ok=true`, review PASS,
 `reviews_ended`, accepted sending, notification correlation or a
 `delivery.source_body=complete` label alone does not establish Task completion
 or unseen content. Resolve previously reported material or judgment questions.
+If a return notification supplies `wait_observation`, report its original
+Task/attempt/worker and snapshot time separately from the current receiving turn.
+Distinguish request phase, exact worker state and direct/saved exit confirmation,
+timer/send/receipt, runtime, persistence and the observed work scope. Unobserved
+children, verification or later cleanup remain unknown. Its remaining receipt
+observation/exit rules do not prove future exit or its own send/receipt. Use the
+available observation; no routine extra inspect/ACK/stop or exit-only turn is
+needed. These facts never replace the result gates below.
 
 The report's `completion_gate.observation=before_completion` labels its retained
 check, not current Task status or an instruction to complete again. Use current

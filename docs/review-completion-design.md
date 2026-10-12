@@ -782,8 +782,11 @@ request the public host's maximum 20,000 UTF-16 code units for integrated report
 Complete source composition and notification correlation are explicitly separate
 in `delivery.source_body` and `delivery.receipt_scope`; no runtime field certifies
 the unseen suffix. The leading identity is limited to 2,000 UTF-16 units and must
-fit completely inside the returned prefix. Ordinary fixed review-only notices
-retain their 4,096-unit exact whole-event comparison.
+fit completely inside the returned prefix. Legacy fixed review-only notices
+retain their 4,096-unit exact whole-event comparison. Managed review-only notices
+with a wait observation use the public 20,000-unit read bound and still require
+exact whole-event comparison; without an integrated leading target identity,
+truncation never establishes receipt correlation.
 
 The fixed notification suffix and MCP description expose the Skill's compact
 direct-report condition: an actually received matching Task/target generation,
@@ -914,6 +917,58 @@ procedure and retained continuation. Physical
 installation and handoff, document/release/Skill checks and two independent
 Tier 2 reviews precede the bounded real-host validation. Accepted sending and
 offline fixtures never establish actual delivery.
+
+#### Worker Observation And Exit Evidence
+
+`worker_observation` owns the shared version-one projection. Managed inspection
+reads the latest request sequence and exact controller/direct siblings, checks
+Task/parent, basis digest, automation, original parent turn and reviewer pairs,
+and consults only an already loaded matching session for direct observation.
+Missing/unreadable/mismatched evidence stays unknown. It creates no session,
+lease file, worker, receipt, timer or read repair. Stop appends observation after
+the existing operation/cleanup boundary, preserving success if that read fails.
+
+`DirectRecord` extends canonical bounded JSON with optional `worker_id`,
+`worker_stopped_at`, `worker_stop_basis` and `worker_stop_identity`. The last is
+a structural checksum of probe/worker/binding, not authentication. Old records omit these fields with
+unchanged encoding; physical schema one and payload versions one/two remain.
+New version-two probes allocate a worker UUID before start, not an exit claim.
+The repository validates canonical UUID/time, stopped time no earlier than
+creation and sole `thread_join` basis. `confirm_worker_stopped` compares probe,
+worker and binding under the existing short OS lease/transaction, retaining the
+first confirmation. Other updates preserve evidence. No core/usage schema,
+backup, Setup, path or permission change is introduced.
+
+After successful start, one daemon join observer belongs to that exact worker
+and ends after join or original duration plus existing join allowance. It has no
+host/Task/Git effects, monitoring/recovery loop, worker restart or resident
+supervisor role. It saves only after `Thread.ident` establishes actual start,
+join returns and `is_alive` is false. Explicit stop confirms after its bounded
+join through the same repository operation. Target/finally never saves exit.
+Save/observer failure is separate from direct exit and triggers no retry;
+process loss before confirmation leaves no proof. Inspect can join an already
+ended thread with zero timeout but never saves. Legacy version-one experiments
+retain their original payload and do not start a termination observer.
+
+The worker retains only transient last bound reviewer observations under a local
+lock. Before send intent ManagedDirectProbe builds the same read-only snapshot.
+ManagedHost checks Task/parent/probe and deep-freezes it before one-shot transport.
+Both raised and returned-unavailable observation paths preserve the worker's
+already-bound probe/automation identity without inferring unread state or retrying
+a failed read. Fresh reviewer, parent, basis, cancellation and original deadline
+guards follow observation work before durable send intent.
+Integrated reports retain every result plus `wait_observation`; review-only
+notices add one labelled JSON line. Exceptional local-frame fallback retains
+observation and lists omitted original fields. Only notification suffixes
+explain remaining receipt observation without asserting own acceptance/receipt
+or future exit. Runtime reads remain source-only; a notification worker cannot
+prove service availability. Receipt correlation compares the exact frozen body.
+No extra normal call, ACK, exit notification or completion gate is added.
+
+Focused fixtures cover running/direct exit/saved exit after restart, unstarted
+and legacy records, binding/ownership conflicts, failed saving, process loss,
+concurrent confirmation, read-only inspection, stop outcome separation, fixed
+notifications/unknown sends and existing complete delivery results.
 
 #### Development Review Wait Relay
 

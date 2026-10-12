@@ -9,11 +9,42 @@ from .request_repository import ParentDispatchRepository
 
 
 class ManagedDirectProbe(DirectProbe):
-    def __init__(self, *args, finalization_factory=None, dispatch_path=None, **kwargs):
+    def __init__(self, *args, finalization_factory=None, dispatch_path=None,
+                 observation_factory=None, runtime_observer=None, **kwargs):
         super().__init__(*args, **kwargs)
         self.finalization_factory = finalization_factory
         self.dispatch_path = dispatch_path
+        self.observation_factory = observation_factory
+        self.runtime_observer = runtime_observer
         self._finalization_prepared = False
+
+    def _notification_observation(self, host, controller, record):
+        # The snapshot precedes this notification's send intent. Its send result,
+        # receipt and future exit cannot be confirmed in its own frozen body.
+        if self.observation_factory is None or not hasattr(host, "set_wait_observation"):
+            return
+        try:
+            observed = self.observation_factory(controller)
+        except Exception:
+            from .worker_observation import observation
+            from .review_wait_direct_repository import instant
+            from datetime import datetime, timezone
+            observed = observation(controller.binding.task_id, controller.binding.parent_thread_id,
+                instant(datetime.now(timezone.utc)), reason="observation_unavailable")
+        # A factory may return its caught read-failure projection rather than
+        # raise. Preserve the already-bound notification identity in either
+        # case, without claiming any unread request/worker/delivery evidence.
+        if observed["identity"]["probe_id"] is None:
+            observed["identity"]["probe_id"] = record.probe_id
+        if observed["identity"]["automation_id"] is None:
+            observed["identity"]["automation_id"] = controller.reservation.timer_id
+        observed["service"] = {"status": "unknown", "scope": "notification_worker_only"}
+        if self.runtime_observer is not None:
+            try:
+                observed["runtime"] = self.runtime_observer()
+            except Exception:
+                observed["runtime"] = {"comparison": "unknown"}
+        host.set_wait_observation(record.probe_id, observed)
 
     def _parent_ready(self, parent, controller, record, *, require_idle=True):
         if parent.child_id != controller.binding.parent_thread_id:

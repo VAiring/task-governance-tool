@@ -10,6 +10,7 @@ from dataclasses import asdict, dataclass, replace
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 import json
+import hashlib
 import os
 from pathlib import Path
 import re
@@ -82,6 +83,11 @@ def instant(value: datetime) -> str:
     return value.astimezone(timezone.utc).isoformat()
 
 
+def worker_stop_identity(probe_id, worker_id, binding_digest):
+    """Structural binding checksum, not authentication of local evidence."""
+    return hashlib.sha256(json.dumps([probe_id, worker_id, binding_digest], separators=(",", ":")).encode()).hexdigest()
+
+
 @dataclass(frozen=True)
 class DirectRecord:
     probe_id: str
@@ -97,6 +103,10 @@ class DirectRecord:
     timer_rule: str | None = None
     timer_updated_at: int | None = None
     timer_due_at: str | None = None
+    worker_id: str | None = None
+    worker_stopped_at: str | None = None
+    worker_stop_basis: str | None = None
+    worker_stop_identity: str | None = None
 
     def __post_init__(self):
         try:
@@ -137,6 +147,21 @@ class DirectRecord:
                 if (not _uuid(self.acknowledged_turn) or self.acknowledged_turn == self.original_parent_turn
                         or self.status not in {"dispatching", "accepted", "rejected", "unknown"}):
                     raise ValueError
+            if self.worker_id is None:
+                if any(value is not None for value in (self.worker_stopped_at, self.worker_stop_basis, self.worker_stop_identity)):
+                    raise ValueError
+            elif not _uuid(self.worker_id):
+                raise ValueError
+            if self.worker_stopped_at is None:
+                if self.worker_stop_basis is not None or self.worker_stop_identity is not None:
+                    raise ValueError
+            else:
+                stopped = datetime.fromisoformat(self.worker_stopped_at)
+                if (type(self.worker_stopped_at) is not str or len(self.worker_stopped_at) > 40
+                        or instant(stopped) != self.worker_stopped_at or stopped < began
+                        or self.worker_stop_basis != "thread_join"
+                        or self.worker_stop_identity != worker_stop_identity(self.probe_id, self.worker_id, self.binding_digest)):
+                    raise ValueError
         except (ValueError, TypeError, OverflowError):
             raise RepositoryError("invalid_snapshot") from None
 
@@ -145,6 +170,9 @@ def _encode(record: DirectRecord) -> str:
     if type(record) is not DirectRecord:
         raise RepositoryError("invalid_snapshot")
     value = asdict(record)
+    if record.worker_id is None:
+        for field in ("worker_id", "worker_stopped_at", "worker_stop_basis", "worker_stop_identity"):
+            value.pop(field)
     if record.version == 1:
         for field in ("version", "timer_phase", "timer_rule", "timer_updated_at", "timer_due_at"):
             value.pop(field)
@@ -196,7 +224,7 @@ class DirectRepository(ReviewWaitRepository):
                 return self._load(connection)
 
     def create_record(self, record: DirectRecord) -> None:
-        if (record.status != "waiting" or record.acknowledged_turn is not None
+        if (record.status != "waiting" or record.acknowledged_turn is not None or record.worker_stopped_at is not None
                 or record.version == 2 and record.timer_phase != "arming"):
             raise RepositoryError("invalid_snapshot")
         payload = _encode(record)
@@ -281,5 +309,25 @@ class DirectRepository(ReviewWaitRepository):
                     reason=reason if status is not None else before.reason,
                     timer_phase=timer_phase or before.timer_phase,
                     timer_updated_at=before.timer_updated_at if timer_updated_at is None else timer_updated_at)
+                connection.execute("UPDATE direct_probe SET payload = ? WHERE singleton = 1", (_encode(after),))
+                return after
+
+    def confirm_worker_stopped(self, probe_id: str, worker_id: str,
+                               binding_digest: str, observed_at: str) -> DirectRecord:
+        """Persist an externally joined worker's confirmation, never its self-report.
+
+        The lifecycle observer and explicit stop may meet here; the first valid
+        confirmation is retained. No status/timer/send/receipt transition occurs.
+        """
+        with self._serial():
+            with self._connection(write=True) as connection:
+                before = self._load(connection)
+                if (before.probe_id != probe_id or before.worker_id != worker_id
+                        or before.binding_digest != binding_digest):
+                    raise RepositoryError("binding_mismatch")
+                if before.worker_stopped_at is not None:
+                    return before
+                after = replace(before, worker_stopped_at=observed_at, worker_stop_basis="thread_join",
+                                worker_stop_identity=worker_stop_identity(probe_id, worker_id, binding_digest))
                 connection.execute("UPDATE direct_probe SET payload = ? WHERE singleton = 1", (_encode(after),))
                 return after

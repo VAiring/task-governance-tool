@@ -88,8 +88,8 @@ class ProjectReviewWaitSession:
     def catalogue():
         descriptions = {
             "wait": "Wait for the original Task and actual returned reviewers using the authorized connected service. Creates and starts its same-parent timer; delegate waiting and end the turn on ok=true,status=waiting,parent_may_end=true. On failure, report the limitation and recovery condition before ordinary turn end; no automatic resumption is promised. A matching prepare-finalization intent runs fixed registration, gates, local commit and completion before notification; otherwise it notifies review end only. A received body matching the original Task/target generation with status=completed, successful stages, actual Task done and sufficient reporting facts without unresolved contradiction or action permits direct reporting without another guide read, routine query or replay. Include all Findings (also low/resolved), warnings, limitations and not_recorded work; these alone do not exclude success. Labels (including delivery.source_body=complete), correlation, ok=true, review end/PASS and send acceptance alone prove neither completion nor unseen content. Follow references/review_wait.md#normal-wait for waiting; other results, including incomplete, unknown, failed, conflicting or action-requiring reports, use references/task_workflow.md#continue-after-reviews. No separate ACK or routine status call; next-Task authority reads and existing gates still apply.",
-            "inspect": "Optional read-only diagnosis of this parent's Task wait and runtime identity; never starts or retries effects, migrates state or establishes a live worker from saved flags.",
-            "stop": "Explicitly stop this parent's Task wait and clean up only known effects; no unknown-operation retry.",
+            "inspect": "Optional read-only diagnosis of this parent's Task wait and runtime identity. observation distinguishes request phase, exact worker running/stopped/unknown, direct versus saved joined termination, timer/send/receipt and observation time. No saved start flag proves life or exit; never starts/retries effects or writes evidence. Old notification observations are not current state. No routine poll or completion gate.",
+            "stop": "Explicitly stop this parent's Task wait and clean up only known effects; no unknown-operation retry. operation reports cleanup separately from observation of the same worker running/stopped/unknown. Successful cleanup survives a later observation failure; unknown observation alone requires no repeat stop. Saved joined termination remains readable after restart.",
             "prepare": "Compatibility only: prepare the earlier per-reservation flow with an authorized PAUSED same-parent timer; no timer or send effect. Normal waiting uses review_wait_wait.",
             "view": "Compatibility/recovery only: inspect an earlier per-reservation wait without starting observation or host effects. Normal diagnosis uses review_wait_inspect.",
             "direct_delete_start": "Compatibility only: start an earlier prepared wait, delete its timer and send once to this same idle parent when its exact reviewers end. Requires send authorization. Normal waiting uses review_wait_wait.",
@@ -174,7 +174,10 @@ class ProjectReviewWaitSession:
             options["prepare_reviewer_reader"] = prepare_reviewer_reader
             options["direct_factory"] = lambda *args, **kwargs: ManagedDirectProbe(
                 *args, finalization_factory=lambda controller: self._finalizer(controller.binding),
-                dispatch_path=lambda parent: self._location(enabling=False).review_wait_dispatch_store(parent), **kwargs)
+                dispatch_path=lambda parent: self._location(enabling=False).review_wait_dispatch_store(parent),
+                observation_factory=lambda controller: self.managed.observe(task_id,
+                    {"threadId": controller.binding.parent_thread_id}, self._location(enabling=False)),
+                runtime_observer=self._runtime, **kwargs)
         session = self.session_factory(config, host_factory=host_factory,
             basis_factory=self._reader, clock=self.clock, **options)
         self.sessions[automation_id] = session
@@ -184,6 +187,16 @@ class ProjectReviewWaitSession:
         if not path_lexically_exists(paths.review_wait_root):
             create_physical_directory_exclusive(paths.review_wait_root, root=paths.fixed_root)
         inspect_physical_directory(paths.review_wait_root, root=paths.fixed_root)
+
+    def _runtime(self):
+        from task_governance_tool.state_resolver import SCHEMA_VERSION
+        try:
+            if self.runtime_identity is not None:
+                return self.runtime_identity.inspect(loaded_schema=SCHEMA_VERSION)
+        except Exception:
+            pass
+        return {"version": 1, "code_id": None, "supported_schema": None,
+                "deployed_supported_schema": None, "comparison": "unknown"}
 
     def handle(self, operation, arguments, metadata):
         diagnostic = CallDiagnostics()
@@ -205,6 +218,31 @@ class ProjectReviewWaitSession:
                 runtime = {"version": 1, "code_id": None, "supported_schema": None,
                            "deployed_supported_schema": None, "comparison": "unknown"}
             result = {**result, "runtime": runtime}
+        if operation in {"inspect", "stop"} and admitted:
+            from .worker_observation import observation
+            from .review_wait_direct_repository import instant
+            from datetime import datetime, timezone
+            try:
+                observed = result.get("observation")
+                if observed is None:
+                    if result.get("ok") is True:
+                        paths = self._location(enabling=False)
+                        observed = self.managed.observe(arguments["task_id"], metadata, paths)
+                    else:
+                        # The failed operation already observed its boundary;
+                        # never repeat an unreadable-state read for reporting.
+                        observed = observation(arguments["task_id"], metadata["threadId"],
+                            instant(datetime.now(timezone.utc)), reason="observation_unavailable")
+            except Exception:
+                observed = observation(arguments["task_id"], metadata["threadId"],
+                    instant((self.clock or (lambda: datetime.now(timezone.utc)))()),
+                    reason="observation_unavailable")
+            observed["runtime"] = result["runtime"] if "runtime" in result else self._runtime()
+            result["observation"] = observed
+            if operation == "stop":
+                result["operation"] = {"status": "succeeded" if result.get("ok") is True else "unresolved",
+                                       "cleanup": "not_needed" if result.get("status") == "absent" else
+                                       "confirmed" if result.get("ok") is True else "unresolved"}
         return result
 
     def _handle(self, operation, arguments, metadata, diagnostic):

@@ -28,6 +28,16 @@ def fallback_prompt(task_id):
     )
 
 
+NOTIFICATION_OBSERVATION_GUIDANCE = (
+    "\nこの通知のworker観測は送信前の時点です。送信中は同一workerが稼働し、"
+    "送信結果がacceptedまたはunknownなら、受領を最大120秒かつ元の20分期限内で観測します。"
+    "受領確認、観測不能、取消、期限到達など既存の終了条件で観測を終了します。"
+    "これは将来の終了条件の説明であり、終了確認ではありません。本通知自身の送信結果・受領はまだ未確定です。"
+    "古い観測を現在状態に読み替えず、要求phase、worker、timer/send/receipt、runtime、"
+    "観測範囲内の担当と処理を分けて報告し、範囲外はunknownを保持してください。追加ACK/stopは不要です。"
+)
+
+
 class ManagedHost(PublicMcpHost):
     def __init__(self, *, task_id, **kwargs):
         self.task_id = validate_task_id(task_id)
@@ -35,7 +45,22 @@ class ManagedHost(PublicMcpHost):
         self._receipt_headers = {}
         self._sent_probes = set()
         self._prompt_lock = threading.RLock()
+        self._wait_observations = {}
+        self._finalization_results = {}
         super().__init__(**kwargs)
+
+    def set_wait_observation(self, probe, observed):
+        with self._prompt_lock:
+            _uuid(probe)
+            if (probe in self._sent_probes or observed["identity"]["task_id"] != self.task_id
+                    or observed["identity"]["parent_thread_id"] != self.parent_thread_id
+                    or observed["identity"]["probe_id"] != probe):
+                raise HostAdapterError("host_call_failed")
+            # Copy/freeze all nested values before sending; no later observation
+            # or receipt update rewrites the attempted body.
+            self._wait_observations[probe] = json.loads(json.dumps(observed, allow_nan=False))
+            if probe in self._finalization_results:
+                self._set_finalization_result(probe, self._finalization_results[probe])
 
     def set_finalization_result(self, probe, result):
         with self._prompt_lock:
@@ -57,6 +82,9 @@ class ManagedHost(PublicMcpHost):
                 or not re.fullmatch(r"(?:[0-9a-f]{40}|[0-9a-f]{64})", target["target_base_revision"])):
             raise HostAdapterError("host_call_failed")
         value = dict(result)
+        self._finalization_results[probe] = result
+        if probe in self._wait_observations:
+            value["wait_observation"] = self._wait_observations[probe]
         value["delivery"] = {"source_body": "complete", "omitted_fields": [],
                              "receipt_scope": "notification_correlation_only"}
         identity = {"version": 1, "notification_id": probe, "parent_thread_id": self.parent_thread_id,
@@ -80,6 +108,8 @@ class ManagedHost(PublicMcpHost):
             "references/task_workflow.md#continue-after-reviews の既存手順を使ってください。"
             "個別ACKや通知の再送は不要です。次のTaskの正本読取りと既存ゲートは引き続き必要です。"
         )
+        if probe in self._wait_observations:
+            suffix += NOTIFICATION_OBSERVATION_GUIDANCE
         raw = json.dumps(value, ensure_ascii=False, allow_nan=False, separators=(",", ":"))
         (prefix + raw + suffix).encode("utf-8")  # Reject invalid text before size-only fallback.
         try:
@@ -91,6 +121,8 @@ class ManagedHost(PublicMcpHost):
             included = {"ok", "status", "task_id", "target", "task_title", "stages", "registered_receipt_ids",
                         "commit_id", "candidate_commit_id", "task_status", "blocking_code", "next_action", "unavailable"}
             value = {key: item for key, item in result.items() if key in included}
+            if probe in self._wait_observations:
+                value["wait_observation"] = self._wait_observations[probe]
             value["delivery"] = {"source_body": "incomplete", "omitted_fields": sorted(set(result) - included),
                 "receipt_scope": "notification_correlation_only", "limitation": "local_relay_frame_limit",
                 "max_frame_bytes": protocol.MAX_MESSAGE_BYTES,
@@ -144,12 +176,16 @@ class ManagedHost(PublicMcpHost):
     def _direct_prompt(self, probe):
         if probe in self._finalization_prompts:
             return self._finalization_prompts[probe]
-        return (
+        prompt = (
             f"レビュー待機通知 {probe}。元Task {self.task_id} の独立レビューが終了し、"
             "待機予約の削除を確認しました。保存済みの元Task・Packetのレビュー原本を回収し、"
             "既存のレビュー結果処理を続けてください。個別ACKやroutine status/viewは不要です。"
             "この通知自体はPASSやTask完了の証拠ではありません。予約の再作成や通知の再送は不要です。"
         )
+        if probe in self._wait_observations:
+            prompt += "\n待機観測: " + json.dumps(self._wait_observations[probe], ensure_ascii=False,
+                allow_nan=False, separators=(",", ":")) + NOTIFICATION_OBSERVATION_GUIDANCE
+        return prompt
 
     def observe_receipt(self, probe, send_parent_turn, *, deadline=None):
         """Find the first receipt after this attempt's fresh pre-send turn.
@@ -161,7 +197,7 @@ class ManagedHost(PublicMcpHost):
         """
         _uuid(probe)
         _uuid(send_parent_turn)
-        maximum = 20000 if probe in self._finalization_prompts else 4096
+        maximum = 20000 if probe in self._finalization_prompts or probe in self._wait_observations else 4096
         bound = time.monotonic() + self._timeout
         if deadline is not None:
             bound = min(bound, deadline)

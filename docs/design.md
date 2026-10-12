@@ -40,6 +40,14 @@ engine:
 - state and artifacts have one physical project-scoped owner; and
 - historical evidence cannot satisfy a current completion or review gate.
 
+## Conditional Response Usage Attribution Design
+
+[Response usage attribution](usage-response-attribution-design.md) defines the
+accepted response boundaries, operation-to-response correlation, per-execution
+aggregation, and partial-observation design. Its applicability section retains
+the current owners and the implementation/verification/review synchronization
+conditions; this design entry alone changes no runtime behavior or schema.
+
 ## Source And Package Layout
 
 The source repository contains governing documents, tests, fixtures, and one

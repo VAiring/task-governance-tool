@@ -127,6 +127,16 @@ activate ownership, numerical collection, a schema migration or host hooks.
 Current product owners remain controlling until the corresponding reviewed
 implementation updates them. Unverified host prerequisites are explicit there.
 
+## Conditional Response Usage Attribution Design
+
+[Response usage attribution](usage-response-attribution-design.md) owns the
+accepted response boundaries and feature-level design for per-execution usage,
+partial observations, successful-operation correlation, and bounded sharing.
+It is conditional on the corresponding implementation, verification, review,
+and synchronization with the current owners. Database persistence, Task state,
+Setup, and completion Evidence retain their existing ownership. This route
+does not activate a runtime, schema, host setting, or completion-gate change.
+
 ## Conditional Review Finalization Plan
 
 [Review finalization and same-parent result notification](review-finalization-plan.md)
@@ -194,11 +204,11 @@ enforced meaning.
 
 ```json
 {
-  "schema": "taskgov-document-authority-v21",
+  "schema": "taskgov-document-authority-v22",
   "mandatory_start": ["AGENTS.md", "docs/authority.md", "live_task_contract"],
   "current": ["docs/specification.md", "docs/design.md", "plan.md", "docs/viewer-specification.md", "docs/viewer-design.md", "docs/runner-plan-authoring-specification.md", "docs/runner-plan-authoring-design.md", "docs/task-operation-specification.md", "docs/task-operation-design.md", "docs/runner-execution-specification.md", "docs/runner-execution-design.md", "docs/evidence-specification.md", "docs/evidence-design.md", "docs/review-completion-specification.md", "docs/review-completion-design.md", "docs/setup-state-specification.md", "docs/setup-state-design.md", "docs/database-specification.md", "docs/database-design.md"],
   "mixed_execution": [],
-  "conditional": ["docs/state-layout-separation-plan.md", "docs/verification-declaration-plan.md", "docs/session-usage-plan.md", "docs/review-finalization-plan.md"],
+  "conditional": ["docs/state-layout-separation-plan.md", "docs/verification-declaration-plan.md", "docs/session-usage-plan.md", "docs/review-finalization-plan.md", "docs/usage-response-attribution-design.md"],
   "history_index": "docs/history/README.md"
 }
 ```

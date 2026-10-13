@@ -87,6 +87,38 @@ class ManagedWait:
             return observation(task_id, metadata["threadId"], instant(datetime.now(timezone.utc)),
                                request=record, attempt=attempt, reason="observation_unavailable")
 
+    def _read_diagnostic(self, observed, attempt, record, task_id, parent_id):
+        """Reuse the admitted observation; unknown/mismatched ownership is no proof."""
+        try:
+            identity, facts = observed["identity"], observed["worker"]
+            if (record is None or identity["task_id"] != task_id or identity["parent_thread_id"] != parent_id
+                    or type(identity["attempt"]) is not int or identity["attempt"] != attempt
+                    or identity["automation_id"] != record.automation_id
+                    or identity["probe_id"] is None or facts["worker_id"] is None
+                    or facts["status"] not in {"running", "stopped"}
+                    or facts["source"] != "direct_thread" or facts["reason"] is not None):
+                return None
+            # direct_thread evidence already checked this same request/controller/
+            # direct binding and actual started thread, including a joined stop.
+            session = self.owner.sessions.get(record.automation_id)
+            worker = None if session is None else session.direct
+            getter = getattr(worker, "read_diagnostic_for", None)
+            if not callable(getter):
+                return None
+            value = getter(identity["probe_id"], facts["worker_id"])
+            if type(value) is not dict:
+                return None
+            safe = CallDiagnostics()
+            safe.capture(result=value)
+            if safe.read_failure is None:
+                return None
+            result = {"read_failure": safe.read_failure}
+            if safe.host_failure is not None:
+                result["host_failure"] = safe.host_failure
+            return result
+        except Exception:
+            return None  # Optional diagnosis never changes a successful inspection.
+
     @staticmethod
     def _read_reviewer(host, reviewer, expected, finalizer):
         def unavailable():
@@ -262,6 +294,10 @@ class ManagedWait:
                                 state = delivery_projection(DirectRepository.for_wait(timer_path).read())
                             result["delivery"] = state
                 result["observation"] = self.observe_safely(task_id, metadata, paths, expected=(attempt, record))
+                read_diagnostic = self._read_diagnostic(result["observation"], attempt, record,
+                                                        task_id, metadata["threadId"])
+                if read_diagnostic is not None:
+                    result["read_diagnostic"] = read_diagnostic
                 return result
             with diagnostic.retained_context(repository.serial()) as lease:
                 attempt, record = repository.read()

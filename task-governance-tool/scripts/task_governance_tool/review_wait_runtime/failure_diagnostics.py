@@ -5,7 +5,8 @@ from dataclasses import dataclass
 import json
 
 from .review_wait_server import _BOOTSTRAP_REASONS, _BOOTSTRAP_STAGES, _bootstrap_failure
-from .review_wait_host import HOST_BOUNDARY_REASONS, HOST_OPERATIONS, HOST_TERMINATION, HostAdapterError, host_failure
+from .review_wait_host import (HOST_BOUNDARY_REASONS, HOST_OPERATIONS, HOST_TERMINATION,
+                              HostAdapterError, host_failure, read_failure, validated_read_failure)
 from .review_wait_direct_repository import DIRECT_REASONS
 
 
@@ -67,8 +68,12 @@ class CallDiagnostics:
     retained_effects: str = "not_inspected"
     cleanup: str = "not_attempted"
     host_failure: dict | None = None
+    read_failure: dict | None = None
 
     def capture(self, *, error=None, result=None):
+        read = validated_read_failure(result.get("read_failure")) if type(result) is dict else read_failure(error)
+        if read is not None:
+            self.read_failure = read
         supplied = result.get("host_failure") if type(result) is dict else host_failure(error)
         if (type(supplied) is dict and set(supplied) == {"operation", "reason", "termination"}
                 and type(supplied["operation"]) is str and supplied["operation"] in HOST_OPERATIONS
@@ -170,6 +175,9 @@ class CallDiagnostics:
         }
         if self.host_failure is not None:
             diagnostic["host_failure"] = self.host_failure
+        read = validated_read_failure(self.read_failure)
+        if read is not None:
+            diagnostic["read_failure"] = read
         # All members are fixed vocabulary, independent of rejected input size.
         assert len(json.dumps(diagnostic).encode("utf-8")) <= MAX_DIAGNOSTIC_BYTES
         return {**result, "diagnostic": diagnostic}

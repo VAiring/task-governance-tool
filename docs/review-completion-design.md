@@ -988,12 +988,47 @@ These paths may use the public history response transiently but do not return
 raw history to the caller/LLM or save it in Task state or diagnostics. Extracting
 fields after receipt does not bypass the transport's byte admission. Use a larger
 finite buffer for read-only responses rather than a streaming JSON extractor.
-4 MiB is an initial implementation candidate, not an already active constant;
-validate and fix the adopted value with the outer JSON-RPC frame, nested JSON,
-queue count, aggregate drain bytes, memory, timeout and cleanup budgets together.
-Keep request/notification-send bounds separate. Do not accidentally retain an
-inner 256 KiB cap that rejects an admitted larger read, or enlarge every mutation
-and notification limit as a side effect.
+The adopted `MAX_READ_RESPONSE_BYTES` is 4,194,304 bytes for `read_thread` and
+`wait_threads` responses only, including the outer frame's newline. Nested JSON
+uses the same byte ceiling, so admitted outer responses face no old 256 KiB inner
+cap. `_ChildSession` admits at most 8,388,608 stdout bytes for that whole owned
+exchange; stderr stays independently capped at 1,048,576 bytes and is discarded.
+The queue still admits at most 16 entries, including EOF markers. Pending data, queued bytes and JSON
+allocations are finite under those frame/count/stream bounds; this is a bounded
+buffer design, not constant-space streaming or a claim about empirical rarity.
+Initialization remains capped at 262,144 bytes even in a read exchange. All
+other operation responses, requests and notification-send frames retain their
+262,144-byte limit and 1,048,576-byte per-stream drain ceiling. This does not alter
+the development-only view relay or public incoming server admission.
+
+The existing per-call host deadline (default twenty seconds), sixteen-page scan
+with one shared deadline, receipt's 120-second observation and twenty-minute
+outer deadline remain. Nested parsing is checked against the remaining call
+deadline before returning a result. Cleanup retains its one-second wait/join
+budgets and exact owned-process/reader/pipe checks. The first fixed pipe failure
+is retained under a lock independently from reaping and extra-frame checks.
+
+`ThreadPage` carries only a validated `ChildTurn`, next cursor and has-more flag.
+The dispatch reader returns that projection and bounded selected path/UUID sets;
+the receipt reader returns it and a validated event-match boolean. Each scan
+retains only these complete validated projections, up to sixteen pages plus the
+dispatch's final fresh recheck, and discards raw items after extraction. No
+partial page or receipt candidate before the required fence becomes a conclusion.
+The parent state reader has no stale-snapshot fallback.
+
+`HostAdapterError` carries an optional closed purpose failure. Bootstrap/direct
+failure projection and `CallDiagnostics` preserve it through later timer cleanup.
+`ManagedDirectProbe` keeps a receipt read failure transiently after stopping
+observation; explicit inspection may project it as `read_diagnostic` for that
+same owned worker only. No durable format changes or historical cause fabrication
+are introduced. Inspection reuses the existing validated observation's exact
+attempt/request/controller/direct identity and direct-thread ownership proof,
+then matches the failure's captured probe/worker tuple against that owned object.
+Unknown observation or changed identity suppresses the optional projection; a
+joined, correctly bound stopped worker remains eligible. No second state read or
+new worker-observation field is required.
+Accepted sending, native commit and Task done remain unchanged;
+the failed receipt read does not resend or invoke finalization again.
 
 If a later response exceeds its bound, retain prior fully received and validated
 pages or independent facts. Do not parse a truncated response as a complete page.

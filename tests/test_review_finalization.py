@@ -616,6 +616,41 @@ class InstalledFinalizationTests(fixtures.PreparationFixture):
                       ("succeeded", "succeeded", "dispatching")):
             self.assertIn(stage, stages)
 
+    def test_capacity_failure_after_confirmed_commit_and_done_preserves_success_without_replay(self):
+        from tests.test_review_wait_direct import ORIGINAL
+        from task_governance_tool.review_wait_runtime.review_wait_host import (
+            ChildTurn, HostAdapterError, annotate_read_failure)
+        task, service = self.ready()
+        direct, host, parent = self.wait_fixture(task, service)
+        reports, reads = [], []
+        host.set_finalization_result = lambda probe, result: reports.append(result)
+        def unavailable(*args, **kwargs):
+            reads.append(1)
+            raise annotate_read_failure(HostAdapterError("host_call_failed",
+                boundary_reason="host_response_frame_limit", operation="read_thread",
+                termination="confirmed"), "notification_receipt", 1)
+        host.observe_receipt = unavailable
+        self.assertTrue(direct.handle("direct_delete_start", {}, {"threadId":parent, "turnId":ORIGINAL})["ok"])
+        host.parent = ChildTurn(parent, ORIGINAL, "completed", "idle")
+        direct._worker.join(30)
+        self.assertFalse(direct._worker.is_alive())
+        self.assertEqual(len(reads), 1)  # No identical oversized-read loop.
+        self.assertEqual(len(host.sends), 1)
+        self.assertEqual(len(reports), 1)
+        self.assertEqual(reports[0]["task_status"], "done")
+        self.assertEqual(reports[0]["stages"], {
+            "registration":"succeeded", "commit":"succeeded", "completion":"succeeded"})
+        commit = reports[0]["commit_id"]
+        self.assertEqual(self.git("rev-parse", "HEAD").decode().strip(), commit)
+        self.assertEqual(self.cli("task", "show", task)["task"]["status"], "done")
+        self.assertEqual(direct.repository.read().status, "accepted")
+        self.assertIsNone(direct.repository.read().acknowledged_turn)
+        self.assertEqual(direct.read_diagnostic["read_failure"]["purpose"], "notification_receipt")
+        self.assertEqual(direct.read_diagnostic["host_failure"]["termination"], "confirmed")
+        self.assertEqual(service.execute(check=True)["task_status"], "done")
+        self.assertEqual(self.git("rev-parse", "HEAD").decode().strip(), commit)
+        self.assertEqual(len(host.sends), 1)
+
     def scheduled_handoff(self, status):
         from tests.test_review_wait_direct import ORIGINAL, NEW_TURN
         from tests.test_review_wait_service import TURN, OTHER

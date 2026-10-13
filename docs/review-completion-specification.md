@@ -1000,6 +1000,13 @@ but never prove review PASS. All existing preparation, wait, pre-effect and
 finalization guards remain. The existing parent status read retains its bounded
 public `read_thread` route. Structured handle mapping below and exact notification
 receipt checks also use public `read_thread`; UUID references require no mapping/history lookup.
+The three internal readers return only current-state facts, selected validated
+dispatch facts, or validated receipt-match/navigation facts. They do not return
+raw history to orchestration. Read-only `read_thread` and `wait_threads` exchanges
+admit at most 4,194,304 bytes per response frame and nested JSON, with bounded
+stdout totals; initialization, requests, mutations and notification sending keep
+their 262,144-byte limit. Exact resource ownership and limits are defined by the
+[query design](review-completion-design.md#accepted-review-wait-query-design).
 Resolve handles only from the admitted parent's structured public
 `read_thread.subAgentActivity` records with `kind=started|interacted`,
 `agentPath` and `agentThreadId`. The nearest dispatch turn owns the mapping.
@@ -1292,6 +1299,7 @@ only the following fixed fields and allowlisted values:
 | `recovery` | `respect_off`, `check_configuration`, `check_project`, `check_connection`, `correct_request`, `inspect_existing` or `report_and_resume`; these select the applicable recovery below and grant no operation permission. |
 | `turn_end` | `report_limitation`: an ordinary turn may end after reporting the limitation and retained continuation, without claiming successful waiting. |
 | `host_failure` | Optional closed object for an observed host exchange: fixed `operation=read_thread|wait_threads|automation_update|send_message_to_thread`, allowlisted host `reason`, and `termination=not_attempted|confirmed|unresolved` for its owned helper process/pipes. It is absent when these facts were not observed; absence is not successful termination. |
+| `read_failure` | Optional closed purpose projection: `purpose=parent_state|reviewer_identity|notification_receipt`, integer `retained_pages=0..17`, `conclusion=unknown`, and the corresponding fixed `next_action=restore_parent_read|restore_identity_read|retain_known_results`. The count describes complete validated pages held transiently in this scan, not a successful identity/receipt conclusion or reusable current parent snapshot. |
 
 Communication and termination are separate results. Preserve the first fixed
 communication reason even if helper termination is unresolved; process exit
@@ -1304,6 +1312,29 @@ normal preparation/start failure projection and any later timer cleanup; they
 do not describe the long-lived notification worker. Mutation wrappers retain
 unknown effect semantics and the original exchange facts, never authorize replay.
 No response body or exception text enters these fields or durable Task storage.
+
+Frame, stream-total and queue overflow have the fixed exchange reasons
+`host_response_frame_limit`, `host_response_drain_limit` and
+`host_response_queue_limit`; partial EOF is `host_response_truncated`.
+Initialization keeps its smaller admission and preserves an observed capacity
+reason. Neither cleanup failure nor cleanup success rewrites that first cause.
+Earlier complete validated purpose projections remain transiently available;
+unseen alias conflicts, failed final freshness or an unreached receipt fence
+leave the dependent conclusion unknown. A failed fresh parent read supplies no
+idle evidence. No partial JSON is parsed as a successful page, identical oversized
+read is automatically repeated, or known commit/completion is reversed.
+
+On requested inspection only, `read_diagnostic` may expose the current same-worker
+receipt-observation failure's closed `read_failure` and, when observed,
+`host_failure`. It is call/process-local, outside the worker observation schema
+and durable journals; missing evidence after restart is not reconstructed.
+Projection requires the exact admitted latest request attempt, controller/direct
+binding, probe and owned worker. Unknown, unavailable, conflicting or mismatched
+observation suppresses it. A correctly bound stopped worker may still supply its
+transient diagnosis; saved exit evidence alone cannot recover a lost cause.
+It never implies that prior registration, commit or Task completion failed and
+adds no routine inspect, ACK, resend or completion gate. Existing report stages
+remain the evidence for each known successful operation.
 
 `not_dispatched` describes this call only. It never establishes that a previous
 reservation or send is absent. Failure before retained-state inspection, or an
@@ -1534,7 +1565,7 @@ This explicit development scratch path is not a production state mode.
 
 Bootstrap failures retain `ok:false,error:"candidate_unavailable"` and add
 fixed `stage` and `reason` diagnostics and, when observed, the closed optional
-`host_failure` facts defined in [failure diagnosis](#review-wait-failure-diagnosis-and-recovery).
+`host_failure` and `read_failure` facts defined in [failure diagnosis](#review-wait-failure-diagnosis-and-recovery).
 Stages identify request, executor
 admission, host context, the first/second Task-basis read, child/reservation
 read, state creation or service loading. Reasons are explicitly allowlisted

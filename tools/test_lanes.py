@@ -254,6 +254,7 @@ LANE_MODULES: dict[str, tuple[str, ...]] = {
         "test_review_wait_mcp_relay",
         "test_review_wait_observer",
         "test_review_wait_project",
+        "test_review_wait_read_capacity",
         "test_review_wait_repository",
         "test_review_wait_runtime",
         "test_review_wait_runtime_identity",

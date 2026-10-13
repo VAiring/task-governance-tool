@@ -6,6 +6,7 @@ from dataclasses import asdict
 from .review_wait_direct import DirectProbe, DirectError, _terminal
 from .review_wait_repository import RepositoryError
 from .request_repository import ParentDispatchRepository
+from .review_wait_host import read_failure, host_failure
 
 
 class ManagedDirectProbe(DirectProbe):
@@ -17,6 +18,17 @@ class ManagedDirectProbe(DirectProbe):
         self.observation_factory = observation_factory
         self.runtime_observer = runtime_observer
         self._finalization_prepared = False
+        self.read_diagnostic = None
+        self._read_diagnostic_identity = None
+
+    def read_diagnostic_for(self, probe_id, worker_id):
+        """Return a transient cause only for the exact observed owned worker."""
+        with self._observations_lock:
+            identity = (probe_id, worker_id)
+            if (worker_id is None or self._read_diagnostic_identity != identity
+                    or (self._owned_probe_id, self._owned_worker_id) != identity):
+                return None
+            return self.read_diagnostic
 
     def _notification_observation(self, host, controller, record):
         # The snapshot precedes this notification's send intent. Its send result,
@@ -156,5 +168,14 @@ class ManagedDirectProbe(DirectProbe):
                     return
                 if self._stop.wait(self._cycle):
                     return
-        except Exception:
+        except Exception as error:
+            read = read_failure(error)
+            if read is not None:
+                diagnostic = {"read_failure": read}
+                exchange = host_failure(error)
+                if exchange is not None:
+                    diagnostic["host_failure"] = exchange
+                with self._observations_lock:
+                    self.read_diagnostic = diagnostic
+                    self._read_diagnostic_identity = (record.probe_id, record.worker_id)
             return  # Accepted stays accepted; an unavailable read is not receipt.

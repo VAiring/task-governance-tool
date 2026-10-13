@@ -32,6 +32,9 @@ HOST_BOUNDARY_REASONS = frozenset({
 }) | frozenset("host_" + reason for reason in relay.RESPONSE_FAILURE_REASONS)
 HOST_OPERATIONS = frozenset({"read_thread", "wait_threads", "automation_update", "send_message_to_thread"})
 HOST_TERMINATION = frozenset({"not_attempted", "confirmed", "unresolved"})
+READ_PURPOSES = frozenset({"parent_state", "reviewer_identity", "notification_receipt"})
+READ_NEXT_ACTIONS = {"parent_state": "restore_parent_read", "reviewer_identity": "restore_identity_read",
+                     "notification_receipt": "retain_known_results"}
 _TURN_STATES = {"completed", "failed", "interrupted", "inProgress"}
 _THREAD_STATES = {"notLoaded", "idle", "active", "systemError"}
 _CALL_ID_KEYS = ("openai/toolCallId", "openai/tool_call_id", "codexCallId",
@@ -54,6 +57,7 @@ class HostAdapterError(Exception):
         self.operation = operation if type(operation) is str and operation in HOST_OPERATIONS else None
         self.termination = (termination if type(termination) is str
                             and termination in HOST_TERMINATION else None)
+        self.read_failure = None
         super().__init__(code)
 
 
@@ -74,12 +78,49 @@ def unknown_host_effect(code: str, error: Exception) -> HostAdapterError:
         if failure is not None else {}))
 
 
+def read_failure(error) -> dict | None:
+    value = error.read_failure if type(error) is HostAdapterError else None
+    return validated_read_failure(value)
+
+
+def validated_read_failure(value) -> dict | None:
+    if (type(value) is dict and set(value) == {"purpose", "retained_pages", "conclusion", "next_action"}
+            and type(value["purpose"]) is str and value["purpose"] in READ_PURPOSES
+            and type(value["retained_pages"]) is int and 0 <= value["retained_pages"] <= 17
+            and value["conclusion"] == "unknown"
+            and value["next_action"] == READ_NEXT_ACTIONS[value["purpose"]]):
+        return dict(value)
+    return None
+
+
+def annotate_read_failure(error: HostAdapterError, purpose: str, retained_pages: int) -> HostAdapterError:
+    error.read_failure = validated_read_failure({"purpose": purpose, "retained_pages": retained_pages,
+        "conclusion": "unknown", "next_action": READ_NEXT_ACTIONS[purpose]})
+    return error
+
+
 @dataclass(frozen=True)
 class ChildTurn:
     child_id: str
     turn_id: str
     status: str
     thread_status: str
+
+
+@dataclass(frozen=True)
+class ThreadPage:
+    """Validated navigation and state only; never raw items or provider bodies."""
+
+    snapshot: ChildTurn
+    next_cursor: str | None
+    has_more: bool
+
+
+def thread_page(value, parent_id) -> ThreadPage:
+    snapshot = parse_read_thread(value, parent_id)
+    if value["page"]["nextCursor"] is not None:
+        _text(value["page"]["nextCursor"], 4096, empty=True)
+    return ThreadPage(snapshot, value["page"]["nextCursor"], value["page"]["hasMore"])
 
 
 @dataclass(frozen=True)
@@ -559,13 +600,16 @@ class PublicMcpHost:
             # Construction may launch before failing; without a returned owned
             # session, do not assert that process/reader cleanup was unattempted.
             termination = "unresolved"
+            read_only = name in {"read_thread", "wait_threads"}
             child = relay._ChildSession(self._command, self._cwd,
-                                        time.monotonic() + (timeout or self._timeout), 1.0)
+                                        time.monotonic() + (timeout or self._timeout), 1.0,
+                                        **({"response_bytes": relay.MAX_READ_RESPONSE_BYTES,
+                                            "stdout_bytes": relay.MAX_READ_DRAIN_BYTES} if read_only else {}))
             boundary_reason = "host_initialize_failed"
             child.send(relay._encode({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {
                 "protocolVersion": relay.PROTOCOL_VERSION, "capabilities": {},
                 "clientInfo": {"name": "taskgov-review-wait-host", "version": "0.1.0"}}}))
-            initialized = child.result(1)
+            initialized = child.result(1, max_bytes=relay.MAX_MESSAGE_BYTES)
             if (initialized.get("protocolVersion") not in relay.SUPPORTED_PROTOCOL_VERSIONS
                     or not isinstance(initialized.get("capabilities"), dict)
                     or not isinstance(initialized["capabilities"].get("tools"), dict)
@@ -588,10 +632,12 @@ class PublicMcpHost:
             succeeded = True
         except Exception as error:
             succeeded = False
-            if (boundary_reason == "host_response_unavailable"
-                    and type(error) is relay.RelayError
+            if (type(error) is relay.RelayError
                     and type(error.response_reason) is str
-                    and error.response_reason in relay.RESPONSE_FAILURE_REASONS):
+                    and error.response_reason in relay.RESPONSE_FAILURE_REASONS
+                    and (boundary_reason == "host_response_unavailable"
+                         or boundary_reason == "host_initialize_failed" and error.response_reason in {
+                             "response_frame_limit", "response_drain_limit", "response_queue_limit"})):
                 boundary_reason = "host_" + error.response_reason
         finally:
             if child is not None:
@@ -654,14 +700,22 @@ class PublicMcpHost:
                                    operation=name, termination="confirmed") from None
 
     def _json_call(self, name: str, arguments: dict, *, timeout: float | None = None) -> object:
+        deadline = time.monotonic() + (timeout or self._timeout)
         texts = self._call(name, arguments, timeout=timeout)
         try:
             if len(texts) != 1:
                 _fail()
-            return relay.strict_json_loads(texts[0])
-        except Exception:
-            raise HostAdapterError("invalid_host_response", boundary_reason="host_response_json_invalid",
+            value = relay.strict_json_loads(texts[0], max_bytes=relay.MAX_READ_RESPONSE_BYTES
+                if name in {"read_thread", "wait_threads"} else relay.MAX_MESSAGE_BYTES)
+        except Exception as error:
+            reason = ("host_" + error.response_reason if type(error) is relay.RelayError
+                      and error.response_reason in relay.RESPONSE_FAILURE_REASONS else "host_response_json_invalid")
+            raise HostAdapterError("invalid_host_response", boundary_reason=reason,
                                    operation=name, termination="confirmed") from None
+        if time.monotonic() >= deadline:
+            raise HostAdapterError("host_call_failed", boundary_reason="host_response_timeout",
+                                   operation=name, termination="confirmed")
+        return value
 
     def resolve_reviewer_ids(self) -> tuple[str, ...]:
         """Resolve only this parent's structured dispatches, never message text.
@@ -674,50 +728,63 @@ class PublicMcpHost:
         unresolved = {value for value in self._reviewers if value.startswith("/")}
         if not unresolved:
             return self._reviewers
+        self._validated_dispatch_pages = []
+        try:
+            return self._resolve_handles(unresolved)
+        except HostAdapterError as error:
+            raise annotate_read_failure(error, "reviewer_identity", len(self._validated_dispatch_pages))
+
+    def _read_dispatch_page(self, paths, cursor, remaining):
+        """Return validated selected dispatches, not the public history payload."""
+        arguments = {"threadId": self._parent_id, "hostId": "local", "turnLimit": 1,
+                     "includeOutputs": False, "maxOutputCharsPerItem": 1}
+        if cursor is not None:
+            arguments["cursor"] = cursor
+        value = self._json_call("read_thread", arguments, timeout=remaining)
+        page = thread_page(value, self._parent_id)
+        matches = {reference: set() for reference in paths}
+        for item in value["turns"][0]["items"]:
+            if (not isinstance(item, dict) or item.get("type") != "subAgentActivity"
+                    or item.get("kind") not in ("started", "interacted")):
+                continue
+            path = item.get("agentPath")
+            if not isinstance(path, str) or path not in paths:
+                continue
+            _object(item, {"type", "id", "kind", "agentPath", "agentThreadId"},
+                    {"type", "id", "kind", "agentPath", "agentThreadId"})
+            _text(item["id"], 256)
+            matches[path].add(_uuid(item["agentThreadId"]))
+            if len(matches[path]) > 1:
+                _fail("reviewer_identity_ambiguous")
+        result = page, tuple((path, tuple(sorted(ids))) for path, ids in matches.items())
+        self._validated_dispatch_pages.append(result)
+        return result
+
+    def _resolve_handles(self, unresolved):
         original_turn = executor_turn_id(self._metadata)
         resolved, seen_turns, seen_cursors = {}, set(), set()
         current_paths = set()
         cursor = None
         deadline = time.monotonic() + self._timeout
 
-        def dispatches(value, paths):
-            matches = {reference: set() for reference in paths}
-            for item in value["turns"][0]["items"]:
-                if (not isinstance(item, dict) or item.get("type") != "subAgentActivity"
-                        or item.get("kind") not in ("started", "interacted")):
-                    continue
-                path = item.get("agentPath")
-                if not isinstance(path, str) or path not in paths:
-                    continue
-                _object(item, {"type", "id", "kind", "agentPath", "agentThreadId"},
-                        {"type", "id", "kind", "agentPath", "agentThreadId"})
-                _text(item["id"], 256)
-                matches[path].add(_uuid(item["agentThreadId"]))
-            return matches
-
-        def read(cursor=None):
+        def read(paths, cursor=None):
             remaining = deadline - time.monotonic()
             if remaining <= 0:
                 _fail("reviewer_identity_unavailable")
-            arguments = {"threadId": self._parent_id, "hostId": "local", "turnLimit": 1,
-                         "includeOutputs": False, "maxOutputCharsPerItem": 1}
-            if cursor is not None:
-                arguments["cursor"] = cursor
-            value = self._json_call("read_thread", arguments, timeout=remaining)
+            page, matches = self._read_dispatch_page(paths, cursor, remaining)
             if time.monotonic() >= deadline:
                 _fail("reviewer_identity_unavailable")
-            observation = parse_read_thread(value, self._parent_id)
-            return value, observation
+            return page, dict((path, set(ids)) for path, ids in matches)
 
         for page_number in range(MAX_REVIEWER_LOOKUP_PAGES):
-            value, parent = read(cursor)
+            page, matches = read(unresolved, cursor)
+            parent = page.snapshot
             if page_number == 0 and (parent.turn_id != original_turn
                     or parent.status != "inProgress" or parent.thread_status != "active"):
                 _fail("reviewer_identity_unavailable")
             if parent.turn_id in seen_turns:
                 _fail("reviewer_identity_unavailable")
             seen_turns.add(parent.turn_id)
-            matches = dispatches(value, unresolved)
             for path, identities in matches.items():
                 if len(identities) > 1:
                     _fail("reviewer_identity_ambiguous")
@@ -728,9 +795,8 @@ class PublicMcpHost:
                     unresolved.remove(path)
             if not unresolved:
                 break
-            page = value["page"]
-            cursor = page["nextCursor"]
-            if (not page["hasMore"] or not isinstance(cursor, str) or not cursor
+            cursor = page.next_cursor
+            if (not page.has_more or not isinstance(cursor, str) or not cursor
                     or len(cursor) > 4096 or cursor in seen_cursors):
                 _fail("reviewer_identity_unavailable")
             seen_cursors.add(cursor)
@@ -739,11 +805,12 @@ class PublicMcpHost:
         identities = tuple(resolved.get(value, value) for value in self._reviewers)
         if self._parent_id in identities or len(set(identities)) != len(identities):
             _fail("invalid_child_set")
-        latest, current = read()
+        latest, current_ids_by_path = read(resolved)
+        current = latest.snapshot
         if (current.turn_id != original_turn or current.status != "inProgress"
                 or current.thread_status != "active"):
             _fail("reviewer_identity_unavailable")
-        for path, current_ids in dispatches(latest, resolved).items():
+        for path, current_ids in current_ids_by_path.items():
             if path in current_paths and not current_ids:
                 _fail("reviewer_identity_unavailable")
             if current_ids and current_ids != {resolved[path]}:
@@ -759,14 +826,17 @@ class PublicMcpHost:
 
     def read_parent(self) -> ChildTurn:
         """Read the admitted parent directly; the host rejects self-wait."""
-        value = self._json_call("read_thread", {"threadId": self._parent_id, "hostId": "local",
-                                               "turnLimit": 1, "includeOutputs": False,
-                                               "maxOutputCharsPerItem": 1})
         try:
-            return parse_read_thread(value, self._parent_id)
+            value = self._json_call("read_thread", {"threadId": self._parent_id, "hostId": "local",
+                                                   "turnLimit": 1, "includeOutputs": False,
+                                                   "maxOutputCharsPerItem": 1})
+            try:
+                return parse_read_thread(value, self._parent_id)
+            except HostAdapterError as error:
+                raise HostAdapterError(error.code, boundary_reason="host_response_invalid",
+                                       operation="read_thread", termination="confirmed") from None
         except HostAdapterError as error:
-            raise HostAdapterError(error.code, boundary_reason="host_response_invalid",
-                                   operation="read_thread", termination="confirmed") from None
+            raise annotate_read_failure(error, "parent_state", 0)
 
     def _read_status(self, thread_id: str) -> ChildTurn:
         # No afterCursor: a fresh complete latest-turn snapshot is required at

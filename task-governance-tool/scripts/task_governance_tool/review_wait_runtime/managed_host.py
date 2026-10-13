@@ -7,7 +7,8 @@ import threading
 import re
 
 from task_governance_tool.task_values import validate_task_id
-from .review_wait_host import PublicMcpHost, HostAdapterError, _automation_id, _uuid, parse_read_thread, unknown_host_effect
+from .review_wait_host import (PublicMcpHost, HostAdapterError, _automation_id, _uuid,
+                              thread_page, annotate_read_failure, unknown_host_effect)
 from . import review_wait_mcp_relay as protocol
 
 
@@ -197,6 +198,25 @@ class ManagedHost(PublicMcpHost):
         """
         _uuid(probe)
         _uuid(send_parent_turn)
+        self._validated_receipt_pages = []
+        try:
+            return self._observe_receipt(probe, send_parent_turn, deadline=deadline)
+        except HostAdapterError as error:
+            raise annotate_read_failure(error, "notification_receipt", len(self._validated_receipt_pages))
+
+    def _read_receipt_page(self, probe, maximum, cursor, remaining):
+        """Expose only state/navigation and a validated event-match boolean."""
+        arguments = {"threadId": self.parent_thread_id, "hostId": "local", "turnLimit": 1,
+                     "includeOutputs": True, "maxOutputCharsPerItem": maximum}
+        if cursor is not None:
+            arguments["cursor"] = cursor
+        value = self._json_call("read_thread", arguments, timeout=remaining)
+        page = thread_page(value, self.parent_thread_id)
+        result = page, self._receipt_event(value, probe, maximum)
+        self._validated_receipt_pages.append(result)
+        return result
+
+    def _observe_receipt(self, probe, send_parent_turn, *, deadline=None):
         maximum = 20000 if probe in self._finalization_prompts or probe in self._wait_observations else 4096
         bound = time.monotonic() + self._timeout
         if deadline is not None:
@@ -207,22 +227,17 @@ class ManagedHost(PublicMcpHost):
             remaining = bound - time.monotonic()
             if remaining <= 0:
                 return None
-            arguments = {"threadId": self.parent_thread_id, "hostId": "local", "turnLimit": 1,
-                         "includeOutputs": True, "maxOutputCharsPerItem": maximum}
-            if cursor is not None:
-                arguments["cursor"] = cursor
-            value = self._json_call("read_thread", arguments, timeout=remaining)
-            parent = parse_read_thread(value, self.parent_thread_id)
+            page, matching_event = self._read_receipt_page(probe, maximum, cursor, remaining)
+            parent = page.snapshot
             if time.monotonic() >= bound or parent.turn_id in seen_turns:
                 return None
             if parent.turn_id == send_parent_turn:
                 return candidate  # Never accept an event in/before the fence.
             seen_turns.add(parent.turn_id)
-            if self._receipt_event(value, probe, maximum):
+            if matching_event:
                 candidate = parent.turn_id
-            page = value["page"]
-            cursor = page["nextCursor"]
-            if (not page["hasMore"] or type(cursor) is not str or not cursor
+            cursor = page.next_cursor
+            if (not page.has_more or type(cursor) is not str or not cursor
                     or len(cursor) > 4096 or cursor in seen_cursors):
                 return None
             seen_cursors.add(cursor)

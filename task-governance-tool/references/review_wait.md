@@ -148,6 +148,18 @@ communication reason and its own helper-process termination result. Report
 these separately: confirmed termination does not repair failed communication,
 and unresolved termination does not erase the original failure. These facts
 do not establish notification-worker exit or any mutation/receipt outcome.
+When present, `read_failure` identifies parent state, reviewer identity or
+notification receipt, the count of complete validated pages, and a fixed next
+action. An unread page or incomplete JSON never establishes the missing
+conclusion; a failed fresh parent read supplies no current idle evidence.
+Frame/total/queue overflow and partial EOF remain distinct from cleanup failure.
+Restore the failed prerequisite before repeating the same read. Receipt failure
+preserves known registration, commit and Task completion: do not resend, reopen
+or complete again. Requested inspection may expose the current worker's
+transient `read_diagnostic`; absence after restart does not recover its cause.
+That projection requires the exact observed attempt, binding, probe and owned
+worker. Unknown or mismatched observation suppresses it; a correctly bound
+stopped worker may retain its transient diagnosis.
 
 Use the following branch once, based on available evidence. Missing diagnostics
 do not justify inventing a cause or inferring that effects were absent.

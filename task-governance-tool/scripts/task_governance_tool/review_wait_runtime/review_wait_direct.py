@@ -17,7 +17,7 @@ import threading
 import time
 from uuid import uuid4
 
-from task_governance_tool.review_wait_runtime.review_wait_host import HOST_BOUNDARY_REASONS, HostAdapterError, admit_executor_metadata, executor_turn_id, host_failure
+from task_governance_tool.review_wait_runtime.review_wait_host import HOST_BOUNDARY_REASONS, HostAdapterError, admit_executor_metadata, executor_turn_id, host_failure, read_failure
 from task_governance_tool.review_wait_runtime.review_wait_basis import BasisError
 from task_governance_tool.review_wait_runtime.review_wait_repository import ReviewWaitRepository, RepositoryError
 from task_governance_tool.review_wait_runtime.review_wait_direct_repository import DirectRecord, DirectRepository, DIRECT_REASONS, instant, marker_exists
@@ -177,8 +177,10 @@ class DirectProbe:
                 return {"ok": False, "error": _reason(error)}
             except Exception as error:
                 failure = host_failure(error)
+                read = read_failure(error)
                 return {"ok": False, "error": "direct_probe_unavailable", "reason": _reason(error),
-                        **({"host_failure": failure} if failure is not None else {})}
+                        **({"host_failure": failure} if failure is not None else {}),
+                        **({"read_failure": read} if read is not None else {})}
 
     def _start(self, metadata, *, delete_timer=False):
         with self.wait.writer() as lease:
@@ -225,7 +227,9 @@ class DirectProbe:
                 except Exception as error:
                     self.repository.update(record.probe_id, status="suppressed", timer_phase="unknown", reason=_reason(error))
                     failure = host_failure(error)
-                    return {**self._summary(), **({"host_failure": failure} if failure is not None else {})}
+                    read = read_failure(error)
+                    return {**self._summary(), **({"host_failure": failure} if failure is not None else {}),
+                            **({"read_failure": read} if read is not None else {})}
         self._worker = threading.Thread(target=self._run, args=(host, record, time.monotonic() + duration), name="review-direct-probe", daemon=False)
         try:
             self._worker.start()

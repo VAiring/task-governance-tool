@@ -26,6 +26,8 @@ FAILURE_TEXT = "Review-wait reservation view failed."
 PROTOCOL_VERSION = "2025-06-18"
 SUPPORTED_PROTOCOL_VERSIONS = ("2024-11-05", "2025-03-26", PROTOCOL_VERSION)
 MAX_MESSAGE_BYTES = 262_144
+MAX_READ_RESPONSE_BYTES = 4_194_304
+MAX_READ_DRAIN_BYTES = 8_388_608
 MAX_QUEUED_MESSAGES = 16
 MAX_DRAIN_BYTES = 1_048_576
 CALL_TIMEOUT_SECONDS = 8.0
@@ -33,6 +35,7 @@ CLEANUP_TIMEOUT_SECONDS = 1.0
 POLL_SECONDS = 0.01
 RESPONSE_FAILURE_REASONS = frozenset({
     "response_timeout", "response_io_or_limit", "response_eof", "response_extra",
+    "response_frame_limit", "response_drain_limit", "response_queue_limit", "response_truncated",
     "response_json_invalid", "response_envelope_invalid",
     "server_request_unsupported", "notification_unsupported",
     "rpc_parse_error", "rpc_invalid_request", "rpc_method_not_found",
@@ -54,7 +57,7 @@ class RelayError(Exception):
         super().__init__(*args)
 
 
-def strict_json_loads(data: bytes | str) -> object:
+def strict_json_loads(data: bytes | str, *, max_bytes: int = MAX_MESSAGE_BYTES) -> object:
     """Reject duplicate object keys, non-finite numbers and oversized records."""
     def pairs(items: list[tuple[str, object]]) -> dict:
         result: dict = {}
@@ -74,12 +77,16 @@ def strict_json_loads(data: bytes | str) -> object:
         raise RelayError()
 
     try:
-        if isinstance(data, bytes):
-            if len(data) > MAX_MESSAGE_BYTES:
-                raise RelayError()
-            data = data.decode("utf-8", errors="strict")
-        elif not isinstance(data, str) or len(data.encode("utf-8")) > MAX_MESSAGE_BYTES:
+        if type(max_bytes) is not int or max_bytes not in {MAX_MESSAGE_BYTES, MAX_READ_RESPONSE_BYTES}:
             raise RelayError()
+        if isinstance(data, bytes):
+            if len(data) > max_bytes:
+                raise RelayError(response_reason="response_frame_limit")
+            data = data.decode("utf-8", errors="strict")
+        elif not isinstance(data, str):
+            raise RelayError()
+        elif len(data.encode("utf-8")) > max_bytes:
+            raise RelayError(response_reason="response_frame_limit")
         return json.loads(data, object_pairs_hook=pairs, parse_float=number,
                           parse_constant=constant)
     except (ValueError, UnicodeError, RecursionError) as exc:
@@ -132,11 +139,20 @@ class _ChildSession:
     """Own a single direct child and bounded, nonblocking pipe-draining workers."""
 
     def __init__(self, command: Sequence[str], cwd: Path | str | None,
-                 deadline: float, cleanup_seconds: float):
+                 deadline: float, cleanup_seconds: float, *,
+                 response_bytes: int = MAX_MESSAGE_BYTES,
+                 stdout_bytes: int = MAX_DRAIN_BYTES):
+        if (type(response_bytes) is not int or response_bytes not in {MAX_MESSAGE_BYTES, MAX_READ_RESPONSE_BYTES}
+                or type(stdout_bytes) is not int or stdout_bytes not in {MAX_DRAIN_BYTES, MAX_READ_DRAIN_BYTES}
+                or stdout_bytes < response_bytes):
+            raise RelayError()
+        self.response_bytes, self.stdout_bytes = response_bytes, stdout_bytes
         self.deadline = deadline
         self.cleanup_seconds = cleanup_seconds
         self.messages: queue.Queue[bytes | None] = queue.Queue(MAX_QUEUED_MESSAGES)
         self.failed = threading.Event()
+        self.failure_reason = None
+        self.failure_lock = threading.Lock()
         self.close_response_reason = None
         self.termination_confirmed = False
         self.stop = threading.Event()
@@ -162,6 +178,13 @@ class _ChildSession:
         try:
             self.messages.put_nowait(item)
         except queue.Full:
+            self._fail_response("response_queue_limit")
+
+    def _fail_response(self, reason: str) -> None:
+        # The first pipe failure survives cleanup and competing stderr failure.
+        with self.failure_lock:
+            if self.failure_reason is None:
+                self.failure_reason = reason
             self.failed.set()
 
     def _drain(self, stream: BinaryIO, capture: bool) -> None:
@@ -177,37 +200,39 @@ class _ChildSession:
                 if not chunk:
                     if capture:
                         if pending:
-                            self.failed.set()
+                            self._fail_response("response_truncated")
                         self._publish(None)
                     return
                 total += len(chunk)
-                if total > MAX_DRAIN_BYTES:
-                    self.failed.set()
+                if total > (self.stdout_bytes if capture else MAX_DRAIN_BYTES):
+                    self._fail_response("response_drain_limit")
                     return
                 if not capture:
                     continue  # Deliberately discard stderr, including on failure.
                 pending.extend(chunk)
                 while b"\n" in pending:
                     end = pending.index(b"\n") + 1
-                    if end > MAX_MESSAGE_BYTES:
-                        self.failed.set()
+                    if end > self.response_bytes:
+                        self._fail_response("response_frame_limit")
                         return
                     self._publish(bytes(pending[:end]))
                     del pending[:end]
                     if self.failed.is_set():
                         return
-                if len(pending) >= MAX_MESSAGE_BYTES:
-                    self.failed.set()
+                if len(pending) >= self.response_bytes:
+                    self._fail_response("response_frame_limit")
                     return
         except (OSError, ValueError):
             if not self.stop.is_set():
-                self.failed.set()
+                self._fail_response("response_io_or_limit")
 
     def send(self, data: bytes) -> None:
         offset = 0
         while offset < len(data):
-            if self.failed.is_set() or time.monotonic() >= self.deadline:
-                raise RelayError()
+            if self.failed.is_set():
+                raise RelayError(response_reason=self.failure_reason or "response_io_or_limit")
+            if time.monotonic() >= self.deadline:
+                raise RelayError(response_reason="response_timeout")
             try:
                 count = os.write(self.process.stdin.fileno(), data[offset:])
             except BlockingIOError:
@@ -219,11 +244,11 @@ class _ChildSession:
                 raise RelayError()
             offset += count
 
-    def result(self, request_id: int) -> dict:
+    def result(self, request_id: int, *, max_bytes: int | None = None) -> dict:
         while True:
             remaining = self.deadline - time.monotonic()
             if self.failed.is_set():
-                raise RelayError(response_reason="response_io_or_limit")
+                raise RelayError(response_reason=getattr(self, "failure_reason", None) or "response_io_or_limit")
             if remaining <= 0:
                 raise RelayError(response_reason="response_timeout")
             try:
@@ -233,9 +258,10 @@ class _ChildSession:
             if data is None:
                 raise RelayError(response_reason="response_eof")
             try:
-                message = strict_json_loads(data)
-            except RelayError:
-                raise RelayError(response_reason="response_json_invalid") from None
+                message = strict_json_loads(data, max_bytes=max_bytes if max_bytes is not None
+                                           else getattr(self, "response_bytes", MAX_MESSAGE_BYTES))
+            except RelayError as error:
+                raise RelayError(response_reason=error.response_reason or "response_json_invalid") from None
             # Any server-initiated request (including elicitation), notification,
             # wrong id, JSON-RPC error or extra envelope field fails closed.
             # Classification never forwards a method, error code/message/data,
@@ -307,7 +333,7 @@ class _ChildSession:
             except (OSError, ValueError):
                 clean = False
         self.termination_confirmed = clean
-        self.close_response_reason = ("response_io_or_limit" if self.failed.is_set()
+        self.close_response_reason = ((self.failure_reason or "response_io_or_limit") if self.failed.is_set()
                                       else "response_extra" if extra else None)
         return clean and self.close_response_reason is None
 

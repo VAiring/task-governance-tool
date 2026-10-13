@@ -915,7 +915,8 @@ class HostBoundaryTests(unittest.TestCase):
         for detail in host.relay.RESPONSE_FAILURE_REASONS:
             for phase, clean, expected in [
                 ("response", True, "host_" + detail),
-                ("initialize", True, "host_initialize_failed"),
+                ("initialize", True, "host_" + detail if detail in {
+                    "response_frame_limit", "response_drain_limit", "response_queue_limit"} else "host_initialize_failed"),
                 ("response", False, "host_" + detail),
             ]:
                 child = DirectProbeTests.child(self.GOOD, clean=clean)
@@ -934,6 +935,15 @@ class HostBoundaryTests(unittest.TestCase):
             child.result.side_effect = [next(child.result.side_effect), error]
             with mock.patch.object(host.relay, "_ChildSession", return_value=child):
                 self.assert_boundary(adapter(Path.cwd()), "host_response_unavailable")
+
+    def test_invalid_initialize_reason_type_retains_safe_first_boundary(self):
+        for reason in ([], {}, True):
+            error = host.relay.RelayError()
+            error.response_reason = reason
+            child = DirectProbeTests.child(self.GOOD)
+            child.result.side_effect = error
+            with self.subTest(reason=reason), mock.patch.object(host.relay, "_ChildSession", return_value=child):
+                self.assert_boundary(adapter(Path.cwd()), "host_initialize_failed")
 
     def test_invalid_result_or_content_has_only_fixed_shape_reason(self):
         for response in (None, [], {"content": []}, {**self.GOOD, "isError": 1},
@@ -1010,7 +1020,7 @@ class DownstreamCorrelationTests(unittest.TestCase):
             def send(self, data):
                 self.frame = json.loads(data)
 
-            def result(self, request_id):
+            def result(self, request_id, **kwargs):
                 if request_id == 1:
                     return {"protocolVersion": host.relay.PROTOCOL_VERSION, "capabilities": {"tools": {}},
                             "serverInfo": {"name": "offline", "version": "1"}}

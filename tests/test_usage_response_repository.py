@@ -409,6 +409,65 @@ class ResponseRepositoryTests(unittest.TestCase):
                     self.repository.refresh(self.reader)
                     self.assertEqual(self.read(A)["periods"][0]["work_units"][0]["exclusive"]["response_count"], 3)
 
+    def test_pending_organization_and_delayed_terminal_results_are_incremental_equivalent(self):
+        third = "tg_task_" + "c" * 16
+        for terminal in (None, "failure", "success"):
+            projections = []
+            for limit in (1, 10000):
+                with self.subTest(terminal=terminal, limit=limit):
+                    self.setUp()
+                    rows = self.operation("b-start", self.acknowledgement(B, 2, "in_progress"), "r0", direct=True)
+                    rows += self.operation("b-block", self.acknowledgement(B, 2, "blocked"), "r1", direct=True)
+                    rows += self.operation("a-start", self.acknowledgement(A, 1, "in_progress"), "r2", direct=True)
+                    result = (self.acknowledgement(A, 1, "paused") if terminal == "success"
+                              else {"ok": False, "command": "task.edit", "project_id": self.repository.basis[0], "data": {}})
+                    rows += self.operation("pending", {"opaque": True}, "r3", direct=True)
+                    rows.append(usage("r4", turn=turn(1)))
+                    rows += self.operation("b-organize", self.acknowledgement(B, 2, "ready"), "r5", direct=True)
+                    rows.append(usage("r6", turn=turn(1)))
+                    rows += self.operation("c-start", self.acknowledgement(third, 3, "in_progress"), "r7", direct=True)
+                    rows += self.operation("c-done", self.acknowledgement(third, 3, "done", cycle="C"), "r8", direct=True)
+                    self.write_turn(rows)
+                    self.repository.collect_source(self.source, max_records=limit)
+                    self.repository = UsageResponseRepository(self.repository.path, *self.repository.basis)
+                    self.ingest(max_records=limit)
+                    self.repository.refresh(self.reader)
+                    initial = self.read(audit=True)
+                    unit = self.read(A)["periods"][0]["work_units"][0]
+                    self.assertEqual(unit["exclusive"]["response_count"], 1)
+                    self.assertEqual(sum(part["response_count"] for part in unit["partial"]), 4)
+                    self.assertEqual(self.read()["unattributed"]["unknown"]["response_count"], 4)
+                    self.assertEqual(self.read(B)["total"]["models"][0]["total_tokens"], 240)
+                    self.assertEqual(self.read(third)["total"]["models"][0]["total_tokens"], 240)
+                    before = self.repository.path.read_bytes()
+                    self.read(A)
+                    self.assertEqual(self.repository.path.read_bytes(), before)
+                    if terminal is not None:
+                        ended = event("response_item", type="custom_tool_call_output", call_id="pending",
+                            internal_chat_message_metadata_passthrough={"turn_id": turn(1)}, output=json.dumps(result))
+                        self.append(ended, ended)
+                        self.repository = UsageResponseRepository(self.repository.path, *self.repository.basis)
+                        self.ingest(max_records=limit)
+                        self.repository.refresh(self.reader)
+                        unit = self.read(A)["periods"][0]["work_units"][0]
+                        self.assertFalse(unit["partial"] or unit["shared"])
+                        self.assertEqual(unit["exclusive"]["response_count"], 2 if terminal == "success" else 5)
+                        self.assertEqual(self.read()["unattributed"]["unknown"]["response_count"], 0)
+                        self.assertEqual(self.read()["unattributed"]["unassigned"]["response_count"],
+                                         3 if terminal == "success" else 0)
+                    current = self.read(audit=True)
+                    documents = {item["snapshot_id"]: item for item in current["snapshots"]}
+                    self.assertTrue(all(documents[item["snapshot_id"]] == item for item in initial["snapshots"]))
+                    self.assertTrue({tuple(sorted(row.items())) for row in initial["cycle_links"]} <=
+                                    {tuple(sorted(row.items())) for row in current["cycle_links"]})
+                    self.repository.refresh(self.reader)
+                    self.assertEqual(self.read(audit=True), current)
+                    self.assertEqual(self.repository.last_projection_work["components_aggregated"], 0)
+                    projections.append((current["current_snapshot_ids"], self.read(A), self.read(B),
+                                        self.read(third), current["unattributed"]))
+            self.assertEqual(len(projections), 2)
+            self.assertEqual(projections[0], projections[1])
+
     def test_capacity_loss_preserves_unknown_after_drain_and_restart(self):
         from task_governance_tool.usage_response_adapter import MAX_CONTEXT
         for limit in (32, 10000):
@@ -664,16 +723,46 @@ class ResponseRepositoryTests(unittest.TestCase):
         current = self.read(audit=True)
         documents = {item["snapshot_id"]: item for item in current["snapshots"]}
         self.assertEqual(documents[original["snapshot_id"]], original)
-        self.assertTrue(all(documents[key]["algorithm"] == "response-partitions-v3" for key in current["current_snapshot_ids"]))
+        self.assertTrue(all(documents[key]["algorithm"] == "response-partitions-v4" for key in current["current_snapshot_ids"]))
         self.assertTrue(any(original["snapshot_id"] in documents[key]["predecessors"] for key in current["current_snapshot_ids"]))
         self.assertTrue(set(tuple(sorted(row.items())) for row in old["cycle_links"]) <=
                         set(tuple(sorted(row.items())) for row in current["cycle_links"]))
         self.assertEqual(self.read(A)["total"]["response_count"], 2)
-        for invalid in ([], {}, "response-partitions-v4"):
+        for invalid in ([], {}, "response-partitions-v5"):
             changed = {**original, "algorithm": invalid}
             changed["snapshot_id"] = digest({key: value for key, value in changed.items() if key != "snapshot_id"})
             with self.assertRaises(UsageError):
                 validate(changed, self.repository.basis[0])
+
+    def test_immediate_previous_algorithm_refresh_preserves_immutable_snapshots(self):
+        import task_governance_tool.usage_response_attribution as policy
+        import task_governance_tool.usage_response_repository as repository_module
+        from task_governance_tool.usage_evidence import validate
+        self.write_turn(self.operation("start", self.acknowledgement(A, 1, "in_progress"), "r0", direct=True)
+                        + self.operation("done", self.acknowledgement(A, 1, "done", cycle="A"), "r1", direct=True))
+        self.ingest()
+        # This start/completion control has identical meaning under v3/v4.
+        with mock.patch.object(policy, "ALGORITHM", "response-partitions-v3"), \
+                mock.patch.object(repository_module, "ALGORITHM", "response-partitions-v3"):
+            self.repository.refresh(self.reader)
+            old = self.read(audit=True)
+        original = old["snapshots"][0]
+        self.assertEqual(validate(original, self.repository.basis[0]), original)
+        before = self.repository.path.read_bytes()
+        with self.assertRaises(UsageError):
+            self.read(A)
+        self.assertEqual(self.repository.path.read_bytes(), before)
+        self.repository = UsageResponseRepository(self.repository.path, *self.repository.basis)
+        self.repository.refresh(self.reader)
+        current = self.read(audit=True)
+        documents = {item["snapshot_id"]: item for item in current["snapshots"]}
+        self.assertEqual(documents[original["snapshot_id"]], original)
+        self.assertTrue(all(documents[key]["algorithm"] == "response-partitions-v4"
+                            for key in current["current_snapshot_ids"]))
+        self.assertTrue(any(original["snapshot_id"] in documents[key]["predecessors"]
+                            for key in current["current_snapshot_ids"]))
+        self.assertTrue({tuple(sorted(row.items())) for row in old["cycle_links"]} <=
+                        {tuple(sorted(row.items())) for row in current["cycle_links"]})
 
     def test_delayed_stop_resume_polls_bind_original_turns_after_restart(self):
         from task_governance_tool.usage_response_adapter import ResponseBoundary

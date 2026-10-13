@@ -141,6 +141,37 @@ class ResponsePartitionTests(unittest.TestCase):
         self.assertEqual(self.keys(result, X, "partial"), {"r2", "r3", "r4"})
         self.assertEqual(self.keys(result, Y, "exclusive"), {"r5", "r6", "r7"})
 
+    def test_unrelated_organization_does_not_resolve_pending_operation(self):
+        for recovery in (None, "start", "stop", "resume"):
+            with self.subTest(recovery=recovery):
+                actions = [(B, Y, "ready", "in_progress", 0),
+                           (B, Y, "in_progress", "blocked", 1),
+                           (A, X, "ready", "in_progress", 2),
+                           (B, None, "blocked", "ready", 5)]
+                if recovery == "start":
+                    actions.append((C, Z, "ready", "in_progress", 7))
+                elif recovery == "stop":
+                    actions.append((A, X, "in_progress", "paused", 7))
+                elif recovery == "resume":
+                    actions += [(A, X, "in_progress", "paused", 3),
+                                (A, X, "paused", "in_progress", 7)]
+                    actions.sort(key=lambda action: action[4])
+                first = 4 if recovery == "resume" else 3
+                value = self.build(actions, count=9, pending=((SOURCE, 1, THREAD, turn(2),
+                                                              "fixture", "r" + str(first), first * 10),))
+                end = 9 if recovery is None else 7
+                uncertain = {"r" + str(i) for i in range(first, end)}
+                self.assertEqual({key[1] for key in value["unknown_response_keys"]}, uncertain)
+                self.assertEqual(self.keys(value, Y, "exclusive"), {"r0", "r1"})
+                self.assertFalse(uncertain & self.keys(value, X, "exclusive"))
+                self.assertFalse(uncertain & {key[1] for key in value["unassigned_response_keys"]})
+                if recovery == "start":
+                    self.assertEqual(self.keys(value, Z, "exclusive"), {"r7", "r8"})
+                elif recovery == "stop":
+                    self.assertEqual(value["unassigned_response_keys"], [("fixture", "r8")])
+                elif recovery == "resume":
+                    self.assertEqual(self.keys(value, X, "exclusive"), {"r2", "r3", "r7", "r8"})
+
     def test_ready_exit_without_execution_id_stops_the_old_execution(self):
         result = self.build(((A, X, "ready", "in_progress", 0), (A, None, "in_progress", "ready", 2)))
         self.assertEqual(self.keys(result, X), {"r0", "r1", "r2"})

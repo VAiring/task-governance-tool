@@ -614,6 +614,15 @@ its next qualified same-Task boundary or new local start/resume. Another
 Task's organization update does not make that range exclusive. Independent
 review/receipt participation remains retained; ambiguous overlapping ownership
 is partial rather than a guessed exclusive or unassigned value.
+An unconfirmed call fences its possible continuation from the admitted source
+origin until a valid new local start/resume, or a located operation that
+re-establishes every execution carried at that origin. A boundary is relevant
+only when it enters or leaves covered work; an unrelated blocked/paused Task's
+ready/cancelled organization cannot resolve the fence. With no carried execution,
+an organization event cannot prove unassigned usage. A later validated terminal
+result resolves its original call through the existing replay rules, rather
+than treating missing results as failure. Independently confirmed preceding and
+later execution intervals retain their original keys and numerical values.
 Existing reviewer and wait-decision bindings
 continue independently; overlapping original response keys are unioned once.
 Unobserved numerical values are not zero; unknown assignment is distinct from
@@ -716,8 +725,8 @@ Optional lifecycle invocation follows the separate Setup/state contract and
 cannot alter these quality or completion boundaries.
 
 Current response partitions emit `taskgov-usage-snapshot-v2` with algorithm
-`response-partitions-v3`. Retained `response-partitions-v1` and
-`response-partitions-v2` snapshots retain their original policy meaning and
+`response-partitions-v4`. Retained `response-partitions-v1`,
+`response-partitions-v2` and `response-partitions-v3` snapshots retain their original policy meaning and
 remain validated immutable history.
 The physical numerical schema remains 6; changing the algorithm invalidates
 the capture basis and publishes successors without a schema migration or

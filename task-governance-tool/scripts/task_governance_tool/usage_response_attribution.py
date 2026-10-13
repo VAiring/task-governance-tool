@@ -10,7 +10,7 @@ from collections import defaultdict
 from task_governance_tool.usage_attribution import _models, _coverage
 
 
-ALGORITHM = "response-partitions-v3"
+ALGORITHM = "response-partitions-v4"
 
 
 def response_order(positions, turns, conflicting_turns=frozenset()):
@@ -148,7 +148,7 @@ def project_responses(transitions, bindings, checks, positions, turns, responses
             previous = held.pop(change.task_id, None)
             if previous is not None and previous[2] is not None and previous[2] != change.actor_session_id:
                 displaced.append((index, change.task_id, *previous))
-    uncertain_stops, thread_indices = [], {}
+    uncertain_stops, thread_indices, pending_origins = [], {}, defaultdict(list)
     def is_beginning(change):
         return change.current_status == "in_progress" and change.previous_status not in {"in_progress", "review_pending"}
 
@@ -203,8 +203,7 @@ def project_responses(transitions, bindings, checks, positions, turns, responses
                 if not candidates:
                     continue
                 first = min(candidates)
-            next_known = [indices[key] for key in events if key in indices and indices[key] > first]
-            unknown.update(keys[first:min(next_known) if next_known else len(keys)])
+            pending_origins[thread].append(first)
         for index, change in changes:
             execution = affected_executions[index]
             # A qualified operation/response relation need not be placeable in
@@ -227,10 +226,12 @@ def project_responses(transitions, bindings, checks, positions, turns, responses
                 execution_gaps[execution].add("response_binding_unknown")
     for thread, timelines in per_thread.items():
         active, completed, completion_turn, pending_checks = None, None, None, []
+        state_before = {}
         for _, turn, keys in sorted(timelines):
             if completion_turn != turn:
                 completed, pending_checks = None, []
             for key in keys:
+                state_before[key] = {owner for owner in (active, completed) if owner is not None}
                 row_events = sorted(events[key])
                 beginning = []
                 for _, change in row_events:
@@ -290,6 +291,23 @@ def project_responses(transitions, bindings, checks, positions, turns, responses
                             pending_checks = []
                 if active is not None:
                     execution_gaps[active].update((thread_diagnostics or {}).get(thread, ()))
+
+        keys = [key for _, _, sequence in sorted(timelines) for key in sequence]
+        for first in pending_origins[thread]:
+            # A call with no terminal result could change the carried state.
+            # An organization release for a different Task does not re-establish
+            # that state. Do not infer the pending call's Task from its body.
+            affected = state_before[keys[first]] | owners[keys[first]]
+            last = len(keys)
+            for position in range(first + 1, len(keys)):
+                row_events = events[keys[position]]
+                reset = {affected_executions[index] for index, change in row_events
+                         if change.current_status in {"in_progress", "review_pending"}
+                         or change.previous_status in {"in_progress", "review_pending"}}
+                if any(is_beginning(change) for _, change in row_events) or (affected and affected <= reset):
+                    last = position
+                    break
+            unknown.update(keys[first:last])
 
     # An unplaceable stop cannot prove that the old active execution continued.
     # It also cannot invalidate another Task's independently allocated work or

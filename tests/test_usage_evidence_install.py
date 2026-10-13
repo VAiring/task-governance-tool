@@ -25,6 +25,52 @@ from task_governance_tool.usage_values import UsageError
 
 
 class UsageEvidenceInstallTests(unittest.TestCase):
+    def test_native_pending_fence_survives_unrelated_organization_and_preserves_history(self):
+        b = self.add("Independent blocked work")
+        bid = b["data"]["task"]["task_id"]
+        blocked = self.cli("task", "edit", bid, "--status", "blocked", "--blocked-reason", "Fixture")
+        a = self.add("Pending operation work")
+        aid = a["data"]["task"]["task_id"]
+        organized = self.cli("task", "edit", bid, "--status", "ready")
+        done = self.complete(aid)
+        logs = self.root / "logs"
+        logs.mkdir()
+        source = SourceInput(THREAD, logs / "pending-organize.jsonl", logs, self.root)
+        register_source(self.repository, source, CallerIdentity(THREAD))
+        prefix = self.response_header(THREAD, 1)
+        for number, ack in enumerate((b, blocked, a)):
+            prefix += self.response_rows("r" + str(number), 1, ack)
+        source.path.write_bytes(b"".join(json.dumps(row).encode() + b"\n" for row in prefix))
+        self.collect_responses(source)
+        old_files = file_snapshot(self.target.resolved_usage_snapshots)
+        old_index = json.loads(self.target.resolved_usage_index.read_bytes())
+        core, sealed = self.target.db_path.read_bytes(), file_snapshot(self.target.resolved_evidence_root)
+        later = self.response_rows("r3", 1, {"opaque": True})
+        for number, ack in ((4, None), (5, organized), (6, None), (7, done), (8, None)):
+            later += self.response_rows("r" + str(number), 1, ack)
+        with source.path.open("ab") as output:
+            output.write(b"".join(json.dumps(row).encode() + b"\n" for row in later))
+        self.collect_responses(source)
+        shown = self.cli("task", "show", aid)["data"]["usage"]
+        unit = shown["periods"][0]["work_units"][0]
+        self.assertEqual(unit["exclusive"]["response_count"], 3)
+        self.assertEqual(sum(part["response_count"] for part in unit["partial"]), 4)
+        self.assertEqual(shown["total"]["models"][0]["total_tokens"], 840)
+        self.assertEqual(self.cli("task", "show", bid)["data"]["usage"]["total"]["response_count"], 2)
+        index = json.loads(self.target.resolved_usage_index.read_bytes())
+        self.assertEqual(index["unattributed"]["unknown"]["response_count"], 4)
+        self.assertEqual(index["unattributed"]["unassigned"]["response_count"], 0)
+        self.assertTrue(old_files.items() <= file_snapshot(self.target.resolved_usage_snapshots).items())
+        self.assertTrue({tuple(sorted(row.items())) for row in old_index["cycle_links"]} <=
+                        {tuple(sorted(row.items())) for row in index["cycle_links"]})
+        before = file_snapshot(self.root)
+        self.cli("task", "show", aid)
+        self.assertEqual(file_snapshot(self.root), before)
+        self.assertEqual(service.refresh_usage(self.target)["publication"], "current")
+        self.assertEqual(json.loads(self.target.resolved_usage_index.read_bytes()), index)
+        self.assertEqual(self.target.db_path.read_bytes(), core)
+        self.assertEqual(file_snapshot(self.target.resolved_evidence_root), sealed)
+
     def test_uncertain_stop_policy_upgrade_preserves_history_and_publishes_correct_native_display(self):
         import task_governance_tool.usage_response_attribution as policy
         import task_governance_tool.usage_response_repository as repository_module
@@ -104,7 +150,7 @@ class UsageEvidenceInstallTests(unittest.TestCase):
                                 {tuple(sorted(row.items())) for row in index["cycle_links"]})
                 documents = {identity: json.loads((self.target.resolved_usage_snapshots / (identity + ".json")).read_bytes())
                              for identity in index["snapshots"]}
-                self.assertTrue(all(documents[identity]["algorithm"] == "response-partitions-v3"
+                self.assertTrue(all(documents[identity]["algorithm"] == "response-partitions-v4"
                                     for identity in index["current_snapshot_ids"]))
                 self.assertTrue(any(item["predecessors"] for identity, item in documents.items()
                                     if identity in index["current_snapshot_ids"]))

@@ -386,7 +386,7 @@ models and diagnostics for one admitted input/core basis. Core restore does
 not rebind missing executions, cycles or immutable wait/reviewer anchors.
 
 Snapshot v2 validation is closed and separate from retained v1 validation.
-The current `response-partitions-v3` policy applies confirmed pause/block exits
+The current `response-partitions-v4` policy applies confirmed pause/block exits
 and resume origins. Whole-response owner allocation is separate from applying
 the same response's committed state order, so a same-execution stop/resume
 leaves the correct final active state. Stopped gaps and previous-turn checks
@@ -413,12 +413,22 @@ segment's start or disable its cutoff. The legacy `owner_intervals` projection
 retains its existing interval shape and meaning. No segment metadata is stored.
 Unordered original keys may retain
 partial membership; no missing response position is fabricated.
-Retained `response-partitions-v1` and `response-partitions-v2` snapshot bodies remain
+Pending origins are located from source/incarnation/turn/record-order metadata
+before partitioning. The pure classifier records the carried active/completed
+execution set at each whole response. After allocation it fences a pending
+origin until a new qualified local start/resume, or a located covered-state
+operation set that re-establishes all carried/origin-response owners. Unrelated
+organization releases are excluded. Empty carried state does not permit an
+organization update to certify an unassigned interval. Terminal-result replay
+uses the unchanged call identity and original response, never its arrival time.
+No new continuation field, SQL structure, core write or result-body retention
+is introduced.
+Retained `response-partitions-v1`, `response-partitions-v2` and `response-partitions-v3` snapshot bodies remain
 valid unchanged; algorithm identity is part of the capture and geometry basis,
 forcing new successors instead of reusing old-policy totals. A read before
 permitted refresh returns the existing pending/unavailable outcome without
 writing. Existing numerical collection/publication invokes that refresh and
-publishes v3 successors; it preserves prior snapshot bytes, membership and
+publishes v4 successors; it preserves prior snapshot bytes, membership and
 cycle links and needs no Setup, new hook/LLM action or core write. No DDL changes.
 Task totals and work-unit parts union original keys; shared parts name actual
 Task/execution identities instead of displaying another period's shared total

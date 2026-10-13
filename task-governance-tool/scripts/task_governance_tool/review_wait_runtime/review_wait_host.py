@@ -30,6 +30,8 @@ HOST_BOUNDARY_REASONS = frozenset({
     "host_launch_failed", "host_initialize_failed", "host_response_unavailable",
     "host_cleanup_unknown", "host_tool_error", "host_response_invalid",
 }) | frozenset("host_" + reason for reason in relay.RESPONSE_FAILURE_REASONS)
+HOST_OPERATIONS = frozenset({"read_thread", "wait_threads", "automation_update", "send_message_to_thread"})
+HOST_TERMINATION = frozenset({"not_attempted", "confirmed", "unresolved"})
 _TURN_STATES = {"completed", "failed", "interrupted", "inProgress"}
 _THREAD_STATES = {"notLoaded", "idle", "active", "systemError"}
 _CALL_ID_KEYS = ("openai/toolCallId", "openai/tool_call_id", "codexCallId",
@@ -44,11 +46,32 @@ _CONFIG_FIELDS = {
 class HostAdapterError(Exception):
     """Only a fixed code crosses this boundary; never include rejected values."""
 
-    def __init__(self, code: str, *, boundary_reason: str | None = None):
+    def __init__(self, code: str, *, boundary_reason: str | None = None,
+                 operation: str | None = None, termination: str | None = None):
         self.code = code
         self.boundary_reason = (boundary_reason if type(boundary_reason) is str
                                 and boundary_reason in HOST_BOUNDARY_REASONS else None)
+        self.operation = operation if type(operation) is str and operation in HOST_OPERATIONS else None
+        self.termination = (termination if type(termination) is str
+                            and termination in HOST_TERMINATION else None)
         super().__init__(code)
+
+
+def host_failure(error) -> dict | None:
+    """Closed transient facts; no provider/metadata/exception text escapes."""
+    if (type(error) is HostAdapterError and error.operation in HOST_OPERATIONS
+            and error.termination in HOST_TERMINATION
+            and error.boundary_reason in HOST_BOUNDARY_REASONS):
+        return {"operation": error.operation, "reason": error.boundary_reason,
+                "termination": error.termination}
+    return None
+
+
+def unknown_host_effect(code: str, error: Exception) -> HostAdapterError:
+    failure = host_failure(error)
+    return HostAdapterError(code, **({"operation": failure["operation"],
+        "boundary_reason": failure["reason"], "termination": failure["termination"]}
+        if failure is not None else {}))
 
 
 @dataclass(frozen=True)
@@ -202,12 +225,16 @@ def parse_wait_threads(value: object, expected_children: Sequence[str]) -> WaitS
         if obj["errors"]:
             _fail("child_status_unavailable")
     if obj["wake"] is not None:
-        wake = _object(obj["wake"], {"reason", "threadId", "hostId"}, {"reason"})
+        wake = _object(obj["wake"], {"reason", "threadId", "hostId", "turnId"}, {"reason"})
         _text(wake["reason"], 100)
         if "threadId" in wake and wake["threadId"] not in children:
             _fail()
         if "hostId" in wake and wake["hostId"] != "local":
             _fail()
+        if "turnId" in wake:
+            _uuid(wake["turnId"])
+            if "threadId" not in wake:
+                _fail()
     turns, cursors = [], []
     seen = set()
     fields = {"schemaVersion", "cursor", "cursorReset", "revision", "changed", "thread", "latestTurn",
@@ -230,6 +257,10 @@ def parse_wait_threads(value: object, expected_children: Sequence[str]) -> WaitS
         turns.append(_turn(poll["latestTurn"], child, _thread_state(thread["status"]), items=False))
     if seen != set(children):
         _fail("child_status_unavailable")
+    if obj["wake"] is not None and "turnId" in obj["wake"]:
+        if not any(turn.child_id == obj["wake"]["threadId"] and turn.turn_id == obj["wake"]["turnId"]
+                   for turn in turns):
+            _fail()
     return WaitSnapshot(tuple(turns), tuple(cursors), obj["timedOut"])
 
 
@@ -521,9 +552,13 @@ class PublicMcpHost:
         """One bounded exchange; no result escapes before child cleanup."""
         child, result, succeeded = None, None, False
         boundary_reason = "host_launch_failed"
+        termination = "not_attempted"
         try:
-            if name not in {"read_thread", "wait_threads", "automation_update", "send_message_to_thread"}:
+            if name not in HOST_OPERATIONS:
                 _fail("unsupported_host_operation")
+            # Construction may launch before failing; without a returned owned
+            # session, do not assert that process/reader cleanup was unattempted.
+            termination = "unresolved"
             child = relay._ChildSession(self._command, self._cwd,
                                         time.monotonic() + (timeout or self._timeout), 1.0)
             boundary_reason = "host_initialize_failed"
@@ -540,6 +575,16 @@ class PublicMcpHost:
             boundary_reason = "host_response_unavailable"
             child.send(self._tool_call_bytes(name, arguments))
             result = child.result(2)
+            if (type(result) is not dict or type(result.get("isError")) is not bool
+                    or type(result.get("content")) is not list
+                    or (name != "send_message_to_thread" and not result["content"])
+                    or any(type(item) is not dict or set(item) != {"type", "text"}
+                           or item["type"] != "text" or type(item["text"]) is not str
+                           for item in result["content"])):
+                boundary_reason = "host_response_invalid"
+                _fail()
+            if result["isError"]:
+                boundary_reason = "host_tool_error"
             succeeded = True
         except Exception as error:
             succeeded = False
@@ -550,15 +595,29 @@ class PublicMcpHost:
                 boundary_reason = "host_" + error.response_reason
         finally:
             if child is not None:
+                termination = "unresolved"
                 try:
-                    if child.close() is not True:
+                    closed = child.close()
+                    late_reason = getattr(child, "close_response_reason", None)
+                    if closed is True or (late_reason in relay.RESPONSE_FAILURE_REASONS
+                                          and child.termination_confirmed is True):
+                        termination = "confirmed"
+                    if closed is not True:
+                        # Preserve the first communication failure even when
+                        # termination also fails. Late replies still reject an
+                        # otherwise successful exchange, separately from exit.
+                        if succeeded and boundary_reason == "host_response_unavailable":
+                            boundary_reason = ("host_" + late_reason
+                                               if late_reason in relay.RESPONSE_FAILURE_REASONS
+                                               else "host_cleanup_unknown")
                         succeeded = False
-                        boundary_reason = "host_cleanup_unknown"
                 except Exception:
+                    if succeeded and boundary_reason == "host_response_unavailable":
+                        boundary_reason = "host_cleanup_unknown"
                     succeeded = False
-                    boundary_reason = "host_cleanup_unknown"
         if not succeeded:
-            raise HostAdapterError("host_call_failed", boundary_reason=boundary_reason) from None
+            raise HostAdapterError("host_call_failed", boundary_reason=boundary_reason,
+                                   operation=name, termination=termination) from None
         return result
 
     def _tool_call_bytes(self, name: str, arguments: dict) -> bytes:
@@ -572,20 +631,27 @@ class PublicMcpHost:
                 _fail("unsupported_host_operation")
             result = self._request(name, arguments, timeout=timeout)
             if not isinstance(result, dict):
-                raise HostAdapterError("host_call_failed", boundary_reason="host_response_invalid")
+                raise HostAdapterError("host_call_failed", boundary_reason="host_response_invalid",
+                                       operation=name, termination="confirmed")
             content = result.get("content")
             if (type(result.get("isError")) is not bool or not isinstance(content, list) or not content
                     or any(not isinstance(x, dict) or set(x) != {"type", "text"}
                            or x["type"] != "text" or not isinstance(x["text"], str) for x in content)):
-                raise HostAdapterError("host_call_failed", boundary_reason="host_response_invalid")
+                raise HostAdapterError("host_call_failed", boundary_reason="host_response_invalid",
+                                       operation=name, termination="confirmed")
             if result["isError"]:
                 # This is a tool-level failure, not proof of a permission denial.
-                raise HostAdapterError("host_call_failed", boundary_reason="host_tool_error")
+                raise HostAdapterError("host_call_failed", boundary_reason="host_tool_error",
+                                       operation=name, termination="confirmed")
             return tuple(x["text"] for x in content)
         except HostAdapterError as error:
-            raise HostAdapterError("host_call_failed", boundary_reason=error.boundary_reason) from None
+            if error.code == "host_call_failed":
+                raise
+            raise HostAdapterError("host_call_failed", boundary_reason=error.boundary_reason,
+                                   operation=error.operation, termination=error.termination) from None
         except Exception:
-            raise HostAdapterError("host_call_failed", boundary_reason="host_response_invalid") from None
+            raise HostAdapterError("host_call_failed", boundary_reason="host_response_invalid",
+                                   operation=name, termination="confirmed") from None
 
     def _json_call(self, name: str, arguments: dict, *, timeout: float | None = None) -> object:
         texts = self._call(name, arguments, timeout=timeout)
@@ -594,7 +660,8 @@ class PublicMcpHost:
                 _fail()
             return relay.strict_json_loads(texts[0])
         except Exception:
-            raise HostAdapterError("invalid_host_response") from None
+            raise HostAdapterError("invalid_host_response", boundary_reason="host_response_json_invalid",
+                                   operation=name, termination="confirmed") from None
 
     def resolve_reviewer_ids(self) -> tuple[str, ...]:
         """Resolve only this parent's structured dispatches, never message text.
@@ -688,17 +755,29 @@ class PublicMcpHost:
         _uuid(child_id, "invalid_child_id")
         if child_id not in self._reviewers:
             _fail("unadmitted_child")
-        value = self._json_call("read_thread", {"threadId": child_id, "hostId": "local",
-                                               "turnLimit": 1, "includeOutputs": False,
-                                               "maxOutputCharsPerItem": 1})
-        return parse_read_thread(value, child_id)
+        return self._read_status(child_id)
 
     def read_parent(self) -> ChildTurn:
-        """Read this admitted parent only; never infer that it has ended."""
+        """Read the admitted parent directly; the host rejects self-wait."""
         value = self._json_call("read_thread", {"threadId": self._parent_id, "hostId": "local",
                                                "turnLimit": 1, "includeOutputs": False,
                                                "maxOutputCharsPerItem": 1})
-        return parse_read_thread(value, self._parent_id)
+        try:
+            return parse_read_thread(value, self._parent_id)
+        except HostAdapterError as error:
+            raise HostAdapterError(error.code, boundary_reason="host_response_invalid",
+                                   operation="read_thread", termination="confirmed") from None
+
+    def _read_status(self, thread_id: str) -> ChildTurn:
+        # No afterCursor: a fresh complete latest-turn snapshot is required at
+        # every existing guard; a prior completed turn never latches completion.
+        value = self._json_call("wait_threads", {
+            "targets": [{"threadId": thread_id, "hostId": "local"}], "timeoutMs": 0})
+        try:
+            return parse_wait_threads(value, [thread_id]).turns[0]
+        except HostAdapterError as error:
+            raise HostAdapterError(error.code, boundary_reason="host_response_invalid",
+                                   operation="wait_threads", termination="confirmed") from None
 
     def send_direct_probe(self, probe_id: str) -> str:
         """Send one fixed same-parent experiment, never retry or assert receipt.
@@ -811,8 +890,8 @@ class PublicMcpHost:
                     _fail()
                 return
             _fail()  # A still-present config never confirms deletion.
-        except Exception:
-            raise HostAdapterError("heartbeat_delete_unknown") from None
+        except Exception as error:
+            raise unknown_host_effect("heartbeat_delete_unknown", error) from None
 
     def update_heartbeat(self, before: HeartbeatSnapshot, action: str, *, rrule: str | None = None) -> HeartbeatSnapshot:
         if not isinstance(before, HeartbeatSnapshot) or before.id != self._automation_id:
@@ -855,5 +934,5 @@ class PublicMcpHost:
                     or after.created_at != before.created_at or after.updated_at < before.updated_at):
                 _fail()
             return after
-        except Exception:
-            raise HostAdapterError("heartbeat_update_unknown") from None
+        except Exception as error:
+            raise unknown_host_effect("heartbeat_update_unknown", error) from None

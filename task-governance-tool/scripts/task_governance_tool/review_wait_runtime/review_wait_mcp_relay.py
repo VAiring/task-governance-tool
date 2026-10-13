@@ -32,7 +32,7 @@ CALL_TIMEOUT_SECONDS = 8.0
 CLEANUP_TIMEOUT_SECONDS = 1.0
 POLL_SECONDS = 0.01
 RESPONSE_FAILURE_REASONS = frozenset({
-    "response_timeout", "response_io_or_limit", "response_eof",
+    "response_timeout", "response_io_or_limit", "response_eof", "response_extra",
     "response_json_invalid", "response_envelope_invalid",
     "server_request_unsupported", "notification_unsupported",
     "rpc_parse_error", "rpc_invalid_request", "rpc_method_not_found",
@@ -137,6 +137,8 @@ class _ChildSession:
         self.cleanup_seconds = cleanup_seconds
         self.messages: queue.Queue[bytes | None] = queue.Queue(MAX_QUEUED_MESSAGES)
         self.failed = threading.Event()
+        self.close_response_reason = None
+        self.termination_confirmed = False
         self.stop = threading.Event()
         self.workers: list[threading.Thread] = []
         self.process = subprocess.Popen(
@@ -292,10 +294,11 @@ class _ChildSession:
                 worker.join(timeout=self.cleanup_seconds)
                 if worker.is_alive():
                     clean = False
+        extra = False
         while True:
             try:
                 if self.messages.get_nowait() is not None:
-                    clean = False  # No extra replies, requests or notifications.
+                    extra = True  # Communication failure, not termination failure.
             except queue.Empty:
                 break
         for stream in (self.process.stdout, self.process.stderr):
@@ -303,7 +306,10 @@ class _ChildSession:
                 stream.close()
             except (OSError, ValueError):
                 clean = False
-        return clean and not self.failed.is_set()
+        self.termination_confirmed = clean
+        self.close_response_reason = ("response_io_or_limit" if self.failed.is_set()
+                                      else "response_extra" if extra else None)
+        return clean and self.close_response_reason is None
 
 
 class ViewRelay:

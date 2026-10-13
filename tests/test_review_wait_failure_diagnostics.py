@@ -24,6 +24,36 @@ FIELDS = {"version", "stage", "reason", "local_state", "host_mutation", "retaine
 PRIVATE = "PRIVATE_PROVIDER_BODY C:/private/token secret=value " * 200
 
 
+class ExchangeDiagnosticsTests(unittest.TestCase):
+    def test_exact_exchange_facts_survive_bootstrap_and_later_timer_cleanup(self):
+        from task_governance_tool.review_wait_runtime.review_wait_server import _bootstrap_failure
+        for termination in ('confirmed', 'unresolved', 'not_attempted'):
+            error = HostAdapterError('host_call_failed', boundary_reason='host_response_timeout',
+                                     operation='wait_threads', termination=termination)
+            prepared = _bootstrap_failure('child_read', error)
+            diagnostic = CallDiagnostics()
+            diagnostic.capture(result=prepared)
+            diagnostic.cleanup = 'confirmed'  # A different timer cleanup is not helper exit.
+            result = diagnostic.failure({'ok': False, 'error': 'review_wait_unresolved'})
+            value = result['diagnostic']
+            self.assertEqual(value['host_failure'], {'operation': 'wait_threads',
+                'reason': 'host_response_timeout', 'termination': termination})
+            self.assertEqual(value['reason'], 'host_response_timeout')
+            self.assertEqual(value['cleanup'], 'confirmed')
+            self.assertLessEqual(len(json.dumps(value).encode('utf-8')), 2048)
+
+    def test_unobserved_or_spoofed_exchange_facts_are_absent(self):
+        for error in (ValueError(PRIVATE), HostAdapterError('host_call_failed'),
+                      HostAdapterError('host_call_failed', boundary_reason=PRIVATE,
+                                       operation=PRIVATE, termination=PRIVATE)):
+            result = CallDiagnostics().failure({'ok': False, 'error': 'review_wait_unavailable'}, error=error)
+            self.assertNotIn('host_failure', result['diagnostic'])
+            self.assertNotIn('PRIVATE_PROVIDER_BODY', json.dumps(result))
+        diagnostic = CallDiagnostics()
+        diagnostic.capture(result={'host_failure': {'operation': [], 'reason': PRIVATE, 'termination': True}})
+        self.assertIsNone(diagnostic.host_failure)
+
+
 class BoundaryDiagnosticsTests(unittest.TestCase):
     def setUp(self):
         root = Path.cwd()
@@ -163,6 +193,25 @@ class ManagedFailureDiagnosticsTests(unittest.TestCase):
         return {path.relative_to(self.root).as_posix():
                 ("lease", path.stat().st_size) if path.suffix == ".lock" else ("payload", path.read_bytes())
                 for path in self.root.rglob("*") if path.is_file()}
+
+    def test_normal_parent_read_failure_keeps_exchange_facts_and_dispatches_no_effect(self):
+        original = self.session.managed_host_factory
+        error = HostAdapterError('host_call_failed', boundary_reason='host_response_timeout',
+                                 operation='read_thread', termination='confirmed')
+        def unavailable(**kwargs):
+            instance = original(**kwargs)
+            instance.read_parent = mock.Mock(side_effect=error)
+            return instance
+        self.session.managed_host_factory = unavailable
+        result = self.call()
+        diagnostic = result['diagnostic']
+        self.assertEqual(diagnostic['stage'], 'parent_read')
+        self.assertEqual(diagnostic['reason'], 'host_response_timeout')
+        self.assertEqual(diagnostic['host_failure'], {
+            'operation': 'read_thread', 'reason': 'host_response_timeout', 'termination': 'confirmed'})
+        self.assertEqual(diagnostic['host_mutation'], 'not_dispatched')
+        self.assertEqual(self.effects, [])
+        self.assertFalse(self.paths.review_wait_root.exists())
 
     def test_typed_basis_failure_is_reported_before_any_local_or_host_write(self):
         with mock.patch.object(self.session, "basis_factory", side_effect=BasisError("wait_basis_response_invalid")):

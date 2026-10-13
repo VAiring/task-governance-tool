@@ -143,6 +143,11 @@ this call; `retained_effects` describes admitted saved-state observations;
 not establish review PASS, message receipt or Task completion. Unresolved
 cleanup takes priority when choosing the next action without erasing the original
 failure. A general host tool error is not proof of permission denial.
+When supplied, `diagnostic.host_failure` names the fixed host operation, its
+communication reason and its own helper-process termination result. Report
+these separately: confirmed termination does not repair failed communication,
+and unresolved termination does not erase the original failure. These facts
+do not establish notification-worker exit or any mutation/receipt outcome.
 
 Use the following branch once, based on available evidence. Missing diagnostics
 do not justify inventing a cause or inferring that effects were absent.

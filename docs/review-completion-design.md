@@ -839,6 +839,15 @@ active first/final turn, nearest dispatch, ambiguity/duplicate/cycle checks and
 strict child-turn capture are unchanged. Diagnostic codes are fixed; no path
 handles or host bodies reach durable state.
 
+`PublicMcpHost.read_child` reuses `parse_wait_threads` via fresh
+single-target public `wait_threads(timeoutMs=0)` calls without `afterCursor`.
+It retains only validated `ChildTurn` identities and both observed states.
+`read_parent` keeps its bounded public `read_thread` route and exact parent-ID
+validation. Existing callers keep every freshness/terminal check,
+including active chats whose latest saved turn is already completed. History
+is also read by handle resolution and notification receipt traversal; known
+UUIDs skip resolution entirely.
+
 Handoff preparation returns `review_wait={status,task_id,wait_tool,guide}`,
 where the fixed values are `review_wait_wait` and `references/review_wait.md#normal-wait`.
 It reads policy only, never starts waiting or changes read-only CLI effects.
@@ -888,6 +897,23 @@ existing-state inspection. Unconfirmed cleanup selects conservative recovery
 without overwriting the original failure boundary. The journal and direct-state owners
 retain intent-before-effect and all replay/competing-cleanup exclusions. These
 diagnostic projections do not settle, rewrite or migrate durable state.
+
+`_ChildSession.close` retains its combined success boolean for the development
+relay while exposing transient `termination_confirmed` and a fixed
+`close_response_reason`. Reader failure flags and queued extra replies reject
+communication independently of process exit, joined readers and closed pipes.
+`PublicMcpHost._request` preserves the first exchange failure, checks late
+responses, and carries safe operation/reason/termination facts through typed
+host errors. Valid tool rejection and malformed content are identified before
+cleanup, so cleanup failure cannot obscure them. `_json_call` identifies inner
+JSON failure after confirmed cleanup.
+Read/timer operations require nonempty content before cleanup; direct sending
+still permits an empty successful content list as transport acceptance only.
+Unknown mutation wrappers preserve both effect uncertainty and these facts.
+Bootstrap and direct-start failure results
+forward the closed optional object to `CallDiagnostics`, which retains it
+through later timer cleanup. Facts are call-local only; old saved worker reasons
+remain readable without fabricating historical exchange/termination observations.
 
 `runtime_identity` owns source-only identity for the review-wait server entry.
 It reuses the source-import loader to capture the startup inventory of Python
@@ -1183,16 +1209,16 @@ sender substitution or persisted metadata. The one-operation connectivity relay
 retains its unchanged forwarding contract.
 The host adapter retains a separate allowlisted boundary reason while preserving
 its general failure code. Only an exact internal host error with a known reason
-can refine bootstrap diagnostics. Cleanup uncertainty takes precedence over a
-received reply; no error message, provider body or inferred permission decision
+can refine bootstrap diagnostics. Cleanup uncertainty prevents success while
+preserving an earlier fixed communication failure; no error message, provider body or inferred permission decision
 is exposed or used to authorize a retry.
 The shared relay response reader assigns closed reasons before rejecting a
 deadline, EOF, I/O/limit fault, malformed response, unsupported inbound method,
 or matching JSON-RPC error envelope. It classifies only standard numeric RPC
 codes; arbitrary codes collapse to a generic reason without retaining the
 message or data. The host refines response-stage failures only for the exact
-internal relay error and an allowlisted reason. Initialization and cleanup keep
-their existing priority; the standalone relay's fixed Hook failure is unchanged.
+internal relay error and an allowlisted reason. Initialization keeps its boundary;
+termination is reported independently, and the standalone relay's fixed Hook failure is unchanged.
 
 The automation view response is presentation-only. The documented exact
 automation TOML can verify identity, rule, status and parent binding, but it
@@ -1219,7 +1245,9 @@ parser accepts optional `cursorReset` only as a boolean and still requires the
 bounded nonempty cursor. The observer replaces each child's saved cursor with
 the returned value for its next wait, including after a reset; no reset flag or
 cursor is persisted as terminal evidence. Other unknown poll fields remain
-invalid. Returned
+invalid. The public optional `wake.turnId` must be canonical and match the
+corresponding requested chat's validated latest turn; it cannot substitute for
+the complete poll set. Returned
 terminal candidates trigger runtime's exact current-turn reads. Unconfirmed
 terminal candidates remain eligible for rechecking under the same bounded
 pacing until the exact observation agrees. Cancellation is checked between

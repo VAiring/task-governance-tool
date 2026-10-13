@@ -7,7 +7,7 @@ import threading
 import re
 
 from task_governance_tool.task_values import validate_task_id
-from .review_wait_host import PublicMcpHost, HostAdapterError, _automation_id, _uuid, parse_read_thread
+from .review_wait_host import PublicMcpHost, HostAdapterError, _automation_id, _uuid, parse_read_thread, unknown_host_effect
 from . import review_wait_mcp_relay as protocol
 
 
@@ -163,8 +163,8 @@ class ManagedHost(PublicMcpHost):
                 raise ValueError
             self._automation_id = automation
             return automation
-        except Exception:
-            raise HostAdapterError("heartbeat_create_unknown") from None
+        except Exception as error:
+            raise unknown_host_effect("heartbeat_create_unknown", error) from None
 
     def verify_created(self, rule):
         config = self._view_config()

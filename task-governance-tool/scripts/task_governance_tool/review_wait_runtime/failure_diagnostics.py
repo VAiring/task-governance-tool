@@ -5,7 +5,7 @@ from dataclasses import dataclass
 import json
 
 from .review_wait_server import _BOOTSTRAP_REASONS, _BOOTSTRAP_STAGES, _bootstrap_failure
-from .review_wait_host import HOST_BOUNDARY_REASONS, HostAdapterError
+from .review_wait_host import HOST_BOUNDARY_REASONS, HOST_OPERATIONS, HOST_TERMINATION, HostAdapterError, host_failure
 from .review_wait_direct_repository import DIRECT_REASONS
 
 
@@ -66,8 +66,15 @@ class CallDiagnostics:
     host_mutation: str = "not_dispatched"
     retained_effects: str = "not_inspected"
     cleanup: str = "not_attempted"
+    host_failure: dict | None = None
 
     def capture(self, *, error=None, result=None):
+        supplied = result.get("host_failure") if type(result) is dict else host_failure(error)
+        if (type(supplied) is dict and set(supplied) == {"operation", "reason", "termination"}
+                and type(supplied["operation"]) is str and supplied["operation"] in HOST_OPERATIONS
+                and type(supplied["reason"]) is str and supplied["reason"] in HOST_BOUNDARY_REASONS
+                and type(supplied["termination"]) is str and supplied["termination"] in HOST_TERMINATION):
+            self.host_failure = dict(supplied)
         if type(result) is dict:
             stage, reason = result.get("stage"), result.get("reason", result.get("error"))
             if type(stage) is str and stage in STAGES:
@@ -125,6 +132,8 @@ class CallDiagnostics:
             self.retained_effects = "present_unresolved"
 
     def failure(self, result, *, error=None):
+        if error is not None and self.reason is None:
+            self.capture(error=error)
         reason = self.reason
         if reason is None:
             reason = reason_for(error) if error is not None else result.get("error")
@@ -159,6 +168,8 @@ class CallDiagnostics:
                 {"not_attempted", "unresolved", "confirmed"}, "unresolved"),
             "recovery": recovery, "turn_end": "report_limitation",
         }
+        if self.host_failure is not None:
+            diagnostic["host_failure"] = self.host_failure
         # All members are fixed vocabulary, independent of rejected input size.
         assert len(json.dumps(diagnostic).encode("utf-8")) <= MAX_DIAGNOSTIC_BYTES
         return {**result, "diagnostic": diagnostic}

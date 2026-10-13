@@ -41,7 +41,8 @@ def read_result():
 
 
 def wait_result():
-    return {"timedOut": False, "wake": {"reason": "completed", "threadId": CHILD, "hostId": "local"},
+    return {"timedOut": False, "wake": {"reason": "turnCompleted", "turnId": TURN,
+            "threadId": CHILD, "hostId": "local"},
             "polls": [{"schemaVersion": 1, "cursor": "fixture-cursor", "revision": 1,
                        "changed": True, "thread": {"id": CHILD, "hostId": "local",
                        "status": {"type": "idle"}}, "latestTurn": turn(),
@@ -528,10 +529,10 @@ class AdmissionAndUpdateTests(ConfigFixture, unittest.TestCase):
 
     def test_read_and_wait_requests_remain_bounded_and_do_not_reuse_discovery_identity(self):
         service = adapter(self.home)
-        with mock.patch.object(service, "_json_call", return_value=read_result()) as call:
+        with mock.patch.object(service, "_json_call", return_value=wait_result()) as call:
             service.read_child(CHILD)
-            self.assertEqual(call.call_args.args[1], {"threadId": CHILD, "hostId": "local", "turnLimit": 1,
-                                                     "includeOutputs": False, "maxOutputCharsPerItem": 1})
+            self.assertEqual(call.call_args.args, ("wait_threads", {
+                "targets": [{"threadId": CHILD, "hostId": "local"}], "timeoutMs": 0}))
         with mock.patch.object(service, "_json_call", return_value=wait_result()) as call:
             service.wait_children([CHILD], cursors={CHILD: "prior"})
             self.assertEqual(call.call_args.args[1], {"targets": [{"threadId": CHILD, "hostId": "local",
@@ -744,6 +745,34 @@ class DirectProbeTests(unittest.TestCase):
                 service.read_parent()
         self.assertEqual(service.reviewer_ids, (CHILD,))
 
+    def test_parent_state_is_fresh_bounded_and_never_uses_self_wait_or_item_text(self):
+        service = adapter(Path.cwd())
+        value = read_result()
+        value['thread'].update(id=PARENT, status={'type': 'active'})
+        value['turns'][0]['items'] = [{'type': 'agentMessage', 'text': 'idle completed ' + SECRET}] * 10000
+        with mock.patch.object(service, '_json_call', return_value=value) as call:
+            observed = service.read_parent()
+        self.assertEqual((observed.status, observed.thread_status), ('completed', 'active'))
+        self.assertNotIn(SECRET, repr(observed))
+        call.assert_called_once_with('read_thread', {'threadId': PARENT, 'hostId': 'local',
+            'turnLimit': 1, 'includeOutputs': False, 'maxOutputCharsPerItem': 1})
+        error = host.HostAdapterError('host_call_failed', boundary_reason='host_response_timeout',
+                                      operation='read_thread', termination='confirmed')
+        with mock.patch.object(service, '_json_call', side_effect=error) as call:
+            with self.assertRaises(host.HostAdapterError) as caught:
+                service.read_parent()
+        self.assertIs(caught.exception, error)
+        self.assertEqual(call.call_count, 1)  # No fallback or stale snapshot.
+        for mutate in (lambda v: v['thread'].update(id=OTHER),
+                       lambda v: v['page'].update(order='oldest_first'),
+                       lambda v: v.update(turns=[])):
+            invalid = copy.deepcopy(value)
+            mutate(invalid)
+            with mock.patch.object(service, '_json_call', return_value=invalid), self.assertRaises(host.HostAdapterError) as caught:
+                service.read_parent()
+            self.assertEqual(host.host_failure(caught.exception), {
+                'operation': 'read_thread', 'reason': 'host_response_invalid', 'termination': 'confirmed'})
+
     def test_same_parent_send_preserves_context_and_only_reports_transport_acceptance(self):
         metadata = {**META, "x-codex-turn-metadata": json.dumps({"thread_id": PARENT, "turn_id": TURN})}
         for is_error, expected in [(False, "accepted"), (True, "rejected")]:
@@ -809,6 +838,24 @@ class DirectProbeTests(unittest.TestCase):
 class HostBoundaryTests(unittest.TestCase):
     GOOD = {"content": [{"type": "text", "text": SECRET}], "isError": False}
 
+    def test_empty_read_or_timer_content_is_invalid_before_every_cleanup_outcome(self):
+        for operation in ('read_thread', 'wait_threads', 'automation_update'):
+            for outcome in ('clean', 'false', 'raises'):
+                child = DirectProbeTests.child({'content': [], 'isError': False}, clean=outcome == 'clean')
+                if outcome == 'raises':
+                    child.close.side_effect = RuntimeError(SECRET)
+                with self.subTest(operation=operation, outcome=outcome), \
+                        mock.patch.object(host.relay, '_ChildSession', return_value=child) as launch:
+                    with self.assertRaises(host.HostAdapterError) as caught:
+                        adapter(Path.cwd())._call(operation, {})
+                self.assertEqual(host.host_failure(caught.exception), {
+                    'operation': operation, 'reason': 'host_response_invalid',
+                    'termination': 'confirmed' if outcome == 'clean' else 'unresolved'})
+                self.assertNotIn(SECRET, json.dumps(vars(caught.exception)))
+                launch.assert_called_once()
+                child.close.assert_called_once_with()
+                self.assertEqual(child.send.call_count, 3)
+
     def assert_boundary(self, service, reason):
         with self.assertRaises(host.HostAdapterError) as caught:
             service._call("automation_update", {"mode": "view", "id": AUTOMATION})
@@ -864,12 +911,12 @@ class HostBoundaryTests(unittest.TestCase):
             self.assert_boundary(adapter(Path.cwd()), "host_tool_error")
         child.close.assert_called_once_with()
 
-    def test_closed_protocol_reason_refines_only_response_and_cleanup_still_wins(self):
+    def test_closed_protocol_reason_survives_unresolved_termination(self):
         for detail in host.relay.RESPONSE_FAILURE_REASONS:
             for phase, clean, expected in [
                 ("response", True, "host_" + detail),
                 ("initialize", True, "host_initialize_failed"),
-                ("response", False, "host_cleanup_unknown"),
+                ("response", False, "host_" + detail),
             ]:
                 child = DirectProbeTests.child(self.GOOD, clean=clean)
                 error = host.relay.RelayError(response_reason=detail)
@@ -900,7 +947,7 @@ class HostBoundaryTests(unittest.TestCase):
                 self.assert_boundary(adapter(Path.cwd()), "host_response_invalid")
             child.close.assert_called_once_with()
 
-    def test_cleanup_failure_takes_priority_over_every_earlier_boundary(self):
+    def test_termination_failure_does_not_replace_communication_failure(self):
         for boundary in ("initialize", "response", "tool_error", "invalid_content", "success"):
             for close_raises in (False, True):
                 response = ({**self.GOOD, "isError": True} if boundary == "tool_error" else
@@ -915,7 +962,10 @@ class HostBoundaryTests(unittest.TestCase):
                     child.close.side_effect = RuntimeError(SECRET)
                 with self.subTest(boundary=boundary, close_raises=close_raises), \
                         mock.patch.object(host.relay, "_ChildSession", return_value=child) as launch:
-                    self.assert_boundary(adapter(Path.cwd()), "host_cleanup_unknown")
+                    reason = {"initialize": "host_initialize_failed", "response": "host_response_unavailable",
+                              "tool_error": "host_tool_error", "invalid_content": "host_response_invalid",
+                              "success": "host_cleanup_unknown"}[boundary]
+                    self.assert_boundary(adapter(Path.cwd()), reason)
                 child.close.assert_called_once_with()
                 launch.assert_called_once()
 
@@ -976,9 +1026,11 @@ class DownstreamCorrelationTests(unittest.TestCase):
                     raise host.relay.RelayError(response_reason="rpc_error")
                 claimed.add(key)
                 calls.append(call)
-                if call["name"] == "read_thread":
-                    value = read_result()
-                    value["thread"]["id"] = call["arguments"]["threadId"]
+                if call["name"] == "wait_threads":
+                    value = wait_result()
+                    thread_id = call["arguments"]["targets"][0]["threadId"]
+                    value["wake"]["threadId"] = thread_id
+                    value["polls"][0]["thread"]["id"] = thread_id
                     return {"content": [{"type": "text", "text": json.dumps(value)}], "isError": False}
                 if call != {"name": "automation_update", "arguments": {"mode": "view", "id": AUTOMATION},
                             "_meta": metadata}:
@@ -999,7 +1051,7 @@ class DownstreamCorrelationTests(unittest.TestCase):
                 self.assertEqual(service.read_child(OTHER).child_id, OTHER)
                 self.assertEqual(service.view_heartbeat().status, "PAUSED")
             self.assertEqual(launch.call_count, 3)
-        self.assertEqual([c["name"] for c in calls], ["read_thread", "read_thread", "automation_update"])
+        self.assertEqual([c["name"] for c in calls], ["wait_threads", "wait_threads", "automation_update"])
         self.assertEqual(len(claimed), 3)
         self.assertTrue(all(key[1:3] == (PARENT, TURN) and key[3] != "outer-call" for key in claimed))
         self.assertEqual(metadata, original)
@@ -1036,6 +1088,82 @@ for line in sys.stdin.buffer:
 
 
 class TransportTests(unittest.TestCase):
+    def test_real_pipe_exchange_failure_and_termination_are_independent(self):
+        peer = r'''
+import json, sys
+mode = sys.argv[1]
+for line in sys.stdin:
+    request = json.loads(line)
+    if request['method'] == 'initialize':
+        value = {'protocolVersion': request['params']['protocolVersion'], 'capabilities': {'tools': {}},
+                 'serverInfo': {'name': 'offline', 'version': '1'}}
+    elif request['method'] == 'notifications/initialized':
+        continue
+    else:
+        if mode in ('malformed', 'nonzero'):
+            print('PRIVATE_BODY_MUST_NOT_ESCAPE', flush=True)
+            if mode == 'nonzero': sys.exit(3)
+            continue
+        if mode == 'partial':
+            sys.stdout.write('{'); sys.stdout.flush(); continue
+        value = {'content': [{'type': 'text', 'text': '{}' if mode == 'extra' else 'PRIVATE_BODY_MUST_NOT_ESCAPE'}],
+                 'isError': False}
+    print(json.dumps({'jsonrpc': '2.0', 'id': request['id'], 'result': value}), flush=True)
+    if request['method'] == 'tools/call' and mode == 'extra':
+        print('{"jsonrpc":"2.0","id":2,"result":{}}', flush=True)
+'''
+        cases = [('malformed', 'host_response_json_invalid', 'confirmed'),
+                 ('nonzero', 'host_response_json_invalid', 'unresolved'),
+                 ('partial', 'host_response_timeout', 'confirmed'),
+                 ('extra', 'host_response_extra', 'confirmed'),
+                 ('inner', 'host_response_json_invalid', 'confirmed')]
+        for mode, reason, termination in cases:
+            service = adapter(Path.cwd(), command=[sys.executable, '-B', '-u', '-c', peer, mode],
+                              timeout_seconds=0.5)
+            children = []
+            original = subprocess.Popen
+            def launch(*args, **kwargs):
+                child = original(*args, **kwargs)
+                children.append(child)
+                return child
+            with self.subTest(mode=mode), mock.patch.object(host.relay.subprocess, 'Popen', side_effect=launch):
+                with self.assertRaises(host.HostAdapterError) as caught:
+                    service._json_call('wait_threads', {'targets': [{'threadId': CHILD, 'hostId': 'local'}],
+                                                       'timeoutMs': 0})
+            self.assertEqual(host.host_failure(caught.exception), {
+                'operation': 'wait_threads', 'reason': reason, 'termination': termination})
+            self.assertNotIn(SECRET, json.dumps(vars(caught.exception)))
+            self.assertIsNotNone(children[0].poll())
+            self.assertTrue(all(stream.closed for stream in
+                                (children[0].stdin, children[0].stdout, children[0].stderr)))
+
+    def test_fresh_state_snapshots_do_not_read_or_latch_history(self):
+        from task_governance_tool.review_wait_runtime.review_wait_direct import _terminal
+        service = adapter(Path.cwd())
+        previous = None
+        for status, thread_status, ended in [('completed', 'active', False), ('inProgress', 'active', False),
+                                           ('failed', 'idle', True), ('interrupted', 'systemError', True),
+                                           ('completed', 'idle', True)]:
+            value = wait_result()
+            value['polls'][0]['latestTurn'].update(id=str(uuid4()), status=status)
+            value['wake'] = None
+            value['polls'][0]['thread']['status']['type'] = thread_status
+            with mock.patch.object(service, '_json_call', return_value=value) as call:
+                observed = service.read_child(CHILD)
+            call.assert_called_once_with('wait_threads', {
+                'targets': [{'threadId': CHILD, 'hostId': 'local'}], 'timeoutMs': 0})
+            self.assertEqual(_terminal(observed), ended)
+            self.assertNotEqual(observed.turn_id, previous)
+            previous = observed.turn_id
+        for mutate in (lambda v: v.update(polls=[]),
+                       lambda v: v['polls'].append(copy.deepcopy(v['polls'][0])),
+                       lambda v: v['polls'][0]['thread'].update(id=OTHER),
+                       lambda v: v['polls'][0].update(latestTurn=None)):
+            value = wait_result()
+            mutate(value)
+            with mock.patch.object(service, '_json_call', return_value=value), self.assertRaises(host.HostAdapterError):
+                service.read_child(CHILD)
+
     def test_direct_probe_real_offline_pipes_preserve_exact_arguments_and_reap(self):
         expected = {"name": "send_message_to_thread", "arguments": DirectProbeTests.arguments(), "_meta": META}
         response = {"content": [{"type": "text", "text": SECRET}], "isError": False}
@@ -1057,10 +1185,9 @@ class TransportTests(unittest.TestCase):
         self.assertEqual(len(children), 2)
 
     def test_real_pipes_forward_unchanged_context_and_sanitize_errors_then_reap(self):
-        arguments = {"threadId": CHILD, "hostId": "local", "turnLimit": 1,
-                     "includeOutputs": False, "maxOutputCharsPerItem": 1}
-        expected = {"name": "read_thread", "arguments": arguments, "_meta": META}
-        response = {"content": [{"type": "text", "text": json.dumps(read_result())}], "isError": False}
+        arguments = {"targets": [{"threadId": CHILD, "hostId": "local"}], "timeoutMs": 0}
+        expected = {"name": "wait_threads", "arguments": arguments, "_meta": META}
+        response = {"content": [{"type": "text", "text": json.dumps(wait_result())}], "isError": False}
         original = subprocess.Popen
         children = []
 

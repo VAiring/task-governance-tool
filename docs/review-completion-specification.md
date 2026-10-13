@@ -991,6 +991,15 @@ Every control requires genuine executor metadata; wait/prepare/start additionall
 require the actual current turn and enabled policy.
 
 Reviewer references are canonical UUIDs or exact returned `/root/...` handles.
+Ordinary reviewer state checks use fresh public `wait_threads` snapshots
+with `timeoutMs=0`, no cursor and no turn-item history. Validate every requested
+chat ID, latest turn ID/state and chat state; missing, conflicting or mismatched
+observations fail closed. A completed earlier turn while the chat is active is
+not an ended reviewer or an idle parent. Failed/interrupted turns may be ended
+but never prove review PASS. All existing preparation, wait, pre-effect and
+finalization guards remain. The existing parent status read retains its bounded
+public `read_thread` route. Structured handle mapping below and exact notification
+receipt checks also use public `read_thread`; UUID references require no mapping/history lookup.
 Resolve handles only from the admitted parent's structured public
 `read_thread.subAgentActivity` records with `kind=started|interacted`,
 `agentPath` and `agentThreadId`. The nearest dispatch turn owns the mapping.
@@ -1282,6 +1291,19 @@ only the following fixed fields and allowlisted values:
 | `cleanup` | `not_attempted`, `unresolved` or `confirmed`; an attempted cleanup without confirmation remains unresolved. |
 | `recovery` | `respect_off`, `check_configuration`, `check_project`, `check_connection`, `correct_request`, `inspect_existing` or `report_and_resume`; these select the applicable recovery below and grant no operation permission. |
 | `turn_end` | `report_limitation`: an ordinary turn may end after reporting the limitation and retained continuation, without claiming successful waiting. |
+| `host_failure` | Optional closed object for an observed host exchange: fixed `operation=read_thread|wait_threads|automation_update|send_message_to_thread`, allowlisted host `reason`, and `termination=not_attempted|confirmed|unresolved` for its owned helper process/pipes. It is absent when these facts were not observed; absence is not successful termination. |
+
+Communication and termination are separate results. Preserve the first fixed
+communication reason even if helper termination is unresolved; process exit
+zero and joined readers do not repair a timeout, malformed/extra response or
+other rejected exchange. Late extra replies remain communication failure.
+Termination confirmation requires the existing process, reader-join and pipe
+cleanup checks, independently of communication failure flags. When only cleanup
+fails, retain `host_cleanup_unknown`. The optional exchange facts survive the
+normal preparation/start failure projection and any later timer cleanup; they
+do not describe the long-lived notification worker. Mutation wrappers retain
+unknown effect semantics and the original exchange facts, never authorize replay.
+No response body or exception text enters these fields or durable Task storage.
 
 `not_dispatched` describes this call only. It never establishes that a previous
 reservation or send is absent. Failure before retained-state inspection, or an
@@ -1511,7 +1533,9 @@ state. Discovery, view and restart never initialize state or start observation.
 This explicit development scratch path is not a production state mode.
 
 Bootstrap failures retain `ok:false,error:"candidate_unavailable"` and add
-only fixed `stage` and `reason` diagnostics. Stages identify request, executor
+fixed `stage` and `reason` diagnostics and, when observed, the closed optional
+`host_failure` facts defined in [failure diagnosis](#review-wait-failure-diagnosis-and-recovery).
+Stages identify request, executor
 admission, host context, the first/second Task-basis read, child/reservation
 read, state creation or service loading. Reasons are explicitly allowlisted
 internal boundary codes; unknown exceptions use `candidate_unavailable`.
@@ -1527,7 +1551,8 @@ invalid JSON/envelopes, unsupported server requests/notifications and validated
 JSON-RPC errors. Only the five standard protocol error categories are named;
 other numeric codes become one generic RPC error. Error messages, data, method
 names and arbitrary codes are never exposed. Each category still fails closed,
-and unconfirmed cleanup takes precedence. An RPC error does not establish a
+and communication reason is retained separately from cleanup confirmation.
+Unconfirmed cleanup still prevents success. An RPC error does not establish a
 permission denial or authorize retry or a different caller.
 
 The closed controls are arm, matching check, healthy rearm and cancellation.

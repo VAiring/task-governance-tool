@@ -61,7 +61,7 @@ _BOOTSTRAP_REASONS = frozenset({
 def _bootstrap_failure(stage: str, error: Exception) -> dict:
     """Expose only fixed boundary diagnostics, never exception/provider data."""
     from task_governance_tool.review_wait_runtime.review_wait_basis import BasisError
-    from task_governance_tool.review_wait_runtime.review_wait_host import HOST_BOUNDARY_REASONS, HostAdapterError
+    from task_governance_tool.review_wait_runtime.review_wait_host import HOST_BOUNDARY_REASONS, HostAdapterError, host_failure
     from task_governance_tool.review_wait_runtime.review_wait_repository import RepositoryError
     from task_governance_tool.review_wait_runtime.review_wait_service import ServiceError
     from task_governance_tool.review_wait_runtime.failure_diagnostics import DiagnosticError
@@ -76,8 +76,10 @@ def _bootstrap_failure(stage: str, error: Exception) -> dict:
             detail = getattr(error, "boundary_reason", None)
             if type(detail) is str and detail in HOST_BOUNDARY_REASONS:
                 reason = detail
+    failure = host_failure(error)
     return {"ok": False, "error": "candidate_unavailable",
-            "stage": stage if stage in _BOOTSTRAP_STAGES else "request", "reason": reason}
+            "stage": stage if stage in _BOOTSTRAP_STAGES else "request", "reason": reason,
+            **({"host_failure": failure} if failure is not None else {})}
 
 
 def catalogue() -> list[dict]:

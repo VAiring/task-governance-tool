@@ -3,6 +3,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -95,6 +96,37 @@ def stage_tree_change(repo: Path, change: str) -> None:
 
 
 class GitSnapshotTests(unittest.TestCase):
+    def test_completion_stream_rejects_malformed_partial_conflicting_and_overlong_records(self):
+        from task_governance_tool import git_snapshot as source
+        with tempfile.TemporaryDirectory() as temporary:
+            repo = Path(temporary) / "repo"
+            base = init_git_repo(repo)
+            snapshot = capture_git_snapshot(repo)
+            candidate = commit_tree(repo, git(repo, "write-tree").stdout.strip(), base, message="fixture")
+            oid = git(repo, "rev-parse", "HEAD:tracked.txt").stdout.strip().encode()
+            prefix = b"100644 blob " + oid + b"\t"
+            valid = prefix + b"tracked.txt\0"
+            original = source.run_git_stream
+            for raw in (valid[:-1], b"not-a-tree-record\0", valid + valid,
+                        prefix + b"z\0" + prefix + b"a\0",
+                        b"100644 blob " + b"a" * 64 + b"\ttracked.txt\0",
+                        b"040000 tree " + oid + b"\tdirectory\0",
+                        prefix + b"x" * (source.GIT_RECORD_BYTE_LIMIT + 1) + b"\0"):
+                with self.subTest(size=len(raw)):
+                    def streamed(root, arguments, consume, **kwargs):
+                        if "ls-tree" not in arguments:
+                            return original(root, arguments, consume, **kwargs)
+                        chunk_size = 3 if len(raw) < 1000 else source.GIT_STREAM_CHUNK_SIZE
+                        for offset in range(0, len(raw), chunk_size):
+                            consume(raw[offset:offset + chunk_size])
+                        return source.GitStreamIdentity(len(raw), "sha256:" + "a" * 64)
+                    with patch.object(source, "run_git_stream", side_effect=streamed), \
+                            self.assertRaises(GitSnapshotError) as rejected:
+                        verify_git_snapshot_commit(repo, candidate, expected_base_revision=base,
+                                                   expected_fingerprint=snapshot.fingerprint)
+                    self.assertEqual(rejected.exception.code, "review_target_mismatch")
+                    self.assertEqual(rejected.exception.field, "completion_revision")
+
     def test_nested_snapshot_and_completion_share_project_scope(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp) / "repo"

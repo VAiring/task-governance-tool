@@ -148,8 +148,13 @@ and existing-Finding resolution remain read-only with respect to the ledger.
 
 At completion, the proposed commit must have exactly one parent equal to the
 stored base. Its recursive tree leaves are normalized to the same
-mode/object/path form and must reproduce the fingerprint. Root and merge
-commits are unsupported for snapshot binding. Hook-altered, added, removed,
+mode/object/path form and must reproduce the fingerprint. `stream_tree_entries`
+validates every leaf and feeds the version-one hash incrementally, without a
+whole-listing or whole-manifest buffer. Its record, ordering, object-format,
+scope and subprocess cleanup checks are shared with target observation; a total
+listing above the bounded byte-capture limit does not invalidate an otherwise
+valid tree. Root and merge commits are unsupported for snapshot binding.
+Hook-altered, added, removed,
 renamed, mode-changed, or otherwise changed content fails
 `review_target_mismatch`. A snapshot target may close only with Git-commit
 completion evidence. A Git-commit target requires the identical canonical
@@ -569,7 +574,12 @@ remain mandatory; no parent ID is inferred from prose or numerical records.
 `verify_git_snapshot_commit`. A stable stage-zero index yields immutable trees
 through fixed `mktree -z` operations and one `commit-tree` candidate. Tree paths
 are raw Git bytes; nested directories are constructed bottom-up. Candidate
-creation leaves refs, the index and the working tree untouched. The orchestrator
+construction uses `stream_index_fingerprint`'s validated entry callback to
+populate that directory structure and compares its complete fingerprint before
+creating any objects. It retains the directory metadata needed for tree
+construction, without an additional whole raw listing or flat entry list.
+Per-record and subprocess limits remain unchanged, as do changed-manifest caps.
+Candidate creation leaves refs, the index and the working tree untouched. The orchestrator
 persists its full ID before attempting publication. Fixed argument vectors,
 sanitized environment, bounded time/output, no stderr retention, no lazy fetch
 and disabled fsmonitor/signing prevent extra execution. The generic Task title

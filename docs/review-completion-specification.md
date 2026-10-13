@@ -857,7 +857,9 @@ and completion writers; same-parent pause/resume does not refresh an old intent.
 The local Git exception creates one fixed-tree commit with exactly the reviewed
 base as its sole parent. It never stages, changes worktree content, creates a
 branch, pushes, runs arbitrary commands, or broadens material. Tree construction
-uses immutable index object IDs and modes, checked against the same fingerprint.
+uses every validated immutable index object ID and mode under the
+[snapshot's streaming contract](#git-snapshot-and-target-binding), checked
+against the same fingerprint.
 It may first create unreachable immutable Git objects; this is separate from
 publishing a commit on a branch and does not assert Task completion. The candidate
 ID is retained before publication. The adapter checks the exact current snapshot
@@ -1749,6 +1751,13 @@ zero-object intent-to-add, and sparse-directory entries. A canonical manifest
 binds base commit, mode, object ID, and raw path bytes; its SHA-256 plus base
 are stored. No Git state, hook, config, worktree, object, index, or ref changes.
 Unstaged/untracked content is outside the snapshot.
+
+Capture, completion comparison and integrated candidate construction consume
+the complete index/tree listing incrementally. A valid listing exceeding 16 MiB
+is not rejected solely for its total size. Every leaf still contributes to the
+same version-one fingerprint; no truncation or changed-path-only comparison is
+permitted. The existing per-record, subprocess time/cleanup and separate changed
+artifact-manifest limits remain controlling.
 
 The governed project fixes the index/tree scope and raw path origin. At the
 Git root this is the complete Git index/tree. For a nested project it is the

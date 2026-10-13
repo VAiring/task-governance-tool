@@ -824,28 +824,18 @@ def verify_git_snapshot_commit(
             "completion commit must have exactly the reviewed base as its parent",
             "completion_revision",
         )
-    tree_payload = run_git_bytes(
-        repo,
-        ["ls-tree", "-r", "-z", "--no-abbrev", tree_id, "--"],
-        code="review_target_mismatch",
-        field="completion_revision",
-        message="completion commit tree could not be inspected",
+    # Hash every validated leaf without buffering the whole listing/manifest.
+    # stream_tree_entries preserves the governed subtree, strict raw ordering,
+    # object format, record bound and subprocess timeout/cleanup contract.
+    digest = hashlib.sha256(MANIFEST_PREFIX + parent_ids[0].encode("ascii") + b"\0")
+
+    def consume_entry(entry: GitSnapshotEntry) -> None:
+        digest.update(entry.mode + b"\0" + entry.object_id + b"\0" + entry.path + b"\0")
+
+    observation = stream_tree_entries(
+        repo, tree_id, object_id_length=len(parent_ids[0]), consume_entry=consume_entry,
     )
-    entries = parse_tree_entries(tree_payload)
-    if any(len(entry.object_id) != len(parent_ids[0]) for entry in entries):
-        raise snapshot_error(
-            "review_target_mismatch",
-            "completion commit tree uses an unexpected object ID format",
-            "completion_revision",
-        )
-    try:
-        fingerprint = manifest_fingerprint(parent_ids[0], entries)
-    except GitSnapshotError as exc:
-        raise snapshot_error(
-            "review_target_mismatch",
-            "completion commit tree cannot match the reviewed Git snapshot",
-            "completion_revision",
-        ) from exc
+    fingerprint = "sha256:" + digest.hexdigest()
     if fingerprint != expected_fingerprint:
         raise snapshot_error(
             "review_target_mismatch",
@@ -855,5 +845,5 @@ def verify_git_snapshot_commit(
     return GitSnapshot(
         base_revision=parent_ids[0],
         fingerprint=fingerprint,
-        entry_count=len(entries),
+        entry_count=observation.entry_count,
     )

@@ -13,7 +13,7 @@ import time
 
 from .completion import FULL_GIT_OBJECT_ID, resolve_git_commit, safe_git_command, safe_git_environment
 from .git_snapshot import (
-    capture_git_snapshot, manifest_fingerprint, parse_index_entries, run_git_bytes,
+    capture_git_snapshot, stream_index_fingerprint, run_git_bytes,
     verify_git_snapshot_commit,
 )
 from .review_wait_runtime.review_wait_repository import _path, _physical, _identity
@@ -77,12 +77,9 @@ def create_candidate(repo, *, base, fingerprint, expected_branch, task_id):
     if run_git_bytes(repo, ["rev-parse", "--show-prefix"], output_limit=4096).strip():
         _fail("finalization_git_unsupported")
     matching_snapshot(repo, base=base, fingerprint=fingerprint, expected_branch=expected_branch)
-    entries = parse_index_entries(run_git_bytes(
-        repo, ["-c", "core.fsmonitor=false", "ls-files", "--cached", "--stage", "--sparse", "-z", "--"]))
-    if manifest_fingerprint(base, entries) != fingerprint:
-        _fail("review_target_mismatch")
     directories = {(): {}}
-    for entry in entries:
+
+    def consume_entry(entry):
         parts = tuple(entry.path.split(b"/"))
         if any(part in (b"", b".", b"..") for part in parts):
             _fail("finalization_git_unsupported")
@@ -90,6 +87,10 @@ def create_candidate(repo, *, base, fingerprint, expected_branch, task_id):
             directories.setdefault(parts[:size], {})
         kind = b"commit" if entry.mode == b"160000" else b"blob"
         directories[parts[:-1]][parts[-1]] = (entry.mode, kind, entry.object_id)
+
+    observation = stream_index_fingerprint(repo, base, consume_entry=consume_entry)
+    if observation.fingerprint != fingerprint:
+        _fail("review_target_mismatch")
     for parts in sorted(directories, key=len, reverse=True):
         raw = b"".join(mode + b" " + kind + b" " + oid + b"\t" + name + b"\0"
                        for name, (mode, kind, oid) in sorted(directories[parts].items()))

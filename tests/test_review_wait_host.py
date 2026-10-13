@@ -529,10 +529,10 @@ class AdmissionAndUpdateTests(ConfigFixture, unittest.TestCase):
 
     def test_read_and_wait_requests_remain_bounded_and_do_not_reuse_discovery_identity(self):
         service = adapter(self.home)
-        with mock.patch.object(service, "_json_call", return_value=wait_result()) as call:
+        with mock.patch.object(service, "_json_call", return_value=read_result()) as call:
             service.read_child(CHILD)
-            self.assertEqual(call.call_args.args, ("wait_threads", {
-                "targets": [{"threadId": CHILD, "hostId": "local"}], "timeoutMs": 0}))
+            self.assertEqual(call.call_args.args, ("read_thread", {"threadId": CHILD, "hostId": "local",
+                "turnLimit": 1, "includeOutputs": False, "maxOutputCharsPerItem": 1}))
         with mock.patch.object(service, "_json_call", return_value=wait_result()) as call:
             service.wait_children([CHILD], cursors={CHILD: "prior"})
             self.assertEqual(call.call_args.args[1], {"targets": [{"threadId": CHILD, "hostId": "local",
@@ -1036,11 +1036,9 @@ class DownstreamCorrelationTests(unittest.TestCase):
                     raise host.relay.RelayError(response_reason="rpc_error")
                 claimed.add(key)
                 calls.append(call)
-                if call["name"] == "wait_threads":
-                    value = wait_result()
-                    thread_id = call["arguments"]["targets"][0]["threadId"]
-                    value["wake"]["threadId"] = thread_id
-                    value["polls"][0]["thread"]["id"] = thread_id
+                if call["name"] == "read_thread":
+                    value = read_result()
+                    value["thread"]["id"] = call["arguments"]["threadId"]
                     return {"content": [{"type": "text", "text": json.dumps(value)}], "isError": False}
                 if call != {"name": "automation_update", "arguments": {"mode": "view", "id": AUTOMATION},
                             "_meta": metadata}:
@@ -1061,7 +1059,7 @@ class DownstreamCorrelationTests(unittest.TestCase):
                 self.assertEqual(service.read_child(OTHER).child_id, OTHER)
                 self.assertEqual(service.view_heartbeat().status, "PAUSED")
             self.assertEqual(launch.call_count, 3)
-        self.assertEqual([c["name"] for c in calls], ["wait_threads", "wait_threads", "automation_update"])
+        self.assertEqual([c["name"] for c in calls], ["read_thread", "read_thread", "automation_update"])
         self.assertEqual(len(claimed), 3)
         self.assertTrue(all(key[1:3] == (PARENT, TURN) and key[3] != "outer-call" for key in claimed))
         self.assertEqual(metadata, original)
@@ -1154,22 +1152,21 @@ for line in sys.stdin:
         for status, thread_status, ended in [('completed', 'active', False), ('inProgress', 'active', False),
                                            ('failed', 'idle', True), ('interrupted', 'systemError', True),
                                            ('completed', 'idle', True)]:
-            value = wait_result()
-            value['polls'][0]['latestTurn'].update(id=str(uuid4()), status=status)
-            value['wake'] = None
-            value['polls'][0]['thread']['status']['type'] = thread_status
+            value = read_result()
+            value['turns'][0].update(id=str(uuid4()), status=status)
+            value['thread']['status']['type'] = thread_status
             with mock.patch.object(service, '_json_call', return_value=value) as call:
                 observed = service.read_child(CHILD)
-            call.assert_called_once_with('wait_threads', {
-                'targets': [{'threadId': CHILD, 'hostId': 'local'}], 'timeoutMs': 0})
+            call.assert_called_once_with('read_thread', {'threadId': CHILD, 'hostId': 'local',
+                'turnLimit': 1, 'includeOutputs': False, 'maxOutputCharsPerItem': 1})
             self.assertEqual(_terminal(observed), ended)
             self.assertNotEqual(observed.turn_id, previous)
             previous = observed.turn_id
-        for mutate in (lambda v: v.update(polls=[]),
-                       lambda v: v['polls'].append(copy.deepcopy(v['polls'][0])),
-                       lambda v: v['polls'][0]['thread'].update(id=OTHER),
-                       lambda v: v['polls'][0].update(latestTurn=None)):
-            value = wait_result()
+        for mutate in (lambda v: v.update(turns=[]),
+                       lambda v: v['turns'].append(copy.deepcopy(v['turns'][0])),
+                       lambda v: v['thread'].update(id=OTHER),
+                       lambda v: v['turns'][0].update(id='invalid')):
+            value = read_result()
             mutate(value)
             with mock.patch.object(service, '_json_call', return_value=value), self.assertRaises(host.HostAdapterError):
                 service.read_child(CHILD)
@@ -1195,9 +1192,10 @@ for line in sys.stdin:
         self.assertEqual(len(children), 2)
 
     def test_real_pipes_forward_unchanged_context_and_sanitize_errors_then_reap(self):
-        arguments = {"targets": [{"threadId": CHILD, "hostId": "local"}], "timeoutMs": 0}
-        expected = {"name": "wait_threads", "arguments": arguments, "_meta": META}
-        response = {"content": [{"type": "text", "text": json.dumps(wait_result())}], "isError": False}
+        arguments = {"threadId": CHILD, "hostId": "local", "turnLimit": 1,
+                     "includeOutputs": False, "maxOutputCharsPerItem": 1}
+        expected = {"name": "read_thread", "arguments": arguments, "_meta": META}
+        response = {"content": [{"type": "text", "text": json.dumps(read_result())}], "isError": False}
         original = subprocess.Popen
         children = []
 
@@ -1217,6 +1215,103 @@ for line in sys.stdin:
                         service.read_child(CHILD)
             self.assertIsNotNone(children[-1].poll())
             self.assertTrue(all(stream.closed for stream in [children[-1].stdin, children[-1].stdout, children[-1].stderr]))
+
+
+class ParentTurnStateReadTests(unittest.TestCase):
+    """Model the host's caller-turn cancellation without a Desktop connection."""
+
+    def exchange(self, operation, moment, event_thread=PARENT, event_turn=TURN, *, clean=True):
+        service = adapter(Path.cwd())
+        calls, events = [], []
+        caller_ended = False
+
+        def end_turn():
+            nonlocal caller_ended
+            events.append((event_thread, event_turn))
+            caller_ended = (event_thread, event_turn) == (PARENT, TURN)
+
+        if moment == 'before':
+            end_turn()
+
+        class Peer:
+            def send(self, data):
+                self.frame = json.loads(data)
+
+            def result(self, request_id, **kwargs):
+                if request_id == 1:
+                    return {"protocolVersion": host.relay.PROTOCOL_VERSION, "capabilities": {"tools": {}},
+                            "serverInfo": {"name": "offline", "version": "1"}}
+                call = self.frame['params']
+                calls.append(call)
+                if moment == 'during':
+                    end_turn()
+                if call['name'] == 'wait_threads' and caller_ended:
+                    raise host.relay.RelayError(response_reason='rpc_error')
+                value = read_result() if call['name'] == 'read_thread' else wait_result()
+                return {"content": [{"type": "text", "text": json.dumps(value)}], "isError": False}
+
+            def close(self):
+                if moment == 'after':
+                    end_turn()
+                return clean
+
+        with mock.patch.object(host.relay, '_ChildSession', return_value=Peer()) as launch:
+            try:
+                result = (service.read_child(CHILD) if operation == 'read_thread'
+                          else service.wait_children([CHILD], timeout_ms=0))
+            except host.HostAdapterError as error:
+                result = error
+        self.assertEqual(launch.call_count, 1)
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(events, [(event_thread, event_turn)])
+        self.assertEqual(calls[0]['_meta']['threadId'], PARENT)
+        self.assertEqual(calls[0]['_meta']['turnId'], TURN)
+        self.assertEqual(calls[0]['_meta']['nested'], META['nested'])
+        return result, calls[0]
+
+    def test_old_wait_route_is_cancelled_before_or_during_its_calling_turn_end(self):
+        for moment in ('before', 'during'):
+            with self.subTest(moment=moment):
+                result, _ = self.exchange('wait_threads', moment)
+                self.assertIsInstance(result, host.HostAdapterError)
+                self.assertEqual(host.host_failure(result), {
+                    'operation': 'wait_threads', 'reason': 'host_rpc_error', 'termination': 'confirmed'})
+        for moment, thread in (('after', PARENT), ('during', OTHER)):
+            result, _ = self.exchange('wait_threads', moment, thread)
+            self.assertIsInstance(result, host.WaitSnapshot)
+        for moment in ('before', 'during', 'after'):
+            with self.subTest(moment=moment, event_thread=PARENT, event_turn=OTHER):
+                result, _ = self.exchange('wait_threads', moment, PARENT, OTHER)
+                self.assertIsInstance(result, host.WaitSnapshot)
+
+    def test_dedicated_reviewer_read_survives_before_during_and_after_parent_turn_end(self):
+        for moment in ('before', 'during', 'after'):
+            for thread, turn in ((PARENT, TURN), (OTHER, TURN), (PARENT, OTHER)):
+                with self.subTest(moment=moment, event_thread=thread, event_turn=turn):
+                    result, call = self.exchange('read_thread', moment, thread, turn)
+                    self.assertEqual(result, host.ChildTurn(CHILD, TURN, 'completed', 'notLoaded'))
+                    self.assertEqual(call['name'], 'read_thread')
+                    self.assertEqual(call['arguments'], {'threadId': CHILD, 'hostId': 'local',
+                        'turnLimit': 1, 'includeOutputs': False, 'maxOutputCharsPerItem': 1})
+                    self.assertNotIn(SECRET, repr(result))
+
+    def test_ending_parent_does_not_mask_unconfirmed_helper_cleanup(self):
+        result, _ = self.exchange('read_thread', 'during', clean=False)
+        self.assertEqual(host.host_failure(result), {
+            'operation': 'read_thread', 'reason': 'host_cleanup_unknown', 'termination': 'unresolved'})
+
+    def test_invalid_reviewer_read_is_sanitized_and_not_retried(self):
+        service = adapter(Path.cwd())
+        value = read_result()
+        value['thread']['id'] = OTHER
+        with mock.patch.object(service, '_json_call', return_value=value) as call:
+            with self.assertRaises(host.HostAdapterError) as caught:
+                service.read_child(CHILD)
+        self.assertEqual(call.call_count, 1)
+        self.assertEqual(host.host_failure(caught.exception), {
+            'operation': 'read_thread', 'reason': 'host_response_invalid', 'termination': 'confirmed'})
+        self.assertIsNone(host.read_failure(caught.exception))
+        self.assertNotIn(SECRET, str(caught.exception))
 
 
 if __name__ == "__main__":

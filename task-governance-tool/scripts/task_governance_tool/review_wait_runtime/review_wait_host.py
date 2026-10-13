@@ -839,15 +839,17 @@ class PublicMcpHost:
             raise annotate_read_failure(error, "parent_state", 0)
 
     def _read_status(self, thread_id: str) -> ChildTurn:
-        # No afterCursor: a fresh complete latest-turn snapshot is required at
-        # every existing guard; a prior completed turn never latches completion.
-        value = self._json_call("wait_threads", {
-            "targets": [{"threadId": thread_id, "hostId": "local"}], "timeoutMs": 0})
+        # The host cancels wait_threads when its calling parent turn ends.
+        # Read the admitted reviewer directly, without history traversal or a
+        # stale terminal latch, at the same existing observation points.
+        value = self._json_call("read_thread", {"threadId": thread_id, "hostId": "local",
+                                               "turnLimit": 1, "includeOutputs": False,
+                                               "maxOutputCharsPerItem": 1})
         try:
-            return parse_wait_threads(value, [thread_id]).turns[0]
+            return parse_read_thread(value, thread_id)
         except HostAdapterError as error:
             raise HostAdapterError(error.code, boundary_reason="host_response_invalid",
-                                   operation="wait_threads", termination="confirmed") from None
+                                   operation="read_thread", termination="confirmed") from None
 
     def send_direct_probe(self, probe_id: str) -> str:
         """Send one fixed same-parent experiment, never retry or assert receipt.

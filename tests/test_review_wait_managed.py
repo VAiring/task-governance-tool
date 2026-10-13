@@ -531,6 +531,60 @@ class ManagedFlowTests(unittest.TestCase):
         self.assertTrue(self.call()["replayed"])
         self.assertEqual(["create", "arm"], self.effects)
 
+    def test_parent_end_during_public_reviewer_read_keeps_worker_and_timer(self):
+        from tests.test_review_wait_host import adapter
+        original_factory = self.factory
+        calls, entered, release, block = [], threading.Event(), threading.Event(), threading.Event()
+        self.addCleanup(release.set)
+
+        def factory(**kwargs):
+            fixture_host = original_factory(**kwargs)
+            public = adapter(self.root, metadata=kwargs['metadata'], reviewer_ids=[CHILD])
+
+            def snapshot(operation, arguments, **options):
+                calls.append((operation, arguments))
+                if block.is_set() and not entered.is_set():
+                    entered.set()
+                    if not release.wait(2):
+                        raise AssertionError('fixture synchronization timeout')
+                    # The prior host route is cancelled by this exact event.
+                    if operation == 'wait_threads' and self.current_parent.status == 'completed':
+                        raise HostAdapterError('host_call_failed', boundary_reason='host_rpc_error',
+                                               operation='wait_threads', termination='confirmed')
+                value = read_result()
+                value['thread'].update(id=CHILD, status={'type': self.child.thread_status})
+                value['turns'][0].update(id=self.child.turn_id, status=self.child.status)
+                return value
+
+            public._json_call = snapshot
+            fixture_host.read_child = public.read_child
+            return fixture_host
+
+        self.factory = factory
+        self.session = self.make()
+        self.assertTrue(self.call()['ok'])
+        block.set()
+        self.assertTrue(entered.wait(2))
+        self.current_parent = ChildTurn(PARENT, ORIGINAL, 'completed', 'idle')
+        release.set()
+        count = len(calls)
+        self.until(lambda: len(calls) > count)
+        state = self.inspect()
+        self.assertEqual((state['delivery']['status'], state['delivery']['timer_phase']), ('waiting', 'active'))
+        self.assertEqual(state['observation']['worker']['status'], 'running')
+        self.assertEqual(self.effects, ['create', 'arm'])
+        self.child = ChildTurn(CHILD, TURN, 'completed', 'active')
+        count = len(calls)
+        self.until(lambda: len(calls) > count + 1)
+        self.assertEqual(self.effects, ['create', 'arm'])
+        self.child = ChildTurn(CHILD, TURN, 'completed', 'idle')
+        self.until(lambda: self.inspect().get('delivery', {}).get('acknowledged_turn') == NEW_TURN)
+        self.assertEqual(self.effects, ['create', 'arm', 'delete', 'send'])
+        self.assertTrue(calls)
+        for operation, arguments in calls:
+            self.assertEqual((operation, arguments), ('read_thread', {'threadId': CHILD, 'hostId': 'local',
+                'turnLimit': 1, 'includeOutputs': False, 'maxOutputCharsPerItem': 1}))
+
     def test_unknown_creation_blocks_duplicates_and_restart(self):
         self.fail_create = True
         self.assertEqual("heartbeat_create_unknown", self.call()["error"])

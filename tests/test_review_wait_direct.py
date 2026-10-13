@@ -474,6 +474,48 @@ class DeleteProbeTests(unittest.TestCase):
         self.ended(child_status="interrupted")
         self.until(lambda: self.status() == "accepted")
 
+    def test_public_reviewer_read_survives_parent_end_with_active_delete_timer(self):
+        from tests.test_review_wait_host import adapter, read_result
+        public = adapter(self.path.parent, metadata=META, reviewer_ids=[CHILD])
+        entered, release, calls = threading.Event(), threading.Event(), []
+        self.addCleanup(release.set)
+
+        def snapshot(operation, arguments, **kwargs):
+            calls.append((operation, arguments))
+            if not entered.is_set():
+                entered.set()
+                if not release.wait(2):
+                    raise AssertionError('fixture synchronization timeout')
+                if operation == 'wait_threads' and self.host.parent.status == 'completed':
+                    raise HostAdapterError('host_call_failed', boundary_reason='host_rpc_error',
+                                           operation='wait_threads', termination='confirmed')
+            value = read_result()
+            value['thread'].update(id=CHILD, status={'type': self.host.turn.thread_status})
+            value['turns'][0].update(id=self.host.turn.turn_id, status=self.host.turn.status)
+            return value
+
+        public._json_call = snapshot
+        self.host.read_child = public.read_child
+        probe = self.start()
+        self.assertTrue(entered.wait(2))
+        self.host.parent = ChildTurn(PARENT, ORIGINAL, 'completed', 'idle')
+        release.set()
+        count = len(calls)
+        self.until(lambda: len(calls) > count)
+        record = self.direct.repository.read()
+        self.assertEqual((record.status, record.timer_phase), ('waiting', 'active'))
+        self.assertTrue(self.direct._worker.is_alive())
+        self.assertEqual(self.host.effects, ['arm'])
+        self.assertEqual(self.host.sends, [])
+        self.ended()
+        self.until(lambda: self.status() == 'accepted')
+        self.assertEqual(self.finished().timer_phase, 'deleted')
+        self.assertEqual(self.host.effects, ['arm', 'delete'])
+        self.assertEqual(self.host.sends, [probe])
+        for operation, arguments in calls:
+            self.assertEqual((operation, arguments), ('read_thread', {'threadId': CHILD, 'hostId': 'local',
+                'turnLimit': 1, 'includeOutputs': False, 'maxOutputCharsPerItem': 1}))
+
     def test_cancel_before_delete_pauses_once_and_restart_cannot_replay(self):
         probe = self.start()
         self.assertTrue(self.call("direct_cancel", {"probe_id": probe})["ok"])

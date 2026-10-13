@@ -44,7 +44,7 @@ for line in sys.stdin:
         turn = {"id":"33333333-3333-4333-8333-333333333333","status":"completed",
                 "error":None,"startedAt":1,"completedAt":2,"durationMs":1}
         if operation == "read_thread":
-            value = {"schemaVersion":1,"thread":{"id":parent,"kind":"codex","hostId":"local",
+            value = {"schemaVersion":1,"thread":{"id":request["params"]["arguments"]["threadId"],"kind":"codex","hostId":"local",
                 "status":{"type":"idle"}},"page":{"order":"newest_first","limit":1,
                 "nextCursor":None,"hasMore":False},"turns":[dict(turn,items=[])]}
             if size == -1:
@@ -114,8 +114,13 @@ class ReadWireCapacityTests(unittest.TestCase):
         self.assertEqual(host.read_failure(caught.exception)["purpose"], "parent_state")
 
     def test_child_status_read_gets_larger_outer_and_inner_admission(self):
-        value = self.peer(relay.MAX_MESSAGE_BYTES + 10000, "wait_threads").read_child(fixtures.CHILD)
-        self.assertEqual((value.child_id, value.status, value.thread_status), (fixtures.CHILD, "completed", "idle"))
+        for size in (relay.MAX_MESSAGE_BYTES + 10000, relay.MAX_READ_RESPONSE_BYTES):
+            value = self.peer(size).read_child(fixtures.CHILD)
+            self.assertEqual((value.child_id, value.status, value.thread_status), (fixtures.CHILD, "completed", "idle"))
+        with self.assertRaises(host.HostAdapterError) as caught:
+            self.peer(relay.MAX_READ_RESPONSE_BYTES + 1).read_child(fixtures.CHILD)
+        self.assertEqual(host.host_failure(caught.exception), {
+            "operation": "read_thread", "reason": "host_response_frame_limit", "termination": "confirmed"})
 
     def test_dispatch_and_receipt_purposes_each_admit_real_large_outer_and_inner_frames(self):
         for size in (relay.MAX_MESSAGE_BYTES + 10000, relay.MAX_READ_RESPONSE_BYTES):

@@ -839,8 +839,8 @@ active first/final turn, nearest dispatch, ambiguity/duplicate/cycle checks and
 strict child-turn capture are unchanged. Diagnostic codes are fixed; no path
 handles or host bodies reach durable state.
 
-`PublicMcpHost.read_child` reuses `parse_wait_threads` via fresh
-single-target public `wait_threads(timeoutMs=0)` calls without `afterCursor`.
+`PublicMcpHost.read_child` uses a dedicated fresh single-target public
+`read_thread` lookup and `parse_read_thread`, without a history cursor.
 It retains only validated `ChildTurn` identities and both observed states.
 `read_parent` keeps its bounded public `read_thread` route and exact parent-ID
 validation. Existing callers keep every freshness/terminal check,
@@ -961,20 +961,31 @@ under its activation conditions. It adds no public MCP operation, caller choice,
 stored transcript, or normal-path polling step. The existing adapter boundaries
 remain responsible for genuine metadata and validated identities.
 
-`PublicMcpHost.read_child` uses a fresh, cursor-free public `wait_threads` snapshot.
-`read_parent` retains a dedicated public `read_thread` call for the admitted
-original parent: `hostId=local`, `turnLimit=1`, `includeOutputs=false`,
-`maxOutputCharsPerItem=1`, with no history cursor. It validates the exact parent,
+`PublicMcpHost.read_child` and `read_parent` each use a dedicated fresh public
+`read_thread` call for their admitted reviewer or original parent:
+`hostId=local`, `turnLimit=1`, `includeOutputs=false`,
+`maxOutputCharsPerItem=1`, with no history cursor. Each validates its exact target,
 latest turn and chat/turn states and returns only the existing `ChildTurn` facts.
-It never probes self-wait first, infers idle from failed observation, changes
-executor identity, or substitutes another chat. Item bodies have no role in this
+They never probe self-wait first, infer idle from failed observation, change
+executor identity, or substitute another chat. Item bodies have no role in this
 state decision. The small per-item cap does not bound the number of items or
 the size of the complete encoded response.
 
-Three internal purpose-specific read paths own their minimal validated outputs:
+The host's caller-turn cancellation of `wait_threads` makes that operation
+unsuitable for the canonical worker's post-parent-turn reviewer state reads.
+`_read_status` uses the existing state parser and fixed transport limits;
+managed, direct and bootstrap callers keep their observation points, cadence,
+exact-turn and terminal-state guards. The separate cursor-based development
+`wait_children` operation remains a compatibility path, outside this worker.
+Reviewer-state read failure retains existing host failure/safety handling;
+it adds no public diagnostic purpose or automatic retry.
+
+Four internal purpose-specific read paths own their minimal validated outputs:
 
 - Parent state owns only the current-state snapshot above and existing fresh
   pre-effect checks. It neither searches receipt history nor resolves handles.
+- Reviewer state owns only the admitted reviewer's current state. It never
+  borrows parent state, handle history or a prior terminal observation.
 - `resolve_reviewer_ids` owns structured dispatch/interact records, nearest
   dispatch ownership, alias reuse/conflicts and the matching first/final parent
   turn. Known UUIDs bypass mapping. Preserve the existing bounded scan and deadline.
@@ -1014,7 +1025,7 @@ the receipt reader returns it and a validated event-match boolean. Each scan
 retains only these complete validated projections, up to sixteen pages plus the
 dispatch's final fresh recheck, and discards raw items after extraction. No
 partial page or receipt candidate before the required fence becomes a conclusion.
-The parent state reader has no stale-snapshot fallback.
+Neither current-state reader has a stale-snapshot fallback.
 
 `HostAdapterError` carries an optional closed purpose failure. Bootstrap/direct
 failure projection and `CallDiagnostics` preserve it through later timer cleanup.
@@ -1043,7 +1054,7 @@ of an unknown mutation follows from the failure.
 Validation covers the real-host self-wait rejection and existing parent read,
 reviewer snapshots, active-chat/old-completed-turn conflicts, identity mismatch,
 known-UUID bypass, alias conflicts and missing receipt fences. The capacity change
-also covers all three dedicated purposes at the old and adopted bounds, outer and
+also covers all four dedicated purposes at the old and adopted bounds, outer and
 inner JSON, UTF-8/escaping, cut records, preserved complete earlier results and
 independent communication/cleanup failures. Retain tests for confirmed commit/Task
 completion with unknown receipt, no resend and no added normal-path LLM operation.

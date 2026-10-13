@@ -991,8 +991,8 @@ Every control requires genuine executor metadata; wait/prepare/start additionall
 require the actual current turn and enabled policy.
 
 Reviewer references are canonical UUIDs or exact returned `/root/...` handles.
-Ordinary reviewer state checks use fresh public `wait_threads` snapshots
-with `timeoutMs=0`, no cursor and no turn-item history. Validate every requested
+Ordinary reviewer state checks use dedicated fresh public `read_thread` lookups
+with the minimum current-state arguments, no cursor and no history traversal. Validate every requested
 chat ID, latest turn ID/state and chat state; missing, conflicting or mismatched
 observations fail closed. A completed earlier turn while the chat is active is
 not an ended reviewer or an idle parent. Failed/interrupted turns may be ended
@@ -1000,7 +1000,7 @@ but never prove review PASS. All existing preparation, wait, pre-effect and
 finalization guards remain. The existing parent status read retains its bounded
 public `read_thread` route. Structured handle mapping below and exact notification
 receipt checks also use public `read_thread`; UUID references require no mapping/history lookup.
-The three internal readers return only current-state facts, selected validated
+The four purpose-specific readers return only current-state facts, selected validated
 dispatch facts, or validated receipt-match/navigation facts. They do not return
 raw history to orchestration. Read-only `read_thread` and `wait_threads` exchanges
 admit at most 4,194,304 bytes per response frame and nested JSON, with bounded
@@ -1188,18 +1188,21 @@ routing therefore distinguishes the reviewer from its original parent:
 
 | Required observation | Public route and admitted result |
 |---|---|
-| Reviewer current state | Fresh `wait_threads(timeoutMs=0)` without a cursor; validated chat and latest-turn identities and both states |
+| Reviewer current state | Dedicated bounded `read_thread` lookup for the admitted reviewer; validated chat and latest-turn identities and both states |
 | Original parent current state | Dedicated bounded `read_thread` lookup; validated original parent, latest turn and both states, without using turn-item bodies for the state decision |
 | Reviewer handle identity | Dedicated structured dispatch/interact lookup under the existing nearest-dispatch and conflict checks; a known UUID skips this lookup |
 | Notification receipt | Dedicated structured event lookup under the existing notification identity, pre-send fence and correlation rules |
 
-The parent route is a required exception to lightweight state lookup, not a
-fallback attempted after every self-wait rejection. It preserves active-parent
+The two state routes use their own admitted target ID while preserving the
+genuine calling parent/turn metadata. The host may cancel `wait_threads`, even
+with `timeoutMs=0`, on the calling parent turn's normal end; that route cannot
+provide post-turn reviewer observation. No failed-wait fallback or automatic
+communication retry is added. The parent route preserves active-parent
 admission and fresh idle-parent guards before effects. An older completed turn
 cannot establish that an active parent is idle. Handle resolution and receipt
 remain distinct from state observation; parent resumption alone is not receipt.
 
-All three dedicated `read_thread` purposes share the accepted finite read-response
+All four dedicated `read_thread` purposes share the accepted finite read-response
 capacity policy in the [query design](review-completion-design.md#accepted-review-wait-query-design).
 Keeping the existing parent reader does not claim that its response always fits
 the current capacity. Completely received and validated independent results may

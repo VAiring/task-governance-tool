@@ -1223,12 +1223,15 @@ class ParentTurnStateReadTests(unittest.TestCase):
     def exchange(self, operation, moment, event_thread=PARENT, event_turn=TURN, *, clean=True):
         service = adapter(Path.cwd())
         calls, events = [], []
-        caller_ended = False
+        caller_ended, subscribed = False, False
+        subscriptions, event_subscriptions = [], []
 
         def end_turn():
             nonlocal caller_ended
             events.append((event_thread, event_turn))
-            caller_ended = (event_thread, event_turn) == (PARENT, TURN)
+            event_subscriptions.append(subscribed)
+            if subscribed and (event_thread, event_turn) == (PARENT, TURN):
+                caller_ended = True
 
         if moment == 'before':
             end_turn()
@@ -1238,17 +1241,26 @@ class ParentTurnStateReadTests(unittest.TestCase):
                 self.frame = json.loads(data)
 
             def result(self, request_id, **kwargs):
+                nonlocal subscribed
                 if request_id == 1:
                     return {"protocolVersion": host.relay.PROTOCOL_VERSION, "capabilities": {"tools": {}},
                             "serverInfo": {"name": "offline", "version": "1"}}
                 call = self.frame['params']
                 calls.append(call)
-                if moment == 'during':
-                    end_turn()
-                if call['name'] == 'wait_threads' and caller_ended:
-                    raise host.relay.RelayError(response_reason='rpc_error')
-                value = read_result() if call['name'] == 'read_thread' else wait_result()
-                return {"content": [{"type": "text", "text": json.dumps(value)}], "isError": False}
+                subscribed = call['name'] == 'wait_threads'
+                if subscribed:
+                    subscriptions.append('subscribe')
+                try:
+                    if moment == 'during':
+                        end_turn()
+                    if caller_ended:
+                        raise host.relay.RelayError(response_reason='rpc_error')
+                    value = read_result() if call['name'] == 'read_thread' else wait_result()
+                    return {"content": [{"type": "text", "text": json.dumps(value)}], "isError": False}
+                finally:
+                    if subscribed:
+                        subscriptions.append('unsubscribe')
+                    subscribed = False
 
             def close(self):
                 if moment == 'after':
@@ -1264,25 +1276,27 @@ class ParentTurnStateReadTests(unittest.TestCase):
         self.assertEqual(launch.call_count, 1)
         self.assertEqual(len(calls), 1)
         self.assertEqual(events, [(event_thread, event_turn)])
+        self.assertFalse(subscribed)
+        self.assertEqual(subscriptions, ['subscribe', 'unsubscribe'] if operation == 'wait_threads' else [])
+        self.assertEqual(event_subscriptions, [operation == 'wait_threads' and moment == 'during'])
+        self.assertEqual(caller_ended, operation == 'wait_threads' and moment == 'during'
+                         and (event_thread, event_turn) == (PARENT, TURN))
         self.assertEqual(calls[0]['_meta']['threadId'], PARENT)
         self.assertEqual(calls[0]['_meta']['turnId'], TURN)
         self.assertEqual(calls[0]['_meta']['nested'], META['nested'])
         return result, calls[0]
 
-    def test_old_wait_route_is_cancelled_before_or_during_its_calling_turn_end(self):
-        for moment in ('before', 'during'):
-            with self.subTest(moment=moment):
-                result, _ = self.exchange('wait_threads', moment)
-                self.assertIsInstance(result, host.HostAdapterError)
-                self.assertEqual(host.host_failure(result), {
-                    'operation': 'wait_threads', 'reason': 'host_rpc_error', 'termination': 'confirmed'})
-        for moment, thread in (('after', PARENT), ('during', OTHER)):
-            result, _ = self.exchange('wait_threads', moment, thread)
-            self.assertIsInstance(result, host.WaitSnapshot)
+    def test_old_wait_route_is_cancelled_only_during_its_calling_turn_end(self):
         for moment in ('before', 'during', 'after'):
-            with self.subTest(moment=moment, event_thread=PARENT, event_turn=OTHER):
-                result, _ = self.exchange('wait_threads', moment, PARENT, OTHER)
-                self.assertIsInstance(result, host.WaitSnapshot)
+            for thread, turn in ((PARENT, TURN), (OTHER, TURN), (PARENT, OTHER)):
+                with self.subTest(moment=moment, event_thread=thread, event_turn=turn):
+                    result, _ = self.exchange('wait_threads', moment, thread, turn)
+                    if moment == 'during' and (thread, turn) == (PARENT, TURN):
+                        self.assertIsInstance(result, host.HostAdapterError)
+                        self.assertEqual(host.host_failure(result), {
+                            'operation': 'wait_threads', 'reason': 'host_rpc_error', 'termination': 'confirmed'})
+                    else:
+                        self.assertIsInstance(result, host.WaitSnapshot)
 
     def test_dedicated_reviewer_read_survives_before_during_and_after_parent_turn_end(self):
         for moment in ('before', 'during', 'after'):

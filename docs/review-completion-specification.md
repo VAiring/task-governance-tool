@@ -1156,6 +1156,45 @@ successful stages, routes parent submission only from manual preparation, and
 keeps incomplete/unknown recovery conditional. Recovery alone does not require
 new review; changed basis and observed reviewer failures retain their gates.
 
+#### Accepted Review Wait Query Routing
+
+This routing and bounded-read change is approved for implementation. Each changed
+part becomes active only with its corresponding implementation, verification,
+two independent Tier 2 reviews and synchronization of the existing owners.
+This design-only approval does not claim deployment, increase a runtime limit,
+or authorize additional normal-loop calls. Live work state remains in the
+public Task CLI.
+
+Public `wait_threads` rejects the calling chat itself, including `timeoutMs=0`.
+The worker retains genuine parent executor metadata; changing the sender or
+using another chat to evade this restriction is not an alternative. The approved
+routing therefore distinguishes the reviewer from its original parent:
+
+| Required observation | Public route and admitted result |
+|---|---|
+| Reviewer current state | Fresh `wait_threads(timeoutMs=0)` without a cursor; validated chat and latest-turn identities and both states |
+| Original parent current state | Dedicated bounded `read_thread` lookup; validated original parent, latest turn and both states, without using turn-item bodies for the state decision |
+| Reviewer handle identity | Dedicated structured dispatch/interact lookup under the existing nearest-dispatch and conflict checks; a known UUID skips this lookup |
+| Notification receipt | Dedicated structured event lookup under the existing notification identity, pre-send fence and correlation rules |
+
+The parent route is a required exception to lightweight state lookup, not a
+fallback attempted after every self-wait rejection. It preserves active-parent
+admission and fresh idle-parent guards before effects. An older completed turn
+cannot establish that an active parent is idle. Handle resolution and receipt
+remain distinct from state observation; parent resumption alone is not receipt.
+
+All three dedicated `read_thread` purposes share the accepted finite read-response
+capacity policy in the [query design](review-completion-design.md#accepted-review-wait-query-design).
+Keeping the existing parent reader does not claim that its response always fits
+the current capacity. Completely received and validated independent results may
+be retained after a later read fails; incomplete JSON is never a successful
+result. Missing information keeps every conclusion that depends on it unknown.
+Unconfirmed parent state prevents dependent effects; unconfirmed reviewer
+identity prevents that reviewer's wait admission; missing receipt remains
+unverified. None reverses a confirmed commit or Task completion or authorizes
+resending, reopening, or repeating successful finalization. Existing deadlines,
+one-send semantics, privacy and quality gates remain unchanged.
+
 #### Review Wait Worker Observations
 
 Optional inspect, explicit stop and the one-shot managed return notification

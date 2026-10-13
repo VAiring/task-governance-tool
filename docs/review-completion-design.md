@@ -928,6 +928,65 @@ installation and handoff, document/release/Skill checks and two independent
 Tier 2 reviews precede the bounded real-host validation. Accepted sending and
 offline fixtures never establish actual delivery.
 
+#### Accepted Review Wait Query Design
+
+This approved design implements the [query-routing contract](review-completion-specification.md#accepted-review-wait-query-routing)
+under its activation conditions. It adds no public MCP operation, caller choice,
+stored transcript, or normal-path polling step. The existing adapter boundaries
+remain responsible for genuine metadata and validated identities.
+
+`PublicMcpHost.read_child` uses a fresh, cursor-free public `wait_threads` snapshot.
+`read_parent` retains a dedicated public `read_thread` call for the admitted
+original parent: `hostId=local`, `turnLimit=1`, `includeOutputs=false`,
+`maxOutputCharsPerItem=1`, with no history cursor. It validates the exact parent,
+latest turn and chat/turn states and returns only the existing `ChildTurn` facts.
+It never probes self-wait first, infers idle from failed observation, changes
+executor identity, or substitutes another chat. Item bodies have no role in this
+state decision. The small per-item cap does not bound the number of items or
+the size of the complete encoded response.
+
+Three internal purpose-specific read paths own their minimal validated outputs:
+
+- Parent state owns only the current-state snapshot above and existing fresh
+  pre-effect checks. It neither searches receipt history nor resolves handles.
+- `resolve_reviewer_ids` owns structured dispatch/interact records, nearest
+  dispatch ownership, alias reuse/conflicts and the matching first/final parent
+  turn. Known UUIDs bypass mapping. Preserve the existing bounded scan and deadline.
+- `ManagedHost.observe_receipt` owns the original notification/Task/target identity,
+  exact structured event, pre-send fence and first matching subsequent turn.
+  Preserve the existing bounded traversal and distinction between correlation
+  and complete-body observation. A candidate before reaching the required fence
+  cannot establish receipt.
+
+These paths may use the public history response transiently but do not return
+raw history to the caller/LLM or save it in Task state or diagnostics. Extracting
+fields after receipt does not bypass the transport's byte admission. Use a larger
+finite buffer for read-only responses rather than a streaming JSON extractor.
+4 MiB is an initial implementation candidate, not an already active constant;
+validate and fix the adopted value with the outer JSON-RPC frame, nested JSON,
+queue count, aggregate drain bytes, memory, timeout and cleanup budgets together.
+Keep request/notification-send bounds separate. Do not accidentally retain an
+inner 256 KiB cap that rejects an admitted larger read, or enlarge every mutation
+and notification limit as a side effect.
+
+If a later response exceeds its bound, retain prior fully received and validated
+pages or independent facts. Do not parse a truncated response as a complete page.
+Do not conclude a handle mapping if unseen records can still change it, or receipt
+if its required fence is missing. Prior parent snapshots are not current evidence
+for a later failed fresh guard. Report only fixed, safe facts about the failed
+purpose, unavailable conclusion and retained successful stages; keep communication
+failure separate from helper-process/reader termination. Successful cleanup does
+not repair a failed read. No identical oversized-read loop, split resend, or replay
+of an unknown mutation follows from the failure.
+
+Validation covers the real-host self-wait rejection and existing parent read,
+reviewer snapshots, active-chat/old-completed-turn conflicts, identity mismatch,
+known-UUID bypass, alias conflicts and missing receipt fences. The capacity change
+also covers all three dedicated purposes at the old and adopted bounds, outer and
+inner JSON, UTF-8/escaping, cut records, preserved complete earlier results and
+independent communication/cleanup failures. Retain tests for confirmed commit/Task
+completion with unknown receipt, no resend and no added normal-path LLM operation.
+
 #### Worker Observation And Exit Evidence
 
 `worker_observation` owns the shared version-one projection. Managed inspection

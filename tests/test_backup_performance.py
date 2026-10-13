@@ -334,10 +334,19 @@ def run_write_sequence(
         testcase.assertEqual(result.returncode, 0, result.stderr or result.stdout)
         payload = json_payload(result)
         testcase.assertEqual(payload["warnings"], [])
-        testcase.assertEqual(
-            len(payload["data"]["event"]["summary"].encode("utf-8")),
-            256,
-        )
+        event = payload["data"]["event"]
+        testcase.assertEqual(event["summary"], "Note added")
+        testcase.assertEqual(event["note_body"], note)
+        # The acknowledgement deduplicates the body; the stored workload and
+        # backup/Viewer qualification still contain the original 256-byte summary.
+        with closing(connect(target.db_path)) as connection:
+            stored = connection.execute(
+                "SELECT summary, note_body FROM task_events WHERE task_event_id = ?",
+                (event["task_event_id"],),
+            ).fetchone()
+        testcase.assertEqual(stored["summary"], "Note added: " + note)
+        testcase.assertEqual(len(stored["summary"].encode("utf-8")), 256)
+        testcase.assertEqual(stored["note_body"], note)
         timings.append(elapsed)
     return timings
 

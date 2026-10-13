@@ -560,7 +560,7 @@ class InstalledFinalizationTests(fixtures.PreparationFixture):
         self.worker_guard_race("partial")
 
     def test_worker_reads_each_child_once_per_guard_and_fresh_at_later_effects(self):
-        from tests.test_review_wait_direct import ORIGINAL
+        from tests.test_review_wait_direct import ORIGINAL, NEW_TURN
         from tests.test_review_wait_service import TURN
         from task_governance_tool.review_wait_runtime.review_wait_host import ChildTurn
         from task_governance_tool.review_wait_runtime.managed_direct import ManagedDirectProbe
@@ -595,12 +595,14 @@ class InstalledFinalizationTests(fixtures.PreparationFixture):
         host.read_child = child
         reports = []
         host.set_finalization_result = lambda probe, result: reports.append(result)
-        host.observe_receipt = lambda *args, **kwargs: None
+        host.observe_receipt = lambda *args, **kwargs: NEW_TURN
         self.assertTrue(direct.handle("direct_delete_start", {}, {"threadId": parent, "turnId": ORIGINAL})["ok"])
         host.parent = ChildTurn(parent, ORIGINAL, "completed", "idle")
-        deadline = time.monotonic() + 30
-        while not reports and time.monotonic() < deadline:
-            time.sleep(0.02)
+        # set_finalization_result runs before the final notification guards.
+        # Closing on that report races the second child read with cancellation.
+        direct._worker.join(30)
+        self.assertFalse(direct._worker.is_alive(), direct.repository.read())
+        self.assertEqual(direct.repository.read().acknowledged_turn, NEW_TURN)
         direct.close()
         self.assertEqual(len(reports), 1)
         self.assertEqual(reports[0]["status"], "completed", reports)

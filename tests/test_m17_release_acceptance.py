@@ -96,7 +96,7 @@ def preserved_business_projection(connection: sqlite3.Connection) -> dict:
             "review_target_runner_basis_version",
             "verification_not_required_reason",
         },
-        "task_events": {"completion_cycle_id"},
+        "task_events": {"completion_cycle_id", "note_body"},
         "review_receipts": {
             "review_provenance_basis_version",
             "review_provenance_id",
@@ -360,6 +360,9 @@ class M17ReleaseAcceptanceTests(unittest.TestCase):
                     preserved_business_projection(connection),
                     before_records,
                 )
+                self.assertEqual(connection.execute(
+                    "SELECT COUNT(*) FROM task_events WHERE note_body IS NOT NULL"
+                ).fetchone()[0], 0)
                 self.assertEqual(
                     list(connection.execute("SELECT task_id, state, generation, execution_id, owner_session_id, completion_session_id FROM task_ownership ORDER BY task_id")),
                     [(task_id, "unknown" if status in {"in_progress", "review_pending"} else "none", 0, None, None, None)

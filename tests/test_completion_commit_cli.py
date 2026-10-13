@@ -361,8 +361,9 @@ class CompletionCommitCliTests(unittest.TestCase):
             self.assertEqual(payload["data"]["event"]["event_type"], "task_updated")
             self.assertEqual(
                 payload["data"]["event"]["summary"],
-                "Note added: Checked required gates; Recorded: verification complete, review complete",
+                "Note added; Recorded: verification complete, review complete",
             )
+            self.assertEqual(payload["data"]["event"]["note_body"], "Checked required gates")
 
     def test_task_edit_long_note_with_confirmation_keeps_marker_within_summary_limit(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -381,8 +382,19 @@ class CompletionCommitCliTests(unittest.TestCase):
 
             summary = payload["data"]["event"]["summary"]
             self.assertLessEqual(len(summary), 1000)
-            self.assertTrue(summary.startswith("Note added: "))
-            self.assertTrue(summary.endswith("; Recorded: verification complete"))
+            self.assertEqual(summary, "Note added; Recorded: verification complete")
+            event = payload["data"]["event"]
+            self.assertEqual(event["note_body"], "x" * 1500)
+            with closing(sqlite3.connect(db)) as connection:
+                connection.row_factory = sqlite3.Row
+                stored = connection.execute(
+                    "SELECT summary, note_body FROM task_events WHERE task_event_id = ?",
+                    (event["task_event_id"],),
+                ).fetchone()
+            self.assertLessEqual(len(stored["summary"]), 1000)
+            self.assertTrue(stored["summary"].startswith("Note added: "))
+            self.assertTrue(stored["summary"].endswith("; Recorded: verification complete"))
+            self.assertEqual(stored["note_body"], "x" * 1500)
 
     def test_task_edit_done_rejects_missing_verification_confirmation_without_storage(self):
         with tempfile.TemporaryDirectory() as tmp:

@@ -717,6 +717,10 @@ class CompletionCycleHistoryTests(unittest.TestCase):
                     EXPECTED_PUBLIC_EVENT_FIELDS,
                 )
                 self.assertNotIn("completion_cycle_id", projected)
+                with_note = row_to_event(raw_event, include_note_body=True)
+                self.assertEqual(tuple(with_note), (*EXPECTED_PUBLIC_EVENT_FIELDS, "note_body"))
+                self.assertIsNone(with_note["note_body"])
+                self.assertNotIn("completion_cycle_id", with_note)
 
                 created = create_task_event(
                     connection,
@@ -754,8 +758,9 @@ class CompletionCycleHistoryTests(unittest.TestCase):
                 for event in shown.events:
                     self.assertEqual(
                         tuple(event),
-                        EXPECTED_PUBLIC_EVENT_FIELDS,
+                        (*EXPECTED_PUBLIC_EVENT_FIELDS, "note_body"),
                     )
+                    self.assertIsNone(event["note_body"])
                     self.assertNotIn("completion_cycle_id", event)
 
     def test_full_history_scan_is_limited_to_setup_reentry_and_doctor(self):

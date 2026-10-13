@@ -38,6 +38,11 @@ class Interval:
 
 
 def owner_intervals(transitions: tuple[Transition, ...], bindings: dict[str, tuple[str, str]]) -> tuple[Interval, ...]:
+    """Preserve the legacy interval projection without exposing segment metadata."""
+    return tuple(interval for interval, _, _ in owner_segments(transitions, bindings))
+
+
+def owner_segments(transitions: tuple[Transition, ...], bindings: dict[str, tuple[str, str]]):
     """Core append order, not log arrival order, determines Task state changes."""
     active, preceding, result = {}, {}, []
     for change in transitions:
@@ -48,17 +53,18 @@ def owner_intervals(transitions: tuple[Transition, ...], bindings: dict[str, tup
         opened = active.get(key)
         if covered and opened is None:
             start = boundary[1] if boundary and boundary[0] == change.actor_session_id else None
-            active[key] = Interval(key, change.execution_id, preceding.get(key),
-                                   change.actor_session_id, start, None, False)
+            active[key] = (Interval(key, change.execution_id, preceding.get(key),
+                                   change.actor_session_id, start, None, False), change.transition_id)
         if not covered:
             opened = active.pop(key, None)
             if opened is not None:
+                opened, origin = opened
                 end = boundary[1] if boundary and boundary[0] == opened.thread_id else None
-                result.append(Interval(opened.task_id, opened.execution_id, opened.preceding_completion,
-                                       opened.thread_id, opened.start_turn, end, True))
+                result.append((Interval(opened.task_id, opened.execution_id, opened.preceding_completion,
+                                        opened.thread_id, opened.start_turn, end, True), origin, change.transition_id))
         if change.current_status == "done":
             preceding[key] = change.transition_id
-    result.extend(active.values())
+    result.extend((interval, origin, None) for interval, origin in active.values())
     return tuple(result)
 
 

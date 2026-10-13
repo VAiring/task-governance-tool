@@ -513,6 +513,120 @@ class ResponseRepositoryTests(unittest.TestCase):
         self.assertEqual(self.read()["unattributed"]["unassigned"]["response_count"], 1)
         self.assertTrue(originals.items() <= {item["snapshot_id"]: item for item in self.read(audit=True)["snapshots"]}.items())
 
+    def uncertain_stop_rows(self, status, *, missing=False, conflict=False, missing_start_counter=False):
+        def action(task, execution, state, key, number):
+            ack = self.acknowledgement(task, execution, state)
+            if state in {"ready", "cancelled"}:
+                # Exact core release shape: the durable execution exists but
+                # the transition clears its current execution link.
+                with closing(sqlite3.connect(self.core_path)) as core:
+                    core.execute("UPDATE task_owner_transitions SET execution_id=NULL WHERE transition_id=?",
+                                 (f"transition-{self.generation}",))
+                    core.commit()
+            return self.operation(key, ack, key, number=number, direct=True)
+        rows = action(A, 1, "in_progress", "r0", 1) + [usage("r1", turn=turn(1))]
+        if conflict:
+            rows += [event("event_msg", type="task_started", turn_id=turn(2), started_at=2),
+                     event("event_msg", type="task_started", turn_id=turn(2), started_at=3),
+                     event("turn_context", turn_id=turn(2), model="fixture-model")]
+        stopped_turn = 2 if conflict else 1
+        stop = action(A, 1, status, "r2", stopped_turn)
+        rows += [stop[1]] if missing else stop
+        rows.append(usage("r3", turn=turn(stopped_turn)))
+        after_turn = 3 if conflict else 1
+        if conflict:
+            rows += [event("event_msg", type="task_started", turn_id=turn(3), started_at=4),
+                     event("turn_context", turn_id=turn(3), model="fixture-model")]
+        rows += [usage("r4", turn=turn(after_turn)), usage("r5", turn=turn(after_turn))]
+        next_start = action(B, 2, "in_progress", "r6", after_turn)
+        rows += ([next_start[0], next_start[2]] if missing_start_counter else next_start)
+        rows.append(usage("r7", turn=turn(after_turn)))
+        return rows
+
+    def test_unknown_release_does_not_borrow_a_missing_next_start_counter(self):
+        self.write_turn(self.uncertain_stop_rows("ready", missing=True, missing_start_counter=True))
+        self.ingest(max_records=1)
+        self.repository.refresh(self.reader)
+        self.assertEqual(self.read(A, audit=True)["periods"][0]["work_units"][0]["exclusive"]["response_count"], 1)
+        self.assertEqual(self.read(B)["total"]["response_count"], 1)
+        self.assertEqual(self.read(B)["total"]["models"][0]["total_tokens"], 120)
+        self.assertEqual(self.read()["unattributed"]["unknown"]["response_count"], 5)
+        self.assertFalse(self.read()["unattributed"]["unassigned"]["response_count"])
+
+    def test_same_turn_segments_do_not_capture_unknown_prestart_or_stopped_responses(self):
+        for pending_origin in (0, 4):
+            with self.subTest(pending_origin=pending_origin):
+                self.setUp()
+                start_at, stop_at = (2, 4) if pending_origin == 0 else (0, 2)
+                acknowledgements = {start_at: self.acknowledgement(A, 1, "in_progress"),
+                                    stop_at: self.acknowledgement(A, 1, "paused"),
+                                    6: self.acknowledgement(A, 1, "in_progress"),
+                                    7: self.acknowledgement(A, 1, "done", cycle="A")}
+                rows = []
+                for number in range(9):
+                    key = "r" + str(number)
+                    if number in acknowledgements:
+                        rows += self.operation(key, acknowledgements[number], key, direct=True)
+                    elif number == pending_origin:
+                        rows += self.operation("unresolved", {"session_id": 7}, key, direct=True)
+                    else:
+                        rows.append(usage(key, turn=turn(1)))
+                self.write_turn(rows)
+                self.repository.collect_source(self.source, max_records=5)
+                self.repository = UsageResponseRepository(self.repository.path, *self.repository.basis)
+                self.ingest(max_records=1)
+                self.repository.refresh(self.reader)
+                shown, index = self.read(A), self.read()
+                unit = shown["periods"][0]["work_units"][0]
+                self.assertEqual(unit["exclusive"]["response_count"], 6)
+                self.assertFalse(unit["partial"] or unit["shared"])
+                self.assertEqual(shown["total"]["models"][0]["total_tokens"], 720)
+                self.assertEqual(index["unattributed"]["unknown"]["response_count"], 2)
+                self.assertEqual(index["unattributed"]["unknown"]["models"][0]["total_tokens"], 240)
+                self.assertEqual(index["unattributed"]["unassigned"]["response_count"], 1)
+                with self.repository.connection() as connection:
+                    keys = {key for identity in index["current_snapshot_ids"]
+                            for key in self.repository.members(connection, identity)}
+                self.assertEqual({key[1] for key in keys},
+                                 {"r2", "r3", "r4", "r6", "r7", "r8"} if pending_origin == 0
+                                 else {"r0", "r1", "r2", "r6", "r7", "r8"})
+                before = self.repository.path.read_bytes()
+                self.assertEqual(self.read(A), shown)
+                self.assertEqual(self.repository.path.read_bytes(), before)
+
+    def test_uncertain_stops_survive_collection_restart_and_display_without_losing_numbers(self):
+        for status, missing, conflict in (("ready", True, False), ("cancelled", True, False),
+                                          ("paused", True, False), ("blocked", True, False),
+                                          ("paused", False, True), ("blocked", False, True),
+                                          ("ready", False, False), ("cancelled", False, False)):
+            projections = []
+            for sliced in (False, True):
+                with self.subTest(status=status, missing=missing, conflict=conflict, sliced=sliced):
+                    self.setUp()
+                    self.write_turn(self.uncertain_stop_rows(status, missing=missing, conflict=conflict))
+                    if sliced:
+                        self.repository.collect_source(self.source, max_records=4)
+                        self.repository = UsageResponseRepository(self.repository.path, *self.repository.basis)
+                    self.ingest(**({"max_records": 1} if sliced else {}))
+                    self.repository.refresh(self.reader)
+                    a, b, index = self.read(A, audit=True), self.read(B), self.read()
+                    unit = a["periods"][0]["work_units"][0]
+                    uncertain = missing or conflict
+                    self.assertEqual(unit["exclusive"]["response_count"], 1 if uncertain else 3)
+                    self.assertEqual(unit["exclusive"]["models"][0]["total_tokens"], 120 if uncertain else 360)
+                    self.assertEqual(index["unattributed"]["unknown"]["response_count"], 5 if uncertain else 0)
+                    self.assertEqual(index["unattributed"]["unassigned"]["response_count"], 0 if uncertain else 3)
+                    self.assertEqual(b["total"]["models"][0]["total_tokens"], 240)
+                    self.assertEqual(a["total"]["response_count"], 6 if uncertain else 3)
+                    before = self.repository.path.read_bytes()
+                    self.assertEqual(self.read(A, audit=True), a)
+                    self.assertEqual(self.repository.path.read_bytes(), before)
+                    with self.repository.connection() as connection:
+                        counters = list(connection.execute("SELECT * FROM usage_responses"))
+                        self.assertEqual(len(counters), 8)
+                    projections.append((a, b, index["unattributed"], index["snapshots"]))
+            self.assertEqual(projections[0], projections[1])
+
     def test_failed_stop_resume_and_host_interruption_do_not_cut_intervals(self):
         failure = {"ok": False, "command": "task.edit", "project_id": self.repository.basis[0], "data": {}}
         rows = self.operation("start", self.acknowledgement(A, 1, "in_progress"), "r0", direct=True)
@@ -550,12 +664,12 @@ class ResponseRepositoryTests(unittest.TestCase):
         current = self.read(audit=True)
         documents = {item["snapshot_id"]: item for item in current["snapshots"]}
         self.assertEqual(documents[original["snapshot_id"]], original)
-        self.assertTrue(all(documents[key]["algorithm"] == "response-partitions-v2" for key in current["current_snapshot_ids"]))
+        self.assertTrue(all(documents[key]["algorithm"] == "response-partitions-v3" for key in current["current_snapshot_ids"]))
         self.assertTrue(any(original["snapshot_id"] in documents[key]["predecessors"] for key in current["current_snapshot_ids"]))
         self.assertTrue(set(tuple(sorted(row.items())) for row in old["cycle_links"]) <=
                         set(tuple(sorted(row.items())) for row in current["cycle_links"]))
         self.assertEqual(self.read(A)["total"]["response_count"], 2)
-        for invalid in ([], {}, "response-partitions-v3"):
+        for invalid in ([], {}, "response-partitions-v4"):
             changed = {**original, "algorithm": invalid}
             changed["snapshot_id"] = digest({key: value for key, value in changed.items() if key != "snapshot_id"})
             with self.assertRaises(UsageError):

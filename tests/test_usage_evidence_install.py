@@ -25,6 +25,96 @@ from task_governance_tool.usage_values import UsageError
 
 
 class UsageEvidenceInstallTests(unittest.TestCase):
+    def test_uncertain_stop_policy_upgrade_preserves_history_and_publishes_correct_native_display(self):
+        import task_governance_tool.usage_response_attribution as policy
+        import task_governance_tool.usage_response_repository as repository_module
+        for status in ("ready", "cancelled", "paused"):
+            with self.subTest(status=status):
+                self.setUp()
+                start = self.add("Uncertain stop upgrade")
+                task = start["data"]["task"]["task_id"]
+                original_execution = self.cli("task", "context")["data"]["selected"]["task"]["ownership"]["execution_id"]
+                arguments = ["task", "edit", task, "--status", status]
+                if status == "paused":
+                    arguments += ["--pause-reason", "Isolated uncertain order"]
+                stopped = self.cli(*arguments)
+                self.assertEqual(stopped["data"]["task"]["ownership"]["execution_id"],
+                                 original_execution if status == "paused" else None)
+                resumed = self.cli("task", "edit", task, "--status", "in_progress")
+                done = self.complete(task)
+                other = self.add("Independent later work")
+                other_id = other["data"]["task"]["task_id"]
+                logs = self.root / "logs"
+                logs.mkdir()
+                source = SourceInput(THREAD, logs / "uncertain-upgrade.jsonl", logs, self.root)
+                register_source(self.repository, source, CallerIdentity(THREAD))
+                rows = self.response_header(THREAD, 1)
+                acknowledgements = {0: start, 6: resumed, 7: done, 10: other}
+                if status == "paused":
+                    acknowledgements[2] = stopped
+                for number in range(12):
+                    if status == "paused" and number == 2:
+                        rows += self.response_header(THREAD, 2, session=False)
+                        rows.append(event("event_msg", type="task_started", turn_id=turn(2), started_at=2100))
+                    if status == "paused" and number == 4:
+                        rows += self.response_header(THREAD, 3, session=False)
+                    t = 1 if status != "paused" or number < 2 else 2 if number < 4 else 3
+                    rows += self.response_rows("r" + str(number), t, acknowledgements.get(number))
+                source.path.write_bytes(b"".join(json.dumps(row).encode() + b"\n" for row in rows))
+                while self.repository.cursor(source.source_id, THREAD).offset < source.path.stat().st_size:
+                    self.repository.collect_source(source, max_records=1)
+
+                original_project = policy.project_responses
+                def prior_projection(changes, *args, **kwargs):
+                    # Fixed prior-policy fixture: the documented v2 defect
+                    # ignored this unbound release/unordered stop. Numerical
+                    # values and the real core history remain unchanged.
+                    changes = tuple(change for change in changes
+                                    if not (change.task_id == task and change.current_status == status))
+                    return original_project(changes, *args, **kwargs)
+                with mock.patch.object(policy, "ALGORITHM", "response-partitions-v2"), \
+                        mock.patch.object(repository_module, "ALGORITHM", "response-partitions-v2"), \
+                        mock.patch.object(repository_module, "project_responses", side_effect=prior_projection):
+                    self.assertEqual(service.refresh_usage(self.target)["publication"], "current")
+                    with closing(connect_initialized_readonly(self.target)) as core:
+                        old = self.repository.read(core, audit=True)
+                original_files = file_snapshot(self.target.resolved_usage_snapshots)
+                original_index = self.target.resolved_usage_index.read_bytes()
+                core_bytes = self.target.db_path.read_bytes()
+                evidence = file_snapshot(self.target.resolved_evidence_root)
+                before = file_snapshot(self.root)
+                unknown = self.cli("task", "show", task)["data"]["usage"]
+                self.assertEqual(unknown["status"], "unknown")
+                self.assertFalse(unknown["periods"])
+                self.assertEqual(file_snapshot(self.root), before)
+                self.assertEqual(self.target.resolved_usage_index.read_bytes(), original_index)
+
+                self.assertEqual(service.refresh_usage(self.target)["publication"], "current")
+                actual = self.cli("task", "show", task, "--audit")["data"]["usage"]
+                unit = next(unit for period in actual["periods"] for unit in period["work_units"]
+                            if unit["execution_id"] == original_execution)
+                self.assertEqual(unit["exclusive"]["response_count"], 5 if status == "paused" else 1)
+                self.assertEqual(sum(part["response_count"] for part in unit["partial"]), 5)
+                self.assertEqual(actual["total"]["models"][0]["total_tokens"], 1200)
+                self.assertEqual(self.cli("task", "show", other_id)["data"]["usage"]["total"]["response_count"], 2)
+                index = json.loads(self.target.resolved_usage_index.read_bytes())
+                self.assertEqual(index["unattributed"]["unknown"]["response_count"], 5)
+                self.assertFalse(index["unattributed"]["unassigned"]["response_count"])
+                self.assertTrue({tuple(sorted(row.items())) for row in old["cycle_links"]} <=
+                                {tuple(sorted(row.items())) for row in index["cycle_links"]})
+                documents = {identity: json.loads((self.target.resolved_usage_snapshots / (identity + ".json")).read_bytes())
+                             for identity in index["snapshots"]}
+                self.assertTrue(all(documents[identity]["algorithm"] == "response-partitions-v3"
+                                    for identity in index["current_snapshot_ids"]))
+                self.assertTrue(any(item["predecessors"] for identity, item in documents.items()
+                                    if identity in index["current_snapshot_ids"]))
+                self.assertTrue(original_files.items() <= file_snapshot(self.target.resolved_usage_snapshots).items())
+                self.assertEqual(self.target.db_path.read_bytes(), core_bytes)
+                self.assertEqual(file_snapshot(self.target.resolved_evidence_root), evidence)
+                published = self.target.resolved_usage_index.read_bytes()
+                self.assertEqual(service.refresh_usage(self.target)["publication"], "current")
+                self.assertEqual(self.target.resolved_usage_index.read_bytes(), published)
+
     def test_native_unrelated_blocked_release_preserves_other_completion_tail(self):
         acknowledgements = {}
         completed = []

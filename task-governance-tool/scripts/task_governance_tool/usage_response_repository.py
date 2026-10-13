@@ -18,7 +18,7 @@ from task_governance_tool.usage_turn_adapter import OperationObservation, TurnOb
 from task_governance_tool.usage_review_attribution import ReviewBoundary, ReviewReceiptTurn, reviewer_intervals
 from task_governance_tool.usage_response_adapter import ResponsePosition, ResponseBoundary, ResponseTracker, CHECKS
 from task_governance_tool.usage_response_attribution import project_responses, ALGORITHM
-from task_governance_tool.usage_attribution import owner_intervals, _models
+from task_governance_tool.usage_attribution import owner_segments, _models
 from task_governance_tool.usage_evidence import digest, encode, RESPONSE_FORMAT
 from task_governance_tool.usage_values import UsageError
 
@@ -218,7 +218,8 @@ class UsageResponseRepository(UsageIncrementalRepository):
                 "WHERE event_id NOT IN (SELECT event_id FROM usage_operation_conflicts)")]
             old_bindings = {identity: (item.thread_id, item.turn_id) for item in old_operations
                             if (identity := resolve_operation(core_connection, item)) is not None}
-            owners = owner_intervals(transitions, old_bindings)
+            segments = owner_segments(transitions, old_bindings)
+            owners = tuple(interval for interval, _, _ in segments)
             turn_conflicts = frozenset(tuple(row) for row in connection.execute("SELECT * FROM usage_turn_conflicts"))
             additional = self._additional_intervals(core_connection, connection, owners, turns, turn_conflicts)
             from task_governance_tool.storage import current_schema_version
@@ -254,7 +255,8 @@ class UsageResponseRepository(UsageIncrementalRepository):
             return project_responses(transitions, bindings, checks, positions, turns, responses,
                 additional=additional, conflicting_responses=conflicts, thread_diagnostics=diagnostics,
                 conflicting_turns=turn_conflicts, unresolved=bool(unresolved), geometry_only=geometry_only,
-                pending=tuple(pending.values()), fallback=owners)
+                pending=tuple(pending.values()), fallback=owners,
+                fallback_origins=tuple((origin, endpoint) for _, origin, endpoint in segments))
 
     def _project_for_refresh(self, core, connection, previous):
         geometry = self.attribution(core, numerical_connection=connection, geometry_only=True)

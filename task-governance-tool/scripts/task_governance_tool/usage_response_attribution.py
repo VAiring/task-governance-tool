@@ -10,7 +10,7 @@ from collections import defaultdict
 from task_governance_tool.usage_attribution import _models, _coverage
 
 
-ALGORITHM = "response-partitions-v2"
+ALGORITHM = "response-partitions-v3"
 
 
 def response_order(positions, turns, conflicting_turns=frozenset()):
@@ -62,7 +62,8 @@ def response_order(positions, turns, conflicting_turns=frozenset()):
 
 def project_responses(transitions, bindings, checks, positions, turns, responses, *,
                       additional=(), conflicting_responses=frozenset(), thread_diagnostics=None,
-                      conflicting_turns=frozenset(), unresolved=False, geometry_only=False, pending=(), fallback=()):
+                      conflicting_turns=frozenset(), unresolved=False, geometry_only=False, pending=(), fallback=(),
+                      fallback_origins=()):
     """Every original key is exclusive, shared, unassigned, or unresolved.
 
     Successful stops include their response; resumed intervals retain the same
@@ -82,8 +83,18 @@ def project_responses(transitions, bindings, checks, positions, turns, responses
     owners, execution_gaps = defaultdict(set), defaultdict(set)
     events = defaultdict(list)
     executions = {}
-    valid_boundaries = {}
+    valid_boundaries, boundary_turns, affected_executions, previous_tasks = {}, {}, {}, {}
     for index, change in enumerate(transitions):
+        previous = previous_tasks.get(change.task_id)
+        affected = change.execution_id
+        if (affected is None and change.policy_version == 1
+                and change.current_status in {"ready", "cancelled"} and previous is not None
+                and previous.policy_version == 1 and previous.current_status == change.previous_status):
+            # Core deliberately clears the execution link on release. Its exact
+            # preceding same-Task transition still identifies the ended execution.
+            affected = previous.execution_id
+        affected_executions[index] = affected
+        previous_tasks[change.task_id] = change
         if change.execution_id is not None:
             executions[change.execution_id] = change
         boundary = bindings.get(change.transition_id)
@@ -98,6 +109,7 @@ def project_responses(transitions, bindings, checks, positions, turns, responses
             unknown.add(key)
             continue
         valid_boundaries[index] = key
+        boundary_turns[index] = boundary.turn_id
         events[key].append((index, change))
     check_keys = {(item.provider, item.response_id) for item in checks if item.response_id is not None}
     per_thread = defaultdict(list)
@@ -120,6 +132,7 @@ def project_responses(transitions, bindings, checks, positions, turns, responses
                 receipt_key = sequence[0]
                 if index not in valid_boundaries:
                     valid_boundaries[index] = receipt_key
+                    boundary_turns[index] = receipt_turn
                 if (index, change) not in events[receipt_key]:
                     events[receipt_key].append((index, change))
     # Core order proves ownership release across actors, but does not order
@@ -135,9 +148,14 @@ def project_responses(transitions, bindings, checks, positions, turns, responses
             previous = held.pop(change.task_id, None)
             if previous is not None and previous[2] is not None and previous[2] != change.actor_session_id:
                 displaced.append((index, change.task_id, *previous))
+    uncertain_stops, thread_indices = [], {}
+    def is_beginning(change):
+        return change.current_status == "in_progress" and change.previous_status not in {"in_progress", "review_pending"}
+
     for thread, timelines in per_thread.items():
         keys = [key for _, _, sequence in sorted(timelines) for key in sequence]
         indices = {key: index for index, key in enumerate(keys)}
+        thread_indices[thread] = indices
         changes = [(index, change) for index, change in enumerate(transitions) if change.actor_session_id == thread]
         located = [(index, change, indices[valid_boundaries[index]]) for index, change in changes
                    if valid_boundaries.get(index) in indices]
@@ -188,17 +206,25 @@ def project_responses(transitions, bindings, checks, positions, turns, responses
             next_known = [indices[key] for key in events if key in indices and indices[key] > first]
             unknown.update(keys[first:min(next_known) if next_known else len(keys)])
         for index, change in changes:
-            if index in valid_boundaries or change.execution_id is None:
+            execution = affected_executions[index]
+            # A qualified operation/response relation need not be placeable in
+            # the current ordering graph (for example, a conflicting turn).
+            if valid_boundaries.get(index) in indices or execution is None:
                 continue
-            before = [item for item, _ in changes if item < index and valid_boundaries.get(item) in indices]
-            after = [item for item, _ in changes if item > index and valid_boundaries.get(item) in indices]
+            applicable = [(item, other) for item, other in changes
+                          if other.task_id == change.task_id or is_beginning(other)]
+            before = [item for item, _ in applicable if item < index and valid_boundaries.get(item) in indices]
+            after = [item for item, _ in applicable if item > index and valid_boundaries.get(item) in indices]
             first = indices[valid_boundaries[max(before)]] if before else 0
             last = indices[valid_boundaries[min(after)]] if after else len(keys)
-            beginning = change.current_status == "in_progress" and change.previous_status not in {"in_progress", "review_pending"}
-            if before and not beginning:
+            if before and not is_beginning(change):
                 first += 1
-            unknown.update(keys[first:last])
-            execution_gaps[change.execution_id].add("response_binding_unknown")
+            affected = keys[first:last]
+            if change.current_status in {"paused", "blocked", "ready", "cancelled"}:
+                uncertain_stops.append((execution, affected))
+            else:
+                unknown.update(affected)
+                execution_gaps[execution].add("response_binding_unknown")
     for thread, timelines in per_thread.items():
         active, completed, completion_turn, pending_checks = None, None, None, []
         for _, turn, keys in sorted(timelines):
@@ -265,12 +291,41 @@ def project_responses(transitions, bindings, checks, positions, turns, responses
                 if active is not None:
                     execution_gaps[active].update((thread_diagnostics or {}).get(thread, ()))
 
+    # An unplaceable stop cannot prove that the old active execution continued.
+    # It also cannot invalidate another Task's independently allocated work or
+    # completion/preparation tail merely because an organization release is missing.
+    for execution, candidates in uncertain_stops:
+        affected = {key for key in candidates if execution in owners[key]}
+        unknown.update(affected)
+        if affected:
+            execution_gaps[execution].add("response_binding_unknown")
+
     # Retained turn-only history preserves observed partial totals. This is
     # deliberately restricted to unknown keys and never proves exclusive cost.
-    for interval in fallback:
+    for ordinal, interval in enumerate(fallback):
         covered, gaps = _coverage(interval, starts)
         candidates = {key for key, row in good.items() if key in unknown
                       and (row.thread_id, row.turn_id) in covered}
+        indices = thread_indices.get(interval.thread_id, {})
+        origins = fallback_origins[ordinal] if ordinal < len(fallback_origins) else None
+        anchors = [(change, valid_boundaries[index], boundary_turns[index]) for index, change in enumerate(transitions)
+                   if affected_executions[index] == interval.execution_id
+                   and change.task_id == interval.task_id and change.actor_session_id == interval.thread_id
+                   and valid_boundaries.get(index) in indices]
+        entry = [indices[key] for change, key, boundary_turn in anchors if is_beginning(change)
+                 and boundary_turn == interval.start_turn
+                 and (origins is None or change.transition_id == origins[0])]
+        exits = [indices[key] for change, key, boundary_turn in anchors if change.current_status in
+                 {"paused", "blocked", "ready", "cancelled", "done"}
+                 and boundary_turn == interval.end_turn
+                 and (origins is None or change.transition_id == origins[1])]
+        # Turn-only fallback cannot override an independently located origin or
+        # exit, or attach another Task to an ordered response already allocated
+        # to a known execution. Unordered keys retain potential partial owners.
+        candidates = {key for key in candidates if key not in indices or interval.execution_id in owners[key]
+                      or (not (entry and owners[key])
+                          and not (entry and indices[key] < min(entry))
+                          and not (exits and indices[key] > max(exits)))}
         for key in candidates:
             owners[key].add(interval.execution_id)
         if candidates:

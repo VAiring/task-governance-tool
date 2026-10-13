@@ -6,7 +6,7 @@ import sys
 import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "task-governance-tool/scripts"))
-from task_governance_tool.usage_attribution import Transition, Interval
+from task_governance_tool.usage_attribution import Transition, Interval, owner_segments
 from task_governance_tool.usage_response_adapter import ResponsePosition, ResponseBoundary
 from task_governance_tool.usage_response_attribution import project_responses
 from task_governance_tool.usage_turn_adapter import TurnObservation
@@ -19,7 +19,8 @@ SOURCE = "a" * 64
 
 
 class ResponsePartitionTests(unittest.TestCase):
-    def build(self, actions, *, count=8, checks=(), additional=(), second_turn=None, missing=(), unbound=(), pending=()):
+    def build(self, actions, *, count=8, checks=(), additional=(), second_turn=None, missing=(), unbound=(), pending=(),
+              fallback_mode=None):
         transitions, bindings = [], {}
         generations = {}
         for index, (task, execution, previous, status, number) in enumerate(actions):
@@ -42,8 +43,30 @@ class ResponsePartitionTests(unittest.TestCase):
             "fixture", "r" + str(number), number * 10, method="explicit") for number in checks)
         for index in unbound:
             bindings.pop("t" + str(index))
+        segments = owner_segments(transitions, {identity: (item.thread_id, item.turn_id) for identity, item in bindings.items()})
         return project_responses(tuple(transitions), bindings, confirmations, positions, starts, tuple(numerical),
-                                 additional=additional, pending=pending)
+                                 additional=additional, pending=pending,
+                                 fallback=tuple(item[0] for item in segments) if fallback_mode else (),
+                                 fallback_origins=tuple(item[1:] for item in segments) if fallback_mode == "segments" else ())
+
+    def test_same_turn_multiple_origins_never_adopt_unknown_responses_before_all_starts(self):
+        for mode in ("legacy", "segments"):
+            with self.subTest(mode=mode):
+                value = self.build(((A, X, "ready", "in_progress", 2), (A, X, "in_progress", "paused", 4),
+                                    (A, X, "paused", "in_progress", 6)), fallback_mode=mode,
+                                   pending=((SOURCE, 1, THREAD, turn(2), "fixture", "r0", 0),))
+                self.assertFalse({"r0", "r1"} & self.keys(value, X))
+                self.assertEqual(value["unknown_response_keys"], [("fixture", "r0"), ("fixture", "r1")])
+                self.assertEqual(self.keys(value, X, "exclusive"), {"r2", "r3", "r4", "r6", "r7"})
+
+    def test_segment_origins_keep_unknown_stopped_gap_outside_resumed_execution(self):
+        value = self.build(((A, X, "ready", "in_progress", 0), (A, X, "in_progress", "paused", 2),
+                            (A, X, "paused", "in_progress", 6)), fallback_mode="segments",
+                           pending=((SOURCE, 1, THREAD, turn(2), "fixture", "r4", 40),))
+        self.assertFalse({"r4", "r5"} & self.keys(value, X))
+        self.assertEqual(value["unknown_response_keys"], [("fixture", "r4"), ("fixture", "r5")])
+        self.assertEqual(value["unassigned_response_keys"], [("fixture", "r3")])
+        self.assertEqual(self.keys(value, X, "exclusive"), {"r0", "r1", "r2", "r6", "r7"})
 
     def keys(self, result, execution, assignment=None):
         return {key[1] for part in result["components"] if execution in part["executions"]
@@ -122,6 +145,80 @@ class ResponsePartitionTests(unittest.TestCase):
         result = self.build(((A, X, "ready", "in_progress", 0), (A, None, "in_progress", "ready", 2)))
         self.assertEqual(self.keys(result, X), {"r0", "r1", "r2"})
         self.assertEqual(set(result["unassigned_response_keys"]), {("fixture", "r" + str(i)) for i in range(3, 8)})
+
+    def test_unbound_release_matches_previous_execution_and_recovers_only_at_state_boundary(self):
+        for status in ("ready", "cancelled", "paused", "blocked"):
+            for recovery in (False, True):
+                with self.subTest(status=status, recovery=recovery):
+                    actions = [(A, X, "ready", "in_progress", 0),
+                               (A, None if status in {"ready", "cancelled"} else X, "in_progress", status, 2)]
+                    if recovery:
+                        actions.append((B, Y, "ready", "in_progress", 6))
+                    value = self.build(actions, unbound=(1,))
+                    end = 6 if recovery else 8
+                    uncertain = {"r" + str(i) for i in range(1, end)}
+                    self.assertEqual(self.keys(value, X, "exclusive"), {"r0"})
+                    self.assertEqual(self.keys(value, X, "partial"), uncertain)
+                    self.assertEqual({key[1] for key in value["unknown_response_keys"]}, uncertain)
+                    self.assertFalse(value["unassigned_response_keys"])
+                    if recovery:
+                        self.assertEqual(self.keys(value, Y, "exclusive"), {"r6", "r7"})
+                    for part in value["components"]:
+                        self.assertEqual(sum(row["total_tokens"] for row in part["models"]),
+                                         12 * len(part["response_keys"]))
+
+    def test_unrelated_bound_organization_release_does_not_end_uncertain_stop(self):
+        value = self.build(((B, Y, "ready", "in_progress", 0), (B, Y, "in_progress", "blocked", 1),
+                            (A, X, "ready", "in_progress", 2), (A, X, "in_progress", "paused", 3),
+                            (B, None, "blocked", "ready", 5), (C, Z, "ready", "in_progress", 7)), unbound=(3,))
+        self.assertEqual(self.keys(value, Y, "exclusive"), {"r0", "r1"})
+        self.assertEqual(self.keys(value, X, "exclusive"), {"r2"})
+        self.assertEqual(self.keys(value, X, "partial"), {"r3", "r4", "r5", "r6"})
+        self.assertEqual(self.keys(value, Z, "exclusive"), {"r7"})
+
+    def test_unbound_unrelated_release_keeps_confirmed_unassigned_later_turn(self):
+        value = self.build(((B, Y, "ready", "in_progress", 0), (B, Y, "in_progress", "blocked", 1),
+                            (A, X, "ready", "in_progress", 2), (A, X, "in_progress", "done", 3),
+                            (B, None, "blocked", "ready", 5)), unbound=(4,), second_turn=4)
+        self.assertEqual(self.keys(value, X, "exclusive"), {"r2", "r3"})
+        self.assertFalse(value["unknown_response_keys"])
+        self.assertEqual(value["unassigned_response_keys"], [("fixture", "r" + str(i)) for i in range(4, 8)])
+
+    def test_stop_in_unordered_turn_fences_later_turn_until_resume_or_next_start(self):
+        for conflict in ("positions", "persisted", "observations"):
+            for recovery in ("none", "resume", "next"):
+                with self.subTest(conflict=conflict, recovery=recovery):
+                    changes = [Transition("start", A, X, 1, "ready", "in_progress", THREAD, 1),
+                               Transition("stop", A, X, 2, "in_progress", "paused", THREAD, 1)]
+                    if recovery != "none":
+                        changes.append(Transition("recover", A if recovery == "resume" else B,
+                            X if recovery == "resume" else Y, 3, "paused" if recovery == "resume" else "ready",
+                            "in_progress", THREAD, 1))
+                    numbers = ((0, 2), (2, 3), (6, 4))
+                    bindings = {change.transition_id: ResponseBoundary(THREAD, turn(t), "fixture-project", "task.edit",
+                        change.transition_id, "fixture", "r" + str(n), n * 10, "tg_event_" + f"{n:016x}",
+                        change.task_id, change.generation, change.current_status, "explicit")
+                        for change, (n, t) in zip(changes, numbers)}
+                    values = tuple(response("r" + str(n), number=2 if n < 2 else 3 if n < 4 else 4) for n in range(8))
+                    positions = [(SOURCE, 1, ResponsePosition(THREAD, row.turn_id, row.provider, row.response_id,
+                        int(row.response_id[1:]) * 10)) for row in values]
+                    starts = tuple(TurnObservation(THREAD, turn(t), t * 1000) for t in (2, 3, 4))
+                    conflicts = frozenset()
+                    if conflict == "persisted":
+                        conflicts = frozenset({(THREAD, turn(3))})
+                    elif conflict == "observations":
+                        starts += (TurnObservation(THREAD, turn(3), 3100),)
+                    else:
+                        positions.append(("b" * 64, 1, replace(positions[3][2], record_order=10)))
+                        positions.append(("b" * 64, 1, replace(positions[2][2], record_order=20)))
+                    value = project_responses(changes, bindings, (), positions, starts, values, conflicting_turns=conflicts)
+                    end = 8 if recovery == "none" else 6
+                    self.assertFalse({"r" + str(n) for n in range(1, end)} & self.keys(value, X, "exclusive"))
+                    self.assertTrue({("fixture", "r" + str(n)) for n in range(1, end)} <= set(value["unknown_response_keys"]))
+                    self.assertFalse(value["unassigned_response_keys"])
+                    self.assertTrue({"r4", "r5"} <= self.keys(value, X, "partial"))
+                    if recovery != "none":
+                        self.assertTrue({"r6", "r7"} <= self.keys(value, X if recovery == "resume" else Y, "exclusive"))
 
     def test_response_order_disagreeing_with_committed_operation_order_is_unknown(self):
         result = self.build(((A, X, "ready", "in_progress", 5), (A, X, "in_progress", "done", 2),
@@ -223,11 +320,12 @@ class ResponsePartitionTests(unittest.TestCase):
                                (B, None, "blocked", status, 5)]
                     if preparation:
                         actions.append((C, Z, "ready", "in_progress", 7))
-                    result = self.build(actions, checks=(4,) if preparation else ())
-                    self.assertEqual(self.keys(result, X), {"r2", "r3"} if preparation else {"r" + str(i) for i in range(2, 8)})
-                    if preparation:
-                        self.assertEqual(self.keys(result, Z, "exclusive"), {"r4", "r5", "r6", "r7"})
-                    self.assertFalse(result["unknown_response_keys"] or result["unassigned_response_keys"])
+                    for unbound in ((), (4,)):
+                        result = self.build(actions, checks=(4,) if preparation else (), unbound=unbound)
+                        self.assertEqual(self.keys(result, X), {"r2", "r3"} if preparation else {"r" + str(i) for i in range(2, 8)})
+                        if preparation:
+                            self.assertEqual(self.keys(result, Z, "exclusive"), {"r4", "r5", "r6", "r7"})
+                        self.assertFalse(result["unknown_response_keys"] or result["unassigned_response_keys"])
 
     def recovery(self, *, clock=2400, return_actor=False, other_active=False, reviewer=False):
         other = "11234567-89ab-7cde-8fab-0123456789ab"

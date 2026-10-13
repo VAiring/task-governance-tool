@@ -589,6 +589,21 @@ distinct successful starts/resumes share only that response. Within-response
 state follows committed operation order, including stop/resume of the same
 execution. Failed operations do not cut intervals; unconfirmed, missing or
 ambiguous boundaries remain unknown rather than proving unassigned usage.
+An execution-ending ready/cancelled transition with a null execution link is
+matched to the immediately preceding same-Task core transition, never to an
+unrelated current execution. An admitted operation/response association does
+not prove placement in the response order: an unbound release or a stop in an
+unordered turn fences the affected execution's possible continuation after
+its last located state boundary until a located same-Task state boundary or
+new local start/resume. No position inside the missing range is inferred.
+Unrelated organization releases cannot end that fence or invalidate another
+execution's independently allocated work, completion tail, preparation, or
+confirmed unassigned gap. Turn-only fallback retains potential partial owners
+but cannot override independently located response origins/exits or create
+cross-Task membership on an already allocated ordered response.
+Repeated starts/resumes of one execution in a turn retain each segment's own
+located origin/exit. They do not authorize assigning unknown pre-start or
+stopped-gap responses to that execution, or remove an applicable cutoff.
 An unrelated blocked Task's ready/cancelled exit does not clear another
 execution's completion tail or eligible preparation. Supported cross-session
 pause recovery includes its qualified stop response in the original execution
@@ -701,11 +716,12 @@ Optional lifecycle invocation follows the separate Setup/state contract and
 cannot alter these quality or completion boundaries.
 
 Current response partitions emit `taskgov-usage-snapshot-v2` with algorithm
-`response-partitions-v2`. Retained `response-partitions-v1` snapshots preserve
-their start/completion-only meaning and remain validated immutable history.
+`response-partitions-v3`. Retained `response-partitions-v1` and
+`response-partitions-v2` snapshots retain their original policy meaning and
+remain validated immutable history.
 The physical numerical schema remains 6; changing the algorithm invalidates
 the capture basis and publishes successors without a schema migration or
-reinterpreting old snapshot bytes. Both algorithms keep the v1 fields and add `assignment`:
+reinterpreting old snapshot bytes. All response algorithms keep the v1 fields and add `assignment`:
 `exclusive` has exactly one execution, `shared` at least two, and `partial`
 retains only known owners with explicit incomplete-boundary gaps. The canonical
 digest includes this field and format. Old v1 bytes, membership and cycle links

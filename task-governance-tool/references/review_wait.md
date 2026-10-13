@@ -155,8 +155,10 @@ conclusion; a failed fresh parent read supplies no current idle evidence.
 Frame/total/queue overflow and partial EOF remain distinct from cleanup failure.
 Restore the failed prerequisite before repeating the same read. Receipt failure
 preserves known registration, commit and Task completion: do not resend, reopen
-or complete again. Requested inspection may expose the current worker's
-transient `read_diagnostic`; absence after restart does not recover its cause.
+or complete again. Requested inspection may expose the current worker's first
+parent-state or receipt-observation failure as transient `read_diagnostic`;
+absence after restart does not recover its cause. A semantic response rejection
+retains observed communication/termination facts; it never invents missing ones.
 That projection requires the exact observed attempt, binding, probe and owned
 worker. Unknown or mismatched observation suppresses it; a correctly bound
 stopped worker may retain its transient diagnosis.

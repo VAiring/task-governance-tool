@@ -259,6 +259,139 @@ class ReadDrainCapacityTests(unittest.TestCase):
 
 
 class PurposeRetentionTests(unittest.TestCase):
+    def test_three_purposes_reject_real_pipe_wrong_identity_with_exchange_facts(self):
+        # Only the isolated peer's JSON is changed; the actual bounded transport
+        # and helper/reader/pipe cleanup establish termination independently.
+        peer = PEER.replace('value["thread"]["preview"] = ""',
+            'value["thread"]["id"] = "99999999-9999-4999-8999-999999999999"; value["thread"]["preview"] = ""')
+        for purpose, public_purpose in (("parent", "parent_state"),
+                ("dispatch", "reviewer_identity"), ("receipt", "notification_receipt")):
+            with self.subTest(purpose=purpose):
+                if purpose == "receipt":
+                    service = managed_fixtures.ManagedHostTests().host()
+                    service._command = (sys.executable, "-B", "-u", "-c", peer,
+                        "2000", "read_thread", purpose, "unused", managed_fixtures.ORIGINAL,
+                        managed_fixtures.NEW_TURN)
+                    call = lambda: service.observe_receipt(managed_fixtures.OTHER, managed_fixtures.ORIGINAL)
+                else:
+                    service = fixtures.adapter(Path.cwd(), reviewer_ids=["/root/one"] if purpose == "dispatch"
+                        else [fixtures.CHILD], command=[sys.executable, "-B", "-u", "-c", peer,
+                                                       "2000", "read_thread", purpose])
+                    call = service.resolve_reviewer_ids if purpose == "dispatch" else service.read_parent
+                with self.assertRaises(host.HostAdapterError) as caught:
+                    call()
+                self.assertEqual(caught.exception.code, "invalid_host_response")
+                self.assertEqual(host.host_failure(caught.exception), {"operation":"read_thread",
+                    "reason":"host_response_invalid", "termination":"confirmed"})
+                self.assertEqual(host.read_failure(caught.exception)["purpose"], public_purpose)
+                self.assertEqual(host.read_failure(caught.exception)["retained_pages"], 0)
+
+    def test_semantic_boundary_preserves_failed_exchange_and_does_not_invent_facts(self):
+        service = fixtures.adapter(Path.cwd(), reviewer_ids=["/root/one"])
+        for error in (host.HostAdapterError("host_call_failed", boundary_reason="host_response_frame_limit",
+                        operation="read_thread", termination="unresolved"),
+                      host.HostAdapterError("host_call_failed")):
+            with mock.patch.object(service, "_json_call", side_effect=error):
+                with self.assertRaises(host.HostAdapterError) as caught:
+                    service.resolve_reviewer_ids()
+            self.assertIs(caught.exception, error)
+            self.assertEqual(host.host_failure(caught.exception), host.host_failure(error))
+        with mock.patch.object(service, "_json_call", side_effect=RuntimeError(fixtures.SECRET)):
+            with self.assertRaises(RuntimeError) as caught:
+                service.resolve_reviewer_ids()
+        self.assertIsNone(host.host_failure(caught.exception))
+
+    def test_selected_dispatch_semantic_rejection_retains_exchange(self):
+        service = fixtures.adapter(Path.cwd(), reviewer_ids=["/root/one"])
+        page = fixtures.dispatch_result(("/root/one", fixtures.CHILD))
+        page["turns"][0]["items"][0]["agentThreadId"] = "invalid"
+        with mock.patch.object(service, "_json_call", return_value=page):
+            with self.assertRaises(host.HostAdapterError) as caught:
+                service.resolve_reviewer_ids()
+        self.assertEqual(host.host_failure(caught.exception), {"operation":"read_thread",
+            "reason":"host_response_invalid", "termination":"confirmed"})
+        self.assertEqual(host.read_failure(caught.exception)["retained_pages"], 0)
+
+    def test_identity_freshness_rejection_keeps_actual_last_exchange_not_prior_success(self):
+        service = fixtures.adapter(Path.cwd(), reviewer_ids=["/root/one"])
+        first = fixtures.dispatch_result(("/root/one", fixtures.CHILD))
+        changed = fixtures.dispatch_result(("/root/one", fixtures.CHILD))
+        changed["turns"][0]["id"] = str(uuid4())
+        with mock.patch.object(service, "_json_call", side_effect=[first, changed]):
+            with self.assertRaises(host.HostAdapterError) as caught:
+                service.resolve_reviewer_ids()
+        self.assertEqual(caught.exception.code, "reviewer_identity_unavailable")
+        self.assertEqual(host.host_failure(caught.exception), {"operation":"read_thread",
+            "reason":"host_response_invalid", "termination":"confirmed"})
+        self.assertEqual(host.read_failure(caught.exception)["retained_pages"], 2)
+        service = fixtures.adapter(Path.cwd(), reviewer_ids=["/root/one"])
+        unobserved = host.HostAdapterError("host_call_failed")
+        with mock.patch.object(service, "_json_call", side_effect=[first, unobserved]):
+            with self.assertRaises(host.HostAdapterError) as caught:
+                service.resolve_reviewer_ids()
+        self.assertIsNone(host.host_failure(caught.exception))
+        self.assertEqual(host.read_failure(caught.exception)["retained_pages"], 1)
+
+    def test_parent_failure_survives_unresolved_timer_cleanup(self):
+        fixture = managed_fixtures.ManagedFlowTests()
+        fixture.setUp()
+        try:
+            self.assertTrue(fixture.call()["ok"])
+            service = fixture.hosts["managed-1"]
+            def unavailable():
+                raise host.annotate_read_failure(boundary_error(), "parent_state", 0)
+            def cleanup_failed(*args, **kwargs):
+                fixture.effects.append("pause")
+                raise host.HostAdapterError("heartbeat_update_unknown")
+            service.read_parent = unavailable
+            service.update_heartbeat = cleanup_failed
+            fixture.ended()
+            worker = fixture.session.sessions["managed-1"].direct
+            worker._worker.join(5)
+            self.assertFalse(worker._worker.is_alive())
+            value = fixture.inspect()
+            self.assertEqual(value["delivery"]["timer_phase"], "unknown")
+            self.assertEqual(value["delivery"]["reason"], "host_response_frame_limit")
+            self.assertEqual(value["read_diagnostic"]["host_failure"], host.host_failure(boundary_error()))
+            self.assertEqual(fixture.effects, ["create", "arm", "pause"])
+        finally:
+            fixture.doCleanups()
+
+    def test_running_parent_failure_survives_cleanup_and_worker_stop_without_send(self):
+        for termination in ("confirmed", "unresolved"):
+            with self.subTest(termination=termination):
+                fixture = managed_fixtures.ManagedFlowTests()
+                fixture.setUp()
+                try:
+                    self.assertTrue(fixture.call()["ok"])
+                    def unavailable():
+                        raise host.annotate_read_failure(host.HostAdapterError("host_call_failed",
+                            boundary_reason="host_response_frame_limit", operation="read_thread",
+                            termination=termination), "parent_state", 0)
+                    fixture.hosts["managed-1"].read_parent = unavailable
+                    fixture.ended()
+                    fixture.until(lambda: "read_diagnostic" in fixture.inspect())
+                    worker = fixture.session.sessions["managed-1"].direct
+                    worker._worker.join(5)
+                    self.assertFalse(worker._worker.is_alive())
+                    value = fixture.inspect()
+                    self.assertEqual(value["observation"]["worker"]["status"], "stopped")
+                    self.assertEqual(value["delivery"]["status"], "suppressed")
+                    self.assertEqual(value["delivery"]["reason"], "host_response_frame_limit")
+                    diagnostic = value["read_diagnostic"]
+                    self.assertEqual(diagnostic["host_failure"]["termination"], termination)
+                    self.assertEqual(diagnostic["read_failure"], {"purpose":"parent_state", "retained_pages":0,
+                        "conclusion":"unknown", "next_action":"restore_parent_read"})
+                    self.assertEqual(fixture.effects, ["create", "arm", "pause"])
+                    # Later cleanup/observation cannot replace the first cause.
+                    worker._retain_read_failure(host.annotate_read_failure(boundary_error(),
+                        "notification_receipt", 1), worker.repository.read())
+                    self.assertEqual(fixture.inspect()["read_diagnostic"], diagnostic)
+                    other = fixture.call("inspect", session=fixture.make())
+                    self.assertNotIn("read_diagnostic", other)
+                finally:
+                    fixture.doCleanups()
+
     def test_dispatch_page_projection_contains_no_history_and_unread_conflicts_stay_unknown(self):
         first, second = "/root/one", "/root/two"
         service = fixtures.adapter(Path.cwd(), reviewer_ids=[first, second])
@@ -352,13 +485,21 @@ class PurposeRetentionTests(unittest.TestCase):
             fixture.doCleanups()
 
     def test_diagnostic_is_suppressed_for_unknown_changed_or_mismatched_observation(self):
+        for purpose in ("parent_state", "notification_receipt"):
+            with self.subTest(purpose=purpose):
+                self._assert_diagnostic_binding_suppression(purpose)
+
+    def _assert_diagnostic_binding_suppression(self, purpose):
         fixture = managed_fixtures.ManagedFlowTests()
         fixture.setUp()
         try:
             self.assertTrue(fixture.call()["ok"])
             def unavailable(*args, **kwargs):
-                raise host.annotate_read_failure(boundary_error(), "notification_receipt", 1)
-            fixture.hosts["managed-1"].observe_receipt = unavailable
+                raise host.annotate_read_failure(boundary_error(), purpose, 0 if purpose == "parent_state" else 1)
+            if purpose == "parent_state":
+                fixture.hosts["managed-1"].read_parent = unavailable
+            else:
+                fixture.hosts["managed-1"].observe_receipt = unavailable
             fixture.ended()
             fixture.until(lambda: "read_diagnostic" in fixture.inspect())
             worker = fixture.session.sessions["managed-1"].direct
@@ -403,7 +544,10 @@ class PurposeRetentionTests(unittest.TestCase):
                 self.assertEqual(value["observation"]["worker"]["status"], "stopped")
                 self.assertNotIn("read_diagnostic", value)
             self.assertIn("read_diagnostic", fixture.inspect())
-            self.assertEqual(fixture.effects, ["create", "arm", "delete", "send"])
+            with mock.patch.dict(fixture.session.sessions, {}, clear=True):
+                self.assertNotIn("read_diagnostic", fixture.inspect())
+            self.assertEqual(fixture.effects, ["create", "arm", "pause"] if purpose == "parent_state"
+                             else ["create", "arm", "delete", "send"])
         finally:
             fixture.doCleanups()
 

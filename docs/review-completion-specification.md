@@ -1214,6 +1214,12 @@ unverified. None reverses a confirmed commit or Task completion or authorizes
 resending, reopening, or repeating successful finalization. Existing deadlines,
 one-send semantics, privacy and quality gates remain unchanged.
 
+Semantic rejection in the parent, identity and receipt routes preserves the
+settled read exchange facts. After readiness, a failed parent observation has
+the same transient, exact-worker inspection boundary as receipt failure; see
+[failure diagnosis](#review-wait-failure-diagnosis-and-recovery). Neither path
+adds persistent diagnosis, inferred helper termination or a routine caller read.
+
 #### Review Wait Worker Observations
 
 Optional inspect, explicit stop and the one-shot managed return notification
@@ -1327,14 +1333,19 @@ leave the dependent conclusion unknown. A failed fresh parent read supplies no
 idle evidence. No partial JSON is parsed as a successful page, identical oversized
 read is automatically repeated, or known commit/completion is reversed.
 
-On requested inspection only, `read_diagnostic` may expose the current same-worker
-receipt-observation failure's closed `read_failure` and, when observed,
+On requested inspection only, `read_diagnostic` may expose the first failed
+parent-state or receipt observation after wait readiness for the same worker:
+its closed `read_failure` and, when observed,
 `host_failure`. It is call/process-local, outside the worker observation schema
 and durable journals; missing evidence after restart is not reconstructed.
 Projection requires the exact admitted latest request attempt, controller/direct
 binding, probe and owned worker. Unknown, unavailable, conflicting or mismatched
 observation suppresses it. A correctly bound stopped worker may still supply its
 transient diagnosis; saved exit evidence alone cannot recover a lost cause.
+Semantic rejection of a completely returned parent-state, identity or receipt
+response retains that exchange's actual operation and helper termination facts.
+A failed exchange keeps its original cause/termination instead; no earlier page,
+unobserved operation or generic exception supplies missing success facts.
 It never implies that prior registration, commit or Task completion failed and
 adds no routine inspect, ACK, resend or completion gate. Existing report stages
 remain the evidence for each known successful operation.

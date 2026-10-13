@@ -30,6 +30,22 @@ class ManagedDirectProbe(DirectProbe):
                 return None
             return self.read_diagnostic
 
+    def _retain_read_failure(self, error, record):
+        read = read_failure(error)
+        if read is None:
+            return
+        diagnostic = {"read_failure": read}
+        exchange = host_failure(error)
+        if exchange is not None:
+            diagnostic["host_failure"] = exchange
+        with self._observations_lock:
+            identity = (record.probe_id, record.worker_id)
+            if (identity != (self._owned_probe_id, self._owned_worker_id)
+                    or self.read_diagnostic is not None):
+                return
+            self.read_diagnostic = diagnostic
+            self._read_diagnostic_identity = identity
+
     def _notification_observation(self, host, controller, record):
         # The snapshot precedes this notification's send intent. Its send result,
         # receipt and future exit cannot be confirmed in its own frozen body.
@@ -169,13 +185,5 @@ class ManagedDirectProbe(DirectProbe):
                 if self._stop.wait(self._cycle):
                     return
         except Exception as error:
-            read = read_failure(error)
-            if read is not None:
-                diagnostic = {"read_failure": read}
-                exchange = host_failure(error)
-                if exchange is not None:
-                    diagnostic["host_failure"] = exchange
-                with self._observations_lock:
-                    self.read_diagnostic = diagnostic
-                    self._read_diagnostic_identity = (record.probe_id, record.worker_id)
+            self._retain_read_failure(error, record)
             return  # Accepted stays accepted; an unavailable read is not receipt.

@@ -295,6 +295,7 @@ class DirectProbe:
                 if self._stop.wait(self._cycle):
                     return
         except Exception as error:
+            self._retain_read_failure(error, record)
             try:
                 current = self.repository.read()
                 if current.status == "waiting":
@@ -308,6 +309,10 @@ class DirectProbe:
                 self._cleanup(host)
             except Exception:
                 pass  # The retained active/pending phase exposes unresolved cleanup.
+
+    def _retain_read_failure(self, error, record):
+        """Legacy waits do not retain process-local purpose diagnostics."""
+        return None
 
     def _observe_reviewer(self, controller, observation):
         """Legacy waits have no integrated result journal."""

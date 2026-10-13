@@ -717,6 +717,23 @@ class PublicMcpHost:
                                    operation=name, termination="confirmed")
         return value
 
+    def _validated_read_thread(self, arguments, validate, *, timeout=None):
+        """Retain settled exchange facts when its admitted JSON is rejected.
+
+        Transport failures bypass this semantic boundary unchanged. A returned
+        _json_call already requires confirmed helper/reader/pipe cleanup; merely
+        invoking it, or an earlier successful page, supplies no such proof.
+        """
+        value = self._json_call("read_thread", arguments,
+                                **({"timeout": timeout} if timeout is not None else {}))
+        try:
+            return validate(value)
+        except HostAdapterError as error:
+            if host_failure(error) is not None:
+                raise
+            raise HostAdapterError(error.code, boundary_reason="host_response_invalid",
+                                   operation="read_thread", termination="confirmed") from None
+
     def resolve_reviewer_ids(self) -> tuple[str, ...]:
         """Resolve only this parent's structured dispatches, never message text.
 
@@ -740,23 +757,24 @@ class PublicMcpHost:
                      "includeOutputs": False, "maxOutputCharsPerItem": 1}
         if cursor is not None:
             arguments["cursor"] = cursor
-        value = self._json_call("read_thread", arguments, timeout=remaining)
-        page = thread_page(value, self._parent_id)
-        matches = {reference: set() for reference in paths}
-        for item in value["turns"][0]["items"]:
-            if (not isinstance(item, dict) or item.get("type") != "subAgentActivity"
-                    or item.get("kind") not in ("started", "interacted")):
-                continue
-            path = item.get("agentPath")
-            if not isinstance(path, str) or path not in paths:
-                continue
-            _object(item, {"type", "id", "kind", "agentPath", "agentThreadId"},
-                    {"type", "id", "kind", "agentPath", "agentThreadId"})
-            _text(item["id"], 256)
-            matches[path].add(_uuid(item["agentThreadId"]))
-            if len(matches[path]) > 1:
-                _fail("reviewer_identity_ambiguous")
-        result = page, tuple((path, tuple(sorted(ids))) for path, ids in matches.items())
+        def validate(value):
+            page = thread_page(value, self._parent_id)
+            matches = {reference: set() for reference in paths}
+            for item in value["turns"][0]["items"]:
+                if (not isinstance(item, dict) or item.get("type") != "subAgentActivity"
+                        or item.get("kind") not in ("started", "interacted")):
+                    continue
+                path = item.get("agentPath")
+                if not isinstance(path, str) or path not in paths:
+                    continue
+                _object(item, {"type", "id", "kind", "agentPath", "agentThreadId"},
+                        {"type", "id", "kind", "agentPath", "agentThreadId"})
+                _text(item["id"], 256)
+                matches[path].add(_uuid(item["agentThreadId"]))
+                if len(matches[path]) > 1:
+                    _fail("reviewer_identity_ambiguous")
+            return page, tuple((path, tuple(sorted(ids))) for path, ids in matches.items())
+        result = self._validated_read_thread(arguments, validate, timeout=remaining)
         self._validated_dispatch_pages.append(result)
         return result
 
@@ -766,6 +784,12 @@ class PublicMcpHost:
         current_paths = set()
         cursor = None
         deadline = time.monotonic() + self._timeout
+
+        def reject(code):
+            # Called only for semantic guards on a fully returned fresh page,
+            # never for an expired budget or an unissued next-page read.
+            raise HostAdapterError(code, boundary_reason="host_response_invalid",
+                                   operation="read_thread", termination="confirmed")
 
         def read(paths, cursor=None):
             remaining = deadline - time.monotonic()
@@ -781,13 +805,13 @@ class PublicMcpHost:
             parent = page.snapshot
             if page_number == 0 and (parent.turn_id != original_turn
                     or parent.status != "inProgress" or parent.thread_status != "active"):
-                _fail("reviewer_identity_unavailable")
+                reject("reviewer_identity_unavailable")
             if parent.turn_id in seen_turns:
-                _fail("reviewer_identity_unavailable")
+                reject("reviewer_identity_unavailable")
             seen_turns.add(parent.turn_id)
             for path, identities in matches.items():
                 if len(identities) > 1:
-                    _fail("reviewer_identity_ambiguous")
+                    reject("reviewer_identity_ambiguous")
                 if identities:
                     resolved[path] = identities.pop()
                     if page_number == 0:
@@ -804,17 +828,17 @@ class PublicMcpHost:
             _fail("reviewer_identity_unavailable")
         identities = tuple(resolved.get(value, value) for value in self._reviewers)
         if self._parent_id in identities or len(set(identities)) != len(identities):
-            _fail("invalid_child_set")
+            reject("invalid_child_set")
         latest, current_ids_by_path = read(resolved)
         current = latest.snapshot
         if (current.turn_id != original_turn or current.status != "inProgress"
                 or current.thread_status != "active"):
-            _fail("reviewer_identity_unavailable")
+            reject("reviewer_identity_unavailable")
         for path, current_ids in current_ids_by_path.items():
             if path in current_paths and not current_ids:
-                _fail("reviewer_identity_unavailable")
+                reject("reviewer_identity_unavailable")
             if current_ids and current_ids != {resolved[path]}:
-                _fail("reviewer_identity_ambiguous")
+                reject("reviewer_identity_ambiguous")
         self._reviewers = identities
         return identities
 
@@ -827,14 +851,9 @@ class PublicMcpHost:
     def read_parent(self) -> ChildTurn:
         """Read the admitted parent directly; the host rejects self-wait."""
         try:
-            value = self._json_call("read_thread", {"threadId": self._parent_id, "hostId": "local",
-                                                   "turnLimit": 1, "includeOutputs": False,
-                                                   "maxOutputCharsPerItem": 1})
-            try:
-                return parse_read_thread(value, self._parent_id)
-            except HostAdapterError as error:
-                raise HostAdapterError(error.code, boundary_reason="host_response_invalid",
-                                       operation="read_thread", termination="confirmed") from None
+            return self._validated_read_thread({"threadId": self._parent_id, "hostId": "local",
+                "turnLimit": 1, "includeOutputs": False, "maxOutputCharsPerItem": 1},
+                lambda value: parse_read_thread(value, self._parent_id))
         except HostAdapterError as error:
             raise annotate_read_failure(error, "parent_state", 0)
 

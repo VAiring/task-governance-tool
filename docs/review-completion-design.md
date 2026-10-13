@@ -1029,15 +1029,23 @@ Neither current-state reader has a stale-snapshot fallback.
 
 `HostAdapterError` carries an optional closed purpose failure. Bootstrap/direct
 failure projection and `CallDiagnostics` preserve it through later timer cleanup.
-`ManagedDirectProbe` keeps a receipt read failure transiently after stopping
-observation; explicit inspection may project it as `read_diagnostic` for that
+`DirectProbe` offers a no-op failure-retention hook at the worker's failure
+boundary; `ManagedDirectProbe` captures the first closed parent-state or receipt
+read failure under its observation lock, bound to its owned probe/worker tuple.
+It survives stopping observation; explicit inspection may project it as `read_diagnostic` for that
 same owned worker only. No durable format changes or historical cause fabrication
 are introduced. Inspection reuses the existing validated observation's exact
 attempt/request/controller/direct identity and direct-thread ownership proof,
 then matches the failure's captured probe/worker tuple against that owned object.
 Unknown observation or changed identity suppresses the optional projection; a
 joined, correctly bound stopped worker remains eligible. No second state read or
-new worker-observation field is required.
+new worker-observation field is required. The shared semantic read boundary runs
+validation only after `_json_call` returns, which requires confirmed helper,
+reader and pipe cleanup. Rejected state/page/selected-record semantics retain
+those facts with `host_response_invalid`. Transport errors bypass semantic
+validation unchanged, so an unresolved cleanup cannot erase the original cause
+or be upgraded to confirmed termination. Generic exceptions and unissued reads
+do not acquire exchange facts from prior validated pages.
 Accepted sending, native commit and Task done remain unchanged;
 the failed receipt read does not resend or invoke finalization again.
 

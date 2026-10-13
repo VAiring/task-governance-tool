@@ -210,9 +210,10 @@ class ManagedHost(PublicMcpHost):
                      "includeOutputs": True, "maxOutputCharsPerItem": maximum}
         if cursor is not None:
             arguments["cursor"] = cursor
-        value = self._json_call("read_thread", arguments, timeout=remaining)
-        page = thread_page(value, self.parent_thread_id)
-        result = page, self._receipt_event(value, probe, maximum)
+        def validate(value):
+            page = thread_page(value, self.parent_thread_id)
+            return page, self._receipt_event(value, probe, maximum)
+        result = self._validated_read_thread(arguments, validate, timeout=remaining)
         self._validated_receipt_pages.append(result)
         return result
 

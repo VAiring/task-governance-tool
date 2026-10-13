@@ -362,7 +362,7 @@ class SetupManagedBackupRecoveryTests(unittest.TestCase):
                     "completed_writes": [],
                     "schema_from": None,
                     "schema_to": 28,
-                    "usage": {"status": "not_attempted", "schema_to": 5,
+                    "usage": {"status": "not_attempted", "schema_to": 6,
                               "planned_writes": [], "completed_writes": [], "error": None},
                     "usage_hooks": {
                         "status": "not_attempted", "planned_writes": [], "completed_writes": [],

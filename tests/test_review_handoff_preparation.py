@@ -125,8 +125,9 @@ class ReviewRequestLayoutTests(unittest.TestCase):
             self.assertNotIn(result_detail, prefixes[0])
         for rule in ("complete exact target under current project authority",
                      "Run the fixed read below",
-                     "If read fails", "mismatched, unavailable or truncated",
-                     "stop and report to the caller", "do not judge from incomplete information"):
+                     "24000 output tokens in both execution and outer return",
+                     "section/page/range", "Recover only missing fixed-target content",
+                     "report the insufficiency to the caller before judgment"):
             self.assertIn(rule, prefixes[0])
 
 
@@ -736,7 +737,7 @@ class ReviewerMaterialTests(PreparationFixture):
         options = ["--material-details"] if details else []
         return self.invoke("read", "--repo", str(self.root), "--packet", packet, *options)
 
-    def material_read(self, command, *, environment=None, posix=False, raw=None):
+    def material_read(self, command, *, environment=None, posix=False, raw=None, decode_text=True):
         if os.name == "nt" and not posix:
             import base64
             arguments = ["powershell.exe", "-NoProfile", "-NonInteractive", "-EncodedCommand",
@@ -746,7 +747,41 @@ class ReviewerMaterialTests(PreparationFixture):
             arguments = shlex.split(command)
         else:
             arguments = ["/bin/sh", "-c", command]
-        return subprocess.run(arguments, input=raw, capture_output=True, env=environment, check=False)
+        result = subprocess.run(arguments, input=raw, capture_output=True, env=environment, check=False)
+        # Existing content-oracle cases compare exact recovered bytes. Protocol
+        # and partial-page assertions use invoke() directly in delivery tests.
+        if result.returncode == 0 and decode_text:
+            try:
+                page = json.loads(result.stdout)
+            except (ValueError, UnicodeError):
+                page = {}
+            if isinstance(page, dict) and page.get("status") == "complete" and "text" in page:
+                result.stdout = page["text"].encode("utf-8")
+        return result
+
+    def inventory(self, material):
+        result = self.material_read(material["inventory_command"])
+        self.assertEqual(result.returncode, 0, result.stdout)
+        return json.loads(result.stdout)
+
+    def material_document(self, command):
+        chunks, position, identity, digest = [], 0, None, None
+        while command:
+            result = self.material_read(command, decode_text=False)
+            self.assertEqual(result.returncode, 0, result.stdout)
+            page = json.loads(result.stdout)
+            self.assertEqual(page["start"], position)
+            if identity is not None:
+                self.assertEqual(page["identity"], identity)
+                self.assertEqual(page["content_sha256"], digest)
+            identity, digest = page["identity"], page["content_sha256"]
+            chunks.append(page["text"].encode())
+            position = page["end"]
+            command = page["next_command"]
+        complete = b"".join(chunks)
+        self.assertEqual(len(complete), page["total_bytes"])
+        self.assertEqual(hashlib.sha256(complete).hexdigest(), digest)
+        return complete
 
     def test_complete_matching_authority_is_reused_without_detail_lookup_before_save(self):
         base = self.committed_fixture()
@@ -833,17 +868,17 @@ class ReviewerMaterialTests(PreparationFixture):
         self.assertEqual({k: v for k, v in normal.items() if k != "review_material"},
                          {k: v for k, v in detailed.items() if k != "review_material"})
         self.assertNotIn("unchanged_inventory", material)
-        self.assertEqual(set(details["unchanged_inventory"]), {"entries", "total", "returned", "truncated"})
+        self.assertNotIn("unchanged_inventory", details)
+        self.assertEqual(self.inventory(details)["status"], "list")
         for name in ("changes", "comparison_base", "dependency_revision", "collect_command"):
             self.assertEqual(material[name], details[name])
         for name in ("blob_command", "blob_batch_command", "diff_command", "dependency_command", "directory_command"):
             self.assertNotIn(name, material)
             self.assertIn(name, details)
         self.assertLess(len(normal_result.stdout), len(detailed_result.stdout))
-        for condition in ("immutable object identity", "incomplete/unknown", "mismatched", "tool-truncated",
-                          "Project reread obligations", "before/after sides", "inventory is omitted",
-                          "not proof of absence or irrelevance", "collect known dependency paths directly",
-                          "directory discovery at dependency_revision"):
+        for condition in ("immutable object identity", "incomplete/unknown", "truncat",
+                          "Project reread obligations", "before/after sides", "Known paths need no inventory",
+                          "Only explicit inventory_command"):
             self.assertIn(condition, " ".join(material["instructions"]))
         # Wrong-version, unknown, missing or truncated prior text cannot replace
         # the selected immutable body. Recovery returns it without successful siblings.
@@ -855,7 +890,7 @@ class ReviewerMaterialTests(PreparationFixture):
             self.assertNotIn(b"value = 3", recovered.stdout)
         missing = self.material_read(details["dependency_command"].replace("<project-relative-path>", "absent.py"))
         self.assertNotEqual(missing.returncode, 0)
-        self.assertEqual(missing.stdout, b"")
+        self.assertEqual(json.loads(missing.stdout)["status"], "incomplete")
         self.assertEqual(file_snapshot(self.root), before)
         (self.root / "source.py").write_bytes(b"value = 4\n")
         self.git("add", "--", "source.py")
@@ -878,21 +913,22 @@ class ReviewerMaterialTests(PreparationFixture):
         _, prepared = self.prepare(self.task(), options=["--kind", "git_snapshot"])
         (self.root / "checks/behavior.py").write_bytes(b"unreviewed ambient replacement\n")
         material = json.loads(self.displayed(prepared["handoff"]["packet_path"], details=True).stdout)["review_material"]
-        inventory = material["unchanged_inventory"]
-        self.assertEqual(set(inventory), {"entries", "total", "returned", "truncated"})
+        inventory = self.inventory(material)
+        self.assertEqual(inventory["status"], "list")
         self.assertEqual(material["dependency_revision"], base)
-        self.assertFalse(inventory["truncated"])
-        self.assertEqual(inventory["total"], inventory["returned"])
+        self.assertEqual(inventory["remaining"], 0)
+        self.assertEqual(inventory["total"], inventory["end"])
         listed = {row["path"]: row for row in inventory["entries"]}
         self.assertNotIn("source.py", listed)
         selected = [material["changes"][0]["after_object_id"],
                     listed["checks/behavior.py"]["object_id"], listed["support/values.py"]["object_id"]]
         before = file_snapshot(self.root)
         actual = self.material_read(material["blob_batch_command"], raw=("\n".join(selected) + "\n").encode())
-        expected = b"".join(oid.encode() + b" blob " + str(len(body)).encode() + b"\n" + body + b"\n"
-                            for oid, body in zip(selected, [b"value = 2\n", *sources.values()]))
         self.assertEqual(actual.returncode, 0, actual.stderr)
-        self.assertEqual(actual.stdout, expected)
+        batch = json.loads(actual.stdout)
+        self.assertEqual(batch["status"], "complete")
+        self.assertEqual(batch["object_ids"], selected)
+        self.assertEqual([batch["bodies"][oid]["text"].encode() for oid in selected], [b"value = 2\n", *sources.values()])
         self.assertEqual(file_snapshot(self.root), before)
 
     def test_collect_supplies_exact_deduplicated_bodies_and_patch_without_extra_parent_input(self):
@@ -1006,16 +1042,19 @@ class ReviewerMaterialTests(PreparationFixture):
                              (view["review_target"]["value"], "git_snapshot"))
         self.assertEqual(len({row["body_id"] for row in collected["dependencies"][:3]}), 1)
         digest = hashlib.sha256((self.root / packet).read_bytes()).hexdigest()
-        unique_bytes = sum(row["byte_count"] for table in ("bodies", "patches") for row in collected[table].values())
+        unique_bytes = max(sum(row["byte_count"] for row in collected[table].values()) for table in ("bodies", "patches"))
         # Exact capacity admits duplicate references without charging or reading
         # their patch twice. One byte less preserves explicit incomplete delivery.
         with mock.patch.object(collection, "TOTAL_BYTE_LIMIT", unique_bytes):
             bounded = collection.collect_material(self.root, packet, digest, io.BytesIO(b'["a.txt","b.txt","c.txt","AGENTS.md"]'))
-        self.assertEqual(bounded, collected)
+        # Imported source and physical fixture have different executable paths;
+        # the delivery and target mappings must still be identical.
+        self.assertEqual({k:v for k,v in bounded.items() if not k.endswith("_command")},
+                         {k:v for k,v in collected.items() if not k.endswith("_command")})
         with mock.patch.object(collection, "TOTAL_BYTE_LIMIT", unique_bytes - 1):
             limited = collection.collect_material(self.root, packet, digest, io.BytesIO(b'["a.txt","b.txt","c.txt","AGENTS.md"]'))
-        self.assertEqual(limited["status"], "incomplete")
-        self.assertEqual(limited["dependencies"][-1]["status"], "delivery_limit")
+        self.assertEqual(limited["status"], "partial")
+        self.assertTrue(any(row["diff"]["status"] == "range_required" for row in limited["changes"]))
 
     def test_collect_modes_rename_deleted_paths_and_whole_file_diffs(self):
         base = self.committed_fixture()
@@ -1072,13 +1111,25 @@ class ReviewerMaterialTests(PreparationFixture):
         self.assertNotEqual(result.returncode, 0)
         collected = json.loads(result.stdout)
         self.assertEqual(collected["status"], "incomplete")
-        self.assertEqual([row["status"] for row in collected["dependencies"]], ["too_large", "non_text", "unavailable"])
+        self.assertEqual([row["status"] for row in collected["dependencies"]], ["range_required", "non_text", "unavailable"])
         self.assertTrue(all("text" not in collected["bodies"][row["object_id"]] for row in collected["dependencies"]))
         self.assertEqual(collected["changes"][0]["after"]["status"], "provided")
         for path in ("large.md", "later.md"):
-            recovered = self.material_read(material["dependency_command"].replace("<project-relative-path>", path))
-            self.assertEqual(recovered.returncode, 0, recovered.stderr)
-            self.assertEqual(recovered.stdout, contents[path])
+            recovered = self.invoke("material", "--repo", str(self.root), "dependency", base, "--path=" + path)
+            parts = []
+            position = 0
+            while True:
+                self.assertEqual(recovered.returncode, 0, recovered.stderr)
+                page = json.loads(recovered.stdout)
+                self.assertEqual(page["start"], position)
+                parts.append(page["text"].encode())
+                position = page["end"]
+                if page["next_start"] is None:
+                    break
+                recovered = self.invoke("material", "--repo", str(self.root), "dependency", base,
+                                        "--path=" + path, "--start=" + str(position),
+                                        "--content-sha256=" + page["content_sha256"])
+            self.assertEqual(b"".join(parts), contents[path])
 
     def test_collect_rejects_invalid_input_changed_packet_and_target_without_bodies(self):
         self.committed_fixture()
@@ -1093,20 +1144,18 @@ class ReviewerMaterialTests(PreparationFixture):
         for raw in (b"", b"{}", b'[1]', b'["../SPEC.md"]', b'["HEAD:SPEC.md"]', b'\xff', b'["SPEC.md",null]'):
             result = self.invoke(*arguments, raw=raw)
             self.assertNotEqual(result.returncode, 0)
-            self.assertEqual(result.stdout, b"")
+            self.assertEqual(json.loads(result.stdout)["status"], "incomplete")
             self.assertNotIn(b"Traceback", result.stderr)
         self.assertEqual(file_snapshot(self.root), snapshot)
         (self.root / packet).write_bytes(raw_packet + b"\n")
         result = self.invoke(*arguments, raw=b"[]")
-        self.assertEqual(result.stdout, b"")
-        self.assertIn(b"review_packet_stale", result.stderr)
+        self.assertEqual(json.loads(result.stdout)["code"], "review_packet_stale")
         (self.root / packet).write_bytes(raw_packet)
         (self.root / "source.py").write_bytes(b"value = 3\n")
         self.git("add", "--", "source.py")
         result = self.invoke(*arguments, raw=b"[]")
         self.assertNotEqual(result.returncode, 0)
-        self.assertEqual(result.stdout, b"")
-        self.assertIn(b"review_target_mismatch", result.stderr)
+        self.assertEqual(json.loads(result.stdout)["code"], "review_target_mismatch")
 
     def test_collect_commit_add_delete_and_aggregate_budget(self):
         from task_governance_tool import review_material_collection as collection
@@ -1131,8 +1180,8 @@ class ReviewerMaterialTests(PreparationFixture):
             self.assertEqual(result["bodies"][side["object_id"]]["text"].encode(), self.git("cat-file", "blob", side["object_id"]))
         with mock.patch.object(collection, "TOTAL_BYTE_LIMIT", 25):
             bounded = collection.collect_material(self.root, packet, digest, io.BytesIO(b'["SPEC.md"]'))
-        self.assertEqual(bounded["status"], "incomplete")
-        self.assertEqual(bounded["dependencies"][0]["status"], "delivery_limit")
+        self.assertEqual(bounded["status"], "partial")
+        self.assertEqual(bounded["dependencies"][0]["status"], "range_required")
         self.assertLessEqual(sum(row.get("byte_count", 0) for row in bounded["bodies"].values()), 25)
 
     def test_directory_discovery_keeps_tree_coordinates_from_nested_project(self):
@@ -1222,7 +1271,10 @@ class ReviewerMaterialTests(PreparationFixture):
             self.assertEqual({(row["kind"], row["old_path"], row["new_path"]) for row in material["changes"]},
                              {("modify", "source.py", "source.py"), ("delete", "remove.py", None),
                               ("rename", "old.py", "new.py")})
-            inventory = {row["path"] for row in material["unchanged_inventory"]["entries"]}
+            listing = invoke("material", "inventory", "--packet=" + packet,
+                             "--packet-sha256=" + hashlib.sha256((project / packet).read_bytes()).hexdigest())
+            self.assertEqual(listing.returncode, 0, listing.stdout)
+            inventory = {row["path"] for row in json.loads(listing.stdout)["entries"]}
             self.assertIn("AGENTS.md", inventory)
             self.assertIn("only-sub.md", inventory)
             self.assertNotIn("only-root.md", inventory)
@@ -1231,7 +1283,7 @@ class ReviewerMaterialTests(PreparationFixture):
             for name, body in (("AGENTS.md", b"Nested rules.\n"), ("only-sub.md", b"Only here.\n")):
                 result = invoke("material", "dependency", revision, "--path=" + name)
                 self.assertEqual(result.returncode, 0, result.stderr)
-                self.assertEqual(result.stdout, body)
+                self.assertEqual(json.loads(result.stdout)["text"].encode(), body)
             absent = invoke("material", "dependency", revision, "--path=only-root.md")
             self.assertNotEqual(absent.returncode, 0)
             listing = invoke("material", "directory", revision, "--path=")
@@ -1300,15 +1352,14 @@ class ReviewerMaterialTests(PreparationFixture):
         detailed = self.material_read(material["recovery_command"])
         self.assertEqual(detailed.returncode, 0, detailed.stderr)
         material = json.loads(detailed.stdout)["review_material"]
-        inventory = material["unchanged_inventory"]
-        self.assertTrue(inventory["truncated"])
-        self.assertLess(inventory["returned"], inventory["total"])
-        self.assertLessEqual(inventory["returned"], preparation.INVENTORY_ENTRY_LIMIT)
+        inventory = self.inventory(material)
+        self.assertGreater(inventory["remaining"], 0)
+        self.assertLess(inventory["end"], inventory["total"])
+        self.assertLessEqual(inventory["end"], preparation.INVENTORY_ENTRY_LIMIT)
         self.assertLessEqual(len(encode(inventory["entries"])), preparation.INVENTORY_BYTE_LIMIT)
         self.assertNotIn("later/needed.py", [row["path"] for row in inventory["entries"]])
-        root = self.material_read(material["directory_command"].replace("<project-relative-directory>", ""))
-        self.assertEqual(root.returncode, 0, root.stderr)
-        self.assertIn(b"later", root.stdout)
+        root = self.material_document(material["directory_command"].replace("<project-relative-directory>", ""))
+        self.assertIn(b"later", root)
         actual = self.material_read(material["directory_command"].replace("<project-relative-directory>", "later"))
         self.assertEqual(actual.returncode, 0, actual.stderr)
         self.assertIn(b"needed.py", actual.stdout)
@@ -1335,7 +1386,7 @@ class ReviewerMaterialTests(PreparationFixture):
         self.git("update-index", "--chmod=+x", "AGENTS.md")
         _, prepared = self.prepare(self.task(), options=["--kind", "git_snapshot"])
         material = json.loads(self.displayed(prepared["handoff"]["packet_path"], details=True).stdout)["review_material"]
-        rows = {row["path"]: row for row in material["unchanged_inventory"]["entries"]}
+        rows = {row["path"]: row for row in self.inventory(material)["entries"]}
         self.assertEqual(rows["link-text"]["mode"], "120000")
         self.assertEqual(rows["submodule"]["mode"], "160000")
         self.assertTrue(set(rows).isdisjoint({"source.py", "renamed.py", "SPEC.md", "AGENTS.md"}))
@@ -1439,19 +1490,19 @@ class ReviewerMaterialTests(PreparationFixture):
         actual = self.material_read(material["dependency_command"].replace("<project-relative-path>", "SPEC.md"),
                                     environment=dict(os.environ, GIT_NO_LAZY_FETCH="0"))
         self.assertNotEqual(actual.returncode, 0)
-        self.assertEqual(actual.stdout, b"")
+        self.assertEqual(json.loads(actual.stdout)["status"], "incomplete")
         self.assertNotIn(b"promisor", actual.stderr.lower())
         self.assertNotIn(b"remote", actual.stderr.lower())
         self.assertEqual(file_snapshot(self.root), before)
-        # A batch exit zero is deliberately not a content-availability claim.
+        # Missing batch objects stay explicit, retaining complete siblings.
         available = material["changes"][0]["after_object_id"]
         body = b"value = 2\n"
         actual = self.material_read(material["blob_batch_command"],
                                     raw=(available + "\n" + missing + "\n").encode())
-        self.assertEqual(actual.returncode, 0, actual.stderr)
-        self.assertEqual(actual.stdout, available.encode() + b" blob " +
-                         str(len(body)).encode() + b"\n" + body + b"\n" +
-                         missing.encode() + b" missing\n")
+        self.assertEqual(actual.returncode, 1, actual.stderr)
+        batch = json.loads(actual.stdout)
+        self.assertEqual(batch["bodies"][available]["text"].encode(), body)
+        self.assertEqual(batch["bodies"][missing]["status"], "unavailable")
         recovered = self.material_read(material["blob_command"].replace("<object_id>", available))
         self.assertEqual(recovered.returncode, 0, recovered.stderr)
         self.assertEqual(recovered.stdout, body)
@@ -1493,8 +1544,17 @@ class ReviewerMaterialTests(PreparationFixture):
                 self.assertNotIn("import ", new_command)
                 old = self.material_read(old_command, raw=raw)
                 new = self.material_read(new_command, raw=raw)
-                self.assertEqual((new.returncode, new.stdout, new.stderr),
-                                 (old.returncode, old.stdout, old.stderr))
+                if short[0] == "batch":
+                    page = json.loads(new.stdout)
+                    self.assertEqual(page["status"], "incomplete")
+                    self.assertEqual(page["bodies"][after_id]["text"].encode(), self.git("cat-file", "blob", after_id))
+                    self.assertEqual(page["bodies"][missing]["status"], "unavailable")
+                    self.assertEqual(page["bodies"][base]["status"], "unavailable")
+                elif old.returncode == 0:
+                    self.assertEqual((new.returncode, new.stdout), (0, old.stdout))
+                else:
+                    self.assertNotEqual(new.returncode, 0)
+                    self.assertEqual(json.loads(new.stdout)["status"], "incomplete")
         self.assertEqual(file_snapshot(self.root), snapshot)
 
     def test_material_rejects_ambient_selectors_unsafe_paths_and_arbitrary_commands(self):
@@ -1522,7 +1582,7 @@ class ReviewerMaterialTests(PreparationFixture):
             with self.subTest(raw=raw):
                 result = self.invoke("material", "--repo", str(self.root), "batch", raw=raw)
                 self.assertNotEqual(result.returncode, 0)
-                self.assertNotIn(b'"ok"', result.stdout)
+                self.assertEqual(json.loads(result.stdout)["status"], "incomplete")
                 self.assertNotIn(b"Traceback", result.stderr)
         for raw in (oid.encode(), (oid + "\r\n").encode()):
             result = self.invoke("material", "--repo", str(self.root), "batch", raw=raw)
@@ -1542,20 +1602,15 @@ class ReviewerMaterialTests(PreparationFixture):
         (self.root / "link").write_bytes(b"ambient must not be read")
         actual = self.invoke("material", "--repo", str(self.root), "dependency", revision, "--path=link")
         self.assertEqual(actual.returncode, 0, actual.stderr)
-        self.assertEqual(actual.stdout, b"The value must be 2.\n")
+        self.assertEqual(json.loads(actual.stdout)["text"].encode(), b"The value must be 2.\n")
         environment = dict(os.environ, GIT_CONFIG_COUNT="1", GIT_CONFIG_KEY_0="diff.external",
                            GIT_CONFIG_VALUE_0="unwanted", GIT_NO_LAZY_FETCH="0")
-        with mock.patch.dict(os.environ, environment, clear=True), mock.patch.object(preparation.subprocess, "run") as run:
-            run.return_value.returncode = 0
-            preparation.read_material(self.root, SimpleNamespace(material_operation="diff", before=oid, after=oid))
-            self.assertEqual(dict(os.environ), environment)
-            self.assertEqual(run.call_args.kwargs["env"], safe_git_environment())
-            self.assertEqual({k: v for k, v in run.call_args.kwargs["env"].items() if k.startswith("GIT_")},
-                             {"GIT_OPTIONAL_LOCKS": "0", "GIT_NO_LAZY_FETCH": "1",
-                              "GIT_NO_REPLACE_OBJECTS": "1", "GIT_TERMINAL_PROMPT": "0"})
-            self.assertIn("--no-ext-diff", run.call_args.args[0])
-            self.assertIn("--no-textconv", run.call_args.args[0])
-            self.assertFalse(run.call_args.kwargs["shell"])
+        other = self.git("rev-parse", revision + ":AGENTS.md").decode().strip()
+        original_environment = dict(os.environ)
+        actual = self.material_read(preparation._material_command(self.root, "diff", oid, other), environment=environment)
+        self.assertEqual(actual.returncode, 0, actual.stdout)
+        self.assertEqual(actual.stdout, self.git("diff", "--no-ext-diff", "--no-textconv", oid, other, "--"))
+        self.assertEqual(dict(os.environ), original_environment)
 
     def test_commit_root_and_first_parent_material_ignore_new_head(self):
         root = self.committed_fixture()
@@ -1587,7 +1642,7 @@ class ReviewerMaterialTests(PreparationFixture):
         self.assertNotIn("unchanged_inventory", material)
         detailed = self.material_read(material["recovery_command"])
         self.assertEqual(detailed.returncode, 0, detailed.stderr)
-        inventory = json.loads(detailed.stdout)["review_material"]["unchanged_inventory"]
+        inventory = self.inventory(json.loads(detailed.stdout)["review_material"])
         self.assertIn("SPEC.md", [row["path"] for row in inventory["entries"]])
 
     def test_live_contract_and_generation_drift_and_opaque_targets(self):
@@ -1629,15 +1684,140 @@ class ReviewerMaterialTests(PreparationFixture):
         self.git("mv", "--", "source.py", "renamed.py")
         self.git("update-index", "--chmod=+x", "SPEC.md")
         _, prepared = self.prepare(self.task(), options=["--kind", "git_snapshot"])
-        result = self.displayed(prepared["handoff"]["packet_path"])
+        packet = prepared["handoff"]["packet_path"]
+        result = self.displayed(packet)
         self.assertEqual(result.returncode, 0, result.stdout)
         view = json.loads(result.stdout)
-        self.assertTrue(view["changed_paths_truncated"])
-        self.assertEqual(len(view["review_material"]["changes"]), 103)
-        rename = next(e for e in view["review_material"]["changes"] if e["kind"] == "rename")
+        self.assertEqual(view["status"], "partial")
+        raw = (self.root / packet).read_bytes()
+        digest = hashlib.sha256(raw).hexdigest()
+        self.assertTrue(json.loads(raw)["changed_paths_truncated"])
+        entries, start = [], 0
+        from task_governance_tool.review_delivery import fits
+        while True:
+            result = self.invoke("material", "--repo", str(self.root), "changes", "--packet=" + packet,
+                                 "--packet-sha256=" + digest, "--start=" + str(start))
+            self.assertEqual(result.returncode, 0, result.stdout)
+            page = json.loads(result.stdout)
+            self.assertTrue(fits(page))
+            self.assertEqual(page["status"], "list")
+            self.assertEqual((page["start"], page["total"]), (start, 103))
+            self.assertEqual(page["packet_sha256"], digest)
+            self.assertEqual(page["end"] - start, len(page["entries"]))
+            entries.extend(page["entries"])
+            if page["next_start"] is None:
+                break
+            start = page["next_start"]
+        self.assertEqual(len(entries), 103)
+        self.assertEqual(len({entry["ordinal"] for entry in entries}), 103)
+        rename = next(e for e in entries if e["kind"] == "rename")
         self.assertEqual((rename["old_path"], rename["new_path"]), ("source.py", "renamed.py"))
-        mode = next(e for e in view["review_material"]["changes"] if e["new_path"] == "SPEC.md")
+        mode = next(e for e in entries if e["new_path"] == "SPEC.md")
         self.assertEqual((mode["before_mode"], mode["after_mode"]), ("100644", "100755"))
+
+    def test_individual_budgets_fit_but_combined_transport_requires_split(self):
+        self.committed_fixture()
+        (self.root / "source.py").write_bytes(b'"' * 2000)
+        self.git("add", "--", "source.py")
+        self.git("commit", "--quiet", "-m", "Escaped body fixture")
+        (self.root / "source.py").write_bytes(b"\\" * 2000)
+        self.git("add", "--", "source.py")
+        _, prepared = self.prepare(self.task(), options=["--kind", "git_snapshot"])
+        packet = prepared["handoff"]["packet_path"]
+        digest = hashlib.sha256((self.root / packet).read_bytes()).hexdigest()
+        result = self.invoke("material", "--repo", str(self.root), "collect", "--packet=" + packet,
+                             "--packet-sha256=" + digest, raw=b"[]")
+        self.assertEqual(result.returncode, 0, result.stdout)
+        page = json.loads(result.stdout)
+        from task_governance_tool.review_delivery import fits
+        self.assertTrue(fits(page))
+        self.assertEqual(page["status"], "partial")
+        row, = page["changes"]
+        ids = [row[side]["object_id"] for side in ("before", "after")]
+        self.assertEqual(sum(len(self.git("cat-file", "blob", oid)) for oid in ids), 4000)
+        self.assertLessEqual(len(self.git("diff", "--no-ext-diff", "--no-textconv", *ids, "--")), 5000)
+        self.assertTrue(all(body["status"] == "range_required" and "text" not in body for body in page["bodies"].values()))
+        self.assertEqual(row["diff"]["status"], "range_required")
+        self.assertEqual(page["patches"], {})
+        for oid in ids:
+            body = self.invoke("material", "--repo", str(self.root), "blob", oid)
+            self.assertEqual(body.returncode, 0, body.stdout)
+            delivered = json.loads(body.stdout)
+            self.assertTrue(fits(delivered))
+            self.assertEqual(delivered["status"], "complete")
+            self.assertEqual(delivered["text"].encode(), self.git("cat-file", "blob", oid))
+
+    def test_real_large_ranges_collection_pages_and_resume_identity_are_read_only(self):
+        self.committed_fixture()
+        (self.root / "source.py").write_bytes(b"a" * 16000)
+        names = [f"deps/p{index:02}日本語.md" for index in range(22)]
+        (self.root / "deps").mkdir()
+        for index, name in enumerate(names):
+            (self.root / name).write_text(f"dependency {index}\r\n", encoding="utf-8", newline="")
+        self.git("add", "--", "source.py", "deps")
+        self.git("commit", "--quiet", "-m", "Large immutable fixtures")
+        (self.root / "source.py").write_bytes(("日本語" * 2500).encode())
+        self.git("add", "--", "source.py")
+        _, prepared = self.prepare(self.task(), options=["--kind", "git_snapshot"])
+        packet = prepared["handoff"]["packet_path"]
+        digest = hashlib.sha256((self.root / packet).read_bytes()).hexdigest()
+        material = json.loads(self.displayed(packet).stdout)["review_material"]
+        entry, = material["changes"]
+        before_snapshot = file_snapshot(self.root)
+        from task_governance_tool.review_delivery import fits
+
+        for action, selectors, arguments in (
+            ("blob", [entry["before_object_id"]], ["cat-file", "blob", entry["before_object_id"]]),
+            ("blob", [entry["after_object_id"]], ["cat-file", "blob", entry["after_object_id"]]),
+            ("diff", [entry["before_object_id"], entry["after_object_id"]],
+             ["diff", "--no-ext-diff", "--no-textconv", entry["before_object_id"], entry["after_object_id"], "--"]),
+        ):
+            expected = self.git(*arguments)
+            offset, parts, content_hash = 0, [], None
+            while True:
+                options = ["--content-sha256=" + content_hash] if content_hash else []
+                response = self.invoke("material", "--repo", str(self.root), action, *selectors,
+                                       "--start=" + str(offset), *options)
+                self.assertEqual(response.returncode, 0, response.stdout)
+                page = json.loads(response.stdout)
+                self.assertTrue(fits(page))
+                self.assertEqual(page["start"], offset)
+                self.assertEqual(page["content_sha256"], hashlib.sha256(expected).hexdigest())
+                self.assertLessEqual(len(page["text"].encode()), 5000)
+                parts.append(page["text"].encode())
+                self.assertEqual(b"".join(parts), expected[:page["end"]])
+                if page["next_start"] is None:
+                    break
+                offset, content_hash = page["next_start"], page["content_sha256"]
+            self.assertEqual(b"".join(parts), expected)
+            failed = self.invoke("material", "--repo", str(self.root), action, *selectors,
+                                 "--start=0", "--content-sha256=" + "0" * 64)
+            self.assertNotEqual(failed.returncode, 0)
+            self.assertEqual(json.loads(failed.stdout)["code"], "review_material_range_mismatch")
+
+        selection = encode(names)
+        start, selection_hash, seen = 0, None, []
+        while True:
+            options = ["--selection-sha256=" + selection_hash] if selection_hash else []
+            response = self.invoke("material", "--repo", str(self.root), "collect", "--packet=" + packet,
+                                   "--packet-sha256=" + digest, "--start=" + str(start), *options, raw=selection)
+            self.assertEqual(response.returncode, 0, response.stdout)
+            page = json.loads(response.stdout)
+            self.assertTrue(fits(page))
+            self.assertEqual((page["start"], page["total"]), (start, 23))
+            self.assertLessEqual(sum(row.get("byte_count", 0) for row in page["bodies"].values()), 5000)
+            self.assertLessEqual(sum(row.get("byte_count", 0) for row in page["patches"].values()), 5000)
+            seen.extend(row["path"] for row in page["dependencies"])
+            self.assertEqual(page["status"], "partial")
+            selection_hash = page["selection_sha256"]
+            if page["next_start"] is None:
+                break
+            start = page["next_start"]
+        self.assertEqual(seen, names)
+        invalid = self.invoke("material", "--repo", str(self.root), "collect", "--packet=" + packet,
+                              "--packet-sha256=" + digest, "--start=20", "--selection-sha256=" + selection_hash, raw=encode(names[::-1]))
+        self.assertEqual(json.loads(invalid.stdout)["code"], "review_material_range_mismatch")
+        self.assertEqual(file_snapshot(self.root), before_snapshot)
 
     def test_unavailable_response_or_git_material_returns_no_partial_view(self):
         task = self.task()
@@ -1973,24 +2153,24 @@ class SharedPatchDeliveryTests(unittest.TestCase):
             self.assertNotEqual(first, bodies.patch("g", "h"))
         self.assertEqual(read.call_count, 4)
         self.assertEqual(len(bodies.patches), 3)
-        self.assertEqual(collection.TOTAL_BYTE_LIMIT - bodies.remaining,
+        self.assertEqual(collection.TOTAL_BYTE_LIMIT - bodies.patch_remaining,
                          sum(row["byte_count"] for row in bodies.patches.values()))
 
     def test_failed_patch_has_no_shared_or_partial_text_and_keeps_status(self):
         from task_governance_tool import review_material_collection as collection
-        cases = ((b"long", 10, 3, "too_large"), (b"long", 3, 10, "delivery_limit"),
+        cases = ((b"long", 10, 3, "range_required"), (b"long", 3, 10, "range_required"),
                  (b"\xff", 10, 10, "non_text"), (b"\0", 10, 10, "non_text"))
         for raw, total, per_body, status in cases:
             with self.subTest(status=status), mock.patch.object(collection, "BODY_BYTE_LIMIT", per_body):
                 bodies = collection._Bodies(Path("unused"))
-                bodies.remaining = total
+                bodies.patch_remaining = total
                 with mock.patch.object(collection, "run_git_stream", side_effect=lambda repo, args, consume: consume(raw)) as read:
                     expected = {"format": "git_patch", "status": status}
                     self.assertEqual(bodies.patch("a", "b"), expected)
                     self.assertEqual(bodies.patch("a", "b"), expected)
                 read.assert_called_once()
                 self.assertEqual(bodies.patches, {})
-                self.assertEqual(bodies.remaining, total)
+                self.assertEqual(bodies.patch_remaining, total)
 
 
 class LegacyPacketPreparationTests(unittest.TestCase):

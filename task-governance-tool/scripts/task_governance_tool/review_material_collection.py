@@ -11,9 +11,10 @@ from task_governance_tool.artifact_manifest import (
     validate_artifact_path,
 )
 from task_governance_tool.git_snapshot import GitSnapshotError, run_git_stream, stream_tree_entries
+from task_governance_tool.review_delivery import TEXT_BUDGET, GUIDANCE, encode, fits, require_fit
 
-BODY_BYTE_LIMIT = 1024 * 1024
-TOTAL_BYTE_LIMIT = 4 * 1024 * 1024
+BODY_BYTE_LIMIT = TEXT_BUDGET
+TOTAL_BYTE_LIMIT = TEXT_BUDGET
 
 
 class _TooLarge(Exception):
@@ -24,13 +25,14 @@ class _Bodies:
     def __init__(self, repo):
         self.repo = repo
         self.remaining = TOTAL_BYTE_LIMIT
+        self.patch_remaining = TOTAL_BYTE_LIMIT
         self.values = {}
         self.patches = {}
         self._patch_ids = {}
         self._patch_pairs = {}
 
     def text(self, arguments):
-        limit = min(BODY_BYTE_LIMIT, self.remaining)
+        limit = BODY_BYTE_LIMIT
         payload = bytearray()
 
         def append(chunk):
@@ -41,7 +43,7 @@ class _Bodies:
         try:
             run_git_stream(self.repo, arguments, append)
         except _TooLarge:
-            return {"status": "too_large" if limit == BODY_BYTE_LIMIT else "delivery_limit"}
+            return {"status": "range_required"}
         except GitSnapshotError:
             return {"status": "unavailable"}
         try:
@@ -50,7 +52,6 @@ class _Bodies:
             return {"status": "non_text"}
         if "\0" in text:
             return {"status": "non_text"}
-        self.remaining -= len(payload)
         return {"status": "provided", "byte_count": len(payload), "text": text}
 
     def patch(self, before, after):
@@ -62,11 +63,13 @@ class _Bodies:
                 # table and equality index reference the same retained string.
                 patch_id = self._patch_ids.get(body["text"])
                 if patch_id is None:
+                    if body["byte_count"] > self.patch_remaining:
+                        self._patch_pairs[pair] = {"format": "git_patch", "status": "range_required"}
+                        return self._patch_pairs[pair]
                     patch_id = f"p{len(self.patches) + 1}"
                     self._patch_ids[body["text"]] = patch_id
                     self.patches[patch_id] = body
-                else:
-                    self.remaining += body["byte_count"]
+                    self.patch_remaining -= body["byte_count"]
                 body = {"status": "provided", "patch_id": patch_id}
             self._patch_pairs[pair] = {"format": "git_patch", **body}
         return self._patch_pairs[pair]
@@ -76,26 +79,36 @@ class _Bodies:
                "side": side, "mode": mode, "object_id": object_id, "body_id": None}
         if mode == "160000":
             return {**row, "status": "submodule_unavailable"}
-        if object_id not in self.values:
-            self.values[object_id] = self.text(["cat-file", "blob", object_id])
+        self.blob(object_id)
         return {**row, "body_id": object_id, "status": self.values[object_id]["status"]}
+
+    def blob(self, object_id):
+        if object_id not in self.values:
+            body = self.text(["cat-file", "blob", object_id])
+            if body["status"] == "provided":
+                if body["byte_count"] > self.remaining:
+                    body = {"status": "range_required"}
+                else:
+                    self.remaining -= body["byte_count"]
+            self.values[object_id] = body
+        return self.values[object_id]
 
 
 def _diff(bodies, before, after):
     sides = [side for side in (before, after) if side is not None]
-    if any(side["status"] != "provided" for side in sides):
+    if any(side["mode"] == "160000" for side in sides):
         return {"status": "source_unavailable"}
     if before is not None and after is not None:
         return bodies.patch(before["object_id"], after["object_id"])
     # A full addition/deletion is exactly the supplied body plus its operation.
     # Refer to it, without manufacturing an empty Git object or duplicating text.
-    return {"status": "provided", "format": "whole_file",
+    return {"status": sides[0]["status"], "format": "whole_file",
             "operation": "add" if after is not None else "delete", "body_id": sides[0]["body_id"]}
 
 
-def collect_material(repo, packet_path, packet_sha256, stream):
+def collect_material(repo, packet_path, packet_sha256, stream, *, start=0, selection_sha256=None, records_only=False):
     """Read only reviewer-selected paths plus every changed side/diff, once per blob."""
-    from task_governance_tool.review_handoff_preparation import _observe_material
+    from task_governance_tool.review_handoff_preparation import _observe_material, _material_command
 
     path = files._path(repo, packet_path)
     raw = files._read(path, files.PACKET_LIMIT)
@@ -113,9 +126,16 @@ def collect_material(repo, packet_path, packet_sha256, stream):
             validate_artifact_path(item)
     except (ArtifactManifestError, UnicodeError, ValueError, TypeError):
         files._fail("handoff_invalid_arguments")
+    selected = list(dict.fromkeys(selected))
+    selection_digest = hashlib.sha256(encode(selected)).hexdigest()
+    if selection_sha256 is not None and selection_digest != selection_sha256:
+        files._fail("review_material_range_mismatch")
     target = packet["review_target"]
     observed = _observe_material(repo, target)
     entries = build_artifact_entries(observed.before_leaves, observed.after_leaves)
+    total = len(entries) + len(selected)
+    if start < 0 or start > total:
+        files._fail("handoff_invalid_arguments")
     after_leaves = {leaf.relative_posix_path: (leaf.mode, leaf.object_id) for leaf in observed.after_leaves}
     changed = {entry.new_path for entry in entries if entry.new_path is not None}
     changed_paths = {name for entry in entries for name in (entry.old_path, entry.new_path) if name is not None}
@@ -132,7 +152,9 @@ def collect_material(repo, packet_path, packet_sha256, stream):
             files._fail(exc.code)
     bodies = _Bodies(repo)
     changes = []
-    for entry in entries:
+    # Retain a bounded page of complete mappings before attempting any content.
+    stop = min(start + 20, total)
+    for entry in entries[start:min(stop, len(entries))]:
         before = (bodies.source(entry.old_path, observed.comparison_base, "git_treeish", "before",
                                entry.before_mode, entry.before_object_id) if entry.old_path is not None else None)
         after = (bodies.source(entry.new_path, target["value"], target["kind"], "after",
@@ -140,7 +162,7 @@ def collect_material(repo, packet_path, packet_sha256, stream):
         changes.append({"ordinal": entry.ordinal, "kind": entry.kind,
                         "before": before, "after": after, "diff": _diff(bodies, before, after)})
     dependencies = []
-    for selected_path in dict.fromkeys(selected):
+    for selected_path in selected[max(0, start - len(entries)):max(0, stop - len(entries))]:
         leaf = after_leaves.get(selected_path)
         if leaf is None:
             dependencies.append({"path": selected_path, "revision": target["value"],
@@ -152,9 +174,51 @@ def collect_material(repo, packet_path, packet_sha256, stream):
                 target["kind"] if selected_path in changed else "git_commit", "dependency", *leaf))
     if files._read(path, files.PACKET_LIMIT) != raw:
         files._fail("handoff_file_changed")
-    rows = [*dependencies, *(row["diff"] for row in changes),
-            *(row[key] for row in changes for key in ("before", "after") if row[key] is not None)]
-    return {"status": "complete" if all(row["status"] == "provided" for row in rows) else "incomplete",
-            "review_target": target, "changes": changes, "dependencies": dependencies,
-            "bodies": bodies.values, "patches": bodies.patches,
-            "instructions": ["Only provided bodies/diffs are supplied. Read bodies[body_id] for each source and patches[patch_id] for each provided git_patch; each table supplies identical text once while preserving every path/revision/side mapping. A whole_file diff references its complete added/deleted body. Mode 120000 is link text, never followed. Apply the first read's reuse conditions and recovery_command (or supplied individual commands) to missing, mismatched, unknown, unavailable or tool-truncated material and newly discovered dependencies; do not collect successful siblings again. Complete/exit zero means delivery, not review coverage or PASS."]}
+    command = lambda action, *args: _material_command(repo, action, *args, records_only=records_only)
+
+    def result():
+        sources = [*dependencies, *(row[key] for row in changes for key in ("before", "after") if row[key] is not None)]
+        diffs = [row["diff"] for row in changes]
+        body_ids = {row["body_id"] for row in sources if row["body_id"] is not None}
+        patch_ids = {row["patch_id"] for row in diffs if "patch_id" in row}
+        end = start + len(changes) + len(dependencies)
+        complete = all(row["status"] == "provided" for row in sources + diffs)
+        failed = any(row["status"] not in ("provided", "range_required") for row in sources + diffs)
+        return {"status": "incomplete" if failed else "complete" if complete and start == 0 and end == total else "partial",
+                "review_target": target, "packet_sha256": packet_sha256, "selection_sha256": selection_digest,
+                "start": start, "end": end, "total": total, "remaining": total - end,
+                "changes_total": len(entries), "dependencies_total": len(selected),
+                "next_start": end if end < total else None,
+                "next_command": command("collect", "--packet=" + packet_path, "--packet-sha256=" + packet_sha256,
+                    "--selection-sha256=" + selection_digest, "--start=" + str(end)) if end < total else None,
+                "changes": changes, "dependencies": dependencies,
+                "bodies": {key: bodies.values[key] for key in sorted(body_ids)},
+                "patches": {key: bodies.patches[key] for key in sorted(patch_ids)},
+                "blob_command": command("blob", "<object_id>"),
+                "diff_command": command("diff", "<before_object_id>", "<after_object_id>"),
+                "instructions": "Repeat exactly the same selected-path JSON stdin for next_command. Every change precedes selected dependencies in stable order. Recover missing bodies by object_id and two-sided diffs by before/after IDs. Whole-file add/delete diffs reference that body. Mode 120000 is link text; 160000 requires supplied material. No successful sibling needs repetition. " + GUIDANCE}
+
+    output = result()
+    while not fits(output) and len(changes) + len(dependencies) > 1:
+        (dependencies if dependencies else changes).pop()
+        output = result()
+    if not fits(output):
+        # A single entry can have two independently admissible text groups but
+        # exceed the combined transport. Keep its selectors and split the reads.
+        for value in bodies.values.values():
+            if value["status"] == "provided":
+                value.clear()
+                value["status"] = "range_required"
+        bodies.patches.clear()
+        for row in changes:
+            for side in (row["before"], row["after"]):
+                if side is not None and side["status"] == "provided":
+                    side["status"] = "range_required"
+            if row["diff"]["status"] == "provided":
+                row["diff"].pop("patch_id", None)
+                row["diff"]["status"] = "range_required"
+        for row in dependencies:
+            if row["status"] == "provided":
+                row["status"] = "range_required"
+        output = result()
+    return require_fit(output)

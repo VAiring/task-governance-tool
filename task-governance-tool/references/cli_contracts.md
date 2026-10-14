@@ -2471,49 +2471,54 @@ Packets may omit it and remain unchanged; a supplied summary must pass closed
 validation. No parent transcription, second Packet read or Task-show lookup is
 needed to obtain the normal summary. Relevant investigation and questions remain
 permitted, and independent quality judgment remains required.
-`review_material` lists the complete Git delta (not the Packet's bounded list),
-immutable before/after object IDs and modes, comparison/dependency revisions,
-and a `collect_command` bound to the saved Packet. Normal read omits the
-unchanged-file inventory, not evidence of absence or irrelevance. Collect known
-dependency paths directly, without first requesting a listing. Replace its single placeholder
-with a JSON array of the dependency paths still needed (`[]` for none); all
-changed before/after bodies and diffs are included automatically. No parent
-selection or OID assembly is required. The returned `bodies` table supplies each
-blob once, with explicit path/revision/side references and outcomes in `changes`
-and `dependencies`. Whole-file add/delete diffs reference their complete body;
-two-sided diffs are Git patches. Use collection for the first required AGENTS,
-authority, source and test reads instead of automatically reading ambient copies
-first. Read governing text before judgment and follow its routes. Reuse an
-already complete body only when its immutable object identity or exact
-revision/path matches the current target mapping; omit such dependencies from
-collection. A filename, summary, prior review or unknown/incomplete delivery
-does not establish that match. The same fixed text can serve authority reading
-and review without another copy; project reread obligations still apply.
-`complete`/exit zero is delivery, not review coverage or PASS.
-`incomplete`/nonzero retains successful siblings but requires recovery of missing,
-unavailable, binary or oversized material (1 MiB per text, 4 MiB total). Tool
-truncation also requires recovery; newly discovered dependencies still need reads.
-Only when individual/additional retrieval or discovery is needed, run the
-returned `recovery_command`: it repeats the same validated read with optional
-`--material-details` and supplies a bounded `unchanged_inventory`, directory
-discovery at the exact dependency revision, individual read/diff commands and
-their complete quoting and recovery guidance. Inventory omissions do not prevent
-direct collection; unknown locations can be explored at that revision when needed.
-Recover affected material rather
-than collecting successful siblings again. Normal read retains all judgment,
-format and provenance information needed for save; the detailed read is not a
-normal prerequisite. Retrieval reuses
-the sanitized/no-fetch Git environment in a child,
-without changing your shell environment; missing objects remain unavailable.
-Use listed objects for changed snapshot files,
-base-commit paths for unchanged dependencies, and exact commit paths for commit
-targets. Delta, dependency and inventory paths are relative to the governed
-project, even below a Git worktree root; an empty directory selector names that
-project's root. Missing project files are not replaced by enclosing documents.
-Required submodule or unreadable material must be supplied before PASS.
-Diff/external targets return `requires_supplied_material`; no content binding
-is inferred from a saved fingerprint or substituted from Git. Existing manifest
-bounds apply without a partial list. No blob, patch or additional file is saved.
+`review_material` supplies fixed target/side/object mappings, `collect_command`,
+`changes_command`, `inventory_command` and conditional `recovery_command`.
+Use collection for the first needed AGENTS, authority, source and test reads.
+Replace only its JSON-array placeholder with dependency paths still needed
+(`[]` for none). Known paths need no inventory. Before/after bodies and diffs
+are automatic; follow the returned governing routes and discovered dependencies.
+Reuse only complete bodies whose immutable object ID or exact revision/path
+matches this target. A filename, summary or unknown/truncated delivery is not
+that match. Preserve required sides/diffs and project reread obligations.
+
+Bodies share an aggregate 5000-token allowance; diffs have a separate 5000.
+The helper conservatively charges UTF-8 bytes, not exact model tokens. It also
+bounds compact JSON, two wrapper layers and overhead to 24000 bytes. Execute
+one response per call with at least 24000 output tokens at both the execution
+tool and outer return. Do not batch/echo outputs. Smaller host caps or extra
+wrappers can still truncate and require recovery.
+
+Small targets remain a single complete display/collection. Oversized first reads
+return commands for context, material and current verification sections; fetch
+all required ranges before judging. The saved Packet/result stays unchanged.
+Large collections return whole mapping pages and explicit missing-text statuses,
+fixed selectors and individual commands. Continue with `next_command` and the
+same selected-path JSON stdin. Packet, target and selection mismatch fail closed.
+`changes_command` lists all changed entries in whole-entry pages. Only explicit
+`inventory_command` lists unchanged files, at most 20 entries or 4096 compact
+UTF-8 JSON-array bytes, also subject to the total response limit. Lists expose
+remaining counts and next commands; omitted paths remain in scope and directly
+retrievable. `--material-details` never forces an unchanged listing.
+
+Individual reads return JSON with identity, full-content hash, UTF-8
+`start`/`end` positions, total bytes, exact text and next command. Fetch only
+missing contiguous ranges of the same identity/hash, including giant single
+lines. A last range alone is not full content. Batch returns bounded bodies with
+per-ID outcomes and individual recovery. Directory uses the fixed dependency revision.
+Every path is governed-project relative; missing nested documents are not
+substituted from an enclosing root. Snapshot changed paths use listed objects;
+unchanged paths use the base commit. Commit paths use that exact commit.
+
+`list` means selectors only; `partial` means limited delivery or later pages;
+`incomplete` means unavailable material with successful siblings retained.
+`complete`/exit zero is delivery, never coverage or PASS. Missing, binary,
+gitlink, mismatched or tool-truncated material needs recovery or an insufficiency
+report before PASS. Use `recovery_command` only for additional individual
+commands, quoting rules or optional workspace guidance. Do not recollect
+successful siblings. Fixed Git disables fetch, replacements, locks, prompts,
+external diff and textconv without changing the caller environment. Opaque
+targets require supplied material and binding; no Git substitute is inferred.
+No blob, patch, dependency list or reading ledger is saved.
 Sanitized public `warnings` remain visible. Save/submit validation is unchanged.
 For ordinary Git reads, `verification_workspace` is only a short optional notice.
 When already-authorized independent verification needs files, the same

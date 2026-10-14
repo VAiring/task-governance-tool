@@ -53,18 +53,20 @@ TASK_COMMANDS = {
 }
 HELPER_COMMANDS = {
     ("continue",): ({"--task-id": 1, "--target-generation": 1, "--directory": 1}, 0),
-    ("read",): ({"--packet": 1, "--material-details": 0}, 0),
+    ("read",): ({"--packet": 1, "--material-details": 0, "--section": 1, "--start": 1, "--content-sha256": 1, "--packet-sha256": 1}, 0),
     ("save",): ({"--packet": 1, "--output": 1}, 0),
     ("submit",): ({"--packet": 1}, None),
     ("prepare", "target"): ({"--directory": 1, "--reviewers": 1, "--kind": 1, "--revision": 1}, 1),
     ("prepare", "receipt"): ({"--directory": 1, "--reviewers": 1, **RECEIPT}, 1),
     ("prepare", "recover"): ({"--directory": 1, "--reviewers": 1, "--expected-binding": 1, "--verification-receipt-id": 1}, 1),
-    ("material", "blob"): ({}, 1),
-    ("material", "batch"): ({}, 0),
-    ("material", "diff"): ({}, 2),
-    ("material", "dependency"): ({"--path": 1}, 1),
-    ("material", "directory"): ({"--path": 1}, 1),
-    ("material", "collect"): ({"--packet": 1, "--packet-sha256": 1}, 0),
+    ("material", "blob"): ({"--start": 1, "--content-sha256": 1}, 1),
+    ("material", "batch"): ({"--start": 1, "--content-sha256": 1}, 0),
+    ("material", "diff"): ({"--start": 1, "--content-sha256": 1}, 2),
+    ("material", "dependency"): ({"--path": 1, "--start": 1, "--content-sha256": 1}, 1),
+    ("material", "directory"): ({"--path": 1, "--start": 1, "--content-sha256": 1}, 1),
+    ("material", "collect"): ({"--packet": 1, "--packet-sha256": 1, "--start": 1, "--selection-sha256": 1}, 0),
+    ("material", "changes"): ({"--packet": 1, "--packet-sha256": 1, "--start": 1}, 0),
+    ("material", "inventory"): ({"--packet": 1, "--packet-sha256": 1, "--start": 1}, 0),
 }
 REPEATED = {"--unresolved-risk", "--state", "--review-profile", "--review-lens", "--review-method"}
 

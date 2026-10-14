@@ -639,154 +639,125 @@ caller attestation from qualifying Runner observation, waiver from execution,
 and missing/stale/incomplete evidence from success. It preserves independent
 quality judgment and legitimate investigation/questions; neither the summary nor
 its successful delivery authenticates execution or proves sufficiency or PASS.
-For Git, the existing manifest observer verifies the
-exact stable index fingerprint/base or canonical commit/first-parent (root:
-empty tree), with its existing object-presence, path, entry and size bounds.
-Normal material contains the complete delta as existing manifest entry fields,
-immutable before/after object IDs and modes, comparison base, dependency revision,
-`collect_command` and a conditional `recovery_command`. The default display omits
-the unchanged-file inventory and explicitly says that this is not absence or
-irrelevance. Known dependency paths can be collected directly without a listing.
-The latter is the same saved-Packet `read` with optional `--material-details`:
-it retains complete physical, target and live-context validation and supplies
-the bounded unchanged-file inventory, individual blob/batch/diff/path/directory commands, quoting rules and retrieval
-exceptions only when needed. It adds no normal prerequisite or format lookup;
-all information required for ordinary independent judgment and save remains in
-the default request/read pair. It does not change the saved Packet or result format.
-The detailed templates' short `material` invocation
-reuses the observer's sanitized Git environment inside the helper (including no lazy fetch,
-replacement refs, optional locks or prompts) without mutating the caller's
-environment. Host-specific single-quote substitution guidance preserves the
-actual dependency path inside the template's shell literal. PowerShell doubles
-the same delimiter character for U+0027 and U+2018 through U+201B; it does not
-normalize smart quotes to ASCII or escape unrelated lookalikes. Other path bytes
-remain unchanged. Missing objects are not fetched.
-No raw blob or diff is embedded
-in the Packet or retained. A bounded Packet path list does not bound this delta;
-overflow fails, never silently truncates. Snapshot changed files use the listed
-after objects (or are deleted); unchanged dependencies use the base commit.
-Commit dependencies use that immutable commit, never ambient HEAD/index/worktree.
-All manifest, dependency and inventory paths are relative to the governed
-project, including when it is below a Git worktree root. An empty directory
-selector names that project's root at the selected revision; directory results
-remain relative to the requested directory. Individual reads and collection
-resolve the same project subtree. A missing project document stays unavailable;
-an enclosing Git root's same-named document is never substituted.
-Only the conditional detailed display includes `unchanged_inventory`: bytewise ordered
-`entries` (`path`, `mode`, `object_id`), `total`, `returned` and `truncated` only.
-Its revision is the enclosing `review_material.dependency_revision`; the inventory
-does not repeat that revision or display the fixed count/byte limits.
-It streams that dependency revision's tree,
-excludes every old/new delta path, and returns at most 128 entries and 16,384
-UTF-8 bytes of compact entry-array JSON. It counts all remaining paths even
-after the prefix fills. No body, relevance inference, test-name heuristic or
-new persistent index is included. These are location hints, not proof that a
-blob exists or that all required material was selected or read. An omitted path
-remains directly collectible; an unknown location or further dependency can be
-discovered from the same exact revision when needed, without parent selection
-or a mandatory extra discovery step.
-In that conditional display, `directory_command` provides nonrecursive discovery at the same dependency
-revision (empty directory means root). Nested tree entries can be explored by
-the same template and path-quoting rule; paths in its result are directory-relative.
-Snapshot changes override that base listing, including deletion and old rename
-paths. Omission or tool truncation is explicit and must be recovered with
-narrower listings/sufficient output, or reported; it never bounds review scope.
-`blob_batch_command` uses the same safe-Git helper with `cat-file --batch`.
-Reviewers may send selected full blob IDs from the delta/inventory, one per stdin
-line followed by EOF, retaining each ID's path/side mapping. Its standard Git
-framing is the ID, type and byte count, LF, that many content bytes, then LF,
-in request order. Every response and complete delivery must be checked: a
-missing-object record may accompany exit zero, and a submodule is not a blob.
-Links remain link text, never followed. Output that cannot be delivered fully
-requires smaller/individual existing blob reads or an explicit insufficiency
-report. This aggregates known reads, not relevance selection or PASS judgment;
-new dependencies discovered later still require their own inspection.
-Required unavailable submodule/content or tool-truncated output must be recovered
-or reported before PASS. The observation is trusted-local and point-in-time;
-it does not lock state, certify review quality or replace submission revalidation.
+For Git, the existing manifest observer verifies the exact stable index
+fingerprint/base or immutable commit/first-parent (root: empty tree), retaining
+its path, object-presence, entry and manifest-size limits. Material selectors
+preserve every change's kind, ordinal, old/new path, mode and before/after
+object ID, comparison base and dependency revision. Snapshot changed files use
+after objects; deleted/renamed old paths remain absent. Unchanged dependencies
+use the base commit; commit dependencies use that exact commit. Never substitute
+ambient HEAD/index/worktree or an enclosing project's same-named document.
+Paths are governed-project relative, including nested Git projects. An empty
+directory selects that project's root; directory output is directory relative.
+Links are link text, never followed; required submodule material remains
+unavailable until supplied. Opaque targets require supplied material and binding.
 
-Use the existing collection as the first required AGENTS, applicable authority,
-source and test read when those complete, demonstrably target-bound bodies are
-not already available. Read governing bodies before judgment and follow their
-routes; no separate ambient authority read is an automatic prerequisite.
-A previously delivered complete body may be reused only when its immutable
-object identity or exact revision/path is established to match the current
-material mapping. A matching filename, current ambient file, summary or earlier
-review is not that evidence. Unknown, mismatched, missing or tool-truncated
-material stays a retrieval obligation. Reuse the same matched text for authority
-reading and review; changing its purpose does not require another copy. Project
-reread obligations at genuine boundaries remain in force, and each reviewer
-still independently reads and judges every applicable rule and required artifact.
-No caller hash calculation, new attestation input or reading ledger is added.
+Delivery has two independent **5000-token allowances**: the aggregate unique
+before/after and selected dependency body text, and the unique patch text.
+These are not per-file allowances or a combined body-plus-diff allowance.
+The implementation charges original UTF-8 bytes as a conservative token upper
+bound for byte-tokenized model text, not characters or an exact model-token
+measurement. It introduces no tokenizer dependency or measured savings claim.
+A whole-file addition/deletion diff refers to the already delivered body and
+operation without duplicating its text; that body is charged once to the body
+allowance. Identical blobs share their immutable ID; patches share only after
+complete byte equality, including headers and line endings. Patch IDs are
+response-local. A body that exceeds its allowance does not consume the separate
+patch allowance or prevent a bounded patch from being supplied.
 
-After the unchanged first read and reviewer-owned dependency selection,
-`collect_command` supplies a host-native stdin invocation bound to the saved
-Packet's SHA-256. Replace only its placeholder with a UTF-8 JSON array of
-selected project-relative dependency paths still needed (`[]` for none); omit
-dependencies already held completely with the matching identity above. The parent gains no
-input or selection step. All changed before/after bodies and diffs are automatic;
-no caller-built OID list, repeated long invocation or source body in the first
-read is needed. The command revalidates the physical complete Packet and its
-digest, reuses the exact Git target observer, and rechecks Packet bytes before
-delivery. It neither queries Task state again nor replaces first-read/live-submit
-validation. An opaque target has no collect command.
+Every response also obeys a separate 24000-byte conservative transport allowance:
+compact UTF-8 JSON plus LF, serialized as an execution `output` string and again
+as an outer `text` string, plus 1024 bytes reserved for wrapper metadata.
+Instructions, selectors, dependencies, JSON escaping and next commands count.
+The generated procedure requests at least 24000 output tokens at both the
+execution tool and outer return, one response per call without echoing or
+batching. This model does not guarantee delivery through smaller host caps or
+additional wrappers; actual tool truncation is an incomplete delivery to recover.
+Even when both text groups fit, combined wrapper overflow switches to a bounded
+mapping page and individual body/diff responses, preserving both allowances.
+No helper emits a prefix that falsely claims to be its complete response.
 
-Collection returns transient UTF-8 JSON with `review_target`, the complete
-`changes`, selected `dependencies`, `bodies`, `patches`, `status` and recovery instructions.
-Each change has `ordinal`, `kind`, `before`, `after` and `diff`; absent sides are
-null. Path, mode and object ID occur on their source side rather than being
-repeated on the enclosing change. The first read's manifest remains unchanged.
-Each present changed side and dependency preserves `path`, `revision`,
-`revision_kind`, `side`, `mode`, `object_id`, `body_id` and `status`. Before sides
-use the observed comparison treeish; after sides use the exact target kind/value
-(a snapshot fingerprint is explicitly not a commit). Unchanged dependencies use
-the base/exact commit, changed ones its after side; removed or renamed old paths
-are `absent_at_target`, never resurrected from the base. Duplicate selected paths
-collapse in first-selection order. Bodies are keyed by immutable blob ID, so
-identical content is supplied once without losing any path/revision/side mapping.
-`provided` bodies include exact UTF-8 text and original byte count, preserving
-CRLF and missing final newline. Links are text, submodules remain unavailable.
-Two present supplied sides receive the existing safe Git blob patch. Each
-provided `git_patch` diff has a `patch_id` into the same response's `patches`
-table, whose rows contain `status`, exact `text` and `byte_count`. Complete,
-byte-identical patches share one row, including headers and line endings;
-different patches never share merely because their hunks or source text match.
-IDs are response-local, not persisted identities. Unavailable patches retain
-their inline status without a reference. Reading either table is one direct
-lookup, without another selection, command, calculation or patch reconstruction.
-This removes repeated source attributes in ordinary deliveries; patch sharing
-adds savings only when identical patches recur, with a small table/reference
-overhead for unique patches. It establishes no token, latency or quality gain.
-A full
-addition/deletion has `format=whole_file`, its operation and a reference to the
-complete supplied body; it does not manufacture an empty object or duplicate
-the body. Modes/renames remain explicit in each change independently of its diff.
+Small first reads retain the ordinary complete independent display. Oversized
+reads return `status=partial` with fixed commands for context, material guidance
+and current verification evidence; workspace guidance is optional. Each section
+is a complete JSON document delivered as contiguous UTF-8 byte ranges if needed.
+The saved Packet is unchanged. Context retains every applicable field except
+the already excluded parent receipt command; current verification evidence is
+separate from that static context. Its observation time is not part of a paged
+content digest. Each section read repeats complete Packet, target and public
+live-context validation. Packet SHA-256 and section/content digests reject mixed
+or changed pages. Workspace prepare/cleanup guidance is one bounded response,
+never split across changing workspace handles. All required context and result
+rules must be received before judgment/save; a navigation response is not them.
 
-The transient collector accepts at most the existing 16 MiB manifest byte bound
-of JSON input and validates every path before material reads. Delivery holds at
-most 1 MiB per text body/patch and 4 MiB total supplied unique text bytes; these are
-transport limits, not review-scope limits. Oversized text is `too_large` or
-`delivery_limit`, invalid UTF-8/NUL data is `non_text`, failed reads are
-`unavailable`, and gitlinks are `submodule_unavailable`; an undeliverable side
-makes its diff `source_unavailable`. No truncated body is supplied. Missing
-changed objects may instead fail the existing target observer before any output.
-Every selected path and change retains its outcome. `status=complete` and exit
-zero mean complete material delivery only, not sufficient dependency selection,
-reading or PASS; any unavailable row gives `incomplete` and nonzero with available
-siblings retained. Invalid input, Packet drift, or target-observation failure
-returns nonzero with the existing sanitized material diagnostic and no body.
-Tool-level truncation also requires recovery. Reuse complete provided bodies
-under the identity/completeness rule above, preserving both changed sides and
-the diff. Use `recovery_command` when individual reads, discovery or recovery
-are needed; then retrieve only affected material or newly discovered dependencies
-instead of collecting successful siblings again. The detailed display retains
-the same current-context rejection and never makes an old body current.
-No body, diff, dependency list or reading ledger is
-persisted to the Packet or database. No relevance inference, mandatory config,
-supervisor, fixed review-roundtrip count or token-saving guarantee is added.
+The first read provides `collect_command`, `changes_command` and an explicit
+`inventory_command`. `--material-details` supplies individual retrieval and
+quoting guidance, not an unchanged inventory. Only `material inventory` lists
+unchanged locations. It streams the fixed dependency tree, excludes all old/new
+changed paths, and returns whole entries in Git byte order up to **20 entries
+or 4096 compact UTF-8 JSON-array bytes**, whichever comes first, subject also
+to the total response allowance. `start`, `end`, `total`, `remaining`,
+`next_start` and a fully bound `next_command` expose every omitted entry.
+`material changes` similarly pages complete changed entries at the same Packet
+digest and target. Listing is explicitly `status=list`, never relevance,
+availability or scope exclusion. Known paths are directly collectible without
+listing; unknown locations may use the fixed-revision directory command.
 
-`material --repo <root>` accepts only `collect --packet=<path>
---packet-sha256=<digest>`, `blob <full-object-id>`, `batch`,
+Collection accepts the existing bounded 16 MiB UTF-8 JSON array of validated
+project-relative selected dependencies. Duplicate paths collapse in first-input
+order. It returns changed entries first, then selected dependencies, with
+explicit page coordinates, total counts, Packet digest and selection digest.
+Continuation repeats the same selected-path stdin with the generated command;
+a changed selection or target is rejected. At most 20 mappings enter a page,
+and whole mappings are removed before output if their combined response is too
+large. A single overlarge mapping retains its exact selectors and reports
+`range_required` before switching to individual reads. No path is silently
+dropped from the complete paged sequence.
+
+Each change retains `ordinal`, `kind`, `before`, `after` and `diff`;
+absent sides are null. Sources retain path, revision, revision kind, side, mode,
+object ID, body ID and delivery status. `bodies` and `patches` contain exact
+provided UTF-8 text and original byte counts, preserving CRLF and missing final
+newline. Gitlink, missing, binary and absent-at-target statuses remain explicit.
+Successful siblings remain usable. `complete` means the full requested
+collection was delivered in one response; `partial` means pages/ranges remain
+or this is a later page; `incomplete` means unavailable material and returns
+nonzero. A valid bounded page returns zero without implying full delivery.
+
+Individual blob/diff/dependency/directory reads return bounded JSON with fixed
+`identity`, full-stream `content_sha256`, `start`, `end`, `total_bytes`,
+exact `text`, `next_start` and `next_command`. Byte intervals are [start,end),
+never split UTF-8 code points, and support huge files and single lines.
+A subsequent range must match the retained digest. Reassemble only contiguous
+ranges of the same identity/hash; the last page alone is not a full document.
+The helper hashes and validates the full stream while retaining only the
+requested window. Invalid UTF-8/NUL, missing content, invalid offsets and digest
+mismatch fail closed with sanitized failure JSON before text output. Batch
+accepts full blob IDs on bounded stdin and returns bounded body pages under the
+same aggregate body allowance, with per-ID outcomes and individual recovery.
+
+All material calls retain safe Git isolation: no fetch, replacement refs,
+external diff/textconv, optional locks or prompts. Named path arguments preserve
+empty roots; host-native shell literals preserve punctuation. PowerShell
+substitution doubles the same single-quote delimiter U+0027 or U+2018–U+201B,
+without normalizing smart quotes. No caller environment is changed.
+Packet bytes are rechecked before collection/list output, and submission retains
+its existing live validation. This trusted-local observation is not a lock.
+
+Use collection for the first required governing/source/test reads. Reuse a
+previous complete body only when its immutable object identity or exact
+revision/path matches the current mapping. Filename, summary, previous review
+or unknown/truncated delivery is insufficient. Preserve required before/after
+sides and diffs, follow newly discovered dependencies, and recover only missing
+ranges or material. Project reread obligations remain. Listing, partial delivery,
+exit zero and complete transport never establish review coverage or PASS;
+unrecoverable material requires a precise insufficiency report and next action.
+No body, patch, dependency list or reading ledger is saved in the Packet, DB or
+cache. Save/registration, review judgment, completion, permissions and usage
+attribution are unchanged.
+
+`material --repo <root>` accepts only `collect`, `changes` or `inventory` with
+`--packet=<path> --packet-sha256=<digest>`, `blob <full-object-id>`, `batch`,
 `diff <before-full-id> <after-full-id>`, `dependency <full-revision>
 --path=<project-relative-path>`, or `directory <full-revision>
 --path=<project-relative-directory>`. The emitted commands include the actual
@@ -795,24 +766,27 @@ additional normal help/guide read or caller-built Python program is needed. The 
 lowercase SHA-1/SHA-256 selectors come from the material display, not HEAD,
 abbreviations or worktree paths. Dependency paths reuse manifest path safety;
 the directory-only empty path names the root, including on PowerShell 5.1.
-The helper permits no arbitrary Git options or operation. Diff always disables
-external diff and text conversion. It does not reselect or attest a target:
-the existing `read` comparison and final registration checks remain controlling.
-`batch` streams validated full IDs from stdin (LF/CRLF or a final unterminated
-line), without a new count cap or retained body. Invalid selectors, paths or
-input fail nonzero; a failure after a batch prefix does not make that prefix
-complete. Outside `collect`, successful Git execution forwards its raw bytes/exit status, not a
-JSON success envelope or a content-availability assertion. Git's batch missing
-and non-blob records still require inspection even on exit zero. No body is
-saved, no parent environment is changed, and no network or Git write is added.
+All material actions accept `--start` for their documented entry or byte
+coordinate. Collection continuation binds `--selection-sha256`; batch and text
+ranges bind `--content-sha256`. The helper permits no arbitrary Git options or
+operation. Diff always disables external diff and text conversion. It does not
+reselect or attest a target: the existing `read` comparison and final
+registration checks remain controlling. `batch` validates the complete bounded
+stdin of full IDs (LF/CRLF or a final unterminated line) before emitting a page;
+missing and non-blob objects remain explicit per-ID outcomes. Every material
+action emits the bounded JSON described above, not raw Git output. Invalid
+selectors, paths or input fail nonzero with sanitized JSON and no text prefix.
+No body is saved, no parent environment is changed, and no network or Git write
+is added.
 
 Diff-fingerprint/external targets instead return `requires_supplied_material`
 with no Git-derived delta. The caller must provide complete material and evidence
 binding it to the exact value; display success is not that evidence. The generated
 request and read output are self-contained together. The request assigns the
 independent role under current project authority, supplies fixed read/save, and
-requires stopping and reporting failed, mismatched, unavailable or truncated
-first-read output before judgment. The existing read's `result_instructions`
+requires recovery of missing fixed-target content after incomplete delivery,
+and reporting the insufficiency before judgment if identity or complete recovery
+cannot be established. The existing read's `result_instructions`
 owns whole-target judgment, routes to material and verification guidance, and
 supplies format/provenance/Finding declarations plus fixed-save, acknowledgement,
 uncertain-outcome and reviewer permission rules. No extra normal read, argument

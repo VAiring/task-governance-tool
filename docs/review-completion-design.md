@@ -363,101 +363,57 @@ result-format rules. Host-native quoting, UTF-8 data carriers and the
 existing invocation arguments remain unchanged. Focused tests compare the
 common opening across cases and retain native command/Packet/result bindings;
 this layout is not an observation of host prompt caching.
-`_review_material` reuses `artifact_manifest.py`
-observers and entry builder, without another fingerprint algorithm, to return
-the complete immutable-object delta and dependency/read command templates.
-Only when `material_details` is requested, the same module streams the immutable dependency revision through the existing
-`git_snapshot.stream_tree_entries`, excluding delta paths and retaining only a
-count/byte-bounded inventory prefix while counting omitted entries. The inventory
-returns only `entries`, `total`, `returned` and `truncated`, sharing its revision
-with the enclosing `dependency_revision`. The existing count/byte constants
-still bound collection but are not repeated in the display. It does not
-infer relevance, scan the worktree or retain blob content. Default read neither
-builds nor emits this inventory; its guidance makes omission explicit and routes
-known paths directly to collection. The additional
-directory-list and `cat-file --batch` templates reuse `_material_command`:
-it now emits short calls to the existing helper's closed `material` operation.
-Discovery and selected multi-blob reads keep the existing safe-Git environment.
-Batch output keeps Git's
-per-object framing and missing/non-blob outcomes, not a new success assertion.
-Generated guidance preserves path/side identity, bounded-display recovery,
-snapshot overlay and later dependency discovery. Inventory and bodies never
-enter the saved Packet or DB; save/submit and reviewer isolation are unchanged.
-The same module's `read_material` dispatches collection to
-`review_material_collection.py` and retains five fixed raw reads: blob, batch,
-diff, dependency and directory. Those raw reads reuse `completion.FULL_GIT_OBJECT_ID`,
-manifest path validation and `completion.safe_git_command/safe_git_environment`;
-no configurable runner or stored wrapper is introduced. Named `--path=` keeps
-an empty root argument intact on PowerShell 5.1.
-Dependency and directory selectors use `<revision>:./<validated-path>` under
-the governed `-C` directory. An empty directory selects that project's tree;
-`ls-tree --full-tree` then lists that already selected directory, with paths
-relative to it. Inventory and collection use the shared project-scoped tree
-stream, so all retrieval forms exclude enclosing same-named documents and
-preserve absence. Object-ID blob/batch reads retain their exact selectors.
-Batch validates each bounded
-ID line before forwarding it to `cat-file --batch`, streams output directly,
-and closes/reaps the child, terminating it on invalid input or interruption.
-It retains no bodies or ID list and adds no batch-count cap. A stream failure
-returns nonzero with a sanitized diagnostic, never a JSON success envelope
-appended to Git bytes; a previously delivered prefix is not complete. Individual
-reads forward the fixed Git process's raw output and exit. No Task query,
-Packet mutation, storage connection, body persistence or permission change is
-added to material retrieval. The already generated immutable selectors and
-existing read/submit checks remain the binding boundary.
-The collector shares `_observe_material` with the first read instead of
-reimplementing fingerprint capture. The first read adds one host-native
-`collect_command`, embedding the physical Packet path and exact raw-byte digest;
-only the reviewer-selected JSON path array remains a placeholder. Collection
-reuses complete-Packet validation, its unchanged-file check, and manifest path
-safety. The observer's changed after-leaves and a streamed immutable dependency
-tree resolve only selected paths, independently of the bounded inventory. Changed
-old/new paths suppress base lookup, preserving snapshot overlays and deletions;
-the shared tree reader keeps nested project coordinates. No parent input or new
-public Task query is added.
-`_Bodies` deduplicates blob IDs in memory while source rows retain path, revision,
-kind, side and mode. Changed rows retain ordinal/kind and before/after/diff,
-without duplicating source fields at the enclosing level. Fixed `run_git_stream` calls inherit sanitized Git and
-bounded timeout/cleanup. Per-text and aggregate byte budgets bound retention;
-oversized/failed/binary records are explicit, with no partial text. Git patches
-use the existing no-external-diff/no-textconv operation. `_Bodies` reuses a
-before/after blob pair's outcome, and indexes complete patch text by exact
-equality into a response-local `patches` table. Provided diffs reference that
-table once; unavailable outcomes stay inline. A different pair may share a row
-only after complete bounded retrieval establishes equality, refunding the
-duplicate text's byte charge. Each unique emitted text is charged once; a
-budget-limited read remains unavailable even if unobserved text might duplicate
-an existing patch. No hash approximation, fragment graph or new caller work is
-introduced. Whole-file add/delete
-diffs reference the provided body and operation; no temporary files or Git objects
-are written. All rows and byte-preserving UTF-8 bodies are emitted together as
-transient JSON after final Packet validation. Available siblings remain usable
-when another row fails; unchanged raw operations recover large or unavailable
-material and discover later dependencies. Default `read_for_reviewer` projects
-the complete target data, normal collect invocation and reuse rules,
-replacing individual command templates and their detailed instructions with
-one fully bound `recovery_command`. That command selects `--material-details`
-on the same read, retaining all physical, exact-target and live-context checks.
-Result templates, applicable format/provenance instructions and warnings remain
-in both projections, so ordinary save requires no extra lookup. The detailed
-view adds the bounded inventory and restores the existing five raw templates
-and their complete guidance. Unknown locations use conditional directory
-discovery at the fixed dependency revision; the inventory never restricts
-collection or determines relevance.
-The owning specification defines
-statuses/limits; these never substitute for review scope, current-state checks,
-or independently reading and judging all necessary material. Nothing is stored
-in a Packet, database, cache or reading ledger. The generated request delegates
-the first required governing/source/test reads to collection, unless matching
-complete bodies are already available. Its existing path/revision/object/side
-mappings support reuse across authority reading and review; they do not prove
-that a reviewer received a full body. Reviewers exclude already-held, matching
-dependencies from the ordinary path selection and use conditional individual
-reads for incomplete or later material. No new reuse flag, hash calculation,
-caller-built identity list, relevance selector or mutable-file comparison is
-introduced. Missing identity or complete delivery cannot justify reuse, and
-project reread obligations retain their force. Save/wait/submit/completion
-are unchanged.
+`_review_material` reuses artifact observers and the complete entry builder.
+Normal read and `--material-details` emit collection/changes/inventory commands;
+neither traverses an unchanged inventory. Only explicit inventory retrieval
+streams the dependency tree, excludes changed paths and counts omitted entries.
+
+`review_delivery.py` owns UTF-8 serialization, text allowance, two-layer JSON
+transport measurement and range formatting. Its Git reader uses existing safe
+Git timeout/cleanup, incrementally validates full-stream UTF-8/NUL and hashes all
+bytes, retaining only the requested window plus a code-point boundary margin.
+It emits nothing before validation. The full-stream hash rejects mixed resumed
+ranges, including a diff changed by configuration. The specification owns limits.
+
+`review_read_delivery.py` bounds the first-read envelope. Small displays remain
+one response. Overflow routes to separately validated context, material and
+verification sections, without mutating the Packet. Stable content hashes bind
+their ranges; verification observation time is outside its section digest.
+Workspace guidance must fit whole because its prepare/cleanup pair has a fresh
+handle. Paged context is original JSON text, never a summary.
+
+`review_material_reads.py` owns fixed individual/list operations. Full object
+IDs and path validation remain closed. Dependency/directory use
+`<revision>:./<path>` under the governed project; empty directory selects that
+project root. Changed and explicit unchanged lists preserve whole entries,
+stable offsets, Packet digest and exact target. Unchanged lists also apply
+their array byte/count caps before the total transport cap. Batch validates
+bounded full-ID stdin and emits bounded bodies with per-ID outcomes and recovery.
+Records-only admission accepts only the corresponding fixed read arguments.
+No configurable Git runner, output path or permission change is introduced.
+
+Collection retains path/side/revision/mode and absence rules. It validates bounded
+selected-path JSON, shares `_observe_material`, and resolves unchanged paths
+through the project-scoped tree stream. Changed old/new paths suppress base
+lookup. Its combined sequence is changed entries followed by deduplicated
+dependencies; continuation binds the normalized selection digest and Packet.
+At most 20 complete mappings enter a page, then the page shrinks against actual
+serialized transport size. Final Packet bytes are rechecked.
+
+`_Bodies` accounts unique emitted body and patch text separately. Exact complete
+patch equality can reuse a response-local patch even after its allowance is
+exhausted. Blob IDs identify bodies; patch pairs cache outcomes. An overlarge
+body does not block a bounded patch. Whole-file additions/deletions reference
+their body and operation. If one mapping's text groups fit separately but not
+together, its selectors remain and text is marked range-required. Successful
+siblings remain usable; partial text is never labeled as a complete body.
+
+Immutable mapping supports reuse across governing-rule reading and review only
+for fully delivered matching content. Missing ranges, discovered dependencies
+and actual reread boundaries remain obligations. Generated guidance covers both
+execution and outer-return budgets, one response per call and recovery. There
+is no content persistence, raw-output cache, reading ledger, relevance inference
+or new public Task query. Save/wait/submit/completion are unchanged.
 The child inherits no Git overrides and cannot lazily fetch missing material.
 Generated host-specific literal-substitution instructions and fully bound shell
 arguments preserve quotes and shell punctuation, including PowerShell's five

@@ -435,6 +435,10 @@ def main(argv=None):
         reader.add_argument("--packet", required=True)
         reader.add_argument("--material-details", action="store_true",
                             help="Show conditional retrieval, discovery, recovery and optional verification workspace details")
+        reader.add_argument("--section", choices=("all", "context", "material", "verification", "workspace"), default="all")
+        reader.add_argument("--start", type=int, default=0)
+        reader.add_argument("--content-sha256")
+        reader.add_argument("--packet-sha256")
         ended = commands.add_parser("wait-ended", help="Declare the bound supervisor's all-ended decision for optional numerical usage")
         ended.add_argument("--repo", required=True)
         packet_source = ended.add_mutually_exclusive_group(required=True)
@@ -487,7 +491,8 @@ def main(argv=None):
             return (0 if result["ok"] else 1) if _emit(result, utf8=True) else 1
         if args.operation == "read":
             return 0 if _emit(read_for_reviewer(repo, args.packet, material_details=args.material_details,
-                **({"records_only": True} if args.records_only else {})), utf8=True) else 1
+                records_only=args.records_only, section=args.section, start=args.start,
+                content_sha256=args.content_sha256, packet_sha256=args.packet_sha256), utf8=True) else 1
         if args.operation == "wait-ended":
             from task_governance_tool.review_wait import wait_ended
             raw = sys.stdin.buffer.read(PACKET_LIMIT + 1) if args.from_stdin else None
@@ -525,12 +530,8 @@ def main(argv=None):
     except KeyboardInterrupt:
         code = "handoff_outcome_unknown"
     if "args" in locals() and args.operation == "material":
-        # A failed stream may have delivered a prefix. Never append a JSON
-        # envelope to raw Git material or label that prefix complete.
-        try:
-            print("Review material failed: " + code, file=sys.stderr, flush=True)
-        except OSError:
-            pass
+        _emit({"ok": False, "status": "incomplete", "code": code,
+               "message": "Material unavailable; preserve complete matching siblings and recover only the missing fixed-target material. Do not treat this as PASS."}, utf8=True)
         return 1
     message = "Review handoff failed; preserve originals and inspect the outcome before retry."
     if registration_status == "not_started":

@@ -23,8 +23,8 @@ from task_governance_tool.verification_results import (
 from task_governance_tool.verification_receipts import VerificationReceiptError
 
 RESPONSE_LIMIT = 262144
-INVENTORY_ENTRY_LIMIT = 128
-INVENTORY_BYTE_LIMIT = 16384
+INVENTORY_ENTRY_LIMIT = 20
+INVENTORY_BYTE_LIMIT = 4096
 COMMANDS = {"target": "review.target.set", "receipt": "verification.receipt.add",
             "recover": "review.prepare"}
 
@@ -206,7 +206,7 @@ def add_material_parser(commands):
     parser.add_argument("--repo", required=True)
     actions = parser.add_subparsers(dest="material_operation", required=True)
     actions.add_parser("blob").add_argument("object_id")
-    actions.add_parser("batch", help="Full blob IDs on stdin, one per line; raw Git batch framing")
+    actions.add_parser("batch", help="Full blob IDs on stdin, one per line; bounded JSON delivery")
     diff = actions.add_parser("diff")
     diff.add_argument("before")
     diff.add_argument("after")
@@ -217,58 +217,33 @@ def add_material_parser(commands):
     collect = actions.add_parser("collect", help="Bound target bodies/diffs plus selected dependency paths as UTF-8 JSON stdin")
     collect.add_argument("--packet", required=True)
     collect.add_argument("--packet-sha256", required=True)
+    collect.add_argument("--selection-sha256")
+    for name in ("changes", "inventory"):
+        action = actions.add_parser(name, help="Explicit whole-entry list at the fixed Packet target")
+        action.add_argument("--packet", required=True)
+        action.add_argument("--packet-sha256", required=True)
+    for action in actions.choices.values():
+        action.add_argument("--start", type=int, default=0, help="Returned next_start: UTF-8 byte offset for text, entry offset for lists/collection")
+        if action.prog.split()[-1] not in ("collect", "changes", "inventory"):
+            action.add_argument("--content-sha256", help="Returned content digest when continuing a range")
 
 
 def read_material(repo, args):
-    """Closed immutable reads, streaming raw Git bytes without a success envelope."""
-    from task_governance_tool.artifact_manifest import ArtifactManifestError, validate_artifact_path
-    from task_governance_tool.completion import FULL_GIT_OBJECT_ID, safe_git_command, safe_git_environment
-
-    def object_id(value):
-        if not FULL_GIT_OBJECT_ID.fullmatch(value):
-            files._fail("handoff_invalid_arguments")
-        return value
-
-    action = args.material_operation
-    if action == "collect":
+    """Serialize a bounded complete response only after immutable reads succeed."""
+    if args.material_operation == "collect":
         from task_governance_tool.review_material_collection import collect_material
-        result = collect_material(repo, args.packet, args.packet_sha256, sys.stdin.buffer)
-        return (0 if result["status"] == "complete" else 1) if files._emit(result, utf8=True) else 1
-    if action == "blob":
-        arguments = ["cat-file", "blob", object_id(args.object_id)]
-    elif action == "diff":
-        arguments = ["diff", "--no-ext-diff", "--no-textconv", object_id(args.before), object_id(args.after), "--"]
-    elif action in ("dependency", "directory"):
-        revision = object_id(args.revision)
-        try:
-            if args.path or action != "directory":
-                validate_artifact_path(args.path)
-        except ArtifactManifestError as exc:
-            files._fail(exc.code)
-        # Git's explicit ./ treeish resolves from the governed project passed
-        # through -C, including an empty directory root; never fall back upward.
-        spec = revision + ":./" + args.path
-        arguments = (["show", spec] if action == "dependency" else
-                     ["-c", "core.quotePath=false", "ls-tree", "--full-tree", "--no-abbrev", spec, "--"])
-    elif action == "batch":
-        # Validate each short ID before forwarding it, without retaining bodies
-        # or imposing a new batch-count cap. Output keeps Git's missing/type framing.
-        with subprocess.Popen([*safe_git_command(repo), "cat-file", "--batch"], stdin=subprocess.PIPE,
-                              shell=False, env=safe_git_environment()) as process:
-            try:
-                while line := sys.stdin.buffer.readline(67):
-                    value = line.removesuffix(b"\n").removesuffix(b"\r").decode("ascii")
-                    process.stdin.write(object_id(value).encode("ascii") + b"\n")
-                    process.stdin.flush()
-                process.stdin.close()
-                return process.wait()
-            except BaseException:
-                process.terminate()
-                raise
+        result = collect_material(repo, args.packet, args.packet_sha256, sys.stdin.buffer,
+                                  start=args.start, selection_sha256=args.selection_sha256,
+                                  records_only=args.records_only)
     else:
-        files._fail("handoff_invalid_arguments")
-    return subprocess.run([*safe_git_command(repo), *arguments], stdin=subprocess.DEVNULL,
-                          shell=False, env=safe_git_environment(), check=False).returncode
+        from task_governance_tool.review_material_reads import read
+        from task_governance_tool.artifact_manifest import ArtifactManifestError
+        from task_governance_tool.git_snapshot import GitSnapshotError
+        try:
+            result = read(repo, args)
+        except (ArtifactManifestError, GitSnapshotError) as exc:
+            files._fail(exc.code)
+    return (1 if result["status"] == "incomplete" else 0) if files._emit(result, utf8=True) else 1
 
 
 def _material_command(repo, operation, *arguments, records_only=False):
@@ -277,7 +252,7 @@ def _material_command(repo, operation, *arguments, records_only=False):
                    operation, *arguments])
 
 
-def _dependency_inventory(repo, revision, changes):
+def _dependency_inventory(repo, revision, changes, *, start=0):
     """Bounded location hints, not inferred relevance or observed blob content."""
     from task_governance_tool.artifact_manifest import decode_artifact_path
     from task_governance_tool.git_snapshot import stream_tree_entries
@@ -295,6 +270,8 @@ def _dependency_inventory(repo, revision, changes):
         if path in changed:
             return
         total += 1
+        if total <= start:
+            return
         row = {"path": path, "mode": entry.mode.decode("ascii"),
                "object_id": entry.object_id.decode("ascii")}
         addition = len(json.dumps(row, ensure_ascii=False, separators=(",", ":")).encode("utf-8")) + bool(entries)
@@ -343,12 +320,6 @@ def _review_material(repo, target, *, material_details=False, records_only=False
     observed = _observe_material(repo, target)
     changes = [asdict(entry) for entry in build_artifact_entries(observed.before_leaves, observed.after_leaves)]
     dependency_revision = target["base_revision"] if target["kind"] == "git_snapshot" else target["value"]
-    inventory = {}
-    if material_details:
-        try:
-            inventory["unchanged_inventory"] = _dependency_inventory(repo, dependency_revision, changes)
-        except (ArtifactManifestError, GitSnapshotError) as exc:
-            files._fail(exc.code)
     # The existing manifest limit remains a complete-result boundary, not a
     # shortened list that a reviewer might mistake for the whole target.
     if len(json.dumps(changes, ensure_ascii=False).encode("utf-8")) > ARTIFACT_MANIFEST_BYTE_LIMIT:
@@ -361,26 +332,25 @@ def _review_material(repo, target, *, material_details=False, records_only=False
     return {"status": "git_objects_verified", "changes": changes,
             "comparison_base": observed.comparison_base,
             "dependency_revision": dependency_revision,
-            **inventory,
             "blob_command": _material_command(repo, "blob", "<object_id>", records_only=records_only),
             "blob_batch_command": _material_command(repo, "batch", records_only=records_only),
             "diff_command": _material_command(repo, "diff", "<before_object_id>", "<after_object_id>", records_only=records_only),
             "dependency_command": _material_command(repo, "dependency", dependency_revision, "--path=<project-relative-path>", records_only=records_only),
             "directory_command": _material_command(repo, "directory", dependency_revision, "--path=<project-relative-directory>", records_only=records_only),
-            "instructions": [
-                "Run collect_command with only its JSON-array placeholder replaced by the selected dependency paths (for example [\"AGENTS.md\",\"docs/authority.md\"], or []). All changed before/after bodies and diffs are automatic. Read governing text before judgment, then follow its routes and discovered dependencies.",
-                "changes is the complete delta even when Packet paths are bounded. Inspect every entry and mode. Mode 120000 is link text, never followed; 160000 is unavailable submodule material to obtain from the caller.",
-                "unchanged_inventory is bounded location guidance, not selected relevance or proof of availability. A path omitted from its prefix can still be collected directly. Use actual authority/import references to select dependencies; follow newly discovered ones afterward. Snapshot changed paths use after objects, removed/renamed old paths are absent, unchanged paths use the base commit; commit targets use their exact commit. Never substitute ambient HEAD/index/worktree content.",
-                "If locations are omitted or more discovery is needed, directory_command lists that exact revision's directory (empty placeholder for root; otherwise path without trailing slash, escaped by the same path rule). Its paths are relative to that directory; mode 040000 entries can be explored with the same command. Apply changes over this base listing: changed snapshot files use after objects, removed/renamed old paths are absent. Recover tool-truncated listings by requesting sufficient output or exploring narrower directories; report unresolved omissions, never use ambient file search as target material.",
-                "Recovery/additional reads use blob_command, diff_command (both sides present), dependency_command (unchanged paths at dependency_revision), or blob_batch_command (listed full IDs, one per stdin line). Batch returns '<id> blob <byte-count>\\n', exactly that many bytes, then LF, per input. Check each record: exit zero may still report missing/non-blob content. Incomplete/nonzero, unavailable/large/non-text or tool-truncated delivery requires affected-material recovery or a report to the caller, not repetition of successful siblings or PASS. The fixed commands disable fetch, replacement refs, locks and prompts; no body enters the Packet or Task DB.",
-                "For the individual dependency/directory recovery templates only: " + path_quoting]}
+            "instructions": ["For individual dependency/directory templates: " + path_quoting]}
 
 
-def read_for_reviewer(repo, packet_path, *, material_details=False, records_only=False):
+def read_for_reviewer(repo, packet_path, *, material_details=False, records_only=False,
+                      section="all", start=0, content_sha256=None, packet_sha256=None):
     """Validate saved data, bind exact material, then compare live public context."""
     from task_governance_tool.review_packet import independent_reviewer_view
     path = files._path(repo, packet_path)
     raw = files._read(path, files.PACKET_LIMIT)
+    from hashlib import sha256
+    from task_governance_tool.review_delivery import GUIDANCE as DELIVERY_GUIDANCE
+    if packet_sha256 is not None and sha256(raw).hexdigest() != packet_sha256:
+        files._fail("review_packet_stale")
+    material_details = material_details or section in ("material", "workspace")
     packet = files._packet(raw)
     material = _review_material(repo, packet["review_target"], material_details=material_details, records_only=records_only)
     if material["status"] == "git_objects_verified":
@@ -393,9 +363,7 @@ def read_for_reviewer(repo, packet_path, *, material_details=False, records_only
             + placeholder + "\n'@ | " + command if os.name == "nt" else
             command + " <<'TASKGOV_MATERIAL_PATHS'\n" + placeholder + "\nTASKGOV_MATERIAL_PATHS")
         reuse_guidance = "Reuse a body already received completely only when its immutable object identity or exact revision/path matches this target's mapping. An ambient filename, summary, prior review or incomplete/unknown delivery is not proof. Omit already-held matching dependencies from collection; use the same text for authority reading and review. A changed file's before/after sides and diff remain necessary. Project reread obligations still apply."
-        if material_details:
-            material["instructions"].insert(1, reuse_guidance)
-        else:
+        if not material_details:
             # Keep exact target data and normal collection together.
             # The optional read retains the same full validation; it is not a
             # prerequisite or a second format lookup before an ordinary save.
@@ -406,12 +374,19 @@ def read_for_reviewer(repo, packet_path, *, material_details=False, records_only
             material["recovery_command"] = _shell([
                 sys.executable, *(["-I", "-S"] if records_only else []), "-B", str(entry), *(["--records-only"] if records_only else []), "read", "--repo=" + str(repo),
                 "--packet=" + packet_path, "--material-details"])
-            material["instructions"] = [
-                "Use collect_command for the first required project AGENTS, authority, source and test reads, selecting the dependency paths you need as its JSON array ([] for none). All changed before/after bodies and diffs are automatic. Read the returned governing text before judging code, then follow its routes and discovered dependencies. The parent does not select material.",
-                reuse_guidance,
-                "changes is complete even if Packet paths are bounded. The unchanged-file inventory is omitted here, not proof of absence or irrelevance: collect known dependency paths directly without a listing. Snapshot changed paths use after objects, deleted/renamed old paths are absent, unchanged paths use the base commit; commit targets use their exact commit. Never substitute ambient HEAD/index/worktree content. Modes, path/side mappings and whole-file diff body references remain part of the material.",
-                "Collection complete/exit zero means delivery, not review coverage or PASS. Missing, mismatched, unknown, tool-truncated, large/non-text or unavailable material still needs retrieval; submodule material must be supplied. Use recovery_command only when individual/additional reads or discovery are needed; it supplies a bounded unchanged-file inventory, directory discovery at dependency_revision, read commands and quoting rules. Recover affected material without repeating successful siblings.",
-            ]
+        material["changes_command"] = _material_command(repo, "changes", "--packet=" + packet_path,
+            "--packet-sha256=" + sha256(raw).hexdigest(), records_only=records_only)
+        material["inventory_command"] = _material_command(repo, "inventory", "--packet=" + packet_path,
+            "--packet-sha256=" + sha256(raw).hexdigest(), records_only=records_only)
+        quoting = material["instructions"][-1] if material_details else None
+        material["instructions"] = [
+            "collect_command accepts the JSON array of needed dependency paths ([] for none) and includes changed before/after bodies and diffs. Read governing text before judgment and follow its routes. Known paths need no inventory. Use fixed IDs/revisions, never ambient HEAD/index/worktree content. Deleted/renamed old paths are absent; unchanged snapshot dependencies use the base commit. Mode 120000 is link text, 160000 needs supplied material.",
+            reuse_guidance,
+            "changes_command pages every changed entry if the first read or collection is split. Only explicit inventory_command lists unchanged files: at most 20 entries and 4096 compact UTF-8 JSON-array bytes, with remaining/next. Individual recovery instructions never imply inventory retrieval. Use listed commands for missing ranges; batch supplies bounded bodies with per-ID status, directory supplies exact fixed-revision text ranges. Recovery does not repeat successful siblings.",
+            DELIVERY_GUIDANCE,
+        ]
+        if quoting:
+            material["instructions"].append(quoting)
     current = validate_live_packet(repo, path, raw, packet, records_only=records_only)
     from task_governance_tool.review_verification import GUIDANCE
     if "verification_evidence" not in current["data"]:
@@ -419,10 +394,12 @@ def read_for_reviewer(repo, packet_path, *, material_details=False, records_only
     if material["status"] == "git_objects_verified" and not records_only:
         from task_governance_tool.review_workspace import workspace_guidance
         material["verification_workspace"] = workspace_guidance(repo, packet_path, raw, details=material_details)
-    return {**independent_reviewer_view(packet), "review_material": material,
+    view = {**independent_reviewer_view(packet), "review_material": material,
             "verification_evidence": current["data"]["verification_evidence"],
             "verification_guidance": GUIDANCE,
             "context_check": "matched_at_read", "warnings": current["warnings"]}
+    from task_governance_tool.review_read_delivery import bound
+    return bound(view, repo, packet_path, raw, section=section, start=start, expected=content_sha256, records_only=records_only)
 
 
 def validate_live_packet(repo, path, raw, packet, *, records_only=False):
@@ -479,8 +456,9 @@ def _requests(repo, args, packet_path):
             invocation = save + " <<'TASKGOV_REVIEW_RESULT'\n<completed original JSON>\nTASKGOV_REVIEW_RESULT"
         reviewers.append({"result_path": path, "request": (
             "You are assigned an independent review of the complete exact target under current project authority. "
+            "Reserve at least 24000 output tokens in both execution and outer return; one response per call without batching or echoing. "
             "Run the fixed read below and follow its result_instructions with the supplied material and verification guidance. "
-            "If read fails or its output is mismatched, unavailable or truncated, stop and report to the caller; do not judge from incomplete information."
+            "Follow explicit section/page/range commands until required context and material are complete. Recover only missing fixed-target content; if identity or complete recovery cannot be established, report the insufficiency to the caller before judgment."
             + "\n\nRead command:\n" + read + "\n\nSave command:\n" + invocation
         )})
     from task_governance_tool.setup_feature_config import read_choices

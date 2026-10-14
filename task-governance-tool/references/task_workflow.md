@@ -1009,9 +1009,9 @@ not PASS. Independently judge quality; investigate or ask when needed.
 The generated shared-file request and its output are self-contained; this
 section is fallback/reference guidance, not an additional normal prerequisite.
 The request supplies the role and fixed commands; its read output's
-`result_instructions` supplies the review/save procedure. Failed, mismatched,
-unavailable or truncated first-read output requires stopping and reporting to
-the caller before judgment.
+`result_instructions` supplies the review/save procedure. Follow explicit
+section/page/range recovery until required context and material are complete.
+If matching content cannot be recovered, report the insufficiency before judgment.
 When the request supplies shared-file operations, use its fixed
 `review_handoff.py read --repo <root> --packet <path>` command in place of reading the raw
 saved Packet. Its output retains Task/Contract/target,
@@ -1024,37 +1024,37 @@ saved verification summary and its source/limits in that first read. Do not
 require parent transcription or routine extra lookup for already supplied
 information. Evidence availability is not execution authentication, sufficient
 testing or review PASS; necessary investigation and questions remain allowed.
-For Git, that material lists every changed entry with machine-verified immutable
-before/after object IDs, modes, comparison base, dependency revision, normal
-`collect_command` and conditional `recovery_command`. Use collection for the
-first required project AGENTS, authority, source and test reads instead of
-automatically reading ambient copies first. Read governing text before judging
-code and follow its routes. Select only dependencies still needed as the
-collect command's JSON array. The unchanged-file inventory is omitted from normal
-read, not evidence of absence or irrelevance; collect known paths directly.
-It automatically
-supplies all changed before/after bodies and diffs, plus your selected dependencies,
-deduplicating bodies while retaining path/revision/side correspondence. Explicitly
-provided complete bodies can be reused when their immutable object identity or
-exact revision/path matches the current target mapping. A filename, summary,
-prior review or unknown/incomplete delivery is insufficient; retrieve the
-affected text. Omit matching, already-held dependencies from collection and use
-the same bodies for governing-rule reading and review without another copy.
-Keep both required changed sides and the diff. No manual hash calculation or
-reading ledger is needed, and project reread obligations still apply.
-Only for individual/additional reads, discovery or recovery, use
-`recovery_command` (the same validated read with optional `--material-details`).
-It supplies a bounded unchanged-file inventory, directory discovery at the exact
-dependency revision, individual templates, quoting rules and retrieval exceptions.
-Paths omitted from the inventory remain collectible. Discover unknown locations
-only when needed; the listing does not select relevant material.
-Recover unavailable/large/non-text or tool-truncated material and newly discovered
-dependencies without collecting successful siblings again. Normal judgment and
-save need no extra guide/format lookup; applicable result rules remain in read.
-Use those objects, including renamed/deleted paths, not ambient files.
-Unchanged snapshot dependencies come from the base commit; changed ones
-use their listed after object. Commit dependencies use the exact commit.
-This is not a replacement Packet, future freshness guarantee or review PASS.
+For Git, the read returns fixed material mappings and collection/recovery
+commands. Use collection for the first required governing/source/test reads,
+selecting only needed dependencies as JSON paths; known paths need no listing.
+Read governing text before judgment and follow discovered dependencies.
+Complete matching immutable bodies may be reused across authority reading and
+review. A filename, summary or incomplete delivery cannot establish that match.
+Before/after sides and diffs remain required; project reread obligations apply.
+
+Small reads/collections remain complete in one response. Overflow is explicit:
+fetch the returned context/material/verification section commands and all their
+contiguous ranges, and use changed-entry pages or individual object ranges as
+directed. Retain Packet/selection/content digests and returned coordinates;
+continue collection with the same selected-path stdin. Never substitute a
+summary, ambient HEAD/index/worktree file or a different generation.
+`--material-details` supplies retrieval instructions without listing unchanged
+files. Only explicit `inventory_command` requests its bounded 20-entry/4096-byte
+pages. Omitted paths remain directly collectible; unknown locations can use
+fixed-revision directory discovery.
+
+Reserve at least 24000 output tokens in both the execution tool and outer
+return, one response per call without batching/echoing. The helper accounts
+UTF-8 bytes conservatively: aggregate body allowance 5000, separate patch
+allowance 5000, and a separate wrapper-inclusive response limit. These are not
+exact measured model tokens. Actual host truncation still requires recovery.
+`list` supplies selectors; `partial` supplies only a page/range; `incomplete`
+reports unavailable material. The last range alone does not constitute the full
+document. Reuse only matching fully received text and fetch missing ranges or
+new dependencies instead of repeating successful siblings. Unavailable content,
+binary files or submodules need resolution/reporting before PASS.
+Delivery status and exit zero never prove review coverage or PASS.
+This is not a replacement Packet or future freshness guarantee.
 When independently selected, already-authorized verification needs files, the
 ordinary Git view's short `verification_workspace` notice directs you to the
 existing `recovery_command`. Only when needed, that detailed read checks

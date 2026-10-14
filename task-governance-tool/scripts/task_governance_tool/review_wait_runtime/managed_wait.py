@@ -157,22 +157,52 @@ class ManagedWait:
             raise DiagnosticError("invalid_child_set")
         diagnostic.stage = "finalization_basis"
         finalizer = self.owner._finalizer(binding)
-        if finalizer is not None and len(reviewers) != len(finalizer.journal.read().result_paths):
-            raise DiagnosticError("invalid_child_set")
+        if finalizer is not None:
+            intent = finalizer.journal.read()
+            if (len(reviewers) != len(intent.result_paths) or intent.continuation_id is not None
+                and set(reviewers) != set(intent.active_sessions)):
+                raise DiagnosticError("invalid_child_set")
         expected = {}
+        continued = None
+        historical = None
+        current_round = None
         diagnostic.stage = "request_read"
         request_path = paths.review_wait_request_store(metadata["threadId"], task_id)
         if path_lexically_exists(request_path):
-            _, previous = RequestRepository(request_path).read()
+            _, previous, rounds = RequestRepository(request_path).read_admission()
+            if rounds:
+                continued = rounds[-1]
+                if continued.wait_basis_digest != basis_digest(binding):
+                    self.owner._continuation(binding, continued, historical=True)
+                    historical, continued = continued, None
+                    if finalizer is not None and intent.continuation_id is not None:
+                        raise DiagnosticError("review_continuation_conflict")
+                else:
+                    current_round = self.owner._continuation(binding, continued)
+                    if set(reviewers) != {row.session_id for row in current_round.selected}:
+                        raise DiagnosticError("invalid_child_set")
+                    if (finalizer is not None and (intent.continuation_id != current_round.continuation_id
+                        or intent.continuation_sequence != current_round.sequence)):
+                        raise DiagnosticError("review_continuation_conflict")
             diagnostic.observe_record(previous)
             if (previous is not None and previous.basis_digest == basis_digest(binding)
+                    and (continued is None or previous.continuation_id == continued.continuation_id)
                     and (previous.phase != "closed" or finalizer is not None)):
                 expected = dict(previous.reviewers)
         else:
             diagnostic.observe_record(None)
+        self.owner._wait_round_current(binding, continued)
         pairs = []
+        reuse = (current_round is not None and current_round.state == "registered") or (finalizer is not None and finalizer.saved_results_ready())
+        if reuse and expected:
+            # Qualified judgments need no new child observation. Retain only
+            # this exact occurrence's saved identity for duplicate admission
+            # and cleanup; these pairs are not evidence of current activity.
+            if set(expected) != set(reviewers):
+                raise DiagnosticError("invalid_child_set")
+            pairs.extend(expected.items())
         ended = True
-        for reviewer in reviewers:
+        for reviewer in (() if reuse else reviewers):
             diagnostic.stage = "child_read"
             if finalizer is not None:
                 diagnostic.local_state = "may_have_changed"
@@ -187,7 +217,7 @@ class ManagedWait:
         diagnostic.stage = "basis_after"
         if reader() != binding:
             raise DiagnosticError("binding_changed")
-        return reader, binding, tuple(sorted(pairs)), host, ended, finalizer
+        return reader, binding, tuple(sorted(pairs)), host, ended, finalizer, continued, historical
 
     def _ready(self, task_id, record, *, replayed=False, diagnostic=None):
         diagnostic = diagnostic or CallDiagnostics()
@@ -309,7 +339,7 @@ class ManagedWait:
                 observed = self.observe_safely(task_id, metadata, paths, expected=(attempt, record))
             return {"ok": True, "status": "stopped", "task_id": task_id, "observation": observed}
 
-        reader, binding, pairs, host, ended, finalizer = self._preflight(
+        reader, binding, pairs, host, ended, finalizer, continued, historical = self._preflight(
             task_id, arguments["reviewer_ids"], metadata, paths, diagnostic)
         diagnostic.stage = "state_create"
         diagnostic.local_state = "may_have_changed"
@@ -319,7 +349,14 @@ class ManagedWait:
         with diagnostic.retained_context(repository.serial(create=True)) as lease:
             diagnostic.stage = "request_read"
             diagnostic.invalidate_record()
-            _, previous = repository.read()
+            sequence, previous, rounds = repository.read_admission()
+            if (rounds[-1] if rounds else None) != (continued or historical):
+                return self._failure("review_wait_binding_changed")
+            if continued is not None:
+                self.owner._continuation(binding, continued)
+            elif historical is not None:
+                self.owner._continuation(binding, historical, historical=True)
+            self.owner._wait_round_current(binding, continued)
             diagnostic.observe_record(previous)
             digest = basis_digest(binding)
             current_turn = executor_turn_id(metadata)
@@ -327,13 +364,41 @@ class ManagedWait:
                 if previous.basis_digest != digest or previous.reviewers != pairs:
                     if previous.phase != "closed":
                         return self._failure("review_wait_binding_changed")
-                elif previous.parent_turn == current_turn:
+                elif previous.parent_turn == current_turn and (continued is None or previous.continuation_id == continued.continuation_id):
                     return self._ready(task_id, previous, replayed=True, diagnostic=diagnostic)
                 if not self._cleanup(repository, lease, previous, task_id, metadata, paths, diagnostic):
                     diagnostic.reason = "cleanup_unresolved"
                     return self._failure()
-                if ended:
-                    return {"ok": True, "status": "reviews_ended", "task_id": task_id, "parent_may_end": False}
+            if historical is not None and (previous is None or previous.basis_digest != digest):
+                from .continuation_cleanup_repository import observe_latest_cleanup
+                _, cleaned = repository.read()
+                proof = observe_latest_cleanup(paths, metadata["threadId"], task_id, sequence, cleaned)
+                if proof.state != "settled":
+                    raise DiagnosticError(proof.reason)
+                if historical.phase == "prepared":
+                    repository.publish_without_wait(lease, historical)
+            elif historical is not None and historical.phase != "published":
+                raise DiagnosticError("review_continuation_conflict")
+            if ended:
+                if continued is not None and continued.phase == "prepared":
+                    repository.publish_without_wait(lease, continued)
+                return {"ok": True, "status": "reviews_ended", "task_id": task_id, "parent_may_end": False}
+            if continued is not None and continued.phase == "published":
+                # A review continuation is distinct from each ten-minute wait
+                # occurrence. Renew only the exact latest settled occurrence;
+                # publication never authorizes changed turns or a new selection.
+                if (previous is None or previous.continuation_id != continued.continuation_id
+                    or previous.continuation_sequence != continued.continuation_sequence
+                    or previous.basis_digest != digest or previous.reviewers != pairs
+                    or previous.parent_turn == current_turn):
+                    return self._failure("review_continuation_conflict")
+                from .continuation_cleanup_repository import observe_latest_cleanup
+                _, cleaned = repository.read()
+                proof = observe_latest_cleanup(paths, metadata["threadId"], task_id, sequence, cleaned)
+                if proof.state != "settled":
+                    raise DiagnosticError(proof.reason)
+            elif continued is not None and continued.phase != "prepared":
+                return self._failure("review_continuation_conflict")
             if len(self.owner.sessions) >= 64:
                 return self._failure("session_limit")
             diagnostic.stage = "host_context"
@@ -342,9 +407,11 @@ class ManagedWait:
             diagnostic.stage = "basis_after"
             if reader() != binding:
                 return self._failure("review_wait_binding_changed")
+            self.owner._wait_round_current(binding, continued)
             diagnostic.stage = "request_write"
             diagnostic.invalidate_record()
-            repository.append(lease, RequestRecord(digest, current_turn, pairs))
+            repository.append(lease, RequestRecord(digest, current_turn, pairs,
+                **({"continuation_id": continued.continuation_id, "continuation_sequence": continued.continuation_sequence} if continued else {})))
             diagnostic.retained_effects = "present_unresolved"
             try:
                 diagnostic.stage = "create"

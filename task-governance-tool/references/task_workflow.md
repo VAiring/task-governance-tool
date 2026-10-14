@@ -711,8 +711,11 @@ A partial success preserves every successful stage; resolve the reported blocker
 and continue only the remaining tail. An incomplete, lost, uncertain or contradictory report
 uses [finalization recovery](cli_contracts.md#recover-integrated-finalization)
 for an integrated intent, or [handoff recovery](#review-handoff-recovery) for
-parent registration. Recovery alone is not a reason for a new target or review;
-changed material/basis or failed reviewer observations retain their existing gates.
+parent registration. Recovery alone is not a reason for a new target or review.
+Changed material/basis requires its new target and fresh gates. For same-basis
+NG, missing material or failed reviewer observations, use the explicit
+[same-basis continuation](#same-basis-review-continuation); preserve old results
+and successful stages.
 No individual ACK, result re-query or routine status call is added.
 If waiting or notification failed, retain this same selected route and command.
 `host_mutation=not_dispatched` for the latest call does not settle prior effects.
@@ -720,6 +723,41 @@ Unknown mutation or cleanup results use the applicable recovery before an
 effectful continuation; successful registration, commit and completion are not
 repeated. When recovery needs an external change, report the limitation and
 resume condition and end the ordinary turn without claiming Task completion.
+
+### Same-Basis Review Continuation
+
+Use this exceptional route only for an admitted shared-file preparation when
+same-basis results need supplementation or actual reviewer reassessment. First
+use already qualified required judgments; do not restart reviewers or update
+the target just because their chats advanced. Changed material, Contract or
+conditions still require a new target. NG and unresolved Findings remain
+blocking; explain a claimed error to the actual original reviewer and record
+their successor judgment and [explicitly linked Finding
+resolution](cli_contracts.md#finding-resolution) using its returned Receipt ID.
+
+Invoke `review_handoff.py continue --repo <project> --task-id <original Task>
+--target-generation <retained generation> --directory <unused ignored directory>`
+with closed UTF-8 stdin: `{"version":1,"reviewers":[{"session_id":"<actual UUID>",
+"action":"supplement","prior_receipt_id":null,"reason":"<bounded sanitized reason>"}]}`.
+Select only needed actual reviewers; reassessment uses `action=reassess` and
+the exact current prior Receipt ID. The helper derives the remaining original
+inventory and preserves the preparation's manual/integrated route. No new
+commit permission, intent, reviewer dispatch or host effect is authorized.
+
+If known cleanup is required, use the existing authorized `review_wait_stop`
+once, then reconcile the same saved request/directory. Unknown effect or worker
+exit blocks replacement; do not replay or choose another output location.
+Dispatch only the returned selected read/save requests under existing permission.
+A reconciled request returns no redispatch instructions. A fenced or settled
+transition with no Packet digest has not exposed executable requests; after known cleanup
+settles, its first ready response supplies the selected requests. Retain its new Packet,
+continuation identity, actual reviewer handles and generated submit/finalize
+command. When waiting is still needed, call the existing wait operation with
+only those reviewers; already-ended results use the retained command directly.
+Registered retained results are reused; complete unregistered originals join
+one atomic batch. A partial or changed original never authorizes registration.
+Direct-byte transport and legacy preparation without a locator retain their
+existing procedure; missing binding is not permission to reconstruct it.
 
 ### Complete Work
 

@@ -548,7 +548,7 @@ Setup always includes `data.relocation` with exactly `required`,
 successful relocation preview. Fresh preview has null top-level ID and null
 identity/generation/token/expiry.
 
-Relocation failure has status null, required schema 28, empty warnings, one
+Relocation failure has status null, required schema 29, empty warnings, one
 error, null token/expiry, and no rejected value. A no-token mismatch preserves
 the read-only future `planned_writes`; invalid/expired/stale/used/not-required
 token rows have empty write arrays and mechanically observed bounded context.
@@ -674,7 +674,7 @@ Setup output data is exactly `status`, `planned_writes`, `completed_writes`,
 `schema_from`, `schema_to`, `maintenance_enabled`,
 `backup_interval_minutes`, `backup_generations`, `evidence_status`,
 `viewer_status`, `relocation`, `usage`, `usage_hooks`, and `optional_features`.
-`schema_to` is always 28. `schema_from` is safely observed source
+`schema_to` is always 29. `schema_from` is safely observed source
 schema, selected recovery schema, or null. Policy values are effective
 requested/stored values, not persistence claims. `maintenance_enabled`,
 Evidence status, and Viewer status describe durable post-command state.

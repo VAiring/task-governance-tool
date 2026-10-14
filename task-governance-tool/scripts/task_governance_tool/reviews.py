@@ -7,7 +7,10 @@ import re
 import secrets
 import sqlite3
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .review_continuation_evidence_repository import EffectiveReviewSnapshot
 
 from task_governance_tool.session_identity import CallerIdentity
 from task_governance_tool import task_ownership
@@ -172,7 +175,10 @@ def generate_review_id(prefix: str) -> str:
 
 
 def public_receipt(receipt: dict[str, Any] | sqlite3.Row) -> dict[str, Any]:
-    return {field: receipt[field] for field in PUBLIC_RECEIPT_FIELDS}
+    projected = {field: receipt[field] for field in PUBLIC_RECEIPT_FIELDS}
+    if "judgment_revision" in receipt.keys():
+        projected["judgment_revision"] = receipt["judgment_revision"]
+    return projected
 
 
 def require_current_capture(task: dict[str, Any]) -> None:
@@ -917,6 +923,7 @@ def add_review_receipt(
     database_target: DatabaseTarget | None = None,
     caller: CallerIdentity = CallerIdentity(None),
     session_binding: review_sessions.ReviewSessionBinding | None = None,
+    _continued_publication=None,
 ) -> ReviewReceiptResult:
     normalized_task_id = validate_task_id(task_id)
     observed_task, ownership = read_mutation_basis(connection, project.project_id, normalized_task_id)
@@ -981,6 +988,20 @@ def add_review_receipt(
     )
     validate_stored_review_target(task)
     require_current_capture(task)
+    judgment_revision = 1
+    if _continued_publication is not None:
+        if current_schema_version(connection) < 29 or session_binding is None or session_binding.binding_source != "handoff":
+            raise review_error("invalid_review_evidence", "continued review requires an admitted original binding")
+        from .review_continuation_repository import require_publication_locked
+        require_publication_locked(connection, _continued_publication,
+            session_id=session_binding.session_id, reviewer_key=normalized["reviewer_key"], caller=caller,
+            original_digest=session_binding.original_result_digest)
+        judgment_revision = _continued_publication.revision
+    elif current_schema_version(connection) >= 29 and session_binding is not None:
+        from .review_continuation_repository import pending_for_session
+        if pending_for_session(connection, project_id=project.project_id, task_id=normalized_task_id,
+                               generation=task["review_target_generation"], session_id=session_binding.session_id):
+            raise review_error("review_continuation_pending", "use the prepared continuation registration")
     now = utc_now()
     receipt_id = generate_review_id("tg_review_receipt")
     provenance = None
@@ -1037,14 +1058,17 @@ def add_review_receipt(
             receipt,
             provenance,
             code_rows,
+            judgment_revision=judgment_revision,
         )
     except sqlite3.IntegrityError as exc:
+        current_revision = current_schema_version(connection) >= 29
         duplicate = connection.execute(
             """
             SELECT 1 FROM review_receipts
              WHERE task_id = ? AND target_generation = ? AND reviewer_key = ?
-            """,
-            (normalized_task_id, task["review_target_generation"], normalized["reviewer_key"]),
+            """ + (" AND judgment_revision=?" if current_revision else ""),
+            (normalized_task_id, task["review_target_generation"], normalized["reviewer_key"])
+            + ((judgment_revision,) if current_revision else ()),
         ).fetchone()
         if duplicate is not None:
             raise review_error(
@@ -1157,6 +1181,11 @@ def add_review_receipt(
                 task["review_target_base_revision"], task["review_target_generation"],
             ), observed_ownership=ownership, caller=caller,
         )
+    if current_schema_version(connection) >= 29:
+        from .review_continuation_repository import append_judgment_locked
+        append_judgment_locked(connection, receipt_id=receipt_id, revision=judgment_revision,
+            continuation_id=_continued_publication.record.continuation_id if _continued_publication else None,
+            prior_receipt_id=_continued_publication.selected.prior_receipt_id if _continued_publication else None)
     connection.execute(
         "UPDATE tasks SET updated_at = ? WHERE project_id = ? AND task_id = ?",
         (now, project.project_id, normalized_task_id),
@@ -1559,6 +1588,7 @@ def resolve_review_findings(
     resolutions: list[dict[str, Any]],
     database_target: DatabaseTarget | None = None,
     caller: CallerIdentity = CallerIdentity(None),
+    reassessment_receipt: str | None = None,
 ) -> list[ReviewFindingResult]:
     normalized_task_id = validate_task_id(task_id)
     if not 1 <= len(resolutions) <= FINDING_RESOLUTION_BATCH_LIMIT:
@@ -1587,6 +1617,7 @@ def resolve_review_findings(
             results.append(resolve_review_finding(
                 connection, project, finding_id, resolution=resolution, database_target=database_target,
                 caller=caller,
+                reassessment_receipt=reassessment_receipt,
             ))
     except Exception:
         connection.execute(f"ROLLBACK TO SAVEPOINT {savepoint}")
@@ -1604,6 +1635,7 @@ def resolve_review_finding(
     resolution: Any,
     database_target: DatabaseTarget | None = None,
     caller: CallerIdentity = CallerIdentity(None),
+    reassessment_receipt: str | None = None,
 ) -> ReviewFindingResult:
     normalized_finding_id = validate_text(
         "review_finding_id", finding_id, required=True, limit=128
@@ -1633,7 +1665,11 @@ def resolve_review_finding(
     resolution_summary = validate_text(
         "review_finding_resolution", resolution, required=True, limit=1000
     )
-    if row["status"] != "open":
+    if reassessment_receipt is not None:
+        reassessment_receipt = validate_text("review_receipt_id", reassessment_receipt, required=True, limit=128)
+        if current_schema_version(connection) < 29:
+            raise review_error("review_continuation_unavailable", "typed reassessment resolution is unavailable in this schema")
+    if row["status"] != "open" and reassessment_receipt is None:
         raise review_error(
             "invalid_review_evidence",
             "review finding is already resolved and its original resolution is preserved",
@@ -1659,7 +1695,7 @@ def resolve_review_finding(
     )
     if locked_row is None:
         raise TaskRepositoryError("not_found", "review finding was not found")
-    if locked_row["status"] != "open":
+    if locked_row["status"] != "open" and reassessment_receipt is None:
         raise review_error(
             "invalid_review_evidence",
             "review finding is already resolved and its original resolution is preserved",
@@ -1675,14 +1711,24 @@ def resolve_review_finding(
     )
     row = locked_row
     now = utc_now()
-    connection.execute(
-        """
+    if reassessment_receipt is not None:
+        from .review_continuation_repository import resolution_link_exists
+        if resolution_link_exists(connection, normalized_finding_id, reassessment_receipt):
+            raise review_error("invalid_review_evidence", "this reassessment resolution is already recorded; inspect stored state")
+    was_open = row["status"] == "open"
+    if was_open:
+        connection.execute(
+            """
         UPDATE review_findings
            SET status = 'resolved', resolution_summary = ?, resolved_at = ?
          WHERE review_finding_id = ?
-        """,
-        (resolution_summary, now, normalized_finding_id),
-    )
+            """,
+            (resolution_summary, now, normalized_finding_id),
+        )
+    if reassessment_receipt is not None:
+        from .review_continuation_repository import append_resolution_locked
+        append_resolution_locked(connection, finding_id=normalized_finding_id,
+            successor_id=reassessment_receipt, summary=resolution_summary)
     connection.execute(
         "UPDATE tasks SET updated_at = ? WHERE project_id = ? AND task_id = ?",
         (now, project.project_id, row["task_id"]),
@@ -1691,8 +1737,8 @@ def resolve_review_finding(
         connection,
         project_id=project.project_id,
         task_id=str(row["task_id"]),
-        event_type="review_finding_resolved",
-        summary=f"Review finding resolved: {row['severity']}",
+        event_type="review_finding_resolved" if was_open else "review_finding_reassessment_linked",
+        summary=f"Review finding {'resolved' if was_open else 'reassessment linked'}: {row['severity']}",
         created_at=now,
     )
     finding_row = connection.execute(
@@ -1971,12 +2017,14 @@ def read_review_evidence(
     validated_task: dict[str, Any] | sqlite3.Row | None = None,
     source_schema_version: int = SCHEMA_VERSION,
     task_show_details: TaskShowReviewDetails | None = None,
+    _continuation_snapshot: EffectiveReviewSnapshot | None = None,
 ) -> dict[str, Any]:
     return _read_review_evidence(
         connection, project_id, task_id, review_tier=review_tier,
         recent_limit=recent_limit, validated_task=validated_task,
         source_schema_version=source_schema_version,
         task_show_details=task_show_details,
+        _continuation_snapshot=_continuation_snapshot,
     )
 
 
@@ -1991,6 +2039,7 @@ def _read_review_evidence(
     source_schema_version: int = SCHEMA_VERSION,
     task_show_details: TaskShowReviewDetails | None = None,
     finding_stream: _ViewerFindingStream | None = None,
+    _continuation_snapshot: EffectiveReviewSnapshot | None = None,
 ) -> dict[str, Any]:
     if not 1 <= recent_limit <= 10:
         raise review_error("invalid_review_evidence", "recent review evidence limit must be 1 to 10")
@@ -2011,6 +2060,13 @@ def _read_review_evidence(
         else ""
     )
     generation = int(task["review_target_generation"])
+    physical_schema = current_schema_version(connection)
+    continuation_view = None
+    if _continuation_snapshot is not None:
+        continuation_view = _continuation_snapshot.for_task(connection, task)
+    elif physical_schema >= 29:
+        from .review_continuation_evidence_repository import effective_for_task
+        continuation_view = effective_for_task(connection, task)
     validate_stored_review_target(
         {
             "review_target_kind": target_kind,
@@ -2045,6 +2101,8 @@ def _read_review_evidence(
         "recent_receipts": [],
         "recent_findings": [],
     }
+    if physical_schema >= 29:
+        empty_evidence["continuation"] = None
     total_receipts = 0
     current_receipts = 0
     qualifying = 0
@@ -2066,6 +2124,7 @@ def _read_review_evidence(
         if receipt_has_base
         else "'' AS target_base_revision"
     )
+    judgment_projection = ", receipt.judgment_revision" if physical_schema >= 29 else ""
     try:
         # Open every candidate stream before consuming one so direct readers
         # retain one SQLite snapshot for source/reference closure.
@@ -2080,7 +2139,7 @@ def _read_review_evidence(
                    receipt.target_kind, receipt.target_value,
                    {legacy_base_projection}, receipt.target_generation,
                    receipt.summary, receipt.user_approved,
-                   receipt.created_at, receipt.rowid AS inventory_rowid
+                   receipt.created_at, receipt.rowid AS inventory_rowid{judgment_projection}
               FROM review_receipts AS receipt
              WHERE receipt.task_id IN (
                    SELECT value FROM selected_task_ids
@@ -2235,6 +2294,8 @@ def _read_review_evidence(
                 )
                 if not is_current:
                     continue
+                if continuation_view is not None and row["review_receipt_id"] not in continuation_view.effective_ids:
+                    continue
                 if task_show_details is not None:
                     current_receipt_candidates.append(
                         (
@@ -2250,23 +2311,35 @@ def _read_review_evidence(
                             },
                         )
                     )
+                    if physical_schema >= 29:
+                        current_receipt_candidates[-1][2]["judgment_revision"] = row["judgment_revision"]
+                        current_receipt_candidates[-1][2]["judgment_state"] = (
+                            "pending_reassessment" if continuation_view is not None and
+                            row["review_receipt_id"] in continuation_view.effective.suspended_receipt_ids else "effective")
                 current_receipts += 1
+                qualified = continuation_view is None or row["review_receipt_id"] in continuation_view.active_ids
                 if (
+                    qualified
+                    and
                     row["receipt_kind"] == "independent"
                     and row["verdict"] == "pass"
                 ):
                     qualifying += 1
-                if row["verdict"] == "changes_requested":
+                if qualified and row["verdict"] == "changes_requested":
                     changes_requested += 1
                 if tier in {1, 2}:
                     expected_approval = 1 if tier == 2 else 0
                     if (
+                        qualified
+                        and
                         row["receipt_kind"] == "self_review_fallback"
                         and row["verdict"] == "pass"
                         and row["user_approved"] == expected_approval
                     ):
                         fallback_kind = "self_review_fallback"
                 elif (
+                    qualified
+                    and
                     row["receipt_kind"] == "not_required"
                     and row["verdict"] == "not_required"
                     and row["user_approved"] == 0
@@ -2365,6 +2438,7 @@ def _read_review_evidence(
                     or (
                         status == "resolved"
                         and finding["target_generation"] >= generation
+                        and (continuation_view is None or finding["review_finding_id"] not in continuation_view.linked_resolved_finding_ids)
                     )
                 ):
                     _retain_recent_candidate(
@@ -2380,6 +2454,7 @@ def _read_review_evidence(
                         severity in {"high", "medium"}
                         and status == "resolved"
                         and finding["target_generation"] >= generation
+                        and (continuation_view is None or finding["review_finding_id"] not in continuation_view.linked_resolved_finding_ids)
                     )
                 ):
                     current_finding = dict(finding)
@@ -2459,7 +2534,7 @@ def _read_review_evidence(
             )
         ]
 
-    if total_receipts == 0:
+    if total_receipts == 0 and continuation_view is None:
         return empty_evidence
 
     blocking_rows = [item[2] for item in blocking_recent_candidates]
@@ -2484,8 +2559,9 @@ def _read_review_evidence(
         and tier_satisfied
         and changes_requested == 0
         and not blocking_rows
+        and (continuation_view is None or continuation_view.pending_continuation_id is None)
     )
-    return {
+    projected = {
         "target": {"kind": target_kind, "value": target_value, "generation": generation},
         "gate": {
             "review_tier": tier,
@@ -2506,6 +2582,9 @@ def _read_review_evidence(
         "recent_receipts": recent_receipts,
         "recent_findings": finding_rows,
     }
+    if physical_schema >= 29:
+        projected["continuation"] = continuation_view.projection() if continuation_view else None
+    return projected
 
 
 def enforce_review_gate(
@@ -2538,6 +2617,9 @@ def first_review_gate_error(
             "task completion requires a current structured review target",
             "review_target_kind",
         )
+    continuation = evidence.get("continuation")
+    if continuation is not None and continuation["pending_continuation_id"] is not None:
+        return review_error("review_continuation_pending", "a required review continuation is pending", "review_receipt")
     if evidence["blocking_findings"]:
         return review_error(
             "review_finding_unresolved",

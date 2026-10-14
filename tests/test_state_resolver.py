@@ -528,7 +528,7 @@ class StateResolverTests(unittest.TestCase):
             self.assertEqual(resolution.binding, "matching")
             self.assertEqual(resolution.project_id, UUID_PROJECT_ID)
             self.assertEqual(resolution.stored_project.identity_scheme, "uuid_v1")
-            self.assertEqual(resolution.source_schema_version, 28)
+            self.assertEqual(resolution.source_schema_version, 29)
             self.assertIsNone(consumer_error_code(resolution))
             self.assertEqual(before, tree_snapshot(fixture.root))
 

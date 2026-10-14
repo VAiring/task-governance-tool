@@ -44,6 +44,12 @@ class FinalizationRecord:
     candidate: str | None = None
     reviewer_observations: tuple[tuple[str, str, str], ...] = ()
     reviewer_blocker: str | None = None
+    continuation_id: str | None = None
+    continuation_sequence: int = 0
+    preparation_id: str | None = None
+    active_sessions: tuple[str, ...] = ()
+    retained_receipt_ids: tuple[str, ...] = ()
+    original_locations: tuple[tuple[str, str], ...] = ()
 
     def __post_init__(self):
         try:
@@ -72,15 +78,30 @@ class FinalizationRecord:
                 if (type(pair) is not tuple or len(pair) != 2 or not is_session_id(pair[0])
                         or not re.fullmatch(r"[a-f0-9]{64}", pair[1])):
                     raise ValueError
-            if self.registration != "not_started" and len(self.originals) != len(self.result_paths):
+            from .review_continuation import identifier
+            continued = self.continuation_id is not None
+            if continued:
+                if (not identifier(self.continuation_id, "tg_review_continuation_")
+                    or not identifier(self.preparation_id, "tg_review_preparation_")
+                    or type(self.continuation_sequence) is not int or not 1 <= self.continuation_sequence <= 64
+                    or type(self.active_sessions) is not tuple or not 1 <= len(self.active_sessions) <= 8
+                    or len(set(self.active_sessions)) != len(self.active_sessions)
+                    or any(not is_session_id(value) for value in self.active_sessions)
+                    or len(self.active_sessions) != len(self.result_paths)):
+                    raise ValueError
+            elif (self.preparation_id is not None or self.continuation_sequence != 0 or self.active_sessions
+                  or self.retained_receipt_ids or self.original_locations):
                 raise ValueError
-            if self.registration == "succeeded" and len(self.receipt_ids) != len(self.result_paths):
+            if self.registration != "not_started" and (len(self.originals) != len(self.result_paths) if not continued else
+                not len(self.result_paths) <= len(self.originals) <= 8):
+                raise ValueError
+            if self.registration == "succeeded" and len(self.receipt_ids) != len(self.originals):
                 raise ValueError
             if any(not re.fullmatch(r"tg_review_receipt_[a-f0-9]{16}", value) for value in self.receipt_ids):
                 raise ValueError
             if self.candidate is not None and not FULL_GIT_OBJECT_ID.fullmatch(self.candidate):
                 raise ValueError
-            if self.commit != "not_started" and (self.registration != "succeeded" or self.candidate is None):
+            if self.commit != "not_started" and ((not continued and self.registration != "succeeded") or self.candidate is None):
                 raise ValueError
             if self.completion != "not_started" and self.commit != "succeeded":
                 raise ValueError
@@ -88,6 +109,19 @@ class FinalizationRecord:
             if self.reviewer_blocker not in _REVIEWER_BLOCKERS:
                 raise ValueError
             if any(item[2] != "completed" for item in self.reviewer_observations) and self.reviewer_blocker is None:
+                raise ValueError
+            if type(self.retained_receipt_ids) is not tuple or len(set(self.retained_receipt_ids)) != len(self.retained_receipt_ids) or any(not identifier(value, "tg_review_receipt_") for value in self.retained_receipt_ids):
+                raise ValueError
+            if type(self.original_locations) is not tuple or len(self.original_locations) > 8:
+                raise ValueError
+            from .review_handoff import _relative_path
+            from pathlib import Path
+            for location in self.original_locations:
+                if type(location) is not tuple or len(location) != 2:
+                    raise ValueError
+                for value in location:
+                    _relative_path(Path("structural-root"), value)
+            if continued and self.registration != "not_started" and len(self.original_locations) != len(self.originals):
                 raise ValueError
         except Exception:
             raise RepositoryError("invalid_snapshot") from None
@@ -110,7 +144,11 @@ def _encode(record):
         raise RepositoryError("invalid_snapshot")
     # Revalidate mutable nested mappings before every durable write.
     FinalizationRecord(**asdict(record))
-    raw = json.dumps(asdict(record), ensure_ascii=True, sort_keys=True, separators=(",", ":"))
+    value = asdict(record)
+    if record.continuation_id is None:
+        for key in ("continuation_id", "continuation_sequence", "preparation_id", "active_sessions", "retained_receipt_ids", "original_locations"):
+            value.pop(key)
+    raw = json.dumps(value, ensure_ascii=True, sort_keys=True, separators=(",", ":"))
     if len(raw) > 32768:
         raise RepositoryError("invalid_snapshot")
     return raw
@@ -167,6 +205,9 @@ class FinalizationRepository(ReviewWaitRepository):
     @staticmethod
     def _load(connection):
         try:
+            if connection.execute("PRAGMA user_version").fetchone() == (2,):
+                from .review_finalization_continuation_repository import load
+                return load(connection)
             objects = connection.execute("SELECT type, name, tbl_name, sql FROM sqlite_schema WHERE name NOT LIKE 'sqlite_%' ORDER BY name").fetchall()
             if (objects != [("table", name, name, sql) for name, sql in sorted(_SCHEMA.items())]
                     or connection.execute("PRAGMA user_version").fetchone() != (1,)
@@ -180,6 +221,8 @@ class FinalizationRepository(ReviewWaitRepository):
             value["receipt_ids"] = tuple(value["receipt_ids"])
             value["originals"] = tuple(tuple(pair) for pair in value["originals"])
             value["reviewer_observations"] = tuple(tuple(item) for item in value["reviewer_observations"])
+            if "continuation_id" in value:
+                raise ValueError
             record = FinalizationRecord(**value)
             if _encode(record) != rows[0][1]:
                 raise ValueError
@@ -194,7 +237,7 @@ class FinalizationRepository(ReviewWaitRepository):
     def advance(self, lease, **changes):
         lease._check()
         if not set(changes) <= {"registration", "commit", "completion", "originals", "receipt_ids", "candidate",
-                               "reviewer_observations", "reviewer_blocker"}:
+                               "reviewer_observations", "reviewer_blocker", "retained_receipt_ids", "original_locations"}:
             raise RepositoryError("state_transition_invalid")
         with self._connection(write=True) as connection:
             before = self._load(connection)
@@ -202,7 +245,7 @@ class FinalizationRepository(ReviewWaitRepository):
             for name in ("registration", "commit", "completion"):
                 if not 0 <= _PHASES[getattr(after, name)] - _PHASES[getattr(before, name)] <= 1:
                     raise RepositoryError("state_transition_invalid")
-            for name in ("originals", "receipt_ids", "candidate"):
+            for name in ("originals", "receipt_ids", "candidate", "retained_receipt_ids", "original_locations"):
                 if getattr(before, name) and getattr(before, name) != getattr(after, name):
                     raise RepositoryError("state_transition_invalid")
             if before.reviewer_blocker is not None and after.reviewer_blocker != before.reviewer_blocker:
@@ -213,8 +256,26 @@ class FinalizationRepository(ReviewWaitRepository):
                        or old[2] != "completed" and old != retained[old[0]]
                        for old in before.reviewer_observations):
                     raise RepositoryError("state_transition_invalid")
-            connection.execute("UPDATE intent SET payload = ? WHERE singleton = 1", (_encode(after),))
+            if connection.execute("PRAGMA user_version").fetchone() == (2,):
+                from .review_finalization_continuation_repository import save_view
+                save_view(connection, before, after)
+            else:
+                if after.continuation_id is not None or after.original_locations or after.retained_receipt_ids:
+                    raise RepositoryError("state_transition_invalid")
+                connection.execute("UPDATE intent SET payload = ? WHERE singleton = 1", (_encode(after),))
             return after
+
+    def append_round(self, lease, record):
+        from .review_finalization_continuation_repository import append
+        lease._check()
+        with self._connection(write=True) as connection:
+            return append(connection, record)
+
+    def read_rounds(self):
+        from .review_finalization_continuation_repository import records
+        with self._connection() as connection:
+            self._load(connection)
+            return records(connection) if connection.execute("PRAGMA user_version").fetchone() == (2,) else (self._load(connection),)
 
     def observe_reviewers(self, lease, observations):
         """Persist exact terminal observations; failed/unknown turns never become PASS on retry."""
@@ -243,11 +304,23 @@ def registered_originals(target, record, receipt_ids):
     """Match actual immutable core bindings after a lost registration response."""
     with closing(connect_initialized_readonly(target)) as connection:
         bindings = review_session_repository.read_bindings(connection, receipt_ids=set(receipt_ids))
+        expected_continuations = None
+        judgments = {}
+        if record.continuation_id is not None:
+            from .review_continuation_repository import read_retained_originals
+            expected_continuations = {actor: record.continuation_id for actor in record.active_sessions}
+            expected_continuations.update({row["session_id"]: row["prior_continuation_id"]
+                for row in read_retained_originals(connection, record.continuation_id)})
+            judgments = {row["review_receipt_id"]: row["continuation_id"] for row in connection.execute(
+                "SELECT review_receipt_id,continuation_id FROM review_receipt_judgments WHERE review_receipt_id IN (SELECT value FROM json_each(?))",
+                (json.dumps(sorted(receipt_ids)),))}
         found = []
         for session, digest in record.originals:
             matches = [key for key, item in bindings.items() if
                        (item.session_id, item.original_result_digest, item.execution_id, item.binding_source)
-                       == (session, digest, record.basis["execution_id"], "handoff")]
+                       == (session, digest, record.basis["execution_id"], "handoff")
+                       and (expected_continuations is None or key in judgments
+                            and judgments[key] == expected_continuations.get(session))]
             if len(matches) > 1:
                 raise RepositoryError("state_unreadable")
             if matches:

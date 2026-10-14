@@ -3,7 +3,7 @@
 import time
 from dataclasses import asdict
 
-from .review_wait_direct import DirectProbe, DirectError, _terminal
+from .review_wait_direct import DirectProbe, DirectError, _terminal, _reason, binding_digest
 from .review_wait_repository import RepositoryError
 from .request_repository import ParentDispatchRepository
 from .review_wait_host import read_failure, host_failure
@@ -11,12 +11,13 @@ from .review_wait_host import read_failure, host_failure
 
 class ManagedDirectProbe(DirectProbe):
     def __init__(self, *args, finalization_factory=None, dispatch_path=None,
-                 observation_factory=None, runtime_observer=None, **kwargs):
+                 observation_factory=None, runtime_observer=None, occurrence_guard=None, **kwargs):
         super().__init__(*args, **kwargs)
         self.finalization_factory = finalization_factory
         self.dispatch_path = dispatch_path
         self.observation_factory = observation_factory
         self.runtime_observer = runtime_observer
+        self.occurrence_guard = occurrence_guard
         self._finalization_prepared = False
         self.read_diagnostic = None
         self._read_diagnostic_identity = None
@@ -66,6 +67,10 @@ class ManagedDirectProbe(DirectProbe):
             observed["identity"]["probe_id"] = record.probe_id
         if observed["identity"]["automation_id"] is None:
             observed["identity"]["automation_id"] = controller.reservation.timer_id
+        occurrence = self.occurrence_guard(controller) if self.occurrence_guard is not None else None
+        if getattr(occurrence, "continuation_id", None) is not None:
+            observed["identity"]["continuation_id"] = occurrence.continuation_id
+            observed["identity"]["continuation_sequence"] = occurrence.continuation_sequence
         observed["service"] = {"status": "unknown", "scope": "notification_worker_only"}
         if self.runtime_observer is not None:
             try:
@@ -110,6 +115,13 @@ class ManagedDirectProbe(DirectProbe):
         return finalizer
 
     def _prepared(self, controller):
+        # This check precedes the legacy fallback: a newer explicit occurrence
+        # cannot inherit this worker's effect/delivery authority.
+        if self.occurrence_guard is not None:
+            try:
+                self.occurrence_guard(controller)
+            except Exception as error:
+                raise DirectError(getattr(error, "reason", None) or _reason(error)) from None
         try:
             super()._prepared(controller)
         except Exception:
@@ -127,6 +139,78 @@ class ManagedDirectProbe(DirectProbe):
         finalizer = self._finalizer(controller)
         if finalizer is not None:
             finalizer.observe_reviewers((observation,))
+
+    def _reviewers_to_observe(self, controller):
+        finalizer = self._finalizer(controller)
+        if finalizer is not None:
+            from task_governance_tool.review_finalization import FinalizationError
+            try:
+                if finalizer.saved_results_ready():
+                    return ()  # Saved native judgments precede incidental chat activity.
+            except FinalizationError as error:
+                if error.code not in {"review_target_mismatch", "task_ownership_changed"}:
+                    raise
+                # Changed Task state cannot reuse judgments. Observe the bound
+                # reviewers so the existing finalizer can report that mismatch;
+                # its native effect guards and occurrence fence remain intact.
+        return controller.reviewers
+
+    def _on_failure(self, host, record, error, monotonic_deadline):
+        """One failure outcome through the existing same-parent send admission.
+
+        No busy-parent retry, unknown-effect replay, finalization or new timer.
+        If any safety observation is unavailable, retain normal suppression.
+        """
+        reason = _reason(error)
+        if (self.dispatch_path is None or record.version != 2 or not hasattr(host, "set_wait_failure")
+            or reason not in {"reviewer_turn_changed", "child_status_unavailable", "invalid_host_response",
+                              "wait_basis_unavailable", "task_binding_changed"}
+            or self._halt_wait(record, monotonic_deadline)):
+            return False
+        controller = self.wait.read().controller
+        try:
+            with ParentDispatchRepository(self.dispatch_path(controller.binding.parent_thread_id)).serial():
+                with self.wait.writer() as lease:
+                    current_controller = lease.read().controller
+                    if binding_digest(current_controller) != record.binding_digest or binding_digest(controller) != record.binding_digest:
+                        return False
+                    self._prepared(controller)
+                    current = self.repository.read()
+                    if current.status != "waiting" or current.timer_phase not in {"active", "deleted"}:
+                        return False
+                    parent = host.read_parent()
+                    if not self._parent_ready(parent, controller, record):
+                        return False
+                    if current.timer_phase == "active":
+                        before = self._heartbeat(host, controller, current)
+                        self.repository.update(record.probe_id, timer_phase="deleting")
+                        try:
+                            host.delete_heartbeat(before)
+                        except Exception:
+                            self.repository.update(record.probe_id, timer_phase="unknown")
+                            return False
+                        current = self.repository.update(record.probe_id, timer_phase="deleted")
+                    occurrence = self.occurrence_guard(controller) if self.occurrence_guard is not None else None
+                    host.set_wait_failure(record.probe_id, controller.binding, reason,
+                        continuation_id=getattr(occurrence, "continuation_id", None),
+                        continuation_sequence=getattr(occurrence, "continuation_sequence", 0))
+                    self._notification_observation(host, controller, current)
+                    parent = host.read_parent()
+                    self._prepared(controller)
+                    if not self._parent_ready(parent, controller, record) or self._halt_wait(record, monotonic_deadline):
+                        return False
+                    self._send_parent_turn = parent.turn_id
+                    self.repository.update(record.probe_id, status="dispatching", reason=reason)
+                    try:
+                        outcome = host.send_direct_probe(record.probe_id)
+                    except Exception:
+                        outcome = "unknown"
+                    if outcome not in {"accepted", "rejected", "unknown"}:
+                        outcome = "unknown"
+                    self.repository.update(record.probe_id, status=outcome, reason=reason)
+                    return True
+        except Exception:
+            return False  # Durable dispatching remains unknown, never replayed.
 
     def _before_send(self, host, controller, record, monotonic_deadline):
         if self._finalization_prepared:

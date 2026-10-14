@@ -90,6 +90,13 @@ class ManagedHost(PublicMcpHost):
                              "receipt_scope": "notification_correlation_only"}
         identity = {"version": 1, "notification_id": probe, "parent_thread_id": self.parent_thread_id,
                     "task_id": self.task_id, "target": target}
+        if result.get("continuation_id") is not None:
+            from task_governance_tool.review_continuation import identifier
+            if (not identifier(result["continuation_id"], "tg_review_continuation_")
+                or type(result.get("continuation_sequence")) is not int or not 1 <= result["continuation_sequence"] <= 64):
+                raise HostAdapterError("host_call_failed")
+            identity.update(version=2, continuation_id=result["continuation_id"],
+                continuation_sequence=result["continuation_sequence"])
         prefix = (f"レビュー結果通知 {probe}。元Task {self.task_id} の処理結果です。\n"
                   + "通知照合: " + json.dumps(identity, ensure_ascii=False, separators=(",", ":")) + "\n")
         # The complete identity must precede the variable body in a bounded read.
@@ -143,6 +150,37 @@ class ManagedHost(PublicMcpHost):
             # outcomes. Receipt must compare the exact attempted notification.
             self._sent_probes.add(probe)
             return super().send_direct_probe(probe)
+
+    def set_wait_failure(self, probe, binding, reason, *, continuation_id=None, continuation_sequence=0):
+        """Fixed failure notice, correlated by the same immutable probe header.
+
+        It asserts no review verdict, registration, Git or Task completion.
+        The worker has already proven exact basis, idle parent and timer deletion.
+        """
+        from .review_wait_direct_repository import DIRECT_REASONS
+        from task_governance_tool.review_continuation import identifier
+        _uuid(probe)
+        if (binding.task_id != self.task_id or binding.parent_thread_id != self.parent_thread_id
+            or reason not in DIRECT_REASONS or type(continuation_sequence) is not int
+            or continuation_id is None and continuation_sequence != 0
+            or continuation_id is not None and (not identifier(continuation_id, "tg_review_continuation_")
+                or type(continuation_sequence) is not int or not 1 <= continuation_sequence <= 64)):
+            raise HostAdapterError("host_call_failed")
+        target = {key: getattr(binding, key) for key in ("contract_revision", "target_kind", "target_value",
+            "target_base_revision", "target_generation")}
+        identity = dict(version=2, notification_id=probe, parent_thread_id=self.parent_thread_id,
+            task_id=self.task_id, target=target, continuation_id=continuation_id, continuation_sequence=continuation_sequence)
+        prefix = (f"レビュー待機失効通知 {probe}。元Task {self.task_id} の待機は継続していません。\n"
+            + "通知照合: " + json.dumps(identity, ensure_ascii=False, separators=(",", ":")) + "\n")
+        body = dict(ok=False, status="attention_required", task_id=self.task_id, reason=reason,
+            timer_cleanup="deleted", next_action="Preserve original results and known stages. Inspect the reported boundary; use explicit continuation only after known worker cleanup. Do not replay unknown effects.")
+        prompt = prefix + json.dumps(body, ensure_ascii=False, separators=(",", ":")) + "\nこの通知はPASSやTask完了の証拠ではありません。追加ACKや再送は不要です。"
+        self._tool_call_bytes("send_message_to_thread", {"threadId": self.parent_thread_id, "hostId": "local", "prompt": prompt})
+        with self._prompt_lock:
+            if probe in self._sent_probes or probe in self._finalization_prompts:
+                raise HostAdapterError("host_call_failed")
+            self._finalization_prompts[probe] = prompt
+            self._receipt_headers[probe] = prefix
 
     def create_heartbeat(self, rule):
         """The caller has already saved creation intent; one call, no retries."""

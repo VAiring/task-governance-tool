@@ -31,6 +31,7 @@ REASONS = _BOOTSTRAP_REASONS | HOST_BOUNDARY_REASONS | DIRECT_REASONS | PROJECT_
     "review_wait_restart_requires_recovery", "review_wait_binding_changed",
     "state_already_exists", "task_binding_changed", "heartbeat_not_admitted",
     "observer_cleanup_unknown", "direct_probe_unavailable", "direct_probe_selected",
+    "review_continuation_conflict", "review_continuation_basis_changed",
 })
 
 

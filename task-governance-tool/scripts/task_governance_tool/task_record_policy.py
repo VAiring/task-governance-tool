@@ -48,10 +48,11 @@ TASK_COMMANDS = {
     ("review", "receipt", "add"): (dict.fromkeys(("--reviewer", "--kind", "--verdict", "--summary", "--reviewer-class", "--model-state", "--declared-model-id", "--skill-state", "--declared-skill-id", "--declared-skill-version", "--review-profile", "--review-lens", "--context-relation", "--review-method"), 1), 1),
     ("review", "result", "add"): ({}, 1),
     ("review", "finding", "add"): ({"--receipt-id": 1, "--severity": 1, "--summary": 1}, 1),
-    ("review", "finding", "resolve"): ({"--resolution": 1, "--from-stdin": 0}, (0, 1)),
+    ("review", "finding", "resolve"): ({"--resolution": 1, "--from-stdin": 0, "--reassessment-receipt": 1}, (0, 1)),
     ("verification", "receipt", "add"): (RECEIPT, 1),
 }
 HELPER_COMMANDS = {
+    ("continue",): ({"--task-id": 1, "--target-generation": 1, "--directory": 1}, 0),
     ("read",): ({"--packet": 1, "--material-details": 0}, 0),
     ("save",): ({"--packet": 1, "--output": 1}, 0),
     ("submit",): ({"--packet": 1}, None),

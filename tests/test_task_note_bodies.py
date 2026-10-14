@@ -68,7 +68,7 @@ class TaskNoteBodyTests(unittest.TestCase):
                     selected = self.success("task", "context", "--read-only")["selected"]
                     self.assertEqual(next(row for row in selected["events"] if row["task_event_id"] == event["task_event_id"])["note_body"], note)
         with closing(storage.connect(self.db)) as connection:
-            schema.validate_storage(connection)
+            storage.validate_current_database(connection, target_for(self.db, self.repo))
 
     def test_accepted_normalization_is_retained_without_reprocessing(self):
         raw = "  日本語\r\nsecond line\t "
@@ -145,7 +145,7 @@ class TaskNoteBodyTests(unittest.TestCase):
                 with self.subTest(statement=statement), self.assertRaises(sqlite3.IntegrityError):
                     connection.execute(statement, args)
                 connection.rollback()
-            schema.validate_storage(connection)
+            storage.validate_current_database(connection, target_for(self.db, self.repo))
 
     def corrupt_body(self, event_id, value, *, column="note_body", raw_sql=None):
         with closing(storage.connect(self.db)) as connection:
@@ -169,7 +169,7 @@ class TaskNoteBodyTests(unittest.TestCase):
                     self.assertEqual(payload(result)["errors"], [{"code": "project_state_unreadable", "message": "project state could not be read safely"}])
                     self.assertNotIn("private-value", result.stdout + result.stderr)
                 with closing(storage.connect(self.db)) as connection, self.assertRaises(storage.StorageError):
-                    schema.validate_storage(connection)
+                    storage.validate_current_database(connection, target_for(self.db, self.repo))
                 self.assertEqual(before, self.snapshot())
         self.corrupt_body(event["task_event_id"], None, raw_sql="CAST(X'80' AS TEXT)")
         result = self.run_cli("task", "show", self.task_id, "--read-only")
@@ -360,6 +360,9 @@ class TaskNoteMigrationTests(unittest.TestCase):
             seed_current_review_evidence(self.db, self.repo, self.task["task_id"])
             result = completion(self.db, self.repo, self.task["task_id"])
             self.assertEqual(result.returncode, 0, result.stdout)
+        # This class qualifies the exact predecessor 27 -> 28 contract, not the
+        # latest Setup tail. Current note consumers are exercised separately.
+        self.enterContext(candidate_runtime(28))
 
     def test_migration_preserves_predecessor_columns_objects_and_bundle_bytes(self):
         with closing(storage.connect(self.db)) as connection:

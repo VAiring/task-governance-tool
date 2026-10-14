@@ -573,7 +573,7 @@ def prepare(repo, args):
             try:
                 intent = prepare_intent(repo, packet_path, result_paths, files.capture_caller_identity())
             except Exception as exc:
-                from task_governance_tool.review_finalization import _code
+                from task_governance_tool.review_handoff_scope import error_code as _code
                 files._fail(_code(exc))
             entry = str(Path(__file__).parent.parent / "review_handoff.py")
             result["handoff"]["finalization"] = intent
@@ -583,6 +583,15 @@ def prepare(repo, args):
             # The finalizer owns registration for this intent. Do not present
             # an independent parent-side submission as another normal next step.
             del result["handoff"]["submit_command"]
+        from task_governance_tool.review_preparation import publish_ready
+        try:
+            locator = publish_ready(repo, packet_path, result_paths, files.capture_caller_identity(),
+                route="integrated" if getattr(args, "operation", "prepare") == "prepare-finalization" else "manual")
+        except Exception as exc:
+            from task_governance_tool.review_handoff_scope import error_code as _code
+            files._fail(_code(exc))
+        if locator is not None:
+            result["handoff"]["preparation"] = locator
         return result
     except (files.HandoffError, files.ReviewEvidenceError, files.TaskValidationError, VerificationReceiptError) as exc:
         code = exc.code

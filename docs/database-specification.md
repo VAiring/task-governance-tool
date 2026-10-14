@@ -15,6 +15,56 @@ remain with the [Setup/state owner](setup-state-specification.md#setup-recovery-
 
 <a id="migration-and-activation-boundary"></a>
 
+## Conditional Review Continuation Persistence
+
+The combined implementation supports schema 29, migration `review_continuations`.
+Actual upgrade remains explicit Setup; managed host activation requires the
+combined verification/review and host gates in the
+[continuation plan](review-continuation-plan.md#sequential-phases-and-verification).
+Ordinary commands never migrate; explicit Setup retains backup, exact predecessor
+admission, transactional rollback, reentry and projection ordering.
+
+`review_receipts.judgment_revision` is a positive SQLite integer, default one.
+The unique key becomes `(task_id,target_generation,reviewer_key,judgment_revision)`.
+A separate immutable judgment row exists for every Receipt. Existing Receipts
+receive revision one, no predecessor and no continuation; no session binding,
+verdict, Finding resolution, assertion, Reference, cycle or sealed Bundle is
+invented or rewritten. Revisions above one require an admitted continuation and
+the actual original reviewer session. Ordinary registration still admits only
+revision one and rejects duplicates.
+
+The concrete relation layout and guards are owned by
+[continuation storage design](database-design.md#conditional-review-continuation-storage).
+All native reads validate the complete relevant successor and resolution graph
+before selecting effective results. A malformed, branching, cyclic, aliased,
+cross-Contract, cross-condition or cross-target graph is
+`evidence_ledger_inconsistent`, never a missing-table compatibility fallback.
+Old unbound evidence retains its ordinary gate meaning but is not eligible for
+same-session reassessment.
+
+Known settled cleanup can explicitly supersede an unjudged pending continuation
+and admit its successor atomically. The old round, choices and any captured
+unregistered originals remain history; superseded is not registered. Exact
+captured v2 originals can join the successor's one complete atomic batch under
+their old identity, with explicit capture/consumption relations. Missing worker
+proof, unknown effects, lost saved results or an attempted reinterpretation of
+an NG as unjudged prevent this transition. Migration creates no such history.
+
+The migration rebuilds only the Receipt table, completion-cycle gate constraint
+and Bundle format/source constraint, preserving each old column projection and
+all old sealed bytes. It recreates the owned indexes and triggers exactly.
+Unowned attachments to a rebuilt table fail admission before mutation; unrelated
+standalone objects and all unaffected objects remain unchanged. Foreign keys are
+restored in every exit path. Reentry validates both exact physical structure and
+rows; a marker alone never admits a partial migration. Recovery and Viewer
+admission use the same schema and graph validation.
+
+New completion cycles requiring continuation evidence use gate basis version two
+and a version-three Bundle. Other new cycles retain the version-one gate and
+version-two Bundle. The independent
+[Evidence format](evidence-specification.md#conditional-continuation-evidence)
+never alters the meaning of a preserved cycle.
+
 ## Migration And Activation Boundary
 
 Schema v17 migration `verification_receipts` creates
@@ -49,8 +99,8 @@ Missing state is `db_not_initialized`; supported older state is
 `migration_required`; a newer schema is `schema_too_new`. Old binaries reject
 newer state and never downgrade/write it.
 
-Fresh setup creates schema v28. Structurally complete contiguous source schemas
-v1-v27 are setup-only migration inputs; v28 is idempotent current state.
+Fresh setup creates schema v29. Structurally complete contiguous source schemas
+v1-v28 are setup-only migration inputs; v29 is idempotent current state.
 Schema sequence is:
 
 | Version | Durable addition |
@@ -80,6 +130,7 @@ Schema sequence is:
 | v26 | combined executing/review-pending session slot and versioned interval semantics |
 | v27 | forward repair of the legacy pending-to-active acquisition guard |
 | v28 | validated Task note bodies retained separately from event summaries |
+| v29 | explicit review continuations, immutable successor judgments and Finding-resolution links; frozen continuation Evidence |
 
 Each migration is transactional, idempotent, rollback-tested, validates
 contiguous history and required objects/rows, preserves project/business IDs
@@ -168,10 +219,10 @@ every cycle/Bundle Runner-observation pointer remains null; native Bundle-v2
 This check occurs before any database or sidecar write, migration backup,
 recovery copy/publication, Viewer publication, or managed-backup write. A complete v19 source alone may invoke migration
 20; a complete v20 source continues through migrations 21 and 22, and a complete
-v21 source invokes migration 22, followed by 23 through 28. Complete v22 invokes 23
-through 28; complete v23 invokes 24 through 28; complete v24 invokes 25 through 28;
-complete v25 invokes 26 through 28, complete v26 invokes 27 and 28, complete v27
-invokes 28, and exact v28 receives validation-only reentry. Unrelated extra
+v21 source invokes migration 22, followed by 23 through 29. Complete v22 invokes 23
+through 29; complete v23 invokes 24 through 29; complete v24 invokes 25 through 29;
+complete v25 invokes 26 through 29, complete v26 invokes 27 through 29, complete v27
+invokes 28 and 29, complete v28 invokes 29, and exact v29 receives validation-only reentry. Unrelated extra
 objects retain the existing policy, including deliberate removal of
 unsupported unowned indexes/triggers attached to the rebuilt Bundle table and
 preservation of unrelated standalone objects.
@@ -189,9 +240,11 @@ qualifying Runner protocol with explicit manual fallback.
 
 <a id="current-schema-v27-persistence-contract"></a>
 
-## Current Schema-v28 Persistence Contract
+<a id="current-schema-v28-persistence-contract"></a>
 
-Schema v28 is the public setup target. Its predecessor migration `24/task_session_ownership`
+## Current Schema-v29 Persistence Contract
+
+Schema v29 is the public setup target. Its predecessor migration `24/task_session_ownership`
 adds `task_executions`, `task_ownership`, `task_owner_transitions` and
 `task_execution_cycles` (39 tables, 45 explicit indexes, 67 triggers).
 Execution/transition/cycle links are append-only. The one current ownership row
@@ -210,7 +263,7 @@ Only the Bundle table and its coupled native-cycle guard are rebuilt to admit
 source 24/format 2. New native completion must link its execution to its exact cycle
 within the same transaction. Older Bundles/cycles remain unlinked and unchanged;
 format 2 is retained and the index reports the actual container. No per-caller display or
-usage fields are added to sealed Evidence or Viewer v4. Viewer accepts v5-v28.
+usage fields are added to sealed Evidence or Viewer v4. Viewer accepts v5-v29.
 Reentry validates exact DDL, markers, retained graph and integrity without repair.
 Setup retains its existing backup/rollback protocol; no normal command migrates.
 Unsupported attached residue/hybrid state fails closed before writes. Global

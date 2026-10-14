@@ -41,6 +41,7 @@ DIRECT_REASONS = frozenset({
     "binding_mismatch", "state_transition_invalid", "invalid_snapshot", "unsupported_journal_mode",
     "state_exists", "send_rejected", "send_unknown", "heartbeat_delete_unknown",
     "heartbeat_update_unknown", "appointment_unavailable", "timer_cleanup_unknown",
+    "review_continuation_conflict", "review_continuation_basis_changed",
 }) | HOST_BOUNDARY_REASONS
 
 

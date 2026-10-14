@@ -552,6 +552,298 @@ failure/timeout cleanup, lost output, quoted paths and records-only rejection.
 
 ### Integrated Review Finalization
 
+#### Conditional Continuation Composition
+
+This candidate is inactive until the
+[continuation synchronization gate](review-continuation-plan.md#sequential-phases-and-verification).
+The core values and relations are owned by
+[continuation storage](database-design.md#conditional-review-continuation-storage).
+`review_handoff_continuation.py` composes the helper operation using existing
+Packet/file validators and public registration; it owns no SQL.
+`review_preparation_repository.py` owns a resolver-derived operational locator,
+`preparation-<sha256(parent UUID:Task ID)>-<target generation>.sqlite`.
+Its schema one has immutable `preparations(preparation_id,record_json)` and a
+single `current(preparation_id)` FK. The closed record is at most 32,768 UTF-8
+bytes: `version=1`, ID, complete core continuation basis, manual/integrated
+route, exact Packet path/digest, one through eight result paths, nullable matching
+finalization-store identity and creation time. Only fully published ready
+preparation advances the pointer. Existing ignored physical-path validation and
+the canonical resolver apply; older records remain immutable. Missing legacy
+locator never authorizes recursive discovery or invented binding.
+
+The preparation record's exact keys are `version`, `preparation_id`, `basis`,
+`route`, `packet_path`, `packet_digest`, `result_paths`, `finalization_store`,
+and `created_at`. JSON is closed canonical sorted ASCII JSON; byte size includes
+escaping. The nullable finalization identity is the resolver-owned basename,
+not a caller path. It is required for integrated and forbidden for manual.
+The repository's singleton `current` points only to an immutable saved record;
+update/delete triggers protect `preparations`. First publication revalidates
+core and physical Packet under the same preparation lease before creating the
+ready record. Failed later publication atomically retains the previous pointer.
+Schema 28's explicit ready preparation can publish this forward-compatible
+structural locator while keeping its initial result/gate route unchanged. That
+write activates no continuation, core migration, worker, or Git effect; it allows
+an actually admitted preparation to survive a later explicit upgrade. Legacy
+unknown caller/execution retains no locator and no inferred binding.
+
+`review_handoff_scope.py` owns structural project resolution and sanitized error
+codes shared by preparation, continuation and finalization. It grants no route,
+ownership or effect admission. `review_handoff_originals.py` owns physical
+original reading, source inventory and composition; neither orchestrator imports
+the other for these common operations.
+
+`continuation_transition_repository.py` owns a separate schema-one intent at
+`continuation-<sha256(parent UUID:Task ID)>-<target generation>.sqlite`. It bridges
+core pending admission to settled old-worker cleanup without changing a live
+version-one request or finalization store. Read/restart performs no cleanup,
+join, activation or notification. `continuation_cleanup_repository.py` reads
+the exact old request/controller/direct association: closed request plus known
+timer/send outcome and bound `thread_join` proof are required when a worker
+could have started. Missing marker/reference or timer deletion alone fails
+closed. Only known pre-start creation admission without any direct marker
+permits the no-worker case; unknown creation or send never does.
+
+The closed transition/round record has `preparation_id`, `continuation_id`,
+`continuation_sequence`, full core `basis_digest`, original `wait_basis_digest`,
+`selection_digest`, `expected_attempt`, nullable `expected_request_digest`,
+nullable `old_automation_id` and `old_request_phase`, `phase`, nullable
+`worker_stop_identity`, planned `packet_path`/`result_paths`, and nullable
+`packet_digest`.
+The original request digest covers its immutable identity including captured
+pairs and automation, excluding only its monotone cleanup phase. Phases advance
+one step through `fenced`, `settled`, `prepared`, `published`. Destination names
+are bound from the fence before any creation, never changed or selected again
+after a crash. During settled preparation the exact intended Packet digest is
+saved before exclusive file creation; it is immutable once present. This binds
+the actual observation bytes, including their verification observation time,
+without regenerating a later observation on retry. Prepared additionally proves
+complete physical readback. A retained matching file reconciles interrupted
+publication; an intent without provable saved bytes remains unknown.
+The fence reserves the tool-generated continuation ID, sequence and selection
+digest before short core admission. A fence without its core row can therefore
+reconcile that same explicit operation after rechecking the predecessor and
+expected request. A legacy core-only intermediate without a provable destination
+remains unknown; it cannot be rebound to a supplied directory.
+Residue after interrupted creation stays unavailable until exact physical
+reconciliation, never triggers creation at another location. Non-pre-start settlement
+requires the existing same-worker join checksum. Each record is at most 32,768
+UTF-8 bytes of canonical sorted ASCII JSON. No result body or host metadata is
+stored. The core continuation owns action/reason/selected identities.
+
+Both the transition store and schema-two request journal use
+`rounds(ordinal,preparation_id,sequence,continuation_id,payload)` with generated
+positive contiguous ordinal, unique continuation ID, unique preparation/sequence
+and sequence one through sixty-four per preparation root.
+The last per-Task row is applicable only when its wait-basis digest matches the
+current binding. Historical admission validates the old native record against
+its own digest/selection/preparation and a strictly newer current generation,
+keeping project/path/binding/parent identity fixed. `ManagedWait` rechecks that
+record and exact journal row under request admission. It uses the shared cleanup
+reader on the latest closed request, including bound timer/send and saved join
+proof, before monotonically consuming an obsolete prepared round. This is not
+reviewer completion or judgment reuse. Subsequent ordinary attempts retain the
+published history but carry no old continuation ID. Read-only inspection does
+not consume a round; unknown effects or identity disagreement still fail closed.
+Explicit continuation preparation also admits a latest closed request from a
+strictly older target before creating a new fence, or while reconciling its exact
+saved fence. The historical basis reader validates the old Manifest/authority
+and actual execution/owner transition; continued requests additionally require
+their native round and selection. The composer proves the exact request,
+controller/direct binding and joined cleanup, then passes an invocation-local
+proof to cleanup and request installation. Both compare the old immutable request
+digest and basis independently of the new round's current basis. Installation
+also matches the saved join checksum under its writer. No serialized field,
+caller permission or historical judgment reuse is added. Same-generation drift,
+future targets, unknown effects and unready native history remain rejected.
+When the admitted request journal has sequence zero and no request, the composer
+may consume an older unused prepared round only after the same native
+digest/selection/preparation, strictly older generation and fixed identity
+checks. The exact empty journal establishes that no wait occurrence exists;
+it creates no worker-stop proof and cannot bypass a recorded attempt's cleanup.
+This applies both before a new fence and during exact saved-fence recovery.
+`current_round(singleton,ordinal)` explicitly selects the appended current row;
+earlier rows must be published and cannot be overwritten. Different explicit
+preparation roots keep independent continuation sequences in the same Task
+journal. Existing database-size and wait-attempt bounds remain in force.
+Schema-one transition history uses `review-continuation-transition-v1`;
+schema-two request history uses `review-wait-request-v2`. Exact schema inspection
+and complete relevant rows, including older rounds, are validated on reads.
+
+Schema-two request attempts retain the exact old five-field JSON when no
+continuation is bound. New attempts additionally contain the exact continuation
+ID/sequence and at most eight selected pairs. Only an admitted prepared round
+permits same-parent-turn replacement. Appending its creating attempt and
+publishing its round happen in one short transaction. Already-ended selected
+reviews publish the round without a new attempt or timer. Conversion requires
+explicit settled preparation, validates every old attempt as closed and keeps
+all old JSON bytes. New schema and current pointer are privately validated in
+the write transaction and published together at commit; reads never convert.
+
+A published continuation round may bind successive scheduled wait occurrences.
+The new occurrence must follow that same round's latest closed attempt in a
+different actual parent turn, retaining the exact basis and selected reviewer
+pairs. Managed admission proves the previous worker's joined exit and settled
+timer/send before append; request admission independently compares the immutable
+identity and requires closed cleanup. Repeated attempts for one continuation
+must be contiguous, with unchanged pairs and distinct adjacent parent turns.
+The round is not republished or appended, and its original expected-attempt
+token continues to describe only its first occurrence admission. Same-turn
+duplicates and rounds published without an earlier occurrence cannot create
+a renewal. All attempts still count toward the existing per-Task capacity.
+The request repository uses a one-second SQLite busy timeout so a worker's
+short occurrence-fence read can settle while admission records `started`.
+Only SQLite lock acquisition waits; no transaction, host operation or failed
+commit is replayed, and the request OS writer lease remains nonblocking.
+
+Operational request and integrated finalization journals gain schema two only
+through explicit settled continuation. Conversion retains exact version-one
+JSON/observations as the first round, validates original basis and known effects,
+and atomically publishes a private validated store under admission. Reads never
+convert. New request attempts bind continuation/sequence; same-parent-turn
+replacement requires that exact pending core continuation. Old pairs never
+change. Capacity remains sixty-four rounds, eight slots per round, with existing
+wait-attempt and loaded-association bounds unchanged.
+
+Finalization retains one fixed root and appended rounds. Root Packet/basis/branch,
+candidate, commit and completion effects never reset. Each round retains its
+continuation, exact originals/result inventory, registration, reviewer
+observations and blocker. Only the current pointer advances. Previous successes
+and terminal observations stay historical. An incidental turn mismatch can be
+retired only by validated required judgments; actual failed/interrupted/unknown
+review requires a selected explicit continuation and matching new judgment.
+Manual locators create no finalization journal or Git stage.
+For historical all-completed mismatch, the finalizer requires a validated
+current-basis head for every observed actor rather than requiring an invented
+failure actor. Empty/unknown observations keep the blocker. Verdict, required
+independent-count and Finding checks remain separate and authoritative.
+Current-round qualification also verifies exact registered original bindings and
+the satisfied native gate before each affected effect boundary. It preserves
+the blocker and permits saved-result precedence without manufacturing a round.
+Reports offer the existing same-basis continuation only for unchanged material/conditions
+and preserve the fresh-target and unknown-effect recovery boundaries.
+
+Schema-two finalization has a closed effect-root `intent` and
+`rounds(sequence,continuation_id,payload)` with one `current_round` pointer.
+Round zero retains the exact legacy intent JSON; sequences one through sixty-four
+retain actual continuation batches. The effect root retains basis, original
+Packet/digest/result paths, branch, candidate, commit and completion phases.
+Current-round reads compose those root effects without resetting earlier
+registration, reviewer observations or blockers. New round fields are
+`continuation_id`, `continuation_sequence`, `preparation_id`, `active_sessions`,
+`retained_receipt_ids` and `original_locations`. Each original location is the
+exact Packet/result pair; original session/digest pairs and Receipt IDs bind the
+complete newly registered inventory, which may exceed the selected active slots.
+The shared `review_handoff_originals.compose_inventory` reads supplied and retained
+originals for both manual submit and finalization. It owns no SQL, lease or effect
+permission. Finalization reads structural preparation and
+transition records without taking their leases beneath its own admission;
+native registration revalidates the pending round in its writer. Reports use
+the frozen original locations after registration, including after ownership is
+released. Known registration is never replayed to rebuild a report. Fresh
+effect-boundary checks reject an obsolete continuation even when successor
+judgments now satisfy the quality gate.
+
+Common nested admission order is preparation, transition intent, request, same-parent dispatch,
+direct controller, finalization, then short core writer, skipping unused locks.
+Workers use only dispatch/controller/finalization/core in that order and never
+acquire preparation/request while holding them. The helper holds dispatch and,
+for an integrated route, the existing finalization lease while reserving the
+fence and admitting core intent. It only observes cleanup; when cancellation or
+join is required it returns the existing stop/reconcile action and releases its
+leases. The stop service performs those effects outside the helper's admissions.
+Host calls and join never span a core writer. Explicit reconciliation acquires
+the same order, compares the transition and old round, and rechecks core basis.
+Waiting captures and rechecks actual selected turns under its existing admission.
+Its preflight and request-admitted creation boundary also compare the latest
+transition fence with the exact request round. A saved successor fence blocks
+obsolete timer creation even before native admission or round installation;
+the existing start/worker checks independently protect activation and later
+effects. Helper readiness accepts the latest validated occurrence of that same
+published round without publishing reviewer requests again.
+Old workers check the fence before Git, timer activation
+or send. Crash at any boundary leaves a pending recoverable transition; reads
+and restart launch nothing. Reconciliation preserves known success; conflicting
+selection or unknown effect cannot publish or replay.
+
+Continuation preparation has named boundaries for operation/predecessor admission,
+settled cleanup, Packet creation or comparison, integrated-round append, core
+preparation and request installation. Pending supersession and registered
+workerless completion retain distinct conditions but share old-round cleanup
+and publication. A retry reads each saved stage and writes only a missing local
+stage. Exact physical Packet bytes at the persisted path can reconcile an
+interruption after creation; missing or changed published Packets, partial
+residue and unprovable content remain unavailable without deletion or overwrite.
+Normal execution and retries use one readiness predicate: current preparation,
+latest non-superseded core continuation, complete basis and selection, matching
+physical Packet/digest, current request round and any required integrated round
+must all agree. An obsolete successful operation is history, not executable
+readiness. Known successful stages are not repeated, and retries return no new
+reviewer dispatch instructions. A fenced or settled transition with a null
+Packet digest cannot have exposed executable requests. Reconciliation of that
+pre-publication boundary returns the first selected requests after known cleanup
+settles; any Packet-bound or later transition retains no-redispatch behavior,
+including an uncertain readiness acknowledgement.
+For an already installed current occurrence, readiness validates its actual
+request/controller/direct binding and rejects in-flight or unknown send/timer
+effects. A healthy current active worker may remain active; only replacement
+requires settled cleanup and worker exit. The finalizer also reads the saved
+transition fence before effects, so a fence whose core admission was interrupted
+already excludes the older finalization round.
+
+The shared effective evaluator serves Receipt/gate reads, Viewer, manual done,
+finalization and locked cycle selection. Completion compares the continuation
+revision in its writer. Qualified saved judgments precede new activity checks.
+The finalizer separates full result inventory from selected active pairs; a
+worker watches only those pairs and rejects unexpected changes within a round.
+When native registration or the finalizer's saved-result predicate qualifies
+reuse, managed admission keeps the exact current occurrence's validated pairs
+for duplicate/cleanup comparison and requires their session set to match the
+requested reviewers. It makes no fresh child read and does not project those
+saved turns as current activity. A later parent turn still performs known
+cleanup before returning review end; same-turn readiness and unknown-effect
+guards retain their existing meaning.
+
+Locked cycle selection borrows one typed `EffectiveReviewSnapshot` for its
+immediate gate projection. This lexical read scope is confined to the same
+connection, unchanged transaction and full validated Task projection; it expires
+on exit and is never a persisted completion token. Other reads and later writer
+or effect boundaries validate current state independently. Resolution links use
+one task-local native predecessor index and validated ancestor sets for complete
+chain and effective-head reachability checks. Audit limits do not bound those
+chains. Bundle construction and the independent reader keep their separate
+semantic validation.
+
+Notification identity adds nullable continuation ID and positive round sequence
+to existing Task/target/probe identity. Success and safe failure share one send
+state under dispatch admission. Failure notice requires a fresh known idle
+original parent, unchanged basis/owner and known safe timer cleanup; otherwise
+only diagnosis is available. Unknown send blocks replacement; known old send is
+historical and never replayed. Receipt must match this occurrence. Deadlines,
+frame bounds and numerical attribution retain their existing contracts.
+
+Managed waiting validates a prepared operational round against one admitted
+native continuation snapshot, including its selection/full basis digests, then
+captures only that exact selected set's current pairs. After request admission
+is reacquired, it compares the saved round and renews native admission before
+publishing an attempt. Already-ended selected reviews publish the round without
+an attempt. The request's current bound continuation plus the operational
+transition fences obsolete workers before activation, finalization or sending.
+The finalizer and worker consult qualified registered judgments before unrelated
+fresh child activity; they never fabricate a completed child observation.
+Old execution-failure observations remain immutable. Automatic progression can
+retire a named old failure only with that same actor's actual registered judgment
+in a later explicit round; an unbound old unknown remains unavailable.
+
+`ManagedDirectProbe._on_failure` uses the existing same-parent dispatch and wait
+admissions. It can report a fixed invalidation only while that probe is waiting,
+its exact basis/occurrence is current, its parent is freshly idle, and timer
+deletion is known. It neither retries busy-parent delivery nor settles unknown
+creation, cleanup or send. Failure and success use the same monotone
+waiting/dispatching/accepted-or-rejected-or-unknown decision. The failure reason
+survives settlement. Its version-two receipt header binds probe, actual parent,
+Task/target and nullable continuation/sequence; it asserts no PASS or completion.
+Unsupported/unsafe failure delivery retains existing suppression and diagnosis.
+
 The [conditional integrated behavior](review-completion-specification.md#integrated-review-finalization)
 is implemented in focused orchestration, operational repository, Git adapter and
 delivery responsibilities. The existing manual helper remains independent.
@@ -647,8 +939,12 @@ earlier wait reads take their own short journal lease without nested acquisition
 Parent-turn changes, parent-read failures and cancellation do not create reviewer
 failure evidence. A subsequent absent observation or completed status cannot erase
 that blocker. Recovery and read-only reports retain its reason and require fresh
-reviews under a new target generation/intent. Complete saved originals can still
-be registered as one batch; the blocker prevents automatic Git/Task completion.
+evidence under the [continuation composition rules](#conditional-continuation-composition)
+for unchanged material; only that explicit route may qualify retained judgments
+or retire a named old failure through the actual selected reviewer's successor
+judgment. Changed material or conditions require a new target generation/intent.
+Complete saved originals can still be registered as one batch; an unresolved
+blocker prevents automatic Git/Task completion.
 No earlier intent missing these closed fields is silently upgraded or repaired.
 No prose, result bodies, raw Git output or variable notification is journaled.
 The report labels a retained completion check `observation=before_completion`
@@ -739,6 +1035,10 @@ Before resumed sending, read-only finalization checking rebuilds that report
 against its exact retained intent and current evidence. Reopen or target/owner
 drift produces a bound failure report with prior successful stages preserved;
 registration, commit and completion are never repeated to refresh a notification.
+Known target/ownership drift during saved-judgment lookup restores observation
+of the original bound reviewers so the existing finalizer can report the mismatch.
+It does not relax native effect guards or the occurrence fence; unknown reads
+and continuation conflicts remain failures rather than reusable judgments.
 Read-only checking does not rerun business gates; an earlier known attempt's
 blocking reason remains unless the check supplies a newer failure or confirms
 completion. A successful read alone never erases an unresolved attempt failure.
@@ -752,8 +1052,9 @@ the same time, the finalization observation writer may wait at most one second
 for its OS lease. Only lock admission repeats; transactions and effects do not.
 This operational finalization repository alone uses a one-second SQLite busy
 timeout so concurrent preflight reads and short observation commits can settle.
-No transaction or external stage is replayed; other wait stores keep their
-existing admission policy.
+No transaction or external stage is replayed. The request repository has the
+separately described short occurrence-read timeout; other wait stores keep
+their existing admission policy.
 
 Immediately before the durable send intent the worker captures the fresh idle
 parent turn as this attempt's transient receipt fence. After send settlement,
@@ -1660,7 +1961,7 @@ ownership before T1, but committed execution cleanup and terminal audit never
 depend on later caller ownership. Packet preparation bindings omit the
 caller-relative ownership projection; ownership freshness is checked separately.
 
-1. validate schema v28, identity/binding, optimistic ownership/Task/authority/target
+1. validate schema v29, identity/binding, optimistic ownership/Task/authority/target
    capture basis, Contract, sequential ordering, and evidence;
 2. reread Verification Receipts and review receipts/findings, evaluate the
    current verification and review gates, and select their deterministic
@@ -1726,8 +2027,10 @@ Each cycle and each candidate complete wrapper is measured using compact,
 sorted-key, non-ASCII-preserving UTF-8 JSON. A cycle is at most 8,192 bytes;
 the wrapper is at most 10 rows and 32,768 bytes. Collection stops at the first
 non-fitting newest-first row. Version-0 basis uses JSON nulls and no receipt
-IDs; version 1 uses integers and the stored one/two IDs without null
+IDs; versions 1 and 2 use integers and the stored one/two IDs without null
 placeholders. Text prints only counts, flags, and newest non-content fields.
+Version two projects the already validated frozen continuation gate; it does not
+select fresh historical heads or requalify audit evidence as current evidence.
 
 The formatter revalidates stored completion revision, evidence reason,
 completion-hash, target value, and target-base text through the ordinary

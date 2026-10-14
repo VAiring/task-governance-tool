@@ -270,6 +270,12 @@ def persist_completion_evidence_bundle_locked(
     if bundle.source_schema_version != current_schema_version(connection):
         raise evidence_ledger_inconsistent()
     _validate_prepared_completion_bundle(bundle, expected_cycle=expected_cycle)
+    if bundle.bundle_version == 3:
+        from .review_continuation_evidence import decode_graph_json
+        from .review_continuation_evidence_repository import validate_frozen_against_core
+        validate_frozen_against_core(connection, decode_graph_json(bundle.continuation_basis_json))
+    elif bundle.continuation_basis_json is not None:
+        raise evidence_ledger_inconsistent()
     try:
         for link in bundle.criterion_links:
             persist_criterion_evidence_link_locked(connection, link=link)
@@ -286,6 +292,8 @@ def persist_completion_evidence_bundle_locked(
             ]
             if field in available_bundle_fields
         }
+        if current_schema_version(connection) >= 29:
+            bundle_fields.add("continuation_basis_json")
         bundle_values = _prepared_row(bundle, bundle_fields)
         ordered_bundle_fields = tuple(sorted(bundle_fields))
         connection.execute(

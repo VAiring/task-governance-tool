@@ -162,6 +162,7 @@ def _read_basis(
     verification_receipt_id: str | None = None,
     include_verification: bool = False,
     runner_selection=None,
+    continuation_id=None,
 ) -> ReviewPacketBasis:
     try:
         manager = (
@@ -307,6 +308,14 @@ def _read_basis(
                 session_context = {"version": 1, "project_id": target.project.project_id,
                                    "execution_id": ownership.execution_id}
                 stability_token += (ownership.execution_id,)
+                if current_schema_version(active_connection) >= 29:
+                    from task_governance_tool.review_continuation_repository import packet_context
+                    continued_context = packet_context(active_connection, task=stored, preparing_id=continuation_id)
+                    if continued_context is not None:
+                        session_context = continued_context
+                    # A new pending round cannot race Packet construction even
+                    # though Task material and target generation stay unchanged.
+                    stability_token += (json.dumps(continued_context, sort_keys=True, separators=(",", ":")),)
             return ReviewPacketBasis(
                 task=task,
                 contract=contract,
@@ -338,9 +347,14 @@ def _read_basis(
                 STALE_PACKET_MESSAGE,
             ) from exc
         raise
+    except TaskValidationError as exc:
+        if exc.code.startswith("review_continuation_"):
+            raise packet_error(exc.code, "review continuation context is unavailable") from exc
+        if revalidation:
+            raise packet_error("review_packet_stale", STALE_PACKET_MESSAGE) from exc
+        raise _stored_context_error(exc) from exc
     except (
         ReviewEvidenceError,
-        TaskValidationError,
         KeyError,
         TypeError,
         ValueError,
@@ -528,6 +542,7 @@ def prepare_review_packet(
     initial_connection: sqlite3.Connection | None = None,
     verification_receipt_id: Any = None,
     expected_binding: Any = None,
+    _continuation_id: str | None = None,
 ) -> dict[str, Any]:
     normalized_task_id = validate_task_id(task_id)
     if expected_binding is not None and (
@@ -546,6 +561,7 @@ def prepare_review_packet(
         revalidation=expected_binding is not None,
         connection=initial_connection,
         verification_receipt_id=receipt_id,
+        continuation_id=_continuation_id,
     )
     if initial_connection is not None:
         initial_connection.close()
@@ -578,6 +594,7 @@ def prepare_review_packet(
         verification_receipt_id=receipt_id,
         include_verification=True,
         runner_selection=runner_selection,
+        continuation_id=_continuation_id,
     )
     if (current.stability_token != basis.stability_token
             or current.preparation_binding != basis.preparation_binding) or (

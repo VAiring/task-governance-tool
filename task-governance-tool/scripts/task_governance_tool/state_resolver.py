@@ -164,6 +164,16 @@ class CanonicalStatePaths:
             raise ValueError("invalid_target_generation")
         return request.with_name("finalize-" + request.stem.removeprefix("request-") + f"-{generation}.sqlite")
 
+    def review_preparation_store(self, parent_id: str, task_id: str, generation: int) -> Path:
+        """Ready physical handoff locations; never a caller-selected state path."""
+        finalization = self.review_finalization_store(parent_id, task_id, generation)
+        return finalization.with_name("preparation-" + finalization.name.removeprefix("finalize-"))
+
+    def review_continuation_store(self, parent_id: str, task_id: str, generation: int) -> Path:
+        """Explicit cross-store transition intent; no worker on read or restart."""
+        finalization = self.review_finalization_store(parent_id, task_id, generation)
+        return finalization.with_name("continuation-" + finalization.name.removeprefix("finalize-"))
+
     def review_wait_dispatch_store(self, parent_id: str) -> Path:
         """Lock-only namespace shared by this project's same-parent senders."""
         from uuid import UUID

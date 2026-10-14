@@ -171,7 +171,7 @@ and projection-generation advance. Schema v20 and the marker-zero schema-v21
 baseline instead insert one version-2 Bundle whose basis is
 `caller_attestation` with the qualifying Receipt for nonempty verification or
 `not_required` with no Receipt for trimmed-empty verification, and its Runner
-observation is null. The current schema-v28 writer requires an explicit Task
+observation is null. The current schema-v29 writer requires an explicit Task
 waiver reason for the not-required branch and additionally
 admits the exact qualifying schema-v21-protocol `runner_observation` branch, reusing its
 existing Runner Reference and criterion link as Bundle members. The sole partial
@@ -194,9 +194,9 @@ matching nullable `verification_receipt_id`, and
 `taskgov-completion-evidence-bundle-v2\0`. The preserved v1 envelope, payload,
 domain, bytes, and digest are unchanged.
 
-Evidence JSON is a deterministic one-way SQLite projection. Canonical sorted-key compact UTF-8 JSON uses integer-only JSON values where numeric, preserves valid Unicode without normalization, and ends each file with one LF. A schema-v20-through-v28 index uses envelope `format_version=2`, digest domain `taskgov-evidence-index-v2\0`, and adds exactly nullable `bundle_format_version` to each entry: null for `legacy_unknown`, 1 for a preserved v1 Bundle, and 2 for a native v2 Bundle. Native entries reference `bundles/<completion-evidence-bundle-id>.json`; the projection may therefore reference preserved source-19/v1 and source-20/21/22/23/24/25/26/27/v2 Bundles alongside new source-28/v2 Bundles without rewriting existing payload bytes or digests. The index reports its actual database source schema. Pre-v19 entries are `legacy_unknown` with null Bundle/file fields.
+Evidence JSON is a deterministic one-way SQLite projection. Canonical sorted-key compact UTF-8 JSON uses integer-only JSON values where numeric, preserves valid Unicode without normalization, and ends each file with one LF. A schema-v20-through-v29 index uses envelope `format_version=2`, digest domain `taskgov-evidence-index-v2\0`, and adds exactly nullable `bundle_format_version` to each entry: null for `legacy_unknown`, 1 for a preserved v1 Bundle, 2 for a native v2 Bundle, and 3 for a validated continuation Bundle. Native entries reference `bundles/<completion-evidence-bundle-id>.json`; the projection may therefore reference preserved source-19/v1 and source-20/21/22/23/24/25/26/27/28/v2 Bundles alongside new source-29/v2 or v3 Bundles without rewriting existing payload bytes or digests. The index reports its actual database source schema. Pre-v19 entries are `legacy_unknown` with null Bundle/file fields.
 The index includes every cycle, is ordered by Task ID, ordinal, and cycle ID, and is capped at 100,000 entries and 64 MiB without truncation. Publication flushes immutable Bundle files and atomically replaces `index.json` last; SQLite remains canonical, unreferenced files are ignored, and JSON is never imported or used to repair the database.
-Contention or failure preserves the last-good index and committed Task result, leaves projection due, and adds only `evidence_projection_deferred` or `evidence_projection_failed`. Setup is the sole explicit repair; doctor only reports stored projection facts. Evidence JSON exposes no Evidence command, custom path, Viewer field/UI, browser launch, server, watcher, or network action and invokes neither Analyzer nor Runner. A current schema-v28 Runner-backed Bundle projects only the already-sanitized stored observation under the [shared Runner protocol](specification.md#schema-v21-persistence-compatibility-and-shared-runner-protocol); publication adds no normal-loop call.
+Contention or failure preserves the last-good index and committed Task result, leaves projection due, and adds only `evidence_projection_deferred` or `evidence_projection_failed`. Setup is the sole explicit repair; doctor only reports stored projection facts. Evidence JSON exposes no Evidence command, custom path, Viewer field/UI, browser launch, server, watcher, or network action and invokes neither Analyzer nor Runner. A current schema-v29 Runner-backed Bundle projects only the already-sanitized stored observation under the [shared Runner protocol](specification.md#schema-v21-persistence-compatibility-and-shared-runner-protocol); publication adds no normal-loop call.
 
 <a id="assurance-evidence-references-and-finding-snapshots"></a>
 
@@ -418,6 +418,61 @@ every cycle, has at most 100,000 entries and 67,108,864 UTF-8 bytes, and is
 never truncated. A Bundle is capped at 16,777,216 bytes.
 
 <a id="evidence-interpretation-and-retired-analyzer-boundary"></a>
+
+## Conditional Continuation Evidence
+
+This candidate activates only with the complete
+[review continuation plan](review-continuation-plan.md#sequential-phases-and-verification).
+Bundle format three applies only when the completion basis contains a
+continuation. It preserves every version-two payload member and adds exactly
+`review_continuation_basis`. The Bundle has `bundle_version=3`, source schema 29
+and domain `taskgov-completion-evidence-bundle-v3\0`. Index format two additionally
+admits `bundle_format_version=3`; its existing digest domain is unchanged.
+All previously sealed files and payload bytes remain unchanged.
+
+The new root has exactly `version=1`, `continuations`, `reviewers`,
+`retained_originals`, `judgments`, `resolutions`, `receipts`, `session_bindings`,
+`references`, `findings` and `effective_receipt_ids`. It contains the complete graph relevant to this
+Task/Contract/target, not a display prefix. Core relation rows use the closed
+columns in the
+[storage design](database-design.md#conditional-review-continuation-storage).
+Receipts retain their existing assertion projection plus judgment revision;
+session bindings retain their existing closed projection; References and
+Findings use their existing validated source projections. Lists order by their
+primary keys using unsigned UTF-8 order; effective IDs order by reviewer key
+then Receipt ID. Digests and source assertions retain their original domains.
+Superseded unjudged slots retain null results and never become invented
+Receipts. A superseded round has its retirement fields and explicit successor.
+Every published old-context Receipt has an exact consumed original capture in
+a registered descendant. The independent reader recomputes the full sidecar
+metadata seal, ancestor relation and consumption; unused captures in superseded
+rounds remain null historical facts. Pending rounds never enter a sealed graph.
+
+The locked completion gate freezes this graph in the same transaction as the
+cycle and Bundle. Gate basis version two retains all version-one counts and
+qualifying links, computed from validated effective heads instead of counting
+historical verdicts. No pending continuation or unresolved Finding may qualify.
+The independent reader validates all relation ownership, immutable assertion
+and Reference digests, actual session equality, complete predecessor chains,
+typed resolution links, and the deterministic effective selection. It recomputes
+counts and compares the selected qualifying Receipts with the existing Bundle
+root; a caller-provided head list or later PASS is not proof. Historical NG and
+its Findings stay in the graph. Format three neither upgrades assurance nor
+introduces raw result bodies, reasons outside the existing sanitized fields,
+current runtime observations or numerical usage into completion evidence.
+
+The graph is retained in the immutable Bundle's nullable
+`continuation_basis_json`, not recomputed from later live state. Historical
+projection and reentry validate its canonical form and source relations while
+preserving its exact selected/resolution snapshot. Graph receipts have the
+existing eight-member Bundle Receipt assertion plus `judgment_revision`;
+Findings have exactly `review_finding_id`, `review_receipt_id`, `severity`,
+`summary`, `status`, `resolution_summary`, `created_at`, `resolved_at`.
+Graph References are only recorded Receipt/Finding References, using their
+existing closed fields; session rows keep their five existing binding fields.
+Every graph item binds the Bundle's same project/Task, Contract/criteria and
+four-part target. Extra current or historical relations are not silently
+added to a sealed graph. A re-opened Task's later links cannot alter old bytes.
 
 ## Evidence Interpretation And Retired Analyzer Boundary
 

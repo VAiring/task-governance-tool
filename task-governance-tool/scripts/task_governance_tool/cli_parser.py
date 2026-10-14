@@ -495,6 +495,8 @@ def build_parser() -> argparse.ArgumentParser:
     add_common_options(review_finding_resolve_parser)
     review_finding_resolve_parser.add_argument("finding_id", nargs="?")
     review_finding_resolve_parser.add_argument("--resolution")
+    review_finding_resolve_parser.add_argument("--reassessment-receipt",
+        help="explicitly link each selected Finding to its actual registered same-basis successor Receipt")
     review_finding_resolve_parser.add_argument(
         "--from-stdin", action="store_true", default=False,
         help="resolve explicit selected Finding groups atomically from UTF-8 JSON stdin",

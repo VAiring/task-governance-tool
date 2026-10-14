@@ -274,7 +274,7 @@ class DirectProbe:
                     raise DirectError("wait_changed")
                 self._prepared(controller)
                 all_ended = True
-                for expected in controller.reviewers:
+                for expected in self._reviewers_to_observe(controller):
                     if self._halt_wait(record, monotonic_deadline):
                         return
                     child = self._read_reviewer(host, controller, expected)
@@ -297,6 +297,8 @@ class DirectProbe:
         except Exception as error:
             self._retain_read_failure(error, record)
             try:
+                if self._on_failure(host, record, error, monotonic_deadline):
+                    return
                 current = self.repository.read()
                 if current.status == "waiting":
                     self.repository.update(record.probe_id, status="suppressed", reason=_reason(error))
@@ -313,6 +315,13 @@ class DirectProbe:
     def _retain_read_failure(self, error, record):
         """Legacy waits do not retain process-local purpose diagnostics."""
         return None
+
+    def _on_failure(self, host, record, error, monotonic_deadline):
+        """Legacy waits retain their existing suppression-only outcome."""
+        return False
+
+    def _reviewers_to_observe(self, controller):
+        return controller.reviewers
 
     def _observe_reviewer(self, controller, observation):
         """Legacy waits have no integrated result journal."""
@@ -350,7 +359,7 @@ class DirectProbe:
 
     def _idle_and_ended(self, host, controller, record, monotonic_deadline, *, reviewer_observer=None):
         """Fresh boundary checks; integrated callers retain every reviewer read."""
-        for expected in controller.reviewers:
+        for expected in self._reviewers_to_observe(controller):
             if self._halt_wait(record, monotonic_deadline):
                 return False
             child = self._read_reviewer(host, controller, expected, terminal=True,

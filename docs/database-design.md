@@ -16,6 +16,97 @@ Setup orchestration remains with the
 
 <a id="migration-sequence"></a>
 
+## Conditional Review Continuation Storage
+
+This is the schema-29 implementation specified by the
+[database owner](database-specification.md#conditional-review-continuation-persistence).
+`schema_review_continuation.py` owns exact DDL, predecessor migration and physical
+admission; `review_continuation_repository.py` owns transaction-bound relation
+reads/writes; `review_continuation.py` owns pure values, closed decoding and graph
+selection. Neither feature module opens SQLite or commits a caller transaction.
+
+The closed core relations are:
+
+| Table | Columns and constraints |
+|---|---|
+| `review_continuations` | `continuation_id` primary key; `project_id`, `task_id`, `target_generation`; `preparation_id`; `sequence` integer 1..64; nullable unique `predecessor_id` self-FK; `basis_json`, `basis_digest`, `selection_digest`; `route` manual/integrated; `state` preparing/prepared/registered/superseded; `created_at`, nullable `registered_at`, `retired_at`, `retirement_digest`; unique preparation/sequence. Superseded requires retirement time/digest and one explicit successor; other states have null retirement fields. |
+| `review_continuation_reviewers` | Primary key continuation/session; `session_id`, `action` supplement/reassess, nullable `prior_receipt_id` FK, privacy-validated `reason` at most 1,000 characters; nullable `result_receipt_id` unique FK and `original_result_digest`. Supplement has no prior; reassess requires one. Result and digest become non-null together, only once. |
+| `review_receipt_judgments` | `review_receipt_id` primary/FK; positive `judgment_revision`; nullable unique `prior_receipt_id` self-chain Receipt FK; nullable `continuation_id` FK. Revision one has no prior; later revisions have both prior and continuation. Receipt/revision is unique and the Receipt has a deferred composite FK to this relation. |
+| `review_reassessment_resolutions` | Primary key finding/successor; `review_finding_id` FK, `successor_receipt_id` FK, `continuation_id` FK; explicit `resolution_summary` at most 1,000 characters, `resolution_digest`, `created_at`. Rows are immutable; a retained resolved Finding is not updated a second time. |
+| `review_continuation_retained_originals` | Primary key continuation/session; `continuation_id` FK, `prior_continuation_id` FK, `session_id`, `original_result_digest`, `metadata_digest`, nullable `result_receipt_id` FK. The prior is a superseded ancestor with the same complete basis and selected actual session; it is not selected again in the consumer. Hashes and identities are immutable. Only its exact atomically registered original publishes the receipt link once. Superseded consumers may retain unconsumed captures as history. |
+
+Identifiers follow existing tool-generated prefix plus sixteen lowercase hex
+digits; preparation IDs use `tg_review_preparation_`, continuations use
+`tg_review_continuation_`. UUID session IDs use the existing canonical validator.
+Digests are sixty-four lowercase hex digits. Canonical UTC strings retain the
+existing time contract. The basis JSON has a 16,384 UTF-8 byte bound and exactly
+`version=1`, `project_id`, `task_id`, `contract_revision`,
+`authority_snapshot_id`, `acceptance_criterion_id`, `verification_criterion_id`,
+`artifact_manifest_id`, `review_tier`, `verification_requirement`,
+`verification_not_required_reason`, `completion_commit_required`,
+`target_kind`, `target_value`, `target_base_revision`, `target_generation`,
+`project_path_hash`, `project_binding_generation`, `parent_session_id`,
+`execution_id`, `ownership_generation`. Nullable criteria retain actual absence.
+The SHA-256 domain is `taskgov-review-continuation-basis-v1\0`; selection digest
+uses `taskgov-review-continuation-selection-v1\0` and the sorted closed selected
+reviewer rows without result fields, tool IDs or timestamps.
+
+Quality selection uses project/Task, Contract, authority/criteria, manifest,
+review tier, verification requirement/reason and the four-part target. Parent,
+execution, ownership, filesystem binding and commit-required policy constrain
+continuation/effects separately; changing them cannot manufacture Git authority
+or transfer an intent, but does not turn otherwise valid quality judgments into
+a need for redundant reviews. The writer checks both the quality and applicable
+effect binding before the corresponding operation.
+
+SQL guards make identity, basis, predecessor and selections immutable, disallow
+deletion, and allow preparing to prepared to registered, or explicit pending
+supersession with retirement time/digest and one successor admitted atomically.
+The retirement digest uses `taskgov-review-continuation-retirement-v1\0` over
+the old continuation ID, complete basis digest, nullable immutable request digest
+and nullable bound worker-join checksum. Only operationally settled proof reaches
+this repository; the checksum is structural evidence, not authentication.
+Saved slots not selected anew are captured by exact original-body digest and
+`taskgov-review-continuation-retained-metadata-v1\0` over the complete canonical
+v2 sidecar. Already captured originals must survive further pending supersession;
+required slot count and actual same-session reassessments cannot be lost.
+A superseded row remains distinct from registered and invents no missing result.
+Only its captured old original may publish once through its prepared descendant's
+complete atomic batch. A registered consumer links every capture to the actual
+old-context Receipt; superseded consumers leave unused captures null as history.
+A prepared registration inserts the Receipt, provenance,
+References, actual session relation, Findings and judgment metadata in the same
+writer. The repository compares the expected effective head, complete captured
+basis, actual session and reviewer key before publication. Supplement cannot
+hide an already registered result. A successor increments exactly one and has
+the same actual session, key, Contract, authority/criteria and four-part target;
+one predecessor has at most one successor. One actual reviewer counts once.
+
+Core admission validates the full graph, even when display uses a bounded
+historical page. Selection validates the original Reference and provenance,
+then derives heads from links, never time order. A matching pending continuation
+blocks completion and suspends selected reassessments; unselected PASS is
+retained. Resolution links refer to a Finding in that successor's predecessor
+chain and an actually resolved Finding. Only that explicit typed relation
+satisfies the same-generation fresh-review exception.
+
+Migration requires the exact schema-28 physical fingerprint and admitted rows.
+It snapshots old projections and unaffected objects, rejects name collisions
+and unowned rebuilt-table attachments, rebuilds under the existing idle
+connection/foreign-key protocol, inserts revision-one metadata and restores
+owned objects, validates before and after the final marker, and commits once.
+Every injected failure rolls back both schema and rows. Activation also updates
+the object inventory, schema fingerprints and all compatible read consumers.
+
+`completion_evidence_bundles.continuation_basis_json` is nullable TEXT with
+valid JSON and a 16,777,216 UTF-8 byte bound. It is null for formats one/two and
+non-null only for source-schema-29 format three. The existing immutable Bundle
+guards protect this column. It stores the closed sanitized continuation graph
+captured at sealing, not original review bodies or operational observations.
+Projection reuses this frozen value; later continuation/resolution rows never
+change an earlier sealed graph. Whole Bundle size still uses the existing
+16,777,216-byte limit including every payload member and envelope.
+
 ## Migration Sequence
 
 `schema_migrations` is contiguous, named, and validated with required objects
@@ -55,6 +146,7 @@ Current sequential migrations are:
 | 26 | `review_pending_session_slot`: combined slot acquisition guards and transition policy version |
 | 27 | `review_pending_reacquisition_guard`: forward correction of legacy pending reacquisition |
 | 28 | `task_event_note_bodies`: nullable full-body retention on Task events |
+| 29 | `review_continuations`: successor judgments, explicit reassessment resolution and frozen continuation evidence |
 
 Every migration is ordered, idempotent on reentry, transactional, and
 rollback-tested. Reentry validates rather than synthesizing missing data.
@@ -67,10 +159,10 @@ checkpoint, maintenance, identity, and completion traces. The sole current
 exception is migration 20's Bundle-rebuild retirement of the
 unsupported attached residue defined below; it changes no other migration.
 
-The fixed-state setup migrator accepts complete source schemas v1-v27 and
-treats v28 as current. Legacy `state/projects` discovery is intentionally
+The fixed-state setup migrator accepts complete source schemas v1-v28 and
+treats v29 as current. Legacy `state/projects` discovery is intentionally
 narrower: v1-v13 plus the explicit schema-v14 legacy-layout transition.
-Viewer compatibility is independent and accepts source schemas v5-v28.
+Viewer compatibility is independent and accepts source schemas v5-v29.
 Incomplete history, a missing required object/row, a later marker, too-new
 state, unsupported layout, foreign identity, or corrupt integrity fails closed.
 
@@ -130,7 +222,9 @@ reject schema 25 rather than dropping its registration constraints.
 ### Combined Session Slot Migration
 
 `schema_session_slot.py` owns Setup-only 25→26 migration and its exact DDL/fingerprint.
-The public runtime constant is 28. Schema 26 retains the original ownership states
+The public runtime ceiling follows the current supported schema in the
+[database specification](database-specification.md#initialization-and-supported-schemas).
+Schema 26 retains the original ownership states
 and active partial index. New insert/acquisition triggers check the combined
 owner/completion-owner session/project slot. A retained legacy overlap is not
 rewritten or arbitrarily assigned: only continuations/releases of its existing

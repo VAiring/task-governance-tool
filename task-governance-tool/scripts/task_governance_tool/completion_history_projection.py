@@ -115,7 +115,7 @@ def _format_gate_basis(
             or receipt_ids
         ):
             raise completion_history_inconsistent()
-    elif basis.version == 1:
+    elif basis.version in (1, 2):
         if (
             any(not _is_json_integer(value) for value in count_values)
             or any(
@@ -156,7 +156,7 @@ def _format_cycle(cycle: CompletionCycle) -> dict[str, Any]:
         if (
             cycle.completeness != "complete"
             or cycle.verification_attestation is not True
-            or cycle.gate_basis.version != 1
+            or cycle.gate_basis.version not in (1, 2)
         ):
             raise completion_history_inconsistent()
     elif cycle.origin == "legacy_current_done":

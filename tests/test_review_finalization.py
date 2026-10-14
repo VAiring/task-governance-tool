@@ -122,7 +122,8 @@ class InstalledFinalizationTests(fixtures.PreparationFixture):
         context = json.loads(completed.stdout)["handoff"]
         self.assertEqual(context["finalization"]["status"], "prepared")
         self.assertEqual(set(context), {"status", "packet_path", "review_requests", "review_wait",
-                                       "finalization", "finalization_command"})
+                                       "finalization", "finalization_command", "preparation"})
+        self.assertEqual(context["preparation"]["route"], "integrated")
         self.assertNotIn("--commit-approved", context["finalization_command"])
         return task, context
 
@@ -140,7 +141,8 @@ class InstalledFinalizationTests(fixtures.PreparationFixture):
         return result, json.loads(result.stdout)
 
     def service(self, task):
-        for module in (finalization, review_wait_basis):
+        from task_governance_tool import review_handoff_scope
+        for module in (review_handoff_scope, review_wait_basis):
             self.enterContext(mock.patch.object(module, "__file__", str(self.install.skill_root /
                 "scripts/task_governance_tool" / (module.__name__.split(".")[-1] + ".py"))))
         return finalization.Finalizer(self.root, task, capture_caller_identity())
@@ -559,7 +561,7 @@ class InstalledFinalizationTests(fixtures.PreparationFixture):
     def test_worker_guard_retains_first_failure_before_second_child_read_fails(self):
         self.worker_guard_race("partial")
 
-    def test_worker_reads_each_child_once_per_guard_and_fresh_at_later_effects(self):
+    def test_worker_reads_each_child_once_until_bound_judgments_qualify(self):
         from tests.test_review_wait_direct import ORIGINAL, NEW_TURN
         from tests.test_review_wait_service import TURN
         from task_governance_tool.review_wait_runtime.review_wait_host import ChildTurn
@@ -599,17 +601,30 @@ class InstalledFinalizationTests(fixtures.PreparationFixture):
         self.assertTrue(direct.handle("direct_delete_start", {}, {"threadId": parent, "turnId": ORIGINAL})["ok"])
         host.parent = ChildTurn(parent, ORIGINAL, "completed", "idle")
         # set_finalization_result runs before the final notification guards.
-        # Closing on that report races the second child read with cancellation.
+        # Closing on that report races receipt observation with cancellation.
         direct._worker.join(30)
         self.assertFalse(direct._worker.is_alive(), direct.repository.read())
         self.assertEqual(direct.repository.read().acknowledged_turn, NEW_TURN)
         direct.close()
         self.assertEqual(len(reports), 1)
         self.assertEqual(reports[0]["status"], "completed", reports)
+        registered = reports[0]["registered_receipt_ids"]
+        self.assertEqual(len(registered), 2)
+        self.assertEqual(len(set(registered)), 2)
+        evidence = reports[0]["reviews"]
+        self.assertTrue(evidence["gate"]["satisfied"])
+        self.assertEqual(evidence["gate"]["qualifying_independent_passes"], 2)
+        self.assertEqual(len(evidence["current_receipts"]), 2)
+        self.assertEqual({row["review_receipt_id"]: row["verdict"] for row in evidence["current_receipts"]},
+                         {receipt_id: "pass" for receipt_id in registered})
         self.assertTrue(boundaries)
         self.assertEqual(boundaries[0]["stages"], boundaries[1]["stages"])
         for boundary in boundaries:
-            self.assertEqual(boundary["reads"], list(host.reviewer_ids), boundary)
+            # This fixture changes no judgment/basis after registering its two
+            # exact PASS results. Later effects reuse them without child reads;
+            # the parent/deadline guards and all stage boundaries still run.
+            expected_reads = [] if boundary["stages"][0] == "succeeded" else list(host.reviewer_ids)
+            self.assertEqual(boundary["reads"], expected_reads, boundary)
         stages = {boundary["stages"] for boundary in boundaries}
         for stage in (("dispatching", "not_started", "not_started"),
                       ("succeeded", "dispatching", "not_started"),

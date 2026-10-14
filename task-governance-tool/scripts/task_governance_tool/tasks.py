@@ -30,6 +30,7 @@ from task_governance_tool.evidence_ledger import (
     EvidenceSource,
     TargetCaptureBinding,
     build_evidence_reference,
+    canonical_json_bytes,
 )
 from task_governance_tool.evidence_projection import (
     EvidenceProjectionError,
@@ -2804,7 +2805,7 @@ def _seal_native_completion_locked(
         completion_cycle_id=completion_identity.completion_cycle_id,
         cycle_ordinal=completion_identity.saved_cycle_ordinal,
         source_schema_version=bundle_basis.source_schema_version,
-        bundle_version=2,
+        bundle_version=3 if bundle_basis.review_continuation_basis is not None else 2,
         contract_revision=cycle.contract_revision,
         authority_snapshot_id=(
             completion_binding.authority_snapshot_id
@@ -2839,6 +2840,8 @@ def _seal_native_completion_locked(
         criterion_links=prepared_links,
         members=prepared_members,
         finding_snapshots=prepared_findings,
+        continuation_basis_json=(canonical_json_bytes(bundle_basis.review_continuation_basis).decode("utf-8")
+            if bundle_basis.review_continuation_basis is not None else None),
     )
     persisted_cycle = insert_native_completion_cycle_locked(
         connection,

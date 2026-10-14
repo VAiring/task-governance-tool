@@ -322,7 +322,7 @@ class ReleaseContractCheckerTests(unittest.TestCase):
                 )
 
         identity_mutations = (
-            ("| SQLite schema | v28 |", "| SQLite schema | v99 |"),
+            (f"| SQLite schema | v{RUNTIME_CONTRACT.schema_version} |", "| SQLite schema | v99 |"),
             (
                 "| Supported runtime | Python 3.12 or newer on Windows, Linux, "
                 "and macOS (ordinary functions) |",

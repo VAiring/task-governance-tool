@@ -304,6 +304,219 @@ caller-owned streams without descriptors remain the caller's lifecycle concern.
 This registration command accepts stdin only, not file paths. The separate
 helper below performs caller-owned transport without changing this writer.
 
+### Conditional Review Continuation
+
+The helper exposes `continue --repo <project> --task-id <Task>
+--target-generation <generation> --directory <unused ignored directory>` with
+the closed selection on bounded UTF-8 stdin. The records-only route permits
+this exceptional operation only for an admitted manual preparation; an integrated
+locator is rejected before any continuation write and never acquires automatic
+finalization authority from records-only invocation.
+
+The [approved continuation plan](review-continuation-plan.md) owns this Task's
+implementation and activation gates. The following closed extension is inactive
+until its schema, repositories, helper, gate consumers and tests are synchronized.
+It adds no public MCP operation, new normal-loop call or Git authority.
+
+The core records an explicit continuation for the complete project/Task,
+Contract, captured authority/criteria, target and applicable owner/execution
+basis. Its tool-owned `tg_review_continuation_<16-lowercase-hex>` ID binds one
+prepared transport root, predecessor, sequence, selected actual sessions and
+monotone preparation/registration state. Selected reassessment suspends the old
+verdict; any required pending judgment blocks completion. Valid unselected PASS
+remains available. Neither timestamps nor reviewer aliases choose a head.
+
+Each Receipt has a positive judgment revision. Revision one has no predecessor;
+later revisions require an explicit same-basis continuation and exactly one
+predecessor from the same reviewer key and actual session. The complete chain is
+validated, including immutable References and applicable conditions. One reviewer
+still counts once. Ordinary registration retains duplicate/replay rejection;
+only the typed continuation writer may append a successor. Legacy absence of a
+session never becomes a binding through inference.
+
+`review_handoff.py continue` takes explicit repo, Task, target generation, an
+unused ignored directory and one bounded UTF-8 stdin selection. It has exactly
+`version:1` and `reviewers`; one through eight distinct entries have exactly
+`session_id`, `action=supplement|reassess`, `prior_receipt_id` and sanitized
+`reason` (at most 1,000 characters). Null predecessor is permitted only for a
+supplement with no registered judgment. IDs, revision, original paths, judgment,
+approval, destination and schedule are derived, not additional caller inputs.
+Existing 262,144-byte input and physical-path rules apply. A same-operation retry
+observes its saved identity and settled outcomes; it never repeats unknown effects.
+Preparation success requires agreement of the current preparation, latest
+non-superseded core continuation, physical Packet and digest, request round and
+applicable integrated round. The same rule applies to first execution and retry.
+An interrupted local save may resume only its proven missing stages at the
+already recorded destination. Complete matching Packet bytes may be reconnected;
+missing or changed published content and unprovable residue remain unavailable.
+No retry deletes, overwrites or selects another destination to escape that state.
+Historical success alone never returns current submit/finalize readiness.
+
+Ready preparation publishes an operational locator of its exact Packet/result
+references and manual/integrated route. A continuation keeps validated registered
+results and exact unregistered originals, creates only selected reviewer requests,
+and never rewrites old bytes. A saved NG must first be registered under the
+existing complete-batch rule. Ambiguous, unavailable or changed original binding
+is reported rather than selecting a route or hiding the judgment. Initial legacy
+transport remains valid under its existing rules without an inferred locator.
+
+The unchanged version-one judgment is accompanied by machine-owned continuation
+Packet context and a version-two save sidecar. That sidecar retains all v1 fields
+and additionally binds preparation ID, continuation ID/sequence, selected action
+and expected predecessor. Save captures the actual caller, and all metadata must
+match the selected session and exact Packet. Submission uses a distinct closed
+continuation envelope; missing continuation metadata cannot fall back to ordinary
+or legacy registration. Complete new originals and the exact retained inventory
+are checked before one atomic core batch. Registered originals are not resubmitted.
+
+An explicit Finding resolution may additionally reference the actual successor
+Receipt. It must belong to the superseded same-session chain and match the
+unchanged target/Contract. The immutable link also binds the explicit resolution
+state; it does not create a verdict or automatically resolve a Finding. An already
+resolved Finding may acquire this link without changing its original resolution.
+Only a valid link permits that Finding's same-generation fresh-review exception;
+unlinked high/medium Findings and every unresolved Finding keep their existing
+manual/integrated gate meaning. Existing resolution inputs remain unchanged.
+
+One validated effective-evidence evaluator supplies manual and automatic gates,
+Task/Viewer projection and locked completion selection. A complete valid existing
+result set precedes new reviewer-activity requirements. An existing matching
+wait retains its saved reviewer/turn identity for readiness duplicates and known
+cleanup even when qualified judgments remove the need for fresh child reads.
+That saved identity never establishes new reviewer activity or authorizes another
+occurrence; same-turn and unknown-effect rules remain unchanged. Incidental turn mismatch
+alone cannot invalidate a fully bound valid judgment; genuine required-review
+failure, interruption or unknown remains distinct and needs evidence-backed
+continuation. Old observations and blockers remain historical, never overwritten
+by PASS. Changed material or conditions still require a fresh target and review.
+An all-completed historical `finalization_reviewer_mismatch` may qualify only
+when each observed actor has a validated judgment for the current exact basis.
+The ordinary verdict, required-count and Finding gates still apply. Empty
+observations and unknown/failed/interrupted execution cannot use that exception.
+A current-round mismatch additionally requires its already registered exact
+original set and a satisfied current review gate, with every observed actor
+bound to a validated current judgment. It can then use the same intent without
+new reviewer activity or continuation. The retained blocker is not cleared.
+Failure guidance distinguishes same-basis continuation from a changed-material
+fresh target, and never treats an unknown effect as permission to replace it.
+
+Manual continuation returns its generated submit command and retains authorized
+manual completion. Only the matching existing integrated intent returns finalize;
+continue creates neither an intent nor commit authority. All successful old
+registration, candidate/publication and completion stages remain monotone.
+Unknown effects block replacement. The old worker must actually exit and known
+timer/send cleanup settle before publishing a new selected-reviewer occurrence.
+An earlier target's closed request may remain the latest per-Task request.
+Explicit continuation validates that request and its native historical binding
+against its own saved basis, separately from the new current preparation basis.
+Only a strictly older target with the same project/binding/Task/parent and
+proven joined cleanup qualifies; same-generation drift, future targets and
+unavailable history remain rejected. Old requests and judgments are not rebound.
+If no wait attempt was ever recorded, an exact empty request journal and a
+validated older native round may retire its unused preparation without a worker
+join. This cannot substitute for cleanup of any recorded wait attempt.
+No core SQLite writer spans host I/O or join. Success and invalidation share one
+bound send decision; notification identity includes the continuation/occurrence.
+Capacity, deadlines, real host metadata and all existing permission gates remain.
+
+#### Continuation Transport And Failure Contract
+
+The machine Packet `review_session_context` version two retains `project_id`
+and `execution_id` and adds exactly `preparation_id`, `continuation_id`,
+`continuation_sequence`, `selected_reviewers`. Each selected row has exactly
+`session_id`, `action`, `prior_receipt_id`; generated reason belongs to the
+review request and the bounded core record, not the judgment. A v2 sidecar adds
+those first three scalar fields and the selected `action`, `prior_receipt_id`
+to the existing v1 binding fields. Actual caller session must select exactly
+one row. Original result JSON remains version one and is never annotated.
+
+The continuation submission envelope has exactly
+`format="taskgov-review-continuation-handoff-v1"`, `preparation_id`,
+`continuation_id`, `continuation_sequence`, `items`, `retained_receipt_ids`.
+Items have the existing exact `original_base64` and `binding` members; every
+new selected result uses a v2 binding. Retained unregistered original results
+keep their existing binding. A nonempty optional `retained_originals` member
+is a closed list of `prior_continuation_id`, `session_id`,
+`original_result_digest`, `metadata_digest`. It permits only exact captured
+old-v2 originals from superseded ancestors; all other mixed-continuation
+metadata remains invalid. Both the envelope and native stored capture must
+match, and each capture must name exactly one provided original. The helper
+derives these references, with no new caller-supplied path or approval input.
+Registered retained IDs are derived from the
+locator/core relation, not supplied as an unvalidated alternative inventory.
+The decoder rejects missing, extra, conflicting or uncaptured mixed-continuation metadata
+before the atomic writer. The complete retained/new inventory must still fit
+one through eight original slots and the existing input byte bound. The writer
+rechecks expected heads and full basis, validates all originals, skips only
+exact already-registered immutable originals and publishes one batch.
+Explicitly superseding an unjudged pending round requires exact settled old
+effects and worker termination, preserves all required slots/captured originals,
+and atomically admits its successor. It cannot erase a saved result from a
+newly selected slot: use the existing registration boundary first. Save and
+switching share preparation admission through complete exclusive file readback;
+obsolete selected contexts fail before creation. Unselected initial slots may
+still save against their unchanged admitted basis. Partial Save residue is
+unavailable evidence and cannot be discarded as an absent result.
+
+The existing explicit Finding resolution gains optional
+`--reassessment-receipt <Receipt ID>`. The owner supplies the existing resolution
+summary; the linked successor must have a registered actual original-session
+reassessment of that Finding's chain. If already resolved, retain its original
+resolution and append the typed link using the supplied sanitized summary.
+No ordinary resolution or unlinked Finding gains the same-generation exception.
+The same optional argument may accompany the unchanged version-one grouped
+stdin input; it applies to every explicitly selected Finding in that atomic
+batch. A Finding from another successor chain rejects and rolls back the batch.
+An already recorded identical link is not a new resolution or event: the public
+operation rejects it and directs stored-state inspection. No blind replay is
+introduced.
+
+Schema-29 Receipt acknowledgements/projections add `judgment_revision` without
+changing the immutable assertion projection. Current detail lists only effective
+heads and adds `judgment_state=effective|pending_reassessment`; bounded recent
+history retains predecessor judgments. `review_evidence.continuation` is null
+without a current continuation, otherwise exactly `state=pending|settled`,
+nullable `pending_continuation_id`, `pending_sessions`, `effective_receipt_ids`
+and `suspended_receipt_ids`. Pending required judgments prevent completion even
+when the old PASS count would have been sufficient. Current-generation counts
+and qualifying passes use heads/unsuspended results; total and recent inventories
+remain historical. A valid typed link removes only its resolved Finding's
+same-generation fresh-review blocker, never its original row or an open Finding.
+
+Ready/recovery responses identify `continuation_id`, sequence, route,
+`retained_receipt_ids`, selected requests and one route-specific submit/finalize
+command. Repeated selection reconciles the admitted operation; it never grants
+permission to rewrite files or resend a reviewer request.
+An existing `fenced` or `settled` transition with no Packet digest proves that executable requests have
+not yet been published. After its known cleanup settles, the first ready
+response returns the selected requests with `replayed=false`. Once Packet
+publication may have begun, reconciliation retains the no-redispatch rule,
+including lost readiness acknowledgements.
+Fixed failures are
+`review_continuation_unavailable`, `review_continuation_conflict`,
+`review_continuation_pending`, `review_continuation_capacity`,
+`review_continuation_effect_unknown` and `review_continuation_basis_changed`.
+Incomplete old-worker cleanup returns `review_continuation_cleanup_required`;
+absence of provable same-worker termination returns
+`review_continuation_worker_exit_unknown`. Neither outcome publishes new reviewer
+requests or readiness. The exceptional continuation response names the existing
+`review_wait_stop` for known cleanup and then the same explicit continuation
+invocation for reconciliation; it adds no caller-chosen operation identity,
+timer argument or normal-path step. Unknown results direct diagnosis, never
+repeat an effect. A saved pending continuation with no transition row is a
+recoverable incomplete admission, not authorization for new worker startup.
+The response supplies known preparation/registration stage, fixed reason and
+next action: supply a missing original, use existing complete-batch registration,
+settle a known old wait, inspect an unknown outcome, use a fresh target for
+changed basis, or report unavailable legacy preparation. It never returns raw
+host/SQLite/path exception detail or treats a lost persistence acknowledgement
+as proof of absence.
+The helper failure projection includes `preparation_stage=admission|cleanup|preparation`.
+It uses `inspect_incomplete_admission` for an unproven admission,
+`inspect_saved_packet` for missing or changed physical content, and
+`use_current_preparation` for a conflicting or superseded operation; these are
+diagnostic next actions, not authority for new effects or file repair.
+
 <a id="caller-owned-review-handoff"></a>
 
 ### Caller-Owned Review Handoff
@@ -883,9 +1096,12 @@ exact reviewer/turn/status observations, closed blocking codes and phases
 are retained under the canonical resolver's operational subtree.
 Observed failed/interrupted, unavailable or changed reviewer turns remain blockers
 on that intent across lost notifications, `--check` and explicit retries. Missing
-later host information is not a successful reviewer observation. A fresh review
-requires a new target generation and intent; the old registered results and
-partial successes remain visible. Ordinary manual completion is unchanged.
+later host information is not a successful reviewer observation. For unchanged
+bound material, the [explicit continuation contract](#conditional-review-continuation)
+governs qualified judgment reuse and evidence-backed retirement of named old
+failures; it preserves those observations and partial successes. Changed material
+or conditions require a new target generation and intent. Ordinary manual
+completion is unchanged.
 This retention begins with the integrated wait's admission and ordinary child
 observations, before another child/parent read, cancellation or scheduled-turn
 handoff can interrupt dispatch. A healthy unfinished child is not a failure.
@@ -1116,10 +1332,28 @@ basis, joins/stops the old worker, settles known cleanup, records deletion
 intent for its PAUSED timer, confirms deletion, then creates/prepares/starts
 the next fresh occurrence internally. If those reviews have ended, cleanup
 returns `status=reviews_ended,parent_may_end=false` and creates no next timer.
+The same rule applies after an explicit review continuation: its published
+round remains the judgment binding while each scheduled wait has its own
+attempt, worker, timer and delivery decision. A later actual parent turn may
+renew only the latest occurrence's unchanged basis, selected reviewer/turn pairs
+and continuation identity after settled cleanup and proven worker exit. It does
+not append a review round or redispatch a reviewer. Same-turn calls remain
+readiness-only duplicates; a round published without an occurrence cannot use
+renewal to start new reviewer activity.
 No reviewer redispatch, separate registration, phase choice or manual reservation
 management is required. The repeated request is not an automatic retry of an
 unknown effect. Changed basis/reviewer identity requires explicit recovery of
 the old association before another wait.
+The per-parent/Task request history may retain an older target's continuation
+round. A fresh ordinary target selects only an applicable current-basis round;
+it never rebinds the old one. Validate the historical native record, unchanged
+project/binding/parent identity and strictly older generation. Before retiring
+an unused prepared round or replacing older effects, prove the exact latest
+request's settled timer/send and actual worker exit. Only then may its monotone
+phase become published while its identity, Packet and earlier records remain
+history. Same-generation drift, unknown cleanup and missing exit proof block
+the fresh wait. A later ordinary attempt uses its own new basis, with no old
+continuation identifier and no reused judgments.
 
 Pending/unknown create, arm, delete, pause or send results forbid replay,
 competing cleanup and replacement. An explicit stop may clean up only a known
@@ -1782,7 +2016,7 @@ repeating timer changes, Task completion or review registration.
 
 ### Reviewer Session Binding
 
-This section applies from schema 25 (retained by current schema 28) under the
+This section applies from schema 25 (retained by current schema 29) under the
 [approved participation design](session-usage-plan.md#reviewer-participation-without-new-manual-steps)
 and preserves the version-1 reviewer's judgment template. Schema migration
 remains setup-only; numerical collection and lifecycle integration are separate.
@@ -2327,7 +2561,8 @@ Public cycle fields are exactly `completion_cycle_id`,
 `changes_requested`, `open_high`, `open_medium`, `fresh_review_required`, and
 `qualifying_receipt_ids`.
 
-Gate-basis v0 emits six null counts and an empty receipt array; v1 emits integer
+Gate-basis v0 emits six null counts and an empty receipt array; v1 and the
+validated continuation basis v2 emit integer
 counts and exactly one qualifying ID for Tier-0/Tier-1/fallback or two for
 Tier-2 independent basis. Attestation is true or null, never false. Public
 events remain only `task_event_id`, `task_id`, `project_id`, `event_type`,

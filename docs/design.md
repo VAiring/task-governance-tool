@@ -2,14 +2,14 @@
 
 Status: the immutable published product remains v0.10.0/schema v16/Viewer v4
 sources v5-v16/20 leaves; its identity is fixed in `docs/release-install.md`.
-The current unpublished candidate is v0.13.0 with SQLite schema v28, Viewer
-snapshot v4 accepting source schemas v5-v28, and 23 public command leaves. Its
+The current unpublished candidate is v0.13.0 with SQLite schema v29, Viewer
+snapshot v4 accepting source schemas v5-v29, and 23 public command leaves. Its
 active implementation includes tool-owned Verification Receipt subjects,
 versioned Review provenance, immutable Evidence References and completion
 Bundles, deterministic Evidence JSON, and the explicitly opted-in trusted-local
 verification Runner with a closed manual fallback. Schema v20 remains a
 supported migration source and
-audit-only Runner lineage; schema v28 is current persistence and retains the
+audit-only Runner lineage; schema v29 is current persistence and retains the
 schema-v21 Runner gate protocol unchanged.
 Select-Split-Merge-Register is active only in the Skill instruction layer.
 The Task database owns live state and evidence; completed execution narrative
@@ -293,6 +293,19 @@ The implementation keeps these narrow ownership boundaries:
   repository rechecks the existing Receipt/Reference, current target and
   execution in its caller's writer; it neither uses numerical storage nor
   commits independently. Ordinary commands never initialize the relation.
+- The conditional [review continuation model](database-design.md#conditional-review-continuation-storage)
+  separates pure selection in `review_continuation.py`, core persistence and
+  registration in `review_continuation_repository.py` and
+  `review_continuation_registration_repository.py`, snapshot acquisition in
+  `review_continuation_handoff_repository.py`, and frozen Evidence composition
+  in `review_continuation_evidence.py`/`review_continuation_evidence_repository.py`.
+  `schema_review_continuation.py` owns only the explicit Setup migration.
+  [Helper/finalizer composition](review-completion-design.md#conditional-continuation-composition)
+  uses `review_handoff_continuation.py`, `review_handoff_originals.py`,
+  `review_preparation.py`/`review_preparation_repository.py` and
+  `review_finalization_continuation_repository.py`; host orchestration remains
+  in the existing managed modules. Request-round codec, cross-store transition
+  and cleanup observation are separate runtime repository responsibilities.
 - `evidence_ledger.py` owns authority/criterion canonicalization, closed
   assurance/producer dispatch, Evidence Reference projections and digests,
   and capture-version source guards without SQLite access.
@@ -602,7 +615,9 @@ Current detail is owned by the [Database persistence and migration design](datab
 
 <a id="current-schema-v27-ownership-and-reviewer-binding-design"></a>
 
-## Current Schema-v28 Ownership, Reviewer Binding, And Task Notes Design
+<a id="current-schema-v28-ownership-reviewer-binding-and-task-notes-design"></a>
+
+## Current Schema-v29 Ownership, Reviewer Binding, And Task Notes Design
 
 Current detail is owned by the [Database persistence and migration design](database-design.md#session-ownership-migration)
 and its [reviewer binding migration](database-design.md#conditional-reviewer-binding-migration)

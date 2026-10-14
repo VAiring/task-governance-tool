@@ -111,6 +111,16 @@ same reviewers are healthy but unfinished, repeat only the same wait request.
 Do not redispatch reviewers merely to wait again, choose reservation phases or
 manually create another heartbeat.
 
+Exceptional same-basis supplementation/reassessment uses the
+[explicit continuation](task_workflow.md#same-basis-review-continuation), then
+waits only for the returned selected actual reviewers. Retained qualified
+judgments do not depend on their old chat turns. Within a new active occurrence,
+unexpected turn changes still invalidate waiting. A failure notice reports an
+invalidated wait and a safe next action, never PASS or Task completion. Its
+continuation/occurrence identity belongs to that outcome; an old notice or
+receiving turn cannot acknowledge the new one. Unknown send/cleanup prevents
+replacement and resend.
+
 ## Retained Wait Notifications
 
 Other permitted work, such as read-only Task inspection, or a retained Task's

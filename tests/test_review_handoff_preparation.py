@@ -224,7 +224,10 @@ class InstalledPreparationTests(PreparationFixture):
         self.assertEqual(result["operation_status"], "succeeded")
         self.assertEqual(result["source"]["verification_route"], "not_required")
         context = result["handoff"]
-        self.assertEqual({"status", "packet_path", "review_requests", "review_wait", "submit_command"}, set(context))
+        self.assertEqual({"status", "packet_path", "review_requests", "review_wait", "submit_command", "preparation"}, set(context))
+        self.assertEqual(set(context["preparation"]), {"preparation_id", "route"})
+        self.assertRegex(context["preparation"]["preparation_id"], r"^tg_review_preparation_[0-9a-f]{16}$")
+        self.assertEqual(context["preparation"]["route"], "manual")
         self.assertEqual("references/review_wait.md#normal-wait", context["review_wait"]["guide"])
         packet = json.loads((self.root / context["packet_path"]).read_bytes())
         self.assertEqual(packet["task"]["task_id"], task)
@@ -560,11 +563,20 @@ class ReviewerDisplayTests(PreparationFixture):
                 output = context["review_requests"][0]["result_path"]
                 saved = self.invoke("save", "--repo", str(self.root), "--packet", context["packet_path"],
                                     "--output", output, raw=raw, reviewer=index)
-                self.assertEqual(saved.returncode, 0, saved.stdout)
-                submitted = self.invoke("submit", "--repo", str(self.root), "--packet", context["packet_path"], output)
-                self.assertEqual(submitted.returncode, 0, submitted.stdout)
+                if legacy:
+                    # Reading the older shape remains supported. Editing an
+                    # already admitted ready Packet cannot reuse its locator.
+                    # Genuine locator-free legacy transport is covered by the
+                    # standalone handoff compatibility fixtures.
+                    self.assertNotEqual(saved.returncode, 0)
+                    self.assertEqual(json.loads(saved.stdout)["code"], "review_packet_stale")
+                    self.assertFalse((self.root / output).exists())
+                else:
+                    self.assertEqual(saved.returncode, 0, saved.stdout)
+                    submitted = self.invoke("submit", "--repo", str(self.root), "--packet", context["packet_path"], output)
+                    self.assertEqual(submitted.returncode, 0, submitted.stdout)
+                    self.assertEqual((self.root / output).read_bytes(), raw)
                 self.assertEqual(path.read_bytes(), original_packet)
-                self.assertEqual((self.root / output).read_bytes(), raw)
                 print(f"AUTHORITY_REF legacy={legacy} added_packet_bytes={added_bytes}; "
                       "reference_only_lookup=unneeded_when_present; read_source_calls=1; tokens=unmeasured")
                 # Optional compatibility must not hide a mismatching supplied
@@ -1659,7 +1671,7 @@ class ReviewerMaterialTests(PreparationFixture):
             if tier == 0:
                 payload["receipts"][0].update(verdict="not_required", provenance=None)
             raw = encode(payload)
-            output = f"reviews/tier{tier}/original.json"
+            output = prepared["handoff"]["review_requests"][0]["result_path"]
             approvals = ["--user-approved-reviewer", "alternative"] if tier == 2 else []
             if tier == 2:
                 failed = self.invoke("save", "--repo", str(self.root), "--packet", packet_path,
@@ -1745,8 +1757,11 @@ class PreparationFailureTests(PreparationFixture):
         return exit_code, json.loads(output.getvalue()), capture
 
     def test_simulated_os_choice_applies_to_every_missing_directory(self):
+        from task_governance_tool import review_preparation
+
         (self.root / "reviews").mkdir()
         mkdir = Path.mkdir
+        caller = handoff.capture_caller_identity()
         for name in ("nt", "posix"):
             with self.subTest(os_name=name):
                 variant = mock.Mock(wraps=os)
@@ -1758,14 +1773,20 @@ class PreparationFailureTests(PreparationFixture):
                     return mkdir(path, *args, **kwargs)
 
                 with mock.patch.object(preparation, "os", variant), \
-                     mock.patch.object(Path, "mkdir", create):
+                     mock.patch.object(Path, "mkdir", create), \
+                     mock.patch.object(review_preparation, "publish_ready", return_value=None) as publish:
                     code, result, capture = self.run_injected(directory=f"reviews/{name}/middle/g1")
                 self.assertEqual(code, 0, result)
                 capture.assert_called_once()
+                publish.assert_called_once_with(self.root, f"reviews/{name}/middle/g1/packet.json",
+                    [f"reviews/{name}/middle/g1/review-{index}.json" for index in (1, 2)],
+                    caller, route="manual")
                 expected = {} if name == "nt" else {"mode": 0o700}
                 self.assertEqual(seen, [(self.root / path, (), expected) for path in
                     (f"reviews/{name}", f"reviews/{name}/middle", f"reviews/{name}/middle/g1")])
         # OS-selection coverage only; not a native POSIX permission observation.
+        # InstalledPreparationTests and test_review_preparation separately cover
+        # real locator publication under its physical package admission.
 
     def test_malformed_or_incomplete_capture_has_unknown_outcome_and_no_files(self):
         for raw in (b"", b"{", b"{}", b"\xef\xbb\xbf{}", b'{"ok":true,"ok":false}', b"null"):

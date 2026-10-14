@@ -166,6 +166,28 @@ class ManagedHostTests(unittest.TestCase):
                 self.assertEqual(actual["stages"], previous["stages"])
                 worker._receipt_finalizer.execute.assert_called_once_with(check=True)
 
+    def test_saved_judgment_drift_preserves_bound_report_but_unknown_and_fence_fail_closed(self):
+        from types import SimpleNamespace
+        from task_governance_tool.review_finalization import FinalizationError
+        from task_governance_tool.review_wait_runtime.managed_direct import ManagedDirectProbe
+        worker = object.__new__(ManagedDirectProbe)
+        finalizer = mock.Mock()
+        worker._finalizer = mock.Mock(return_value=finalizer)
+        controller = SimpleNamespace(reviewers=((CHILD, TURN),))
+        for reason in ("review_target_mismatch", "task_ownership_changed"):
+            with self.subTest(reason=reason):
+                finalizer.saved_results_ready.side_effect = FinalizationError(reason)
+                self.assertEqual(worker._reviewers_to_observe(controller), controller.reviewers)
+                finalizer.execute.assert_not_called()
+        for error in (FinalizationError("review_continuation_conflict"),
+                      FinalizationError("finalization_reviewer_unknown"), OSError("unavailable")):
+            with self.subTest(error=type(error), reason=str(error)):
+                finalizer.saved_results_ready.side_effect = error
+                with self.assertRaises(type(error)) as raised:
+                    worker._reviewers_to_observe(controller)
+                self.assertIs(raised.exception, error)
+                finalizer.execute.assert_not_called()
+
     def report(self, summary):
         return {"task_id": TASK, "target": TARGET, "status": "attention_required", "task_title": "結果通知",
             "recorded_work": {"checkpoint": {"summary": "記録済みの作業"}}, "verification": {"result": "pass"},
@@ -644,6 +666,8 @@ class ManagedFlowTests(unittest.TestCase):
         # Actual observation writer and journal; no fake PASS or Git effects.
         class ObservationOnly:
             observe_reviewers = Finalizer.observe_reviewers
+            def saved_results_ready(self):
+                return False  # This fixture has no registered judgments.
         observer = ObservationOnly()
         observer.journal = journal
         self.session._finalizer = lambda binding: observer
@@ -660,6 +684,45 @@ class ManagedFlowTests(unittest.TestCase):
         self.assertEqual(journal.read().reviewer_observations, ((CHILD, TURN, "failed"),))
         self.assertEqual(journal.read().reviewer_blocker, "finalization_reviewer_failed")
         self.assertEqual(self.effects, ["create", "arm", "pause", "delete"])
+
+    def test_registered_integrated_wait_reuses_saved_pairs_without_child_reads(self):
+        journal = self.integrated_observer()
+        self.assertEqual(self.call()["status"], "waiting")
+        request_store = RequestRepository(self.paths.review_wait_request_store(PARENT, TASK))
+        before = request_store.read()
+        observer = self.session._finalizer(self.basis)
+        # The native saved-result predicate is tested with real Receipts in
+        # finalization tests. This fixture isolates wait/cleanup admission.
+        observer.saved_results_ready = lambda: True
+        original = self.factory
+        admission_child_reads = []
+        def no_fresh_child(**kwargs):
+            host = original(**kwargs)
+            if kwargs["automation_id"] == "pending":
+                def unexpected_read(child):
+                    admission_child_reads.append(child)
+                    raise AssertionError("saved results need no fresh child activity")
+                host.read_child = unexpected_read
+            return host
+        self.session.managed_host_factory = no_fresh_child
+        wrong_actor = self.call(reviewer_ids=[OTHER])
+        self.assertFalse(wrong_actor["ok"], wrong_actor)
+        self.assertEqual(request_store.read(), before)
+        self.assertEqual(self.effects, ["create", "arm"])
+        duplicate = self.call()
+        self.assertTrue(duplicate["replayed"], duplicate)
+        self.assertEqual(request_store.read(), before)
+        self.assertEqual(self.effects, ["create", "arm"])
+        self.current_parent = ChildTurn(PARENT, NEW_TURN, "inProgress", "active")
+        result = self.call(metadata={"threadId": PARENT, "turnId": NEW_TURN})
+        self.assertEqual(result["status"], "reviews_ended", result)
+        self.assertFalse(result["parent_may_end"])
+        attempt, request = request_store.read()
+        self.assertEqual((attempt, request.reviewers), (before[0], before[1].reviewers))
+        self.assertEqual(request.phase, "closed")
+        self.assertEqual(self.effects, ["create", "arm", "pause", "delete"])
+        self.assertEqual(journal.read().reviewer_observations, ())
+        self.assertEqual(admission_child_reads, [])
 
     def test_preflight_observation_waits_for_short_worker_write_without_replaying(self):
         journal = self.integrated_observer()

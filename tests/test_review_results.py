@@ -760,7 +760,9 @@ class ReviewResultsTests(unittest.TestCase):
         for row in rows:
             self.assertEqual(set(row), {"receipt", "findings"})
             public = row["receipt"]
-            self.assertEqual(set(public), {"review_receipt_id", "reviewer_key", "receipt_kind", "verdict", "summary", "user_approved"})
+            self.assertEqual(set(public), {"review_receipt_id", "reviewer_key", "receipt_kind", "verdict", "summary", "user_approved", "judgment_revision"})
+            self.assertIs(type(public["judgment_revision"]), int)
+            self.assertEqual(public["judgment_revision"], 1)
             saved = audit_receipts[public["review_receipt_id"]]
             self.assertEqual(saved["task_id"], self.task_id)
             self.assertEqual(saved["target_generation"], 1)

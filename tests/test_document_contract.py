@@ -45,6 +45,7 @@ EXPECTED_CANONICAL_DOCS = (
     "docs/session-usage-plan.md",
     "docs/review-finalization-plan.md",
     "docs/usage-response-attribution-design.md",
+    "docs/review-continuation-plan.md",
     "docs/history/README.md",
 )
 EXPECTED_METRIC_DOCS = EXPECTED_CANONICAL_DOCS + (
@@ -249,9 +250,9 @@ class DocumentContractTests(unittest.TestCase):
         self.assertNotIn(secret, serialized)
         self.assertNotIn("Traceback", serialized)
 
-    def test_registry_v22_is_closed(self):
+    def test_registry_v23_is_closed(self):
         expected = {
-            "schema": "taskgov-document-authority-v22",
+            "schema": "taskgov-document-authority-v23",
             "mandatory_start": [
                 "AGENTS.md",
                 "docs/authority.md",
@@ -276,7 +277,7 @@ class DocumentContractTests(unittest.TestCase):
                 "docs/database-design.md",
             ],
             "mixed_execution": [],
-            "conditional": ["docs/state-layout-separation-plan.md", "docs/verification-declaration-plan.md", "docs/session-usage-plan.md", "docs/review-finalization-plan.md", "docs/usage-response-attribution-design.md"],
+            "conditional": ["docs/state-layout-separation-plan.md", "docs/verification-declaration-plan.md", "docs/session-usage-plan.md", "docs/review-finalization-plan.md", "docs/usage-response-attribution-design.md", "docs/review-continuation-plan.md"],
             "history_index": "docs/history/README.md",
         }
         with self.fixture() as root:
@@ -454,6 +455,11 @@ class DocumentContractTests(unittest.TestCase):
         self.assertEqual(
             contract.ROUTE_SECTIONS,
             (
+                (
+                    contract.AUTHORITY,
+                    "## Conditional Review Continuation Plan",
+                    ("review-continuation-plan.md",),
+                ),
                 (
                     contract.AUTHORITY,
                     "## Conditional Response Usage Attribution Design",
@@ -783,7 +789,7 @@ class DocumentContractTests(unittest.TestCase):
                 ),
                 (
                     "docs/specification.md",
-                    "### Current Schema-v28 Persistence Contract",
+                "### Current Schema-v29 Persistence Contract",
                     ("database-specification.md#current-schema-v22-persistence-contract",),
                 ),
                 (
@@ -798,7 +804,7 @@ class DocumentContractTests(unittest.TestCase):
                 ),
                 (
                     contract.DESIGN,
-                    "## Current Schema-v28 Ownership, Reviewer Binding, And Task Notes Design",
+                "## Current Schema-v29 Ownership, Reviewer Binding, And Task Notes Design",
                     ("database-design.md#session-ownership-migration", "database-design.md#conditional-reviewer-binding-migration", "database-design.md#combined-session-slot-migration", "database-design.md#task-event-note-body-migration", "database-design.md#current-schema-v22-reservation-cleanup-design"),
                 ),
                 (

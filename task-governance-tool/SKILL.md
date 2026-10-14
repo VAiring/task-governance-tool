@@ -108,6 +108,7 @@ confirmation is required.
 | Pause, block, or resume held work | [State transitions](references/task_workflow.md#pause-resume-and-block) |
 | A discovery outside accepted scope | [Local handoff](references/task_workflow.md#scope-control-and-local-handoff) |
 | Exact review material ready, including `git_snapshot` before commit | [Set the review target](references/task_workflow.md#set-the-review-target) |
+| Same-basis NG reassessment or missing review material | [Continue only needed reviewers](references/task_workflow.md#same-basis-review-continuation) |
 | Explicit Receipt/provenance or saved-history investigation | [Task audit](references/cli_contracts.md#task-audit-detail) |
 | Explicit trusted-local Runner Plan authoring | [Plan actions, example, and OS limits](references/cli_contracts.md#runner-plan-actions) |
 | Maintenance warning after a successful write | [Continuity warnings](references/cli_contracts.md#internal-continuity-boundary) |

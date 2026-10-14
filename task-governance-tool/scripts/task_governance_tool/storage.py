@@ -271,7 +271,7 @@ from task_governance_tool.schema_verification_receipts import (
 )
 
 
-SCHEMA_VERSION = 28
+SCHEMA_VERSION = 29
 PRIVATE_SCHEMA20_MIGRATION_NAME = "verification_runner_shadow"
 PRIVATE_SCHEMA21_MIGRATION_NAME = "verification_runner_gate_basis"
 PRIVATE_SCHEMA22_VERSION = 22
@@ -812,6 +812,7 @@ class PreparedCompletionEvidenceBundle:
     criterion_links: tuple[PreparedCriterionEvidenceLink, ...]
     members: tuple[PreparedCompletionBundleMember, ...]
     finding_snapshots: tuple[PreparedCompletionFindingSnapshot, ...]
+    continuation_basis_json: str | None = field(default=None, repr=False)
 
 
 
@@ -835,6 +836,7 @@ class NativeCompletionBundleBasis:
     findings: tuple[dict[str, Any], ...]
     finding_references: tuple[dict[str, Any] | None, ...]
     completion_reference: dict[str, Any]
+    review_continuation_basis: dict[str, Any] | None = field(default=None, repr=False)
 
 
 @dataclass(frozen=True)
@@ -1556,7 +1558,20 @@ _SCHEMA_COLUMN_INTRODUCED_VERSION = {
     "column:task_completion_cycles.verification_runner_observation_id": 20,
     "column:completion_evidence_bundles.verification_basis_kind": 20,
     "column:completion_evidence_bundles.verification_runner_observation_id": 20,
+    "column:review_receipts.judgment_revision": 29,
+    "column:completion_evidence_bundles.continuation_basis_json": 29,
 }
+
+# Later-schema objects stay recognizable to predecessor inspection; schema 29
+# composes the same exact continuation object inventory for native admission.
+from task_governance_tool.schema_review_continuation import relation_statements as _continuation_relations
+for _statement in _continuation_relations():
+    _match = re.match(r"CREATE\s+(?:UNIQUE\s+)?(TABLE|INDEX|TRIGGER)\s+([a-z0-9_]+)", _statement, re.IGNORECASE)
+    if _match is None:
+        raise AssertionError("continuation object inventory is incomplete")
+    {"TABLE": _SCHEMA_TABLE_INTRODUCED_VERSION, "INDEX": _SCHEMA_INDEX_INTRODUCED_VERSION,
+     "TRIGGER": _SCHEMA_TRIGGER_INTRODUCED_VERSION}[_match.group(1).upper()][_match.group(2)] = 29
+del _statement, _match
 
 _EVIDENCE_LEDGER_REQUIRED_COLUMNS = {
     "authority_snapshots": {
@@ -5319,7 +5334,7 @@ def _owned_schema_sql_fingerprint(
     *,
     schema_version: int,
 ) -> str:
-    if schema_version not in {23, 24, 25, 26, 27, 28,
+    if schema_version not in {23, 24, 25, 26, 27, 28, 29,
         PRIVATE_SCHEMA20_VERSION,
         PRIVATE_SCHEMA21_VERSION,
         PRIVATE_SCHEMA22_VERSION,
@@ -5394,6 +5409,10 @@ def _validate_completion_evidence_bundle_schema_contract(
     connection: sqlite3.Connection,
 ) -> None:
     version = current_schema_version(connection)
+    if version == 29:
+        from task_governance_tool.schema_review_continuation import validate_owned_contract
+        validate_owned_contract(connection)
+        return
     if version == 28:
         from task_governance_tool.schema_task_event_notes import validate_owned_contract
         validate_owned_contract(connection)
@@ -5582,7 +5601,7 @@ def _verification_receipt_trigger_definitions(
     }
     definitions: dict[str, str] = {}
     statements = list(verification_receipt_schema_statements())
-    if schema_version in {23, 24, 25, 26, 27, 28, PRIVATE_SCHEMA21_VERSION, PRIVATE_SCHEMA22_VERSION}:
+    if schema_version in {23, 24, 25, 26, 27, 28, 29, PRIVATE_SCHEMA21_VERSION, PRIVATE_SCHEMA22_VERSION}:
         statements = [
             (
                 _task_completion_cycle_verification_basis_v21_trigger_sql()
@@ -5850,7 +5869,7 @@ def _validate_completion_gate_basis(
     *,
     review_tier: int,
 ) -> None:
-    _completion_int(basis.version, maximum=1)
+    _completion_int(basis.version, maximum=2)
     if basis.version == 0:
         if (
             basis.kind != "unknown"
@@ -5928,7 +5947,7 @@ def _cycle_from_row(row: sqlite3.Row) -> CompletionCycle:
     else:
         attestation = _completion_bool(attestation_value)
     basis = CompletionGateBasis(
-        version=_completion_int(row["gate_basis_version"], maximum=1),
+        version=_completion_int(row["gate_basis_version"], maximum=2),
         kind=str(row["review_basis_kind"]),
         required_independent_passes=(
             _completion_int(row["required_independent_passes"], maximum=2)
@@ -6233,7 +6252,7 @@ def _validate_completion_cycle(cycle: CompletionCycle) -> None:
             or cycle.completed_at is None
             or cycle.verification_attestation is not True
             or not cycle.review_target_kind
-            or cycle.gate_basis.version != 1
+            or cycle.gate_basis.version not in (1, 2)
         ):
             raise completion_history_inconsistent()
     elif cycle.origin == "legacy_current_done":
@@ -6342,6 +6361,48 @@ def _validate_cycle_verification_receipt(
     _validate_cycle_verification_receipt_projection(cycle, receipt)
 
 
+def _validate_continuation_cycle_receipts(connection: sqlite3.Connection, cycle: CompletionCycle) -> None:
+    from .review_continuation_evidence import decode_graph_json
+    from .review_continuation_evidence_repository import validate_frozen_against_core
+    if current_schema_version(connection) < 29 or cycle.completion_evidence_bundle_id is None:
+        raise completion_history_inconsistent()
+    row = connection.execute("SELECT * FROM completion_evidence_bundles WHERE completion_evidence_bundle_id=?",
+        (cycle.completion_evidence_bundle_id,)).fetchone()
+    if (row is None or row["bundle_version"] != 3 or row["source_schema_version"] != 29
+        or row["project_id"] != cycle.project_id or row["task_id"] != cycle.task_id
+        or row["completion_cycle_id"] != cycle.completion_cycle_id):
+        raise completion_history_inconsistent()
+    graph = decode_graph_json(row["continuation_basis_json"])
+    validate_frozen_against_core(connection, graph)
+    frozen_basis = json.loads(graph["continuations"][0]["basis_json"])
+    expected = dict(project_id=cycle.project_id, task_id=cycle.task_id, contract_revision=cycle.contract_revision,
+        review_tier=cycle.review_tier, authority_snapshot_id=row["authority_snapshot_id"],
+        acceptance_criterion_id=row["acceptance_criterion_id"], verification_criterion_id=row["verification_criterion_id"],
+        artifact_manifest_id=row["artifact_manifest_id"], target_kind=cycle.review_target_kind, target_value=cycle.review_target_value,
+        target_base_revision=cycle.review_target_base_revision, target_generation=cycle.review_target_generation)
+    if any(frozen_basis[key] != value for key, value in expected.items()):
+        raise completion_history_inconsistent()
+    receipts = {receipt["review_receipt_id"]: receipt for receipt in graph["receipts"]}
+    heads = [receipts[key] for key in graph["effective_receipt_ids"]]
+    passes = [item["review_receipt_id"] for item in heads if item["receipt_kind"] == "independent"
+        and item["verdict"] == "pass" and item["user_approved"] == 0]
+    required = {0: 0, 1: 1, 2: 2}[cycle.review_tier]
+    if cycle.review_tier in (1, 2) and len(passes) >= required:
+        kind, selected = "independent_passes", tuple(passes[:required])
+    else:
+        kind = "not_required" if cycle.review_tier == 0 else "self_review_fallback"
+        verdict = "not_required" if cycle.review_tier == 0 else "pass"
+        eligible = sorted(item["review_receipt_id"] for item in heads if item["receipt_kind"] == kind
+            and item["verdict"] == verdict and item["user_approved"] == int(cycle.review_tier == 2))
+        if not eligible:
+            raise completion_history_inconsistent()
+        selected = (eligible[0],)
+    if (cycle.gate_basis.kind != kind or cycle.gate_basis.qualifying_receipt_ids != selected
+        or cycle.gate_basis.qualifying_independent_passes != len(passes)
+        or cycle.gate_basis.required_independent_passes != required):
+        raise completion_history_inconsistent()
+
+
 def _validate_cycle_receipts(
     connection: sqlite3.Connection,
     cycle: CompletionCycle,
@@ -6350,6 +6411,9 @@ def _validate_cycle_receipts(
         _validate_cycle_verification_receipt(connection, cycle)
     basis = cycle.gate_basis
     if basis.version == 0:
+        return
+    if basis.version == 2:
+        _validate_continuation_cycle_receipts(connection, cycle)
         return
     target_parameters = (
         cycle.project_id,
@@ -6503,6 +6567,9 @@ def _validate_cycle_receipts_batch(
     project_id: str,
     cycles: tuple[CompletionCycle, ...],
 ) -> None:
+    for cycle in cycles:
+        if cycle.gate_basis.version == 2:
+            _validate_continuation_cycle_receipts(connection, cycle)
     receipt_subject_projection = (
         """
                    , receipt.verification_subject_basis_version AS receipt_subject_basis_version
@@ -7500,6 +7567,12 @@ def _select_completion_gate_basis_for_projection_locked(
             "completion gate basis requires an active writer transaction",
         )
     task = task_projection
+    if current_schema_version(connection) >= 29:
+        from .review_continuation_evidence_repository import completion_selection_locked
+        continued = completion_selection_locked(connection, task)
+        if continued is not None:
+            _validate_completion_gate_basis(continued, review_tier=task["review_tier"])
+            return continued
     tier = _completion_int(task["review_tier"], maximum=2)
     target_kind = str(task["review_target_kind"])
     target_value = str(task["review_target_value"])
@@ -8610,7 +8683,7 @@ def _match_current_done_completion_cycle_locked(
     if validate_structure:
         version = current_schema_version(connection)
         if (
-            version not in {23, 24, 25, 26, 27, 28, 15, 16, 17, 18, 19, 20, 21, PRIVATE_SCHEMA22_VERSION}
+            version not in {23, 24, 25, 26, 27, 28, 29, 15, 16, 17, 18, 19, 20, 21, PRIVATE_SCHEMA22_VERSION}
             or missing_migration_versions(connection, version)
             or schema_objects_inconsistent_with_version(connection, version)
         ):
@@ -9924,10 +9997,14 @@ def _apply_post22_migrations(connection: sqlite3.Connection) -> list[int]:
         from task_governance_tool.schema_session_slot_reacquisition import migrate
         if migrate(connection):
             applied.append(27)
-    if SCHEMA_VERSION >= 28:
+    if SCHEMA_VERSION >= 28 and current_schema_version(connection) <= 28:
         from task_governance_tool.schema_task_event_notes import migrate
         if migrate(connection):
             applied.append(28)
+    if SCHEMA_VERSION >= 29:
+        from task_governance_tool.schema_review_continuation import migrate
+        if migrate(connection):
+            applied.append(29)
     return applied
 
 
@@ -9959,7 +10036,7 @@ def apply_migrations(
             "migration_required",
             "database schema is inconsistent with its declared version",
         )
-    if version in {22, 23, 24, 25, 26, 27, 28} and SCHEMA_VERSION >= 23:
+    if version in {22, 23, 24, 25, 26, 27, 28, 29} and SCHEMA_VERSION >= 23:
         return _apply_post22_migrations(connection), []
     if version == PRIVATE_SCHEMA22_VERSION:
         _migrate_schema22_connection(connection)
@@ -10287,7 +10364,7 @@ def _validate_evidence_ledger_schema_contract(
         expected_sql = _normalized_schema_sql(statement)
         if (
             match.group(1) == "evidence_references"
-            and current_schema_version(connection) in {PRIVATE_SCHEMA22_VERSION, 23, 24, 25, 26, 27, 28}
+            and current_schema_version(connection) in {PRIVATE_SCHEMA22_VERSION, 23, 24, 25, 26, 27, 28, 29}
         ):
             expected_sql = dict(_SCHEMA22_EXPECTED_OBJECTS)["evidence_references"][2]
         row = connection.execute(
@@ -10538,7 +10615,14 @@ def _validate_evidence_ledger_schema_contract(
                 + ", ".join((*expected_definitions, *later_definitions))
                 + base_constraint_suffixes[table_name]
             )
-            if not table_sql[table_name].endswith(expected_suffix):
+            continuation_table = (current_schema_version(connection) == 29
+                                  and table_name in {"review_receipts", "task_completion_cycles"})
+            if continuation_table:
+                # The exact schema-29 fingerprint owns the changed constraints;
+                # all old column/FK contracts are still checked below.
+                from task_governance_tool.schema_review_continuation import validate_owned_contract
+                validate_owned_contract(connection)
+            elif not table_sql[table_name].endswith(expected_suffix):
                 raise evidence_ledger_inconsistent()
             base_version, expected_columns = base_columns[table_name]
             expected_columns += tuple(
@@ -10555,6 +10639,8 @@ def _validate_evidence_ledger_schema_contract(
                 if contract[0] == table_name
             )
             expected_columns += later_columns
+            if current_schema_version(connection) == 29 and table_name == "review_receipts":
+                expected_columns += ("judgment_revision",)
             column_rows = connection.execute(
                 f"PRAGMA table_xinfo({_quoted_identifier(table_name)})"
             ).fetchall()
@@ -11366,6 +11452,8 @@ def _completion_bundle_version_basis_valid(
 ) -> bool:
     if type(source_schema_version) is not int or type(bundle_version) is not int:
         return False
+    if (bundle_version == 3) != (cycle.gate_basis.version == 2):
+        return False
     if (source_schema_version, bundle_version) == (19, 1):
         return (
             verification_basis_kind is None
@@ -11373,13 +11461,13 @@ def _completion_bundle_version_basis_valid(
             and cycle.verification_basis_kind is None
             and cycle.verification_runner_observation_id is None
         )
-    if (source_schema_version, bundle_version) not in {(20, 2), (21, 2), (22, 2), (23, 2), (24, 2), (25, 2), (26, 2), (27, 2), (28, 2)}:
+    if (source_schema_version, bundle_version) not in {(20, 2), (21, 2), (22, 2), (23, 2), (24, 2), (25, 2), (26, 2), (27, 2), (28, 2), (29, 2), (29, 3)}:
         return False
     if verification_basis_kind != cycle.verification_basis_kind:
         return False
     if verification_basis_kind == "runner_observation":
         return (
-            source_schema_version in {23, 24, 25, 26, 27, 28,
+            source_schema_version in {23, 24, 25, 26, 27, 28, 29,
                 PRIVATE_SCHEMA21_VERSION, PRIVATE_SCHEMA22_VERSION,
             }
             and verification_receipt_id is None
@@ -11626,7 +11714,13 @@ def _validate_current_schema_contract(
     if missing_migration_versions(connection, version):
         raise _unreadable_project_state()
 
-    if version == 28:
+    if version == 29:
+        from task_governance_tool.schema_review_continuation import validate_owned_contract, MIGRATION_NAME
+        marker = connection.execute("SELECT name FROM schema_migrations WHERE version = 29").fetchone()
+        if marker is None or marker["name"] != MIGRATION_NAME:
+            raise _unreadable_project_state()
+        validate_owned_contract(connection)
+    elif version == 28:
         from task_governance_tool.schema_task_event_notes import validate_owned_contract, MIGRATION_NAME
         marker = connection.execute("SELECT name FROM schema_migrations WHERE version = 28").fetchone()
         if marker is None or marker["name"] != MIGRATION_NAME:
@@ -11711,15 +11805,15 @@ def _validate_current_schema_structure(
     version = _validate_current_schema_contract(connection)
     if version == PRIVATE_SCHEMA20_VERSION:
         validate_current_schema20_admitted_rows(connection)
-    elif version in {23, 24, 25, 26, 27, 28, PRIVATE_SCHEMA21_VERSION, PRIVATE_SCHEMA22_VERSION}:
+    elif version in {23, 24, 25, 26, 27, 28, 29, PRIVATE_SCHEMA21_VERSION, PRIVATE_SCHEMA22_VERSION}:
         validate_current_schema21_admitted_rows(connection)
-    if version in {24, 25, 26, 27, 28}:
+    if version in {24, 25, 26, 27, 28, 29}:
         from task_governance_tool.task_ownership import validate_storage_rows
         validate_storage_rows(connection)
-    if version in {25, 26, 27, 28}:
+    if version in {25, 26, 27, 28, 29}:
         from task_governance_tool.review_session_repository import read_bindings
         read_bindings(connection)
-    if version == 28:
+    if version in {28, 29}:
         from task_governance_tool.schema_task_event_notes import validate_note_rows
         validate_note_rows(connection)
     return version
@@ -12034,14 +12128,14 @@ def _validate_snapshot_database_state(
                 raise
             raise _unreadable_project_state() from exc
 
-    if version in {24, 25, 26, 27, 28}:
+    if version in {24, 25, 26, 27, 28, 29}:
         from task_governance_tool.task_ownership import validate_storage_rows
         validate_storage_rows(connection)
-    if version in {25, 26, 27, 28}:
+    if version in {25, 26, 27, 28, 29}:
         from task_governance_tool.review_session_repository import read_bindings
         read_bindings(connection)
 
-    if version == 28:
+    if version in {28, 29}:
         from task_governance_tool.schema_task_event_notes import validate_note_rows
         validate_note_rows(connection)
     required_tables = {
@@ -12135,7 +12229,7 @@ def validate_snapshot_database_for_viewer(
     """Validate a Viewer source and issue one current Evidence Task proof."""
 
     version, task_rows = _validate_snapshot_database_state(connection, target)
-    if version not in {23, 24, 25, 26, 27, 28, 18, 19, 20, 21, PRIVATE_SCHEMA22_VERSION}:
+    if version not in {23, 24, 25, 26, 27, 28, 29, 18, 19, 20, 21, PRIVATE_SCHEMA22_VERSION}:
         return ViewerSnapshotDatabaseValidation(source_schema_version=version)
     if task_rows is None:
         raise _unreadable_project_state()
@@ -12210,7 +12304,7 @@ def _consume_validated_viewer_task_batch(
         or query_only != 1
         or type(data_version) is not int
         or data_version != issuance.data_version
-        or source_schema_version not in {23, 24, 25, 26, 27, 28, 18, 19, 20, 21, PRIVATE_SCHEMA22_VERSION}
+        or source_schema_version not in {23, 24, 25, 26, 27, 28, 29, 18, 19, 20, 21, PRIVATE_SCHEMA22_VERSION}
         or issuance.source_schema_version != source_schema_version
         or type(project_id) is not str
         or not project_id
@@ -12328,6 +12422,9 @@ def read_setup_state(
             validate_schema22_storage(connection)
         elif version == 23:
             from task_governance_tool.schema_verification_declaration import validate_storage
+            validate_storage(connection)
+        elif version == 29:
+            from task_governance_tool.schema_review_continuation import validate_storage
             validate_storage(connection)
         elif version == 28:
             from task_governance_tool.schema_task_event_notes import validate_storage
@@ -12518,7 +12615,7 @@ def _is_exact_empty_completion_history_database(db_path: Path) -> bool:
         with closing(connect_readonly(db_path)) as connection:
             version = current_schema_version(connection)
             if (
-                version not in {23, 24, 25, 26, 27, 28, 15, 16, 17, 18, 19, 20, 21, PRIVATE_SCHEMA22_VERSION}
+                version not in {23, 24, 25, 26, 27, 28, 29, 15, 16, 17, 18, 19, 20, 21, PRIVATE_SCHEMA22_VERSION}
                 or missing_migration_versions(connection, version)
                 or schema_objects_inconsistent_with_version(connection, version)
             ):
@@ -12536,6 +12633,8 @@ def _is_exact_empty_completion_history_database(db_path: Path) -> bool:
                 ).fetchall()
             }
             expected_object_counts = (
+                {"index": 47, "table": 45, "trigger": 91}
+                if version == 29 else
                 {"index": 46, "table": 40, "trigger": 76}
                 if version == 28 else
                 {"index": 46, "table": 40, "trigger": 73}

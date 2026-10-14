@@ -146,6 +146,14 @@ delivery before the corresponding reviewed implementation and host gates.
 Review/completion and the directly coupled current owners retain durable
 product and implementation authority.
 
+## Conditional Review Continuation Plan
+
+[Review continuation](review-continuation-plan.md) owns the single existing
+Task's three sequential phases and conditional design for same-basis judgment
+reuse, explicit reassessment, retained history and safe wait continuation.
+Review/completion, Evidence, database and setup owners retain current authority.
+Saving this design does not activate a schema, operation, worker or host effect.
+
 ## Delegated Repository Operating Guides
 
 - [Artifact authoring](artifact-authoring.md)
@@ -204,11 +212,11 @@ enforced meaning.
 
 ```json
 {
-  "schema": "taskgov-document-authority-v22",
+  "schema": "taskgov-document-authority-v23",
   "mandatory_start": ["AGENTS.md", "docs/authority.md", "live_task_contract"],
   "current": ["docs/specification.md", "docs/design.md", "plan.md", "docs/viewer-specification.md", "docs/viewer-design.md", "docs/runner-plan-authoring-specification.md", "docs/runner-plan-authoring-design.md", "docs/task-operation-specification.md", "docs/task-operation-design.md", "docs/runner-execution-specification.md", "docs/runner-execution-design.md", "docs/evidence-specification.md", "docs/evidence-design.md", "docs/review-completion-specification.md", "docs/review-completion-design.md", "docs/setup-state-specification.md", "docs/setup-state-design.md", "docs/database-specification.md", "docs/database-design.md"],
   "mixed_execution": [],
-  "conditional": ["docs/state-layout-separation-plan.md", "docs/verification-declaration-plan.md", "docs/session-usage-plan.md", "docs/review-finalization-plan.md", "docs/usage-response-attribution-design.md"],
+  "conditional": ["docs/state-layout-separation-plan.md", "docs/verification-declaration-plan.md", "docs/session-usage-plan.md", "docs/review-finalization-plan.md", "docs/usage-response-attribution-design.md", "docs/review-continuation-plan.md"],
   "history_index": "docs/history/README.md"
 }
 ```

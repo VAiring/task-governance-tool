@@ -84,6 +84,16 @@ class ProjectWaitTests(PreparationFixture):
             time.sleep(0.05)
         self.assertTrue(predicate())
 
+    def join_physical_worker(self, automation):
+        # A physical worker performs several fresh helper subprocess reads,
+        # each with its own 15-second bound. There is no 15-second end-to-end
+        # product guarantee. Join the actual worker under a bounded test budget;
+        # callers still require its exact successful delivery and effect counts.
+        worker = self.session.sessions[automation].direct._worker
+        self.assertIsNotNone(worker)
+        worker.join(120)
+        self.assertFalse(worker.is_alive(), "Physical wait worker did not terminate")
+
     def test_physical_entry_discovery_is_inert_and_has_only_closed_controls(self):
         before = file_snapshot(self.root)
         entry = self.install.skill_root / "scripts/review_wait_server.py"
@@ -222,7 +232,9 @@ class ProjectWaitTests(PreparationFixture):
         probe = started["state"]["probe_id"]
         simulated.turn = ChildTurn(CHILD, TURN, "completed", "idle")
         simulated.parent = ChildTurn(self.parent, ORIGINAL, "completed", "idle")
-        self.until(lambda: self.call("direct_status")["state"]["status"] == "accepted")
+        self.join_physical_worker("timer-1")
+        status = self.call("direct_status")
+        self.assertEqual(status["state"]["status"], "accepted", status)
         self.assertEqual(["arm", "delete"], simulated.effects)
         self.assertEqual([probe], simulated.sends)
         simulated.parent = ChildTurn(self.parent, NEW_TURN, "inProgress", "active")
@@ -250,7 +262,8 @@ class ProjectWaitTests(PreparationFixture):
         self.assertEqual({"status": "enabled", "task_id": self.task_id,
             "wait_tool": "review_wait_wait", "guide": "references/review_wait.md#normal-wait"}, route)
         self.assertNotIn("wait_ended_command", self.handoff["handoff"])
-        self.assertFalse(self.paths.review_wait_root.exists())
+        self.assertTrue(self.paths.review_wait_root.exists())
+        self.assertTrue(all(path.name.startswith("preparation-") for path in self.paths.review_wait_root.iterdir()))
         for request_item in self.handoff["handoff"]["review_requests"]:
             self.assertNotIn("review_wait_prepare", request_item["request"])
             self.assertNotIn("wait-ended", request_item["request"])
@@ -278,10 +291,10 @@ class ProjectWaitTests(PreparationFixture):
         host = self.hosts["managed-real-basis"]
         host.turn = ChildTurn(CHILD, TURN, "completed", "idle")
         host.parent = ChildTurn(self.parent, ORIGINAL, "completed", "idle")
-        def received():
-            state = self.session.handle("inspect", {"task_id": self.task_id}, self.metadata)
-            return state.get("delivery", {}).get("acknowledged_turn") == NEW_TURN
-        self.until(received)
+        self.join_physical_worker("managed-real-basis")
+        state = self.session.handle("inspect", {"task_id": self.task_id}, self.metadata)
+        self.assertEqual(state.get("delivery", {}).get("status"), "accepted", state)
+        self.assertEqual(state.get("delivery", {}).get("acknowledged_turn"), NEW_TURN, state)
         self.assertEqual(["create", "arm", "delete"], host.effects)
         self.assertEqual(1, len(host.sends))
         self.assertEqual(core, self.paths.database.read_bytes())

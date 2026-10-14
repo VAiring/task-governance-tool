@@ -401,6 +401,10 @@ def _validate_review_receipt_base_row(
     summary = receipt["summary"]
     user_approved = receipt["user_approved"]
     created_at = receipt["created_at"]
+    if "judgment_revision" in receipt.keys():
+        revision = receipt["judgment_revision"]
+        if type(revision) is not int or not 1 <= revision <= (1 << 63) - 1:
+            raise evidence_ledger_inconsistent()
     provenance_basis = receipt["review_provenance_basis_version"]
     if (
         type(receipt_id) is not str
@@ -717,6 +721,7 @@ def insert_review_receipt_with_provenance_locked(
     receipt: dict[str, Any],
     provenance: dict[str, Any] | None,
     code_rows: tuple[dict[str, Any], ...],
+    *, judgment_revision: int = 1,
 ) -> dict[str, Any]:
     """Atomically append one current Receipt and its exact provenance union."""
     from task_governance_tool.storage import (
@@ -802,27 +807,36 @@ def insert_review_receipt_with_provenance_locked(
             raise evidence_ledger_inconsistent()
         basis = 1
 
+    from .storage import current_schema_version
+    continued_schema = current_schema_version(connection) >= 29
+    if (type(judgment_revision) is not int or not 1 <= judgment_revision <= (1 << 63) - 1
+        or not continued_schema and judgment_revision != 1):
+        raise evidence_ledger_inconsistent()
     stored_receipt = {
         **receipt,
         "review_provenance_basis_version": basis,
         "review_provenance_id": provenance_id,
     }
+    if continued_schema:
+        stored_receipt["judgment_revision"] = judgment_revision
     _validate_review_receipt_base_row(
         stored_receipt,
         privacy_success_cache=set(),
     )
+    extra_column = ", judgment_revision" if continued_schema else ""
+    extra_value = ", :judgment_revision" if continued_schema else ""
     connection.execute(
-        """
+        f"""
         INSERT INTO review_receipts(
           review_receipt_id, task_id, project_id, reviewer_key, receipt_kind,
           verdict, target_kind, target_value, target_base_revision,
           target_generation, summary, user_approved, created_at,
-          review_provenance_basis_version, review_provenance_id
+          review_provenance_basis_version, review_provenance_id{extra_column}
         ) VALUES (
           :review_receipt_id, :task_id, :project_id, :reviewer_key, :receipt_kind,
           :verdict, :target_kind, :target_value, :target_base_revision,
           :target_generation, :summary, :user_approved, :created_at,
-          :review_provenance_basis_version, :review_provenance_id
+          :review_provenance_basis_version, :review_provenance_id{extra_value}
         )
         """,
         stored_receipt,

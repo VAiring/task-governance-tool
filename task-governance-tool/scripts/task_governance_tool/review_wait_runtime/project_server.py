@@ -5,7 +5,7 @@ Setup owns opt-in and the host owns configuration, trust and reservations.
 No worker is recovered or retried when the process starts or reads old state.
 """
 
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from pathlib import Path
 import sys
 
@@ -142,6 +142,16 @@ class ProjectReviewWaitSession:
         if not self._policy_enabled():
             raise BasisError()
         paths = self._location(enabling=False)
+        locator_path = paths.review_preparation_store(binding.parent_thread_id, binding.task_id, binding.target_generation)
+        preparation = None
+        if path_lexically_exists(locator_path):
+            from task_governance_tool.review_preparation_repository import PreparationRepository
+            _, preparation = PreparationRepository(locator_path).read()
+            expected = {**preparation.basis, "parent_thread_id": preparation.basis["parent_session_id"]}
+            if any(expected.get(key) != value for key, value in asdict(binding).items() if key != "wait_id"):
+                raise BasisError()
+            if preparation.route == "manual":
+                return None  # Presence of an older intent cannot promote this route.
         intent = paths.review_finalization_store(binding.parent_thread_id,
                                                  binding.task_id, binding.target_generation)
         if not path_lexically_exists(intent):
@@ -151,9 +161,92 @@ class ProjectReviewWaitSession:
         finalizer = Finalizer(self.config.repo, binding.task_id, CallerIdentity(binding.parent_thread_id),
                               generation=binding.target_generation)
         basis = finalizer.journal.read().basis
+        if preparation is not None:
+            from task_governance_tool.review_finalization import require_preparation_intent
+            from task_governance_tool.session_identity import CallerIdentity
+            if preparation.finalization_store != intent.name:
+                raise BasisError()
+            require_preparation_intent(preparation, finalizer.journal.read_rounds()[0], preparation.basis,
+                CallerIdentity(binding.parent_thread_id))
         if any(basis.get(key) != value for key, value in asdict(binding).items() if key != "wait_id"):
             raise BasisError()
         return finalizer
+
+    def _continuation(self, binding, round_record, *, historical=False):
+        """Validate an operational round against current native authority.
+
+        Exceptional continuation only; ordinary initial waits add no core read.
+        Repository code owns the snapshot and SQL, never this host composer.
+        """
+        from task_governance_tool.review_handoff_scope import resolve
+        from task_governance_tool.review_continuation_handoff_repository import read_state
+        from task_governance_tool.review_continuation import basis_digest as native_digest, selection_digest
+        from task_governance_tool.session_identity import CallerIdentity
+        state = read_state(resolve(self.config.repo, writing=False).target, binding.task_id,
+            CallerIdentity(binding.parent_thread_id))
+        current = next((row for row in state.records if row.continuation_id == round_record.continuation_id), None)
+        if (current is None or current.state not in ("prepared", "registered")
+            or current.preparation_id != round_record.preparation_id or current.sequence != round_record.continuation_sequence
+            or native_digest(current.basis) != round_record.basis_digest or selection_digest(current.selected) != round_record.selection_digest):
+            raise DiagnosticError("review_continuation_conflict")
+        if historical:
+            # Validate history only; never reuse an old judgment or effect.
+            identity = ("project_id", "project_path_hash", "project_binding_generation", "task_id", "parent_session_id")
+            fresh = {**state.basis, "parent_thread_id": state.basis["parent_session_id"]}
+            if (current.basis["target_generation"] >= state.basis["target_generation"]
+                or any(current.basis[key] != state.basis[key] for key in identity)
+                or any(fresh.get(key) != value for key, value in asdict(binding).items() if key != "wait_id")):
+                raise DiagnosticError("review_continuation_basis_changed")
+        elif current.basis != state.basis:
+            raise DiagnosticError("review_continuation_basis_changed")
+        return current
+
+    def _wait_round_current(self, binding, round_record):
+        """Prove the saved fence before a new occurrence can create host effects.
+
+        Called again under request admission, which continuation preparation
+        also holds before publishing a fence. Reads never settle a transition.
+        """
+        from .continuation_transition_repository import TransitionRepository
+        from .managed_wait import basis_digest
+        paths = self._location(enabling=False)
+        transition_path = paths.review_continuation_store(binding.parent_thread_id, binding.task_id, binding.target_generation)
+        if not path_lexically_exists(transition_path):
+            if round_record is not None:
+                raise DiagnosticError("review_continuation_conflict")
+            return
+        transitions = TransitionRepository(transition_path).read()
+        if not transitions:
+            if round_record is not None:
+                raise DiagnosticError("review_continuation_conflict")
+            return
+        transition = transitions[-1]
+        if (transition.phase not in ("prepared", "published") or round_record is None
+            or transition.wait_basis_digest != basis_digest(binding)
+            or replace(transition, phase="prepared") != replace(round_record, phase="prepared")):
+            raise DiagnosticError("review_continuation_conflict")
+
+    def _wait_occurrence_current(self, binding, automation_id):
+        """Fence obsolete workers using the explicit operational transition."""
+        from .continuation_transition_repository import TransitionRepository
+        from .request_repository import RequestRepository
+        from .managed_wait import basis_digest
+        paths = self._location(enabling=False)
+        transition_path = paths.review_continuation_store(binding.parent_thread_id, binding.task_id, binding.target_generation)
+        if not path_lexically_exists(transition_path):
+            return  # Legacy/initial occurrence, without a continuation fence.
+        transitions = TransitionRepository(transition_path).read()
+        if not transitions:
+            return
+        transition = transitions[-1]
+        if transition.phase not in ("prepared", "published"):
+            raise DiagnosticError("review_continuation_conflict")
+        _, attempt, rounds = RequestRepository(paths.review_wait_request_store(binding.parent_thread_id, binding.task_id)).read_admission()
+        if (attempt is None or attempt.automation_id != automation_id or attempt.continuation_id != transition.continuation_id
+            or attempt.continuation_sequence != transition.continuation_sequence or attempt.basis_digest != basis_digest(binding)
+            or not rounds or rounds[-1].continuation_id != transition.continuation_id or rounds[-1].phase != "published"):
+            raise DiagnosticError("review_continuation_conflict")
+        return attempt
 
     def _session(self, path, task_id, automation_id, *, managed=False, prepare_reviewer_reader=None):
         if automation_id in self.sessions:
@@ -177,7 +270,8 @@ class ProjectReviewWaitSession:
                 dispatch_path=lambda parent: self._location(enabling=False).review_wait_dispatch_store(parent),
                 observation_factory=lambda controller: self.managed.observe(task_id,
                     {"threadId": controller.binding.parent_thread_id}, self._location(enabling=False)),
-                runtime_observer=self._runtime, **kwargs)
+                runtime_observer=self._runtime,
+                occurrence_guard=lambda controller: self._wait_occurrence_current(controller.binding, automation_id), **kwargs)
         session = self.session_factory(config, host_factory=host_factory,
             basis_factory=self._reader, clock=self.clock, **options)
         self.sessions[automation_id] = session

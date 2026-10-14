@@ -686,16 +686,16 @@ class ManagedFailureDiagnosticsTests(unittest.TestCase):
         repository = flow.RequestRepository(path)
         with repository.serial(create=True):
             pass
-        original = flow.RequestRepository.read
+        original = flow.RequestRepository.read_admission
         reads = []
         def read(current):
             reads.append(current.path)
             if len(reads) == 2:
                 raise RepositoryError("state_unreadable")
             value = original(current)
-            self.assertEqual((0, None), value)
+            self.assertEqual((0, None, ()), value)
             return value
-        with mock.patch.object(flow.RequestRepository, "read", new=read):
+        with mock.patch.object(flow.RequestRepository, "read_admission", new=read):
             result = self.call()
         self.assertEqual([path, path], reads)
         self.assert_diagnostic(result, stage="request_read", reason="state_unreadable",

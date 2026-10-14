@@ -2437,6 +2437,9 @@ def handle_review_command(context: CommandContext, *, submission=None, finalizat
                             caller=context.caller,
                             session_bindings=payload.bindings,
                             finalization_basis=finalization_basis,
+                            continuation_identity=payload.continuation,
+                            retained_receipt_ids=payload.retained_receipt_ids,
+                            retained_originals=payload.retained_originals,
                         )
                     elif context.command == "review.receipt.add":
                         result = add_review_receipt(
@@ -2513,6 +2516,7 @@ def handle_review_command(context: CommandContext, *, submission=None, finalizat
                             connection, target.project, payload["task_id"],
                             resolutions=payload["resolutions"], database_target=target,
                             caller=context.caller,
+                            reassessment_receipt=getattr(context.args, "reassessment_receipt", None),
                         )
                         data = {"findings": [{"finding": item.finding, "event": item.event} for item in results]}
                     else:
@@ -2523,6 +2527,7 @@ def handle_review_command(context: CommandContext, *, submission=None, finalizat
                             resolution=getattr(context.args, "resolution", ""),
                             database_target=target,
                             caller=context.caller,
+                            reassessment_receipt=getattr(context.args, "reassessment_receipt", None),
                         )
                         data = {"finding": result.finding, "event": result.event}
     except (TaskValidationError, ReviewEvidenceError) as exc:

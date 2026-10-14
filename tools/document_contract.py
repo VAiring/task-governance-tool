@@ -41,6 +41,7 @@ VERIFICATION_DECLARATION_PLAN = "docs/verification-declaration-plan.md"
 SESSION_USAGE_PLAN = "docs/session-usage-plan.md"
 REVIEW_FINALIZATION_PLAN = "docs/review-finalization-plan.md"
 RESPONSE_USAGE_DESIGN = "docs/usage-response-attribution-design.md"
+REVIEW_CONTINUATION_PLAN = "docs/review-continuation-plan.md"
 
 CANONICAL_DOCS = (
     "AGENTS.md",
@@ -70,6 +71,7 @@ CANONICAL_DOCS = (
     SESSION_USAGE_PLAN,
     REVIEW_FINALIZATION_PLAN,
     RESPONSE_USAGE_DESIGN,
+    REVIEW_CONTINUATION_PLAN,
     HISTORY_INDEX,
 )
 METRIC_DOCS = CANONICAL_DOCS + (RELEASE_INSTALL, ARTIFACT_AUTHORING)
@@ -85,6 +87,7 @@ PACKAGE_LINK_TARGETS = (
 # These sections are closed authority edges. Their prose and link order are not
 # part of the contract; the required destination set is.
 ROUTE_SECTIONS = (
+    (AUTHORITY, "## Conditional Review Continuation Plan", ("review-continuation-plan.md",)),
     (AUTHORITY, "## Conditional Response Usage Attribution Design", ("usage-response-attribution-design.md",)),
     (DESIGN, "## Conditional Response Usage Attribution Design", ("usage-response-attribution-design.md",)),
     (AUTHORITY, "## Conditional Review Finalization Plan", ("review-finalization-plan.md",)),
@@ -390,7 +393,7 @@ ROUTE_SECTIONS = (
     ),
     (
         "docs/specification.md",
-        "### Current Schema-v28 Persistence Contract",
+        "### Current Schema-v29 Persistence Contract",
         ("database-specification.md#current-schema-v22-persistence-contract",),
     ),
     (
@@ -405,7 +408,7 @@ ROUTE_SECTIONS = (
     ),
     (
         DESIGN,
-        "## Current Schema-v28 Ownership, Reviewer Binding, And Task Notes Design",
+        "## Current Schema-v29 Ownership, Reviewer Binding, And Task Notes Design",
         ("database-design.md#session-ownership-migration", "database-design.md#conditional-reviewer-binding-migration", "database-design.md#combined-session-slot-migration", "database-design.md#task-event-note-body-migration", "database-design.md#current-schema-v22-reservation-cleanup-design"),
     ),
     (
@@ -593,6 +596,7 @@ FENCE_LIST_PREFIX = re.compile(
 )
 
 ROLE_TITLES = {
+    REVIEW_CONTINUATION_PLAN: "# Review Continuation Design And Execution Plan",
     RESPONSE_USAGE_DESIGN: "# Response Usage Attribution Design",
     STATE_LAYOUT_PLAN: "# Project State Separation: Design And Execution Plan",
     VERIFICATION_DECLARATION_PLAN: "# Explicit Verification Declaration Correction",
@@ -1264,7 +1268,7 @@ def _section_bounds(scan: Scan, heading: str) -> tuple[int, int] | None:
 
 def _expected_registry() -> dict[str, object]:
     return {
-        "schema": "taskgov-document-authority-v22",
+        "schema": "taskgov-document-authority-v23",
         "mandatory_start": ["AGENTS.md", AUTHORITY, "live_task_contract"],
         "current": [
             "docs/specification.md", "docs/design.md", "plan.md",
@@ -1278,7 +1282,7 @@ def _expected_registry() -> dict[str, object]:
             DATABASE_SPECIFICATION, DATABASE_DESIGN,
         ],
         "mixed_execution": [],
-        "conditional": [STATE_LAYOUT_PLAN, VERIFICATION_DECLARATION_PLAN, SESSION_USAGE_PLAN, REVIEW_FINALIZATION_PLAN, RESPONSE_USAGE_DESIGN],
+        "conditional": [STATE_LAYOUT_PLAN, VERIFICATION_DECLARATION_PLAN, SESSION_USAGE_PLAN, REVIEW_FINALIZATION_PLAN, RESPONSE_USAGE_DESIGN, REVIEW_CONTINUATION_PLAN],
         "history_index": HISTORY_INDEX,
     }
 

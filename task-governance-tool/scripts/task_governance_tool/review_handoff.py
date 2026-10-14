@@ -293,10 +293,19 @@ def save(repo, packet_path, output, raw, approvals=()):
     packet_file = _path(repo, packet_path)
     packet_raw = _read(packet_file, PACKET_LIMIT)
     packet = _packet(packet_raw)
+    from task_governance_tool.review_preparation import save_admission
+    caller = capture_caller_identity()
+    with save_admission(repo, packet_path, packet_raw, packet, output, caller):
+        if _read(packet_file, PACKET_LIMIT) != packet_raw:
+            _fail("handoff_file_changed")
+        return _save_admitted(repo, packet_path, output, raw, approvals, caller, packet_file, packet_raw, packet)
+
+
+def _save_admitted(repo, packet_path, output, raw, approvals, caller, packet_file, packet_raw, packet):
     payload = _validate(raw, packet, approvals, original=True)
     binding_path, binding_raw = None, None
     if "review_session_context" in packet:
-        metadata = session_transport.metadata_for(packet, raw, capture_caller_identity())
+        metadata = session_transport.metadata_for(packet, raw, caller)
         session_transport.validate_metadata(metadata, raw)
         binding_path = _path(repo, output + ".session.json")
         binding_raw = json.dumps(metadata, ensure_ascii=True, separators=(",", ":")).encode("utf-8")
@@ -331,6 +340,9 @@ def submission(repo, packet_path, originals, approvals=()):
     packet_file = _path(repo, packet_path)
     packet_raw = _read(packet_file, PACKET_LIMIT)
     packet = _packet(packet_raw)
+    if packet.get("review_session_context", {}).get("version") == 2:
+        from task_governance_tool.review_handoff_continuation import assemble_submission
+        return assemble_submission(repo, packet_path, originals, approvals)
     paths = [_path(repo, item) for item in originals]
     if len(set(os.path.normcase(str(path)) for path in paths)) != len(paths):
         _fail()
@@ -403,6 +415,8 @@ def main(argv=None):
         commands = parser.add_subparsers(dest="operation", required=True)
         add_parser(commands)
         add_parser(commands, "prepare-finalization")
+        from task_governance_tool import review_handoff_continuation
+        review_handoff_continuation.add_parser(commands)
         add_material_parser(commands)
         workspace = commands.add_parser("workspace", help="Prepare or clean one optional fixed-target verification workspace; never execute tests")
         workspace.add_argument("workspace_operation", choices=("prepare", "cleanup"))
@@ -450,6 +464,10 @@ def main(argv=None):
         if args.operation == "submit":
             registration_status = "not_started"
         repo = Path(os.path.abspath(args.repo))
+        if args.operation == "continue":
+            from task_governance_tool.review_continuation import INPUT_LIMIT
+            result = review_handoff_continuation.continue_reviews(repo, args, sys.stdin.buffer.read(INPUT_LIMIT + 1))
+            return (0 if result["ok"] else 1) if _emit(result) else 1
         if args.operation == "workspace":
             from task_governance_tool.review_workspace import operate
             result = operate(repo, args)

@@ -18,7 +18,7 @@ atomically replaces; failure preserves last good.
 
 ## Snapshot v4
 
-Snapshot v4 accepts source schemas v5-v28. One query-only transaction validates
+Snapshot v4 accepts source schemas v5-v29. One query-only transaction validates
 schema/project/binding, reads generation, validates the complete source-aware
 Task batch through the stored-row and Contract-relationship boundary, and
 assembles rows; rendering and
@@ -28,16 +28,20 @@ replacement and therefore preserves the last-good Viewer.
 It contains version/UTC `generated_at`, project ID/display, source schema,
 seven status counts, explicit Task allow-list, newest at most 10 sanitized
 events/review receipts/findings, and the exact completion-history projection. Sources
-v5-v14 synthesize zero cycles with `legacy_history_incomplete=true`; v15-v28
+v5-v14 synthesize zero cycles with `legacy_history_incomplete=true`; v15-v29
 read stored history in query batches of at most 500 Task IDs. For sources
-v17-v28, the batch reader validates version-1 completion-cycle Verification
+v17-v29, the batch reader validates version-1 completion-cycle Verification
 Receipt links; v18+ additionally validates subject, provenance, manifest, and
-Reference relations, while v19-v28 validate and discard the Bundle
-discriminator. Sources v20-v28 additionally validate the Bundle-v2
-verification basis and Runner graph appropriate to the source schema; v21-v28
+Reference relations, while v19-v29 validate and discard the Bundle
+discriminator. Sources v20-v29 additionally validate the Bundle-v2
+verification basis and Runner graph appropriate to the source schema; v21-v29
 validate the complete tagged union. These reads discard every Runner field without
 exposing it. Schema-23 declaration reasons are validated but not added to the
 Viewer projection or UI.
+Source 29 also validates the sealed continuation graph when Bundle format three
+applies, and selects the same effective review heads as the native gates. Old
+judgments and Findings remain in durable/audit evidence; pagination never
+qualifies an incomplete graph or substitutes historical PASS as current PASS.
 It discards every joined ledger field. It validates schema-28 full Task notes
 and their parent bindings but excludes note
 bodies from its snapshot and HTML; existing event summaries remain unchanged.

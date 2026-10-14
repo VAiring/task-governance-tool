@@ -521,6 +521,9 @@ def add_review_results(
     caller: CallerIdentity = CallerIdentity(None),
     session_bindings: tuple[BoundResult, ...] | None = None,
     finalization_basis=None,
+    continuation_identity=None,
+    retained_receipt_ids: tuple[str, ...] = (),
+    retained_originals: tuple = (),
 ) -> dict[str, Any]:
     """Append the whole batch; caller must commit or roll back on exception.
 
@@ -542,6 +545,10 @@ def add_review_results(
         raise TaskRepositoryError("not_found", "task was not found")
     reject_done_task_write(observed)
     bound_schema = current_schema_version(connection) >= 25
+    if (continuation_identity is not None and current_schema_version(connection) < 29
+        or continuation_identity is None and (retained_receipt_ids or retained_originals or
+            session_bindings is not None and any(getattr(item, "continuation", None) is not None for item in session_bindings))):
+        raise _invalid_input()
     if session_bindings is not None and (
         not bound_schema or type(session_bindings) is not tuple
         or len(session_bindings) != len(payload["receipts"])
@@ -598,8 +605,19 @@ def add_review_results(
         raise _basis_mismatch()
     validate_stored_review_target(locked)
     require_current_capture(locked)
+    continued_batch = None
+    if continuation_identity is not None:
+        from .review_continuation_registration_repository import begin_locked
+        continued_batch = begin_locked(connection, project_id=project.project_id, task_id=normalized_task_id,
+            identity=continuation_identity, bindings=session_bindings, retained_receipt_ids=retained_receipt_ids,
+            retained_originals=retained_originals,
+            caller=caller, database_target=database_target)
     receipts = []
-    for entry, session_binding in zip(normalized["receipts"], bindings):
+    for index, (entry, session_binding) in enumerate(zip(normalized["receipts"], bindings)):
+        if continued_batch is not None and continued_batch.existing_receipt_ids[index] is not None:
+            from .review_continuation_registration_repository import existing_acknowledgement
+            receipts.append(existing_acknowledgement(connection, continued_batch.existing_receipt_ids[index]))
+            continue
         provenance = dict(entry["provenance"] or {})
         methods = provenance.pop("method_codes", None)
         receipt = add_review_receipt(
@@ -611,6 +629,7 @@ def add_review_results(
             database_target=database_target,
             caller=caller,
             session_binding=session_binding,
+            _continued_publication=continued_batch.publications.get(session_binding.session_id) if continued_batch else None,
         )
         findings = []
         for entry_finding in entry["findings"]:
@@ -633,6 +652,11 @@ def add_review_results(
             )},
             "findings": findings,
         })
+        if "judgment_revision" in receipt.receipt:
+            receipts[-1]["receipt"]["judgment_revision"] = receipt.receipt["judgment_revision"]
+    if continued_batch is not None:
+        from .review_continuation_registration_repository import finish_locked
+        finish_locked(connection, continued_batch, receipts, session_bindings)
     # Observe the existing gate on the same locked basis, including Findings
     # from older generations. This is not completion or a new admission gate.
     evidence = read_review_evidence(

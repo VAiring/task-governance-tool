@@ -431,7 +431,7 @@ and retry using [outcome and retry rules](#setup-outcomes-and-recovery):
     "state_layout_activate"
   ],
   "schema_from": null,
-  "schema_to": 28,
+  "schema_to": 29,
   "maintenance_enabled": true,
   "backup_interval_minutes": 30,
   "backup_generations": 3,
@@ -552,7 +552,7 @@ Preview reports current durable state, not planned state:
 `completed_writes=[]`, and a fresh preview keeps
 `maintenance_enabled=false`. A healthy replay has empty write lists. Every
 error has `status=null`; preflight/policy failures use empty write lists and
-null observed values except `schema_to=28`. A later-stage failure reports only
+null observed values except `schema_to=29`. A later-stage failure reports only
 the durable ordered prefix. Inspect `data.completed_writes` before retrying;
 `setup_incomplete` permits a retry that recomputes from durable state rather
 than repeating an assumed failed stage; it does not guarantee automatic repair
@@ -606,8 +606,8 @@ A ready result has this structure:
     },
     "project_state": {
       "code": "ready",
-      "schema_version": 28,
-      "required_schema_version": 28
+      "schema_version": 29,
+      "required_schema_version": 29
     },
     "task_summary": {
       "code": "ready",
@@ -1821,7 +1821,7 @@ python .agents/skills/task-governance-tool/scripts/taskgov.py review target set 
 generation. Git commits are resolved read-only and stored canonically. A diff
 fingerprint is `sha256:` plus 64 lowercase hexadecimal characters.
 
-At schema v21 through v28, this same target-set operation may use the explicitly opted-in
+At schema v21 through v29, this same target-set operation may use the explicitly opted-in
 trusted-local Runner route. It adds no argument or public Runner command. JSON
 success data is `task`, `changed_fields`, `event`, `verification_route`,
 `blocking_code`, and `review_preparation`; failure
@@ -1985,8 +1985,20 @@ python .agents/skills/task-governance-tool/scripts/taskgov.py review finding res
 ```
 
 Severity is `high`, `medium`, or `low`. Open high/medium findings block
-completion. After resolving a blocking finding and changing material, set a
-new target and obtain fresh qualifying receipts.
+completion. Ordinary resolution of a blocking Finding still requires a newer
+target and fresh qualifying receipts. Changed material or conditions always
+use that fresh-target route.
+
+For an actual same-basis reassessment, add
+`--reassessment-receipt <successor-receipt-id>` to the resolution command.
+Use the registered successor Receipt from the original actual reviewer, whose
+predecessor chain contains this Finding. The tool validates that relation and
+records the explicit link; only this resolved Finding gains the same-generation
+fresh-review exception. The supplied resolution remains a caller-confirmed
+judgment, never inferred from PASS. If already resolved, its original resolution
+is preserved and only the new link and bounded explanation are appended. An
+existing identical link is rejected; inspect stored state after an uncertain
+response instead of blindly replaying it.
 
 <a id="structured-finding-resolutions"></a>
 
@@ -1998,6 +2010,13 @@ For several confirmed resolutions, send one UTF-8 JSON document to
 ```json
 {"version":1,"task_id":"tg_task_0123456789abcdef","resolutions":[{"finding_ids":["tg_review_finding_0123456789abcdef"],"resolution":"Individual correction verified"},{"finding_ids":["tg_review_finding_123456789abcdef0","tg_review_finding_23456789abcdef01"],"resolution":"Shared correction verified for these two findings"}]}
 ```
+
+The optional `--reassessment-receipt <successor-receipt-id>` applies to every
+selected Finding in this unchanged JSON shape, using the
+[same-basis resolution rules](#finding-resolution). Every selected Finding must
+belong to that successor's predecessor chain; a mismatch rolls back the whole
+batch. An already-resolved Finding may receive the missing explicit link without
+rewriting its resolution. Do not add a Receipt ID to the JSON document.
 
 Use `data.task.task_id` from `task show` and the selected
 `data.review_evidence.current_findings[].review_finding_id` values, or the same
@@ -2023,12 +2042,14 @@ All selected resolutions commit together or all roll back, with one maintenance
 pass. No extra per-ID confirmation is needed after a successful response.
 After confirmed rollback, correct and resubmit the explicit selection. For a
 lost response, inspect existing state and preserve completed resolutions;
-resubmit only IDs proven still open, never blindly replay or overwrite.
+resubmit only IDs proven still open or, for explicit reassessment, resolved IDs
+whose requested link is proven absent. Never blindly replay or overwrite.
 Malformed shape uses `invalid_review_evidence`; missing/foreign-project IDs use
 `not_found`, different-Task IDs use `invalid_review_evidence`, and other existing
 privacy/value/storage errors keep their codes. Unselected Findings and original
-content are unchanged. A blocking resolution still needs a newer target and
-fresh qualifying review; this mode never infers resolution from PASS.
+content are unchanged. Without the validated same-basis link, a blocking
+resolution still needs a newer target and fresh qualifying review. This mode
+never infers resolution from PASS.
 
 ### Structured Review Results
 
@@ -2287,8 +2308,11 @@ completion conditions remain unchanged.
 Retained owner/target constraints are checked inside the native writers, and
 Findings are checked again before publication and locked completion. A saved
 failed/interrupted, unavailable or changed reviewer turn remains a blocker on
-this intent across `--check` and retries; obtain fresh reviews under a new target
-generation/intent instead of treating missing host information as success.
+this intent across `--check` and retries. For unchanged bound material use the
+[explicit same-basis continuation](task_workflow.md#same-basis-review-continuation)
+when applicable; retain old observations and require actual evidence for the
+needed judgment. Changed material or conditions require a new target generation
+and intent. Missing host information never establishes success.
 
 Use [normal waiting](review_wait.md#normal-wait) when its conditions hold.
 If reviews already ended or an existing exception prevents worker use, retain

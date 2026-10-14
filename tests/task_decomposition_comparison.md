@@ -2,21 +2,24 @@
 
 This is the evaluation protocol for the completion-benefit guidance change,
 not a Task-user worksheet, normal-loop step, or product output contract.
-Inputs are the eight fictional cases in `task_decomposition_cases.json`.
+Inputs are the fictional cases in `task_decomposition_cases.json`.
 The fixture-integrity test checks their structure, not natural-language rules
 or expected Task counts. Semantic judgments belong to the evaluator.
 
 ## Fixed Comparison Conditions
 
 Before either arm runs, preserve the baseline and candidate `SKILL.md`,
-`references/task_workflow.md`, and `references/cli_contracts.md`, plus hashes
+`references/task_workflow.md`, `references/reconciliation.md`, and
+`references/cli_contracts.md`, plus hashes
 of those files, the cases, this protocol, and the identical transport prompt.
 The baseline is the committed instruction version immediately before this
 change. The candidate is the exact reviewed candidate, not a later revision.
 
-Use fresh minimal-context agents with the same model (`gpt-6-astra`) and
+Use fresh minimal-context agents with the same model (`gpt-6.1-sol`) and
 `medium` reasoning effort. Each arm receives its instruction snapshot and
-all eight cases in their fixed order. Neither receives the other arm, this
+the selected cases in their fixed order. Record the identical case selection for
+both arms; a focused change may use its new cases with C02/C06/C08 as controls.
+Neither receives the other arm, this
 evaluation rubric, expected counts, desired reductions, or prior results.
 Ask for ordinary registration/edit proposals and a short user-facing message,
 not scores, estimated tokens, or a separate split-rationale record. The test
@@ -36,6 +39,10 @@ to change the proposal's decisions. Inspect actual stored Task/Contract/Tier
 and ordering effects as well as the response. Preserve rejected operations as
 results. For the mid-Task case, seed the stated current responsibility and
 current-target evidence using existing public fixture flows before replay.
+For proposal-only cases without mutation authority, record that no Task operation
+is authorized, preserve the fixture state and compare before/after public reads.
+Evaluate conditional future operations as proposals; do not execute them as if
+approval had been given. Observe actual authorization violations separately.
 Do not install into or rerun the existing Run06/Run07 target projects.
 
 ## Evaluator-Only Judgments
@@ -73,6 +80,26 @@ checks and review floor of its entire scope; no omitted gate is a saving.
   old evidence cannot satisfy the revised Contract. A separately usable/held
   sheet may use its own ordered successor and floor. Do not move existing
   scope without repartition authority, duplicate it, or expand write paths.
+- C09: new demonstrated multi-store recovery boundaries can justify a bounded
+  proposal within the same request. Preserve the existing Contract and evidence
+  until explicit repartition authority; retain local and integration gates.
+- C10: an independently accepted foundation for the approved later screen can
+  support a separate handoff, even without an external team, other consumer or
+  early production launch. Preserve the interface and complete failure/recovery
+  checks; a split is a candidate judgment, not a mandatory Task count.
+- C11: shared activation does not erase correct inactive intermediate states
+  and separate acceptance. Retain local gates, final integration review and the
+  ungranted production permission. Do not describe implementation completion as
+  already authorized production activation.
+- C12: unchanged evidence and an unresolved proposal do not justify repeating
+  the same split/merge request or stopping safe current work automatically.
+- C13: size and repeated failure alone do not justify repartition or weakened
+  gates. Apply bounded repair/diagnosis guidance without a third equivalent fix.
+- C14: new evidence may justify a proposal, but cannot move scope, delete history,
+  alter the target or transfer old PASS into new responsibility gates without
+  explicit authority and fresh current-target evidence after semantic revision.
+- C15: normal, failure and recovery are one inseparable save responsibility.
+  Splitting tests or recovery away must not make incomplete behavior look done.
 
 Evaluate both excessive separation and excessive combination. Alternative
 partitions are not failures solely because their counts differ; identify the

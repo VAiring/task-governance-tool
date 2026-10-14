@@ -100,6 +100,7 @@ confirmation is required.
 | Explicit introduction/diagnosis of ordinary-Task host preapproval | [Optional preapproval](references/cli_contracts.md#optional-task-preapproval) |
 | Configured preapproval invocation missing from this session | [Recover only invocation information](references/cli_contracts.md#configured-preapproval-invocation) |
 | Explicit taskization | [Completion-based Task boundaries and registration](references/task_workflow.md#taskize-or-add-scope) |
+| New concrete evidence of an unsuitable Task boundary | [Propose boundary reassessment](references/task_workflow.md#reassess-task-boundaries) |
 | Explicit active-Task scope addition | [Scope-addition disposition](references/task_workflow.md#explicit-mid-task-scope-addition) |
 | Copy an explicit initial Contract | [Task Contract](references/task_workflow.md#task-contract) |
 | Later explicitly authorized Contract change | [Contract revision](references/task_workflow.md#contract-revision) |
@@ -129,9 +130,11 @@ unspecified, not waived, and blocks completion; do not infer a waiver from prose
 
 ## Keep Scope And Evidence Honest
 
-- Invoke task decomposition only for an explicit request to register or taskize
-  already-authorized work, or an explicit scope addition to an active Task.
-  Discovery, test failure, Effort, size, or model preference does not trigger it.
+- Register or change Task boundaries only for an explicit request to register or taskize
+  already-authorized work, or an explicit scope addition to an active Task,
+  with explicit repartition authority before moving already-covered work.
+  New concrete evidence can justify a write-free reassessment proposal through
+  the route above; discovery, test failure, Effort, or size alone cannot.
   Register only explicit work; `task add --status done` and initial paused are
   prohibited. Missing Contract detail alone creates no question.
 - A failed verification or blocking review prevents completion of its Task;

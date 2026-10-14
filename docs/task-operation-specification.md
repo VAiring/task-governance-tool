@@ -905,12 +905,14 @@ output contains only ID, type, and time; replay event is null. Text is
 <a id="task-decomposition-and-registration"></a>
 <a id="current-m25-select-split-merge-register-contract"></a>
 
-Task decomposition and registration apply to two and only two explicit
+Task registration and scope changes apply to two explicit
 user-authority events: an instruction to register or taskize already-authorized
 work, and an explicit scope addition to an `in_progress` or `review_pending`
 Task. This contract is implemented only in current Skill and task-workflow
 guidance. Discovery, a test failure, an Effort result, task size, or model
-preference does not create either event.
+preference does not create either event. Newly established concrete evidence
+may justify a write-free [boundary reassessment proposal](#boundary-reassessment)
+within the same request, without creating mutation authority.
 
 ### Candidate-First Split And One Global Merge
 
@@ -931,15 +933,18 @@ After that Merge, each final slice must:
   produced outputs;
 - leave the repository in a correct state when completed after its represented
   predecessors;
-- have verification and review whose result is locally attributable to that
-  responsibility;
+- have independent acceptance, verification and review whose result is locally
+  attributable to that responsibility, including its normal, failure and recovery paths;
 - use the existing sequential/optional lane and order model; and
 - be resumable by a fresh agent from its Task Contract, routed authority, and
   declared predecessor outputs without relying on prior chat or a hidden
   worksheet.
 
-A foundation need not deliver standalone user value, but an imagined future
-consumer does not justify its separate completion. Independent implementation
+A foundation need not deliver standalone user value. A stable interface,
+correct intermediate state, independent acceptance/gates and handoff to another
+owner can justify separate completion for already-approved later work, including
+within the same request. An external consumer team is not required; an imagined
+future consumer does not justify separate completion. Independent implementation
 or inspection, different files, modules, feature names, tests, or work phases
 do not alone justify separate Tasks. Nor do file/line counts, estimated effort,
 duration, or risk wording. Shared files, tests, commands, or fixtures alone
@@ -963,8 +968,18 @@ group retains the gates required for its entire scope. Ambiguous ownership uses
 the [registration fallback](#explicit-registration-and-contract-population)
 rather than an arbitrary Merge.
 
-The merged set is final for that explicit event. It is never Split again,
-recursively decomposed, or optimized through a second Merge pass. Neither one
+Implementation completion is distinct from production activation. An inactive
+intermediate state may be correct and independently complete; activation must
+still wait for all required units and final integration verification and review.
+One shared activation does not itself require one implementation Task. Each
+unit's gates and the final integration gates remain required, and neither
+substitutes for the other. No partial responsibility is marked done by renaming
+its unfinished normal, failure or recovery work as a later Task.
+
+The merged set is final for that evidence and explicit event. It is not Split
+again or optimized through another Merge on the same facts. Newly established
+evidence uses [boundary reassessment](#boundary-reassessment) before any authorized
+repartition; it is not recursive classification. Neither one
 Task nor the fewest Tasks is a target. The criteria add no scorecard, token
 estimate, split-reason output or record, or new confirmation step. If a valid
 flat set cannot be formed, the registration and grouped-question fallbacks
@@ -972,6 +987,32 @@ in [registration](#explicit-registration-and-contract-population) apply instead 
 paraphrase, or answer about the same taskization or scope-addition outcome stays
 in the same event; only materially changed authority for scope, order, or
 permission starts a new event.
+
+### Boundary Reassessment
+
+During authorized investigation or implementation, new concrete evidence about
+dependencies, persistence/recovery boundaries, or inability to attribute
+acceptance to changes and verification may establish that an existing Task
+boundary is inappropriate. Even within the same request, the agent may explain
+that evidence and propose a bounded alternative using the common final-slice
+criteria. Distinguish this write-free proposal from registration, moving covered
+scope, Contract revision and completion. Size, difficulty, effort, failure count,
+model preference or an unconfirmed dependency alone is insufficient. Do not
+repeat split/merge proposals on the same evidence, including reconciliation.
+
+Applying a proposal requires explicit authority for the concrete registration,
+repartition and semantic revisions involved. Already-given authority covering
+those exact changes remains valid; otherwise ask for the missing decision once,
+after making the proposal reviewable. The authorized event uses the same flat
+pass and existing public operations, conserving the entire scope, permissions,
+ordering, Review Tier floors and acceptance. Keep prior evidence as history;
+semantic revisions retain ordinary target/evidence invalidation and fresh-gate
+requirements. A new Task or renamed scope cannot inherit old PASS as current
+evidence or hide an unfinished remainder.
+
+While awaiting a decision, continue safe authorized work under the existing
+Contract, using existing Handoff, pause and blocker conditions. A proposal adds
+no automatic stop, recurring check, stored classifier, Task model, or permission.
 
 ### Explicit Registration And Contract Population
 
@@ -1084,7 +1125,9 @@ Contract revision retains all existing target/evidence invalidation effects;
 `keep-current` retains evidence only while the ordinary exact-target rules do.
 An unresolved proposal is not persisted as a new model or reconstructed from a
 Handoff. The same explicit addition event never starts another Split after its
-global Merge.
+global Merge on unchanged evidence. New concrete boundary evidence without an
+addition instruction uses [reassessment](#boundary-reassessment), not this write
+branch; any resulting revision or scope move still requires explicit authority.
 
 ### Active Instruction-Layer Boundary
 
@@ -1206,8 +1249,9 @@ reasoning remain session-local and are not persisted as a basis or worksheet.
 Inputs and outputs use existing Contract prose only when explicit authority
 supplies them; only the selected Task, Review Tier, and lane/order results use
 other existing fields. In-scope discovery, test-driven cross-module failure,
-and unrequested work remain governed by current rules and cannot invoke this
-policy.
+and unrequested work remain governed by current rules. They grant no registration
+or revision authority; only new concrete boundary evidence permits the write-free
+reassessment above.
 
 The Skill documents taskgov-specific authorization and write boundaries. The
 [optional preapproval adapter](#optional-ordinary-task-preapproval) has an explicit

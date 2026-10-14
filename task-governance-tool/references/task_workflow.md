@@ -31,6 +31,7 @@ from `data.selected.task.task_id` (`task context`) or `data.task.task_id`
 - [Reopen](#reopen)
 - [Taskize Or Add Scope](#taskize-or-add-scope)
 - [Split And Merge Cases](#split-and-merge-cases)
+- [Reassess Task Boundaries](#reassess-task-boundaries)
 - [Design-First Registration](#design-first-registration)
 - [Registration Example](#registration-example)
 - [Explicit Mid-Task Scope Addition](#explicit-mid-task-scope-addition)
@@ -1118,12 +1119,15 @@ evidence are required.
 
 ## Taskize Or Add Scope
 
-Use this guidance for two and only two explicit authority events: a request to
+Registration and scope changes use two explicit authority events: a request to
 register or taskize already-authorized work, and an explicit scope addition to
 an `in_progress` or `review_pending` Task. Discovery, a test failure, an Effort
-result, task size, difficulty, or model preference does not invoke it. Replies
+result, task size, difficulty, or model preference does not authorize either. Replies
 and clarifications about the same outcome stay in the same event; only
 materially changed scope, order, or permission authority starts another event.
+New concrete evidence within the same request may instead justify a
+[write-free boundary reassessment](#reassess-task-boundaries). It grants no
+registration or Contract-change authority.
 Keep the authority envelope, candidates, fragment coupling, grouping, and Tier
 basis session-local; do not persist a classifier record, worksheet, or basis.
 For an explicit addition to active work, apply
@@ -1142,7 +1146,8 @@ Apply this fixed sequence once, including when the result is one Task:
 2. **Split** once into flat candidate responsibilities where separate completion
    has a concrete purpose: separate approval, usable early handoff, or finishing
    one outcome while another is held, or a foundation releasing already-authorized
-   downstream work. Being separately implementable or testable,
+   downstream work through a stable, independently accepted interface, including
+   handoff to another owner. Being separately implementable or testable,
    or having different files, modules, or feature names, is not enough. Conserve
    the complete, non-overlapping scope and explicit permission unions without
    omission or expansion; use only order representable by existing lane/order.
@@ -1153,8 +1158,10 @@ Apply this fixed sequence once, including when the result is one Task:
    combining them would obscure which changes and checks satisfy each acceptance
    condition. Shared files or tests alone do not force a Merge; ambiguous
    ownership uses the fallback below instead of a guessed owner.
-4. Treat the result as final. Do not recursively classify, run a second Merge,
-   re-Split, create a parent/child graph, or optimize by size or Task count.
+4. Treat the result as final on that evidence and authority. Do not recursively
+   classify, run a second Merge or re-Split on the same facts, create a
+   parent/child graph, or optimize by size or Task count. New evidence uses the
+   reassessment route above before any authorized repartition.
 
 A provisional candidate states one bounded responsibility, its authorized
 consumed inputs and produced outputs, and any concrete fragment-to-owner
@@ -1162,8 +1169,13 @@ coupling; judge final viability only after Merge. Each final group must own its
 bounded responsibility, leave a correct repository state after represented predecessors, carry locally
 attributable verification and review, use existing lane/order, and be resumable
 by a fresh agent from its Contract, routed authority, and predecessor outputs.
-Every group keeps verification and review sufficient for its entire combined
-scope. Use these criteria in the existing pass, without
+Every group keeps acceptance, verification and review sufficient for its entire
+combined scope, including normal, failure and recovery paths within its
+responsibility. Implementation completion and production activation are separate
+decisions: a correct inactive intermediate state can complete, while activation
+still waits for all required units and final integration verification/review.
+Shared activation alone does not require one Task; local gates and final
+integration gates never replace each other. Use these criteria in the existing pass, without
 scores, token estimates, recorded split reasons, or extra confirmation steps.
 
 For fragments, enabling foundations, or uncertainty about separate-completion
@@ -1246,17 +1258,46 @@ own gate rather than relying on later integration review.
 Use with the [one-pass rules](#one-pass-select-split-merge) when candidate
 fragments, enabling foundations or separate-completion benefit need resolution.
 A provisional fragment may expose that it cannot stand alone; do not reject it
-before the global Merge. A foundation need not provide standalone user value,
-but its separate completion must release already-authorized downstream work,
-not anticipate an imagined future consumer.
+before the global Merge. A foundation need not provide standalone user value.
+Its stable inputs/outputs, correct intermediate state, independent acceptance
+and normal/failure/recovery checks must support handoff for already-authorized
+downstream work, including a later unit of the same request, not an imagined
+future consumer. A separate team or immediate production launch is not required.
 
 For example, a JSON contract needed for an approved consumer team's early start
 may remain separate from its later CLI consumer. If both only complete one
-feature with no separate decision or use, their different tests do not justify
+inseparable responsibility with no independent acceptance or handoff, their different tests do not justify
 separate Tasks. A fixture-only fragment Merges into its concrete consumer. A
 tutorial with a separately scheduled handoff can remain independent even when
 it shares files or checks with the feature. These examples add no outcome or
 permission beyond the selected authority envelope.
+
+## Reassess Task Boundaries
+
+During already-authorized investigation or work, newly established dependency,
+persistence or recovery boundaries, or concrete inability to map acceptance to
+changes and checks, may show that the current Task boundary is unsuitable even
+within the same request. Explain that new evidence and propose a bounded
+alternative using the [one-pass criteria](#one-pass-select-split-merge), including
+its normal, failure, recovery and final integration gates. This is a write-free
+proposal, not permission to register, revise, move scope, reset evidence or
+declare an unfinished remainder done.
+
+Size, difficulty, elapsed effort, failure count, a merely suspected dependency,
+or a preference for more/fewer Tasks is insufficient. Do not repeat a split or
+merge proposal on the same evidence, including during reconciliation. Continue
+safe authorized work under the existing Contract while a proposal is pending;
+pause/block only under the existing conditions.
+
+Apply a proposed repartition only after explicit authority for its concrete
+registration, scope moves and Contract revisions. Reuse already-given authority
+that covers those exact changes; otherwise obtain the missing decision once.
+Then apply the common pass to that authorized event, conserve the full scope,
+permissions and represented order, and use existing registration/revision paths.
+Retain prior evidence as history; semantic revisions require fresh exact-target
+verification and review. Neither renamed Tasks nor old PASS receipts complete
+new responsibility boundaries. No proposal ledger, new Task model or recurring
+check is introduced.
 
 ## Design-First Registration
 
@@ -1291,6 +1332,8 @@ no permission to start other work.
 Only for an explicit scope addition to an `in_progress` or `review_pending`
 Task, use the [taskization authority and one-pass rules](#taskize-or-add-scope).
 Discovery or a failed check alone does not authorize this branch.
+New concrete evidence without a scope-addition instruction uses
+[boundary reassessment](#reassess-task-boundaries) to propose changes only.
 
 Apply the same completion-purpose and Merge criteria once to the addition and
 its relationship to the current responsibility, then choose one disposition:

@@ -203,6 +203,15 @@ class SkillSelfContainmentTests(unittest.TestCase):
         self.assertIn("C08-R0", current["requirements"])
         self.assertIn("C08-R0", current["existing_task"]["scope"])
         self.assertIn("C08-R0", current["existing_task"]["acceptance"])
+        # IDs keep neutral workloads addressable without embedding desired answers.
+        self.assertTrue({f"C{number:02}" for number in range(9, 16)} <= set(case_ids))
+        for case in cases:
+            self.assertTrue(case["request"].strip())
+            if "existing_task" in case:
+                existing = case["existing_task"]
+                self.assertRegex(existing["id"], r"^tg_task_[a-f0-9]{16}$")
+                self.assertIn(existing["status"], {"in_progress", "review_pending"})
+                self.assertIn(existing["review_tier"], {0, 1, 2})
 
     def test_apache_2_license_boundary_is_official_and_manifest_covered(self):
         expected_digest = OFFICIAL_APACHE_2_LICENSE_SHA256
@@ -757,7 +766,13 @@ class SkillSelfContainmentTests(unittest.TestCase):
         )
         self.assertLessEqual(len(reconciliation.splitlines()), 100)
         self.assertNotIn("taskgov.py", reconciliation)
-        self.assertNotIn("](", reconciliation)
+        # Reassessment is conditional guidance, not a new reconciliation call.
+        links = _scan("references/reconciliation.md", reconciliation, []).links
+        self.assertEqual(
+            [_resolve(SKILL_ROOT, "references/reconciliation.md", link.target)
+             for link in links],
+            [("references/task_workflow.md", "reassess-task-boundaries")],
+        )
 
         for marker in (
             "**Evidence and authority.**",
@@ -2592,6 +2607,24 @@ print(json.dumps(results, ensure_ascii=False))
         _, recovery = self.linked_output(source, normal, "partial-add-recovery")
         self.assertIn("missing response is not a confirmed rollback", recovery)
         self.assertIn("do not reconstruct or rerun it", recovery)
+
+    def test_reassessment_is_direct_conditional_guidance_with_shared_criteria(self):
+        source = "references/task_workflow.md"
+        normal = self.reader().read_reference(f"{source}#taskize-or-add-scope", SKILL_ROOT)
+        _, proposal = self.linked_output(source, normal, "reassess-task-boundaries")
+        self.assertNotIn("## Reassess Task Boundaries", normal)
+        _, common = self.linked_output(source, proposal, "one-pass-select-split-merge")
+        self.assertEqual(common, self.reader().read_reference(
+            f"{source}#one-pass-select-split-merge", SKILL_ROOT))
+        for origin, body in (
+            ("SKILL.md", (SKILL_ROOT / "SKILL.md").read_text(encoding="utf-8")),
+            ("references/reconciliation.md", self.reader().read_reference(
+                "references/reconciliation.md#reconciliation-and-test-repair", SKILL_ROOT)),
+            (source, self.reader().read_reference(
+                f"{source}#explicit-mid-task-scope-addition", SKILL_ROOT)),
+        ):
+            _, reached = self.linked_output(origin, body, "reassess-task-boundaries")
+            self.assertEqual(reached, proposal)
 
     def test_edit_guidance_routes_to_typed_completion(self):
         source = 'references/cli_contracts.md'

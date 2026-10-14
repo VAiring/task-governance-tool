@@ -653,7 +653,8 @@ one session-local event and classifies it as either `registration` or
 about that outcome remain the same event; only materially changed authority for
 scope, order, or permission creates a new event. An in-scope discovery, test
 failure, Effort result, cross-module failure, inferred dependency, task size,
-or model preference does not create either event.
+or model preference does not create either mutation-authority event. New concrete
+evidence may instead enter the write-free reassessment path below.
 
 For the event, session-local reasoning holds only:
 
@@ -680,7 +681,10 @@ The classifier runs this fixed sequence once:
    separate-completion purposes, not just implementable or testable units:
    separate approval, early use or handoff, independent completion while other
    work is held, or a foundation that releases already-authorized downstream
-   work. A foundation need not offer standalone user value. A provisional
+   work through independently accepted inputs/outputs and a correct intermediate
+   state that another owner can take over. This includes approved later work in
+   the same request, without requiring an external consumer team or standalone
+   user value. A provisional
    fragment may expose its missing state or gate independence for Merge.
 3. `Merge` all concretely coupled fragments and same-outcome work whose separate
    completion changes no decision or use and mainly repeats gates. Form their
@@ -689,16 +693,46 @@ The classifier runs this fixed sequence once:
    them obscures the mapping from acceptance to changes and checks. Multiple
    disjoint groups may merge at once; shared files or tests alone create no
    coupling. Ambiguous ownership invokes the fallback, not an arbitrary group.
-4. Treat the resulting groups as final. There is no recursive classification,
-   second Merge, re-Split, parent/child graph, or size/Task-count optimization.
+4. Treat the resulting groups as final on that evidence and authority. There is
+   no recursive classification, second Merge or re-Split on the same facts,
+   parent/child graph, or size/Task-count optimization. New concrete evidence
+   follows reassessment before an authorized new event.
 
 Only final groups must each own one bounded responsibility and its authorized
 inputs/outputs, leave a correct repository state after represented predecessors,
 carry locally attributable verification and review, and be resumable from
 Contract, routed authority, and declared predecessor outputs.
+Local acceptance and gates cover normal, failure and recovery behavior within
+the responsibility. A correct inactive implementation can complete before
+production activation; shared activation waits for all units and final integration
+verification/review, not an artificial Merge of all implementation. Local and
+integration gates do not replace each other, and unfinished responsibility cannot
+be moved away merely to declare completion.
 The combined scope retains all applicable gates. These criteria use the existing
 session-local decision, not a scorecard, token estimate, split-reason output or
 record, or extra confirmation step.
+
+### Evidence-Based Boundary Reassessment
+
+New concrete dependency, persistence/recovery or acceptance-to-check evidence
+found during authorized work can invalidate the current partition assumptions,
+even within the same request. The instruction layer compares that evidence to
+the existing responsibility and proposes a bounded alternative using the same
+final-group criteria. It performs no Task write, evidence reset or automatic
+completion. Mere size, difficulty, effort, failure count, model preference and
+suspected dependencies do not enter this path; the same evidence does not justify
+another split/merge proposal during ordinary work or reconciliation.
+
+An accepted concrete repartition proceeds as a new authorized event through
+existing registration, Tier and Contract-revision operations. Reuse explicit
+authority already covering the exact changes; otherwise obtain the missing
+decision after presenting the proposal. Preserve scope/permission unions and
+represented order, retain historical evidence, and preserve ordinary semantic
+revision invalidation and fresh exact-target gates. Until that authority exists,
+safe authorized work continues under the original Contract, with only existing
+Handoff, pause and blocker conditions. The proposal has no persisted classifier,
+new fields or recurring check. It does not bypass partial-add recovery or let a
+new Task reuse old current evidence.
 
 ### Registration Adapter And Partial-Add Recovery
 
@@ -849,7 +883,9 @@ unrepresentable order never creates an implicit dependency. Existing semantic
 revision continues to invalidate stale target, review, and completion evidence;
 `keep-current` preserves them only under ordinary exact-target rules. A pending
 proposal is not persisted as a new model or reconstructed from Handoff. The
-same event cannot run another Split after global Merge. Scope preservation
+same event cannot run another Split after global Merge on unchanged evidence;
+new concrete boundary evidence follows the separate write-free reassessment path.
+Scope preservation
 precedes any pause or block, and the normal Task loop gains no new call.
 
 ### Instruction-Layer Ownership And Synchronization
@@ -1062,6 +1098,13 @@ resulting Task DB. The reusable coverage matrix includes:
   higher Tier, and no ordinary lowering of a binding floor;
 - mid-Task keep, revise, successor, and merge-into-current Tier effects,
   including separate Contract/Tier writes and no auto-lowering; and
+- newly established multi-store recovery or acceptance-attribution boundaries
+  within the same request, contrasted with unchanged facts, size/failure counts
+  and merely suspected dependencies; proposal-only permission versus explicitly
+  approved repartition, with preserved history and fresh exact-target gates;
+- independently accepted foundations for approved later work and correct inactive
+  intermediate states before shared activation; retain normal/failure/recovery
+  coverage per responsibility and final integration gates without oversplitting;
 - unchanged current command leaves, schema, Runner, no additional normal-loop calls,
   target/evidence freshness, Handoff bounds, and no invocation from discovery,
   test failure, Effort, or cross-module failure alone. Each Task's review gate

@@ -36,6 +36,11 @@ automatic stop.
    acceptance blocker only after safe authorized work for the affected Task or
    lane is exhausted; otherwise hand off the out-of-scope discovery
    immediately. Reserve `paused` for an explicit temporary interruption.
+   If newly established dependencies, persistence/recovery boundaries or
+   acceptance-to-check mismatches show an unsuitable Task boundary, use
+   [boundary reassessment](task_workflow.md#reassess-task-boundaries) for a
+   write-free proposal. Failure count alone is insufficient; do not repeat a
+   proposal on the same evidence or move scope without explicit authority.
 7. **Review remediation.** A current-generation `changes_requested` receipt or
    unresolved high or medium finding blocks completion immediately. A
    remediation cycle requires a meaningful fix, applicable finding

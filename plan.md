@@ -220,7 +220,7 @@ gates. It is not the product contract, execution ledger, or evidence store:
 
 ### Task Decomposition And Registration Guidance
 
-Select-Split-Merge-Register remains active only as Skill instruction-layer guidance for two explicit
+Select-Split-Merge-Register remains Skill instruction-layer guidance for two explicit
 authority events: a request to register or taskize already-authorized work, and
 an explicit scope addition to an in-progress or review-pending Task. The active
 product and implementation contracts are the
@@ -229,6 +229,12 @@ and [design](docs/task-operation-design.md#task-decomposition-and-registration-d
 the concise operating rule and complete procedure remain in
 [SKILL.md](task-governance-tool/SKILL.md) and the
 [Task workflow](task-governance-tool/references/task_workflow.md).
+
+New concrete evidence of unsuitable responsibility boundaries may support a
+write-free reassessment within the same request, under the
+[current proposal boundary](docs/task-operation-specification.md#boundary-reassessment).
+It grants no registration, repartition or Contract-revision authority; repeated
+proposals on unchanged evidence remain excluded.
 
 The retained decision is one authority envelope, one flat Split, and one global
 Merge at boundaries where separate completion serves a concrete decision or

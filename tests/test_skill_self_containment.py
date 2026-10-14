@@ -671,8 +671,8 @@ class SkillSelfContainmentTests(unittest.TestCase):
         self.assertEqual(setup_example["schema_to"], SCHEMA_VERSION)
         self.assertIn(f"`schema_to={SCHEMA_VERSION}`", setup_section)
 
-        from task_governance_tool.usage_response_repository import UsageResponseRepository
-        usage_schema = UsageResponseRepository.migrations[-1][0]
+        from task_governance_tool.usage_publication_repository import UsagePublicationRepository
+        usage_schema = UsagePublicationRepository.migrations[-1][0]
         self.assertEqual(setup_example["usage"]["schema_to"], usage_schema)
         usage_contract = setup_section.split("`usage` reports separate", 1)[1].split(
             "`usage_hooks` separately reports", 1)[0]

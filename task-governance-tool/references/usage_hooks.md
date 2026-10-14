@@ -92,7 +92,7 @@ stops coverage from the next response. Resume retains the same execution and
 starts at its eligible same-turn preparation or original operation response.
 Stopped gaps without another valid binding remain unassigned; missing or
 ambiguous boundaries stay unknown. Reviewers and real receipt bindings remain
-independently eligible. Numerical schema 6 is unchanged; retained prior-policy
+independently eligible. Retained prior-policy
 snapshots remain history and ordinary collection never migrates old stores.
 Setup preserves older closed intervals and legacy overlapping holdings. Use
 ordinary authorized state transitions to resolve those holdings, not a manual
@@ -105,7 +105,7 @@ remains read-only, and a saved review counts only after its core binding exists.
 Only a retained legacy supervisor uses the
 [wait-decision marker](cli_contracts.md#record-review-wait-decision); normal
 deterministic waiting creates no supervisor usage turn. Actual parent/reviewer
-usage and existing marker history remain intact. Numerical schema 6 requires
+usage and existing marker history remain intact. Numerical schema 7 requires
 explicit setup to initialize or migrate; ordinary helpers and hooks never
 upgrade old stores. Usage unavailability does not prevent review or Task
 completion, and a marker does not prove collection.
@@ -137,8 +137,11 @@ Normal collection reads appended records using saved safe context. Prefix
 integrity is checked later in bounded resumable slices, with explicit
 `prefix_verification_deferred` coverage; unchanged mtime/size is not proof.
 Later events share work with old participants/segments and deferred audits.
-Changed shared components are recomputed; stored snapshot/counter and published
-byte validation remains intact. Budget or publication failure preserves prior
+Changed shared components are recomputed. Snapshot/counter and published-byte
+checks continue across events in a rotating audit, with explicit
+`evidence_verification_deferred` status; a visited item may change before the
+next sweep detects it. A cursor or unchanged mtime/size is no proof of integrity.
+Budget or publication failure preserves prior
 progress/output and never asks to repeat Task completion. This is not a measured
 guarantee that every host invocation avoids its timeout.
 

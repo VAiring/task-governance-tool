@@ -42,7 +42,7 @@ except ModuleNotFoundError:
 from task_governance_tool import backup as backup_service
 from task_governance_tool import setup as setup_service
 from task_governance_tool.state_resolver import resolve_setup_project_state
-from task_governance_tool.storage import DatabaseTarget, StorageError
+from task_governance_tool.storage import DatabaseTarget, StorageError, SCHEMA_VERSION
 
 
 RECOVERY_WRITES = [
@@ -361,8 +361,8 @@ class SetupManagedBackupRecoveryTests(unittest.TestCase):
                     "planned_writes": [],
                     "completed_writes": [],
                     "schema_from": None,
-                    "schema_to": 28,
-                    "usage": {"status": "not_attempted", "schema_to": 6,
+                    "schema_to": SCHEMA_VERSION,
+                    "usage": {"status": "not_attempted", "schema_to": 7,
                               "planned_writes": [], "completed_writes": [], "error": None},
                     "usage_hooks": {
                         "status": "not_attempted", "planned_writes": [], "completed_writes": [],

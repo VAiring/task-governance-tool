@@ -355,10 +355,10 @@ responses; unchanged components reuse validated snapshots. New graph geometry
 and immutable predecessor overlap handle splits/merges without summing old
 totals. Dirty marks and bases are adopted with snapshots, cycle links and capture
 fingerprint. Core restore or delayed boundaries/reviewer/receipt bindings cannot
-reuse a different geometry. The structural pass is still global; Evidence
-validation still reads membership/counters and publication still checks all
-existing immutable snapshot bytes. Test work counters distinguish aggregation
-from this intentionally retained integrity I/O.
+reuse a different geometry. The structural pass is still global; current
+snapshot validation still reads membership/counters. Historical Evidence and
+file integrity use the resumable publication sweep below. Test work counters
+distinguish aggregation from these integrity operations.
 
 `usage_collection.py` composes those boundaries and returns unknown on numerical
 failure without discarding readable prior observations. Its explicit-setup
@@ -391,9 +391,9 @@ Turn observations, response observations and source cursor commit atomically.
 `usage_review_boundaries` and `usage_review_receipt_turns`
 to numerical schema 1. Explicit initialization migrates the migration-marker
 table and adds the new relations in one short transaction, recording version 2
-last. No ordinary read or collector migrates. The setup factory selects schema 6
+last. No ordinary read or collector migrates. The setup factory selects schema 7
 for the current package. Preview returns `migration_required` and planned `usage_migrate` for
-an exact schema-1 through schema-5 store; explicit setup returns `migrated` and that completed
+an exact schema-1 through schema-6 store; explicit setup returns `migrated` and that completed
 write on success. Fresh-store creation keeps `usage_initialize`. Failure remains
 a separate numerical outcome, not rollback or rejection of core setup.
 
@@ -423,7 +423,7 @@ known save/direct-registration turn with explicit partial coverage.
 bounded continuation (128 pending calls, handles and retired-handle entries,
 262,144 bytes). `usage_response_attribution.py` owns response ordering and
 whole-response start/stop/resume/completion partitions. `usage_response_repository.py`
-owns numerical schema 6, current factories, core-reference resolution,
+owns numerical schema 6, core-reference resolution,
 partition snapshots and read projections. Neither parser nor classifier uses
 SQLite; SQL stays in the repository boundary.
 
@@ -528,7 +528,7 @@ Task totals and work-unit parts union original keys; shared parts name actual
 Task/execution identities instead of displaying another period's shared total
 as an exclusive value. The v2 index exposes known-unassigned versus unknown
 observed values without a completion gate or new hook/LLM action. Current
-factories select the schema-6 subclass through `usage_collection.py` and
+factories select the schema-7 publication subclass through `usage_collection.py` and
 `usage_evidence_service.py`; lifecycle composition and source discovery stay
 with their existing owners.
 
@@ -609,6 +609,45 @@ are matched, never repaired in place. Reads validate closed stored snapshot
 shape, digest, members and counters before output; errors become fixed unknown
 usage, not private diagnostics or a failed Task read. Only explicit setup
 migrates; ordinary completion does not even open the numerical store.
+
+`usage_publication_repository.py` adds numerical schema 7 and the mutable
+singleton `usage_publication` (`revision`, exact index `basis`, `position`,
+`total`, `published`, canonical-field `checksum`). The checksum detects damaged
+continuation fields; it is neither authentication nor evidence of unchanged
+external bytes. Setup alone adds it and the migration marker. Schema-6
+continuation bytes remain unchanged; migrations from older schemas retain the
+existing response-format replay rule. The exact predecessor admitted under the
+migration writer selects that rule, never an earlier inspection. No observation or immutable history is
+deleted or treated as already audited during migration.
+
+Capture returns its admitted current documents, core/period basis and
+classification to the publisher in the same numerical writer/core read.
+It builds only index metadata for history, without repeating historical
+membership/counter validation or classification. Ordinary response reads reuse
+the base reader's validated documents and periods in that same connection;
+there is no cross-connection verified cache. The publication basis also includes
+closed turn, operation, reviewer, conflict and source-diagnostic inputs, plus
+actual operation resolutions, so changed source/capture/restore state cannot
+silently reuse an earlier index. Structural metadata remains a whole pass.
+
+The writer closes before file I/O. Each subsequent short numerical read fully
+validates one snapshot; the service compares/publishes its immutable bytes,
+then CAS-advances the saved position. A losing cursor never regresses a winner.
+A new event retains the cursor only for the identical prospective index and
+an unfinished sweep, otherwise starts at zero. A final fresh numerical/core
+read validates the saved cursor, capture, no pending dirty turns and exact
+index metadata, and remains open during index replacement to fence concurrent
+normal writers. The published flag is saved afterward; an interruption at
+that boundary permits idempotent index replay. No core writer spans this work.
+
+The saved position is completed work, not an unchanged-byte certificate. The
+index's `integrity` and internal `evidence_verification_deferred` diagnostic
+always disclose the rotating audit's detection window. Earlier rows/files may
+change between steps and are checked again by the next sweep; stat metadata
+never substitutes for content validation. File failures retain last-good index
+and cursor through the last committed step. One item and its checkpoint must
+fit the event's remaining cooperative budget to advance; no universal timing
+guarantee or new daemon, timer, hook event, command or LLM step is introduced.
 
 <a id="schema-v20-physical-foundation"></a>
 

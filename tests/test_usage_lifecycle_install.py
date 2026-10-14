@@ -237,7 +237,7 @@ class UsageLifecycleReviewInstallTests(unittest.TestCase):
                 caller=caller)
             self.assertEqual(read.returncode, 0, read.stdout or read.stderr)
             displayed = json.loads(read.stdout)
-            output = f"reviews/g1/segment-review-{number}.json"
+            output = self.handoff["review_requests"][number]["result_path"]
             saved = self.helper("save", "--packet", self.packet_path, "--output", output,
                                 caller=caller, raw=self.original(f"segment-review-{number}"))
             outputs.append(output)
@@ -312,7 +312,7 @@ class UsageLifecycleReviewInstallTests(unittest.TestCase):
         self.assertEqual(display.returncode, 0)
         self.assertEqual(target.resolved_usage_database.read_bytes(), before)
         displayed = json.loads(display.stdout)
-        output = "reviews/g1/hook-child.json"
+        output = self.handoff["review_requests"][0]["result_path"]
         saved = self.helper("save", "--packet", self.packet_path, "--output", output,
                             caller=REVIEWER, raw=self.original("hook-child"))
         self.assertIn(REVIEWER.session_id, repository.registered_sources()[0])

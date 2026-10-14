@@ -302,11 +302,8 @@ class UsageResponseRepository(UsageIncrementalRepository):
 
     def read(self, core, *, task_id=None, audit=False, numerical_connection=None):
         with (self.connection() if numerical_connection is None else nullcontext(numerical_connection)) as connection:
-            result = super().read(core, task_id=task_id, audit=audit, numerical_connection=connection)
-            current = self._snapshots(connection, current=True)
-            _, periods = self._core_basis(core, connection)
-            known = set().union(*(period["executions"] for period in periods))
-            current = [item for item in current if set(item["executions"]) <= known and item["format"] == RESPONSE_FORMAT]
+            result, current, periods = self._read(core, connection, task_id=task_id, audit=audit)
+            current = [item for item in current if item["format"] == RESPONSE_FORMAT]
             if task_id is None:
                 classification = self.attribution(core, numerical_connection=connection, geometry_only=True)
                 result["format"] = "taskgov-usage-index-v2"

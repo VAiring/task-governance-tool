@@ -681,12 +681,12 @@ schema, selected recovery schema, or null. Policy values are effective
 requested/stored values, not persistence claims. `maintenance_enabled`,
 Evidence status, and Viewer status describe durable post-command state.
 
-`usage` independently contains `status`, `schema_to=6`, `planned_writes`,
+`usage` independently contains `status`, `schema_to=7`, `planned_writes`,
 `completed_writes` and `error`. Status is `not_attempted` after core failure,
 `pending_core_setup` when preview cannot yet admit the future core binding,
 `not_present` for an admitted missing-store preview, `initialized` after
-publication, `migration_required` for exact schema 1 through 5 in preview, `migrated`
-after the atomic schema-1-through-5-to-6 transaction, `current` after validation, or `unavailable`.
+publication, `migration_required` for exact schema 1 through 6 in preview, `migrated`
+after the atomic schema-1-through-6-to-7 transaction, `current` after validation, or `unavailable`.
 Write stages are `usage_initialize` and `usage_migrate`; completed writes are empty in preview. `error` is null
 except the fixed `usage_unavailable` for numerical failure. Core `ok`, errors,
 status and write lists remain about core setup: numerical failure does not
@@ -909,7 +909,7 @@ Persisted complete records flow through the existing atomic cursor/observation
 writer and immutable usage publisher. Delayed endpoint records, completed Tasks
 and previous participants are retried at later events. Interrupted/concurrent
 work remains replayable; stale batches do not rerun a Task command. Missing or
-invalid sources preserve observed totals with gaps. Existing schema6 is required:
+invalid sources preserve observed totals with gaps. Existing schema7 is required:
 events never initialize, migrate, repair or rebind a database.
 
 Collection reserves bounded work for previous participants, old segments and
@@ -918,8 +918,11 @@ source attempts resume across events; new traffic cannot continually select
 only the newest source. Later cycles catch moved directory entries. Work and
 database-lock budgets yield neutral pending/unavailable results, preserving
 committed progress and last-good publication. Prefix integrity is explicitly
-[deferred](database-specification.md#numerical-usage-store); snapshot integrity
-and original Evidence validation retain their guarantees. Internal budgets do
+[deferred](database-specification.md#numerical-usage-store); immutable snapshot
+validation and file comparison follow the explicitly deferred
+[rotating audit](database-specification.md#immutable-usage-evidence).
+Completed audit steps resume on later events against the same index basis;
+`evidence_verification_deferred` never claims current integrity. Internal budgets do
 not assert every environment finishes within the host timeout.
 
 Stop, quiet files and elapsed time never establish final coverage. Disabled or

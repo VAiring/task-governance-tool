@@ -16,12 +16,12 @@ from task_governance_tool.state_paths import (
 )
 from task_governance_tool.storage import connect_initialized_readonly
 from task_governance_tool.usage_evidence import encode, MAX_DOCUMENT_BYTES
-from task_governance_tool.usage_response_repository import UsageResponseRepository
+from task_governance_tool.usage_publication_repository import UsagePublicationRepository
 from task_governance_tool.usage_values import UsageError
 
 
 def repository_for(target):
-    return UsageResponseRepository(target.resolved_usage_database, target.project.project_id,
+    return UsagePublicationRepository(target.resolved_usage_database, target.project.project_id,
                                    target.binding_path_hash, target.binding_generation)
 
 
@@ -72,10 +72,13 @@ def _publish(path, document, root, *, immutable):
 def refresh_usage(target, *, deadline=None):
     """Replayable internal worker for optional lifecycle events, not completion.
 
-    A separate zero-wait publication lock serializes index adoption. Snapshot
-    bytes and links are read from one numerical snapshot; original Evidence
-    files and Viewer maintenance are not involved. Failures preserve last-good
-    index and return only a fixed diagnostic, never a request to repeat completion.
+    A separate zero-wait publication lock serializes index adoption. Capture
+    fixes index metadata; separate admitted reads validate each snapshot before
+    its bytes are published and progress is saved. A fresh numerical/core guard
+    fences index replacement. Earlier history remains subject to the disclosed
+    deferred audit across events. Original Evidence and Viewer maintenance are
+    not involved. Failures preserve last-good index and return only a fixed
+    diagnostic, never a request to repeat completion.
     """
     try:
         repository = repository_for(target)
@@ -91,18 +94,19 @@ def refresh_usage(target, *, deadline=None):
         root = target.resolved_usage_root
         _directory(root, target.db_path.parent)
         with zero_wait_artifact_lock(target.resolved_usage_lock):
-            repository.refresh(core_reader)
-            with core_reader() as core:
-                projection = repository.read(core, audit=True)
+            index, state = repository.prepare_publication(core_reader)
             _directory(target.resolved_usage_snapshots, root)
-            for item in projection["snapshots"]:
+            for identity in index["snapshots"][state["position"]:]:
                 if deadline is not None:
                     repository.check_budget()
-                _publish(target.resolved_usage_snapshots / (item["snapshot_id"] + ".json"), item, root, immutable=True)
-            index = {**projection, "snapshots": [item["snapshot_id"] for item in projection["snapshots"]]}
+                item = repository.publication_snapshot(identity)
+                _publish(target.resolved_usage_snapshots / (identity + ".json"), item, root, immutable=True)
+                state = repository.advance_publication(state)
             if deadline is not None:
                 repository.check_budget()
-            _publish(target.resolved_usage_index, index, root, immutable=False)
-        return {"status": "pending", "publication": "current", "diagnostics": []}
+            with repository.publication_guard(core_reader, index, state):
+                _publish(target.resolved_usage_index, index, root, immutable=False)
+            repository.advance_publication(state, published=True)
+        return {"status": "pending", "publication": "current", "diagnostics": ["evidence_verification_deferred"]}
     except Exception:
         return {"status": "unknown", "publication": "pending", "diagnostics": ["usage_unavailable"]}

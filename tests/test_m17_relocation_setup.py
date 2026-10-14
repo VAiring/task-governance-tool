@@ -40,6 +40,7 @@ from task_governance_tool.relocation import (
 )
 from task_governance_tool.state_resolver import resolve_setup_project_state
 from task_governance_tool.storage import (
+    SCHEMA_VERSION,
     initialize_uuid_database,
     project_identity,
 )
@@ -408,7 +409,7 @@ class M17RelocationSetupTests(unittest.TestCase):
                 preview.data,
                 {
                     "status": "relocation_preview",
-                    "usage": {"status": "pending_core_setup", "schema_to": 6,
+                    "usage": {"status": "pending_core_setup", "schema_to": 7,
                               "planned_writes": [], "completed_writes": [], "error": None},
                     "usage_hooks": {
                         "status": "not_requested", "planned_writes": [], "completed_writes": [],
@@ -428,8 +429,8 @@ class M17RelocationSetupTests(unittest.TestCase):
                     },
                     "planned_writes": FIXED_WRITES,
                     "completed_writes": [],
-                    "schema_from": 28,
-                    "schema_to": 28,
+                    "schema_from": SCHEMA_VERSION,
+                    "schema_to": SCHEMA_VERSION,
                     "maintenance_enabled": True,
                     "backup_interval_minutes": 30,
                     "backup_generations": 3,

@@ -175,10 +175,12 @@ does not starve deferred verification. Cooperative event budgets are 20 seconds
 (1.5 seconds for SessionEnd), with 50 ms SQLite lock waits and query progress
 interrupts for these numerical workers and their admitted core readers. They
 do not alter ordinary Task connection budgets or admission checks. Filesystem
-operations, one bounded record and full Evidence validation can still dominate
+operations, one bounded record, current-component validation and metadata passes can still dominate
 wall time; there is no universal host-timeout guarantee. The same
 compare-and-commit cursor/continuation rule handles interruption, followed by
-`refresh_usage` for exact-cycle capture and snapshot-first publication. It uses
+`refresh_usage` for exact-cycle capture and snapshot-first publication. Its
+schema-7 cursor continues the rotating history audit across events; a completed
+sweep retains explicit deferred-integrity status. It uses
 the existing canonical paths above; no daemon, timer, process, model call,
 post-commit Task callback or host-settings writer is added. A later same-project
 event retries backlog and late records, with pending coverage throughout.

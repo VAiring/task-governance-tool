@@ -19,6 +19,7 @@ from task_governance_tool.state_paths import StatePathError
 from task_governance_tool.state_resolver import observe_current_root, resolve_setup_project_state
 from task_governance_tool.state_separation import read_record
 from task_governance_tool.storage import (
+    SCHEMA_VERSION,
     DatabaseTarget, UnboundDatabaseTarget, connect, connect_snapshot_readonly,
     initialize_uuid_database, project_identity, ensure_project_meta,
     apply_initial_schema_migration, apply_completion_commit_migration,
@@ -499,7 +500,7 @@ class SetupStateSeparationTests(unittest.TestCase):
                     self.assertEqual(result.error_code, "project_state_unreadable")
                     self.assertEqual(result.data, {
                         "status": None, "planned_writes": [], "completed_writes": [],
-                        "usage": {"status": "not_attempted", "schema_to": 6,
+                        "usage": {"status": "not_attempted", "schema_to": 7,
                                   "planned_writes": [], "completed_writes": [], "error": None},
                         "usage_hooks": {
                             "status": "not_attempted", "planned_writes": [], "completed_writes": [],
@@ -515,7 +516,7 @@ class SetupStateSeparationTests(unittest.TestCase):
                             },
                             "offer": [], "viewer_default_interval_seconds": 30,
                         },
-                        "schema_from": None, "schema_to": 28,
+                        "schema_from": None, "schema_to": SCHEMA_VERSION,
                         "maintenance_enabled": None, "backup_interval_minutes": None,
                         "backup_generations": None, "evidence_status": None,
                         "viewer_status": None,

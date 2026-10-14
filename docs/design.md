@@ -145,7 +145,9 @@ numerical schema-3 replay/links, and isolated publication/Task-detail reading,
 as specified in [immutable usage persistence](database-design.md#immutable-usage-persistence).
 Core completion never invokes that worker or opens its store.
 
-Current numerical factories select the schema-6 response repository. Closed
+Current numerical factories select the schema-7 publication repository, whose
+resumable audit is owned by
+[immutable usage persistence](database-design.md#immutable-usage-persistence). Closed
 transport relations and pure response partitions are delegated to
 [response attribution structure](database-design.md#response-relation-and-partition-structure);
 retained turn-policy modules continue to own historical interpretation.

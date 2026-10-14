@@ -412,9 +412,9 @@ or general migration framework is added.
 
 ## Numerical Usage Store
 
-Numerical collection uses independent schema 6 in the resolver-owned
+Numerical collection uses independent schema 7 in the resolver-owned
 `current/taskgov-usage.sqlite`, not the main schema sequence. Explicit setup
-initializes an absent store, migrates exact schema 1 through 5, and validates current state. Normal reads and
+initializes an absent store, migrates exact schema 1 through 6, and validates current state. Normal reads and
 collection never initialize, migrate or repair it. Incompatible structure,
 WAL, corruption, contention or project/binding mismatch produces unavailable
 usage, never a core admission failure or a weakened quality gate. Existing
@@ -495,10 +495,12 @@ require broad recomputation. Structural selection remains a full metadata pass;
 no claim that every path is proportional only to appended bytes is made.
 
 Stored snapshot shape/digest, exact membership, original counters, supersession
-and published immutable bytes retain their existing validation. Deferred log
-auditing does not defer Evidence integrity. Budget or publication failure keeps
-committed collection progress and last-good output, reports pending/unavailable,
-and resumes at later events without retrying completion or review registration.
+and published immutable bytes are checked by the rotating publication audit
+below. This explicitly defers historical integrity detection between events;
+deferred log auditing is a separate mechanism. Budget or publication failure
+keeps committed collection progress, completed audit steps and last-good output,
+reports pending/unavailable, and resumes at later events without retrying
+completion or review registration.
 
 Repository summaries report observed per-model totals, registered source
 coverage, conflicts and fixed gaps. Collection alone returns pending,
@@ -773,7 +775,7 @@ Capture and display revalidate immutable execution/cycle/reviewer identities.
 A core-basis mismatch after restore or later transitions returns unavailable
 until replay; missing references are never rebound to the newest Task cycle.
 Restored numerical state with a different project/path binding stays unavailable.
-The main schema is independently versioned (currently 28); no numerical table joins a core transaction or gate.
+The main schema is independently versioned (currently 29); no numerical table joins a core transaction or gate.
 Optional lifecycle invocation follows the separate Setup/state contract and
 cannot alter these quality or completion boundaries.
 
@@ -781,7 +783,7 @@ Current response partitions emit `taskgov-usage-snapshot-v2` with algorithm
 `response-partitions-v4`. Retained `response-partitions-v1`,
 `response-partitions-v2` and `response-partitions-v3` snapshots retain their original policy meaning and
 remain validated immutable history.
-The physical numerical schema remains 6; changing the algorithm invalidates
+Changing the response algorithm invalidates
 the capture basis and publishes successors without a schema migration or
 reinterpreting old snapshot bytes. All response algorithms keep the v1 fields and add `assignment`:
 `exclusive` has exactly one execution, `shared` at least two, and `partial`
@@ -799,3 +801,40 @@ and shared/partial parts with snapshot IDs, execution sets, actual
 `{execution_id,task_id}` members and observed model totals. These do not change
 sealed completion Evidence or create a public usage command. No value proves
 final coverage, billing, new ownership or permission.
+
+Numerical schema 7 adds a restart-safe publication cursor. Each event captures
+one admitted numerical/core basis, reuses its classification, and audits the
+immutable history in stored order. A step validates the stored shape/digest,
+exact members, original counters and predecessor edges, then compares or
+durably publishes that snapshot's immutable bytes before saving progress.
+The cursor is scoped to the exact prospective index (snapshot identities,
+current identities, valid original-cycle links, attribution, core basis and
+unattributed totals). A changed basis invalidates its reuse. Stale concurrent
+advances fail closed; a failed file operation never advances that step.
+After every item is visited, fresh admitted reads recheck the capture, source
+and structural classification inputs and index membership before replacement.
+Snapshot files always precede the index. If index publication fails, its
+completed audit position can be retried on the unchanged basis.
+
+A completed sweep is a record of past observations, not proof that all earlier
+items remained unchanged. The index retains format `taskgov-usage-index-v2`
+and adds `integrity={"policy":"rotating-audit-v1","status":"verification_deferred"}`.
+Successful internal publication returns the fixed diagnostic
+`evidence_verification_deferred`; `publication=current` describes index
+publication, never integrity certification or complete coverage. The next
+event after successful publication starts another sweep. Same-length edits
+with restored mtime, changes to previously visited rows or files, and missing
+earlier files may be detected only on that next sweep. No mtime/size check or
+saved cursor is accepted as proof of unchanged bytes. Until a sweep finishes,
+last-good output remains intact; without later events there is no progress or
+detection guarantee. For finite stable input and enough budget to perform a
+capture, one audit step and its checkpoint, repeated events reach publication
+instead of restarting the same history prefix. Metadata classification and
+current-component validation remain whole passes, and each snapshot/file is
+still bounded to 16 MiB; this is not a universal latency guarantee.
+
+Ordinary Task reads retain full validation of selected snapshot rows and never
+advance this cursor or publish files. Explicit Setup alone initializes/migrates
+schema 7, preserving all old numerical observations, snapshot bytes, membership,
+cycle links and schema-6 collection continuations. It creates no trusted result
+for earlier history; the first publication starts an audit from the beginning.

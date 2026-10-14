@@ -131,7 +131,7 @@ class UsageIncrementalRepository(UsageWaitRepository):
                             connection.execute(statement)
                     for migration in self.migrations[len(previous.migrations):]:
                         connection.execute("INSERT INTO usage_migrations VALUES (?,?)", migration)
-                    self._before_incremental_marker(connection)
+                    self._after_numerical_upgrade(connection, previous)
                     self._validate(connection)
                 return "migrated"
             except UsageError as error:
@@ -141,6 +141,10 @@ class UsageIncrementalRepository(UsageWaitRepository):
 
     def _before_incremental_marker(self, connection):
         """Migration rollback seam; existing evidence is never rewritten."""
+
+    def _after_numerical_upgrade(self, connection, previous):
+        """Use the exact predecessor admitted under this migration's writer."""
+        self._before_incremental_marker(connection)
 
     def _project_for_refresh(self, core, connection, previous):
         from task_governance_tool.usage_incremental_projection import project_changed

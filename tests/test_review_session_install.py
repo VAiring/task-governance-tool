@@ -20,25 +20,26 @@ from tests.m14_test_support import make_physical_install, refresh_test_manifest
 from tests.test_review_results import encode, receipt, FINGERPRINT
 from tests.test_review_session_repository import OWNER, REVIEWER, SECOND
 from task_governance_tool.session_identity import CallerIdentity
+from task_governance_tool.storage import SCHEMA_VERSION
 
 
 class ReviewSessionInstallTests(unittest.TestCase):
     def test_candidate_setup_previews_and_migrates_numerical_store_separately(self):
         from task_governance_tool.state_resolver import observe_current_root
         from task_governance_tool.usage_repository import UsageRepository
-        from task_governance_tool.usage_response_repository import UsageResponseRepository
+        from task_governance_tool.usage_publication_repository import UsagePublicationRepository
 
         path = self.install.db_path.parent / "taskgov-usage.sqlite"
         basis = (self.packet["review_session_context"]["project_id"],
                  observe_current_root(self.root).canonical_path_hash, 1)
-        self.assertEqual(UsageResponseRepository(path, *basis).inspect(), "current")
+        self.assertEqual(UsagePublicationRepository(path, *basis).inspect(), "current")
         # Only this test's disposable numerical store is replaced with v1.
         path.unlink()
         old = UsageRepository(path, *basis)
         old.initialize()
         original = path.read_bytes()
         preview = self.cli("setup", "--read-only")["data"]["usage"]
-        self.assertEqual(preview["schema_to"], 6)
+        self.assertEqual(preview["schema_to"], 7)
         self.assertEqual(preview["status"], "migration_required")
         self.assertEqual(preview["planned_writes"], ["usage_migrate"])
         self.assertEqual(path.read_bytes(), original)
@@ -96,7 +97,7 @@ class ReviewSessionInstallTests(unittest.TestCase):
         self.root = self.install.project_root
         storage = self.install.skill_root / "scripts/task_governance_tool/storage.py"
         source = storage.read_text(encoding="utf-8")
-        self.assertEqual(source.count("SCHEMA_VERSION = 28"), 1)
+        self.assertEqual(source.count(f"SCHEMA_VERSION = {SCHEMA_VERSION}"), 1)
         ignore = self.root / ".gitignore"
         ignore.write_text(ignore.read_text(encoding="utf-8") + "/reviews/\n", encoding="utf-8")
         self.cli("setup")

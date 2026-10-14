@@ -32,6 +32,7 @@ from task_governance_tool.relocation import (  # noqa: E402
     relocation_token_expiry,
     require_unexpired,
 )
+from task_governance_tool.storage import SCHEMA_VERSION  # noqa: E402
 
 
 ISSUED_AT = "2026-07-29T01:02:03Z"
@@ -179,7 +180,7 @@ class RelocationTokenCodecTests(unittest.TestCase):
         context = legacy_context(source_layout="fixed_current_v1", source_schema_version=27)
         token = encode_relocation_token(context, issued_at=ISSUED_AT)
         self.assertEqual(decode_relocation_token(token, now=ISSUED_AT).context, context)
-        self.assert_invalid(legacy_context, source_layout="fixed_current_v1", source_schema_version=29)
+        self.assert_invalid(legacy_context, source_layout="fixed_current_v1", source_schema_version=SCHEMA_VERSION + 1)
 
     def test_context_rejects_invalid_scheme_specific_values_and_ranges(self):
         cases = (
@@ -220,14 +221,27 @@ class RelocationTokenCodecTests(unittest.TestCase):
         self.assert_invalid(
             legacy_context,
             source_layout="fixed_current_v1",
-            source_schema_version=29,
+            source_schema_version=SCHEMA_VERSION + 1,
         )
 
     def test_current_schema_context_roundtrip(self):
-        context = legacy_context(source_layout="fixed_current_v1", source_schema_version=24)
+        context = legacy_context(source_layout="fixed_current_v1", source_schema_version=SCHEMA_VERSION)
         issued_at = "2026-09-28T00:00:00Z"
         token = encode_relocation_token(context, issued_at=issued_at)
         self.assertEqual(decode_relocation_token(token, now=issued_at).context, context)
+
+    def test_fixed_source_supported_range_and_legacy_limit_are_distinct(self):
+        for version in (1, 14, 15, 28, 29):
+            with self.subTest(version=version):
+                context = legacy_context(source_layout="fixed_current_v1", source_schema_version=version)
+                token = encode_relocation_token(context, issued_at=ISSUED_AT)
+                self.assertEqual(decode_relocation_token(token, now=ISSUED_AT).context, context)
+        for version in (15, 29):
+            self.assert_invalid(decode_relocation_token,
+                                raw_token(canonical_payload(source_schema_version=version)), now=ISSUED_AT)
+        self.assert_invalid(decode_relocation_token,
+                            raw_token(canonical_payload(source_layout="fixed_current_v1",
+                                                        source_schema_version=SCHEMA_VERSION + 1)), now=ISSUED_AT)
 
     def test_encode_rejects_invalid_context_time_and_oversized_transport(self):
         for issued_at in (

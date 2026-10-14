@@ -57,7 +57,7 @@
     "scripts/task_governance_tool/ordering.py": "sha256:3dbc5ca110a4cfa4c9092f404629a53779577c40e7b667e9ad989a7feb193740",
     "scripts/task_governance_tool/project_binding_repository.py": "sha256:bc734c9292ee370015160b31c122f193c6669959db443e53e2332eed0c48d63e",
     "scripts/task_governance_tool/project_scope.py": "sha256:57c88d0320acd1db4d330e20037a4b7f2605deaeb9714657a4c328c045c94863",
-    "scripts/task_governance_tool/relocation.py": "sha256:2e84daa9d80186a08e3146d7c3f58e2a1f2abc67db41eed67348b5cffeed6da4",
+    "scripts/task_governance_tool/relocation.py": "sha256:1a7217f5d244b0a545fed7964ae3f72388daa1bd59c14623c2898993a08f3f07",
     "scripts/task_governance_tool/review_continuation.py": "sha256:c31d8688be7dc0ac6195dc3625191a40414576092b484bda4026061522aab8b2",
     "scripts/task_governance_tool/review_continuation_evidence.py": "sha256:dc67b5088e787510efc2584a1a14a7d4e19e4fbee7a3eacd87cc106463195eaa",
     "scripts/task_governance_tool/review_continuation_evidence_repository.py": "sha256:b728a473fd39a84450d324122e3444d28c5cc7ece59ac89aaf41fdcb71dbd69c",

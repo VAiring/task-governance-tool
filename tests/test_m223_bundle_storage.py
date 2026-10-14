@@ -18,6 +18,7 @@ from tests.m223_test_support import (
     remove_v19_bundle_storage_for_test,
     remove_v20_runner_shadow_for_test,
     remove_v21_gate_basis_for_test,
+    remove_v24_ownership_for_test,
 )
 from tests.verification_receipt_test_support import (
     add_receipt,
@@ -60,17 +61,79 @@ class CompletionEvidenceBundleStorageTests(unittest.TestCase):
             completed = complete_task(db_path, repo, task_id)
             self.assertEqual(completed.returncode, 0, completed.stdout)
             with closing(connect(db_path)) as connection:
-                self.assertEqual(current_schema_version(connection), 28)
+                self.assertEqual(current_schema_version(connection), SCHEMA_VERSION)
                 self.assertEqual(connection.execute(
                     "SELECT source_schema_version FROM completion_evidence_bundles"
-                ).fetchone()[0], 28)
+                ).fetchone()[0], SCHEMA_VERSION)
                 before = logical_database_digest(connection)
                 with self.assertRaisesRegex(AssertionError, "cannot discard ownership or completion history"):
                     remove_v21_gate_basis_for_test(connection)
                 self.assertEqual(logical_database_digest(connection), before)
-                self.assertEqual(current_schema_version(connection), 28)
+                self.assertEqual(current_schema_version(connection), SCHEMA_VERSION)
                 self.assertEqual(connection.execute("PRAGMA foreign_keys").fetchone()[0], 1)
                 self.assertEqual(connection.execute("PRAGMA legacy_alter_table").fetchone()[0], 0)
+
+    def test_current_empty_history_reduces_with_rows_and_connection_settings_preserved(self):
+        for tuple_rows in (False, True):
+            with self.subTest(tuple_rows=tuple_rows), tempfile.TemporaryDirectory() as directory:
+                repo, db_path = initialize_completion_fixture(Path(directory))
+                task = add_completion_task(db_path, repo, title="Retained fixture task", status="ready")
+                with closing(connect(db_path)) as connection:
+                    self.assertEqual(current_schema_version(connection), 29)
+                    connection.execute("CREATE TABLE unrelated_fixture(value TEXT)")
+                    connection.execute("INSERT INTO unrelated_fixture VALUES ('retained')")
+                    connection.commit()
+                    if tuple_rows:
+                        connection.row_factory = None
+                    row_factory = connection.row_factory
+                    remove_v21_gate_basis_for_test(connection)
+                    self.assertIs(connection.row_factory, row_factory)
+                    self.assertEqual(connection.execute("SELECT MAX(version) FROM schema_migrations").fetchone()[0], 20)
+                    self.assertEqual(connection.execute("SELECT title FROM tasks WHERE task_id=?",
+                                                       (task['task_id'],)).fetchone()[0], "Retained fixture task")
+                    self.assertEqual(connection.execute("SELECT value FROM unrelated_fixture").fetchone()[0], "retained")
+                    self.assertEqual(connection.execute("PRAGMA foreign_keys").fetchone()[0], 1)
+                    self.assertEqual(connection.execute("PRAGMA legacy_alter_table").fetchone()[0], 0)
+
+    def test_schema29_fixture_rebuild_failure_rolls_back_rows_and_schema(self):
+        from tests import m223_test_support as support
+        with tempfile.TemporaryDirectory() as directory:
+            repo, db_path = initialize_completion_fixture(Path(directory))
+            add_completion_task(db_path, repo, title="Fixture before interruption", status="ready")
+            with closing(connect(db_path)) as connection:
+                before = logical_database_digest(connection)
+                original = support._remove_continuation_shape_for_test
+
+                def interrupted(candidate):
+                    original(candidate)
+                    raise RuntimeError("test-only fixture interruption")
+
+                with mock.patch.object(support, "_remove_continuation_shape_for_test", side_effect=interrupted):
+                    with self.assertRaisesRegex(RuntimeError, "test-only fixture interruption"):
+                        remove_v24_ownership_for_test(connection)
+                self.assertEqual(logical_database_digest(connection), before)
+                self.assertEqual(current_schema_version(connection), 29)
+                self.assertEqual(connection.execute("PRAGMA foreign_keys").fetchone()[0], 1)
+                self.assertEqual(connection.execute("PRAGMA legacy_alter_table").fetchone()[0], 0)
+
+    def test_reducer_preserves_migrated_initial_review_judgments_as_old_receipts(self):
+        from tests.test_review_session_migration import candidate_runtime
+        from task_governance_tool.schema_verification_declaration import validate_storage
+        with tempfile.TemporaryDirectory() as directory:
+            with candidate_runtime(23):
+                repo, db_path = initialize_completion_fixture(Path(directory))
+                task = add_completion_task(db_path, repo, review_tier=1)
+                seed_current_review_evidence(db_path, repo, task['task_id'])
+            with closing(connect(db_path)) as connection:
+                before = tuple(tuple(row) for row in connection.execute("SELECT rowid,* FROM review_receipts"))
+                self.assertTrue(before)
+                apply_migrations(connection)
+                self.assertEqual(current_schema_version(connection), 29)
+                self.assertEqual(connection.execute("SELECT COUNT(*) FROM review_receipt_judgments").fetchone()[0], len(before))
+                remove_v24_ownership_for_test(connection)
+                self.assertEqual(current_schema_version(connection), 23)
+                validate_storage(connection)
+                self.assertEqual(tuple(tuple(row) for row in connection.execute("SELECT rowid,* FROM review_receipts")), before)
 
     def _initialized_database(self, root: Path) -> Path:
         repo = root / "repo"
@@ -203,7 +266,7 @@ class CompletionEvidenceBundleStorageTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             db_path = self._initialized_database(Path(directory))
             with closing(connect(db_path)) as connection:
-                self.assertEqual(SCHEMA_VERSION, 28)
+                self.assertEqual(current_schema_version(connection), SCHEMA_VERSION)
                 remove_v20_runner_shadow_for_test(connection)
                 self.assertEqual(current_schema_version(connection), 19)
                 marker = connection.execute(

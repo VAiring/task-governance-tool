@@ -381,7 +381,7 @@ write. Retry recomputes from the canonical state and the restore temporary is
 cleaned in either case; no later failure authorizes reselection or another
 canonical publication.
 
-The current classifier admits 500 for schema v17 and 1,000 for schema v18-v28,
+The current classifier admits 500 for schema v17 and 1,000 for schema v18-v29,
 rejecting the next character in each source schema. It does not generalize
 local rejection to another field
 or to structural, identity, lineage, metadata, or TOCTOU failure.
@@ -515,7 +515,9 @@ JSON has exactly sorted keys `binding_generation`, `expires_at`,
 `identity_scheme`, `issued_at`, `new_path_hash`, `old_path_hash`,
 `project_id`, `source_layout`, `source_schema_version`, and `v`. Version is 1;
 source layout is `fixed_current_v1` or `legacy_projects_v1`; hashes are 64
-lowercase hex; generation positive; schema supported. Serialization uses
+lowercase hex; generation positive. Fixed-current sources support schemas
+v1-v29; legacy-project sources remain capped at v14. Newer source schemas are
+rejected. Serialization uses
 sorted keys, `(",", ":")`, unpadded base64url. Expiry is exactly 900 seconds
 after issue, acceptance is `issued_at <= now < expires_at`, total token at most
 2,048 ASCII bytes, and checksum comparison constant-time.

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import sqlite3
 import tempfile
 import unittest
@@ -8,8 +9,10 @@ from pathlib import Path
 from unittest import mock
 
 from tests.m14_test_support import (
+    make_physical_install,
     remove_v18_evidence_ledger_for_test,
 )
+from tests import setup_package_diagnostics
 from tests.m214b_test_support import (
     inject_primary_candidate_metadata_conflict as _inject_primary_candidate_metadata_conflict,
     publish_generations as _publish_generations,
@@ -19,6 +22,7 @@ from tests.m214b_test_support import (
     restore_temporaries as _restore_temporaries,
 )
 from tests.m214c_test_support import PRIVATE_SENTINEL
+from tests.setup_package_diagnostics import observe_setup_package
 from tests.m223_test_support import remove_v19_bundle_storage_for_test
 from tests.test_m17_recovery_hardening import (
     _relocate_install,
@@ -28,6 +32,8 @@ from tests.test_m17_recovery_hardening import (
 
 from task_governance_tool import backup as backup_service
 from task_governance_tool import setup as setup_service
+from task_governance_tool import project_scope
+from task_governance_tool.self_status import MAX_CHANGED_CORE_PATHS
 from task_governance_tool.state_resolver import (
     resolve_project_state,
     resolve_setup_project_state,
@@ -1199,16 +1205,133 @@ class M214BRecoveryBoundaryTests(unittest.TestCase):
             )
             target_a.db_path.unlink()
 
-            result = _run_setup(
-                returned,
-                read_only=False,
-                now="2026-08-08T00:00:00Z",
-            )
+            with observe_setup_package(returned) as diagnostic:
+                result = _run_setup(
+                    returned,
+                    read_only=False,
+                    now="2026-08-08T00:00:00Z",
+                )
 
-            self.assertFalse(result.ok)
-            self.assertEqual(result.error_code, "setup_restore_failed")
-            self.assertEqual(result.data["planned_writes"], [])
-            self.assertFalse(target_a.db_path.exists())
+            message = diagnostic.message(
+                expected={"ok": False, "error_code": "setup_restore_failed",
+                          "planned_writes": [], "primary_exists": False},
+                actual={"ok": result.ok, "error_code": result.error_code,
+                        "planned_writes": result.data["planned_writes"],
+                        "primary_exists": target_a.db_path.exists()},
+            )
+            self.assertFalse(result.ok, message)
+            self.assertEqual(result.error_code, "setup_restore_failed", message)
+            self.assertEqual(result.data["planned_writes"], [], message)
+            self.assertFalse(target_a.db_path.exists(), message)
+
+
+class SetupPackageDiagnosticTests(unittest.TestCase):
+    def install(self):
+        root = Path(self.enterContext(tempfile.TemporaryDirectory()))
+        return make_physical_install(root)
+
+    def run_observed(self, install):
+        with observe_setup_package(install) as diagnostic:
+            result = _run_setup(install, read_only=True, now="2026-08-08T00:00:00Z")
+        return result, diagnostic
+
+    def mismatch(self, install, count=1):
+        manifest = json.loads((install.skill_root / "release-manifest.json").read_bytes())
+        paths = sorted(manifest["core_files"])[:count]
+        for relative in paths:
+            with (install.skill_root / relative).open("ab") as stream:
+                stream.write(b"\nPRIVATE_DIAGNOSTIC_FILE_BODY\n")
+        return paths
+
+    def test_same_inspection_failure_survives_repair_and_fixture_cleanup(self):
+        install = self.install()
+        original_inspect = project_scope.inspect_local_package
+        seen = []
+
+        def inspected(*args, **kwargs):
+            value = original_inspect(*args, **kwargs)
+            seen.append(value)
+            return value
+
+        changed = self.mismatch(install)
+        with mock.patch.object(project_scope, "inspect_local_package", side_effect=inspected):
+            result, diagnostic = self.run_observed(install)
+        self.assertFalse(result.ok)
+        self.assertEqual(result.error_code, "package_core_modified")
+        self.assertEqual(len(seen), 1)
+        self.assertEqual(diagnostic.observation["changed_core_paths"], changed)
+        self.assertEqual(diagnostic.observation["status"], seen[0].status)
+        # No failure-time facts may be replaced by a later successful inspection.
+        from tests.m14_test_support import refresh_test_manifest
+        refresh_test_manifest(install.skill_root)
+        repaired, _ = self.run_observed(install)
+        self.assertNotEqual(repaired.error_code, "package_core_modified")
+        self.doCleanups()
+        message = diagnostic.message(expected="setup_restore_failed", actual=result.error_code)
+        with self.assertRaises(AssertionError) as caught:
+            self.assertEqual(result.error_code, "setup_restore_failed", message)
+        rendered = str(caught.exception)
+        for value in ("package_core_modified", "setup_restore_failed", "modified",
+                      "package_name", "package_version", "manifest_version", changed[0]):
+            self.assertIn(value, rendered)
+        self.assertEqual(json.loads(message)["package_root"], str(install.skill_root))
+        self.assertNotIn("PRIVATE_DIAGNOSTIC_FILE_BODY", rendered)
+
+    def test_clean_observation_keeps_setup_outcome_and_restores_inspector(self):
+        install = self.install()
+        before = project_scope.inspect_local_package
+        result, diagnostic = self.run_observed(install)
+        self.assertTrue(result.ok, result)
+        self.assertEqual(diagnostic.diagnostic_status, "observed")
+        self.assertEqual(diagnostic.observation["status"], "clean")
+        self.assertEqual(diagnostic.observation["changed_core_paths"], [])
+        self.assertIs(project_scope.inspect_local_package, before)
+
+    def test_changed_paths_keep_existing_count_and_omission_boundary(self):
+        install = self.install()
+        changed = self.mismatch(install, MAX_CHANGED_CORE_PATHS + 1)
+        result, diagnostic = self.run_observed(install)
+        self.assertEqual(result.error_code, "package_core_modified")
+        self.assertEqual(diagnostic.observation["changed_core_count"], len(changed))
+        self.assertEqual(diagnostic.observation["changed_core_paths"], changed[:MAX_CHANGED_CORE_PATHS])
+        self.assertTrue(diagnostic.observation["changed_core_paths_truncated"])
+
+    def test_capture_unavailable_does_not_hide_original_failure(self):
+        install = self.install()
+        self.mismatch(install)
+        with mock.patch.object(setup_package_diagnostics, "_summary", side_effect=RuntimeError("PRIVATE")):
+            result, diagnostic = self.run_observed(install)
+        self.assertEqual(result.error_code, "package_core_modified")
+        message = diagnostic.message(expected="setup_restore_failed", actual=result.error_code)
+        self.assertEqual(json.loads(message)["diagnostic_status"], "capture_unavailable")
+        self.assertIsNone(json.loads(message)["package_inspection"])
+        self.assertNotIn("PRIVATE", message)
+        with self.assertRaises(AssertionError):
+            self.assertEqual(result.error_code, "setup_restore_failed", message)
+
+    def test_unobserved_and_other_fixture_do_not_borrow_results(self):
+        first, second = self.install(), self.install()
+        self.mismatch(second)
+        with observe_setup_package(first) as diagnostic:
+            result = _run_setup(second, read_only=True, now="2026-08-08T00:00:00Z")
+        self.assertEqual(result.error_code, "package_core_modified")
+        self.assertEqual(diagnostic.diagnostic_status, "not_observed")
+        self.assertEqual(diagnostic.inspection_count, 0)
+        self.assertIsNone(diagnostic.observation)
+        result, second_diagnostic = self.run_observed(second)
+        self.assertEqual(second_diagnostic.observation["status"], "modified")
+        self.assertIsNone(diagnostic.observation)
+
+    def test_inspection_exception_is_preserved_without_private_diagnostic(self):
+        install = self.install()
+        failure = RuntimeError("PRIVATE_INSPECTION_FAILURE")
+        with mock.patch.object(project_scope, "inspect_local_package", side_effect=failure):
+            with observe_setup_package(install) as diagnostic:
+                with self.assertRaises(RuntimeError) as caught:
+                    _run_setup(install, read_only=True, now="2026-08-08T00:00:00Z")
+        self.assertIs(caught.exception, failure)
+        self.assertEqual(diagnostic.diagnostic_status, "inspection_raised")
+        self.assertNotIn("PRIVATE_INSPECTION_FAILURE", diagnostic.message(expected="result", actual="raised"))
 
 
 if __name__ == "__main__":

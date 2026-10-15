@@ -98,6 +98,27 @@ class ContinuationRetirementTests(unittest.TestCase):
         self.assertEqual(self.evidence()["counts"]["changes_requested_current_generation"], 1)
         self.assertEqual(self.evidence()["counts"]["open_medium"], 1)
 
+    def test_missing_consumed_capture_fails_task_and_whole_store_reads(self):
+        old = self.initial()
+        saved = self.original(A, continued=old)
+        capture = self.capture(old, saved)
+        current = self.retire(old, (old.selected[1],), (capture,))
+        self.register([saved, self.original(B, continued=current)], current, (capture,))
+        # Simulate offline corruption after a valid atomic publication. Losing
+        # the consumption edge must not hide the old published original.
+        with closing(storage.connect(self.db)) as connection, connection:
+            connection.execute("DROP TRIGGER trg_review_continuation_retained_originals_no_delete")
+            connection.execute("DELETE FROM review_continuation_retained_originals WHERE continuation_id=?", (current.continuation_id,))
+        with closing(storage.connect(self.db)) as connection:
+            connection.execute("PRAGMA query_only=ON")
+            for read in (
+                lambda: repository.read_continuations(connection, project_id=self.basis["project_id"], task_id=self.task_id),
+                lambda: repository.validate_judgment_storage(connection),
+            ):
+                with self.subTest(read=read), self.assertRaises(storage.StorageError) as caught:
+                    read()
+                self.assertEqual(caught.exception.code, "evidence_ledger_inconsistent")
+
     def test_retained_actor_cannot_be_selected_again_or_reformatted(self):
         old = self.initial()
         saved = self.original(A, continued=old)

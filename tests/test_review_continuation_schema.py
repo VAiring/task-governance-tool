@@ -249,5 +249,148 @@ class ContinuationRepositoryReadTests(unittest.TestCase):
             self.read()
 
 
+class ContinuationReadScopeTests(unittest.TestCase):
+    """Real SQL inventories, including unrelated owners and historical captures."""
+
+    def setUp(self):
+        ContinuationSchemaTests.setUp(self)
+        self.db.row_factory = sqlite3.Row
+
+    def history(self, task_index=1, *, generation=1, depth=3):
+        from task_governance_tool.review_session_transport import continued_metadata_digest
+
+        value = basis(task_id=ident("tg_task_", task_index), target_generation=generation)
+        self.db.execute("INSERT OR IGNORE INTO tasks VALUES (?,?)", (value["project_id"], value["task_id"]))
+        original = None
+        previous = None
+        identifiers = []
+        for sequence in range(1, depth + 1):
+            if previous is not None:
+                self.db.execute("""UPDATE review_continuations SET state='superseded',
+retired_at='2026-10-14T00:00:02Z',retirement_digest=? WHERE continuation_id=?""", ("e" * 64, previous))
+            current = ident("tg_review_continuation_", task_index * 10000 + generation * 100 + sequence)
+            selected = tuple(values.SelectedReviewer(actor, "supplement", None, "Missing result")
+                             for actor in ((A, B) if sequence == 1 else (B,)))
+            self.db.execute("""INSERT INTO review_continuations
+(continuation_id,project_id,task_id,target_generation,preparation_id,sequence,predecessor_id,
+basis_json,basis_digest,selection_digest,route,state,created_at)
+VALUES (?,?,?,?,?,?,?,?,?,?,'manual','preparing','2026-10-14T00:00:00Z')""",
+                (current, value["project_id"], value["task_id"], generation,
+                 ident("tg_review_preparation_", task_index * 100 + generation), sequence, previous,
+                 canonical_json_bytes(value).decode(), values.basis_digest(value), values.selection_digest(selected)))
+            for choice in selected:
+                self.db.execute("INSERT INTO review_continuation_reviewers VALUES (?,?,?,?,?,NULL,NULL)",
+                    (current, choice.session_id, choice.action, choice.prior_receipt_id, choice.reason))
+            if original is not None:
+                self.db.execute("INSERT INTO review_continuation_retained_originals VALUES (?,?,?,?,?,NULL)",
+                    (current, original.continuation_id, A, "d" * 64,
+                     continued_metadata_digest(original, original.selected[0], "d" * 64)))
+            self.db.execute("UPDATE review_continuations SET state='prepared' WHERE continuation_id=?", (current,))
+            if original is None:
+                original = repository.read_continuations(self.db, project_id=value["project_id"], task_id=value["task_id"])[-1]
+            previous = current
+            identifiers.append(current)
+        self.db.commit()
+        return identifiers
+
+    def measured(self, operation):
+        counts = {"continuations": 0, "retained": 0}
+
+        def count_row(cursor, row):
+            names = {column[0] for column in cursor.description}
+            if {"selection_digest", "retirement_digest"} <= names:
+                counts["continuations"] += 1
+            if {"metadata_digest", "prior_continuation_id"} <= names:
+                counts["retained"] += 1
+            return sqlite3.Row(cursor, row)
+
+        before = self.db.total_changes
+        self.db.row_factory = count_row
+        self.db.execute("PRAGMA query_only=ON")
+        try:
+            result = operation()
+        finally:
+            self.db.row_factory = sqlite3.Row
+            self.db.execute("PRAGMA query_only=OFF")
+        self.assertEqual(self.db.total_changes, before)
+        return result, counts
+
+    def read(self, task_index=1):
+        return repository.read_continuations(self.db, project_id=basis()["project_id"], task_id=ident("tg_task_", task_index))
+
+    def test_other_task_growth_does_not_expand_retained_acquisition(self):
+        self.history()
+        expected, small = self.measured(self.read)
+        for index in range(2, 102):
+            self.history(index)
+        actual, large = self.measured(self.read)
+        self.assertEqual(actual, expected)
+        self.assertEqual(small, {"continuations": 3, "retained": 2})
+        self.assertEqual(large, small)
+        # The fixture has real, admitted foreign-owner captures, not mock rows.
+        self.assertEqual(self.db.execute("SELECT count(*) FROM review_continuation_retained_originals").fetchone()[0], 202)
+        repository.validate_judgment_storage(self.db)
+
+    def test_global_validation_acquires_each_history_and_capture_once(self):
+        for index in range(1, 26):
+            self.history(index)
+        for index in range(26, 51):
+            self.db.execute("INSERT INTO tasks VALUES (?,?)", (basis()["project_id"], ident("tg_task_", index)))
+        self.db.commit()
+        _, counts = self.measured(lambda: repository.validate_judgment_storage(self.db))
+        self.assertEqual(counts, {"continuations": 75, "retained": 50})
+
+    def test_empty_history_reads_no_foreign_captures(self):
+        self.history(2)
+        result, counts = self.measured(self.read)
+        self.assertEqual(result, ())
+        self.assertEqual(counts, {"continuations": 0, "retained": 0})
+
+    def test_all_generations_and_long_retained_chain_remain_validated(self):
+        first = self.history(generation=1, depth=25)
+        second = self.history(generation=2)
+        rows, counts = self.measured(self.read)
+        self.assertEqual([row.continuation_id for row in rows], first + second)
+        self.assertEqual(counts, {"continuations": 28, "retained": 26})
+        # Corruption of an early capture must not be hidden by the latest page.
+        self.db.execute("DROP TRIGGER trg_review_retained_originals_publication")
+        self.db.execute("UPDATE review_continuation_retained_originals SET metadata_digest=? WHERE continuation_id=?",
+                        ("f" * 64, first[1]))
+        self.db.commit()
+        with self.assertRaises(StorageError):
+            self.measured(self.read)
+        with self.assertRaises(StorageError):
+            self.measured(lambda: repository.validate_judgment_storage(self.db))
+
+    def test_unrelated_corruption_is_still_rejected_by_global_validation(self):
+        self.history()
+        other = self.history(2)
+        expected = self.read()
+        self.db.execute("DROP TRIGGER trg_review_retained_originals_publication")
+        self.db.execute("UPDATE review_continuation_retained_originals SET metadata_digest=? WHERE continuation_id=?",
+                        ("f" * 64, other[1]))
+        self.db.commit()
+        self.assertEqual(self.measured(self.read)[0], expected)
+        with self.assertRaises(StorageError):
+            self.measured(lambda: repository.validate_judgment_storage(self.db))
+
+    def test_missing_and_cross_task_retained_ancestors_fail_closed(self):
+        current = self.history()
+        other = self.history(2)
+        self.db.execute("PRAGMA foreign_keys=OFF")
+        for prior in (ident("tg_review_continuation_", 999999), other[0]):
+            with self.subTest(prior=prior):
+                self.db.execute("SAVEPOINT corrupt")
+                self.db.execute("DROP TRIGGER trg_review_retained_originals_publication")
+                self.db.execute("UPDATE review_continuation_retained_originals SET prior_continuation_id=? WHERE continuation_id=?",
+                                (prior, current[-1]))
+                with self.assertRaises(StorageError):
+                    self.read()
+                with self.assertRaises(StorageError):
+                    repository.validate_judgment_storage(self.db)
+                self.db.execute("ROLLBACK TO corrupt")
+                self.db.execute("RELEASE corrupt")
+
+
 if __name__ == "__main__":
     unittest.main()

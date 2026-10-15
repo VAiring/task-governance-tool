@@ -180,10 +180,15 @@ WHERE receipt.review_receipt_id=?""", (receipt_id,)).fetchall()
 
 def read_continuations(connection: sqlite3.Connection, *, project_id: str,
                        task_id: str) -> tuple[Continuation, ...]:
-    from .storage import validate_utc_timestamp
-    result = []
     rows = connection.execute("SELECT * FROM review_continuations WHERE project_id=? AND task_id=? ORDER BY preparation_id,sequence",
                               (project_id, task_id)).fetchall()
+    return _validate_continuations(connection, rows, project_id=project_id, task_id=task_id)
+
+
+def _validate_continuations(connection, rows, *, project_id, task_id):
+    """Validate one Task's complete history from the caller's current snapshot."""
+    from .storage import validate_utc_timestamp
+    result = []
     by_id = {}
     for row in rows:
         try:
@@ -264,11 +269,13 @@ def read_retained_originals(connection, continuation_id):
 
 def validate_retained_storage(connection, by_id):
     from .review_session_transport import continued_metadata_digest
-    rows = connection.execute("SELECT * FROM review_continuation_retained_originals ORDER BY continuation_id,session_id").fetchall()
+    # The existing composite primary key bounds each read to a known consumer.
+    # Keep every historical consumer; neither current generation nor page size
+    # may narrow this inventory. Reuse it for slot counts instead of rereading.
+    retained = {identifier: read_retained_originals(connection, identifier)
+                for identifier in sorted(by_id)}
     consumed = set()
-    for row in rows:
-        if row["continuation_id"] not in by_id:
-            continue  # This read owns one Task; global admission reads each owner.
+    for row in (row for rows in retained.values() for row in rows):
         capture = values.RetainedOriginal(**{key: row[key] for key in values.RetainedOriginal.__dataclass_fields__})
         consumer, old = by_id[row["continuation_id"]], by_id.get(capture.prior_continuation_id)
         chain = set()
@@ -281,7 +288,7 @@ def validate_retained_storage(connection, by_id):
         choice = next((value for value in old.selected if value.session_id == capture.session_id), None) if old else None
         if (old is None or old.state != "superseded" or old.continuation_id not in chain or old.basis != consumer.basis
             or choice is None or capture.session_id in {value.session_id for value in consumer.selected}
-            or len(consumer.selected) + len(read_retained_originals(connection, consumer.continuation_id)) > 8
+            or len(consumer.selected) + len(retained[consumer.continuation_id]) > 8
             or continued_metadata_digest(old, choice, capture.original_result_digest) != capture.metadata_digest):
             raise _inconsistent()
         result = row["result_receipt_id"]
@@ -570,10 +577,17 @@ def resolution_link_exists(connection, finding_id, successor_id) -> bool:
 
 def validate_judgment_storage(connection) -> None:
     """Validate all immutable lineage, including off-page/historical nodes."""
+    # Whole-store admission acquires the continuation inventory once, then uses
+    # the same per-Task validator as ordinary reads. No persistent cache or
+    # cross-transaction validation result is introduced.
+    histories = {}
+    for row in connection.execute("SELECT * FROM review_continuations ORDER BY preparation_id,sequence"):
+        histories.setdefault((row["project_id"], row["task_id"]), []).append(row)
     all_records = {}
     for task in connection.execute("SELECT project_id,task_id FROM tasks ORDER BY task_id"):
-        all_records.update({record.continuation_id: record for record in read_continuations(
-            connection, project_id=task["project_id"], task_id=task["task_id"])})
+        all_records.update({record.continuation_id: record for record in _validate_continuations(
+            connection, histories.pop((task["project_id"], task["task_id"]), ()),
+            project_id=task["project_id"], task_id=task["task_id"])})
     nodes = connection.execute("""SELECT receipt.review_receipt_id,receipt.judgment_revision,
 judgment.judgment_revision AS metadata_revision,judgment.prior_receipt_id,judgment.continuation_id
 FROM review_receipts AS receipt LEFT JOIN review_receipt_judgments AS judgment

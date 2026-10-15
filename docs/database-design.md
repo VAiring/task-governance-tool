@@ -83,7 +83,15 @@ the same actual session, key, Contract, authority/criteria and four-part target;
 one predecessor has at most one successor. One actual reviewer counts once.
 
 Core admission validates the full graph, even when display uses a bounded
-historical page. Selection validates the original Reference and provenance,
+historical page. Task reads acquire all that Task's continuation generations
+and use the retained-original composite primary key to fetch only those
+consumers' captures. The same fetched inventory supplies slot counts and all
+ancestor, metadata and consumption checks. Whole-store admission reads the
+continuation inventory once, groups it by project/Task, and applies the same
+complete validator to every Task; it does not repeat a whole-table acquisition
+per Task. These values live only within the caller's existing snapshot, with
+no cached validation across operations or change to schema or read permissions.
+Selection validates the original Reference and provenance,
 then derives heads from links, never time order. A matching pending continuation
 blocks completion and suspends selected reassessments; unselected PASS is
 retained. Resolution links refer to a Finding in that successor's predecessor

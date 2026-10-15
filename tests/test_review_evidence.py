@@ -304,15 +304,18 @@ class ReviewEvidenceTests(unittest.TestCase):
     def test_zero_receipt_projection_uses_bounded_membership_checks(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            db = root / "taskgov.sqlite"
-            repo = root / "repo"
-            repo.mkdir()
-            init_db(db, repo)
-            target = database_target(db, repo)
 
             for tier in (0, 1, 2):
                 for target_is_set in (False, True):
                     with self.subTest(tier=tier, target_is_set=target_is_set):
+                        # Each case owns one executing session slot. Keep the
+                        # full six-case matrix without borrowing another case's
+                        # held Task or bypassing current ownership admission.
+                        db = root / f"{tier}-{target_is_set}.sqlite"
+                        repo = root / f"repo-{tier}-{target_is_set}"
+                        repo.mkdir()
+                        init_db(db, repo)
+                        target = database_target(db, repo)
                         task = add_task(
                             db,
                             repo,
@@ -369,6 +372,7 @@ class ReviewEvidenceTests(unittest.TestCase):
                                 "blocking_findings": [],
                                 "recent_receipts": [],
                                 "recent_findings": [],
+                                "continuation": None,
                             },
                         )
                         review_sql = [

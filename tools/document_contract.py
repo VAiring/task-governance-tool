@@ -42,6 +42,7 @@ SESSION_USAGE_PLAN = "docs/session-usage-plan.md"
 REVIEW_FINALIZATION_PLAN = "docs/review-finalization-plan.md"
 RESPONSE_USAGE_DESIGN = "docs/usage-response-attribution-design.md"
 REVIEW_CONTINUATION_PLAN = "docs/review-continuation-plan.md"
+REVIEW_ANSWER_COLLECTION_DESIGN = "docs/review-answer-collection-design.md"
 
 CANONICAL_DOCS = (
     "AGENTS.md",
@@ -72,6 +73,7 @@ CANONICAL_DOCS = (
     REVIEW_FINALIZATION_PLAN,
     RESPONSE_USAGE_DESIGN,
     REVIEW_CONTINUATION_PLAN,
+    REVIEW_ANSWER_COLLECTION_DESIGN,
     HISTORY_INDEX,
 )
 METRIC_DOCS = CANONICAL_DOCS + (RELEASE_INSTALL, ARTIFACT_AUTHORING)
@@ -87,6 +89,7 @@ PACKAGE_LINK_TARGETS = (
 # These sections are closed authority edges. Their prose and link order are not
 # part of the contract; the required destination set is.
 ROUTE_SECTIONS = (
+    (AUTHORITY, "## Conditional Review Answer Collection Design", ("review-answer-collection-design.md",)),
     (AUTHORITY, "## Conditional Review Continuation Plan", ("review-continuation-plan.md",)),
     (AUTHORITY, "## Conditional Response Usage Attribution Design", ("usage-response-attribution-design.md",)),
     (DESIGN, "## Conditional Response Usage Attribution Design", ("usage-response-attribution-design.md",)),
@@ -596,6 +599,7 @@ FENCE_LIST_PREFIX = re.compile(
 )
 
 ROLE_TITLES = {
+    REVIEW_ANSWER_COLLECTION_DESIGN: "# Conditional Review Answer Collection Design",
     REVIEW_CONTINUATION_PLAN: "# Review Continuation Design And Execution Plan",
     RESPONSE_USAGE_DESIGN: "# Response Usage Attribution Design",
     STATE_LAYOUT_PLAN: "# Project State Separation: Design And Execution Plan",
@@ -1268,7 +1272,7 @@ def _section_bounds(scan: Scan, heading: str) -> tuple[int, int] | None:
 
 def _expected_registry() -> dict[str, object]:
     return {
-        "schema": "taskgov-document-authority-v23",
+        "schema": "taskgov-document-authority-v24",
         "mandatory_start": ["AGENTS.md", AUTHORITY, "live_task_contract"],
         "current": [
             "docs/specification.md", "docs/design.md", "plan.md",
@@ -1282,7 +1286,7 @@ def _expected_registry() -> dict[str, object]:
             DATABASE_SPECIFICATION, DATABASE_DESIGN,
         ],
         "mixed_execution": [],
-        "conditional": [STATE_LAYOUT_PLAN, VERIFICATION_DECLARATION_PLAN, SESSION_USAGE_PLAN, REVIEW_FINALIZATION_PLAN, RESPONSE_USAGE_DESIGN, REVIEW_CONTINUATION_PLAN],
+        "conditional": [STATE_LAYOUT_PLAN, VERIFICATION_DECLARATION_PLAN, SESSION_USAGE_PLAN, REVIEW_FINALIZATION_PLAN, RESPONSE_USAGE_DESIGN, REVIEW_CONTINUATION_PLAN, REVIEW_ANSWER_COLLECTION_DESIGN],
         "history_index": HISTORY_INDEX,
     }
 

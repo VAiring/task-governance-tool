@@ -46,6 +46,7 @@ EXPECTED_CANONICAL_DOCS = (
     "docs/review-finalization-plan.md",
     "docs/usage-response-attribution-design.md",
     "docs/review-continuation-plan.md",
+    "docs/review-answer-collection-design.md",
     "docs/history/README.md",
 )
 EXPECTED_METRIC_DOCS = EXPECTED_CANONICAL_DOCS + (
@@ -250,9 +251,9 @@ class DocumentContractTests(unittest.TestCase):
         self.assertNotIn(secret, serialized)
         self.assertNotIn("Traceback", serialized)
 
-    def test_registry_v23_is_closed(self):
+    def test_registry_v24_is_closed(self):
         expected = {
-            "schema": "taskgov-document-authority-v23",
+            "schema": "taskgov-document-authority-v24",
             "mandatory_start": [
                 "AGENTS.md",
                 "docs/authority.md",
@@ -277,7 +278,7 @@ class DocumentContractTests(unittest.TestCase):
                 "docs/database-design.md",
             ],
             "mixed_execution": [],
-            "conditional": ["docs/state-layout-separation-plan.md", "docs/verification-declaration-plan.md", "docs/session-usage-plan.md", "docs/review-finalization-plan.md", "docs/usage-response-attribution-design.md", "docs/review-continuation-plan.md"],
+            "conditional": ["docs/state-layout-separation-plan.md", "docs/verification-declaration-plan.md", "docs/session-usage-plan.md", "docs/review-finalization-plan.md", "docs/usage-response-attribution-design.md", "docs/review-continuation-plan.md", "docs/review-answer-collection-design.md"],
             "history_index": "docs/history/README.md",
         }
         with self.fixture() as root:
@@ -322,6 +323,33 @@ class DocumentContractTests(unittest.TestCase):
             registry["current"].append("docs/usage-response-attribution-design.md")
             self.write_registry(root, registry)
             self.assertIn("authority_registry", self.codes(contract.check_document_contract(root)))
+
+    def test_review_answer_collection_design_remains_conditional_and_routed(self):
+        with self.fixture() as root:
+            self.replace(
+                root,
+                contract.AUTHORITY,
+                "](review-answer-collection-design.md)",
+                "](review-completion-design.md)",
+            )
+            self.assertIn(
+                "authority_route", self.codes(contract.check_document_contract(root))
+            )
+
+        with self.fixture() as root:
+            registry = self.registry(root)
+            registry["conditional"].remove("docs/review-answer-collection-design.md")
+            registry["current"].append("docs/review-answer-collection-design.md")
+            self.write_registry(root, registry)
+            self.assertIn(
+                "authority_registry", self.codes(contract.check_document_contract(root))
+            )
+
+        with self.fixture() as root:
+            root.joinpath("docs/review-answer-collection-design.md").unlink()
+            self.assertIn(
+                "document_unavailable", self.codes(contract.check_document_contract(root))
+            )
 
     def test_viewer_detail_routes_are_required(self):
         for source, destination in (
@@ -455,6 +483,11 @@ class DocumentContractTests(unittest.TestCase):
         self.assertEqual(
             contract.ROUTE_SECTIONS,
             (
+                (
+                    contract.AUTHORITY,
+                    "## Conditional Review Answer Collection Design",
+                    ("review-answer-collection-design.md",),
+                ),
                 (
                     contract.AUTHORITY,
                     "## Conditional Review Continuation Plan",

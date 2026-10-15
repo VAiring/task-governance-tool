@@ -246,7 +246,7 @@ class SetupStateSeparationTests(unittest.TestCase):
         before = original.read_bytes()
         resolved = self.assert_success(self.run_setup())
         self.assertEqual(resolved.project_id, project.project_id)
-        self.assertEqual(resolved.source_schema_version, 28)
+        self.assertEqual(resolved.source_schema_version, 29)
         self.assertEqual(original.read_bytes(), before)
         self.assertEqual(read_record(self.new_root).source_schema_version, 2)
 
@@ -441,12 +441,12 @@ class SetupStateSeparationTests(unittest.TestCase):
         self.assertTrue(preview.ok, preview.error_code)
         self.assertEqual(preview.data["status"], "setup_preview")
         self.assertTrue(preview.data["maintenance_enabled"])
-        self.assertEqual(preview.data["schema_from"], 28)
+        self.assertEqual(preview.data["schema_from"], 29)
         self.assertEqual(file_snapshot(self.install.project_root), before)
         repaired = self.run_setup()
         self.assertTrue(repaired.ok, repaired.error_code)
         self.assertEqual(repaired.data["completed_writes"], ["state_layout_retire"])
-        self.assertEqual(repaired.data["schema_from"], 28)
+        self.assertEqual(repaired.data["schema_from"], 29)
 
     def test_barrier_repair_preserves_recorded_source_and_new_root_recovery(self):
         for origin in ("fresh", "fixed", "legacy"):
@@ -578,7 +578,7 @@ class SetupStateSeparationTests(unittest.TestCase):
                 self.assertEqual(result.error_code, "project_state_unreadable")
                 self.assertEqual(result.data["completed_writes"], [])
                 self.assertEqual(result.data["planned_writes"], ["state_layout_retire"])
-                self.assertEqual(result.data["schema_from"], 28)
+                self.assertEqual(result.data["schema_from"], 29)
                 self.assertIsNotNone(after_drift)
                 self.assertEqual(file_snapshot(self.install.project_root), after_drift)
 

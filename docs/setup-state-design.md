@@ -344,6 +344,11 @@ at most 500 characters through schema v17 and 1,000 at schema v18-v29. The sourc
 schema is selected before migration or recovery publication; no recovery-only
 limit or migration laundering exists.
 
+For schema 29, both resolver discovery and managed-backup selection dispatch
+to `schema_review_continuation.validate_storage(recovery=True)`. That validator
+finishes Bundle and continuation graph checks before returning a deferred
+Task-verification rejection; a local rejection cannot hide structural damage.
+
 The structural phase also validates each candidate as the immutable
 pre-publication repository snapshot for its ordered physical prefix. One
 set-wide generation registry requires every occurrence of a generation ID in

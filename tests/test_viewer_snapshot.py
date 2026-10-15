@@ -1027,7 +1027,7 @@ class ViewerSnapshotTests(unittest.TestCase):
                 },
             )
             self.assertEqual(snapshot["snapshot_version"], 4)
-            self.assertEqual(snapshot["source_schema_version"], 28)
+            self.assertEqual(snapshot["source_schema_version"], 29)
             self.assertEqual(snapshot["generated_at"], generated_at)
             self.assertEqual(snapshot["source_schema_version"], SCHEMA_VERSION)
             self.assertEqual(snapshot["project"], {

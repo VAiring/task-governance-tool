@@ -766,6 +766,36 @@ class M224EvidenceAcceptanceTests(unittest.TestCase):
                 expected_project_id=project_id,
             )
             self.assertEqual(tree_snapshot(report_copy), before_report)
+            self.assertEqual(index["payload"]["source_schema_version"], 29)
+            self.assertEqual(primary_bundle["source_schema_version"], 29)
+            self.assertEqual(primary_bundle["bundle_version"], 2)
+            # Re-seal unsupported source versions so rejection cannot depend
+            # merely on a stale digest after this reader's schema-29 admission.
+            for changed_part in ("index", "bundle"):
+                with self.subTest(future_source=changed_part):
+                    future_root = root / f"evidence-future-{changed_part}"
+                    shutil.copytree(report_copy, future_root)
+                    future_index = deepcopy(index)
+                    if changed_part == "index":
+                        future_index["payload"]["source_schema_version"] = 30
+                    else:
+                        entry = next(item for item in future_index["payload"]["entries"]
+                                     if item["task_id"] == primary_task_id)
+                        future_bundle = deepcopy(bundles[primary_task_id])
+                        future_bundle["payload"]["source_schema_version"] = 30
+                        future_bundle["bundle_digest"] = domain_digest(
+                            BUNDLE_V2_DOMAIN, future_bundle["payload"])
+                        document = canonical_json_bytes(future_bundle) + b"\n"
+                        future_root.joinpath(*entry["bundle_file"].split("/")).write_bytes(document)
+                        entry["bundle_digest"] = future_bundle["bundle_digest"]
+                        entry["file_digest"] = "sha256:" + hashlib.sha256(document).hexdigest()
+                    future_index["index_digest"] = domain_digest(INDEX_V2_DOMAIN, future_index["payload"])
+                    (future_root / "index.json").write_bytes(canonical_json_bytes(future_index) + b"\n")
+                    future_before = tree_snapshot(future_root)
+                    with self.assertRaises(EvidenceReportError) as rejected:
+                        read_evidence_report(future_root, expected_project_id=project_id)
+                    self.assertEqual(rejected.exception.code, "evidence_report_invalid")
+                    self.assertEqual(tree_snapshot(future_root), future_before)
             self.assertEqual(
                 (report["bundle_count"], report["legacy_count"]),
                 (len(expected_task_ids), 0),

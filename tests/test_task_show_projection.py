@@ -21,7 +21,7 @@ from task_governance_tool import reviews, tasks, verification_receipts
 
 REVIEW_RECEIPT_FIELDS = {
     "review_receipt_id", "reviewer_key", "receipt_kind", "verdict", "summary",
-    "user_approved", "created_at",
+    "user_approved", "created_at", "judgment_revision", "judgment_state",
 }
 VERIFICATION_RECEIPT_FIELDS = {
     "verification_receipt_id", "result", "duration_ms", "scope_coverage", "created_at",
@@ -283,8 +283,9 @@ class TaskShowProjectionTests(unittest.TestCase):
                 self.assertEqual(normal["completion_history"], {"total": 0, "legacy_history_incomplete": False})
                 self.assertEqual(set(audit["completion_history"]), {"total", "returned_count", "truncated", "legacy_history_incomplete", "cycles"})
                 self.assertEqual(set(normal["review_evidence"]), {"gate", "counts", "current_receipts", "current_findings"})
-                self.assertEqual(set(audit["review_evidence"]), {"target", "gate", "counts", "blocking_findings", "recent_receipts", "recent_findings", "preparation_binding"})
+                self.assertEqual(set(audit["review_evidence"]), {"target", "gate", "counts", "blocking_findings", "recent_receipts", "recent_findings", "preparation_binding", "continuation"})
                 self.assertIsNone(audit["review_evidence"]["preparation_binding"])
+                self.assertIsNone(audit["review_evidence"]["continuation"])
                 self.assertEqual(set(normal["verification_evidence"]), {"current_verification_subject", "gate", "counts", "current_receipt"})
                 self.assertEqual(set(audit["verification_evidence"]), {"contract_revision", "expectation", "source_revision", "current_verification_subject", "gate", "counts", "recent_receipts"})
                 self.assertIsNone(normal["verification_evidence"]["current_receipt"])
@@ -305,7 +306,11 @@ class TaskShowProjectionTests(unittest.TestCase):
         for row in current:
             self.assertEqual(set(row), REVIEW_RECEIPT_FIELDS)
             original = next(receipt for receipt in receipts if receipt["review_receipt_id"] == row["review_receipt_id"])
-            self.assertEqual(row, {key: original[key] for key in REVIEW_RECEIPT_FIELDS})
+            self.assertEqual(row, {
+                **{key: original[key] for key in REVIEW_RECEIPT_FIELDS - {"judgment_state"}},
+                "judgment_state": "effective",
+            })
+            self.assertEqual(row["judgment_revision"], 1)
         self.assert_modes_have_same_gates(normal, audit)
 
     def test_old_open_findings_and_current_resolved_blocker_survive_many_generations(self):

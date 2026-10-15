@@ -966,7 +966,7 @@ class EvidenceLedgerStorageTests(unittest.TestCase):
         )
 
     def test_schema_version_and_verification_capacity_are_layered(self):
-        self.assertEqual(SCHEMA_VERSION, 28)
+        self.assertEqual(SCHEMA_VERSION, 29)
         self.assertEqual(stored_task_verification_limit(17), 500)
         self.assertEqual(stored_task_verification_limit(18), 1_000)
         self.assertEqual(stored_task_verification_limit(19), 1_000)
@@ -1198,9 +1198,9 @@ class EvidenceLedgerStorageTests(unittest.TestCase):
                         validate_evidence_ledger_storage(connection)
 
                         applied, warnings = apply_migrations(connection)
-                        self.assertEqual(applied, [19, 20, 21, 22, 23, 24, 25, 26, 27, 28])
+                        self.assertEqual(applied, [19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29])
                         self.assertEqual(warnings, [])
-                        self.assertEqual(current_schema_version(connection), 28)
+                        self.assertEqual(current_schema_version(connection), 29)
                         self.assertEqual(
                             connection.execute(
                                 "SELECT constraints_text "
@@ -2190,6 +2190,14 @@ class EvidenceLedgerStorageTests(unittest.TestCase):
                     "DROP TRIGGER trg_review_receipts_provenance_basis_insert"
                 )
                 connection.execute(sql, values)
+                # Keep the native revision-one relation valid so this fixture
+                # still tests the independently corrupt provenance on reentry.
+                connection.execute(
+                    "INSERT INTO review_receipt_judgments "
+                    "(review_receipt_id, judgment_revision, prior_receipt_id, continuation_id) "
+                    "VALUES (?, 1, NULL, NULL)",
+                    (values[0],),
+                )
                 connection.execute(trigger_sql)
                 connection.commit()
 
@@ -3328,7 +3336,7 @@ class EvidenceLedgerStorageTests(unittest.TestCase):
                             apply_completion_evidence_bundle_migration(connection)
                             self.assertEqual(
                                 apply_migrations(connection),
-                                ([20, 21, 22, 23, 24, 25, 26, 27, 28], []),
+                                ([20, 21, 22, 23, 24, 25, 26, 27, 28, 29], []),
                             )
 
                     corrupt_owner = "corrupt-verification-project-owner"
@@ -3382,7 +3390,7 @@ class EvidenceLedgerStorageTests(unittest.TestCase):
                             apply_completion_evidence_bundle_migration(connection)
                             self.assertEqual(
                                 apply_migrations(connection),
-                                ([20, 21, 22, 23, 24, 25, 26, 27, 28], []),
+                                ([20, 21, 22, 23, 24, 25, 26, 27, 28, 29], []),
                             )
 
                     with closing(connect(db)) as connection:
@@ -3981,7 +3989,7 @@ class EvidenceLedgerStorageTests(unittest.TestCase):
                             apply_completion_evidence_bundle_migration(connection)
                             self.assertEqual(
                                 apply_migrations(connection),
-                                ([20, 21, 22, 23, 24, 25, 26, 27, 28], []),
+                                ([20, 21, 22, 23, 24, 25, 26, 27, 28, 29], []),
                             )
 
                     with closing(connect(target.db_path)) as connection:

@@ -1338,7 +1338,7 @@ class CompletionCycleLifecycleTests(unittest.TestCase):
                     "code": "migration_required",
                     "message": (
                         "database schema version 17 does not match supported "
-                        "version 28; run setup to migrate"
+                        "version 29; run setup to migrate"
                     ),
                 }],
             )
@@ -1347,7 +1347,7 @@ class CompletionCycleLifecycleTests(unittest.TestCase):
             with closing(connect(db)) as connection:
                 apply_evidence_ledger_capture_migration(connection)
                 apply_completion_evidence_bundle_migration(connection)
-                self.assertEqual(apply_migrations(connection), ([20, 21, 22, 23, 24, 25, 26, 27, 28], []))
+                self.assertEqual(apply_migrations(connection), ([20, 21, 22, 23, 24, 25, 26, 27, 28, 29], []))
 
             reopened, reopen_payload = run_json(
                 *reopen_args(

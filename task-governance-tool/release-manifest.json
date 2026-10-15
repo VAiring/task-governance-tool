@@ -138,7 +138,7 @@
     "scripts/task_governance_tool/setup_state_separation.py": "sha256:a61a965c8a6f4dc7ad6e7962141ec9b62e99072f8fcec7498e1f25984b9d0550",
     "scripts/task_governance_tool/sqlite_connection.py": "sha256:9bd2e2941378b842d0b016e48aea5f3bd1acbdb07d6119c9d9142c35079bca50",
     "scripts/task_governance_tool/state_paths.py": "sha256:41f60fdba374cff3e2ec464493313e09a20fb5d508b631a06ec55d0abdecb6a9",
-    "scripts/task_governance_tool/state_resolver.py": "sha256:47b2007d126ca541bb3d8f5f17d2fb09122062ec9256f8e91fa81e4e0d8fdaef",
+    "scripts/task_governance_tool/state_resolver.py": "sha256:3ec33a5b513a70e7a2c5437ea2b59f5d2b074439d1281d436655da3823a25302",
     "scripts/task_governance_tool/state_separation.py": "sha256:bb02c88f2d27935d9dd992a899fec9172d0933033973b7aaf84e9221e9c2e872",
     "scripts/task_governance_tool/state_transition.py": "sha256:9c18bbe9bbf0d4714483219781d37e8ef60fbd69be14e0329fdbeb53836f4c90",
     "scripts/task_governance_tool/storage.py": "sha256:44db0b4ddac6d37bdb612567368beb1cd4d841b1f55ae4438ecd9680b38d960a",

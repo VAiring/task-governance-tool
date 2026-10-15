@@ -1893,7 +1893,7 @@ print(json.dumps(results, ensure_ascii=False))
             for field in ('result_template', 'result_instructions', 'changed_paths_truncated',
                           '## Independent Reviewer'):
                 self.assertIn(field, output)
-        for shared_only in ('collect_command', 'verification_workspace', 'ok=true,status=saved',
+        for shared_only in ('fixed material mappings', 'verification_workspace', 'ok=true,status=saved',
                             'review_handoff.py read --repo'):
             self.assertIn(shared_only, shared)
             self.assertNotIn(shared_only, direct)
@@ -2525,8 +2525,10 @@ print(json.dumps(results, ensure_ascii=False))
                 self.assertIn(operation_input, body)
                 if fragment == "read-review-packet":
                     self.assertNotIn("--role", body)
-                    for rule in ("recovery_command", "--material-details", "immutable object identity",
-                                 "unknown/incomplete", "project reread obligations", "Normal read retains"):
+                    for rule in ("collect_command", "recovery_command", "--material-details",
+                                 "immutable object ID or exact revision/path", "unknown/truncated delivery",
+                                 "project reread obligations", "result_instructions",
+                                 "No blob, patch, dependency list or reading ledger is saved"):
                         self.assertIn(rule, body)
                 self.assertIn("### Caller-Owned Review Handoff", body)
                 _, common = self.linked_output(source, body, "handoff-path-and-validation")
@@ -2547,9 +2549,9 @@ print(json.dumps(results, ensure_ascii=False))
 
     def test_reviewer_reference_keeps_complete_reuse_and_conditional_recovery_rules(self):
         body = self.reader().read_reference("references/task_workflow.md#independent-reviewer", SKILL_ROOT)
-        for rule in ("collect_command", "recovery_command", "--material-details",
-                     "immutable object identity", "exact revision/path", "unknown/incomplete",
-                     "both required changed sides", "newly discovered", "project reread obligations",
+        for rule in ("fixed material mappings", "recovery_command", "--material-details",
+                     "Complete matching immutable bodies", "incomplete delivery",
+                     "Before/after sides and diffs remain required", "newly discovered", "project reread obligations",
                      "result_template", "result_instructions", "ok=true,status=saved"):
             self.assertIn(rule, body)
 

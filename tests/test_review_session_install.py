@@ -63,7 +63,7 @@ class ReviewSessionInstallTests(unittest.TestCase):
             ["read", "--repo", str(self.root), "--packet", self.packet_path], caller=REVIEWER)
         self.assertEqual(read_result.returncode, 0, read_result.stdout or read_result.stderr)
         displayed = json.loads(read_result.stdout)
-        output = "reviews/g1/numerical-child.json"
+        output = self.handoff["review_requests"][0]["result_path"]
         saved = self.helper("save", "--packet", self.packet_path, "--output", output,
                             caller=REVIEWER, raw=self.original("numerical-child"))
         self.assertEqual(saved["review_session"]["session_id"], REVIEWER.session_id)
@@ -141,9 +141,9 @@ class ReviewSessionInstallTests(unittest.TestCase):
         document["receipts"] = [receipt(key, findings=findings)]
         return b"\n " + json.dumps(document, ensure_ascii=False, indent=2).encode("utf-8") + b"\n"
 
-    def save(self, name, caller, *, findings=()):
+    def save(self, name, caller, *, slot=0, findings=()):
         original = self.original(name, findings)
-        output = "reviews/g1/" + name + ".json"
+        output = self.handoff["review_requests"][slot]["result_path"]
         self.helper("save", "--packet", self.packet_path, "--output", output, caller=caller, raw=original)
         self.assertEqual((self.root / output).read_bytes(), original)
         metadata = json.loads((self.root / (output + ".session.json")).read_bytes())
@@ -161,7 +161,7 @@ class ReviewSessionInstallTests(unittest.TestCase):
             "--status", "in_progress", "--review-tier", "0", "--verification-not-required", "Fixture", caller=REVIEWER)["data"]
         other = registration_body(data, data, "task")
         first = self.save("child", REVIEWER)
-        second = self.save("root", SECOND)
+        second = self.save("root", SECOND, slot=1)
         result = self.helper("submit", "--packet", self.packet_path, first, second)
         self.assertTrue(result["data"]["review_gate"]["satisfied"], result)
         with closing(sqlite3.connect(self.install.db_path)) as connection:
@@ -336,7 +336,7 @@ class ReviewSessionInstallTests(unittest.TestCase):
             ["read", "--repo", str(self.root), "--packet", self.packet_path], caller=unknown)
         self.assertEqual(result.returncode, 0, result.stdout or result.stderr)
         self.assertEqual(json.loads(result.stdout)["context_check"], "matched_at_read")
-        output = "reviews/g1/unknown.json"
+        output = self.handoff["review_requests"][0]["result_path"]
         self.helper("save", "--packet", self.packet_path, "--output", output,
                     raw=self.original(), caller=unknown, error=True)
         self.assertFalse((self.root / output).exists())

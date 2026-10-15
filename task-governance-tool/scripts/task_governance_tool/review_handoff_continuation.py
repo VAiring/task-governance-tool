@@ -4,28 +4,121 @@ No host call, worker launch, core SQL, original rewrite or permission inference.
 Known cleanup uses the existing stop service; unknown outcomes stay unavailable.
 """
 
-from contextlib import ExitStack
-from dataclasses import replace
+from __future__ import annotations
+
+from contextlib import ExitStack, contextmanager
+from dataclasses import dataclass, replace
 from hashlib import sha256
 import json
 import os
+from pathlib import Path
 import sys
 from types import SimpleNamespace
+from typing import Iterator, Literal
 
 from . import review_continuation as values, review_continuation_handoff_repository as core
 from . import review_handoff as files, review_handoff_preparation as preparation
 from .review_handoff_scope import resolve, error_code as _code
-from .review_preparation_repository import PreparationRepository
+from .review_preparation_repository import PreparationRecord, PreparationRepository
+from .review_continuation_repository import Continuation
+from .review_finalization_repository import FinalizationRepository
+from .session_identity import CallerIdentity
+from .state_resolver import CanonicalStatePaths
+from .storage import DatabaseTarget
 from .review_handoff_originals import compose_inventory, read_sources as _sources
 from .review_session_transport import metadata_digest
 from .review_packet import prepare_review_packet
 from .state_paths import path_lexically_exists
-from .review_wait_runtime.request_repository import RequestRepository, ParentDispatchRepository, HistoricalRequestProof, request_identity_digest
+from .review_wait_runtime.request_repository import RequestRecord, RequestRepository, ParentDispatchRepository, HistoricalRequestProof, request_identity_digest
+from .review_wait_runtime.review_wait_repository import WriterLease
 from .review_wait_runtime.continuation_transition_repository import TransitionRepository
-from .review_wait_runtime.continuation_cleanup_repository import observe_cleanup, observe_current_occurrence, observe_latest_cleanup, read_bound_effects
+from .review_wait_runtime.continuation_cleanup_repository import CleanupObservation, observe_cleanup, observe_current_occurrence, observe_latest_cleanup, read_bound_effects
 from .review_wait_runtime.request_continuation import RequestRound
 from .review_wait_runtime.review_wait_controller import WaitBinding
 from .review_wait_runtime.managed_wait import basis_digest as wait_digest
+
+
+@dataclass(frozen=True)
+class ContinuationScope:
+    repo: Path
+    target: DatabaseTarget
+    paths: CanonicalStatePaths
+    caller: CallerIdentity
+    root: PreparationRecord
+
+
+@dataclass(frozen=True)
+class IntegratedAdmission:
+    """Borrowed only after the existing effect root has been admitted."""
+    journal: FinalizationRepository
+    lease: WriterLease
+
+
+@dataclass(frozen=True)
+class ContinuationLeases:
+    """Borrowed from _admission_scope, never acquired or released by stages.
+
+    That lexical owner also retains preparation and same-parent dispatch.
+    Absence of integrated admission preserves the manual route.
+    """
+    transitions: TransitionRepository
+    transition: WriterLease
+    request: RequestRepository
+    request_writer: WriterLease
+    integrated: IntegratedAdmission | None
+
+
+@dataclass(frozen=True)
+class PreviousRequest:
+    attempt: int
+    record: RequestRecord | None
+
+
+@dataclass(frozen=True)
+class AdmissionSnapshot:
+    state: core.HandoffState
+    history: tuple[RequestRound, ...]
+    previous: PreviousRequest
+
+
+@dataclass(frozen=True)
+class AdmittedContinuation:
+    record: Continuation
+    transition: RequestRound
+    historical: HistoricalRequestProof | None
+    replayed: bool
+
+
+@dataclass(frozen=True)
+class SettledContinuation:
+    admitted: AdmittedContinuation
+    transition: RequestRound
+
+
+@dataclass(frozen=True)
+class PacketPreparation:
+    raw: bytes
+    transition: RequestRound
+
+
+@dataclass(frozen=True)
+class ReadyContinuation:
+    record: Continuation
+    transition: RequestRound
+    replayed: bool
+
+
+@dataclass
+class FailureProgress:
+    """Only acknowledged local facts for the existing failure projection.
+
+    Set at the original acknowledgement boundaries, including before a later
+    check can fail. A lost write acknowledgement never proves absence and does
+    not fabricate the unreturned record. This is not a readiness token.
+    """
+    stage: Literal["admission", "cleanup", "preparation"] = "admission"
+    record: Continuation | None = None
+    transition: RequestRound | None = None
 
 
 def add_parser(commands):
@@ -176,51 +269,57 @@ def _request_round(request, transition, selected):
     return round_record, current if attempt > transition.expected_attempt else None
 
 
-def _ready(repo, target, paths, caller, root, selected, transition, request, journal):
+def _ready(scope: ContinuationScope, leases: ContinuationLeases,
+           selected: tuple[values.SelectedReviewer, ...], transition: RequestRound) -> Continuation:
     """One readiness predicate for first publication and every successful retry.
 
     Callers retain preparation/transition/request/dispatch/finalization leases.
     This renews native identity and physical bindings after the last write.
     """
+    repo, target, paths, caller, root = scope.repo, scope.target, scope.paths, scope.caller, scope.root
     state = core.read_state(target, root.basis["task_id"], caller)
     record = _current_record(state, root, transition.continuation_id, selected)
     if record is None or record.state not in ("prepared", "registered") or transition.phase not in ("prepared", "published"):
         files._fail("review_continuation_pending")
     raw = _read_packet(repo, root, record, transition)
-    _, occurrence = _request_round(request, transition, selected)
+    _, occurrence = _request_round(leases.request, transition, selected)
     if occurrence is not None:
         observed = observe_current_occurrence(paths, caller.require(), root.basis["task_id"], occurrence)
         if observed.state != "known":
             files._fail(observed.reason)
-    if journal is not None:
+    if leases.integrated is not None:
         from . import review_finalization
+        journal = leases.integrated.journal
         expected = review_finalization.continuation_candidate(root, record, transition, raw, caller, journal)
         review_finalization.require_continuation_round(expected, journal)
     return record
 
 
-def _settle_previous(paths, caller, task_id, prior, attempt, old_request, transitions, transition_lease, request, request_lease, historical=None):
+def _settle_previous(scope: ContinuationScope, leases: ContinuationLeases,
+                     previous: PreviousRequest, prior: RequestRound,
+                     historical: HistoricalRequestProof | None) -> CleanupObservation:
     """Close only a proven old occurrence; no cancellation, join or host call.
 
     Pending retirement and registered workerless completion have distinct
     admission conditions in the caller. Both use this same cleanup/publication
     boundary, including a lost acknowledgement between its two local writes.
     """
+    attempt, old_request = previous.attempt, previous.record
     observation = replace(prior, phase="fenced", packet_digest=None, worker_stop_identity=None,
         expected_attempt=attempt, expected_request_digest=request_identity_digest(old_request) if old_request else None,
         old_automation_id=old_request.automation_id if old_request else None,
         old_request_phase=old_request.phase if old_request else None)
-    cleanup = observe_cleanup(paths, caller.require(), task_id, observation, historical=historical)
+    cleanup = observe_cleanup(scope.paths, scope.caller.require(), scope.root.basis["task_id"], observation, historical=historical)
     if cleanup.state != "settled":
         files._fail(cleanup.reason)
-    rounds = request.read_rounds()
+    rounds = leases.request.read_rounds()
     if (not rounds or rounds[-1].continuation_id != prior.continuation_id
         or replace(rounds[-1], phase="prepared") != replace(prior, phase="prepared")):
         files._fail("review_continuation_conflict")
     if rounds[-1].phase == "prepared":
-        request.publish_without_wait(request_lease, rounds[-1])
+        leases.request.publish_without_wait(leases.request_writer, rounds[-1])
     if prior.phase == "prepared":
-        transitions.advance(transition_lease, prior, phase="published")
+        leases.transitions.advance(leases.transition, prior, phase="published")
     return cleanup
 
 
@@ -236,9 +335,12 @@ def _retained_inventory(repo, root, history, state, selected):
         and source.bound.binding.session_id not in selected_actors | registered)
 
 
-def _prior_admission(repo, target, paths, caller, root, state, selected, history, attempt, old_request,
-                     transitions, transition_lease, request, request_lease, journal, historical=None):
+def _prior_admission(scope: ContinuationScope, leases: ContinuationLeases,
+                     snapshot: AdmissionSnapshot,
+                     historical: HistoricalRequestProof | None) -> values.RetirementProof | None:
     """Validate distinct pending-retirement / registered-round conditions."""
+    root, state, history = scope.root, snapshot.state, snapshot.history
+    old_request = snapshot.previous.record
     pending = [row for row in state.records if row.basis["target_generation"] == root.basis["target_generation"]
                and row.state in ("preparing", "prepared")]
     previous = history[-1] if history else None
@@ -249,9 +351,8 @@ def _prior_admission(repo, target, paths, caller, root, state, selected, history
         # invent its operation identity or escape into a different directory.
         if prior is None or prior.phase not in ("prepared", "published") or old_core.state != "prepared":
             files._fail("review_continuation_effect_unknown")
-        _ready(repo, target, paths, caller, root, old_core.selected, prior, request, journal)
-        cleanup = _settle_previous(paths, caller, root.basis["task_id"], prior, attempt, old_request,
-            transitions, transition_lease, request, request_lease, historical)
+        _ready(scope, leases, old_core.selected, prior)
+        cleanup = _settle_previous(scope, leases, snapshot.previous, prior, historical)
         return values.RetirementProof(old_core.continuation_id, values.basis_digest(root.basis),
             request_identity_digest(old_request) if old_request else None, cleanup.worker_stop_identity)
     if previous is not None and previous.phase != "published":
@@ -259,18 +360,22 @@ def _prior_admission(repo, target, paths, caller, root, state, selected, history
             next((row.selected for row in state.records if row.continuation_id == previous.continuation_id), ()))
         if old_core is None or old_core.state != "registered":
             files._fail("review_continuation_effect_unknown")
-        _ready(repo, target, paths, caller, root, old_core.selected, previous, request, journal)
-        _settle_previous(paths, caller, root.basis["task_id"], previous, attempt, old_request,
-            transitions, transition_lease, request, request_lease, historical)
+        _ready(scope, leases, old_core.selected, previous)
+        _settle_previous(scope, leases, snapshot.previous, previous, historical)
     return None
 
 
-def _historical_admission(target, paths, caller, root, attempt, previous, request, lease, transition):
+def _historical_admission(scope: ContinuationScope, leases: ContinuationLeases,
+                          observed: PreviousRequest,
+                          transition: RequestRound | None) -> HistoricalRequestProof | None:
     """Prove older settled effects before first admission or exact recovery.
 
     A request journal spans target generations. Its old immutable basis is
     cleanup evidence only; the new round retains the current preparation basis.
     """
+    target, paths, caller, root = scope.target, scope.paths, scope.caller, scope.root
+    attempt, previous = observed.attempt, observed.record
+    request, lease = leases.request, leases.request_writer
     rounds = request.read_rounds()
     if previous is None:
         if not rounds or rounds[-1].wait_basis_digest == _digest(root.basis):
@@ -312,9 +417,13 @@ def _historical_admission(target, paths, caller, root, attempt, previous, reques
     return proof
 
 
-def _packet_for_preparation(repo, target, root, record, transition, transitions, lease):
+def _packet_for_preparation(scope: ContinuationScope, leases: ContinuationLeases,
+                            settled: SettledContinuation) -> PacketPreparation:
+    repo, target, root = scope.repo, scope.target, scope.root
+    record, transition = settled.admitted.record, settled.transition
+    transitions, lease = leases.transitions, leases.transition
     if transition.packet_digest is not None:
-        return _read_packet(repo, root, record, transition), transition
+        return PacketPreparation(_read_packet(repo, root, record, transition), transition)
     packet = prepare_review_packet(target, record.basis["task_id"], _continuation_id=record.continuation_id)
     raw = json.dumps(packet, ensure_ascii=True, separators=(",", ":")).encode()
     files._packet(raw, record.basis["task_id"])
@@ -336,155 +445,199 @@ def _packet_for_preparation(repo, target, root, record, transition, transitions,
         _new_packet(repo, target, directory, len(record.selected), raw)
     if _read_packet(repo, root, record, transition) != raw:
         files._fail("handoff_file_changed")
-    return raw, transition
+    return PacketPreparation(raw, transition)
 
 
-def _complete_preparation(repo, target, paths, caller, root, record, transition,
-                          transitions, transition_lease, request, request_lease, journal, journal_lease, historical=None):
+def _complete_preparation(scope: ContinuationScope, leases: ContinuationLeases,
+                          settled: SettledContinuation) -> ReadyContinuation:
     """Reconcile only missing local stages, then use the shared readiness test."""
-    rounds = request.read_rounds()
+    repo, target, caller, root = scope.repo, scope.target, scope.caller, scope.root
+    record = settled.admitted.record
+    rounds = leases.request.read_rounds()
     installed = next((row for row in rounds if row.continuation_id == record.continuation_id), None)
-    raw, transition = _packet_for_preparation(repo, target, root, record, transition, transitions, transition_lease)
+    packet = _packet_for_preparation(scope, leases, settled)
+    raw, transition = packet.raw, packet.transition
     fresh = core.read_state(target, root.basis["task_id"], caller)
     if _current_record(fresh, root, record.continuation_id, record.selected) is None:
         files._fail("review_continuation_conflict")
-    if journal is not None:
+    if leases.integrated is not None:
         from . import review_finalization
         review_finalization.prepare_continuation(repo, root, record, transition, raw, caller,
-            journal=journal, lease=journal_lease)
+            journal=leases.integrated.journal, lease=leases.integrated.lease)
     if transition.phase == "settled":
-        transition = transitions.advance(transition_lease, transition, phase="prepared",
+        transition = leases.transitions.advance(leases.transition, transition, phase="prepared",
             packet_path=transition.packet_path, packet_digest=sha256(raw).hexdigest(), result_paths=transition.result_paths)
     if record.state == "preparing":
         core.prepared(target, record, caller)
     if installed is None:
-        request.install_round(request_lease, replace(transition, phase="prepared"), historical=historical)
-    record = _ready(repo, target, paths, caller, root, record.selected, transition, request, journal)
-    return record, transition
+        leases.request.install_round(leases.request_writer, replace(transition, phase="prepared"),
+            historical=settled.admitted.historical)
+    record = _ready(scope, leases, record.selected, transition)
+    return ReadyContinuation(record, transition, settled.admitted.replayed)
+
+
+@contextmanager
+def _admission_scope(repo: Path, args, caller: CallerIdentity
+                     ) -> Iterator[tuple[ContinuationScope, ContinuationLeases, AdmissionSnapshot]]:
+    """Own every lease from acquisition through response, including unwinding.
+
+    Acquisition order: preparation -> transition -> request -> dispatch ->
+    optional finalization. Stages borrow these permits; only repositories own
+    short core writers. No stage acquires an earlier lease or performs host I/O.
+    """
+    resolution = resolve(repo, writing=True)
+    initial = core.read_state(resolution.target, args.task_id, caller)
+    if type(args.target_generation) is not int or args.target_generation != initial.basis["target_generation"]:
+        files._fail("review_continuation_basis_changed")
+    paths = resolution.paths
+    locator = PreparationRepository(paths.review_preparation_store(caller.require(), args.task_id, args.target_generation))
+    if not path_lexically_exists(locator.path):
+        files._fail("review_continuation_unavailable")
+    with ExitStack() as admissions:
+        admissions.enter_context(locator.serial())
+        _, root = locator.read()
+        state = core.read_state(resolution.target, args.task_id, caller)
+        if root.basis != initial.basis or state.basis != root.basis:
+            files._fail("review_continuation_basis_changed")
+        if root.route == "integrated" and getattr(args, "records_only", False):
+            files._fail("review_continuation_unavailable")
+        original = files._read(files._path(repo, root.packet_path), files.PACKET_LIMIT)
+        if sha256(original).hexdigest() != root.packet_digest:
+            files._fail("handoff_file_changed")
+        transitions = TransitionRepository(paths.review_continuation_store(caller.require(), args.task_id, args.target_generation))
+        transition_lease = admissions.enter_context(transitions.serial(create=not path_lexically_exists(transitions.path)))
+        history = transitions.read()
+        request = RequestRepository(paths.review_wait_request_store(caller.require(), args.task_id))
+        request_lease = admissions.enter_context(request.serial(create=not path_lexically_exists(request.path)))
+        previous = PreviousRequest(*request.read())
+        dispatch = ParentDispatchRepository(paths.review_wait_dispatch_store(caller.require()))
+        admissions.enter_context(dispatch.serial())
+        integrated = None
+        if root.route == "integrated":
+            from . import review_finalization
+            journal = FinalizationRepository(paths.review_finalization_store(caller.require(), args.task_id, args.target_generation))
+            if root.finalization_store != journal.path.name:
+                files._fail("review_continuation_conflict")
+            journal_lease = admissions.enter_context(journal.serial())
+            review_finalization.require_preparation_intent(root, journal.read_rounds()[0], root.basis, caller)
+            current = journal.read()
+            if (any(value == "dispatching" for value in (current.registration, current.commit, current.completion))
+                or current.completion != "not_started"):
+                files._fail("review_continuation_effect_unknown")
+            integrated = IntegratedAdmission(journal, journal_lease)
+        yield (ContinuationScope(repo, resolution.target, paths, caller, root),
+            ContinuationLeases(transitions, transition_lease, request, request_lease, integrated),
+            AdmissionSnapshot(state, history, previous))
+
+
+def _admit_operation(scope: ContinuationScope, leases: ContinuationLeases,
+                     snapshot: AdmissionSnapshot, selected: tuple[values.SelectedReviewer, ...],
+                     directory: str, progress: FailureProgress) -> AdmittedContinuation:
+    """Reconcile the exact fence, predecessor and core admission, in that order."""
+    root, state, history = scope.root, snapshot.state, snapshot.history
+    attempt, old_request = snapshot.previous.attempt, snapshot.previous.record
+    transition = next((row for row in history if row.preparation_id == root.preparation_id
+                       and row.packet_path == directory + "/packet.json"), None)
+    progress.transition = transition
+    # A pre-Packet fence cannot have exposed executable requests. Once Packet
+    # publication may have begun, retain no-redispatch even after a lost reply.
+    replayed = transition is not None and not (
+        transition.phase in ("fenced", "settled") and transition.packet_digest is None)
+    record = None
+    if transition is not None:
+        _require_transition(root, selected, transition, history)
+        record = _current_record(state, root, transition.continuation_id, selected)
+        progress.record = record
+        if record is None and transition.phase != "fenced":
+            files._fail("review_continuation_effect_unknown")
+    historical = _historical_admission(scope, leases, snapshot.previous, transition)
+    if record is None:
+        # A saved fence remains the operation identity even if native admission
+        # did not commit or its acknowledgement was lost.
+        predecessor_history = history[:-1] if transition is not None else history
+        if transition is not None:
+            if (attempt != transition.expected_attempt
+                or (request_identity_digest(old_request) if old_request else None) != transition.expected_request_digest):
+                files._fail("review_continuation_effect_unknown")
+        else:
+            if history and history[-1].phase in ("fenced", "settled"):
+                files._fail("review_continuation_effect_unknown")
+            preparation._directory(scope.repo, directory)
+        captures = _retained_inventory(scope.repo, root, predecessor_history, state, selected)
+        retirement = _prior_admission(scope, leases, replace(snapshot, history=predecessor_history), historical)
+        if transition is None:
+            group = [row for row in state.records if row.preparation_id == root.preparation_id]
+            sequence = group[-1].sequence + 1 if group else 1
+            if sequence > values.CONTINUATION_LIMIT:
+                files._fail("review_continuation_capacity")
+            import secrets
+            transition = leases.transitions.fence(leases.transition, RequestRound(root.preparation_id,
+                "tg_review_continuation_" + secrets.token_hex(8), sequence, values.basis_digest(root.basis),
+                _digest(root.basis), values.selection_digest(selected), attempt,
+                request_identity_digest(old_request) if old_request else None,
+                old_request.automation_id if old_request else None, old_request.phase if old_request else None,
+                packet_path=directory + "/packet.json",
+                result_paths=tuple(directory + f"/review-{index}.json" for index in range(1, len(selected) + 1))))
+            progress.transition = transition
+        record = core.admit(scope.target, root.basis, root.preparation_id, root.route, selected, scope.caller,
+            retirement=retirement, retained_originals=captures, continuation_id=transition.continuation_id)
+        progress.record = record
+        if record.sequence != transition.continuation_sequence:
+            files._fail("review_continuation_conflict")
+    return AdmittedContinuation(record, transition, historical, replayed)
+
+
+def _settle_cleanup(scope: ContinuationScope, leases: ContinuationLeases,
+                    admitted: AdmittedContinuation) -> SettledContinuation:
+    """Observe known cleanup only; stop/join remains outside these admissions."""
+    transition = admitted.transition
+    installed = next((row for row in leases.request.read_rounds()
+                      if row.continuation_id == admitted.record.continuation_id), None)
+    if installed is None:
+        cleanup = observe_cleanup(scope.paths, scope.caller.require(), scope.root.basis["task_id"],
+            transition, historical=admitted.historical)
+        if cleanup.state != "settled":
+            files._fail(cleanup.reason)
+        if transition.phase == "fenced":
+            transition = leases.transitions.advance(leases.transition, transition, phase="settled",
+                worker_stop_identity=cleanup.worker_stop_identity)
+    return SettledContinuation(admitted, transition)
+
+
+def _failure_response(progress: FailureProgress, exc: Exception) -> dict:
+    code = _code(exc)
+    next_action = ("stop_known_wait_then_reconcile" if code == "review_continuation_cleanup_required"
+        else "inspect_saved_packet" if code in ("handoff_file_changed", "handoff_path_unsafe")
+        else "use_current_preparation" if code == "review_continuation_conflict"
+        else "inspect_incomplete_admission" if progress.stage == "admission"
+        else "inspect_reported_boundary")
+    record, transition = progress.record, progress.transition
+    return {"ok": False, "command": "review.handoff.continue",
+        "handoff": {"status": "pending" if record or transition else "unavailable",
+            "continuation_id": record.continuation_id if record else transition.continuation_id if transition else None,
+            "preparation_stage": progress.stage, "next_action": next_action},
+        "errors": [{"code": code, "message": "Continuation is not ready. Preserve saved records and reconcile only the reported boundary."}]}
 
 
 def continue_reviews(repo, args, raw, *, caller=None):
-    """Reconcile one bound operation; expose ready only after all ledgers agree."""
+    """Admit -> observe cleanup -> prepare -> shared readiness -> response.
+
+    _admission_scope retains all leases through the ready response. Its unwind
+    releases them before failure reporting. Stage values are invocation-local;
+    retries derive them again from the original validated ledgers and files.
+    """
     caller = caller or files.capture_caller_identity()
-    record = transition = None
-    stage = "admission"
-    replayed = False
+    progress = FailureProgress()
     try:
         selected = values.decode_selection(raw)
-        resolution = resolve(repo, writing=True)
-        initial = core.read_state(resolution.target, args.task_id, caller)
-        if type(args.target_generation) is not int or args.target_generation != initial.basis["target_generation"]:
-            files._fail("review_continuation_basis_changed")
-        paths = resolution.paths
-        locator = PreparationRepository(paths.review_preparation_store(caller.require(), args.task_id, args.target_generation))
-        if not path_lexically_exists(locator.path):
-            files._fail("review_continuation_unavailable")
-        # Lock lifetime remains explicit here. No helper acquires an earlier
-        # lease beneath these: preparation -> transition -> request -> dispatch
-        # -> finalization -> short native writer. No host effect or join occurs.
-        with ExitStack() as admissions:
-            admissions.enter_context(locator.serial())
-            _, root = locator.read()
-            state = core.read_state(resolution.target, args.task_id, caller)
-            if root.basis != initial.basis or state.basis != root.basis:
-                files._fail("review_continuation_basis_changed")
-            if root.route == "integrated" and getattr(args, "records_only", False):
-                files._fail("review_continuation_unavailable")
-            original = files._read(files._path(repo, root.packet_path), files.PACKET_LIMIT)
-            if sha256(original).hexdigest() != root.packet_digest:
-                files._fail("handoff_file_changed")
-            transitions = TransitionRepository(paths.review_continuation_store(caller.require(), args.task_id, args.target_generation))
-            transition_lease = admissions.enter_context(transitions.serial(create=not path_lexically_exists(transitions.path)))
-            history = transitions.read()
-            request = RequestRepository(paths.review_wait_request_store(caller.require(), args.task_id))
-            request_lease = admissions.enter_context(request.serial(create=not path_lexically_exists(request.path)))
-            attempt, old_request = request.read()
-            dispatch = ParentDispatchRepository(paths.review_wait_dispatch_store(caller.require()))
-            admissions.enter_context(dispatch.serial())
-            journal = journal_lease = None
-            if root.route == "integrated":
-                from . import review_finalization
-                from .review_finalization_repository import FinalizationRepository
-                journal = FinalizationRepository(paths.review_finalization_store(caller.require(), args.task_id, args.target_generation))
-                if root.finalization_store != journal.path.name:
-                    files._fail("review_continuation_conflict")
-                journal_lease = admissions.enter_context(journal.serial())
-                review_finalization.require_preparation_intent(root, journal.read_rounds()[0], root.basis, caller)
-                current = journal.read()
-                if (any(value == "dispatching" for value in (current.registration, current.commit, current.completion))
-                    or current.completion != "not_started"):
-                    files._fail("review_continuation_effect_unknown")
-            transition = next((row for row in history if row.preparation_id == root.preparation_id
-                               and row.packet_path == args.directory + "/packet.json"), None)
-            # A pre-Packet fence cannot have exposed executable instructions:
-            # Packet intent and all readiness ledgers are still unpublished.
-            # Settling its known cleanup returns the first selected requests.
-            # Once Packet publication may have begun, keep the conservative
-            # no-redispatch rule even if a readiness acknowledgement was lost.
-            replayed = transition is not None and not (
-                transition.phase in ("fenced", "settled") and transition.packet_digest is None)
-            if transition is not None:
-                _require_transition(root, selected, transition, history)
-                record = _current_record(state, root, transition.continuation_id, selected)
-                if record is None and transition.phase != "fenced":
-                    files._fail("review_continuation_effect_unknown")
-            historical = _historical_admission(resolution.target, paths, caller, root, attempt, old_request,
-                request, request_lease, transition)
-            if record is None:
-                # An existing fence is the operation identity, including the
-                # destination and expected old request, even if core admission
-                # did not commit or its acknowledgement was lost.
-                predecessor_history = history[:-1] if transition is not None else history
-                if transition is not None:
-                    if (attempt != transition.expected_attempt
-                        or (request_identity_digest(old_request) if old_request else None) != transition.expected_request_digest):
-                        files._fail("review_continuation_effect_unknown")
-                else:
-                    if history and history[-1].phase in ("fenced", "settled"):
-                        files._fail("review_continuation_effect_unknown")
-                    preparation._directory(repo, args.directory)
-                captures = _retained_inventory(repo, root, predecessor_history, state, selected)
-                retirement = _prior_admission(repo, resolution.target, paths, caller, root, state, selected,
-                    predecessor_history, attempt, old_request, transitions, transition_lease, request, request_lease, journal, historical)
-                if transition is None:
-                    group = [row for row in state.records if row.preparation_id == root.preparation_id]
-                    sequence = group[-1].sequence + 1 if group else 1
-                    if sequence > values.CONTINUATION_LIMIT:
-                        files._fail("review_continuation_capacity")
-                    import secrets
-                    transition = transitions.fence(transition_lease, RequestRound(root.preparation_id,
-                        "tg_review_continuation_" + secrets.token_hex(8), sequence, values.basis_digest(root.basis),
-                        _digest(root.basis), values.selection_digest(selected), attempt,
-                        request_identity_digest(old_request) if old_request else None,
-                        old_request.automation_id if old_request else None, old_request.phase if old_request else None,
-                        packet_path=args.directory + "/packet.json",
-                        result_paths=tuple(args.directory + f"/review-{index}.json" for index in range(1, len(selected) + 1))))
-                record = core.admit(resolution.target, root.basis, root.preparation_id, root.route, selected, caller,
-                    retirement=retirement, retained_originals=captures, continuation_id=transition.continuation_id)
-                if record.sequence != transition.continuation_sequence:
-                    files._fail("review_continuation_conflict")
-            stage = "cleanup"
-            installed = next((row for row in request.read_rounds() if row.continuation_id == record.continuation_id), None)
-            if installed is None:
-                cleanup = observe_cleanup(paths, caller.require(), args.task_id, transition, historical=historical)
-                if cleanup.state != "settled":
-                    files._fail(cleanup.reason)
-                if transition.phase == "fenced":
-                    transition = transitions.advance(transition_lease, transition, phase="settled",
-                        worker_stop_identity=cleanup.worker_stop_identity)
-            stage = "preparation"
-            record, transition = _complete_preparation(repo, resolution.target, paths, caller, root, record, transition,
-                transitions, transition_lease, request, request_lease, journal, journal_lease, historical)
-            return _response(repo, args, root, record, transition, replayed=replayed)
+        with _admission_scope(repo, args, caller) as (scope, leases, snapshot):
+            admitted = _admit_operation(scope, leases, snapshot, selected, args.directory, progress)
+            progress.stage = "cleanup"
+            settled = _settle_cleanup(scope, leases, admitted)
+            progress.transition = settled.transition
+            progress.stage = "preparation"
+            ready = _complete_preparation(scope, leases, settled)
+            progress.record, progress.transition = ready.record, ready.transition
+            return _response(repo, args, scope.root, ready.record, ready.transition, replayed=ready.replayed)
     except Exception as exc:
-        code = _code(exc)
-        next_action = ("stop_known_wait_then_reconcile" if code == "review_continuation_cleanup_required"
-            else "inspect_saved_packet" if code in ("handoff_file_changed", "handoff_path_unsafe")
-            else "use_current_preparation" if code == "review_continuation_conflict"
-            else "inspect_incomplete_admission" if stage == "admission"
-            else "inspect_reported_boundary")
-        return {"ok": False, "command": "review.handoff.continue",
-            "handoff": {"status": "pending" if record or transition else "unavailable",
-                "continuation_id": record.continuation_id if record else transition.continuation_id if transition else None,
-                "preparation_stage": stage, "next_action": next_action},
-            "errors": [{"code": code, "message": "Continuation is not ready. Preserve saved records and reconcile only the reported boundary."}]}
+        return _failure_response(progress, exc)

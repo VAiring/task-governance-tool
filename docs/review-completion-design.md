@@ -725,7 +725,21 @@ Continuation preparation has named boundaries for operation/predecessor admissio
 settled cleanup, Packet creation or comparison, integrated-round append, core
 preparation and request installation. Pending supersession and registered
 workerless completion retain distinct conditions but share old-round cleanup
-and publication. A retry reads each saved stage and writes only a missing local
+and publication. The composer carries a typed `ContinuationScope` for the
+admitted project/root and `ContinuationLeases` borrowed from one lexical
+`_admission_scope`. That scope alone acquires and releases preparation,
+transition, request, dispatch and optional finalization admissions in the order
+above, including partial-acquisition failure. An `IntegratedAdmission` pairs
+the already authorized journal with its lease; the manual route has none.
+`AdmissionSnapshot` keeps the observed native history and prior request together.
+The entry advances through `AdmittedContinuation`, `SettledContinuation`,
+`PacketPreparation` and `ReadyContinuation`; stages neither acquire earlier
+leases nor extend their lifetime. `FailureProgress` separately retains only
+acknowledged records and the active diagnostic stage. It preserves failure
+identity even if a later check raises before returning a stage result; lost
+acknowledgements still require observing the saved state on the next invocation.
+These internal values are not persisted, permission tokens or replacements for
+fresh readiness checks. A retry reads each saved stage and writes only a missing local
 stage. Exact physical Packet bytes at the persisted path can reconcile an
 interruption after creation; missing or changed published Packets, partial
 residue and unprovable content remain unavailable without deletion or overwrite.

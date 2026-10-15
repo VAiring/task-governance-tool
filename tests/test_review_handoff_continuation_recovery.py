@@ -4,7 +4,7 @@ Only temporary core/operational databases and ignored physical Packets are used.
 No host connection, timer, reviewer dispatch, or finalization execution occurs.
 """
 
-from contextlib import closing
+from contextlib import closing, contextmanager, ExitStack
 from dataclasses import replace
 from hashlib import sha256
 import json
@@ -19,8 +19,9 @@ from tests.test_review_wait_direct import ORIGINAL
 from tests.test_review_wait_service import TURN
 from task_governance_tool import review_handoff_continuation as continuation, storage
 from task_governance_tool.review_finalization_repository import FinalizationRepository
+from task_governance_tool.review_preparation_repository import PreparationRepository
 from task_governance_tool.review_wait_runtime.continuation_transition_repository import TransitionRepository
-from task_governance_tool.review_wait_runtime.request_repository import RequestRecord, RequestRepository
+from task_governance_tool.review_wait_runtime.request_repository import ParentDispatchRepository, RequestRecord, RequestRepository
 
 
 class RecoveryAssertions:
@@ -32,6 +33,83 @@ class RecoveryAssertions:
 
     def state(self):
         return continuation.core.read_state(self.target, self.task_id, self.caller)
+
+    def assert_leases_released(self):
+        paths = self.resolution.paths
+        # Real OS leases must all be available after the failed invocation.
+        with ExitStack() as held:
+            held.enter_context(PreparationRepository(paths.review_preparation_store()).serial())
+            held.enter_context(TransitionRepository(self.root / "transition.sqlite").serial())
+            held.enter_context(RequestRepository(self.root / "request.sqlite").serial())
+            held.enter_context(ParentDispatchRepository(self.root / "dispatch.sqlite").serial())
+            if hasattr(self, "journal"):
+                held.enter_context(self.journal.serial())
+
+    def test_lost_fence_acknowledgement_reports_unproven_admission_then_recovers(self):
+        self.ready()
+        result = self.interrupted(TransitionRepository, "fence", after=True)
+        self.assertEqual(result["handoff"], dict(status="unavailable", continuation_id=None,
+            preparation_stage="admission", next_action="inspect_incomplete_admission"))
+        saved = TransitionRepository(self.root / "transition.sqlite").read()[-1]
+        self.assertEqual(self.state().records, ())
+        self.assert_leases_released()
+        ready = self.assert_ready(self.call())
+        self.assertEqual(ready["continuation_id"], saved.continuation_id)
+        self.assertFalse(ready["replayed"])
+
+    def test_failure_projection_keeps_acknowledged_identity_at_each_stage(self):
+        self.ready()
+        for owner, name, stage in ((continuation.core, "admit", "admission"),
+                (TransitionRepository, "advance", "cleanup"),
+                (continuation.core, "prepared", "preparation")):
+            with self.subTest(stage=stage):
+                result = self.interrupted(owner, name, after=True)
+                saved = self.state().records[-1]
+                self.assertEqual(result["handoff"], dict(status="pending", continuation_id=saved.continuation_id,
+                    preparation_stage=stage, next_action="inspect_incomplete_admission" if stage == "admission"
+                    else "inspect_reported_boundary"))
+                self.assert_leases_released()
+        self.assert_ready(self.call())
+
+    def test_admission_order_and_lifetime_cover_writes_and_response(self):
+        self.ready()
+        active, events = [], []
+        owners = [(PreparationRepository, "preparation"), (TransitionRepository, "transition"),
+                  (RequestRepository, "request"), (ParentDispatchRepository, "dispatch")]
+        if hasattr(self, "journal"):
+            owners.append((FinalizationRepository, "finalization"))
+        expected = [name for _, name in owners]
+
+        def observed(original, name):
+            @contextmanager
+            def serial(repo, *args, **kwargs):
+                with original(repo, *args, **kwargs) as lease:
+                    self.assertEqual(active, expected[:len(active)])
+                    active.append(name)
+                    events.append(("enter", name))
+                    try:
+                        yield lease
+                    finally:
+                        self.assertEqual(active.pop(), name)
+                        events.append(("exit", name))
+            return serial
+
+        admit, response = continuation.core.admit, continuation._response
+        def during_admit(*args, **kwargs):
+            self.assertEqual(active, expected)
+            return admit(*args, **kwargs)
+        def during_response(*args, **kwargs):
+            self.assertEqual(active, expected)
+            return response(*args, **kwargs)
+        with ExitStack() as patches:
+            for owner, name in owners:
+                patches.enter_context(mock.patch.object(owner, "serial", observed(owner.serial, name)))
+            patches.enter_context(mock.patch.object(continuation.core, "admit", side_effect=during_admit))
+            patches.enter_context(mock.patch.object(continuation, "_response", side_effect=during_response))
+            self.assert_ready(self.call())
+        self.assertEqual(active, [])
+        self.assertEqual(events, [("enter", name) for name in expected]
+            + [("exit", name) for name in reversed(expected)])
 
     def test_known_cleanup_recovery_returns_first_selected_requests_once(self):
         self.ready()

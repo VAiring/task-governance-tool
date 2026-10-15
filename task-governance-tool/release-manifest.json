@@ -71,7 +71,7 @@
     "scripts/task_governance_tool/review_finalization_git.py": "sha256:57e24101588f0fdd2c3525b9db11e02949b3694fea5d01cb48c34c6ab1c46347",
     "scripts/task_governance_tool/review_finalization_repository.py": "sha256:fd796c47933617a20582de9829e0f088014877d0d57b55f2a0139a126fa1ab0c",
     "scripts/task_governance_tool/review_handoff.py": "sha256:4e3414433b0356ff7a59784d150e29ed6c72f9dde7c000f63bc59b91588920f1",
-    "scripts/task_governance_tool/review_handoff_continuation.py": "sha256:15c4686415e150981f51839f9228c3773ea1049ed1c3beaede8fce6879f639f3",
+    "scripts/task_governance_tool/review_handoff_continuation.py": "sha256:1b4fcd00b15ad33cbc22b9eb35ae6c7b985ce266c417d4b7af70939002ce1bde",
     "scripts/task_governance_tool/review_handoff_originals.py": "sha256:7a96146e0c80fa558b8f965aa74ca44431570245cf0d717210406886839741ea",
     "scripts/task_governance_tool/review_handoff_preparation.py": "sha256:6af1f056e380a425c7e38ab6a1f83a3c677ea3d2b59354f7bb65699e0ddc5e70",
     "scripts/task_governance_tool/review_handoff_scope.py": "sha256:f6e3d45005374910882a64d48133f39f3b0c9ba1e8a468a9ff91d42d2c6cc3e5",

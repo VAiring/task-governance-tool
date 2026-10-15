@@ -49,6 +49,27 @@ PUBLIC_COMMAND_LEAVES = {
 
 
 class CliHelpTests(unittest.TestCase):
+    def test_task_edit_help_explains_contract_requirements_and_partial_recovery(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            result = make_physical_install(Path(tmp)).run("task", "edit", "--help")
+            self.assertEqual(result.returncode, 0, result.stderr)
+            text = " ".join(result.stdout.split())
+            for phrase in ("later semantic change", "--contract-authority-ref",
+                           "--contract-change-reason", "Exact canonical content replay is write-free",
+                           "Initial revision-zero activation", "preserve applied edits",
+                           "result is unknown"):
+                self.assertIn(phrase, text)
+
+    def test_reused_parser_does_not_leak_task_edit_diagnostic_context(self):
+        from task_governance_tool.cli_parser import CommandLineError
+        parser = build_parser()
+        with self.assertRaises(CommandLineError) as edited:
+            parser.parse_args(["task", "edit", "tg_task_example", "--unknown"])
+        self.assertIn("unrecognized arguments", edited.exception.message)
+        with self.assertRaises(CommandLineError) as shown:
+            parser.parse_args(["task", "show", "tg_task_example", "--unknown"])
+        self.assertEqual(shown.exception.message, "arguments are invalid")
+
     def test_parser_has_only_the_twenty_three_public_leaves(self):
         self.assertEqual(parser_leaf_commands(build_parser()), PUBLIC_COMMAND_LEAVES)
 

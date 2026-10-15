@@ -136,10 +136,13 @@ def normalize_contract_input(
             "invalid_argument",
             "Contract input was not supplied",
         )
-    if "contract_scope" not in contract_input or "contract_acceptance" not in contract_input:
+    missing = [field for field in ("contract_scope", "contract_acceptance") if field not in contract_input]
+    if missing:
         raise validation_error(
             "invalid_argument",
-            "Contract input requires both --contract-scope and --contract-acceptance",
+            "missing required Contract options: "
+            + ", ".join("--" + field.replace("_", "-") for field in missing)
+            + "; supply --contract-scope and --contract-acceptance together",
         )
     scope = _canonical_text(
         "contract_scope",

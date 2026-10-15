@@ -14,7 +14,48 @@ EXIT_TOOL_ERROR = 2
 
 
 class TaskgovArgumentParser(argparse.ArgumentParser):
+    _task_edit_parser = False
+    _edit_diagnostics = False
+
+    def parse_known_args(self, args=None, namespace=None):
+        # Bind diagnostics to the parser/parsed command, never to arbitrary
+        # tokens that might merely be option values. Reset on every parse.
+        self._edit_diagnostics = self._task_edit_parser
+        parsed, remaining = super().parse_known_args(args, namespace)
+        self._edit_diagnostics = self._task_edit_parser or (
+            getattr(parsed, "command", None) == "task"
+            and getattr(parsed, "task_command", None) == "edit"
+        )
+        return parsed, remaining
+
     def error(self, message: str) -> None:
+        if self._edit_diagnostics:
+            if message.startswith("unrecognized arguments:"):
+                safe_message = (
+                    "task edit has unrecognized arguments; use task edit --help "
+                    "for supported option names"
+                )
+            elif message.startswith("ambiguous option:"):
+                safe_message = (
+                    "task edit option is ambiguous; use the full option name "
+                    "from task edit --help"
+                )
+            elif message == "the following arguments are required: task_id":
+                safe_message = "task edit requires task_id from task context or task add"
+            else:
+                safe_message = "task edit arguments are invalid; use task edit --help"
+                for action in self._actions:
+                    if action.option_strings and message == (
+                        f"argument {'/'.join(action.option_strings)}: expected one argument"
+                    ):
+                        # The emitted name comes only from this parser's fixed
+                        # action registry; no part of argparse's input is echoed.
+                        safe_message = (
+                            f"missing value for {action.option_strings[0]}; "
+                            "supply its value before the next option"
+                        )
+                        break
+            raise CommandLineError("invalid_argument", safe_message)
         raise CommandLineError("invalid_argument", "arguments are invalid")
 
     def _check_value(self, action: argparse.Action, value: Any) -> None:
@@ -232,7 +273,22 @@ def build_parser() -> argparse.ArgumentParser:
         action="append",
         default=None,
     )
-    task_edit_parser = task_subparsers.add_parser("edit", help="update task state or metadata")
+    task_edit_parser = task_subparsers.add_parser(
+        "edit", help="update task state or metadata",
+        epilog=(
+            "Contract edits: always supply --contract-scope and --contract-acceptance together. "
+            "A later semantic change also requires --contract-authority-ref (existing explicit "
+            "authority) and --contract-change-reason (why the accepted boundary changed). "
+            "Keep later Contract edits separate from metadata, status, review-tier and other edits. "
+            "Initial revision-zero activation instead requires an isolated --status in_progress "
+            "transition from ready or blocked and no --contract-change-reason. "
+            "Exact canonical content replay is write-free and does not require later authority/reason labels. "
+            "For multiple operations, confirm each success before the next; preserve applied edits "
+            "after a later failure and resume only the failed operation. Inspect public Task state "
+            "before retrying an operation whose result is unknown."
+        ),
+    )
+    task_edit_parser._task_edit_parser = True
     add_common_options(task_edit_parser)
     task_edit_parser.add_argument("task_id")
     task_edit_parser.add_argument("--title", default=argparse.SUPPRESS)
@@ -278,8 +334,10 @@ def build_parser() -> argparse.ArgumentParser:
     task_edit_parser.add_argument("--contract-scope", default=argparse.SUPPRESS)
     task_edit_parser.add_argument("--contract-acceptance", default=argparse.SUPPRESS)
     task_edit_parser.add_argument("--contract-constraints", default=argparse.SUPPRESS)
-    task_edit_parser.add_argument("--contract-authority-ref", default=argparse.SUPPRESS)
-    task_edit_parser.add_argument("--contract-change-reason", default=argparse.SUPPRESS)
+    task_edit_parser.add_argument("--contract-authority-ref", default=argparse.SUPPRESS,
+                                  help="stable reference to already-explicit authority; required for a later semantic change")
+    task_edit_parser.add_argument("--contract-change-reason", default=argparse.SUPPRESS,
+                                  help="reason for a later semantic change; distinct from its authority reference")
     task_edit_parser.add_argument(
         "--runner-plan-action",
         metavar="{replace,rebind,detach,disable}",

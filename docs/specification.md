@@ -295,6 +295,15 @@ partially truncates an identity.
 Supported nested-command or option parse failures use exit 1,
 `invalid_argument`, and `arguments are invalid`. Incompatible supported
 options use `invalid_option_combination` with a bounded fixed message.
+For `task edit`, syntax messages instead distinguish unrecognized arguments,
+missing values for a known option, missing `task_id`, and ambiguous options;
+unclassified failures use fixed Task-edit help guidance. Only a complete match
+to a registered option's missing-value diagnostic may name that option. No
+rejected token/value or parser exception detail is emitted. The envelope,
+`invalid_argument` code and exit 1 are unchanged; other commands retain their
+existing diagnostics. Missing Contract fields and prohibited companion edits
+retain their domain codes, as defined by the
+[Task Contract owner](task-operation-specification.md#task-contract).
 Specifically, `setup --read-only --confirm-relocation <token>` fails before
 project/state resolution with exact message
 `--confirm-relocation cannot be used with --read-only`.

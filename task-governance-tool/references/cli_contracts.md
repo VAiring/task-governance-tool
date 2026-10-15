@@ -1211,6 +1211,19 @@ Task Contract activation is allowed only on an exact revision-zero
 Contract-only, require explicit later authority and a reason, invalidate
 current completion/review eligibility, and use immutable successive revisions.
 Canonically unchanged input is a write-free replay.
+For a later semantic revision supply `--contract-scope`, `--contract-acceptance`,
+`--contract-authority-ref`, and `--contract-change-reason`; the authority reference
+and explanation serve different purposes. Use the complete
+[Contract revision example and partial-failure recovery](task_workflow.md#contract-revision).
+Confirm each operation's success before the next dependent write. A successful
+Tier edit survives a failed Contract edit; correct only the failed operation.
+Inspect public Task state first only when the result is unknown.
+`task edit` parser diagnostics distinguish unrecognized arguments, a missing
+known option value, missing `task_id`, and ambiguous options. They emit only
+fixed guidance and parser-owned option names, never rejected tokens or values.
+Missing Contract fields and forbidden companion edits keep their existing
+domain codes with actionable option guidance. Unknown input is not corrected
+and a supplied reference never establishes approval.
 Omitted later constraints retain the byte-identical, already-validated prior
 value, including [bounded legacy counter forms](#legacy-stored-counter-compatibility); explicit constraints use strict
 normal validation. Carry-forward does not accept caller-supplied legacy

@@ -345,6 +345,15 @@ transaction/event coordination; `storage.py` calls the same content validator
 for rows it selects. Content validation does not own DB-backed Task/Contract
 pointer integrity.
 
+Input diagnostics remain at their existing boundaries: `cli_parser.py` classifies
+Task-edit syntax failures with fixed categories and registered option names;
+`contract_content.py` identifies missing content fields; `contracts.py` owns
+later authority/reason and Contract-only edit guidance after replay selection.
+No diagnostic parses or emits caller values, infers authority, changes the
+write ordering, or retries/rolls back a previous successful operation. The Skill
+links mid-task additions directly to the complete Contract-revision example and
+keeps known-success, failed and unknown-result recovery distinct.
+
 Schema v8 gives Tasks a current revision pointer and adds append-only
 `task_contract_revisions`. Revision 0 has no row and projects empty fields.
 Each positive row stores normalized scope, acceptance, optional constraints,

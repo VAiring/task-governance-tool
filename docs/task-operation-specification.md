@@ -593,6 +593,16 @@ repository-relative path plus known revision/hash. Neither stores prompt/body.
 A current Task output cannot authorize expansion of that same Task.
 Out-of-scope hardening is handed off.
 
+The `task edit` help and installed Contract-revision procedure distinguish the
+four required later semantic options from initial activation and exact replay.
+Missing scope/acceptance or later authority/reason diagnostics name the required
+CLI options using fixed guidance; forbidden companion edits explain that other
+edits must run separately, retaining their existing error codes. For a sequence
+of edits, the agent confirms each successful result before the next dependent
+operation. A failed Contract edit does not undo a successful Tier change: retain
+that state and correct only the failed edit. An unknown result requires public
+state inspection before retry; ordinary success adds no read or approval step.
+
 An exact canonical content replay is a successful write-free no-op even if
 authority/change labels are omitted or relabeled after their privacy/size
 validation. It returns `recorded=false`, current revision, `event=null`, and

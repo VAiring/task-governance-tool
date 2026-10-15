@@ -472,6 +472,15 @@ or unknown root options before package, project, Git, or state resolution. A
 rejected token or option value is never echoed. Argparse contains no
 compatibility subparsers.
 
+The Task-edit parser marks its diagnostic context explicitly; the root also
+uses the parsed command identity when rejecting remaining arguments. It resets
+that context for each parse, so values that resemble command words cannot
+select another command's diagnostics. Syntax categories emit fixed text;
+missing-value classification matches the complete parser-generated form against
+registered actions and emits only that action's fixed option name. All unknown
+forms use fixed help guidance. Other parser behavior and the bounded envelope
+remain unchanged; Contract-domain guidance stays in the Task operation owner.
+
 The optional `--records-only` restriction and read-only host configuration
 proposal are owned by the [Task operation adapter](task-operation-design.md#ordinary-record-authorization-adapter).
 Their two-class authorization boundary does not expand this command inventory.

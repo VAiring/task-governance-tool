@@ -428,7 +428,8 @@ def _later_revision(
     if caller_edit_input:
         raise validation_error(
             "contract_write_conflict",
-            "later Contract revisions must be Contract-only task edits",
+            "later Contract revisions cannot be combined with other edits; "
+            "apply metadata, status or --review-tier changes separately and confirm each success",
         )
     if existing["status"] not in CONTRACT_ACTIVE_STATUSES:
         raise validation_error(
@@ -490,7 +491,8 @@ def _later_revision(
     if not values["authority_ref"]:
         raise validation_error(
             "contract_authority_required",
-            "a semantic Contract revision requires --contract-authority-ref",
+            "missing required option --contract-authority-ref; supply a stable reference "
+            "to the existing explicit authority, separately from --contract-change-reason",
             "contract_authority_ref",
         )
     expected_user_authority = (
@@ -520,7 +522,8 @@ def _later_revision(
     if not values["change_reason"]:
         raise validation_error(
             "invalid_argument",
-            "a semantic Contract revision requires --contract-change-reason",
+            "missing required option --contract-change-reason; explain the accepted "
+            "boundary change separately from --contract-authority-ref",
             "contract_change_reason",
         )
 

@@ -288,10 +288,18 @@ For an illustrative concise Contract referring to existing shared owners, see
 
 ## Contract Revision
 
-Make a later semantic revision only from later explicit authority and include
-its reason. Copy explicit scope and acceptance together; do not infer missing
+Make a later semantic revision only from later explicit authority. Supply
+`--contract-scope`, `--contract-acceptance`, `--contract-authority-ref`, and
+`--contract-change-reason` together: the authority reference identifies the
+already-explicit instruction; the reason explains the accepted boundary change.
+Copy explicit scope and acceptance together; do not infer missing
 Contract facts or use a document produced by the current Task to authorize its
 own expansion. Initial creation instead uses [Task Contract](#task-contract).
+Later revisions are Contract-only; apply status, Tier, metadata, notes and other
+edits separately. Initial revision-zero activation instead combines only the
+Contract with the required ready/blocked to `in_progress` transition and omits
+the change reason. Exact canonical content replay is write-free and needs no
+later authority/reason labels; any supplied labels still undergo validation.
 
 ```powershell
 python .agents/skills/task-governance-tool/scripts/taskgov.py task edit --repo <target-project> <task-id> --contract-scope "Revised explicit scope" --contract-acceptance "Revised explicit acceptance" --contract-authority-ref "user_instruction:<task-id>:<revision>" --contract-change-reason "User changed the accepted boundary" --json
@@ -306,6 +314,18 @@ A new `task add` has not returned its Task ID yet: the
 [initial reference example](#task-contract) avoids guessing that ID.
 A conversation ID in the reserved Task-ID slot
 is rejected. These checks do not authenticate user approval.
+
+For several operations, inspect each success response before the next dependent
+write; stop that sequence at a failure. If raising `--review-tier` with
+`--review-tier-change-reason` succeeded but the Contract edit failed, retain the
+higher Tier and unchanged Contract. Correct only the failed Contract input and
+resume using the complete example above and the already-known Task ID/revision.
+Do not replay or undo the successful Tier edit. Missing required options,
+unrecognized arguments and missing option values are different corrections;
+follow the diagnostic and `task edit --help` without echoing rejected input.
+If an operation's result is unknown, inspect the existing Task through public
+`task show <task-id>` before deciding which operation remains; never infer
+success or blindly retry. This conditional recovery adds no normal-path read.
 
 Do not use a document produced by the current task to authorize that task's own
 expansion. Hand off proposed hardening outside the current Contract. A
@@ -1342,7 +1362,8 @@ its relationship to the current responsibility, then choose one disposition:
   the current Tier;
 - revise or Merge into current: use the maximum of the current Tier and every
   resulting floor. When higher, raise the Tier first and then make the semantic
-  Contract revision; never auto-lower or advance review between those writes;
+  [Contract revision](#contract-revision), using its complete four-option example
+  and partial-failure recovery; never auto-lower or advance review between those writes;
 - successor: use the successor's own scope floor and existing lane/order.
   Register it only when explicit taskization or separate placement is present;
   otherwise make one write-free proposal; or

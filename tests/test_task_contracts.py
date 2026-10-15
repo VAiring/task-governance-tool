@@ -1,4 +1,5 @@
 import json
+import shlex
 import sqlite3
 import subprocess
 import sys
@@ -9,10 +10,13 @@ from contextlib import closing
 from pathlib import Path
 
 from tests.m14_test_support import (
+    file_snapshot,
+    make_physical_install,
     initialize_taskgov_internal,
     remove_v10_maintenance_for_test,
     run_taskgov_internal,
 )
+from tests.registration_output_support import registration_task
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -115,6 +119,129 @@ def durable_contract_state(db, task_id):
 
 
 class TaskContractCliTests(unittest.TestCase):
+    def test_public_edit_syntax_diagnostics_are_distinct_private_and_write_free(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            install = make_physical_install(Path(tmp))
+            before = file_snapshot(install.project_root)
+            cases = (
+                (("tg_task_example", "--contract-authority-typo", "token=PRIVATE"), "unrecognized arguments"),
+                (("tg_task_example", "--contract-scope"), "missing value for --contract-scope"),
+                (("tg_task_example", "--contract-acceptance", "--json"), "missing value for --contract-acceptance"),
+                (("--json",), "requires task_id"),
+                (("tg_task_example", "--contract", "PRIVATE"), "option is ambiguous"),
+                (("tg_task_example", "--json=PRIVATE"), "arguments are invalid"),
+            )
+            for args, message in cases:
+                with self.subTest(args=args):
+                    result = install.run("task", "edit", *args, "--json")
+                    self.assertEqual(result.returncode, 1, result.stdout)
+                    payload = json.loads(result.stdout)
+                    self.assertEqual(payload["command"], "parse")
+                    self.assertEqual(payload["errors"][0]["code"], "invalid_argument")
+                    self.assertIn(message, payload["errors"][0]["message"])
+                    self.assertNotIn("PRIVATE", result.stdout + result.stderr)
+                    self.assertNotIn("--contract-authority-typo", result.stdout)
+                    self.assertEqual(result.stderr, "")
+                    self.assertEqual(file_snapshot(install.project_root), before)
+            text = install.run("task", "edit", "tg_task_example", "--title")
+            self.assertEqual(text.returncode, 1)
+            self.assertEqual(text.stdout, "")
+            self.assertIn("missing value for --title", text.stderr)
+            other = install.run("task", "show", "tg_task_example", "--unknown", "PRIVATE", "--json")
+            self.assertEqual(json.loads(other.stdout)["errors"], [
+                {"code": "invalid_argument", "message": "arguments are invalid"},
+            ])
+
+    def test_public_tier_success_contract_failure_and_documented_resume(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            install = make_physical_install(Path(tmp))
+
+            def successful(*args):
+                result = install.run(*args, "--json")
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                payload = json.loads(result.stdout)
+                self.assertTrue(payload["ok"], payload)
+                return payload
+
+            successful("setup")
+            added = successful(
+                "task", "add", "--title", "Edit recovery fixture", "--status", "in_progress",
+                "--review-tier", "1", "--contract-scope", "Initial scope",
+                "--contract-acceptance", "Initial acceptance", "--verification", "Check revised boundary",
+            )
+            task_id = registration_task(added)["task_id"]
+            successful("review", "target", "set", task_id, "--kind", "diff_fingerprint",
+                       "--revision", "sha256:" + "a" * 64)
+            successful("verification", "receipt", "add", task_id, "--result", "pass",
+                       "--duration-ms", "1", "--scope-coverage", "full", "--expected-target-generation", "1")
+            successful("review", "receipt", "add", task_id, "--reviewer", "Recovery fixture reviewer",
+                       "--kind", "independent", "--verdict", "pass", "--summary", "Boundary checked",
+                       "--reviewer-class", "human", "--model-state", "not_applicable",
+                       "--skill-state", "not_applicable", "--context-relation", "external_context")
+            tier = successful("task", "edit", task_id, "--review-tier", "2",
+                              "--review-tier-change-reason", "Explicit addition requires two reviews")
+            self.assertEqual(tier["data"]["task"]["review_tier"], 2)
+            before = durable_contract_state(install.db_path, task_id)
+            scope = ("--contract-scope", "Revised explicit scope",
+                     "--contract-acceptance", "Revised explicit acceptance")
+            authority = f"user_instruction:{task_id}:2"
+            failures = (
+                (("--contract-scope", "Revised explicit scope"), "invalid_argument", "--contract-acceptance"),
+                ((*scope, "--contract-change-reason", "Explicit addition"), "contract_authority_required", "--contract-authority-ref"),
+                ((*scope, "--contract-authority-ref", authority), "invalid_argument", "--contract-change-reason"),
+                ((*scope, "--contract-authority-ref", authority, "--contract-change-reason", "Explicit addition", "--review-tier", "2"), "contract_write_conflict", "cannot be combined"),
+                ((*scope, "--contract-authority-ref", "user_instruction:other:2", "--contract-change-reason", "Explicit addition"), "contract_authority_required", "user-instruction authority"),
+                ((*scope, "--contract-authority-ref", authority, "--contract-change-reason", "token=PRIVATE"), "privacy_rejected", ""),
+            )
+            for options, code, diagnostic in failures:
+                with self.subTest(code=code, diagnostic=diagnostic):
+                    failed = install.run("task", "edit", task_id, *options, "--json")
+                    self.assertEqual(failed.returncode, 1, failed.stdout)
+                    error = json.loads(failed.stdout)["errors"][0]
+                    self.assertEqual(error["code"], code)
+                    self.assertIn(diagnostic, error["message"])
+                    self.assertNotIn("PRIVATE", failed.stdout + failed.stderr)
+                    self.assertEqual(durable_contract_state(install.db_path, task_id), before)
+            # Conditional recovery of an unknown result uses public state, not
+            # replay of the already-successful Tier operation.
+            shown = successful("task", "show", task_id)["data"]
+            self.assertEqual(shown["task"]["review_tier"], 2)
+            self.assertEqual(shown["contract"]["revision"], 1)
+            self.assertEqual(shown["task"]["review_target_generation"], 2)
+            self.assertEqual(shown["task"]["review_target_kind"], "")
+            self.assertFalse(shown["verification_evidence"]["gate"]["satisfied"])
+            self.assertEqual(shown["review_evidence"]["gate"]["qualifying_independent_passes"], 0)
+            replay = successful("task", "edit", task_id, "--contract-scope", "Initial scope",
+                                "--contract-acceptance", "Initial acceptance")
+            self.assertFalse(replay["data"]["contract_write"]["recorded"])
+            self.assertEqual(durable_contract_state(install.db_path, task_id), before)
+            # Execute the installed Skill's complete example with the actual
+            # known identity and next revision; its source is already authorized.
+            guide = (install.skill_root / "references/task_workflow.md").read_text(encoding="utf-8")
+            example = next(line for line in guide.splitlines()
+                           if line.startswith("python ") and '--contract-scope "Revised explicit scope"' in line)
+            args = [arg.replace("<target-project>", str(install.project_root))
+                    .replace("<task-id>", task_id)
+                    .replace("<revision>", str(shown["contract"]["revision"] + 1))
+                    for arg in shlex.split(example)[2:]]
+            resumed = install.run(*args)
+            self.assertEqual(resumed.returncode, 0, resumed.stdout + resumed.stderr)
+            self.assertTrue(json.loads(resumed.stdout)["data"]["contract_write"]["recorded"])
+            after = successful("task", "show", task_id)["data"]
+            self.assertEqual(after["task"]["review_tier"], 2)
+            self.assertEqual(after["contract"]["revision"], 2)
+            self.assertEqual(after["task"]["review_target_generation"], 3)
+            self.assertEqual(after["task"]["review_target_kind"], "")
+            self.assertFalse(after["verification_evidence"]["gate"]["satisfied"])
+            self.assertEqual(after["review_evidence"]["gate"]["qualifying_independent_passes"], 0)
+            after_state = durable_contract_state(install.db_path, task_id)
+            replay = successful("task", "edit", task_id, *scope)
+            self.assertFalse(replay["data"]["contract_write"]["recorded"])
+            self.assertEqual(durable_contract_state(install.db_path, task_id), after_state)
+            readonly = install.run("task", "edit", task_id, *scope, "--read-only", "--json")
+            self.assertNotEqual(readonly.returncode, 0)
+            self.assertEqual(durable_contract_state(install.db_path, task_id), after_state)
+
     def test_content_normalizes_supplied_values_without_database_input(self):
         content = normalize_contract_input(
             {

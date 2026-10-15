@@ -72,14 +72,14 @@ class RequestRound:
             if not 1 <= len(self.result_paths) <= 8:
                 raise ValueError
             from pathlib import Path
-            from task_governance_tool.review_handoff import _relative_path
+            from task_governance_tool.review_handoff_transport import relative_path
             paths = (self.packet_path, *self.result_paths)
             if len(set(paths)) != len(paths):
                 raise ValueError
             for path in paths:
                 if type(path) is not str or not path.endswith(".json"):
                     raise ValueError
-                _relative_path(Path("structural-root"), path)
+                relative_path(Path("structural-root"), path)
         except Exception:
             raise RepositoryError("invalid_snapshot") from None
 

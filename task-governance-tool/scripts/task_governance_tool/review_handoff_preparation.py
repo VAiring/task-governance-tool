@@ -15,8 +15,10 @@ import sys
 from dataclasses import asdict
 from pathlib import Path
 
-from task_governance_tool import review_handoff as files
-from task_governance_tool.task_values import validate_task_id
+from task_governance_tool import review_handoff_transport as files
+from task_governance_tool import session_identity
+from task_governance_tool.reviews import ReviewEvidenceError
+from task_governance_tool.task_values import TaskValidationError, reject_private_or_raw_content, validate_task_id
 from task_governance_tool.verification_results import (
     VERIFICATION_RESULT_INPUT_LIMIT, decode_verification_result,
 )
@@ -67,7 +69,7 @@ def _command(repo, args):
     raw = None
     if action == "receipt" and args.from_stdin:
         if any(getattr(args, name) is not None for name in names):
-            files._fail("handoff_invalid_arguments")
+            files.fail("handoff_invalid_arguments")
         raw = sys.stdin.buffer.read(VERIFICATION_RESULT_INPUT_LIMIT + 1)
         decode_verification_result(raw, task_id=task_id)
         arguments.append("--from-stdin")
@@ -78,7 +80,7 @@ def _command(repo, args):
 
 
 def _directory(repo, supplied):
-    destination = files._relative_path(repo, supplied)
+    destination = files.relative_path(repo, supplied)
     missing = []
     current = destination
     while True:
@@ -88,13 +90,13 @@ def _directory(repo, supplied):
             missing.append(current)
             current = current.parent
         else:
-            files._physical(details, directory=True)
+            files.require_physical(details, directory=True)
             break
     if not missing:
-        files._fail("handoff_destination_exists")
-    observed = files._parents(current / "unused.json")
+        files.fail("handoff_destination_exists")
+    observed = files.observe_parents(current / "unused.json")
     for path in missing:
-        files._ignored(repo, path.relative_to(repo).as_posix() + "/")
+        files.require_ignored(repo, path.relative_to(repo).as_posix() + "/")
     # Check actual future file names too: an ignore negation may differ from its directory.
     return destination, list(reversed(missing)), observed
 
@@ -126,42 +128,42 @@ def _capture(command, raw, started):
 
 
 def _json(raw):
-    return json.loads(raw.decode("utf-8"), object_pairs_hook=files._unique,
-                      parse_constant=lambda value: files._fail("handoff_response_invalid"))
+    return json.loads(raw.decode("utf-8"), object_pairs_hook=files.unique_object,
+                      parse_constant=lambda value: files.fail("handoff_response_invalid"))
 
 
 def _messages(value):
     if type(value) is not list:
-        files._fail("handoff_response_invalid")
+        files.fail("handoff_response_invalid")
     for row in value:
         if type(row) is not dict or set(row) != {"code", "message"}:
-            files._fail("handoff_response_invalid")
+            files.fail("handoff_response_invalid")
         for key in row:
             if type(row[key]) is not str:
-                files._fail("handoff_response_invalid")
-            files.reject_private_or_raw_content(key, row[key])
+                files.fail("handoff_response_invalid")
+            reject_private_or_raw_content(key, row[key])
     return value
 
 
 def _envelope(raw, code, command):
     if not isinstance(raw, bytes):
-        files._fail("handoff_response_invalid")
+        files.fail("handoff_response_invalid")
     value = _json(raw)
     if (type(value) is not dict or set(value) != {"ok", "command", "project_id", "data", "warnings", "errors"}
             or type(value["ok"]) is not bool or type(value["data"]) is not dict
             or value["command"] not in ({command} if value["ok"] else {command, "parse"})
             or (value["ok"] and code != 0) or (not value["ok"] and code not in (1, 2))):
-        files._fail("handoff_response_invalid")
+        files.fail("handoff_response_invalid")
     _messages(value["warnings"])
     _messages(value["errors"])
     if bool(value["errors"]) == value["ok"]:
-        files._fail("handoff_response_invalid")
+        files.fail("handoff_response_invalid")
     return value
 
 
 def _packet(value, task_id):
     raw = json.dumps(value, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
-    files._packet(raw, expected_task_id=task_id)
+    files.decode_packet(raw, expected_task_id=task_id)
     return raw
 
 
@@ -186,18 +188,18 @@ def _source(data, args):
         if source["review_target"]["kind"] != "git_snapshot" and source["review_target"]["base_revision"] is None:
             source["review_target"]["base_revision"] = ""
     if source["task_id"] != args.task_id:
-        files._fail("review_target_mismatch")
-    files._packet_target(source["review_target"])
+        files.fail("review_target_mismatch")
+    files.validate_packet_target(source["review_target"])
     if action == "target":
         route = source["verification_route"]
         if (route not in ("not_required", "runner_pass", "receipt_required", "blocked")
                 or (source["blocking_code"] not in {"verification_receipt_blocking", "verification_requirement_unspecified"}
                     if route == "blocked" else source["blocking_code"] is not None)
                 or (route in ("not_required", "runner_pass")) != (preparation["status"] in ("ready", "failed"))):
-            files._fail("handoff_response_invalid")
+            files.fail("handoff_response_invalid")
     elif ((source["result"] == "pass" and source["scope_coverage"] == "full")
           != (preparation["status"] in ("ready", "failed"))):
-        files._fail("handoff_response_invalid")
+        files.fail("handoff_response_invalid")
     return source, preparation
 
 
@@ -242,8 +244,8 @@ def read_material(repo, args):
         try:
             result = read(repo, args)
         except (ArtifactManifestError, GitSnapshotError) as exc:
-            files._fail(exc.code)
-    return (1 if result["status"] == "incomplete" else 0) if files._emit(result, utf8=True) else 1
+            files.fail(exc.code)
+    return (1 if result["status"] == "incomplete" else 0) if files.emit_json(result, utf8=True) else 1
 
 
 def _material_command(repo, operation, *arguments, records_only=False):
@@ -295,16 +297,16 @@ def _observe_material(repo, target):
     from task_governance_tool.completion import CompletionEvidenceError
     from task_governance_tool.git_snapshot import GitSnapshotError
     if target["kind"] not in ("git_snapshot", "git_commit"):
-        files._fail("review_material_requires_supplied")
+        files.fail("review_material_requires_supplied")
     try:
         observed = (observe_staged_git_manifest(repo) if target["kind"] == "git_snapshot"
                     else observe_git_commit_manifest(repo, target["value"]))
         if (observed.target_value != target["value"]
                 or observed.target_base_revision != target["base_revision"]):
-            files._fail("review_target_mismatch")
+            files.fail("review_target_mismatch")
         return observed
     except (ArtifactManifestError, GitSnapshotError, CompletionEvidenceError) as exc:
-        files._fail(exc.code)
+        files.fail(exc.code)
 
 
 def _review_material(repo, target, *, material_details=False, records_only=False):
@@ -323,7 +325,7 @@ def _review_material(repo, target, *, material_details=False, records_only=False
     # The existing manifest limit remains a complete-result boundary, not a
     # shortened list that a reviewer might mistake for the whole target.
     if len(json.dumps(changes, ensure_ascii=False).encode("utf-8")) > ARTIFACT_MANIFEST_BYTE_LIMIT:
-        files._fail("artifact_manifest_too_large")
+        files.fail("artifact_manifest_too_large")
     # The placeholder is inside a shell literal; state the host's exact
     # substitution rule rather than asking the reviewer to repair quoting.
     path_quoting = ("When substituting <project-relative-path>, first double each PowerShell single-quote delimiter in the path: U+0027 ('), U+2018 (‘), U+2019 (’), U+201A (‚), U+201B (‛). Use two copies of that same character, never replace a smart quote with ASCII. Keep all other characters unchanged and keep the surrounding command quotes."
@@ -344,14 +346,14 @@ def read_for_reviewer(repo, packet_path, *, material_details=False, records_only
                       section="all", start=0, content_sha256=None, packet_sha256=None):
     """Validate saved data, bind exact material, then compare live public context."""
     from task_governance_tool.review_packet import independent_reviewer_view
-    path = files._path(repo, packet_path)
-    raw = files._read(path, files.PACKET_LIMIT)
+    path = files.checked_path(repo, packet_path)
+    raw = files.read_bounded(path, files.PACKET_LIMIT)
     from hashlib import sha256
     from task_governance_tool.review_delivery import GUIDANCE as DELIVERY_GUIDANCE
     if packet_sha256 is not None and sha256(raw).hexdigest() != packet_sha256:
-        files._fail("review_packet_stale")
+        files.fail("review_packet_stale")
     material_details = material_details or section in ("material", "workspace")
-    packet = files._packet(raw)
+    packet = files.decode_packet(raw)
     material = _review_material(repo, packet["review_target"], material_details=material_details, records_only=records_only)
     if material["status"] == "git_objects_verified":
         from hashlib import sha256
@@ -390,7 +392,7 @@ def read_for_reviewer(repo, packet_path, *, material_details=False, records_only
     current = validate_live_packet(repo, path, raw, packet, records_only=records_only)
     from task_governance_tool.review_verification import GUIDANCE
     if "verification_evidence" not in current["data"]:
-        files._fail("handoff_response_invalid")
+        files.fail("handoff_response_invalid")
     if material["status"] == "git_objects_verified" and not records_only:
         from task_governance_tool.review_workspace import workspace_guidance
         material["verification_workspace"] = workspace_guidance(repo, packet_path, raw, details=material_details)
@@ -414,7 +416,7 @@ def validate_live_packet(repo, path, raw, packet, *, records_only=False):
     code, response = _capture(command, None, lambda: None)
     current = _envelope(response, code, "review.prepare")
     if not current["ok"]:
-        files._fail(current["errors"][0]["code"])
+        files.fail(current["errors"][0]["code"])
     _packet(current["data"], packet["task"]["task_id"])
     for key in ("task", "contract", "review_target", "changed_paths_available", "changed_paths",
                 "changed_paths_total", "changed_paths_truncated"):
@@ -424,11 +426,11 @@ def validate_live_packet(repo, path, raw, packet, *, records_only=False):
             # changing its bytes/display. Every pre-existing field still matches.
             compared = {name: value for name, value in compared.items() if name != "authority_ref"}
         if compared != packet[key]:
-            files._fail("review_packet_stale")
+            files.fail("review_packet_stale")
     if current["data"].get("review_session_context") != packet.get("review_session_context"):
-        files._fail("review_packet_stale")
-    if files._read(path, files.PACKET_LIMIT) != raw:
-        files._fail("handoff_file_changed")
+        files.fail("review_packet_stale")
+    if files.read_bounded(path, files.PACKET_LIMIT) != raw:
+        files.fail("handoff_file_changed")
     return current
 
 
@@ -485,7 +487,7 @@ def prepare(repo, args):
         packet_path = args.directory + "/packet.json"
         result_paths = [args.directory + f"/review-{index}.json" for index in range(1, args.reviewers + 1)]
         for path in (packet_path, *result_paths):
-            files._ignored(repo, path)
+            files.require_ignored(repo, path)
         code, response = _capture(command, raw, lambda: result.update(operation_status="unknown"))
         result["source_exit_code"] = code
         envelope = _envelope(response, code, result["command"])
@@ -508,51 +510,51 @@ def prepare(repo, args):
         result["source"] = source
         status = preparation["status"]
         if status not in ("ready", "failed", "blocked", "not_applicable"):
-            files._fail("handoff_response_invalid")
+            files.fail("handoff_response_invalid")
         errors = _messages(preparation["errors"])
         if status != "ready":
             if preparation["packet"] is not None:
-                files._fail("handoff_response_invalid")
+                files.fail("handoff_response_invalid")
             result.update(ok=status == "not_applicable", errors=errors, handoff={"status": status})
             return result
         if errors:
-            files._fail("handoff_response_invalid")
+            files.fail("handoff_response_invalid")
         packet = preparation["packet"]
         packet_bytes = _packet(packet, args.task_id)
         if source and (source["review_target"] != packet["review_target"]
                        or source.get("contract_revision", packet["contract"]["revision"]) != packet["contract"]["revision"]):
-            files._fail("review_target_mismatch")
+            files.fail("review_target_mismatch")
         # Recheck before the first write; no path created by another caller is adopted.
-        files._check_parents(observed)
+        files.check_parents(observed)
         for path in missing:
-            parents = files._parents(path)
-            files._ignored(repo, path.relative_to(repo).as_posix() + "/")
+            parents = files.observe_parents(path)
+            files.require_ignored(repo, path.relative_to(repo).as_posix() + "/")
             # Windows treats 0700 as a protected DACL, blocking parent grants.
             if os.name == "nt":
                 path.mkdir()
             else:
                 path.mkdir(mode=0o700)
-            files._physical(path.lstat(), directory=True)
-            files._check_parents(parents)
-        parents = files._parents(destination / "packet.json")
-        target = files._path(repo, packet_path)
-        files._write_new(target, packet_bytes)
-        saved = files._read(target, files.PACKET_LIMIT)
+            files.require_physical(path.lstat(), directory=True)
+            files.check_parents(parents)
+        parents = files.observe_parents(destination / "packet.json")
+        target = files.checked_path(repo, packet_path)
+        files.write_exclusive(target, packet_bytes)
+        saved = files.read_bounded(target, files.PACKET_LIMIT)
         if saved != packet_bytes or _packet(_json(saved), args.task_id) != packet_bytes:
-            files._fail("handoff_file_changed")
+            files.fail("handoff_file_changed")
         for path in result_paths:
-            target_result = files._path(repo, path)
+            target_result = files.checked_path(repo, path)
             if os.path.lexists(target_result):
-                files._fail("handoff_destination_exists")
-        files._check_parents(parents)
+                files.fail("handoff_destination_exists")
+        files.check_parents(parents)
         result.update(ok=True, handoff=_requests(repo, args, packet_path))
         if getattr(args, "operation", "prepare") == "prepare-finalization":
             from task_governance_tool.review_finalization import prepare_intent
             try:
-                intent = prepare_intent(repo, packet_path, result_paths, files.capture_caller_identity())
+                intent = prepare_intent(repo, packet_path, result_paths, session_identity.capture_caller_identity())
             except Exception as exc:
                 from task_governance_tool.review_handoff_scope import error_code as _code
-                files._fail(_code(exc))
+                files.fail(_code(exc))
             entry = str(Path(__file__).parent.parent / "review_handoff.py")
             result["handoff"]["finalization"] = intent
             result["handoff"]["finalization_command"] = _shell([
@@ -563,15 +565,15 @@ def prepare(repo, args):
             del result["handoff"]["submit_command"]
         from task_governance_tool.review_preparation import publish_ready
         try:
-            locator = publish_ready(repo, packet_path, result_paths, files.capture_caller_identity(),
+            locator = publish_ready(repo, packet_path, result_paths, session_identity.capture_caller_identity(),
                 route="integrated" if getattr(args, "operation", "prepare") == "prepare-finalization" else "manual")
         except Exception as exc:
             from task_governance_tool.review_handoff_scope import error_code as _code
-            files._fail(_code(exc))
+            files.fail(_code(exc))
         if locator is not None:
             result["handoff"]["preparation"] = locator
         return result
-    except (files.HandoffError, files.ReviewEvidenceError, files.TaskValidationError, VerificationReceiptError) as exc:
+    except (files.HandoffError, ReviewEvidenceError, TaskValidationError, VerificationReceiptError) as exc:
         code = exc.code
     except (OSError, ValueError, KeyError, TypeError, AttributeError, RecursionError, subprocess.SubprocessError):
         code = "handoff_io_or_input_failed"

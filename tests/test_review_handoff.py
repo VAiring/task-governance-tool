@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import copy
+import ast
 import io
 import json
 import os
@@ -16,6 +17,8 @@ from unittest import mock
 
 from tests.m14_test_support import file_snapshot, make_physical_install
 from tests.test_review_results import BinaryInput, document, encode, receipt, FINGERPRINT
+from task_governance_tool import review_handoff_transport as handoff_transport
+from task_governance_tool import review_handoff_originals as originals
 from task_governance_tool import review_handoff as handoff
 from task_governance_tool import review_results
 from task_governance_tool.reviews import ReviewEvidenceError
@@ -36,6 +39,33 @@ def packet_for(payload):
         "changed_paths_truncated": False, "review_focus": ["Transport"], "required_output": ["Verdict"],
         "result_instructions": ["Inspect artifacts"], "receipt_command": "unused in filesystem unit checks",
     }
+
+
+class HandoffBoundaryTests(unittest.TestCase):
+    def test_shared_consumers_do_not_import_the_cli_entry(self):
+        package = Path(handoff.__file__).parent
+        for path in package.rglob("*.py"):
+            with self.subTest(module=path.relative_to(package).as_posix()):
+                tree = ast.parse(path.read_text(encoding="utf-8"))
+                for node in ast.walk(tree):
+                    if isinstance(node, ast.ImportFrom):
+                        self.assertNotEqual((node.module or "").split(".")[-1], "review_handoff")
+                        self.assertNotIn("review_handoff", [item.name for item in node.names])
+                    elif isinstance(node, ast.Import):
+                        self.assertNotIn("review_handoff", [item.name.split(".")[-1] for item in node.names])
+
+    def test_shared_transport_has_no_live_state_or_orchestration_dependency(self):
+        tree = ast.parse(Path(handoff_transport.__file__).read_text(encoding="utf-8"))
+        forbidden = {"cli", "storage", "review_handoff", "review_preparation",
+                     "review_finalization", "review_handoff_continuation", "review_handoff_originals"}
+        for node in ast.walk(tree):
+            if isinstance(node, (ast.Import, ast.ImportFrom)):
+                imported = {item.name.split(".")[-1] for item in node.names}
+                if isinstance(node, ast.ImportFrom):
+                    imported.add((node.module or "").split(".")[-1])
+                self.assertFalse(imported & forbidden, imported & forbidden)
+        for name in ("_path", "_read", "_packet", "_validate", "_write_new", "submission"):
+            self.assertFalse(hasattr(handoff, name), name)
 
 
 class ReviewHandoffFilesTests(unittest.TestCase):
@@ -68,7 +98,7 @@ class ReviewHandoffFilesTests(unittest.TestCase):
                         packet["task"].update(verification="Fixture expectation", verification_not_required_reason="")
                         packet["verification_evidence"] = summary
                         validate_review_verification(summary)
-                        self.assertEqual(handoff._packet(encode(packet)), packet)
+                        self.assertEqual(handoff_transport.decode_packet(encode(packet)), packet)
                         invalid_gates = [
                             {"required": True, "satisfied": True, "blocking_code": None,
                              "qualifying_receipt_id": None},
@@ -89,8 +119,8 @@ class ReviewHandoffFilesTests(unittest.TestCase):
                             broken["verification_evidence"]["gate"] = gate
                             with self.assertRaises(ValueError):
                                 validate_review_verification(broken["verification_evidence"])
-                            with self.assertRaises(handoff.HandoffError):
-                                handoff._packet(encode(broken))
+                            with self.assertRaises(handoff_transport.HandoffError):
+                                handoff_transport.decode_packet(encode(broken))
 
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory()
@@ -118,7 +148,7 @@ class ReviewHandoffFilesTests(unittest.TestCase):
         second["receipts"][0].update(reviewer="reviewer-b", verdict="changes_requested")
         other = encode(second)
         self.save(other, "reviews/b.json")
-        task, raw = handoff.submission(self.root, self.packet, [self.output, "reviews/b.json"])
+        task, raw = originals.submission(self.root, self.packet, [self.output, "reviews/b.json"])
         self.assertEqual(task, self.payload["task_id"])
         self.assertEqual(raw, b"[" + self.raw + b"," + other + b"]")
         self.assertEqual(len(review_results.decode_review_results(raw)["receipts"]), 2)
@@ -234,7 +264,7 @@ class ReviewHandoffFilesTests(unittest.TestCase):
                 (self.root / self.packet).write_bytes(encode(packet))
                 output = f"reviews/legacy-{index}.json"
                 self.save(output=output)
-                self.assertEqual(handoff.submission(self.root, self.packet, [output])[1], b"[" + self.raw + b"]")
+                self.assertEqual(originals.submission(self.root, self.packet, [output])[1], b"[" + self.raw + b"]")
                 for field in ("scope", "acceptance"):
                     broken = copy.deepcopy(packet)
                     broken["contract"][field] = constraints
@@ -242,7 +272,7 @@ class ReviewHandoffFilesTests(unittest.TestCase):
                     with self.assertRaises(TaskValidationError):
                         self.save(output="reviews/rejected.json")
                     with self.assertRaises(TaskValidationError):
-                        handoff.submission(self.root, self.packet, [output])
+                        originals.submission(self.root, self.packet, [output])
                     self.assertFalse((self.root / "reviews/rejected.json").exists())
 
     def test_approval_stays_explicit_and_is_not_inferred_by_save(self):
@@ -252,8 +282,8 @@ class ReviewHandoffFilesTests(unittest.TestCase):
         self.assertFalse((self.root / self.output).exists())
         self.save(raw, approvals=["reviewer-a"])
         with self.assertRaises(ReviewEvidenceError):
-            handoff.submission(self.root, self.packet, [self.output])
-        self.assertEqual(handoff.submission(self.root, self.packet, [self.output], ["reviewer-a"])[1],
+            originals.submission(self.root, self.packet, [self.output])
+        self.assertEqual(originals.submission(self.root, self.packet, [self.output], ["reviewer-a"])[1],
                          b"[" + raw + b"]")
 
     def test_lost_save_acknowledgement_never_retries_or_erases_the_original(self):
@@ -283,7 +313,7 @@ class ReviewHandoffFilesTests(unittest.TestCase):
             if len(calls) == 1:
                 return write(fd, raw[:8])
             raise OSError("private detail")
-        with mock.patch.object(handoff.os, "write", side_effect=partial_then_fail):
+        with mock.patch.object(handoff_transport.os, "write", side_effect=partial_then_fail):
             with self.assertRaises(OSError):
                 self.save(output="reviews/partial.json")
         self.assertEqual((self.root / "reviews/partial.json").read_bytes(), self.raw[:8])
@@ -291,21 +321,21 @@ class ReviewHandoffFilesTests(unittest.TestCase):
             self.save(output="reviews/partial.json")
 
     def test_readback_failure_has_no_ready_acknowledgement(self):
-        read = handoff._read
+        read = handoff_transport.read_bounded
         def denied(path, limit):
             if path.name == "a.json":
                 raise PermissionError("private path")
             return read(path, limit)
-        with mock.patch.object(handoff, "_read", side_effect=denied), self.assertRaises(PermissionError):
+        with mock.patch.object(handoff_transport, "read_bounded", side_effect=denied), self.assertRaises(PermissionError):
             self.save()
         self.assertEqual((self.root / self.output).read_bytes(), self.raw)
 
     def test_permission_and_flush_failure_do_not_acknowledge_or_clean_up(self):
-        with mock.patch.object(handoff.os, "open", side_effect=PermissionError("private detail")):
+        with mock.patch.object(handoff_transport.os, "open", side_effect=PermissionError("private detail")):
             with self.assertRaises(PermissionError):
                 self.save()
         self.assertFalse((self.root / self.output).exists())
-        with mock.patch.object(handoff.os, "fsync", side_effect=OSError("flush failed")):
+        with mock.patch.object(handoff_transport.os, "fsync", side_effect=OSError("flush failed")):
             with self.assertRaises(OSError):
                 self.save()
         self.assertEqual((self.root / self.output).read_bytes(), self.raw)
@@ -332,8 +362,8 @@ class ReviewHandoffFilesTests(unittest.TestCase):
             value.st_file_attributes = 0
             value.st_ino += 1
             return value
-        with mock.patch.object(handoff.os, "fstat", side_effect=replaced), self.assertRaises(HandoffFailure):
-            handoff._read(self.root / self.output, review_results.REVIEW_RESULTS_INPUT_LIMIT)
+        with mock.patch.object(handoff_transport.os, "fstat", side_effect=replaced), self.assertRaises(HandoffFailure):
+            handoff_transport.read_bounded(self.root / self.output, review_results.REVIEW_RESULTS_INPUT_LIMIT)
 
     def test_packet_mismatch_or_truncation_and_unknown_submission_preserve_sources(self):
         packet = packet_for(self.payload)
@@ -351,8 +381,8 @@ class ReviewHandoffFilesTests(unittest.TestCase):
         import io
         output = io.StringIO()
         # Explicitly injected transport interruption, not a child retry loop.
-        task, framed = handoff.submission(self.root, self.packet, [self.output])
-        with mock.patch.object(handoff, "submission", return_value=(task, framed)), \
+        task, framed = originals.submission(self.root, self.packet, [self.output])
+        with mock.patch.object(originals, "submission", return_value=(task, framed)), \
              mock.patch.object(handoff.subprocess, "run", side_effect=KeyboardInterrupt) as launch, \
              redirect_stdout(output):
             code = handoff.main(["submit", "--repo", str(self.root), "--packet", self.packet, self.output])
@@ -383,14 +413,14 @@ class ReviewHandoffFilesTests(unittest.TestCase):
 
     def test_submit_forwards_child_rejection_and_postcommit_output_failure_without_reinterpretation(self):
         self.save()
-        task, framed = handoff.submission(self.root, self.packet, [self.output])
+        task, framed = originals.submission(self.root, self.packet, [self.output])
         for exit_code, child_output in ((1, '{"ok":false,"data":{"receipts":[]}}\n'),
                                         (2, 'partial committed response')):
             def child(*args, **kwargs):
                 sys.stdout.write(child_output)
                 return subprocess.CompletedProcess(args[0], exit_code)
             output = io.StringIO()
-            with mock.patch.object(handoff, "submission", return_value=(task, framed)), \
+            with mock.patch.object(originals, "submission", return_value=(task, framed)), \
                  mock.patch.object(handoff.subprocess, "run", side_effect=child) as launch, \
                  redirect_stdout(output):
                 code = handoff.main(["submit", "--repo", str(self.root), "--packet", self.packet, self.output])
@@ -401,28 +431,28 @@ class ReviewHandoffFilesTests(unittest.TestCase):
 
     def test_lost_save_acknowledgement_can_be_confirmed_without_repeating_save(self):
         with mock.patch.object(sys, "stdin", BinaryInput(self.raw)), \
-             mock.patch.object(handoff, "_emit", return_value=False):
+             mock.patch.object(handoff_transport, "emit_json", return_value=False):
             code = handoff.main(["save", "--repo", str(self.root), "--packet", self.packet,
                                  "--output", self.output])
         self.assertEqual(code, 1)
         with mock.patch.object(handoff, "save", side_effect=AssertionError("save must not replay")):
-            task, framed = handoff.submission(self.root, self.packet, [self.output])
+            task, framed = originals.submission(self.root, self.packet, [self.output])
         self.assertEqual(task, self.payload["task_id"])
         self.assertEqual(framed, b"[" + self.raw + b"]")
 
     def test_changed_saved_content_and_packet_fail_without_cleanup(self):
-        write = handoff._write_new
+        write = handoff_transport.write_exclusive
         def changed(path, raw):
             write(path, raw)
             path.write_bytes(raw.replace(b"Kept", b"Edit"))
-        with mock.patch.object(handoff, "_write_new", side_effect=changed), self.assertRaises(HandoffFailure):
+        with mock.patch.object(handoff_transport, "write_exclusive", side_effect=changed), self.assertRaises(HandoffFailure):
             self.save()
         self.assertTrue((self.root / self.output).exists())
         packet_bytes = (self.root / self.packet).read_bytes()
         def packet_changed(path, raw):
             write(path, raw)
             (self.root / self.packet).write_bytes(packet_bytes + b" ")
-        with mock.patch.object(handoff, "_write_new", side_effect=packet_changed), self.assertRaises(HandoffFailure):
+        with mock.patch.object(handoff_transport, "write_exclusive", side_effect=packet_changed), self.assertRaises(HandoffFailure):
             self.save(output="reviews/b.json")
 
     def test_path_ignore_link_hardlink_and_parent_boundaries(self):
@@ -433,7 +463,7 @@ class ReviewHandoffFilesTests(unittest.TestCase):
         self.save()
         os.link(self.root / self.output, self.root / "reviews/hard.json")
         with self.assertRaises(HandoffFailure):
-            handoff.submission(self.root, self.packet, [self.output])
+            originals.submission(self.root, self.packet, [self.output])
         try:
             (self.root / "reviews/link.json").symlink_to(self.root / self.packet)
         except OSError:
@@ -442,16 +472,16 @@ class ReviewHandoffFilesTests(unittest.TestCase):
             details = mock.Mock(st_mode=stat_mode_regular(), st_nlink=1,
                                 st_file_attributes=1024)
             with self.assertRaises(HandoffFailure):
-                handoff._physical(details)
+                handoff_transport.require_physical(details)
         else:
             with self.assertRaises(HandoffFailure):
-                handoff.submission(self.root, self.packet, ["reviews/link.json"])
+                originals.submission(self.root, self.packet, ["reviews/link.json"])
 
     def test_tracked_ignored_file_is_refused(self):
         self.save()
         subprocess.run(["git", "-C", str(self.root), "add", "-f", self.output], check=True, capture_output=True)
         with self.assertRaises(HandoffFailure):
-            handoff.submission(self.root, self.packet, [self.output])
+            originals.submission(self.root, self.packet, [self.output])
 
     def test_inflight_read_change_and_fifo_are_refused(self):
         self.save()
@@ -464,31 +494,31 @@ class ReviewHandoffFilesTests(unittest.TestCase):
                 with (self.root / self.output).open("ab") as target:
                     target.write(b" ")
             return result
-        with mock.patch.object(handoff.os, "read", side_effect=concurrent), self.assertRaises(HandoffFailure):
-            handoff._read(self.root / self.output, review_results.REVIEW_RESULTS_INPUT_LIMIT)
+        with mock.patch.object(handoff_transport.os, "read", side_effect=concurrent), self.assertRaises(HandoffFailure):
+            handoff_transport.read_bounded(self.root / self.output, review_results.REVIEW_RESULTS_INPUT_LIMIT)
         if hasattr(os, "mkfifo"):
             os.mkfifo(self.root / "reviews/fifo.json")
             with self.assertRaises(HandoffFailure):
-                handoff.submission(self.root, self.packet, ["reviews/fifo.json"])
+                originals.submission(self.root, self.packet, ["reviews/fifo.json"])
 
     def test_second_original_and_aggregate_capacity_are_checked_before_submission(self):
         self.save()
         other = self.root / "reviews/b.json"
         other.write_bytes(b"{}")
         with self.assertRaises(ReviewEvidenceError):
-            handoff.submission(self.root, self.packet, [self.output, "reviews/b.json"])
+            originals.submission(self.root, self.packet, [self.output, "reviews/b.json"])
         other.write_bytes(self.raw)
         with self.assertRaises(ReviewEvidenceError):
-            handoff.submission(self.root, self.packet, [self.output, "reviews/b.json"])
+            originals.submission(self.root, self.packet, [self.output, "reviews/b.json"])
         with self.assertRaises(HandoffFailure):
-            handoff.submission(self.root, self.packet, [self.output, self.output])
+            originals.submission(self.root, self.packet, [self.output, self.output])
         padded = self.raw + b" " * (review_results.REVIEW_RESULTS_INPUT_LIMIT - len(self.raw))
         self.save(padded, "reviews/full.json")
         with self.assertRaises(ReviewEvidenceError):
-            handoff.submission(self.root, self.packet, ["reviews/full.json"])
+            originals.submission(self.root, self.packet, ["reviews/full.json"])
 
 
-HandoffFailure = handoff.HandoffError
+HandoffFailure = handoff_transport.HandoffError
 
 
 def stat_mode_regular():

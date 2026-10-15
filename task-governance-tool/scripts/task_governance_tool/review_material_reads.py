@@ -5,7 +5,7 @@ from __future__ import annotations
 import hashlib
 import sys
 
-from task_governance_tool import review_handoff as files
+from task_governance_tool import review_handoff_transport as files
 from task_governance_tool.artifact_manifest import ARTIFACT_MANIFEST_BYTE_LIMIT, validate_artifact_path
 from task_governance_tool.completion import FULL_GIT_OBJECT_ID
 from task_governance_tool.review_delivery import GUIDANCE, encode, fits, git_range, require_fit
@@ -19,20 +19,20 @@ def read(repo, args):
     action = args.material_operation
     start = args.start
     if start < 0:
-        files._fail("handoff_invalid_arguments")
+        files.fail("handoff_invalid_arguments")
     command = lambda operation, *values: _material_command(repo, operation, *values, records_only=args.records_only)
 
     def oid(value):
         if not FULL_GIT_OBJECT_ID.fullmatch(value):
-            files._fail("handoff_invalid_arguments")
+            files.fail("handoff_invalid_arguments")
         return value
 
     if action in ("inventory", "changes"):
-        path = files._path(repo, args.packet)
-        raw = files._read(path, files.PACKET_LIMIT)
+        path = files.checked_path(repo, args.packet)
+        raw = files.read_bounded(path, files.PACKET_LIMIT)
         if hashlib.sha256(raw).hexdigest() != args.packet_sha256:
-            files._fail("review_packet_stale")
-        packet = files._packet(raw)
+            files.fail("review_packet_stale")
+        packet = files.decode_packet(raw)
         target = packet["review_target"]
         observed = _observe_material(repo, target)
         changes = [asdict(entry) for entry in build_artifact_entries(observed.before_leaves, observed.after_leaves)]
@@ -42,7 +42,7 @@ def read(repo, args):
         else:
             page = {"entries": changes[start:start + 20], "total": len(changes)}
         if start > page["total"]:
-            files._fail("handoff_invalid_arguments")
+            files.fail("handoff_invalid_arguments")
 
         def output():
             end = start + len(page["entries"])
@@ -58,18 +58,18 @@ def read(repo, args):
             page["entries"].pop()
             result = output()
         if not page["entries"] and start < page["total"]:
-            files._fail("review_delivery_budget_exceeded")
-        if files._read(path, files.PACKET_LIMIT) != raw:
-            files._fail("handoff_file_changed")
+            files.fail("review_delivery_budget_exceeded")
+        if files.read_bounded(path, files.PACKET_LIMIT) != raw:
+            files.fail("handoff_file_changed")
         return require_fit(result)
     if action == "batch":
         raw = sys.stdin.buffer.read(ARTIFACT_MANIFEST_BYTE_LIMIT + 1)
         if len(raw) > ARTIFACT_MANIFEST_BYTE_LIMIT:
-            files._fail("handoff_invalid_arguments")
+            files.fail("handoff_invalid_arguments")
         ids = [oid(line.decode("ascii")) for line in raw.splitlines()]
         digest = hashlib.sha256(encode(ids)).hexdigest()
         if start > len(ids) or (args.content_sha256 is not None and args.content_sha256 != digest):
-            files._fail("review_material_range_mismatch")
+            files.fail("review_material_range_mismatch")
         end = min(start + 20, len(ids))
         from task_governance_tool.review_material_collection import _Bodies
         bodies = _Bodies(repo)
@@ -112,7 +112,7 @@ def read(repo, args):
                      ["-c", "core.quotePath=false", "ls-tree", "--full-tree", "--no-abbrev", spec, "--"])
         identity = {"operation": action, "revision": revision, "path": args.path}
     else:
-        files._fail("handoff_invalid_arguments")
+        files.fail("handoff_invalid_arguments")
     return git_range(repo, arguments, identity,
                      lambda offset, digest: command(action, *values, "--start=" + str(offset), "--content-sha256=" + digest),
                      start=start, expected=args.content_sha256)

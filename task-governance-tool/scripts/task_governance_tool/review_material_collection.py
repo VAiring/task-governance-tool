@@ -5,7 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 
-from task_governance_tool import review_handoff as files
+from task_governance_tool import review_handoff_transport as files
 from task_governance_tool.artifact_manifest import (
     ARTIFACT_MANIFEST_BYTE_LIMIT, ArtifactManifestError, build_artifact_entries, decode_artifact_path,
     validate_artifact_path,
@@ -110,32 +110,32 @@ def collect_material(repo, packet_path, packet_sha256, stream, *, start=0, selec
     """Read only reviewer-selected paths plus every changed side/diff, once per blob."""
     from task_governance_tool.review_handoff_preparation import _observe_material, _material_command
 
-    path = files._path(repo, packet_path)
-    raw = files._read(path, files.PACKET_LIMIT)
+    path = files.checked_path(repo, packet_path)
+    raw = files.read_bounded(path, files.PACKET_LIMIT)
     if hashlib.sha256(raw).hexdigest() != packet_sha256:
-        files._fail("review_packet_stale")
-    packet = files._packet(raw)
+        files.fail("review_packet_stale")
+    packet = files.decode_packet(raw)
     selected_raw = stream.read(ARTIFACT_MANIFEST_BYTE_LIMIT + 1)
     if len(selected_raw) > ARTIFACT_MANIFEST_BYTE_LIMIT:
-        files._fail("handoff_invalid_arguments")
+        files.fail("handoff_invalid_arguments")
     try:
         selected = json.loads(selected_raw.decode("utf-8"))
         if not isinstance(selected, list):
-            files._fail("handoff_invalid_arguments")
+            files.fail("handoff_invalid_arguments")
         for item in selected:
             validate_artifact_path(item)
     except (ArtifactManifestError, UnicodeError, ValueError, TypeError):
-        files._fail("handoff_invalid_arguments")
+        files.fail("handoff_invalid_arguments")
     selected = list(dict.fromkeys(selected))
     selection_digest = hashlib.sha256(encode(selected)).hexdigest()
     if selection_sha256 is not None and selection_digest != selection_sha256:
-        files._fail("review_material_range_mismatch")
+        files.fail("review_material_range_mismatch")
     target = packet["review_target"]
     observed = _observe_material(repo, target)
     entries = build_artifact_entries(observed.before_leaves, observed.after_leaves)
     total = len(entries) + len(selected)
     if start < 0 or start > total:
-        files._fail("handoff_invalid_arguments")
+        files.fail("handoff_invalid_arguments")
     after_leaves = {leaf.relative_posix_path: (leaf.mode, leaf.object_id) for leaf in observed.after_leaves}
     changed = {entry.new_path for entry in entries if entry.new_path is not None}
     changed_paths = {name for entry in entries for name in (entry.old_path, entry.new_path) if name is not None}
@@ -149,7 +149,7 @@ def collect_material(repo, packet_path, packet_sha256, stream, *, start=0, selec
         try:
             stream_tree_entries(repo, revision, object_id_length=len(revision), consume_entry=dependency)
         except (ArtifactManifestError, GitSnapshotError) as exc:
-            files._fail(exc.code)
+            files.fail(exc.code)
     bodies = _Bodies(repo)
     changes = []
     # Retain a bounded page of complete mappings before attempting any content.
@@ -172,8 +172,8 @@ def collect_material(repo, packet_path, packet_sha256, stream, *, start=0, selec
             dependencies.append(bodies.source(
                 selected_path, target["value"] if selected_path in changed else revision,
                 target["kind"] if selected_path in changed else "git_commit", "dependency", *leaf))
-    if files._read(path, files.PACKET_LIMIT) != raw:
-        files._fail("handoff_file_changed")
+    if files.read_bounded(path, files.PACKET_LIMIT) != raw:
+        files.fail("handoff_file_changed")
     command = lambda action, *args: _material_command(repo, action, *args, records_only=records_only)
 
     def result():

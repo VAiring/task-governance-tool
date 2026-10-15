@@ -17,7 +17,7 @@ import uuid
 from dataclasses import asdict
 from pathlib import Path
 
-from task_governance_tool import review_handoff as files
+from task_governance_tool import review_handoff_transport as files
 from task_governance_tool.state_paths import (
     StatePathError, ValidatedFile, create_exclusive_durable_file,
     create_physical_directory_exclusive, inspect_physical_directory,
@@ -82,12 +82,12 @@ def _temporary_parent(repo):
     if configured is None:
         if os.name == "nt":
             if not os.environ.get("LOCALAPPDATA"):
-                files._fail("review_workspace_temp_unavailable")
+                files.fail("review_workspace_temp_unavailable")
             configured = str(Path(os.environ["LOCALAPPDATA"]) / "Temp")
         else:
             configured = "/tmp"
     if not Path(configured).is_absolute():
-        files._fail("review_workspace_temp_unavailable")
+        files.fail("review_workspace_temp_unavailable")
     try:
         # OS defaults may use aliases (for example /var on macOS). Resolve
         # only this location selector, before admission or any write. All
@@ -95,35 +95,35 @@ def _temporary_parent(repo):
         # traversal; a retargeted alias must still match the retained digest.
         parent = Path(configured).resolve(strict=True)
     except (OSError, RuntimeError):
-        files._fail("review_workspace_temp_unavailable")
+        files.fail("review_workspace_temp_unavailable")
     # The selected physical root and every ancestor must remain directories
     # outside Git; this does not relax source/Packet or restored-entry checks.
     for path in (parent, *parent.parents):
         inspect_physical_directory(path)
         if path_lexically_exists(path / ".git"):
-            files._fail("review_workspace_temp_unavailable")
+            files.fail("review_workspace_temp_unavailable")
     if parent == repo or repo in parent.parents:
-        files._fail("review_workspace_temp_unavailable")
+        files.fail("review_workspace_temp_unavailable")
     return parent
 
 
 def _location(repo, identity, digest):
     if re.fullmatch(r"[0-9a-f]{32}", identity) is None:
-        files._fail("review_workspace_invalid_id")
+        files.fail("review_workspace_invalid_id")
     parent = _temporary_parent(repo)
     if digest != _path_digest(parent):
-        files._fail("review_workspace_temp_changed")
+        files.fail("review_workspace_temp_changed")
     return parent, parent / ("taskgov-review-" + identity)
 
 
 def _packet(repo, path, digest):
     if re.fullmatch(r"[0-9a-f]{64}", digest) is None:
-        files._fail("review_workspace_invalid_binding")
-    selected = files._path(repo, path)
-    raw = files._read(selected, files.PACKET_LIMIT)
+        files.fail("review_workspace_invalid_binding")
+    selected = files.checked_path(repo, path)
+    raw = files.read_bounded(selected, files.PACKET_LIMIT)
     if hashlib.sha256(raw).hexdigest() != digest:
-        files._fail("review_workspace_packet_changed")
-    return selected, raw, files._packet(raw)
+        files.fail("review_workspace_packet_changed")
+    return selected, raw, files.decode_packet(raw)
 
 
 def _owner(repo, packet, digest, identity, directory):
@@ -137,7 +137,7 @@ def _owner(repo, packet, digest, identity, directory):
 
 def _check_root(directory, parent):
     if inspect_physical_directory(directory.path, root=parent) != directory:
-        files._fail("review_workspace_changed")
+        files.fail("review_workspace_changed")
 
 
 def _remove(directory, parent, marker=None):
@@ -146,19 +146,19 @@ def _remove(directory, parent, marker=None):
     pending = [(directory.path, 0)]
     selected_files, selected_dirs = [], []
     count = 0
-    parents = files._parents(directory.path)
+    parents = files.observe_parents(directory.path)
 
     def check():
         if time.monotonic() > deadline:
-            files._fail("review_workspace_cleanup_timeout")
-        files._check_parents(parents)
+            files.fail("review_workspace_cleanup_timeout")
+        files.check_parents(parents)
         _check_root(directory, parent)
 
     while pending:
         check()
         path, depth = pending.pop()
         if depth > CLEANUP_DEPTH:
-            files._fail("review_workspace_cleanup_limit")
+            files.fail("review_workspace_cleanup_limit")
         observed = inspect_physical_directory(path, root=parent)
         selected_dirs.append((depth, observed))
         with os.scandir(path) as children:
@@ -166,11 +166,11 @@ def _remove(directory, parent, marker=None):
                 check()
                 count += 1
                 if count > CLEANUP_ENTRIES:
-                    files._fail("review_workspace_cleanup_limit")
+                    files.fail("review_workspace_cleanup_limit")
                 details = child.stat(follow_symlinks=False)
                 if (stat.S_ISLNK(details.st_mode) or getattr(details, "st_file_attributes", 0)
                         & getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0)):
-                    files._fail("review_workspace_cleanup_unsafe")
+                    files.fail("review_workspace_cleanup_unsafe")
                 child_path = Path(child.path)
                 if stat.S_ISDIR(details.st_mode):
                     pending.append((child_path, depth + 1))
@@ -187,7 +187,7 @@ def _remove(directory, parent, marker=None):
         if marker is not None:
             current, _ = read_physical_file_bounded(directory.path / MARKER, root=parent, max_bytes=MARKER_LIMIT)
             if current != marker:
-                files._fail("review_workspace_changed")
+                files.fail("review_workspace_changed")
         unlink_validated_file(item, root=parent)
     for _, item in sorted(selected_dirs, key=lambda pair: -pair[0]):
         if item.path == directory.path:
@@ -200,7 +200,7 @@ def _remove(directory, parent, marker=None):
     check()
     rmdir_validated_directory(directory, root=parent)
     if path_lexically_exists(directory.path):
-        files._fail("review_workspace_cleanup_uncertain")
+        files.fail("review_workspace_cleanup_uncertain")
 
 
 def _observation(repo, packet):
@@ -212,21 +212,21 @@ def _observation(repo, packet):
     # nested manual review/completion support does not expand its admission.
     prefix = run_git_bytes(repo, ["rev-parse", "--show-prefix"], output_limit=4096)
     if prefix != b"\n":
-        files._fail("review_workspace_nested_git_unsupported")
+        files.fail("review_workspace_nested_git_unsupported")
     target = packet["review_target"]
     if target["kind"] == "git_snapshot":
         observed = observe_staged_runner_target(repo)
     elif target["kind"] == "git_commit":
         observed = observe_commit_runner_target(repo, target["value"])
     else:
-        files._fail("review_workspace_target_unsupported")
+        files.fail("review_workspace_target_unsupported")
     artifact = observed.artifact
     if (artifact.target_kind, artifact.target_value, artifact.target_base_revision) != (
             target["kind"], target["value"], target["base_revision"]):
-        files._fail("review_target_mismatch")
+        files.fail("review_target_mismatch")
     if any(part.casefold() in {".git", "git~1"}
            for entry in observed.entries for part in entry.relative_posix_path.split("/")):
-        files._fail("review_workspace_git_marker_unsupported")
+        files.fail("review_workspace_git_marker_unsupported")
     return observed
 
 
@@ -243,10 +243,10 @@ def _executable_modes(target, entries):
         try:
             opened = os.fstat(descriptor)
             if (opened.st_dev, opened.st_ino, opened.st_size) != (identity.device, identity.inode, identity.size):
-                files._fail("review_workspace_changed")
+                files.fail("review_workspace_changed")
             os.fchmod(descriptor, 0o700)
             if inspect_physical_file(path, root=target)[1] != identity:
-                files._fail("review_workspace_changed")
+                files.fail("review_workspace_changed")
         finally:
             os.close(descriptor)
 
@@ -272,22 +272,22 @@ def operate(repo, args):
             marker, _ = read_physical_file_bounded(root / MARKER, root=parent, max_bytes=MARKER_LIMIT)
             expected = _owner(repo, packet, args.packet_sha256, args.workspace_id, directory)
             if json.loads(marker) != expected:
-                files._fail("review_workspace_owner_mismatch")
+                files.fail("review_workspace_owner_mismatch")
             _remove(directory, parent, marker)
             return {"ok": True, "status": "absent", "workspace_id": args.workspace_id}
         if path_lexically_exists(root):
             cleanup_status = "retained"
-            files._fail("review_workspace_exists")
+            files.fail("review_workspace_exists")
         validate_live_packet(repo, path, raw, packet)
         observed = _observation(repo, packet)
         material = preflight_runner_material(repo, observed)
-        parents = files._parents(root)
-        files._check_parents(parents)
+        parents = files.observe_parents(root)
+        files.check_parents(parents)
         # New private root only; never rewrite permissions of existing paths.
         root.mkdir() if os.name == "nt" else root.mkdir(mode=0o700)
         cleanup_status = "retained"
         created = inspect_physical_directory(root, root=parent)
-        files._check_parents(parents)
+        files.check_parents(parents)
         marker = json.dumps(_owner(repo, packet, args.packet_sha256, args.workspace_id, created),
                             separators=(",", ":")).encode("utf-8")
         create_exclusive_durable_file(root / MARKER, marker, root=parent, max_bytes=MARKER_LIMIT)
@@ -295,13 +295,13 @@ def operate(repo, args):
         restored = materialize_runner_target(repo, material, target.path)
         _executable_modes(target.path, observed.entries)
         validate_live_packet(repo, path, raw, packet)
-        files._check_parents(parents)
+        files.check_parents(parents)
         _check_root(created, parent)
         actual_marker, _ = read_physical_file_bounded(root / MARKER, root=parent, max_bytes=MARKER_LIMIT)
         if actual_marker != marker:
-            files._fail("review_workspace_changed")
+            files.fail("review_workspace_changed")
         if inspect_physical_directory(target.path, root=parent) != target:
-            files._fail("review_workspace_changed")
+            files.fail("review_workspace_changed")
         return {"ok": True, "status": "ready", "workspace_id": args.workspace_id,
                 "working_directory": str(target.path), "task_id": packet["task"]["task_id"],
                 "contract_revision": packet["contract"]["revision"],

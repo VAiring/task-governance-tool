@@ -12,7 +12,7 @@ from types import SimpleNamespace
 from tests import m14_test_support  # Set the source-package import path.
 from task_governance_tool import review_delivery as delivery
 from task_governance_tool import review_material_collection as collection
-from task_governance_tool.review_handoff import HandoffError
+from task_governance_tool.review_handoff_transport import HandoffError
 from task_governance_tool import review_handoff_preparation as preparation
 from task_governance_tool import review_read_delivery
 

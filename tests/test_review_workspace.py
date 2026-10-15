@@ -11,6 +11,7 @@ from types import SimpleNamespace
 from unittest import mock
 
 from tests import test_review_handoff_preparation as fixtures
+from task_governance_tool import review_handoff_transport as handoff_transport
 from task_governance_tool import review_workspace as workspace
 from task_governance_tool import review_handoff as handoff
 
@@ -315,7 +316,7 @@ class ReviewerWorkspaceTests(fixtures.PreparationFixture):
             nonlocal calls
             calls += 1
             if calls == 2:
-                raise handoff.HandoffError("review_packet_stale")
+                raise handoff_transport.HandoffError("review_packet_stale")
             return real(*values, **kwargs)
         with mock.patch.object(preparation, "validate_live_packet", side_effect=checked):
             result = workspace.operate(self.root, args)

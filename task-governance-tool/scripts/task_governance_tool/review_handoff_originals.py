@@ -7,9 +7,11 @@ to register, rewrite originals, resolve Findings, or infer review PASS.
 from dataclasses import dataclass, field
 import hashlib
 import json
+import os
 
 from . import review_continuation as values
-from . import review_handoff as files, review_session_transport as transport
+from . import review_handoff_transport as files, review_session_transport as transport
+from .review_results import REVIEW_RESULTS_INPUT_LIMIT, REVIEW_RESULTS_RECEIPT_LIMIT
 from .state_paths import path_lexically_exists
 
 
@@ -25,22 +27,22 @@ class SavedOriginal:
 
 
 def read_original(repo, packet_path, result_path, *, approvals=()):
-    packet_file = files._path(repo, packet_path)
-    packet_raw = files._read(packet_file, files.PACKET_LIMIT)
-    packet = files._packet(packet_raw)
+    packet_file = files.checked_path(repo, packet_path)
+    packet_raw = files.read_bounded(packet_file, files.PACKET_LIMIT)
+    packet = files.decode_packet(packet_raw)
     if "review_session_context" not in packet:
-        files._fail("review_continuation_unavailable")
-    result_file = files._path(repo, result_path)
-    raw = files._read(result_file, files.REVIEW_RESULTS_INPUT_LIMIT)
-    normalized = files._validate(raw, packet, approvals, original=True)
-    sidecar_file = files._path(repo, result_path + ".session.json")
-    sidecar_raw = files._read(sidecar_file, files.PACKET_LIMIT)
-    metadata = json.loads(sidecar_raw.decode("utf-8"), object_pairs_hook=files._unique)
+        files.fail("review_continuation_unavailable")
+    result_file = files.checked_path(repo, result_path)
+    raw = files.read_bounded(result_file, REVIEW_RESULTS_INPUT_LIMIT)
+    normalized = files.validate_results(raw, packet, approvals, original=True)
+    sidecar_file = files.checked_path(repo, result_path + ".session.json")
+    sidecar_raw = files.read_bounded(sidecar_file, files.PACKET_LIMIT)
+    metadata = json.loads(sidecar_raw.decode("utf-8"), object_pairs_hook=files.unique_object)
     bound = transport.validate_packet_metadata(packet, metadata, raw)
-    if (files._read(packet_file, files.PACKET_LIMIT) != packet_raw
-        or files._read(result_file, files.REVIEW_RESULTS_INPUT_LIMIT) != raw
-        or files._read(sidecar_file, files.PACKET_LIMIT) != sidecar_raw):
-        files._fail("handoff_file_changed")
+    if (files.read_bounded(packet_file, files.PACKET_LIMIT) != packet_raw
+        or files.read_bounded(result_file, REVIEW_RESULTS_INPUT_LIMIT) != raw
+        or files.read_bounded(sidecar_file, files.PACKET_LIMIT) != sidecar_raw):
+        files.fail("handoff_file_changed")
     return SavedOriginal(packet_path, result_path, raw, metadata, sidecar_raw, bound, normalized["receipts"][0]["verdict"])
 
 
@@ -62,11 +64,11 @@ def read_sources(repo, root, transitions):
         if row.preparation_id == root.preparation_id and row.phase in ("prepared", "published"):
             locations.extend((row.packet_path, path) for path in row.result_paths)
     for packet, result in locations:
-        path = files._relative_path(repo, result)
+        path = files.relative_path(repo, result)
         if path_lexically_exists(path):
             sources.append(read_original(repo, packet, result))
-        elif path_lexically_exists(files._relative_path(repo, result + ".session.json")):
-            files._fail("handoff_file_changed")
+        elif path_lexically_exists(files.relative_path(repo, result + ".session.json")):
+            files.fail("handoff_file_changed")
     return sources
 
 
@@ -80,7 +82,7 @@ def compose_inventory(repo, root, record, state, sources, packet_path, originals
     """
     selected = [read_original(repo, packet_path, path, approvals=approvals) for path in originals]
     if tuple(source.bound.binding.session_id for source in selected) != tuple(choice.session_id for choice in record.selected):
-        files._fail("review_continuation_conflict")
+        files.fail("review_continuation_conflict")
     captures = tuple(values.RetainedOriginal(**{key: row[key] for key in values.RetainedOriginal.__dataclass_fields__})
         for row in state.captures[record.continuation_id])
     needed = {capture.session_id: capture for capture in captures}
@@ -100,16 +102,64 @@ def compose_inventory(repo, root, record, state, sources, packet_path, originals
                 del needed[actor]
         elif actor not in registered_actors:
             if source.bound.continuation is not None or actor in {row.bound.binding.session_id for row in retained}:
-                files._fail("review_continuation_conflict")
+                files.fail("review_continuation_conflict")
             retained.append(source)
     if needed:
-        files._fail("review_continuation_original_registration_required")
+        files.fail("review_continuation_original_registration_required")
     supplied = [*retained, *selected]
     actors = {source.bound.binding.session_id for source in supplied}
     ids = tuple(sorted(node.receipt_id for node in state.heads if node.session_id not in selected_actors and node.session_id not in actors))
     if len(supplied) + len(ids) < len(root.result_paths):
-        files._fail("review_continuation_original_registration_required")
+        files.fail("review_continuation_original_registration_required")
     identity = transport.ContinuationIdentity(record.preparation_id, record.continuation_id, record.sequence)
     framed = transport.frame_submission([source.raw for source in supplied], [source.metadata for source in supplied],
         continuation=identity, retained_receipt_ids=ids, retained_originals=captures)
     return framed, tuple(supplied), ids
+
+
+def submission(repo, packet_path, originals, approvals=()):
+    """Confirm the complete saved handoff before any registration dispatch.
+
+    The caller need not separately retrieve save acknowledgements or originals.
+    This observes the files now; it does not infer a past save/child outcome.
+    """
+    if not 1 <= len(originals) <= REVIEW_RESULTS_RECEIPT_LIMIT:
+        files.fail()
+    packet_file = files.checked_path(repo, packet_path)
+    packet_raw = files.read_bounded(packet_file, files.PACKET_LIMIT)
+    packet = files.decode_packet(packet_raw)
+    if packet.get("review_session_context", {}).get("version") == 2:
+        from task_governance_tool.review_handoff_continuation import assemble_submission
+        return assemble_submission(repo, packet_path, originals, approvals)
+    paths = [files.checked_path(repo, item) for item in originals]
+    if len(set(os.path.normcase(str(path)) for path in paths)) != len(paths):
+        files.fail()
+    documents = [files.read_bounded(path, REVIEW_RESULTS_INPUT_LIMIT) for path in paths]
+    if any(not raw.lstrip().startswith(b"{") for raw in documents):
+        files.fail()
+    framed = b"[" + b",".join(documents) + b"]"
+    payload = files.validate_results(framed, packet, approvals)
+    binding_files = [(files.checked_path if "review_session_context" in packet else files.relative_path)(
+        repo, item + ".session.json") for item in originals]
+    binding_documents = []
+    if "review_session_context" in packet:
+        for path, raw in zip(binding_files, documents):
+            binding_raw = files.read_bounded(path, files.PACKET_LIMIT)
+            metadata = json.loads(binding_raw.decode("utf-8"), object_pairs_hook=files.unique_object)
+            transport.validate_metadata(metadata, raw)
+            context = {key: metadata[key] for key in ("version", "project_id", "execution_id")}
+            if context != packet["review_session_context"]:
+                files.fail("review_target_mismatch")
+            binding_documents.append((binding_raw, metadata))
+        framed = transport.frame_submission(documents, [metadata for _, metadata in binding_documents])
+    elif any(os.path.lexists(path) for path in binding_files):
+        files.fail("handoff_invalid_input")
+    if files.read_bounded(packet_file, files.PACKET_LIMIT) != packet_raw:
+        files.fail("handoff_file_changed")
+    for path, raw in zip(paths, documents):
+        if files.read_bounded(path, REVIEW_RESULTS_INPUT_LIMIT) != raw:
+            files.fail("handoff_file_changed")
+    for path, (raw, _) in zip(binding_files, binding_documents):
+        if files.read_bounded(path, files.PACKET_LIMIT) != raw:
+            files.fail("handoff_file_changed")
+    return payload["task_id"], framed

@@ -295,6 +295,12 @@ The implementation keeps these narrow ownership boundaries:
   repository rechecks the existing Receipt/Reference, current target and
   execution in its caller's writer; it neither uses numerical storage nor
   commits independently. Ordinary commands never initialize the relation.
+- `review_handoff_transport.py` owns shared bounded physical-file operations,
+  pure Packet/result validation and handoff JSON emission. Its consumers retain
+  their own live admission, leases and effects. `review_handoff_originals.py`
+  owns complete saved-batch confirmation and original inventory/composition;
+  the CLI entry owns parsing, admitted save and public registration dispatch.
+  Common consumers do not depend on the CLI entry's private helpers.
 - The conditional [review continuation model](database-design.md#conditional-review-continuation-storage)
   separates pure selection in `review_continuation.py`, core persistence and
   registration in `review_continuation_repository.py` and

@@ -16,8 +16,9 @@ import sys
 from types import SimpleNamespace
 from typing import Iterator, Literal
 
+from . import session_identity
 from . import review_continuation as values, review_continuation_handoff_repository as core
-from . import review_handoff as files, review_handoff_preparation as preparation
+from . import review_handoff_transport as files, review_handoff_preparation as preparation
 from .review_handoff_scope import resolve, error_code as _code
 from .review_preparation_repository import PreparationRecord, PreparationRepository
 from .review_continuation_repository import Continuation
@@ -136,30 +137,30 @@ def _digest(basis):
 
 def assemble_submission(repo, packet_path, originals, approvals=(), *, caller=None):
     """Read the complete selected/captured/retained inventory, without retyping."""
-    caller = caller or files.capture_caller_identity()
+    caller = caller or session_identity.capture_caller_identity()
     resolution = resolve(repo, writing=False)
-    raw = files._read(files._path(repo, packet_path), files.PACKET_LIMIT)
-    packet = files._packet(raw)
+    raw = files.read_bounded(files.checked_path(repo, packet_path), files.PACKET_LIMIT)
+    packet = files.decode_packet(raw)
     context = packet["review_session_context"]
     state = core.read_state(resolution.target, packet["task"]["task_id"], caller)
     record = next((row for row in state.records if row.continuation_id == context["continuation_id"]), None)
     if (record is None or record.state not in ("prepared", "registered") or record.basis != state.basis
         or record.preparation_id != context["preparation_id"] or record.sequence != context["continuation_sequence"]):
-        files._fail("review_continuation_conflict")
+        files.fail("review_continuation_conflict")
     paths = resolution.paths
     locator = PreparationRepository(paths.review_preparation_store(caller.require(), state.basis["task_id"], state.basis["target_generation"]))
     with locator.serial():
         _, root = locator.read()
         if root.preparation_id != record.preparation_id or root.basis != record.basis:
-            files._fail("review_continuation_conflict")
+            files.fail("review_continuation_conflict")
         history = TransitionRepository(paths.review_continuation_store(caller.require(), state.basis["task_id"], state.basis["target_generation"])).read()
         transition = next((row for row in history if row.continuation_id == record.continuation_id), None)
         if (transition is None or transition.phase not in ("prepared", "published") or transition.packet_path != packet_path
             or transition.packet_digest != sha256(raw).hexdigest() or tuple(originals) != transition.result_paths):
-            files._fail("review_continuation_conflict")
+            files.fail("review_continuation_conflict")
         framed, _, _ = compose_inventory(repo, root, record, state, _sources(repo, root, history), packet_path, originals, approvals)
-        if core.read_state(resolution.target, record.basis["task_id"], caller).basis != state.basis or files._read(files._path(repo, packet_path), files.PACKET_LIMIT) != raw:
-            files._fail("review_continuation_basis_changed")
+        if core.read_state(resolution.target, record.basis["task_id"], caller).basis != state.basis or files.read_bounded(files.checked_path(repo, packet_path), files.PACKET_LIMIT) != raw:
+            files.fail("review_continuation_basis_changed")
         return record.basis["task_id"], framed
 
 
@@ -167,18 +168,18 @@ def _new_packet(repo, target, directory, count, raw):
     destination, missing, observed = preparation._directory(repo, directory)
     names = [directory + "/packet.json", *(directory + f"/review-{index}.json" for index in range(1, count + 1))]
     for path in names:
-        files._ignored(repo, path)
-    files._check_parents(observed)
+        files.require_ignored(repo, path)
+    files.check_parents(observed)
     for path in missing:
-        parents = files._parents(path)
-        files._ignored(repo, path.relative_to(repo).as_posix() + "/")
+        parents = files.observe_parents(path)
+        files.require_ignored(repo, path.relative_to(repo).as_posix() + "/")
         path.mkdir() if os.name == "nt" else path.mkdir(mode=0o700)
-        files._physical(path.lstat(), directory=True)
-        files._check_parents(parents)
-    packet_file = files._path(repo, names[0])
-    files._write_new(packet_file, raw)
-    if files._read(packet_file, files.PACKET_LIMIT) != raw:
-        files._fail("handoff_file_changed")
+        files.require_physical(path.lstat(), directory=True)
+        files.check_parents(parents)
+    packet_file = files.checked_path(repo, names[0])
+    files.write_exclusive(packet_file, raw)
+    if files.read_bounded(packet_file, files.PACKET_LIMIT) != raw:
+        files.fail("handoff_file_changed")
 
 
 def _response(repo, args, root, record, transition, *, replayed=False):
@@ -209,7 +210,7 @@ def _current_record(state, root, continuation_id, selected):
     if (not group or group[-1] != record or record.state == "superseded"
         or record.basis != root.basis or state.basis != root.basis
         or record.route != root.route or record.selected != selected):
-        files._fail("review_continuation_conflict")
+        files.fail("review_continuation_conflict")
     return record
 
 
@@ -219,21 +220,21 @@ def _require_transition(root, selected, transition, history):
         or transition.basis_digest != values.basis_digest(root.basis)
         or transition.wait_basis_digest != _digest(root.basis)
         or transition.selection_digest != values.selection_digest(selected)):
-        files._fail("review_continuation_conflict")
+        files.fail("review_continuation_conflict")
 
 
 def _read_packet(repo, root, record, transition):
     """Prove the physical original root and selected Packet; never recreate."""
     try:
-        original = files._read(files._path(repo, root.packet_path), files.PACKET_LIMIT)
-        raw = files._read(files._path(repo, transition.packet_path), files.PACKET_LIMIT)
+        original = files.read_bounded(files.checked_path(repo, root.packet_path), files.PACKET_LIMIT)
+        raw = files.read_bounded(files.checked_path(repo, transition.packet_path), files.PACKET_LIMIT)
     except FileNotFoundError:
-        files._fail("handoff_file_changed")
+        files.fail("handoff_file_changed")
     if sha256(original).hexdigest() != root.packet_digest:
-        files._fail("handoff_file_changed")
+        files.fail("handoff_file_changed")
     if transition.packet_digest is not None and sha256(raw).hexdigest() != transition.packet_digest:
-        files._fail("handoff_file_changed")
-    packet = files._packet(raw, record.basis["task_id"])
+        files.fail("handoff_file_changed")
+    packet = files.decode_packet(raw, record.basis["task_id"])
     expected = dict(version=2, project_id=record.basis["project_id"], execution_id=record.basis["execution_id"],
         preparation_id=record.preparation_id, continuation_id=record.continuation_id, continuation_sequence=record.sequence,
         selected_reviewers=[dict(session_id=row.session_id, action=row.action, prior_receipt_id=row.prior_receipt_id)
@@ -242,7 +243,7 @@ def _read_packet(repo, root, record, transition):
         or packet["contract"]["revision"] != record.basis["contract_revision"]
         or any(packet["review_target"][key] != record.basis["target_" + key]
                for key in ("kind", "value", "base_revision", "generation"))):
-        files._fail("review_continuation_conflict")
+        files.fail("review_continuation_conflict")
     return raw
 
 
@@ -251,21 +252,21 @@ def _request_round(request, transition, selected):
     attempt, current, rounds = request.read_admission()
     if (not rounds or rounds[-1].continuation_id != transition.continuation_id
         or replace(rounds[-1], phase="prepared") != replace(transition, phase="prepared")):
-        files._fail("review_continuation_conflict")
+        files.fail("review_continuation_conflict")
     round_record = rounds[-1]
     if attempt == transition.expected_attempt:
         if (request_identity_digest(current) if current else None) != transition.expected_request_digest:
-            files._fail("review_continuation_conflict")
+            files.fail("review_continuation_conflict")
         if current is not None and current.phase != "closed":
-            files._fail("review_continuation_effect_unknown")
+            files.fail("review_continuation_effect_unknown")
     elif (attempt < transition.expected_attempt + 1 or current is None or round_record.phase != "published"
           or current.continuation_id != transition.continuation_id
           or current.continuation_sequence != transition.continuation_sequence
           or current.basis_digest != transition.wait_basis_digest
           or {pair[0] for pair in current.reviewers} != {row.session_id for row in selected}):
-        files._fail("review_continuation_conflict")
+        files.fail("review_continuation_conflict")
     elif current.phase in ("creating", "closing", "unknown"):
-        files._fail("review_continuation_effect_unknown")
+        files.fail("review_continuation_effect_unknown")
     return round_record, current if attempt > transition.expected_attempt else None
 
 
@@ -280,13 +281,13 @@ def _ready(scope: ContinuationScope, leases: ContinuationLeases,
     state = core.read_state(target, root.basis["task_id"], caller)
     record = _current_record(state, root, transition.continuation_id, selected)
     if record is None or record.state not in ("prepared", "registered") or transition.phase not in ("prepared", "published"):
-        files._fail("review_continuation_pending")
+        files.fail("review_continuation_pending")
     raw = _read_packet(repo, root, record, transition)
     _, occurrence = _request_round(leases.request, transition, selected)
     if occurrence is not None:
         observed = observe_current_occurrence(paths, caller.require(), root.basis["task_id"], occurrence)
         if observed.state != "known":
-            files._fail(observed.reason)
+            files.fail(observed.reason)
     if leases.integrated is not None:
         from . import review_finalization
         journal = leases.integrated.journal
@@ -311,11 +312,11 @@ def _settle_previous(scope: ContinuationScope, leases: ContinuationLeases,
         old_request_phase=old_request.phase if old_request else None)
     cleanup = observe_cleanup(scope.paths, scope.caller.require(), scope.root.basis["task_id"], observation, historical=historical)
     if cleanup.state != "settled":
-        files._fail(cleanup.reason)
+        files.fail(cleanup.reason)
     rounds = leases.request.read_rounds()
     if (not rounds or rounds[-1].continuation_id != prior.continuation_id
         or replace(rounds[-1], phase="prepared") != replace(prior, phase="prepared")):
-        files._fail("review_continuation_conflict")
+        files.fail("review_continuation_conflict")
     if rounds[-1].phase == "prepared":
         leases.request.publish_without_wait(leases.request_writer, rounds[-1])
     if prior.phase == "prepared":
@@ -328,7 +329,7 @@ def _retained_inventory(repo, root, history, state, selected):
     selected_actors = {choice.session_id for choice in selected}
     registered = {node.session_id for node in state.heads}
     if any(source.bound.binding.session_id in selected_actors - registered for source in sources):
-        files._fail("review_continuation_original_registration_required")
+        files.fail("review_continuation_original_registration_required")
     return tuple(values.RetainedOriginal(source.bound.continuation.identity.continuation_id,
         source.bound.binding.session_id, source.bound.binding.original_result_digest, metadata_digest(source.metadata))
         for source in sources if source.bound.continuation is not None
@@ -350,7 +351,7 @@ def _prior_admission(scope: ContinuationScope, leases: ContinuationLeases,
         # Old binaries could admit core before saving a destination. Do not
         # invent its operation identity or escape into a different directory.
         if prior is None or prior.phase not in ("prepared", "published") or old_core.state != "prepared":
-            files._fail("review_continuation_effect_unknown")
+            files.fail("review_continuation_effect_unknown")
         _ready(scope, leases, old_core.selected, prior)
         cleanup = _settle_previous(scope, leases, snapshot.previous, prior, historical)
         return values.RetirementProof(old_core.continuation_id, values.basis_digest(root.basis),
@@ -359,7 +360,7 @@ def _prior_admission(scope: ContinuationScope, leases: ContinuationLeases,
         old_core = _current_record(state, root, previous.continuation_id,
             next((row.selected for row in state.records if row.continuation_id == previous.continuation_id), ()))
         if old_core is None or old_core.state != "registered":
-            files._fail("review_continuation_effect_unknown")
+            files.fail("review_continuation_effect_unknown")
         _ready(scope, leases, old_core.selected, previous)
         _settle_previous(scope, leases, snapshot.previous, previous, historical)
     return None
@@ -385,10 +386,10 @@ def _historical_admission(scope: ContinuationScope, leases: ContinuationLeases,
         if attempt != 0 or transition is not None and (
             transition.expected_attempt != 0 or transition.expected_request_digest is not None
             or transition.old_automation_id is not None):
-            files._fail("review_continuation_conflict")
+            files.fail("review_continuation_conflict")
         cleanup = observe_latest_cleanup(paths, caller.require(), root.basis["task_id"], attempt, None)
         if cleanup.state != "settled":
-            files._fail(cleanup.reason)
+            files.fail(cleanup.reason)
         from .review_wait_basis_repository import validate_historical_wait
         validate_historical_wait(target, root.basis, None, None, rounds)
         if rounds[-1].phase == "prepared":
@@ -401,15 +402,15 @@ def _historical_admission(scope: ContinuationScope, leases: ContinuationLeases,
             return None  # Already published; the ordinary readiness check owns it.
         if (attempt != transition.expected_attempt
             or request_identity_digest(previous) != transition.expected_request_digest):
-            files._fail("review_continuation_conflict")
+            files.fail("review_continuation_conflict")
     cleanup = observe_latest_cleanup(paths, caller.require(), root.basis["task_id"], attempt, previous)
     if cleanup.state != "settled":
-        files._fail(cleanup.reason)
+        files.fail(cleanup.reason)
     binding, direct = read_bound_effects(paths, caller.require(), root.basis["task_id"], previous)
     from .review_wait_basis_repository import validate_historical_wait
     validate_historical_wait(target, root.basis, binding, previous, rounds)
     if cleanup.worker_stop_identity is None or cleanup.worker_stop_identity != direct.worker_stop_identity:
-        files._fail("review_continuation_worker_exit_unknown")
+        files.fail("review_continuation_worker_exit_unknown")
     proof = HistoricalRequestProof(attempt, request_identity_digest(previous), previous.automation_id,
         previous.basis_digest, _digest(root.basis), cleanup.worker_stop_identity)
     if rounds and rounds[-1].wait_basis_digest != proof.wait_basis_digest and rounds[-1].phase == "prepared":
@@ -426,15 +427,15 @@ def _packet_for_preparation(scope: ContinuationScope, leases: ContinuationLeases
         return PacketPreparation(_read_packet(repo, root, record, transition), transition)
     packet = prepare_review_packet(target, record.basis["task_id"], _continuation_id=record.continuation_id)
     raw = json.dumps(packet, ensure_ascii=True, separators=(",", ":")).encode()
-    files._packet(raw, record.basis["task_id"])
+    files.decode_packet(raw, record.basis["task_id"])
     directory = transition.packet_path.rsplit("/", 1)[0]
-    destination = files._relative_path(repo, directory)
+    destination = files.relative_path(repo, directory)
     if path_lexically_exists(destination):
         # The persisted fence binds the only permitted path. Exact complete
         # bytes can reconnect a lost write acknowledgement; all other residue
         # remains in place and cannot be overwritten or replaced.
         if _read_packet(repo, root, record, transition) != raw:
-            files._fail("handoff_file_changed")
+            files.fail("handoff_file_changed")
         transition = transitions.bind_packet(lease, transition, sha256(raw).hexdigest())
     else:
         # Verification evidence includes its observation time. Bind the exact
@@ -444,7 +445,7 @@ def _packet_for_preparation(scope: ContinuationScope, leases: ContinuationLeases
         transition = transitions.bind_packet(lease, transition, sha256(raw).hexdigest())
         _new_packet(repo, target, directory, len(record.selected), raw)
     if _read_packet(repo, root, record, transition) != raw:
-        files._fail("handoff_file_changed")
+        files.fail("handoff_file_changed")
     return PacketPreparation(raw, transition)
 
 
@@ -459,7 +460,7 @@ def _complete_preparation(scope: ContinuationScope, leases: ContinuationLeases,
     raw, transition = packet.raw, packet.transition
     fresh = core.read_state(target, root.basis["task_id"], caller)
     if _current_record(fresh, root, record.continuation_id, record.selected) is None:
-        files._fail("review_continuation_conflict")
+        files.fail("review_continuation_conflict")
     if leases.integrated is not None:
         from . import review_finalization
         review_finalization.prepare_continuation(repo, root, record, transition, raw, caller,
@@ -488,22 +489,22 @@ def _admission_scope(repo: Path, args, caller: CallerIdentity
     resolution = resolve(repo, writing=True)
     initial = core.read_state(resolution.target, args.task_id, caller)
     if type(args.target_generation) is not int or args.target_generation != initial.basis["target_generation"]:
-        files._fail("review_continuation_basis_changed")
+        files.fail("review_continuation_basis_changed")
     paths = resolution.paths
     locator = PreparationRepository(paths.review_preparation_store(caller.require(), args.task_id, args.target_generation))
     if not path_lexically_exists(locator.path):
-        files._fail("review_continuation_unavailable")
+        files.fail("review_continuation_unavailable")
     with ExitStack() as admissions:
         admissions.enter_context(locator.serial())
         _, root = locator.read()
         state = core.read_state(resolution.target, args.task_id, caller)
         if root.basis != initial.basis or state.basis != root.basis:
-            files._fail("review_continuation_basis_changed")
+            files.fail("review_continuation_basis_changed")
         if root.route == "integrated" and getattr(args, "records_only", False):
-            files._fail("review_continuation_unavailable")
-        original = files._read(files._path(repo, root.packet_path), files.PACKET_LIMIT)
+            files.fail("review_continuation_unavailable")
+        original = files.read_bounded(files.checked_path(repo, root.packet_path), files.PACKET_LIMIT)
         if sha256(original).hexdigest() != root.packet_digest:
-            files._fail("handoff_file_changed")
+            files.fail("handoff_file_changed")
         transitions = TransitionRepository(paths.review_continuation_store(caller.require(), args.task_id, args.target_generation))
         transition_lease = admissions.enter_context(transitions.serial(create=not path_lexically_exists(transitions.path)))
         history = transitions.read()
@@ -517,13 +518,13 @@ def _admission_scope(repo: Path, args, caller: CallerIdentity
             from . import review_finalization
             journal = FinalizationRepository(paths.review_finalization_store(caller.require(), args.task_id, args.target_generation))
             if root.finalization_store != journal.path.name:
-                files._fail("review_continuation_conflict")
+                files.fail("review_continuation_conflict")
             journal_lease = admissions.enter_context(journal.serial())
             review_finalization.require_preparation_intent(root, journal.read_rounds()[0], root.basis, caller)
             current = journal.read()
             if (any(value == "dispatching" for value in (current.registration, current.commit, current.completion))
                 or current.completion != "not_started"):
-                files._fail("review_continuation_effect_unknown")
+                files.fail("review_continuation_effect_unknown")
             integrated = IntegratedAdmission(journal, journal_lease)
         yield (ContinuationScope(repo, resolution.target, paths, caller, root),
             ContinuationLeases(transitions, transition_lease, request, request_lease, integrated),
@@ -549,7 +550,7 @@ def _admit_operation(scope: ContinuationScope, leases: ContinuationLeases,
         record = _current_record(state, root, transition.continuation_id, selected)
         progress.record = record
         if record is None and transition.phase != "fenced":
-            files._fail("review_continuation_effect_unknown")
+            files.fail("review_continuation_effect_unknown")
     historical = _historical_admission(scope, leases, snapshot.previous, transition)
     if record is None:
         # A saved fence remains the operation identity even if native admission
@@ -558,10 +559,10 @@ def _admit_operation(scope: ContinuationScope, leases: ContinuationLeases,
         if transition is not None:
             if (attempt != transition.expected_attempt
                 or (request_identity_digest(old_request) if old_request else None) != transition.expected_request_digest):
-                files._fail("review_continuation_effect_unknown")
+                files.fail("review_continuation_effect_unknown")
         else:
             if history and history[-1].phase in ("fenced", "settled"):
-                files._fail("review_continuation_effect_unknown")
+                files.fail("review_continuation_effect_unknown")
             preparation._directory(scope.repo, directory)
         captures = _retained_inventory(scope.repo, root, predecessor_history, state, selected)
         retirement = _prior_admission(scope, leases, replace(snapshot, history=predecessor_history), historical)
@@ -569,7 +570,7 @@ def _admit_operation(scope: ContinuationScope, leases: ContinuationLeases,
             group = [row for row in state.records if row.preparation_id == root.preparation_id]
             sequence = group[-1].sequence + 1 if group else 1
             if sequence > values.CONTINUATION_LIMIT:
-                files._fail("review_continuation_capacity")
+                files.fail("review_continuation_capacity")
             import secrets
             transition = leases.transitions.fence(leases.transition, RequestRound(root.preparation_id,
                 "tg_review_continuation_" + secrets.token_hex(8), sequence, values.basis_digest(root.basis),
@@ -583,7 +584,7 @@ def _admit_operation(scope: ContinuationScope, leases: ContinuationLeases,
             retirement=retirement, retained_originals=captures, continuation_id=transition.continuation_id)
         progress.record = record
         if record.sequence != transition.continuation_sequence:
-            files._fail("review_continuation_conflict")
+            files.fail("review_continuation_conflict")
     return AdmittedContinuation(record, transition, historical, replayed)
 
 
@@ -597,7 +598,7 @@ def _settle_cleanup(scope: ContinuationScope, leases: ContinuationLeases,
         cleanup = observe_cleanup(scope.paths, scope.caller.require(), scope.root.basis["task_id"],
             transition, historical=admitted.historical)
         if cleanup.state != "settled":
-            files._fail(cleanup.reason)
+            files.fail(cleanup.reason)
         if transition.phase == "fenced":
             transition = leases.transitions.advance(leases.transition, transition, phase="settled",
                 worker_stop_identity=cleanup.worker_stop_identity)
@@ -626,7 +627,7 @@ def continue_reviews(repo, args, raw, *, caller=None):
     releases them before failure reporting. Stage values are invocation-local;
     retries derive them again from the original validated ledgers and files.
     """
-    caller = caller or files.capture_caller_identity()
+    caller = caller or session_identity.capture_caller_identity()
     progress = FailureProgress()
     try:
         selected = values.decode_selection(raw)

@@ -53,11 +53,11 @@ class PreparationRecord:
             # Reuse the existing portable structural rules without filesystem
             # inspection. The composition owns ignore and physical-file checks.
             from pathlib import Path
-            from .review_handoff import _relative_path
+            from .review_handoff_transport import relative_path
             for path in paths:
                 if type(path) is not str or not path.endswith(".json"):
                     raise ValueError
-                _relative_path(Path("structural-root"), path)
+                relative_path(Path("structural-root"), path)
             validate_utc_timestamp(self.created_at, field="review preparation creation time")
             digest = sha256((self.basis["parent_session_id"] + ":" + self.basis["task_id"]).encode("ascii")).hexdigest()
             expected = f"finalize-{digest}-{self.basis['target_generation']}.sqlite"

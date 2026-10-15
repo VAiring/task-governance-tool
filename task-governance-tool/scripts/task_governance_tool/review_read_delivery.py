@@ -6,7 +6,7 @@ import hashlib
 import sys
 from pathlib import Path
 
-from task_governance_tool import review_handoff as files
+from task_governance_tool import review_handoff_transport as files
 from task_governance_tool.review_delivery import GUIDANCE, encode, fits, range_result, require_fit
 
 
@@ -23,7 +23,7 @@ def bound(view, repo, packet_path, raw, *, section="all", start=0, expected=None
 
     if section == "all":
         if start or expected:
-            files._fail("handoff_invalid_arguments")
+            files.fail("handoff_invalid_arguments")
         if fits(view):
             return view
         return require_fit({"status": "partial", "packet_sha256": digest, "review_target": view["review_target"],
@@ -47,11 +47,11 @@ def bound(view, repo, packet_path, raw, *, section="all", start=0, expected=None
         payload = {"verification_evidence": evidence, "verification_guidance": view["verification_guidance"]}
     elif section == "workspace":
         if start or expected:
-            files._fail("handoff_invalid_arguments")
+            files.fail("handoff_invalid_arguments")
         return require_fit({"status": "complete", "packet_sha256": digest,
                             "verification_workspace": view["review_material"].get("verification_workspace", {"status": "unavailable"})})
     else:
-        files._fail("handoff_invalid_arguments")
+        files.fail("handoff_invalid_arguments")
     return range_result(encode(payload), {"packet_sha256": digest, "section": section},
                         lambda offset, content_hash: command(section, offset, content_hash),
                         start=start, expected=expected,

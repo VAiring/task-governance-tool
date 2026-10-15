@@ -14,7 +14,7 @@ from tests.test_review_results import document, encode
 from task_governance_tool import review_preparation as preparation, storage
 from task_governance_tool.review_preparation_repository import PreparationRepository
 from task_governance_tool.review_wait_basis_repository import read_preparation_basis
-from task_governance_tool.review_handoff import HandoffError
+from task_governance_tool.review_handoff_transport import HandoffError
 from task_governance_tool.session_identity import CallerIdentity
 from tests.test_review_continuation import A
 from tests.test_review_continuation import B, ident
@@ -103,7 +103,7 @@ class PreparationPublicationTests(unittest.TestCase):
         self.publish()
         self.pending(A)
         raw = registration_fixture.ContinuationRegistrationTests.original(self, A)[0]
-        with mock.patch.object(files, "capture_caller_identity", return_value=CallerIdentity(A)):
+        with mock.patch("task_governance_tool.session_identity.capture_caller_identity", return_value=CallerIdentity(A)):
             with self.assertRaises(HandoffError) as caught:
                 files.save(self.repo, "reviews/packet.json", "reviews/a.json", raw)
         self.assertEqual(caught.exception.code, "review_packet_stale")
@@ -115,7 +115,7 @@ class PreparationPublicationTests(unittest.TestCase):
         self.publish()
         self.pending(B)
         raw = registration_fixture.ContinuationRegistrationTests.original(self, A)[0]
-        with mock.patch.object(files, "capture_caller_identity", return_value=CallerIdentity(A)), \
+        with mock.patch("task_governance_tool.session_identity.capture_caller_identity", return_value=CallerIdentity(A)), \
              mock.patch("task_governance_tool.usage_lifecycle.register_reviewer"):
             result = files.save(self.repo, "reviews/packet.json", "reviews/a.json", raw)
         self.assertEqual(result["status"], "saved")

@@ -4,7 +4,7 @@ from contextlib import closing, contextmanager
 from hashlib import sha256
 import secrets
 
-from . import review_handoff as files
+from . import review_handoff_transport as files
 from .review_handoff_scope import resolve
 from .review_finalization_repository import FinalizationRepository
 from .review_preparation_repository import PreparationRecord, PreparationRepository
@@ -31,8 +31,8 @@ def publish_ready(repo, packet_path, result_paths, caller, *, route):
     with closing(connect_initialized_readonly(resolution.target)) as connection:
         if current_schema_version(connection) < 28:
             return None
-        raw = files._read(files._path(repo, packet_path), files.PACKET_LIMIT)
-        packet = files._packet(raw)
+        raw = files.read_bounded(files.checked_path(repo, packet_path), files.PACKET_LIMIT)
+        packet = files.decode_packet(raw)
         if (packet.get("review_session_context", {}).get("execution_id") is None
             or caller.session_id is None):
             return None  # Legacy absence remains absence, never inferred binding.
@@ -46,10 +46,10 @@ def publish_ready(repo, packet_path, result_paths, caller, *, route):
         or packet["task"]["verification_not_required_reason"] != basis["verification_not_required_reason"]
         or any(packet["review_target"][key] != basis["target_" + key] for key in ("kind", "value", "base_revision", "generation"))
         or context.get("project_id") != basis["project_id"] or context.get("execution_id") != basis["execution_id"]):
-        files._fail("review_continuation_basis_changed")
+        files.fail("review_continuation_basis_changed")
     for path in result_paths:
-        if path_lexically_exists(files._path(repo, path)):
-            files._fail("handoff_destination_exists")
+        if path_lexically_exists(files.checked_path(repo, path)):
+            files.fail("handoff_destination_exists")
     paths = resolution.paths
     finalization_store = None
     if route == "integrated":
@@ -62,7 +62,7 @@ def publish_ready(repo, packet_path, result_paths, caller, *, route):
             or intent.result_paths != tuple(result_paths)
             or any(value != "not_started" for value in (intent.registration, intent.commit, intent.completion))
             or intent.candidate is not None):
-            files._fail("review_continuation_conflict")
+            files.fail("review_continuation_conflict")
         finalization_store = finalization_path.name
     record = PreparationRecord(1, "tg_review_preparation_" + secrets.token_hex(8), basis, route, packet_path,
         sha256(raw).hexdigest(), tuple(result_paths), finalization_store, utc_now())
@@ -74,11 +74,11 @@ def publish_ready(repo, packet_path, result_paths, caller, *, route):
     # Validate again under publication admission; another physical preparation
     # or core change cannot silently replace the admitted exact location.
     def admit():
-        if _basis(resolution.target, basis["task_id"], caller) != basis or files._read(files._path(repo, packet_path), files.PACKET_LIMIT) != raw:
-            files._fail("review_continuation_basis_changed")
+        if _basis(resolution.target, basis["task_id"], caller) != basis or files.read_bounded(files.checked_path(repo, packet_path), files.PACKET_LIMIT) != raw:
+            files.fail("review_continuation_basis_changed")
         for path in result_paths:
-            if path_lexically_exists(files._path(repo, path)):
-                files._fail("handoff_destination_exists")
+            if path_lexically_exists(files.checked_path(repo, path)):
+                files.fail("handoff_destination_exists")
     with journal.serial(initial=record if fresh else None, admit=admit) as lease:
         if not fresh:
             journal.publish(lease, record)
@@ -106,7 +106,7 @@ def save_admission(repo, packet_path, raw, packet, output, caller):
     path = paths.review_preparation_store(basis["parent_session_id"], basis["task_id"], packet["review_target"]["generation"])
     if not path_lexically_exists(path):
         if context["version"] == 2:
-            files._fail("review_continuation_unavailable")
+            files.fail("review_continuation_unavailable")
         yield
         return
     journal = PreparationRepository(path)
@@ -115,7 +115,7 @@ def save_admission(repo, packet_path, raw, packet, output, caller):
         with closing(connect_initialized_readonly(resolution.target)) as connection:
             fresh = read_review_basis(connection, project_id=basis["project_id"], task_id=basis["task_id"])
             if fresh != basis or current.basis != basis:
-                files._fail("review_continuation_basis_changed")
+                files.fail("review_continuation_basis_changed")
             if current_schema_version(connection) >= 29:
                 from .review_continuation_repository import read_continuations
                 history = read_continuations(connection, project_id=basis["project_id"], task_id=basis["task_id"])
@@ -127,12 +127,12 @@ def save_admission(repo, packet_path, raw, packet, output, caller):
             if (current.packet_path != packet_path or current.packet_digest != sha256(raw).hexdigest()
                 or output not in current.result_paths or any(row.basis["target_generation"] == basis["target_generation"]
                     and actor in {choice.session_id for choice in row.selected} for row in history)):
-                files._fail("review_packet_stale")
+                files.fail("review_packet_stale")
         else:
             matches = [row for row in pending if row.continuation_id == context["continuation_id"]]
             if (len(matches) != 1 or matches[0].state != "prepared" or current.preparation_id != context["preparation_id"]
                 or matches[0].sequence != context["continuation_sequence"]):
-                files._fail("review_packet_stale")
+                files.fail("review_packet_stale")
             record = matches[0]
             from .review_wait_runtime.continuation_transition_repository import TransitionRepository
             transitions = TransitionRepository(paths.review_continuation_store(basis["parent_session_id"], basis["task_id"], basis["target_generation"])).read()
@@ -141,5 +141,5 @@ def save_admission(repo, packet_path, raw, packet, output, caller):
             if (len(rounds) != 1 or rounds[0].phase not in ("prepared", "published") or actor not in actors
                 or rounds[0].packet_path != packet_path or rounds[0].packet_digest != sha256(raw).hexdigest()
                 or rounds[0].result_paths[actors.index(actor)] != output):
-                files._fail("review_packet_stale")
+                files.fail("review_packet_stale")
         yield

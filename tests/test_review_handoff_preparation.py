@@ -20,6 +20,7 @@ from unittest import mock
 
 from tests.m14_test_support import file_snapshot, make_physical_install
 from tests.test_review_results import encode, receipt, FINGERPRINT
+from task_governance_tool import review_handoff_transport as handoff_transport
 from task_governance_tool import review_handoff as handoff
 from task_governance_tool import review_handoff_preparation as preparation
 from task_governance_tool.review_results import review_result_instructions
@@ -376,11 +377,11 @@ class InstalledPreparationTests(PreparationFixture):
                 broken = copy.deepcopy(packet)
                 mutate(broken)
                 packet_path.write_bytes(encode(broken))
-                with self.assertRaises((handoff.HandoffError, handoff.TaskValidationError)):
+                with self.assertRaises((handoff_transport.HandoffError, handoff.TaskValidationError)):
                     preparation._packet(broken, task)
-                with self.assertRaises((handoff.HandoffError, handoff.TaskValidationError)):
+                with self.assertRaises((handoff_transport.HandoffError, handoff.TaskValidationError)):
                     preparation.read_for_reviewer(self.root, context["packet_path"])
-                with self.assertRaises((handoff.HandoffError, handoff.TaskValidationError)):
+                with self.assertRaises((handoff_transport.HandoffError, handoff.TaskValidationError)):
                     handoff.save(self.root, context["packet_path"], "reviews/g1/unsaved.json", encode(original), ())
                 self.assertFalse((self.root / "reviews/g1/unsaved.json").exists())
                 output = io.StringIO()
@@ -521,8 +522,8 @@ class ReviewerDisplayTests(PreparationFixture):
                     validate_review_verification(invalid["verification_evidence"])
                 malformed_packet = copy.deepcopy(packet)
                 malformed_packet["verification_evidence"] = invalid["verification_evidence"]
-                with self.assertRaises(handoff.HandoffError):
-                    handoff._packet(encode(malformed_packet))
+                with self.assertRaises(handoff_transport.HandoffError):
+                    handoff_transport.decode_packet(encode(malformed_packet))
 
     def read(self, packet, *options):
         return self.invoke("read", "--repo", str(self.root), "--packet", packet, *options)
@@ -681,7 +682,7 @@ class ReviewerDisplayTests(PreparationFixture):
             self.assertNotEqual(failed.returncode, 0)
             self.assertFalse(json.loads(failed.stdout)["ok"])
         self.assertEqual(file_snapshot(self.root), before)
-        invalid = [b"{", raw[:-1], raw + b" " * handoff.PACKET_LIMIT]
+        invalid = [b"{", raw[:-1], raw + b" " * handoff_transport.PACKET_LIMIT]
         for change in (lambda p: p["contract"].pop("scope"),
                        lambda p: p["result_template"]["review_target"].update(generation=8),
                        lambda p: p["task"].update(review_tier=None),
@@ -704,8 +705,8 @@ class ReviewerDisplayTests(PreparationFixture):
         self.assertNotEqual(view.returncode, 0, view.stdout)
         self.assertEqual(json.loads(view.stdout)["code"], "review_packet_stale")
         path.write_bytes(raw)
-        with mock.patch.object(handoff, "_emit", return_value=False), \
-             mock.patch.object(handoff, "_write_new") as write, \
+        with mock.patch.object(handoff_transport, "emit_json", return_value=False), \
+             mock.patch.object(handoff_transport, "write_exclusive") as write, \
              mock.patch.object(preparation, "_capture", wraps=preparation._capture) as source:
             code = handoff.main(["read", "--repo", str(self.root), "--packet", relative])
         self.assertEqual(code, 1)
@@ -1262,7 +1263,7 @@ class ReviewerMaterialTests(PreparationFixture):
 
         def inspect(packet):
             from task_governance_tool import review_workspace
-            with self.assertRaises(handoff.HandoffError) as unsupported:
+            with self.assertRaises(handoff_transport.HandoffError) as unsupported:
                 review_workspace._observation(project, json.loads((project / packet).read_bytes()))
             self.assertEqual(unsupported.exception.code, "review_workspace_nested_git_unsupported")
             read = invoke("read", "--packet", packet, "--material-details")
@@ -1825,7 +1826,7 @@ class ReviewerMaterialTests(PreparationFixture):
         packet = prepared["handoff"]["packet_path"]
         for raw in (None, b"{", b"{}"):
             with mock.patch.object(preparation, "_capture", return_value=(0, raw)):
-                with self.assertRaises((handoff.HandoffError, ValueError)):
+                with self.assertRaises((handoff_transport.HandoffError, ValueError)):
                     preparation.read_for_reviewer(self.root, packet)
         self.committed_fixture()
         (self.root / "source.py").write_text("value = 2\n", encoding="utf-8")
@@ -1834,7 +1835,7 @@ class ReviewerMaterialTests(PreparationFixture):
         from task_governance_tool.artifact_manifest import ArtifactManifestError
         with mock.patch("task_governance_tool.artifact_manifest.observe_staged_git_manifest",
                         side_effect=ArtifactManifestError("artifact_manifest_stale", "fixture")):
-            with self.assertRaises(handoff.HandoffError):
+            with self.assertRaises(handoff_transport.HandoffError):
                 preparation.read_for_reviewer(self.root, prepared["handoff"]["packet_path"])
 
     def test_complete_packet_alternative_routes_keep_explicit_approval_and_tier_zero(self):
@@ -1941,7 +1942,7 @@ class PreparationFailureTests(PreparationFixture):
 
         (self.root / "reviews").mkdir()
         mkdir = Path.mkdir
-        caller = handoff.capture_caller_identity()
+        caller = handoff.session_identity.capture_caller_identity()
         for name in ("nt", "posix"):
             with self.subTest(os_name=name):
                 variant = mock.Mock(wraps=os)
@@ -2064,14 +2065,14 @@ class PreparationFailureTests(PreparationFixture):
         capture.assert_not_called()
 
     def test_write_and_readback_failures_keep_source_success_and_residue(self):
-        for index, method in enumerate(("_write_new", "_read")):
-            with mock.patch.object(handoff, method, side_effect=PermissionError("private failure detail")):
+        for index, method in enumerate(("write_exclusive", "read_bounded")):
+            with mock.patch.object(handoff_transport, method, side_effect=PermissionError("private failure detail")):
                 _, result, capture = self.run_injected(directory=f"reviews/fail-{index}")
             self.assertEqual(result["operation_status"], "succeeded")
             self.assertNotIn("review_requests", result["handoff"])
             self.assertNotIn("private failure detail", json.dumps(result))
             self.assertTrue((self.root / f"reviews/fail-{index}").is_dir())
-            self.assertEqual((self.root / f"reviews/fail-{index}/packet.json").exists(), method == "_read")
+            self.assertEqual((self.root / f"reviews/fail-{index}/packet.json").exists(), method == "read_bounded")
             capture.assert_called_once()
 
     def test_partial_packet_and_raced_directory_are_retained_without_requests(self):
@@ -2082,7 +2083,7 @@ class PreparationFailureTests(PreparationFixture):
             if len(count) == 1:
                 return write(descriptor, raw[:8])
             raise OSError("private error")
-        with mock.patch.object(handoff.os, "write", side_effect=partial):
+        with mock.patch.object(handoff_transport.os, "write", side_effect=partial):
             _, result, capture = self.run_injected(directory="reviews/partial")
         self.assertEqual(result["operation_status"], "succeeded")
         self.assertNotIn("review_requests", result["handoff"])
@@ -2101,15 +2102,15 @@ class PreparationFailureTests(PreparationFixture):
         capture.assert_called_once()
 
     def test_changed_packet_readback_and_preflight_ignore_failure_do_not_dispatch(self):
-        read = handoff._read
+        read = handoff_transport.read_bounded
         def changed(path, limit):
             return read(path, limit) + b" "
-        with mock.patch.object(handoff, "_read", side_effect=changed):
+        with mock.patch.object(handoff_transport, "read_bounded", side_effect=changed):
             _, result, capture = self.run_injected()
         self.assertEqual(result["operation_status"], "succeeded")
         self.assertNotIn("review_requests", result["handoff"])
         self.assertTrue((self.root / "reviews/g1/packet.json").exists())
-        with mock.patch.object(handoff, "_ignored", side_effect=handoff.HandoffError("handoff_ignore_required")):
+        with mock.patch.object(handoff_transport, "require_ignored", side_effect=handoff_transport.HandoffError("handoff_ignore_required")):
             _, result, capture = self.run_injected(directory="reviews/denied")
         self.assertEqual(result["operation_status"], "not_started")
         capture.assert_not_called()
@@ -2119,7 +2120,7 @@ class PreparationFailureTests(PreparationFixture):
             started()
             return 0, encode(self.response)
         with mock.patch.object(preparation, "_capture", side_effect=captured) as capture, \
-             mock.patch.object(handoff, "_emit", return_value=False):
+             mock.patch.object(handoff_transport, "emit_json", return_value=False):
             result = handoff.main(["prepare", "--repo", str(self.root), "--directory", "reviews/g1",
                 "target", self.task_id, "--kind", "diff_fingerprint", "--revision", FINGERPRINT])
         self.assertEqual(result, 1)

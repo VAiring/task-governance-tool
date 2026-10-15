@@ -303,7 +303,7 @@ submit preserves raw bytes, adds only array framing, and sends them once to
 the sibling public CLI through binary stdin. No LLM-built collector, alternate
 writer or producer-specific adapter is required. The registration transaction
 and current-state revalidation stay here and are not replaced by saved-file checks.
-`submission` owns the complete parent-side confirmation from retained paths;
+`review_handoff_originals.submission` owns the complete parent-side confirmation from retained paths;
 no separately retrieved child acknowledgement or model-visible original is a
 prerequisite. Its Packet/original/sidecar validation and final byte comparisons
 finish before the one registration dispatch. `main` tracks that boundary only
@@ -313,9 +313,16 @@ dispatch has the fixed `handoff_input_missing` code. The child still owns its
 atomic outcome, complete decision response and post-commit output failures;
 its stdout/exit pass through without capture, reinterpretation or replay.
 This introduces no persisted confirmation record, alternate writer or mode.
-This module also owns the pure complete-Packet validator shared by prepare,
-read, save and submit. It retains the existing stored-constraints compatibility,
-without repairing incomplete input or introducing another Packet contract.
+`review_handoff_transport.py` owns the shared physical-file operations and pure
+complete-Packet/result validation consumed by prepare, read, save, submit,
+continuation, finalization, material delivery and optional workspaces. Its named
+internal interface separates structural `relative_path` from ignored physical
+`checked_path`, bounded reads from exclusive writes, and parent observations
+from replacement checks. Stored-constraints compatibility and the existing
+result decoder/normalizer remain unchanged. It owns neither live admission nor
+registration; consumers import identity, domain errors and privacy validation
+from their actual owners rather than through the CLI entry. The entry retains
+argument parsing, admitted save orchestration and the one public CLI dispatch.
 
 `review_handoff_preparation.py` owns the same helper's explicit `prepare`
 operation: three fixed sibling CLI invocations, bounded binary response capture,
@@ -544,9 +551,12 @@ unknown caller/execution retains no locator and no inferred binding.
 
 `review_handoff_scope.py` owns structural project resolution and sanitized error
 codes shared by preparation, continuation and finalization. It grants no route,
-ownership or effect admission. `review_handoff_originals.py` owns physical
-original reading, source inventory and composition; neither orchestrator imports
-the other for these common operations.
+ownership or effect admission. `review_handoff_originals.py` owns complete-batch
+submission confirmation, physical original reading, source inventory and
+composition using `review_handoff_transport.py` for shared path, file and pure
+Packet/result checks. Structural preparation/finalization/request records use
+only its lexical path validation, without adding filesystem or ignore queries.
+Neither orchestrator imports the other or the CLI entry for these common operations.
 
 `continuation_transition_repository.py` owns a separate schema-one intent at
 `continuation-<sha256(parent UUID:Task ID)>-<target generation>.sqlite`. It bridges

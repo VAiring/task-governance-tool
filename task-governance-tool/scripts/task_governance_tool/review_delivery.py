@@ -6,7 +6,7 @@ import codecs
 import hashlib
 import json
 
-from task_governance_tool import review_handoff as files
+from task_governance_tool import review_handoff_transport as files
 from task_governance_tool.git_snapshot import GitSnapshotError, run_git_stream
 
 TEXT_BUDGET = 5000
@@ -35,7 +35,7 @@ def fits(value):
 
 def require_fit(value):
     if not fits(value):
-        files._fail("review_delivery_budget_exceeded")
+        files.fail("review_delivery_budget_exceeded")
     return value
 
 
@@ -59,9 +59,9 @@ def range_result(raw, identity, command, *, start=0, expected=None, limit=TEXT_B
 
 def _range(window, total, digest, identity, command, *, start, expected, limit, metadata=None):
     if start < 0 or start > total or (expected is not None and expected != digest):
-        files._fail("review_material_range_mismatch")
+        files.fail("review_material_range_mismatch")
     if window and window[0] & 0xC0 == 0x80:
-        files._fail("handoff_invalid_arguments")
+        files.fail("handoff_invalid_arguments")
     end = min(limit, len(window))
     while end < len(window) and window[end] & 0xC0 == 0x80:
         end -= 1
@@ -76,7 +76,7 @@ def _range(window, total, digest, identity, command, *, start, expected, limit, 
         if fits(result):
             return result
         if end == 0:
-            files._fail("review_delivery_budget_exceeded")
+            files.fail("review_delivery_budget_exceeded")
         end -= 1
         while end and window[end] & 0xC0 == 0x80:
             end -= 1
@@ -85,7 +85,7 @@ def _range(window, total, digest, identity, command, *, start, expected, limit, 
 def git_range(repo, arguments, identity, command, *, start=0, expected=None):
     """Hash/validate a full immutable stream, retaining only the requested window."""
     if start < 0:
-        files._fail("handoff_invalid_arguments")
+        files.fail("handoff_invalid_arguments")
     total = 0
     digest = hashlib.sha256()
     decoder = codecs.getincrementaldecoder("utf-8")("strict")
@@ -109,8 +109,8 @@ def git_range(repo, arguments, identity, command, *, start=0, expected=None):
         run_git_stream(repo, arguments, consume)
         decoder.decode(b"", final=True)
     except GitSnapshotError:
-        files._fail("review_material_unavailable")
+        files.fail("review_material_unavailable")
     except (UnicodeError, _NonText):
-        files._fail("review_material_non_text")
+        files.fail("review_material_non_text")
     return _range(window, total, digest.hexdigest(), identity, command,
                   start=start, expected=expected, limit=TEXT_BUDGET)

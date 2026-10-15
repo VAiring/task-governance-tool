@@ -39,7 +39,7 @@ class FinalizationContinuationTests(unittest.TestCase):
         payload = json.loads((self.repo / packet_path).read_bytes())["result_template"]
         payload["receipts"] = [receipt("a" if actor == A else "b")]
         raw = encode(payload)
-        with mock.patch.object(files, "capture_caller_identity", return_value=CallerIdentity(actor)), \
+        with mock.patch("task_governance_tool.session_identity.capture_caller_identity", return_value=CallerIdentity(actor)), \
              mock.patch("task_governance_tool.usage_lifecycle.register_reviewer"):
             self.assertEqual(files.save(self.repo, packet_path, output, raw)["status"], "saved")
         return raw

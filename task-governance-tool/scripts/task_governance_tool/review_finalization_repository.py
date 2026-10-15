@@ -114,13 +114,13 @@ class FinalizationRecord:
                 raise ValueError
             if type(self.original_locations) is not tuple or len(self.original_locations) > 8:
                 raise ValueError
-            from .review_handoff import _relative_path
+            from .review_handoff_transport import relative_path
             from pathlib import Path
             for location in self.original_locations:
                 if type(location) is not tuple or len(location) != 2:
                     raise ValueError
                 for value in location:
-                    _relative_path(Path("structural-root"), value)
+                    relative_path(Path("structural-root"), value)
             if continued and self.registration != "not_started" and len(self.original_locations) != len(self.originals):
                 raise ValueError
         except Exception:

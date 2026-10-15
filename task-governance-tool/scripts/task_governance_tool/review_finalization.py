@@ -10,7 +10,8 @@ from contextlib import closing
 from dataclasses import replace
 from hashlib import sha256
 
-from . import cli, review_handoff as files, review_finalization_git as git
+from . import review_handoff_originals as original_files
+from . import cli, review_handoff_transport as files, review_finalization_git as git
 from .review_handoff_scope import resolve, error_code as _code
 from .review_finalization_repository import FinalizationRecord, FinalizationRepository, registered_originals, registered_findings
 from .review_finalization_basis import FinalizationBasis, require_no_findings
@@ -71,8 +72,8 @@ class Core:
 def prepare_intent(repo, packet_path, result_paths, caller):
     """Called only by the explicit integrated preparation operation."""
     actual = caller.require()
-    packet_raw = files._read(files._path(repo, packet_path), files.PACKET_LIMIT)
-    packet = files._packet(packet_raw)
+    packet_raw = files.read_bounded(files.checked_path(repo, packet_path), files.PACKET_LIMIT)
+    packet = files.decode_packet(packet_raw)
     task_id = packet["task"]["task_id"]
     observed = wait_basis(repo, task_id=task_id)
     if not observed["ok"]:
@@ -89,7 +90,7 @@ def prepare_intent(repo, packet_path, result_paths, caller):
                           expected_branch=expected_branch)
     resolution = resolve(repo, writing=True)
     intent = FinalizationRecord(basis, packet_path, sha256(packet_raw).hexdigest(), tuple(result_paths), expected_branch)
-    if wait_basis(repo, task_id=task_id) != observed or files._read(files._path(repo, packet_path), files.PACKET_LIMIT) != packet_raw:
+    if wait_basis(repo, task_id=task_id) != observed or files.read_bounded(files.checked_path(repo, packet_path), files.PACKET_LIMIT) != packet_raw:
         _fail("review_target_mismatch")
     paths = resolution.paths
     if not path_lexically_exists(paths.review_wait_root):
@@ -356,13 +357,13 @@ class Finalizer:
                 except Exception as exc:
                     available.append({"path": path, "status": "unavailable", "code": _code(exc)})
             return available
-        raw = files._read(files._path(self.repo, record.packet_path), files.PACKET_LIMIT)
+        raw = files.read_bounded(files.checked_path(self.repo, record.packet_path), files.PACKET_LIMIT)
         if sha256(raw).hexdigest() != record.packet_digest:
             _fail("review_packet_stale")
         available = []
         for index, path in enumerate(record.result_paths):
             try:
-                _, framed = files.submission(self.repo, record.packet_path, [path])
+                _, framed = original_files.submission(self.repo, record.packet_path, [path])
                 decoded = decode_submission(framed)
                 if decoded.bindings is None or len(decoded.bindings) != 1:
                     _fail("invalid_review_evidence")
@@ -402,7 +403,7 @@ class Finalizer:
         history = TransitionRepository(paths.review_continuation_store(self.caller.require(), self.task_id,
             record.basis["target_generation"])).read()
         transition = next((row for row in history if row.continuation_id == record.continuation_id), None)
-        raw = files._read(files._path(self.repo, record.packet_path), files.PACKET_LIMIT)
+        raw = files.read_bounded(files.checked_path(self.repo, record.packet_path), files.PACKET_LIMIT)
         if (transition is None or transition.phase not in ("prepared", "published")
             or (transition.packet_path, transition.packet_digest, transition.result_paths) !=
                (record.packet_path, record.packet_digest, record.result_paths)
@@ -452,7 +453,7 @@ class Finalizer:
                 if record.continuation_id is not None:
                     submission, locations, retained = self._continuation_submission(record)
                 else:
-                    _, framed = files.submission(self.repo, record.packet_path, record.result_paths)
+                    _, framed = original_files.submission(self.repo, record.packet_path, record.result_paths)
                     submission = decode_submission(framed)
                     locations, retained = (), ()
                 if submission.bindings is None:

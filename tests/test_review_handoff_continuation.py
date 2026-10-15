@@ -10,12 +10,13 @@ from unittest import mock
 from tests import test_review_preparation as fixtures
 from tests.test_review_continuation import A, B
 from tests import test_review_continuation_registration as registration
+from task_governance_tool import review_handoff_transport as handoff_transport
 from task_governance_tool import review_handoff as files, review_results, storage, review_session_transport as transport
 from task_governance_tool.review_continuation_handoff_repository import read_state
 from task_governance_tool.session_identity import CallerIdentity
 from contextlib import closing
 from task_governance_tool import review_handoff_continuation as continuation
-from task_governance_tool.review_handoff import HandoffError
+from task_governance_tool.review_handoff_transport import HandoffError
 from task_governance_tool.review_wait_runtime.continuation_transition_repository import TransitionRepository
 
 
@@ -25,7 +26,7 @@ class ContinuationEntryTests(unittest.TestCase):
         response = dict(ok=False, handoff=dict(status="unavailable"), errors=[])
         with mock.patch.object(continuation, "continue_reviews", return_value=response) as invoked, \
              mock.patch.object(files.sys, "stdin", SimpleNamespace(buffer=io.BytesIO(raw))), \
-             mock.patch.object(files, "_emit", return_value=True):
+             mock.patch.object(handoff_transport, "emit_json", return_value=True):
             result = files.main(["continue", "--repo", ".", "--task-id", "tg_task_" + "1" * 16,
                 "--target-generation", "1", "--directory", "reviews/new"])
         self.assertEqual(result, 1)
@@ -99,7 +100,7 @@ class HandoffContinuationTests(unittest.TestCase):
 
     def save_actor(self, actor, packet_path, output):
         raw = registration.ContinuationRegistrationTests.original(self, actor)[0]
-        with mock.patch.object(files, "capture_caller_identity", return_value=CallerIdentity(actor)), \
+        with mock.patch("task_governance_tool.session_identity.capture_caller_identity", return_value=CallerIdentity(actor)), \
              mock.patch("task_governance_tool.usage_lifecycle.register_reviewer"):
             result = files.save(self.repo, packet_path, output, raw)
         self.assertEqual(result["status"], "saved")

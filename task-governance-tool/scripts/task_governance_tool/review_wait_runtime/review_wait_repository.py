@@ -69,12 +69,17 @@ def _path(value: Path) -> Path:
         raise RepositoryError("state_path_invalid") from None
 
 
-def _file(path: Path, *, maximum: int = MAX_DATABASE_BYTES) -> os.stat_result:
+def _file(path: Path, *, maximum: int = MAX_DATABASE_BYTES,
+          missing_ok: bool = False) -> os.stat_result | None:
     try:
         details = path.lstat()
         if not _physical(details) or not 0 <= details.st_size <= maximum:
             raise RepositoryError("state_unreadable")
         return details
+    except FileNotFoundError:
+        if missing_ok:
+            return None
+        raise RepositoryError("state_unreadable") from None
     except OSError:
         raise RepositoryError("state_unreadable") from None
 
@@ -230,8 +235,9 @@ class ReviewWaitRepository:
             if not _missing(Path(str(self.path) + suffix)):
                 raise RepositoryError("unsupported_journal_mode")
         journal = Path(str(self.path) + "-journal")
-        if not _missing(journal):
-            _file(journal)
+        # A concurrent rollback-mode commit may remove this optional sibling.
+        # Inspect it once; required files and non-missing errors stay closed.
+        _file(journal, missing_ok=True)
         try:
             with self.path.open("rb") as stream:
                 if _identity(os.fstat(stream.fileno())) != _identity(details):

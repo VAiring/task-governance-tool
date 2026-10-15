@@ -359,6 +359,42 @@ with repo.writer() as lease:
         self.assert_code("unsupported_journal_mode", repo.read)
         self.assertEqual(b"private-sentinel", sidecar.read_bytes())
 
+    def test_rollback_journal_removed_after_stat_does_not_reject_reader(self):
+        repo = self.create()
+        journal = Path(str(self.path) + "-journal")
+        journal.write_bytes(b"")
+        real_lstat = Path.lstat
+        observed = []
+
+        def commit_after_stat(path, *args, **kwargs):
+            details = real_lstat(path, *args, **kwargs)
+            if path == journal and not observed:
+                observed.append(True)
+                # A concurrent rollback-mode writer deletes its journal at
+                # commit, after preflight observes it but before SQLite opens.
+                journal.unlink()
+            return details
+
+        with patch.object(Path, "lstat", commit_after_stat):
+            self.assertEqual(repo.read().revision, 1)
+        self.assertEqual(observed, [True])
+
+    def test_rollback_journal_nonphysical_or_unreadable_is_still_rejected(self):
+        repo = self.create()
+        journal = Path(str(self.path) + "-journal")
+        journal.mkdir()
+        self.assert_code("state_unreadable", repo.read)
+        journal.rmdir()
+        real_lstat = Path.lstat
+
+        def deny_journal(path, *args, **kwargs):
+            if path == journal:
+                raise PermissionError("private-path-details")
+            return real_lstat(path, *args, **kwargs)
+
+        with patch.object(Path, "lstat", deny_journal):
+            self.assert_code("state_unreadable", repo.read)
+
     def test_missing_lock_does_not_get_recreated(self):
         repo = self.create()
         repo.lock_path.unlink()

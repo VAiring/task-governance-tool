@@ -977,7 +977,11 @@ deletion, finalization and one send across same-project/same-parent workers,
 without serializing unrelated parents or claiming atomic host compare-and-send.
 
 `request_repository` reuses the wait repository's physical/no-link admission,
-bounded SQLite connection and OS writer lease. Its separate schema version one
+bounded SQLite connection and OS writer lease. It uses a single physical
+observation for an optional rollback-journal sibling,
+which SQLite may remove on concurrent commit. Missing that optional sibling is
+allowed; required files, nonphysical entries and other inspection errors still
+fail closed. This adds no transaction or effect retry. Its separate schema version one
 has exact `schema_history` and `attempts` tables. Each bounded canonical JSON row
 retains basis digest (excluding generated wait ID), actual original parent turn,
 sorted reviewer UUID/turn pairs, returned automation ID or null, and phase

@@ -282,7 +282,9 @@ class ManagedContinuationTests(unittest.TestCase):
 
     def registered_active_wait(self):
         self.prepared()
-        self.assertEqual(self.call()["status"], "waiting")
+        started = self.call()
+        self.assertTrue(started.get("ok"), started)
+        self.assertEqual(started.get("status"), "waiting", started)
         self.validate.return_value = SimpleNamespace(state="registered", selected=(SimpleNamespace(session_id=fixtures.CHILD),))
         original = self.factory
         self.admission_child_reads = []

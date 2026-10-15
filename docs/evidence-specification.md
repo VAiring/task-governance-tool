@@ -301,6 +301,13 @@ omissions. Pre-v19 cycle absence is represented only by an index
 edits a prior cycle or Bundle; later completion creates a new one and historical
 Bundles never satisfy a current gate.
 
+For continuation-based completion, these same immutable assertions and
+References also participate in the
+[complete continuation graph](#conditional-continuation-evidence). Validation
+checks the full history and resolution relations; splitting the implementation
+into [responsibility checks](evidence-design.md#continuation-graph-validation)
+does not permit a partial graph or change its canonical bytes or rejection rules.
+
 <a id="canonical-evidence-bundle-and-index-formats"></a>
 
 ## Canonical Evidence Bundle And Index Formats

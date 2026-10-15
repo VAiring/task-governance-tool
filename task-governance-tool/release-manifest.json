@@ -59,7 +59,7 @@
     "scripts/task_governance_tool/project_scope.py": "sha256:57c88d0320acd1db4d330e20037a4b7f2605deaeb9714657a4c328c045c94863",
     "scripts/task_governance_tool/relocation.py": "sha256:1a7217f5d244b0a545fed7964ae3f72388daa1bd59c14623c2898993a08f3f07",
     "scripts/task_governance_tool/review_continuation.py": "sha256:c31d8688be7dc0ac6195dc3625191a40414576092b484bda4026061522aab8b2",
-    "scripts/task_governance_tool/review_continuation_evidence.py": "sha256:dc67b5088e787510efc2584a1a14a7d4e19e4fbee7a3eacd87cc106463195eaa",
+    "scripts/task_governance_tool/review_continuation_evidence.py": "sha256:5c53dc1eca54345efa424f061519754b15e32adbb8b0bb0a629e17f4320a8e15",
     "scripts/task_governance_tool/review_continuation_evidence_repository.py": "sha256:b728a473fd39a84450d324122e3444d28c5cc7ece59ac89aaf41fdcb71dbd69c",
     "scripts/task_governance_tool/review_continuation_handoff_repository.py": "sha256:2968fbdb867c45225dd131e36d19c0736d0753c175d0a7fdf73f1a4f19062ca4",
     "scripts/task_governance_tool/review_continuation_registration_repository.py": "sha256:37f20a016cc8945d379eac3235bbd4c9aff69da25c7a3344fdebc05aae5c1fe7",

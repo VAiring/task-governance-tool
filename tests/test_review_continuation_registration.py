@@ -465,5 +465,180 @@ class ContinuationRegistrationTests(unittest.TestCase):
                     reader.ValidatedEvidenceSource("native_bundle", basis, envelope)
 
 
+class ContinuationEvidenceValidationTests(unittest.TestCase):
+    """Responsibility boundaries and their public whole-graph composition."""
+
+    setUp = ContinuationRegistrationTests.setUp
+    original = ContinuationRegistrationTests.original
+    register = ContinuationRegistrationTests.register
+    prepare = ContinuationRegistrationTests.prepare
+    resolve = ContinuationRegistrationTests.resolve
+    freeze = ContinuationRegistrationTests.freeze
+    reassess_with_finding = ContinuationRegistrationTests.reassess_with_finding
+    native_continuation_artifact = ContinuationRegistrationTests.native_continuation_artifact
+
+    def settled_graph(self):
+        old, finding, successor = self.reassess_with_finding()
+        self.resolve(finding, successor=successor)
+        return self.freeze()
+
+    def assert_rejected_by_boundary_and_graph(self, graph, boundary):
+        # Unit checks name the responsibility; public checks prevent a missed
+        # helper invocation from silently accepting the same bad evidence.
+        for validate in (boundary, frozen.validate_graph):
+            before = canonical_json_bytes(graph)
+            with self.assertRaises((EvidenceLedgerError, values.TaskValidationError)) as caught:
+                validate(graph)
+            self.assertEqual(caught.exception.code, "evidence_ledger_inconsistent")
+            self.assertEqual(canonical_json_bytes(graph), before)
+
+    @staticmethod
+    def receipt_parts(graph):
+        rows = frozen._index_graph(graph)
+        history = frozen._validate_history(rows)
+        references = frozen._index_references(rows)
+        return rows, history, references
+
+    def test_closed_row_indexes_reject_missing_duplicate_unsorted_and_wrong_types(self):
+        graph = self.settled_graph()
+        mutations = {
+            "boolean version": lambda value: value.update(version=True),
+            "non-list receipts": lambda value: value.update(receipts={}),
+            "duplicate receipt": lambda value: value["receipts"].append(value["receipts"][0]),
+            "unsorted receipts": lambda value: value["receipts"].reverse(),
+            "missing judgment": lambda value: value["judgments"].pop(),
+            "extra field": lambda value: value["receipts"][0].update(extra=None),
+        }
+        for name, mutate in mutations.items():
+            with self.subTest(name=name):
+                changed = copy.deepcopy(graph)
+                mutate(changed)
+                self.assert_rejected_by_boundary_and_graph(changed, frozen._index_graph)
+
+    def test_history_rejects_wrong_ownership_sequence_and_pending_rounds(self):
+        graph = self.settled_graph()
+        changes = (
+            dict(task_id=ident("tg_task_", 900)), dict(target_generation=2),
+            dict(sequence=True), dict(sequence=2),
+            dict(predecessor_id=graph["continuations"][0]["continuation_id"]),
+            dict(state="prepared"), dict(selection_digest="0" * 64),
+        )
+        for change in changes:
+            with self.subTest(change=change):
+                changed = copy.deepcopy(graph)
+                changed["continuations"][0].update(change)
+                self.assert_rejected_by_boundary_and_graph(changed,
+                    lambda value: frozen._validate_history(frozen._index_graph(value)))
+
+    def test_receipt_reference_and_session_checks_reject_substitution(self):
+        graph = self.settled_graph()
+        selected_id = graph["reviewers"][0]["result_receipt_id"]
+
+        def session_change(value):
+            next(row for row in value["session_bindings"] if row["review_receipt_id"] == selected_id).update(session_id=B)
+
+        mutations = {
+            "missing Receipt reference": lambda value: value["references"].__setitem__(slice(None),
+                [row for row in value["references"] if row["source_kind"] != "review_receipt"]),
+            "changed assertion": lambda value: value["receipts"][0].update(summary="Unattested replacement"),
+            "boolean revision": lambda value: value["receipts"][0].update(judgment_revision=True),
+            "wrong actual session": session_change,
+            "boolean reference version": lambda value: [row.update(producer_version=True)
+                for row in value["references"] if row["source_kind"] == "review_receipt"],
+        }
+        for name, mutate in mutations.items():
+            with self.subTest(name=name):
+                changed = copy.deepcopy(graph)
+                mutate(changed)
+                self.assert_rejected_by_boundary_and_graph(changed,
+                    lambda value: frozen._validate_receipts(*self.receipt_parts(value)))
+
+    def test_effective_heads_are_recomputed_from_complete_judgment_ancestry(self):
+        graph = self.settled_graph()
+        old = next(row["review_receipt_id"] for row in graph["receipts"] if row["verdict"] == "changes_requested")
+
+        def validate_heads(value):
+            rows, history, references = self.receipt_parts(value)
+            nodes = frozen._validate_receipts(rows, history, references)
+            return frozen._validate_effective_heads(nodes, history.quality, value["effective_receipt_ids"])
+
+        for heads in ([], [old], list(reversed(graph["effective_receipt_ids"])), tuple(graph["effective_receipt_ids"])):
+            with self.subTest(heads=heads):
+                changed = copy.deepcopy(graph)
+                changed["effective_receipt_ids"] = heads
+                # Tuple is deliberately outside canonical JSON's input types.
+                if type(heads) is tuple:
+                    with self.assertRaises(EvidenceLedgerError):
+                        validate_heads(changed)
+                    with self.assertRaises(EvidenceLedgerError):
+                        frozen.validate_graph(changed)
+                else:
+                    self.assert_rejected_by_boundary_and_graph(changed, validate_heads)
+
+    def test_finding_assertions_and_explicit_resolution_links_are_separate_gates(self):
+        graph = self.settled_graph()
+        changed = copy.deepcopy(graph)
+        changed["findings"][0]["summary"] = "Changed original finding"
+
+        def validate_findings(value):
+            rows, history, references = self.receipt_parts(value)
+            frozen._validate_findings(rows, history.basis, references)
+
+        self.assert_rejected_by_boundary_and_graph(changed, validate_findings)
+
+        def validate_resolutions(value):
+            rows, history, references = self.receipt_parts(value)
+            frozen._validate_resolutions(rows, frozen._validate_receipts(rows, history, references))
+
+        other = next(row["review_receipt_id"] for row in graph["receipts"] if row["reviewer_key"] == "b")
+        mutations = {
+            "resolved without link": lambda value: value.update(resolutions=[]),
+            "wrong successor ancestry": lambda value: value["resolutions"][0].update(successor_receipt_id=other),
+            "altered resolution seal": lambda value: value["resolutions"][0].update(resolution_digest="0" * 64),
+            "unresolved finding": lambda value: value["findings"][0].update(status="open", resolution_summary="", resolved_at=None),
+        }
+        for name, mutate in mutations.items():
+            with self.subTest(name=name):
+                changed = copy.deepcopy(graph)
+                mutate(changed)
+                self.assert_rejected_by_boundary_and_graph(changed, validate_resolutions)
+
+    def test_bundle_matching_preserves_exact_bytes_and_independent_reader_boundary(self):
+        from tests.evidence_reader_oracle import ValidatedEvidenceSource
+
+        artifact, source_basis = self.native_continuation_artifact()
+        bundle = artifact.payload
+        graph = bundle["review_continuation_basis"]
+        before_graph, before_bundle = canonical_json_bytes(graph), canonical_json_bytes(bundle)
+        self.assertIs(frozen.validate_graph(graph, bundle=bundle), graph)
+        self.assertEqual(frozen.decode_graph_json(before_graph.decode()), graph)
+        with self.assertRaises(EvidenceLedgerError):
+            frozen.decode_graph_json(json.dumps(graph, indent=2))
+        with mock.patch.object(frozen, "validate_graph", side_effect=AssertionError("producer validator called by oracle")):
+            self.assertEqual(ValidatedEvidenceSource("native_bundle", source_basis, artifact.envelope).source["payload"], bundle)
+        self.assertEqual(canonical_json_bytes(graph), before_graph)
+        self.assertEqual(canonical_json_bytes(bundle), before_bundle)
+
+        rows, history, references = self.receipt_parts(graph)
+        nodes = frozen._validate_receipts(rows, history, references)
+        effective = frozen._validate_effective_heads(nodes, history.quality, graph["effective_receipt_ids"])
+        for name, mutate, boundary in (
+            ("wrong Task", lambda value: value["task"].update(task_id=ident("tg_task_", 900)),
+             lambda value: frozen._match_bundle_basis(value, history.basis)),
+            ("wrong target generation", lambda value: value["target"].update(generation=2),
+             lambda value: frozen._match_bundle_basis(value, history.basis)),
+            ("wrong selection order", lambda value: value["review_receipts"].reverse(),
+             lambda value: frozen._match_bundle_receipts(value, rows, history, effective)),
+            ("wrong selected assertion", lambda value: value["review_receipts"][0].update(summary="Changed bundle assertion"),
+             lambda value: frozen._match_bundle_receipts(value, rows, history, effective)),
+        ):
+            with self.subTest(name=name):
+                changed = copy.deepcopy(bundle)
+                mutate(changed)
+                for validate in (boundary, lambda value: frozen.validate_graph(graph, bundle=value)):
+                    with self.assertRaises(EvidenceLedgerError):
+                        validate(changed)
+
+
 if __name__ == "__main__":
     unittest.main()

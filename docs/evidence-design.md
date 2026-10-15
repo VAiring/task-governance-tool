@@ -303,6 +303,26 @@ is never consumed. SQLite stays authoritative and setup regenerates only
 one-way; no JSON is imported. Failure or contention keeps the last-good index,
 records the fixed maintenance outcome, and does not undo the business mutation.
 
+## Continuation Graph Validation
+
+`review_continuation_evidence.validate_graph` composes pure checks in dependency
+order: closed row indexes; complete continuation history and reviewer results;
+retained-original ancestry, metadata and consumption; optional Bundle basis;
+Receipt assertions, References and session bindings; recomputed effective heads;
+Finding assertions and explicit resolution links; then optional Bundle Receipt
+selection and the existing canonical size bound. Error normalization remains at
+this shared entry. Each helper consumes only call-local row indexes or validated
+history and judgment values; it does not mutate, cache or persist the graph.
+
+The same entry serves sealing, projection and historical reentry. The repository
+still acquires source rows and compares frozen assertions with native evidence
+in its caller's transaction, as described by
+[continuation storage](database-design.md#conditional-review-continuation-storage).
+The pure check alone proves declared consistency, not current authority.
+`ContinuationEvidenceValidationTests` in the registration suite and the
+retirement suite exercise responsibility boundaries and the whole entry with
+the same corruptions; snapshot and native Bundle tests cover their composition.
+
 <a id="test-only-independent-evidence-reader"></a>
 
 ## Test-Only Independent Evidence Reader
@@ -323,6 +343,12 @@ semantic validator. They may reuse the existing bounded physical-filesystem
 primitives in `state_paths.py`; independence does not require duplicate I/O or
 Windows infrastructure. They have no Analyzer descriptor, packet, report,
 outbox, process, model, or publication responsibility.
+
+`tests/review_continuation_evidence_oracle.py` separately interprets the
+[complete continuation graph](evidence-specification.md#conditional-continuation-evidence).
+It recomputes ancestry, retained originals, assertion/Reference digests,
+resolution links and selected heads without calling the product graph helpers.
+Refactoring the product validator does not transfer that independent obligation.
 
 The independent reader implements the same
 [captured-policy accounting rules](evidence-specification.md#canonical-evidence-bundle-and-index-formats)

@@ -115,6 +115,12 @@ Projection reuses this frozen value; later continuation/resolution rows never
 change an earlier sealed graph. Whole Bundle size still uses the existing
 16,777,216-byte limit including every payload member and envelope.
 
+Pure [graph validation](evidence-design.md#continuation-graph-validation) is
+separate from source acquisition and frozen-to-native comparison in
+`review_continuation_evidence_repository.py`. Its internal responsibility
+checks share only call-local values; they acquire no connection, retain no
+validation across reads, and do not change the caller's transaction ownership.
+
 ## Migration Sequence
 
 `schema_migrations` is contiguous, named, and validated with required objects

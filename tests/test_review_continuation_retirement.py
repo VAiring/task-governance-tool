@@ -162,6 +162,59 @@ class ContinuationRetirementTests(unittest.TestCase):
             with self.subTest(changes=changes), self.assertRaises(Exception):
                 frozen.validate_graph(wrong)
 
+    def test_history_and_retained_original_boundaries_reject_missing_or_forked_lineage(self):
+        import copy
+        from task_governance_tool.evidence_ledger import canonical_json_bytes, EvidenceLedgerError
+
+        old = self.initial()
+        saved = self.original(A, continued=old)
+        capture = self.capture(old, saved)
+        current = self.retire(old, (old.selected[1],), (capture,))
+        self.register([saved, self.original(B, continued=current)], current, (capture,))
+        graph = self.freeze()
+
+        def history(value):
+            frozen._validate_history(frozen._index_graph(value))
+
+        def originals(value):
+            rows = frozen._index_graph(value)
+            frozen._validate_retained_originals(rows, frozen._validate_history(rows))
+
+        def current_row(value):
+            return next(row for row in value["continuations"] if row["continuation_id"] == current.continuation_id)
+
+        def fork(value):
+            row = copy.deepcopy(current_row(value))
+            row["continuation_id"] = ident("tg_review_continuation_", 900)
+            value["continuations"].append(row)
+            value["continuations"].sort(key=lambda item: item["continuation_id"])
+            # Preserve the cloned round's selection so rejection exercises
+            # the fork/round identity, not an unrelated empty selection.
+            choices = [dict(choice, continuation_id=row["continuation_id"])
+                for choice in value["reviewers"] if choice["continuation_id"] == current.continuation_id]
+            value["reviewers"].extend(choices)
+            value["reviewers"].sort(key=lambda item: (item["continuation_id"], item["session_id"]))
+
+        for name, mutate, boundary in (
+            ("missing predecessor", lambda value: current_row(value).update(predecessor_id=ident("tg_review_continuation_", 901)), history),
+            ("cycle", lambda value: current_row(value).update(predecessor_id=current.continuation_id), history),
+            ("fork", fork, history),
+            ("lost consumption", lambda value: value.update(retained_originals=[]), originals),
+            ("altered original", lambda value: value["retained_originals"][0].update(original_result_digest="d" * 64), originals),
+            ("altered metadata", lambda value: value["retained_originals"][0].update(metadata_digest="d" * 64), originals),
+            ("unconsumed original", lambda value: value["retained_originals"][0].update(result_receipt_id=None), originals),
+            ("wrong ancestor", lambda value: value["retained_originals"][0].update(prior_continuation_id=current.continuation_id), originals),
+        ):
+            with self.subTest(name=name):
+                changed = copy.deepcopy(graph)
+                mutate(changed)
+                before = canonical_json_bytes(changed)
+                for validate in (boundary, frozen.validate_graph):
+                    with self.assertRaises(EvidenceLedgerError) as caught:
+                        validate(changed)
+                    self.assertEqual(caught.exception.code, "evidence_ledger_inconsistent")
+                    self.assertEqual(canonical_json_bytes(changed), before)
+
     def test_native_seal_and_independent_reader_keep_superseded_and_consumed_original(self):
         old = self.initial()
         saved = self.original(A, continued=old)

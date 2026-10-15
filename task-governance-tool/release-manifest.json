@@ -120,7 +120,7 @@
     "scripts/task_governance_tool/schema_completion_cycles.py": "sha256:dacd46b254a6194d27dd7eafb9a48ba707f95962291822f4630f3a0297924f32",
     "scripts/task_governance_tool/schema_completion_evidence_bundles.py": "sha256:737615857c18b6ac55887109af7ce84260b35a8a3523791c0f34937c2aa890a5",
     "scripts/task_governance_tool/schema_evidence_ledger.py": "sha256:032e7aab46e8d9bc083b14919f87f559c241179ca250fefee0c22ab82982d799",
-    "scripts/task_governance_tool/schema_review_continuation.py": "sha256:8a428ffc93fe1d6a92c80457a4a81c0610d00ed1cbaa1443d3c70f876e599f61",
+    "scripts/task_governance_tool/schema_review_continuation.py": "sha256:47f186a1ee98eb8b23f21718f58cd3e3ec6d7135fec9936a75bbb8af856cc7e0",
     "scripts/task_governance_tool/schema_review_sessions.py": "sha256:e7fcd5c88e5de3484abbe3db556c1e2617a3399e34e5183bdef1bd2fcbecac04",
     "scripts/task_governance_tool/schema_session_slot.py": "sha256:9f0c91e0e54de1d5eb3c6b36e9b1b7bdded7e0651cae182d22092391dbf254af",
     "scripts/task_governance_tool/schema_session_slot_reacquisition.py": "sha256:0a2adfc18929c7e9b5f7ba810666c1361f7b3f7ee8025bc3dbb6dfffadc9b358",

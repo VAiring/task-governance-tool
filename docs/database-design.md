@@ -25,6 +25,12 @@ admission; `review_continuation_repository.py` owns transaction-bound relation
 reads/writes; `review_continuation.py` owns pure values, closed decoding and graph
 selection. Neither feature module opens SQLite or commits a caller transaction.
 
+Physical admission constructs the expected owned-object name inventory once per
+validation and shares it between fingerprint and attachment checks. Migration
+similarly shares one inventory within its attachment scan. This is call-local
+reuse of code-defined names, not cached database validation: each invocation
+still reads and validates the current schema and every relevant attachment.
+
 The closed core relations are:
 
 | Table | Columns and constraints |

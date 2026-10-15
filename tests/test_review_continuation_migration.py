@@ -7,6 +7,7 @@ import tempfile
 import unittest
 from contextlib import closing
 from pathlib import Path
+from unittest.mock import patch
 
 from tests.verification_receipt_test_support import initialize, add_task, seed_current_review_evidence, completion
 from tests.test_m23s_schema22_migration import _source_copy, _logical_snapshot, _add_unrelated_objects
@@ -97,6 +98,20 @@ class ContinuationMigrationDeltaTests(unittest.TestCase):
             connection.execute("PRAGMA foreign_keys=ON")
             self.assertEqual(_logical_snapshot(connection), before)
             validate_predecessor(connection)
+
+    def test_owned_inventory_work_is_bounded_and_schema_drift_is_rechecked(self):
+        with _source_copy(self.db) as connection:
+            self.begin(connection)
+            schema._apply_delta_locked(connection)
+            connection.commit()
+            with patch.object(schema, "relation_statements", wraps=schema.relation_statements) as definitions:
+                schema.validate_owned_contract(connection)
+                self.assertEqual(definitions.call_count, 1)
+                connection.execute("CREATE INDEX unexpected_attachment ON review_receipts(task_id)")
+                connection.commit()
+                with self.assertRaises(storage.StorageError):
+                    schema.validate_owned_contract(connection)
+                self.assertEqual(definitions.call_count, 2)
 
     def test_unowned_rebuilt_table_attachment_fails_before_delta(self):
         for table in schema.REBUILT_TABLES:

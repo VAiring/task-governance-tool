@@ -283,10 +283,13 @@ def _owned_names() -> set[str]:
 
 
 def owned_fingerprint(connection: sqlite3.Connection) -> str:
+    return _owned_fingerprint(connection, _owned_names())
+
+
+def _owned_fingerprint(connection: sqlite3.Connection, names: set[str]) -> str:
     from . import storage as s
-    names = sorted(_owned_names())
     rows = connection.execute("SELECT type,name,tbl_name,sql FROM sqlite_master WHERE name IN "
-        "(SELECT value FROM json_each(?)) AND sql IS NOT NULL ORDER BY type,name", (json.dumps(names),)).fetchall()
+        "(SELECT value FROM json_each(?)) AND sql IS NOT NULL ORDER BY type,name", (json.dumps(sorted(names)),)).fetchall()
     if len(rows) != len(names):
         raise s._unreadable_project_state()
     payload = [(row["type"], row["name"], row["tbl_name"], s._normalized_schema_sql(row["sql"])) for row in rows]
@@ -296,13 +299,14 @@ def owned_fingerprint(connection: sqlite3.Connection) -> str:
 
 def validate_owned_contract(connection: sqlite3.Connection) -> None:
     from . import storage as s
-    if owned_fingerprint(connection) != OWNED_FINGERPRINT:
+    names = _owned_names()
+    if _owned_fingerprint(connection, names) != OWNED_FINGERPRINT:
         raise s._unreadable_project_state()
     for table in REBUILT_TABLES:
         if connection.execute("SELECT 1 FROM sqlite_master WHERE name=? COLLATE NOCASE", (table + "_v28",)).fetchone():
             raise s._unreadable_project_state()
         for row in connection.execute("SELECT name FROM sqlite_master WHERE tbl_name=? AND type IN ('index','trigger') AND sql IS NOT NULL", (table,)):
-            if row["name"] not in _owned_names():
+            if row["name"] not in names:
                 raise s._unreadable_project_state()
 
 
@@ -316,9 +320,10 @@ def _apply_delta_locked(connection: sqlite3.Connection) -> None:
     if not connection.in_transaction or connection.execute("PRAGMA foreign_keys").fetchone()[0] != 0:
         raise s.StorageError("internal_error", "review continuation migration requires its admitted writer")
     attachments = []
+    names = _owned_names()
     for table in REBUILT_TABLES:
         attached = connection.execute("SELECT type,name,tbl_name,sql FROM sqlite_master WHERE tbl_name=? AND type IN ('index','trigger') AND sql IS NOT NULL ORDER BY type,name", (table,)).fetchall()
-        if any(row["name"] not in _owned_names() for row in attached):
+        if any(row["name"] not in names for row in attached):
             raise s._unreadable_project_state()
         attachments.extend(attached)
     replacements = {"review_receipts": receipt_statement(), "completion_evidence_bundles": bundle_statement(),

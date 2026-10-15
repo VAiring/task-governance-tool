@@ -92,6 +92,30 @@ discard them to use that verdict. This outcome is valid collected evidence but
 does not contribute a qualifying PASS and prevents automatic completion.
 It is not converted to content NG or invalid JSON.
 
+The first answer protocol is for an explicitly assigned independent review.
+Its fixed request states in ordinary review language: returning `pass` or
+`changes_requested` attests that the responder actually performed the assigned
+review in an independent reviewer role, rather than as the implementer doing
+self-review. If the responder cannot affirm that role or sufficient review,
+it must return `unable_to_review` and explain the limitation. No extra JSON key
+or Taskgov-specific declaration is added. The protocol definition and exact
+request digest bind this meaning to the answer; a verdict is not interpreted
+without that request. An empty `checks` array does not supply evidence of work.
+
+Registration may map an answer to a qualifying independent judgment only when
+the admitted request explicitly carries that protocol/attestation definition,
+the actual response is bound to its assigned reviewer and turn, and the answer
+expressly supplies `pass`. `changes_requested` carries the same role attestation
+but cannot qualify as a PASS. Unknown role, missing request/attestation binding,
+an unable result, or a known conflicting structural role binding never becomes
+an independent PASS from the assignment label alone. Reject a conflicting
+structural binding and return it for parent judgment. Do not build a free-text
+role classifier: any contradiction explicitly identified by the parent or
+reviewer requires correction at its source, not rewriting the answer. The
+claim remains reviewer-attested, not host-proven independence. Tier-0 waivers
+and approved self-review fallback retain their existing explicit routes and
+approval conditions; this protocol does not silently classify or replace them.
+
 The ordinary request asks for JSON alone. The decoder also accepts the whole
 answer wrapped in exactly one `json` fenced block, with only JSON whitespace
 outside it, an opening fence on its own line and a closing fence on its own
@@ -255,6 +279,27 @@ If the complete answer cannot be obtained, report collection failure to the
 parent. Deadline expiry does not prove a send failed or permit another send.
 No new normal-path parent polling is introduced.
 
+This deadline policy applies only when a matching live wait occurrence already
+owns observation. With waiting OFF, unavailable, or explicitly parent-managed,
+there is no implied deadline or background observer. Normal complete bound
+answers can still be collected and manually submitted. The existing parent
+continuation is the recovery owner: when it processes the ended reviews, it may
+make one bounded exact-answer recovery call per missing slot and then apply the
+same decoder/publication path. If that call cannot establish a complete answer,
+it returns collection failure immediately to the parent; it does not schedule
+polls, create a worker/timer, or wait for a nonexistent occurrence. Host calls
+retain their bounded transport timeout, not a new review deadline.
+
+Automatic format correction is admitted only when a matching live occurrence
+can durably own the send, exact follow-up turn and original deadline. Without
+that observation owner, do not dispatch a correction: return the format failure
+to the parent with the fixed reason `correction_observer_unavailable`. If an
+already-dispatched correction loses that owner, preserve its known or unknown
+send effect and return control to the parent as unresolved; never retry or
+declare failed merely because observation ended. Explicit later recovery uses
+the retained exact identities and the existing supported recovery route.
+Parent manual registration never bypasses missing, invalid or unresolved slots.
+
 ## One Format Correction
 
 Only a complete, bounded, privacy-admissible `format_invalid` result for an
@@ -329,7 +374,9 @@ unknown, not applicable, and legacy absence remain distinguishable.
 Collection provenance has its own producer/version and a structural association
 assurance distinct from v1 attestation. It proves neither competence,
 independence, completeness nor truth. The parent still declares the independent
-assignment through the current authority route; session alias checks remain.
+assignment through the current authority route; the bound answer supplies the
+explicit role attestation defined above. Assignment alone cannot supply it,
+and session alias checks remain.
 The new digest domain includes project/Task/Receipt/target, source identity,
 original and payload digests, protocol, and all versioned semantic metadata.
 No v1 digest is recalculated under v2 rules.
@@ -427,9 +474,11 @@ readers, helper guidance, Setup selection, and package tests together.
 | Decoder | Bare JSON and sole json fence; Japanese/quotes/newlines; all five fields; duplicate/unknown keys; invalid Unicode/numbers/types; privacy precedence |
 | Limits | Original/event/escaped envelope/batch limits independently; 1–8 slots and combined 64 Findings; no truncation, partial registration or demand to remove Findings |
 | Binding | Parent differs from reviewer; wrong session/turn/project/Task/Contract/execution/target; alias; answer-before-binding race; stale generation |
+| Role attestation | Explicit independent pass/NG under the fixed request; unknown role becomes unable; missing attestation or conflicting structural role never becomes qualifying PASS from assignment; fallback approval remains separate |
 | Publication | Exact fenced original; payload digest; exclusive paths; readback mismatch; interruption before/after create/reference commit; retained partial residue |
 | Idempotency | Repeated hook and fallback same bytes; conflicting bytes for same turn; delayed initial answer after correction; restart without duplicate side effects |
 | Correction | One same-reviewer request; unavailable/failed/unknown send; accepted but unbound turn; invalid resubmission; original deadline; sibling preservation; finalizer race |
+| Workerless paths | Waiting OFF/unavailable/parent-managed accepts normal complete answers; one exact missing-answer recovery call then parent failure; no observer means no automatic correction send; lost owner preserves unresolved accepted/unknown send |
 | Outcomes | PASS, content NG, unable, format, privacy, capacity and collection failure remain distinct; two PASS plus an effective unable blocks the shared gate, manual completion and automatic completion until legitimate supersession |
 | Provenance | Actual vs requested model/Skill/method; unknown vs explicit empty; no v1 fabrication; mixed v0/v1/v2 history and independent Reader validation |
 | Registration | Whole-batch rollback; concurrent target/owner/Contract change; lost post-commit output; exact public reconciliation before retry |

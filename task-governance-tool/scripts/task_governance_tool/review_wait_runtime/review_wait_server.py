@@ -107,20 +107,29 @@ def catalogue() -> list[dict]:
 
 def _call(params: object, service) -> dict:
     operations = getattr(service, "operations", _OPERATIONS)
+    aliases = getattr(service, "tool_operations", {})
     if (not isinstance(params, dict) or set(params) != {"name", "arguments", "_meta"}
             or not isinstance(params["name"], str)
-            or not params["name"].startswith("review_wait_")
-            or params["name"][12:] not in operations
             or not isinstance(params["arguments"], dict)
             or not isinstance(params["_meta"], dict)):
         raise protocol.RelayError()
-    operation = params["name"][12:]
-    if set(params["arguments"]) != set(operations[operation]):
+    operation = aliases.get(params["name"])
+    if operation is None:
+        if not params["name"].startswith("review_wait_"):
+            raise protocol.RelayError()
+        operation = params["name"][12:]
+        if operation in aliases.values():
+            raise protocol.RelayError()  # No accidental second public spelling.
+    if operation not in operations:
+        raise protocol.RelayError()
+    shapes = getattr(service, "argument_shapes", {}).get(operation, (set(operations[operation]),))
+    if set(params["arguments"]) not in shapes:
         raise protocol.RelayError()
     result = service.handle(operation, params["arguments"], params["_meta"])
     # Only this internal service's closed summary is serialized, never raw host
     # results, caller metadata, repository snapshots or exception details.
-    return {"content": [{"type": "text", "text": protocol._encode(result).decode().rstrip("\n")}],
+    output = {} if operation == "answer_collect" and "event" in params["arguments"] and result.get("ok") is True else result
+    return {"content": [{"type": "text", "text": protocol._encode(output).decode().rstrip("\n")}],
             "isError": result.get("ok") is not True}
 
 

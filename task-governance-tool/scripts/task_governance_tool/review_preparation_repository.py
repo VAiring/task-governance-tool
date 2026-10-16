@@ -37,16 +37,32 @@ class PreparationRecord:
     result_paths: tuple[str, ...]
     finalization_store: str | None
     created_at: str
+    collection_bases: tuple[dict, ...] = ()
 
     def __post_init__(self):
         try:
-            if type(self.version) is not int or self.version != 1 or not values.identifier(self.preparation_id, "tg_review_preparation_"):
+            if type(self.version) is not int or self.version not in (1, 2) or not values.identifier(self.preparation_id, "tg_review_preparation_"):
                 raise ValueError
             object.__setattr__(self, "basis", values.validate_basis(self.basis))
             if self.route not in ("manual", "integrated") or not values._digest(self.packet_digest):
                 raise ValueError
             if type(self.result_paths) is not tuple or not 1 <= len(self.result_paths) <= 8:
                 raise ValueError
+            if type(self.collection_bases) is not tuple:
+                raise ValueError
+            if self.version == 1:
+                if self.collection_bases:
+                    raise ValueError
+            else:
+                from .review_answer_values import validate_basis
+                if len(self.collection_bases) != len(self.result_paths):
+                    raise ValueError
+                collection = tuple(validate_basis(row) for row in self.collection_bases)
+                if any(row["preparation_id"] != self.preparation_id or row["execution_basis"] != self.basis
+                    or row["route"] != self.route or row["continuation"] is not None
+                    or row["packet_digest"] != "sha256:" + self.packet_digest for row in collection):
+                    raise ValueError
+                object.__setattr__(self, "collection_bases", collection)
             paths = (self.packet_path, *self.result_paths)
             if len(set(paths)) != len(paths):
                 raise ValueError
@@ -72,7 +88,10 @@ def _encode(record):
     if type(record) is not PreparationRecord:
         raise RepositoryError("invalid_snapshot")
     record = PreparationRecord(**asdict(record))
-    raw = json.dumps(asdict(record), ensure_ascii=True, sort_keys=True, separators=(",", ":"), allow_nan=False)
+    value = asdict(record)
+    if record.version == 1:
+        del value["collection_bases"]  # Preserve exact issued legacy bytes.
+    raw = json.dumps(value, ensure_ascii=True, sort_keys=True, separators=(",", ":"), allow_nan=False)
     if len(raw.encode("utf-8")) > RECORD_LIMIT:
         raise RepositoryError("invalid_snapshot")
     return raw
@@ -81,9 +100,18 @@ def _encode(record):
 def _decode(raw):
     try:
         value = json.loads(raw)
-        if type(value) is not dict or set(value) != set(PreparationRecord.__dataclass_fields__):
+        if type(value) is not dict:
+            raise ValueError
+        expected = set(PreparationRecord.__dataclass_fields__)
+        if value.get("version") == 1:
+            expected.remove("collection_bases")
+        if set(value) != expected:
             raise ValueError
         value["result_paths"] = tuple(value["result_paths"])
+        if "collection_bases" in value:
+            if type(value["collection_bases"]) is not list:
+                raise ValueError
+            value["collection_bases"] = tuple(value["collection_bases"])
         record = PreparationRecord(**value)
         if _encode(record) != raw:
             raise ValueError

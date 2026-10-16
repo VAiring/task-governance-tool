@@ -27,7 +27,7 @@ and the separately authorized history/routing transition preserves outstanding
 conditions. Live Task progress and evidence remain in the public CLI.
 
 The [concrete host baseline](#concrete-host-admission-baseline) records the
-current unresolved prerequisites. The [closed collection values](#closed-collection-values-and-records)
+bounded public adapter and its remaining activation checks. The [closed collection values](#closed-collection-values-and-records)
 define the conditional input, persistence and evidence contract; they are not
 an activation declaration.
 
@@ -150,6 +150,14 @@ observation eligible only for the bounded exact-answer recovery below.
 No clipped prefix becomes a valid answer. A dedicated reply transport can
 reuse complete originals without exposing them as model-visible hook output.
 
+Throughout this design, a complete answer means the observed public final-answer
+item for the exactly bound reviewer/turn/message, with no communication failure,
+explicit truncation or other explicit missing-content indication, within the
+existing bounds. It does not prove that the provider omitted no invisible
+content. The user-approved guarantee does not require that unobservable proof.
+JSON, shape, privacy and capacity validation still precede acceptance; a complete
+observation is not a valid review, a saved original or Task completion.
+
 | Failure class | Meaning and action |
 |---|---|
 | `format_invalid` | Complete bounded answer has invalid JSON/shape/type/enum or required content; one source correction may be attempted |
@@ -181,8 +189,10 @@ supply or enlarge them.
 After actual dispatch, bind each allocated slot to the actual returned reviewer
 session and the intended review turn using the supported host observations.
 Slot labels or supplied JSON IDs do not prove that association. The supported
-dispatch/observation adapter must identify a new or already-running turn
-unambiguously; if it cannot, admission fails closed. Do not choose whichever
+dispatch/observation adapter must identify the intended turn unambiguously;
+if it cannot, admission fails closed. The current supported admission is the
+new dedicated child's first dispatch defined below; reused children and
+`interacted` requests are unsupported. Do not choose whichever
 turn is latest later. A completed answer racing ahead of slot binding is not
 accepted under guessed identity; after binding, only the exact recovery route
 may recover it. Preparation alone launches no reviewer.
@@ -213,8 +223,9 @@ not a stable API. A hook event or its active turn ID alone therefore does not
 prove the exact review turn, complete final answer, successful terminal state,
 or independent review.
 
-The first supported host adapter must demonstrate exact parent/child/turn
-binding and complete final-answer retrieval using public host surfaces.
+The supported host adapter must demonstrate exact parent/child/turn binding
+and observed complete final-answer retrieval using public host surfaces,
+under the bounded admission and completeness meaning defined here.
 Do not read arbitrary transcript files or private host databases to fill gaps.
 Existing terminal observation remains authoritative for reviewer termination.
 `stop_hook_active` is not a durable correction counter or success flag.
@@ -225,6 +236,15 @@ parent. Neither API availability in this assistant nor a hook configuration
 file proves that the installed product can address/resume the intended native
 reviewer. Same-reviewer MCP send, actual correction-turn linkage, restart
 recovery, and same-parent delivery are implementation activation gates.
+
+An already bound hook may recover its saved answer source when the genuine
+executor thread is supplied without executor-turn metadata, under the current
+[collected-answer host boundary](review-completion-specification.md#collected-answer-host-boundary).
+This does not select the latest answer or copy the event turn into executor
+metadata. Supplied malformed or conflicting identities remain rejected, and
+fresh initial binding still requires the dispatching parent's genuine turn.
+Connection, exact original publication and the host's hook result must be
+verified separately; a saved original alone does not prove a successful hook.
 
 Do not use hook `decision=block`, a hidden continuation prompt, or an additional
 timer as an unapproved substitute for the chosen MCP correction route.
@@ -283,6 +303,10 @@ summaries, tool output, a truncated preview or an arbitrary latest message.
 If the complete answer cannot be obtained, report collection failure to the
 parent. Deadline expiry does not prove a send failed or permit another send.
 No new normal-path parent polling is introduced.
+An unavailable or undecidable result remains unresolved, never completed.
+The existing ten-minute wait check or parent resumption handles it through
+the existing bounded recovery rules, without resetting a deadline, replaying
+an unknown effect, or adding a timer, resident observer or proof-gathering loop.
 
 This deadline policy applies only when a matching live wait occurrence already
 owns observation. With waiting OFF, unavailable, or explicitly parent-managed,
@@ -329,8 +353,10 @@ The correction transition fences finalization while it is pending. Preserve
 the initial turn record and the explicit new-turn relation; do not overwrite
 the wait's original reviewer pair or globally disable turn-change detection.
 The worker observes the authorized correction turn for that slot only.
-Unexpected turns still invalidate an unregistered slot's active observation;
-this exception is not a general permission to follow the latest turn. A later
+Unexpected turns never supply a missing initial or correction binding. An
+already bound answer may still be recovered by its exact saved turn/message
+within the fixed retrieval window; wait/finalizer freshness and effect checks
+remain separate. This is not permission to follow the latest turn. A later
 unrelated turn does not invalidate an already registered, fully bound judgment
 retained under the existing same-basis continuation contract. Other valid
 answers for the unchanged basis remain retained.
@@ -478,7 +504,7 @@ readers, helper guidance, Setup selection, and package tests together.
 |---|---|
 | Decoder | Bare JSON and sole json fence; Japanese/quotes/newlines; all five fields; duplicate/unknown keys; invalid Unicode/numbers/types; privacy precedence |
 | Limits | Original/event/escaped envelope/batch limits independently; 1–8 slots and combined 64 Findings; no truncation, partial registration or demand to remove Findings |
-| Binding | Parent differs from reviewer; wrong session/turn/project/Task/Contract/execution/target; alias; answer-before-binding race; stale generation |
+| Binding | [Initial-turn admission](#initial-turn-admission): exact new-child dispatch; unique own first turn while running or already completed; inherited context excluded from own-turn enumeration; reject reuse/interacted, competing or unknown sends, multiple turns, further pages, inconsistent page metadata and identity/type mismatches; durable binding and restart; stale generation |
 | Role attestation | Explicit independent pass/NG under the fixed request; unknown role becomes unable; missing attestation or conflicting structural role never becomes qualifying PASS from assignment; fallback approval remains separate |
 | Publication | Exact fenced original; payload digest; exclusive paths; readback mismatch; interruption before/after create/reference commit; retained partial residue |
 | Idempotency | Repeated hook and fallback same bytes; conflicting bytes for same turn; delayed initial answer after correction; restart without duplicate side effects |
@@ -488,31 +514,35 @@ readers, helper guidance, Setup selection, and package tests together.
 | Provenance | Actual vs requested model/Skill/method; unknown vs explicit empty; no v1 fabrication; mixed v0/v1/v2 history and independent Reader validation |
 | Registration | Whole-batch rollback; concurrent target/owner/Contract change; lost post-commit output; exact public reconciliation before retry |
 | Compatibility | Old issued request completes; new request omits save; restart keeps protocol; unresolved legacy drainage defers removal; retained original/reassessment rules |
-| Host | Exact reviewer-turn binding and complete answer; direct MCP correction to native reviewer; durable correction turn; trusted hook absence; parent idle wake and restart |
+| Host | Exact reviewer-turn/message binding and observed complete final item; one two-turn read and window miss; communication/explicit truncation rejection; correction unsupported or exact durable correction turn; trusted hook absence; parent idle wake and restart |
 | Permissions | No setup/trust/Git authority from hook; no full transcripts, new timers, arbitrary paths or numerical-hook coupling |
 
 The host gate must name the actual Codex version, adapter, launch settings,
 verified public fields, original/correction-turn evidence and failure behavior.
-Mocks alone cannot satisfy it. Exact answer completeness and source binding are
-mandatory: if either is unsupported, do not activate the new route on that
-host; retain the existing supported route and report the capability limitation.
+Mocks alone cannot satisfy it. Observed answer completeness as defined above
+and exact source binding are mandatory: if either is unsupported, do not
+activate the new route on that host; retain the existing supported route and
+report the capability limitation.
 Correction addressability is a separately reported capability. A host that
 supports exact collection but cannot send/bind a correction can collect normal
 answers; a malformed answer follows the agreed format-failure path to the
 parent. Test that unavailable-correction path before activation. Neither case
 permits weaker identity checks or an invented transcript fallback.
 
-Before implementation begins, resolve the concrete supported host adapter and
-complete the closed v2 provenance/transport schema against that baseline.
-Those technical activation details remain explicit implementation prerequisites;
-the approved product decisions (five answer fields, one correction, unknown
+The bounded public adapter below and the closed v2 provenance/transport schema
+are the technical implementation baseline. Adoption of this revised contract
+after its required review permits implementation against that baseline; it
+does not assert that hooks or the runtime integration are enabled or verified.
+The remaining real-host integration checks are activation gates, not a demand
+to prove invisible provider omissions before implementation. The
+approved product decisions (five answer fields, one correction, unknown
 preservation, manual parent path, and answer-command-only removal) are fixed.
 Any change to those decisions requires new authority. No implementation Tasks,
 runtime changes, or further phase backlog are created by this document.
 
 ## Concrete Host Admission Baseline
 
-The inspected baseline is Windows Codex Desktop package `26.1007.9446.0`,
+The earlier inspected baseline is Windows Codex Desktop package `26.1007.9446.0`,
 bundled `codex-app-tools` directory version `0.1.6`, and its `server.mjs` SHA-256
 `064893183a9cc09953a1f69ed82dfb4299b4f7e1653a3507259deeb5abbb9617`.
 The separately installed command reports `codex-cli 0.160.0`; this is not proof
@@ -520,18 +550,51 @@ of the Desktop's embedded runtime version. These are inspection identities,
 not supported-version claims. A package directory version is also distinct
 from the server's self-reported MCP version (`0.1.0` in that source).
 
-The candidate adapter is `codex-app-tools-review-answer/1`, using the connected
-public `read_thread`/`wait_threads` surfaces and the dedicated SubagentStop
-event. Its current admission is **unavailable**. No host version is certified
-for this answer route by this document. The following distinctions prevent
-the subsequent implementation from treating a read probe as a passed gate:
+The concrete adapter is `codex-app-tools-review-answer/1`, using connected
+public `read_thread` for the bounded initial binding and answer recovery below,
+existing terminal observation, and the dedicated SubagentStop integration.
+The 2026-10-15 user-authorized investigation established public retrieval of a
+23,063-byte UTF-8 synthetic final answer (Japanese, quotes and newlines) from
+one new dedicated child. Its first turn was fixed while in progress; the final
+item had that same turn/message identity. The reported answer SHA-256 was
+`f86daaa0157c07612d7d7477b6a1cde37575a4b234ae135a09eaab6c09297037`.
+The parent independently re-read the same public turn/message and confirmed
+that hash. A single two-turn read also recovered it after a newer turn existed.
+These are observed sample facts, not a guarantee for unseen content or all hosts.
+
+Additional bounded observations on the same reported runtime established that
+the first child read can occur after completion: it still returned exactly one
+own turn with `hasMore=false` and null next cursor. Two new children launched
+with inherited parent context likewise exposed only their own turn through
+public `read_thread`; inherited parent turns were not part of that enumeration.
+A one-turn read of a child with two own turns returned `hasMore=true` and a
+non-null cursor, so a single returned turn did not establish a unique first
+turn. A separate observed `interacted` send entered an already running turn;
+it did not create a new turn. These observations support the admission rules
+below, not a guarantee for reused children or other host versions. Diagnostic
+log comparison was used only to check the public observation, not as a runtime
+source or a requirement to retain transcripts.
+
+The investigation reported runtime `0.162.0-alpha.17.2` and requested
+`gpt-6.1-sol` / `medium`; that runtime identity came from diagnostic source
+comparison, not a public field proving every reviewer's runtime or model use.
+Unobserved host metadata remains unknown. The diagnostic source comparison
+does not authorize transcript collection or a runtime fallback. No transcript,
+prompt or answer body is incorporated here. The inspected relay identity above
+still applies; the installed CLI and Desktop runtime identities remain distinct.
+
+Admission is bounded to the new dedicated child's initial dispatch, as defined
+below. This is a concrete implementation baseline under the approved observed
+completeness guarantee, not certification or activation of the hook integration.
+Reuse, `interacted` requests and correction dispatch are not admitted by this
+host evidence. The following distinctions remain controlling:
 
 | Surface | Established observation or documented contract | Missing required evidence |
 |---|---|---|
 | SubagentStop | Official fields identify an agent and an active turn and optionally carry its latest assistant message; common `session_id` belongs to the parent | The event does not document that its turn is the assigned child's review turn, that its message is the complete final answer, or that the child successfully terminated |
-| `read_thread` | The public input selects a thread and bounded recent turns/cursor, with `includeOutputs` and `maxOutputCharsPerItem`; a read of one known ended reviewer returned schema 1, exact thread/turn IDs, completed status and an `agentMessage.text` string | It has no exact-turn input or documented final-answer completeness contract; the observed short string does not prove large-answer fidelity or dispatch-to-child-turn correlation |
+| `read_thread` | Public reads returned exact thread/turn/message IDs, `phase=final_answer` and the 23,063-byte text; parent re-read confirmed identity/hash; one two-turn window recovered the bound answer despite a newer turn | No exact-turn input or proof of invisible provider omissions; window misses, communication failures, explicit truncation and ambiguous final items remain unavailable |
 | `wait_threads` | Existing adapter validates returned child/turn identity and terminal state | A latest-turn observation is not the original dispatch binding or complete answer |
-| Native agent dispatch | Actual returned handles and parent dispatch activity can establish the child; current wait adapter already rejects ambiguous aliases | The available dispatch return does not provide an admitted initial child-turn ID. A later newest turn cannot supply it by inference |
+| Native agent dispatch | Matching public parent `started` activity establishes the new child; a complete one-turn enumeration established its initial turn both before and after answer completion; observed inherited context was excluded from own-turn enumeration | Reused/interacted requests and ambiguous ownership of enumerated turns are not admitted; turn count alone cannot exclude a competing message within the same turn; a later latest turn cannot replace the fixed turn |
 | `send_message_to_thread` | Public tool accepts an authorized destination and prompt | Its schema does not promise native subagent addressability or the resulting exact correction-turn ID; this was not tested by a send |
 | App Server | Official `agentMessage` and `item/completed` describe finalized items and optional `phase`; public `turn/start` is a separate surface | Access from this connected product to that same Desktop-owned reviewer, exact source recovery and lifecycle continuity has not been established; launching another server is not a substitute |
 
@@ -539,21 +602,75 @@ Sources: [Hooks common fields](https://learn.chatgpt.com/docs/hooks#common-input
 [SubagentStop](https://learn.chatgpt.com/docs/hooks#subagentstop), and
 [App Server items](https://learn.chatgpt.com/docs/app-server#items) and
 [turn start](https://learn.chatgpt.com/docs/app-server#start-a-turn).
-The read-only probe retained no transcript, tool output or answer body in the
-repository. It observed an existing reviewer only; no new review, correction,
-hook, timer, trust or configuration was created. The installed server source
-is a dynamic public-tool relay, not an answer-specific implementation or a
+The earlier read-only probe observed an existing reviewer only. The later
+authorized investigation used a dedicated synthetic-answer child and one
+subsequent test request, not a product review or hook activation. Neither
+experiment certifies correction, idle-parent delivery or restart. The installed
+server source is a dynamic public-tool relay, not an answer-specific implementation or a
 contract for the Desktop's hidden implementation.
 
-Before enabling or starting the dependent integration, certify the adapter's
-two mandatory capabilities: exact dispatch-to-parent/child/turn binding, and
-complete final-answer retrieval. They remain unresolved on this baseline.
-Do not implement a guessed latest-turn fallback while awaiting that evidence.
-A future public adapter may satisfy them, but selecting a different host
-surface requires revisiting this baseline and its acceptance evidence first.
+Implementation uses the bounded initial binding and observed complete-answer
+retrieval demonstrated above. It must reject cases outside that admission,
+not invent a latest-turn fallback. Before runtime activation, verify the
+implemented adapter's failures, byte bounds, lost-hook recovery, existing wait
+and parent-resumption paths, idle delivery and restart on the actual host.
+Selecting a different host surface or broadening binding support requires
+revisiting this baseline and its acceptance evidence first.
 Correction send/binding is a separate optional capability: its absence returns
 `correction_observer_unavailable` or `correction_transport_unavailable` as
 appropriate and does not disable otherwise certified normal collection.
+
+### Initial Turn Admission
+
+The first binding is a structural association for one new dedicated reviewer,
+not selection of a plausible turn from an existing conversation. The adapter
+must establish all of the following before saving a `SlotBinding`:
+
+1. The saved basis, parent and dispatch describe the actual creation of that
+   dedicated child. A matching public parent `subAgentActivity` has exactly
+   that dispatch `id`, `kind=started`, and an `agentThreadId` agreeing with the
+   actual returned child identity under the existing handle/alias checks.
+   Missing or conflicting matches do not establish a child. Caller labels,
+   request prose, timestamps and parsed completion-event IDs are not substitutes.
+2. One bounded public child read uses `hostId=local`, `turnLimit=1` and no
+   cursor. Validate schema/version and exact types, the expected `thread.id`,
+   `kind=codex`, `hostId=local`, `page.order=newest_first`, integer `limit=1`,
+   Boolean `hasMore=false`, null `nextCursor`, and exactly one valid own turn.
+   Missing/inconsistent page metadata, extra turns or a continuation cursor
+   fail admission; do not paginate or pick the newest/oldest candidate.
+3. The adapter's verified enumeration describes the child's own turns. A new
+   child may inherit parent context when that adapter excludes inherited parent
+   turns from this enumeration, as observed on the baseline above. Context
+   inheritance is not reuse of the child. If own and inherited turns cannot be
+   distinguished by the supported host semantics, return unavailable rather
+   than infer ownership from text or read a transcript.
+4. From initial creation until durable binding, the dispatching flow issues no
+   additional request/message to that child. Any observed competing/interacted
+   request or unresolved send effect prevents admission, even if only one turn
+   is returned. This is bounded control of the flow's own dispatch and known
+   conflicts, not a claim to prove the absence of invisible external activity
+   or a reason to scan all history. A restarted flow that lost the required
+   pre-binding context cannot infer this condition from a one-turn page alone.
+
+The unique turn may already be completed when first observed; an earlier
+`inProgress` observation is unnecessary. Turn identity and terminal outcome
+remain separate: a failed or interrupted turn can be identified but cannot
+satisfy successful review completion. Persist the exact basis/parent/dispatch/
+child/turn binding before admitting an answer. An answer that arrived first
+uses the existing bounded exact-answer recovery after binding, not a saved
+unbound hook body.
+
+Restart with a durable binding validates and reuses those exact identities;
+it never repeats first-turn selection or replaces the turn with a newer one.
+Without a durable binding and the required dispatch context, return
+`collection_unavailable`. A later turn does not rewrite the binding. Exact old
+answer recovery, current wait/finalizer freshness and registered judgment reuse
+remain separate under [One Format Correction](#one-format-correction).
+
+Reused children and `interacted` requests cannot use this initial-binding rule,
+including a same-reviewer format-correction request. That separate capability
+still requires exact follow-up-turn linkage; its unavailable path remains
+mandatory and does not disable supported initial-answer collection.
 
 ### Public Adapter Boundary
 
@@ -565,19 +682,31 @@ when present. They neither traverse history to find a plausible answer nor
 retain provider envelopes.
 
 - Dispatch binding input is `{basis_digest, slot, dispatch_id}`; success is
-  `{parent_session_id, reviewer_session_id, initial_turn_id, source}`. The
-  public observation must bind the saved dispatch to all three identities.
-  A missing or ambiguous relation returns `collection_unavailable`; knowing
-  the parent or child alone cannot manufacture a successful result.
+  `{parent_session_id, reviewer_session_id, initial_turn_id, source}` only
+  under [Initial Turn Admission](#initial-turn-admission). A missing or
+  ambiguous relation returns `collection_unavailable`; knowing the parent or
+  child alone cannot manufacture a successful result. The existing latest-state
+  wait reader and handle resolver are not initial-turn admission by themselves:
+  their acceptance of later turns or `interacted` mappings must not weaken this
+  separate predicate.
 - Answer observation input is `{basis_digest, slot, attempt,
   reviewer_session_id, turn_id, expected_message_id}`. Session and turn must
   already match the admitted dispatch or correction binding. The expected
   message ID is null when no final item was observed, including lost-hook,
   answer-before-binding and workerless recovery. In that case this one bounded
-  exact-turn operation must identify exactly one complete final item and return
-  its ID; zero or ambiguous final items returns `collection_unavailable`.
+  exact-turn operation must identify exactly one observed complete final item
+  and return its ID; zero or ambiguous final items returns `collection_unavailable`.
   A non-null expected ID additionally requires exact equality. No latest-turn
   selection, history traversal or preliminary message-ID lookup is permitted.
+  The concrete public operation is one `read_thread` call for that child with
+  `hostId=local`, fixed `turnLimit=2`, `includeOutputs=false`,
+  `maxOutputCharsPerItem=256` and no cursor. Select only the saved turn ID within
+  that fixed window, then exactly one `agentMessage` with `phase=final_answer`;
+  never select the newest item by position. A known message ID must also match.
+  A turn outside that window is unknown/`collection_unavailable`, not permission
+  to paginate, widen the window or issue another lookup. The observed agent text
+  was not clipped by that output cap; this is not a promise about tool outputs
+  or other backends. Enforce the existing whole-response and answer bounds.
   Success is `{source_identity, answer_bytes, complete:true, terminal,
   answer_source, terminal_source}`. `source_identity` is exactly
   `{reviewer_session_id, turn_id, message_id}`, with non-null message ID;
@@ -585,11 +714,15 @@ retain provider envelopes.
   `answer_source.operation` is `answer_observation`; terminal source is null
   exactly for unknown, otherwise its operation is `terminal_observation`.
   Both observations bind the returned session/turn; answer observation does
-  not infer terminal state. Only an
-  actual complete final-answer item may provide `answer_bytes`; a summary,
-  tool response, concatenated commentary or clipped prefix never does.
+  not infer terminal state. Only an observed complete public final-answer item
+  may provide `answer_bytes`; a summary, tool response, concatenated commentary
+  or clipped prefix never does.
   Publication and terminal observation remain separate; registration requires
   `completed`. A changed source or multiple ambiguous final items fails closed.
+  `complete:true` means this bound public final item has no observed transport
+  failure or explicit missing/truncated-content indication. It asserts neither
+  invisible provider completeness nor semantic/JSON validity; the existing
+  decoder rejects invalid JSON, privacy failures and capacity excess separately.
 - Terminal-only observation input is `{basis_digest, slot, attempt,
   reviewer_session_id, turn_id}` and success is `{reviewer_session_id, turn_id,
   terminal, terminal_source}`, with the same terminal/source rules. It observes
@@ -609,9 +742,10 @@ retain provider envelopes.
 operation:"dispatch_binding"|"answer_observation"|"terminal_observation"|
 "correction_binding"}`. It is assigned by the certified adapter, never supplied
 by the reviewer or copied from hook `model`. These source labels describe
-structural observations, not authentication. There is currently no admitted
-producer for them. The API must drop unrelated message and reasoning content
-before returning its closed result. An oversized or incomplete provider result
+structural observations, not authentication. Only the implemented, reviewed
+adapter may produce them under the bounded admission above; this document
+does not activate that producer. The API must drop unrelated message and
+reasoning content before returning its closed result. An oversized or incomplete provider result
 returns `collection_unavailable`; it never reaches the JSON decoder as a
 complete malformed answer.
 
@@ -1019,6 +1153,24 @@ retained exact operation, complete inventory and all source digests. A caller
 must separately establish non-commit/settled effects before any other recovery;
 an absent read alone never resets dispatched/unknown to not_started.
 
+The current [registration recovery contract](review-completion-specification.md#exact-collected-registration-inspection)
+distinguishes an outer finalization reservation from actual source dispatch.
+Its complete-source proof may establish that registration was never issued.
+For dispatched/unknown sources, a distinct fresh proof holds every exact source
+lease through the existing writer transaction and confirms settled current-state
+effects, with no dispatch, source, Receipt or continuation residue eligible for
+adoption. The request and earlier diagnostic are not proof; the same writer
+rechecks the current basis and all predicates before registration. Neither
+proof treats snapshot absence or a generic database error as rollback, resets
+source intent, or claims historical non-commit across arbitrary restoration.
+
+The same current owner defines the conditional `registration_observation` on
+retained `finalize --check`: exact saved selectors, public native inventory and
+complete per-slot source phase/digest relations under existing finalization and
+source leases. This is a bounded read-only diagnostic, never a rollback proof,
+replay permit or state repair. Missing/invalid/busy observations are sanitized;
+normal successful finalization adds no inspection call.
+
 The normal successful registration response remains sufficient; this lookup is
 an explicit failure-recovery operation, not a new normal-loop prerequisite.
 It reports structural registration facts, never review truth, verification or
@@ -1056,7 +1208,7 @@ same-reviewer reassessment. No new override or implicit Finding resolution exist
 | [Original transport](review-completion-design.md#structured-result-registration), `review_handoff_transport.py`, `review_handoff_originals.py`, preparation/finalization repositories | Shared physical checks and two confirmations; immutable request protocol; initial/correction attempts kept distinct; existing finalizer consumes exact originals without a second finalizer |
 | [Evidence provenance](evidence-specification.md#versioned-review-provenance-and-bundle-boundary), `review_provenance.py`, ledger/projection and [independent Reader](evidence-design.md#test-only-independent-evidence-reader) | Explicit v2 dispatch and digest, complete checks/limitations and all Findings; references/bundles carry new assurance/producer without upgrading attestation; old v0/v1/v2/v3 Bundle bytes/digests remain exact |
 | [Persistence](database-specification.md#current-schema-v28-persistence-contract), [migration design](database-design.md#migration-sequence), schema/admission/recovery/Viewer validators | Transactional predecessor migration, rollback/reentry, exact old rows and sealed bytes preserved; no synthesized provenance or actual-use claims; independent Reader rejects recomputed corrupt graphs, not only bad hashes |
-| [Setup choice](setup-state-specification.md#optional-feature-selection), hook definitions and review-wait host adapter | Separately selected answer retention/correction permission and host trust; numerical hook choice cannot enable it; unresolved host capability keeps route unavailable; no ordinary-command config writes |
+| [Setup choice](setup-state-specification.md#optional-feature-selection), hook definitions and review-wait host adapter | Separately selected answer retention/correction permission and host trust; numerical hook choice cannot enable it; runtime route stays unavailable until implementation and activation gates pass; unsupported binding/correction remains unavailable; no ordinary-command config writes |
 | [Current wait](review-completion-specification.md#host-owned-review-waiting) and continuation composition | Bind each correction to one slot and original deadline, retain siblings; no-worker normal collection/manual registration; one exact recovery then failure, no automatic correction without its observer; unknown effects never replayed |
 | Skill/helper guidance and release manifest | Five-field final answer only for admitted new requests; old answer-save route remains until known drainage; read/material/workspace and parent submit retained; package and document checks agree |
 
@@ -1083,14 +1235,21 @@ Receipt window, after target change, and with absent/partial/conflicting source
 relations; none may trigger a blind replay.
 Restart must recover the exact protocol/source/effect state;
 it cannot manufacture missing bindings. Actual host certification additionally
-needs a known dispatch-to-initial-turn relation, large/escaped/Japanese complete
-answers, a lost-hook exact recovery, unrelated newer turns, optional correction
+needs the bounded new-child dispatch-to-initial-turn relation, large/escaped/Japanese
+observed complete answers, explicit truncation/communication failure rejection,
+one fixed two-turn recovery and window miss, a lost-hook exact recovery,
+unrelated newer turns, optional correction
 addressability or its explicit unavailable path, idle parent delivery and
 restart. Record actual Desktop/runtime/plugin versions and launch settings for
 each observation; mock tests satisfy only the deterministic contract.
 
-The documentation prerequisite can report the negative host-admission result
-honestly. Its completion does not satisfy the dependent integration's start
-gate: that gate remains closed until the two mandatory capabilities above are
-established through the same supported public adapter and reviewed contract.
+The bounded host evidence supports implementation under this revised,
+reviewed contract; it does not certify a running collector. The absence of an
+exact-turn public parameter or a proof of invisible provider omissions does
+not by itself prohibit that implementation. Unknown/unrecoverable collection
+still prevents registration/completion and returns to the existing ten-minute
+check or parent resumption under the original recovery/effect rules. Hook,
+Setup/trust, real-host integration verification and ordinary Task completion
+gates remain separate; no new timer, resident monitoring or heavy proof duty
+is introduced.
 

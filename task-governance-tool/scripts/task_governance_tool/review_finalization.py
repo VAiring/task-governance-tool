@@ -49,9 +49,15 @@ class Core:
     def read(self, task_id):
         return _result(cli.handle_task_show(self.context("task.show", task_id=task_id)))
 
-    def register(self, task_id, submission, *, basis):
+    def collection_registration(self, task_id, submission):
+        return _result(cli.handle_task_show(self.context("task.show", task_id=task_id, audit=True,
+            collection_preparation=submission.preparation_id,
+            collection_submission=submission.submission_digest)))["collection_registration"]
+
+    def register(self, task_id, submission, *, basis, registration_recovery=None):
         context = self.context("review.result.add", task_id=task_id, user_approved_reviewers=[])
-        return self._maintain(context, cli.handle_review_command(context, submission=submission, finalization_basis=basis))
+        return self._maintain(context, cli.handle_review_command(context, submission=submission,
+            finalization_basis=basis, registration_recovery=registration_recovery))
 
     def complete(self, task_id, candidate, *, basis, check=False):
         context = self.context("task.complete", task_id=task_id, check=check,
@@ -341,6 +347,10 @@ class Finalizer:
             return  # Numerical availability is never a Task or send gate.
 
     def _originals(self, record):
+        from .review_answer_finalization import prepared_reports
+        prepared = prepared_reports(self, record)
+        if prepared is not None:
+            return prepared
         if record.continuation_id is not None:
             from .review_handoff_originals import read_original
             available = []
@@ -409,8 +419,9 @@ class Finalizer:
                (record.packet_path, record.packet_digest, record.result_paths)
             or sha256(raw).hexdigest() != record.packet_digest):
             _fail("review_packet_stale")
-        framed, sources, retained = compose_inventory(self.repo, root, current, state, read_sources(self.repo, root, history),
-            record.packet_path, record.result_paths)
+        framed, sources, retained = compose_inventory(self.repo, root, current, state,
+            read_sources(self.repo, root, history, resolution=self.resolution),
+            record.packet_path, record.result_paths, resolution=self.resolution)
         return decode_submission(framed), tuple((source.packet_path, source.result_path) for source in sources), retained
 
     def execute(self, *, check=False, guard=lambda observe: None):
@@ -464,18 +475,29 @@ class Finalizer:
                     _fail("finalization_reviewer_mismatch")
                 if record.originals and record.originals != originals:
                     _fail("handoff_file_changed")
-                if record.registration == "not_started":
-                    record = self.journal.advance(lease, registration="dispatching", originals=originals,
-                        **({"original_locations": locations, "retained_receipt_ids": retained} if record.continuation_id else {}))
-                ids = [item["review_receipt_id"] for item in state["review_evidence"]["current_receipts"]]
-                found = registered_originals(self.resolution.target, record, ids)
-                if not found:
+                from .review_answer_transport import CollectedSubmission
+                if type(submission) is CollectedSubmission:
+                    # Read-only admission failure is not a writer dispatch.
                     guarded(require_success=False)
                     self._match(record, self.core.read(self.task_id))
-                    self.core.register(self.task_id, submission, basis=FinalizationBasis.from_record(record))
-                    state = self.core.read(self.task_id)
+                dispatched = record.registration != "not_started"
+                if not dispatched:
+                    record = self.journal.advance(lease, registration="dispatching", originals=originals,
+                        **({"original_locations": locations, "retained_receipt_ids": retained} if record.continuation_id else {}))
+                if type(submission) is CollectedSubmission:
+                    from .review_answer_finalization import registered_ids
+                    found = registered_ids(self.core, self.task_id, submission,
+                        basis=FinalizationBasis.from_record(record), dispatched=dispatched)
+                else:
                     ids = [item["review_receipt_id"] for item in state["review_evidence"]["current_receipts"]]
                     found = registered_originals(self.resolution.target, record, ids)
+                    if not found:
+                        guarded(require_success=False)
+                        self._match(record, self.core.read(self.task_id))
+                        self.core.register(self.task_id, submission, basis=FinalizationBasis.from_record(record))
+                        state = self.core.read(self.task_id)
+                        ids = [item["review_receipt_id"] for item in state["review_evidence"]["current_receipts"]]
+                        found = registered_originals(self.resolution.target, record, ids)
                 if len(found) != len(record.originals):
                     _fail("finalization_registration_unknown")
                 record = self.journal.advance(lease, registration="succeeded", receipt_ids=found)
@@ -488,6 +510,9 @@ class Finalizer:
             self._require_reviewer_history(record)
             require_no_findings(evidence)
             if not evidence["gate"]["satisfied"]:
+                if (not evidence["counts"]["changes_requested_current_generation"]
+                    and evidence["counts"].get("unable_current_generation", 0)):
+                    _fail("review_unable")
                 _fail("review_required")
             if not state["verification_evidence"]["gate"]["satisfied"]:
                 _fail(state["verification_evidence"]["gate"].get("blocking_code") or "verification_required")
@@ -546,6 +571,11 @@ class Finalizer:
         record = self.journal.read()
         result = report(record, state, available, error, gate)
         result["maintenance_warnings"] = self.core.maintenance_warnings
+        if check and record.registration == "dispatching":
+            from .review_answer_finalization import registration_observation
+            observed = registration_observation(self, record)
+            if observed is not None:
+                result["registration_observation"] = observed
         try:
             ids = [item["review_receipt_id"] for item in state["review_evidence"]["current_receipts"]] if state else []
             actual = registered_originals(self.resolution.target, record, ids) if record.originals and state else ()

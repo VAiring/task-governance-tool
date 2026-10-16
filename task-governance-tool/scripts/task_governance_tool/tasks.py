@@ -2805,7 +2805,7 @@ def _seal_native_completion_locked(
         completion_cycle_id=completion_identity.completion_cycle_id,
         cycle_ordinal=completion_identity.saved_cycle_ordinal,
         source_schema_version=bundle_basis.source_schema_version,
-        bundle_version=3 if bundle_basis.review_continuation_basis is not None else 2,
+        bundle_version=4 if bundle_basis.source_schema_version >= 30 else 3 if bundle_basis.review_continuation_basis is not None else 2,
         contract_revision=cycle.contract_revision,
         authority_snapshot_id=(
             completion_binding.authority_snapshot_id

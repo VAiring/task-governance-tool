@@ -10,6 +10,7 @@ from .evidence_ledger import (EvidenceLedgerError, EvidenceSource, TargetCapture
                              build_evidence_reference, canonical_json_bytes, domain_digest)
 from .review_session_repository import ReviewSessionBinding
 from .task_values import TaskValidationError, validate_text
+from .review_answer import AnswerError
 
 
 GRAPH_KEYS = {"version", "continuations", "reviewers", "retained_originals", "judgments", "resolutions",
@@ -99,6 +100,7 @@ class _GraphRows:
     sessions: dict[tuple[str, ...], dict]
     references: dict[tuple[str, ...], dict]
     findings: dict[tuple[str, ...], dict]
+    collected: tuple[dict, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -109,8 +111,17 @@ class _History:
 
 
 def _index_graph(graph) -> _GraphRows:
-    if type(graph) is not dict or set(graph) != GRAPH_KEYS or type(graph["version"]) is not int or graph["version"] != 1:
+    if type(graph) is not dict or type(graph.get("version")) is not int or graph["version"] not in (1,2) or set(graph) != GRAPH_KEYS | ({"collected_captures"} if graph["version"] == 2 else set()):
         raise _bad()
+    captures = ()
+    if graph["version"] == 2:
+        from .review_answer_values import validate_capture_evidence
+        if type(graph["collected_captures"]) is not list:
+            raise _bad()
+        captures = tuple(validate_capture_evidence(row) for row in graph["collected_captures"])
+        keys = [(r["capture_identity"]["consumer_continuation_id"],r["capture_identity"]["session_id"]) for r in captures]
+        if len(set(keys)) != len(keys) or keys != sorted(keys,key=lambda pair:tuple(s.encode("utf-8") for s in pair)):
+            raise _bad()
     rows = _GraphRows(
         continuations=_rows(graph, "continuations", CONTINUATION_KEYS, ("continuation_id",)),
         reviewers=_rows(graph, "reviewers", REVIEWER_KEYS, ("continuation_id", "session_id")),
@@ -121,6 +132,7 @@ def _index_graph(graph) -> _GraphRows:
         sessions=_rows(graph, "session_bindings", SESSION_KEYS, ("review_receipt_id",)),
         references=_rows(graph, "references", REFERENCE_KEYS, ("evidence_reference_id",)),
         findings=_rows(graph, "findings", FINDING_KEYS, ("review_finding_id",)),
+        collected=captures,
     )
     if not rows.continuations or set(rows.judgments) != set(rows.receipts) or not set(rows.sessions) <= set(rows.receipts):
         raise _bad()
@@ -236,7 +248,70 @@ def _validate_retained_originals(rows: _GraphRows, history: _History) -> None:
                 raise _bad()
             consumed.add(rid)
     for (cid,sid), choice in reviewers.items():
-        if continuations[(cid,)]["state"] == "superseded" and choice["result_receipt_id"] is not None and choice["result_receipt_id"] not in consumed:
+        if continuations[(cid,)]["state"] == "superseded" and choice["result_receipt_id"] is not None and choice["result_receipt_id"] not in consumed and not any(c["result_receipt_id"] == choice["result_receipt_id"] for c in rows.collected):
+            raise _bad()
+
+
+def _validate_collected_captures(rows, history):
+    from .review_answer_repository import match_capture_provenance
+    consumed=set()
+    sources={}
+    for capture in rows.collected:
+        identity=capture["capture_identity"]
+        cid,sid,source_id=identity["consumer_continuation_id"],identity["session_id"],identity["source_continuation_id"]
+        consumer=rows.continuations.get((cid,))
+        retained_order=sorted({actor for root,actor in rows.retained if root==cid} |
+            {row["capture_identity"]["session_id"] for row in rows.collected if row["capture_identity"]["consumer_continuation_id"]==cid})
+        selected_count=sum(root==cid for root,_ in rows.reviewers)
+        if identity["consumer_slot"] != selected_count + retained_order.index(sid) + 1:
+            raise _bad()
+        metadata=capture["source_metadata"]
+        source_key=(identity["source_preparation_id"],source_id,sid)
+        if source_key in sources and sources[source_key] != metadata:
+            raise _bad()
+        sources[source_key]=metadata
+        if consumer is None or (cid,sid) in rows.reviewers or (cid,sid) in rows.retained or consumer["preparation_id"] != identity["source_preparation_id"] or metadata["basis"]["execution_basis"] != history.bases[(cid,)] or metadata["basis"]["route"] != consumer["route"]:
+            raise _bad()
+        count=sum(root==cid for root,_ in rows.reviewers)+sum(root==cid for root,_ in rows.retained)+sum(c["capture_identity"]["consumer_continuation_id"]==cid for c in rows.collected)
+        if count>8:
+            raise _bad()
+        if source_id is not None:
+            chain=set();parent=consumer["predecessor_id"]
+            while parent is not None:
+                if parent in chain or (parent,) not in rows.continuations:
+                    raise _bad()
+                chain.add(parent);parent=rows.continuations[(parent,)]["predecessor_id"]
+            source=rows.continuations.get((source_id,))
+            if source is None or source_id not in chain or source["state"]!="superseded" or source["basis_json"] != consumer["basis_json"] or source["preparation_id"] != consumer["preparation_id"] or (source_id,sid) not in rows.reviewers:
+                raise _bad()
+            if metadata["basis"]["continuation"] != {key:source[key] for key in ("continuation_id","sequence","selection_digest")}:
+                raise _bad()
+        rid=capture["result_receipt_id"]
+        if rid is None:
+            if consumer["state"] != "superseded":
+                raise _bad()
+            continue
+        row=rows.receipts.get((rid,));session=rows.sessions.get((rid,));judgment=rows.judgments.get((rid,))
+        if (consumer["state"] != "registered" or rid in consumed or row is None or session is None or judgment is None
+            or row["reviewer_key"] != metadata["binding"]["reviewer_key"]
+            or session["session_id"] != sid or session["original_result_digest"] != identity["original_digest"].removeprefix("sha256:")
+            or session["binding_source"] != "handoff" or session["execution_id"] != history.bases[(cid,)]["execution_id"]
+            or judgment["continuation_id"] != source_id or row["review_provenance"] is None or row["review_provenance"]["provenance_version"] != 2):
+            raise _bad()
+        try:
+            match_capture_provenance(capture,row["review_provenance"])
+        except Exception as exc:
+            raise _bad() from exc
+        if source_id is not None and rows.reviewers[(source_id,sid)]["result_receipt_id"] != rid:
+            raise _bad()
+        consumed.add(rid)
+    for row in rows.receipts.values():
+        provenance=row["review_provenance"]
+        if provenance is None or provenance["provenance_version"] != 2:
+            continue
+        rid=row["review_receipt_id"]
+        cid=rows.judgments[(rid,)]["continuation_id"]
+        if cid is not None and rows.continuations[(cid,)]["state"] == "superseded" and rid not in consumed:
             raise _bad()
 
 
@@ -274,6 +349,15 @@ def _validate_receipts(rows: _GraphRows, history: _History,
         _time(row["created_at"])
         source = EvidenceSource("review_receipt", "recorded", row["review_receipt_id"],
             {field: row[field] for field in ASSERTION_KEYS})
+        if type(row["review_provenance"]) is dict and row["review_provenance"].get("provenance_version") == 2:
+            from .review_answer_provenance import validate_provenance_v2
+            validate_provenance_v2(row["review_provenance"],project_id=history.basis["project_id"],task_id=history.basis["task_id"],
+                review_receipt_id=row["review_receipt_id"],receipt_kind=row["receipt_kind"],target={"kind":history.basis["target_kind"],"value":history.basis["target_value"],"base_revision":history.basis["target_base_revision"],"generation":history.basis["target_generation"],"capture_version":1})
+            payload=row["review_provenance"]["answer_attestation"]["payload"]
+            actual=sorted((f["severity"],f["summary"]) for f in rows.findings.values() if f["review_receipt_id"]==row["review_receipt_id"])
+            expected=sorted((f["severity"],f["summary"].strip()) for f in payload["findings"])
+            if payload["verdict"] != row["verdict"] or payload["summary"].strip() != row["summary"] or actual != expected:
+                raise _bad()
         reference = reference_by_source.get(("review_receipt", row["review_receipt_id"]))
         if reference is None:
             raise _bad()
@@ -402,6 +486,9 @@ def validate_graph(graph, *, bundle=None):
         history = _validate_history(rows)
         _validate_reviewer_results(rows, history)
         _validate_retained_originals(rows, history)
+        _validate_collected_captures(rows,history)
+        if graph["version"] == 1 and any(type(r["review_provenance"]) is dict and r["review_provenance"].get("provenance_version")==2 for r in rows.receipts.values()):
+            raise _bad()
         if bundle is not None:
             _match_bundle_basis(bundle, history.basis)
         references = _index_references(rows)
@@ -409,14 +496,14 @@ def validate_graph(graph, *, bundle=None):
         effective = _validate_effective_heads(nodes, history.quality, graph["effective_receipt_ids"])
         _validate_findings(rows, history.basis, references)
         _validate_resolutions(rows, nodes)
-        if any(node.verdict == "changes_requested" for node in effective.heads):
+        if any(node.verdict in ("changes_requested","unable_to_review") for node in effective.heads):
             raise _bad()
         if bundle is not None:
             _match_bundle_receipts(bundle, rows, history, effective)
         if len(canonical_json_bytes(graph)) > 16_777_216:
             raise _bad()
         return graph
-    except (TaskValidationError, KeyError, ValueError, UnicodeError, TypeError, RecursionError) as exc:
+    except (TaskValidationError, AnswerError, KeyError, ValueError, UnicodeError, TypeError, RecursionError) as exc:
         raise _bad() from exc
 
 

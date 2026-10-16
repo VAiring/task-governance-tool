@@ -44,6 +44,16 @@ class JudgmentPublication:
     retained_original: values.RetainedOriginal | None = None
 
 
+@dataclass(frozen=True)
+class CollectedJudgmentPublication:
+    record: Continuation
+    selected: values.SelectedReviewer
+    revision: int
+    consumer_id: str
+    capture: dict
+    judgment_continuation_id: str | None
+
+
 def packet_context(connection, *, task, preparing_id=None):
     """Prepared pending context for the existing read-only Packet procedure."""
     from .storage import current_schema_version
@@ -98,6 +108,23 @@ def require_publication_locked(connection: sqlite3.Connection, publication: Judg
                                *, session_id: str, reviewer_key: str, caller: CallerIdentity,
                                original_digest: str | None = None) -> None:
     """Recheck the captured batch admission without reading a transient partial batch."""
+    if type(publication) is CollectedJudgmentPublication:
+        from .review_answer_repository import read_collected_captures
+        require_current_basis(connection,publication.record.basis,caller)
+        rows = read_collected_captures(connection,publication.consumer_id)
+        current = next((r for r in rows if r["capture_identity"]["session_id"] == session_id),None)
+        consumer = connection.execute("SELECT state FROM review_continuations WHERE continuation_id=?",(publication.consumer_id,)).fetchone()
+        if current != publication.capture or current is None or current["result_receipt_id"] is not None or consumer is None or consumer["state"] != "prepared" or current["capture_identity"]["original_digest"] != "sha256:"+original_digest:
+            raise values._invalid()
+        if publication.selected.prior_receipt_id is not None:
+            prior = _session_proof(connection,publication.selected.prior_receipt_id,basis=publication.record.basis,session_id=session_id)
+            if prior["reviewer_key"] != reviewer_key or prior["judgment_revision"]+1 != publication.revision:
+                raise values._invalid()
+            if connection.execute("SELECT 1 FROM review_receipt_judgments WHERE prior_receipt_id=?",(publication.selected.prior_receipt_id,)).fetchone():
+                raise validation_error("review_continuation_conflict","review continuation expected head changed")
+        elif publication.revision != 1:
+            raise values._invalid()
+        return
     if type(publication) is not JudgmentPublication or publication.selected.session_id != session_id:
         raise values._invalid()
     record, choice = publication.record, publication.selected
@@ -275,6 +302,10 @@ def validate_retained_storage(connection, by_id):
     retained = {identifier: read_retained_originals(connection, identifier)
                 for identifier in sorted(by_id)}
     consumed = set()
+    from .storage import current_schema_version
+    if current_schema_version(connection) >= 30:
+        from .review_answer_repository import validate_capture_relations
+        consumed.update(validate_capture_relations(connection,by_id))
     for row in (row for rows in retained.values() for row in rows):
         capture = values.RetainedOriginal(**{key: row[key] for key in values.RetainedOriginal.__dataclass_fields__})
         consumer, old = by_id[row["continuation_id"]], by_id.get(capture.prior_continuation_id)
@@ -399,10 +430,30 @@ def admit_locked(connection: sqlite3.Connection, *, basis: dict, preparation_id:
                  route: str, selected: tuple[values.SelectedReviewer, ...],
                  caller: CallerIdentity, retirement: values.RetirementProof | None = None,
                  retained_originals: tuple[values.RetainedOriginal, ...] = (),
+                 retained_collected: tuple = (),
                  continuation_id: str | None = None) -> Continuation:
     """Admit one explicit expected-head selection; replay reconciles, never republishes."""
-    from .storage import utc_now
+    from .storage import utc_now, current_schema_version
     require_current_basis(connection, basis, caller)
+    if type(retained_collected) is not tuple:
+        raise values._invalid()
+    collected = []
+    if retained_collected:
+        from .review_answer_values import validate_collected_capture, validate_metadata, metadata_digest
+        from .review_answer import AnswerError
+        try:
+            for pair in retained_collected:
+                if type(pair) is not tuple or len(pair) != 2:
+                    raise values._invalid()
+                capture, metadata = validate_collected_capture(pair[0]), validate_metadata(pair[1])
+                if capture["metadata_digest"] != metadata_digest(metadata):
+                    raise values._invalid()
+                collected.append((capture, metadata))
+        except AnswerError:
+            raise values._invalid() from None
+    collected_actors = {capture["session_id"] for capture, _ in collected}
+    if len(collected_actors) != len(collected):
+        raise values._invalid()
     if continuation_id is not None and not values.identifier(continuation_id, "tg_review_continuation_"):
         raise values._invalid()
     selected = values.validate_selection({"version": 1, "reviewers": [row.as_dict() for row in selected]})
@@ -424,17 +475,27 @@ def admit_locked(connection: sqlite3.Connection, *, basis: dict, preparation_id:
             raise validation_error("review_continuation_conflict", "a different review continuation is pending")
     elif retirement is not None or retained_originals:
         raise validation_error("review_continuation_conflict", "review continuation retirement has no pending predecessor")
-    if (type(retained_originals) is not tuple or len(selected) + len(retained_originals) > 8
+    if (type(retained_originals) is not tuple or len(selected) + len(retained_originals) + len(collected) > 8
         or any(type(value) is not values.RetainedOriginal for value in retained_originals)
         or len({value.session_id for value in retained_originals}) != len(retained_originals)
-        or {value.session_id for value in selected} & {value.session_id for value in retained_originals}):
+        or {value.session_id for value in selected} & {value.session_id for value in retained_originals}
+        or collected_actors & ({value.session_id for value in selected} | {value.session_id for value in retained_originals})):
+        raise values._invalid()
+    retained_order = sorted({value.session_id for value in retained_originals} | collected_actors)
+    if any(capture["consumer_slot"] != len(selected) + retained_order.index(capture["session_id"]) + 1
+           for capture, _ in collected):
         raise values._invalid()
     if pending:
         prior_captures = {values.RetainedOriginal(**{key: row[key] for key in values.RetainedOriginal.__dataclass_fields__})
             for row in read_retained_originals(connection, pending[0].continuation_id)}
-        actors = {row.session_id for row in selected} | {row.session_id for row in retained_originals}
+        from .review_answer_repository import read_native_collected_captures
+        prior_collected = read_native_collected_captures(connection, pending[0].continuation_id) if collected or current_schema_version(connection) >= 30 else ()
+        transferred = {(capture["session_id"], capture["metadata_digest"]) for capture, _ in collected}
+        if any((capture["session_id"], capture["metadata_digest"]) not in transferred for capture, _ in prior_collected):
+            raise validation_error("review_continuation_conflict", "review continuation would lose a collected original")
+        actors = {row.session_id for row in selected} | {row.session_id for row in retained_originals} | collected_actors
         if (not prior_captures <= set(retained_originals)
-            or len(selected) + len(retained_originals) < len(pending[0].selected) + len(prior_captures)
+            or len(selected) + len(retained_originals) + len(collected) < len(pending[0].selected) + len(prior_captures) + len(prior_collected)
             or any(row.prior_receipt_id is not None and row.session_id not in actors for row in pending[0].selected)):
             raise validation_error("review_continuation_conflict", "review continuation would lose a required original or reassessment")
     judgments = read_judgments(connection, basis=basis)
@@ -457,6 +518,8 @@ def admit_locked(connection: sqlite3.Connection, *, basis: dict, preparation_id:
         connection.execute("UPDATE review_continuations SET state='superseded',retired_at=?,retirement_digest=? WHERE continuation_id=?",
             (utc_now(), retirement.digest(), pending[0].continuation_id))
     continuation = continuation_id or "tg_review_continuation_" + secrets.token_hex(8)
+    if any(capture["consumer_continuation_id"] != continuation for capture, _ in collected):
+        raise values._invalid()
     connection.execute("""INSERT INTO review_continuations
 (continuation_id,project_id,task_id,target_generation,preparation_id,sequence,predecessor_id,
 basis_json,basis_digest,selection_digest,route,state,created_at)
@@ -470,6 +533,10 @@ VALUES (?,?,?,?,?,?,?,?,?,?,?,'preparing',?)""", (continuation, basis["project_i
     for original in retained_originals:
         connection.execute("INSERT INTO review_continuation_retained_originals VALUES (?,?,?,?,?,NULL)",
             (continuation, original.prior_continuation_id, original.session_id, original.original_result_digest, original.metadata_digest))
+    if collected:
+        from .review_answer_repository import capture_collected_locked
+        for capture, metadata in sorted(collected, key=lambda pair: pair[0]["session_id"]):
+            capture_collected_locked(connection, capture=capture, metadata=metadata)
     return next(row for row in read_continuations(connection, project_id=basis["project_id"], task_id=basis["task_id"])
                 if row.continuation_id == continuation)
 

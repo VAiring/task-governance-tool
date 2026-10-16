@@ -32,7 +32,7 @@ Do not invent aliases, alternate state paths, or administrative commands.
 
 ## Assigned Independent Review
 
-When assigned an independent review with generated read/save instructions,
+When assigned an independent review with generated read/output instructions,
 follow that self-contained request and its output; no additional Skill procedure
 read is needed. Read Skill material when it is actually authority or part of the
 reviewed target. The parent's Task loop below is not your workflow. For direct

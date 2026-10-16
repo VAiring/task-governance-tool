@@ -460,7 +460,8 @@ def handle_setup(context: CommandContext) -> CommandResult:
             None,
         ),
         feature_selections={name: value == "on" for name in (
-            "usage_collection", "verification_runner", "effort_advisory", "viewer_reload", "review_wait")
+            "usage_collection", "verification_runner", "effort_advisory", "viewer_reload", "review_wait",
+            "review_answer_collection", "review_answer_correction")
             if (value := getattr(context.args, name, None)) is not None},
     )
     return CommandResult(
@@ -1243,9 +1244,11 @@ def task_show_failure_result(
 
 def handle_task_show(context: CommandContext) -> CommandResult:
     from task_governance_tool.usage_evidence_service import read_task_usage
+    from task_governance_tool import review_answer_audit
     target = resolve_context_target(context)
     audit = bool(getattr(context.args, "audit", False))
     try:
+        collection_selectors = review_answer_audit.selection(context.args)
         task_id = validate_task_id(getattr(context.args, "task_id", ""))
         runner_selection_required = False
         try:
@@ -1278,6 +1281,8 @@ def handle_task_show(context: CommandContext) -> CommandResult:
                         caller=context.caller,
                     )
                     usage = read_task_usage(target, connection, task_id, audit=audit)
+                    collection_registration = review_answer_audit.read(connection, target.project.project_id,
+                        task_id, collection_selectors)
         finally:
             if context.read_connection_override is not None:
                 context.read_connection_override.close()
@@ -1304,6 +1309,8 @@ def handle_task_show(context: CommandContext) -> CommandResult:
                     caller=context.caller,
                 )
                 usage = read_task_usage(target, connection, task_id, audit=audit)
+                collection_registration = review_answer_audit.read(connection, target.project.project_id,
+                    task_id, collection_selectors)
     except TaskValidationError as exc:
         return task_show_failure_result(
             context,
@@ -1373,6 +1380,8 @@ def handle_task_show(context: CommandContext) -> CommandResult:
         )
 
     data = build_task_show_data(result, audit=audit)
+    if collection_selectors is not None:
+        data["collection_registration"] = collection_registration
     data["usage"] = usage
     effort_profile = load_effort_profile(skill_root_from_script(cli_script_path()))
     data["effort_advisory_enabled"] = bool(
@@ -2375,7 +2384,9 @@ def read_review_results_stdin():
     return decode_submission(raw)
 
 
-def handle_review_command(context: CommandContext, *, submission=None, finalization_basis=None) -> CommandResult:
+def handle_review_command(context: CommandContext, *, submission=None, finalization_basis=None,
+                          registration_recovery=None) -> CommandResult:
+    from task_governance_tool.review_answer_transport import CollectedSubmission
     from task_governance_tool.verification_runner_service import (
         VerificationRunnerServiceError,
         set_review_target_with_optional_runner,
@@ -2392,12 +2403,16 @@ def handle_review_command(context: CommandContext, *, submission=None, finalizat
             exit_code=EXIT_USAGE,
         )
 
+    collection_warnings = []
     try:
         payload = (
             (submission if submission is not None else read_review_results_stdin())
             if context.command == "review.result.add"
             else None
         )
+        if registration_recovery is not None and (context.command != "review.result.add" or type(payload) is not CollectedSubmission):
+            from task_governance_tool.review_answer_transport import input_error
+            raise input_error("registration_unknown", reason="effect_unknown")
         finding_batch = context.command == "review.finding.resolve" and bool(getattr(context.args, "from_stdin", False))
         if finding_batch:
             try:
@@ -2421,6 +2436,10 @@ def handle_review_command(context: CommandContext, *, submission=None, finalizat
                 "verification_route": result.verification_route,
                 "blocking_code": result.blocking_code,
             }
+        elif context.command == "review.result.add" and type(payload) is CollectedSubmission:
+            from task_governance_tool.review_answer_registration import register
+            data, collection_warnings = register(context, target, payload, finalization_basis=finalization_basis,
+                registration_recovery=registration_recovery)
         else:
             with closing(connect_initialized(target)) as connection:
                 with connection:
@@ -2576,7 +2595,7 @@ def handle_review_command(context: CommandContext, *, submission=None, finalizat
             exit_code=EXIT_TOOL_ERROR,
         )
 
-    warnings = []
+    warnings = list(collection_warnings)
     try:
         text = review_text(context.command, data)
     except Exception:

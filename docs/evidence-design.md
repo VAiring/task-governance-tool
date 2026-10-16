@@ -39,7 +39,13 @@ the retired `derived_analysis` reservation from current schema v22.
 ### Capture And Projection Module Ownership
 
 - `review_provenance.py` owns the closed enum/matrix, public v1/v0/null union,
-  option normalization, and provenance digest; it owns no SQLite access.
+  option normalization, provenance digest and explicit v2 dispatch; it owns no SQLite access.
+- `review_answer.py` owns bounded answer decoding and privacy-first failure
+  classification; `review_answer_values.py` owns closed collection metadata and
+  native/public capture values; `review_answer_provenance.py` owns the pure v2
+  builder, contextual digest and validator. `review_answer_repository.py` owns
+  immutable v2/source/dispatch/capture persistence and comparison in the caller's
+  core transaction. Operational journals and transport files stay separate.
 - `review_repository.py` owns stored Receipt/Finding projection validation,
   provenance/code relation reads, and Receipt/provenance insertion on the
   caller-owned connection. Reference creation, events, and outer transaction
@@ -305,6 +311,40 @@ records the fixed maintenance outcome, and does not undo the business mutation.
 
 ## Continuation Graph Validation
 
+Schema-30 sealing uses Bundle 4 and index 3 under their new digest domains,
+without changing a previously sealed format. Format 4 always carries nullable
+`review_continuation_basis`; continuation completions freeze graph 2, whose
+only added root field is `collected_captures`. Ordinary completion keeps null.
+Source versions and index entry discriminators route exact versions; formats
+one through three never accept the v2 arm through a widened old validator.
+
+Pure graph validation first checks each collected public capture's closed
+metadata, basis and evidence digest, then consumer/source ancestry and the
+source continuation's exact ID/sequence/selection digest, same full
+execution basis/preparation/route, slot/session uniqueness, correction-turn
+relation and registered consumption. Every transfer of one source preserves
+identical source metadata even in superseded historical null-link captures.
+It compares the linked v2 provenance's assignment, request/attestation,
+original/payload metadata, source identity and three observation sources,
+and compares the source binding's reviewer key with the linked Receipt's key
+in both native relation and frozen graph validation. It then validates
+Receipt/Finding normalization, session binding, Reference digest
+and effective judgment selection. Current changes-requested and unable heads
+both prevent sealing. Digest recomputation cannot waive graph relationships.
+
+Native capture creation derives the path-free projection and its public
+evidence digest atomically from the complete validated native metadata used
+for the physical seal. Native sealing/reentry and projection enumerate the
+frozen graph's consumer continuation IDs, acquire each consumer's native capture
+inventory once, and compare the complete ordered deterministic projection with
+the frozen list. Checking only supplied capture rows cannot detect omissions.
+Consumers outside the frozen graph are excluded so later history preserves old
+Bundle bytes. The comparison does not accept an independently supplied public
+claim. Public graph validation reads no transport file and
+does not recompute the private metadata seal. Initial-context registration
+history remains a native source/inventory fact; the public graph validates
+declared consumed captures without inventing absent prior registration.
+
 `review_continuation_evidence.validate_graph` composes pure checks in dependency
 order: closed row indexes; complete continuation history and reviewer results;
 retained-original ancestry, metadata and consumption; optional Bundle basis;
@@ -349,6 +389,10 @@ outbox, process, model, or publication responsibility.
 It recomputes ancestry, retained originals, assertion/Reference digests,
 resolution links and selected heads without calling the product graph helpers.
 Refactoring the product validator does not transfer that independent obligation.
+Its graph-two arm independently checks the path-free collected metadata,
+contextual v2 provenance, transfer/ancestry and Receipt relations. Bundle-four
+and index-three readers retain all old encodings and version-specific domains;
+they do not call the producing validators or inspect private original files.
 
 The independent reader implements the same
 [captured-policy accounting rules](evidence-specification.md#canonical-evidence-bundle-and-index-formats)

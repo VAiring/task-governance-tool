@@ -175,7 +175,7 @@ without inferring target material from ambient HEAD or the post-commit index.
 Receipts are append-only and unique per Task, target generation, and bounded
 caller-supplied reviewer key. Kinds are:
 
-- `independent`: pass or changes-requested, never user-approved;
+- `independent`: pass or changes-requested, and v2 collected `unable_to_review`, never user-approved;
 - `self_review_fallback`: summarized; a Tier-2 pass requires explicit user
   approval, a Tier-1 pass does not;
 - `not_required`: Tier 0 only, verdict not-required, mechanical rationale, no
@@ -190,7 +190,7 @@ medium, or low. Resolution preserves the original row and adds only bounded
 resolution text/time. Open high or medium findings across all task receipts
 block. A resolved high/medium finding still requires a target generation newer
 than its receipt and fresh passes. Any current-generation changes-requested
-receipt blocks. Low findings are nonblocking.
+or effective collected unable receipt blocks. Low findings are nonblocking.
 
 The gate deterministically requires:
 
@@ -198,7 +198,7 @@ The gate deterministically requires:
 - Tier 1: one distinct current independent PASS, or its valid fallback;
 - Tier 2: two distinct current independent PASS reviewer keys, or one valid
   explicitly approved fallback when independent review tooling is unavailable;
-- no current changes-requested receipt;
+- no current changes-requested or effective unable receipt;
 - no open high/medium finding; and
 - no resolved high/medium finding at or after the current target generation.
 
@@ -239,6 +239,12 @@ No schema, new durable batch record, alternative gate, or new normal-loop step
 is introduced.
 
 ### Structured Result Registration
+
+The version-one decoder/save path described here remains the legacy arm.
+New opted-in requests use [collected answer collection](#collected-answer-collection)
+through the same public writer and shared gate. Material retrieval and complete
+Packet validation remain common; their result instructions follow the immutable
+saved protocol rather than the installed package's current default.
 
 `review_results.py` owns the closed version-1 JSON decoder, exact type and
 capacity checks, input-only approval-key matching, and batch orchestration.
@@ -460,6 +466,287 @@ Both cover portable filesystem behavior; `test_review_handoff_windows.py`
 owns the native PowerShell transport case outside POSIX platform selection. Existing
 result registration tests retain writer atomicity and concurrent-state checks.
 
+<a id="collected-answer-collection"></a>
+
+### Collected Answer Collection
+
+This structure implements the current
+[answer protocol](review-completion-specification.md#collected-review-answers)
+and [host boundary](review-completion-specification.md#collected-answer-host-boundary).
+The [database value schemas](database-design.md#collected-answer-value-schemas)
+own the exact closed basis/binding/source/metadata/capture types; the
+[Evidence contract](evidence-specification.md#collected-answer-evidence) owns
+path-free v2 provenance and frozen public graph validation. Conditional design
+material retains Task acceptance only and supplies no missing runtime rule.
+
+`review_answer.py` owns pure bounded UTF-8/JSON decoding and exact original/
+payload byte ranges. `DecodedAnswer` retains complete bytes, all five sanitized
+fields, offsets/length and separate original/payload digests. `AnswerError`
+carries only a closed failure object and a digest only after valid shape and
+privacy admission. Unknown keys, rejected bodies and arbitrary exceptions never
+enter diagnostics or operational records. `review_answer_values.py` reuses the
+continuation execution basis, canonical codec and privacy policy, returning
+detached closed values. `review_answer_provenance.py` builds and validates v2
+after the actual Receipt ID is known; requested assignment and observed sources
+remain separate, and actual model/Skill/methods stay unknown.
+
+`review_answer_preparation.py` selects the opt-in only for admitted schema-30
+preparations with known execution and a nonzero review tier. Preparation-record
+version two adds per-slot `collection_bases`; version one remains exact and
+omits that member. Each basis binds complete Packet bytes and the exact request
+UTF-8 bytes, including the independence attestation. The request asks only for
+the five-field final answer and contains no reviewer save/submit command.
+The complete Packet's material/template representation stays unchanged; the
+admitted read projects result instructions for the saved protocol.
+
+`review_answer_continuation_preparation.py` freezes a separate basis/store for
+each new continuation and includes the exact action/reason suffix in its request
+digest. `RequestRound.answer_protocol` is an immutable discriminator:
+`review-answer-v1` is encoded explicitly; default `legacy` is omitted to preserve
+the exact old canonical payload. Decode rejects alternative encodings and
+unknown protocol values. Transition/request copies preserve the tag. The
+collection store is initialized before advancing the native/request transition
+to prepared readiness. Before that advancement, the transition separately pins
+the ordered digests of each complete CollectionBasis. Recovery compares every
+operational source slot to its issued initial preparation basis or continuation
+pin before binding, publication, readback, capture or registration. It never
+regenerates an issued request or uses the operational basis as its own proof.
+A tagged ready round with missing pins or missing/corrupt state fails closed
+without filling pins from the journal or falling back to legacy. An opted-out new round cannot mix newly selected legacy results with
+outstanding collected originals. No locator scans directories or invents a
+missing preparation.
+
+`review_answer_handoff.service_for` gives fresh collection call-local admission
+that reloads the current preparation and native/issued continuation at each
+existing effect boundary. This shared check covers parent, wait and hook
+collection, including a successor selected during host observation. An unchanged
+initial reviewer remains eligible only under the existing unselected-slot rule.
+Exact retained-source reads, capture and registration select their separate
+admission explicitly; historical reporting retains its read-only basis. Neither
+path makes an obsolete selected request eligible for new collection.
+
+`review_answer_runtime.sources_for_reviewers` resolves current selected requests
+and never-selected initial reviewers through one shared preparation, native
+selection-history and exact-binding check. Parent/wait collection and event
+lookup use that resolver, including after restart. Its call-local `SourceGroup`
+keeps each service's source slots separate from positions in the requested
+reviewer list; collection responses map only to those request positions. It
+admits ordered subsets of bound slots without changing initial full-dispatch
+admission or registration ordering. The source service's existing fresh-basis
+checks still run at each effect boundary. Retained-source reads keep their
+separate admission and cannot supply a fresh-source fallback.
+
+For reviewer-origin hooks, `_CollectionAdmission.check_hook` obtains one fresh,
+fully validated query-only native snapshot per existing admission boundary. It
+checks the active Task, complete execution basis and native continuation history,
+then closes that connection before operational-store or Packet reads. It also
+rechecks the canonical collection path, complete captured preparation, current
+issued source, opt-in and exact Packet bytes. Nothing is cached across boundaries;
+this shares validation within one observation without removing any effect check
+or weakening the ordinary parent/wait and retained-source admissions.
+
+`review_answer_collection_repository.py` stores at most eight contiguous slots
+per preparation/continuation in the resolver-derived operational database.
+Every read/write validates the exact schema and closed record. Each record is
+at most 32,768 canonical UTF-8 bytes with at most two ordinal attempts, one
+correction intent, publication reference and monotone registration state.
+It contains no answer body, prompt, provider envelope or growing observation
+array. Call-local validation never becomes a cross-operation cache.
+`review_answer_collection.py` owns the effect state machine. It latches exact
+source/digest conflicts, preserves the first original and each attempt's digest,
+reserves each persistence/send intent before its effect and reconciles only that exact intent.
+Save and registration unknowns remain distinct. A format failure with admitted
+privacy may retain its digest; unestablished/rejected privacy cannot.
+Recovery and readback raise the repository-validated attempt failure with its closed field
+and reason after checking unresolved publication, before the generic incomplete
+branch. Parent submission and finalizer reporting consume that same readback.
+Explicit recovery does not reconcile a publication with a stored attempt failure;
+it retains both the unresolved effect and conflict evidence without I/O replay.
+
+Publication uses only the prepared ignored physical original path and shared
+`review_handoff_transport.py` exclusive-create/flush/readback checks. The service
+commits the intent/reference first, revalidates basis/privacy before the file
+effect, and commits saved only after exact readback and renewed identity.
+Post-create uncertainty retains residue and unknown state. Only the explicit
+parent arm passes publication-reconciliation intent through the runtime to
+`CollectionService.recover`; hook/wait calls preserve `save_unknown`. The service
+reuses `reconcile_publication` to validate the saved intent, current basis and
+exact physical bytes before recording saved. It performs no host fetch, file
+creation or send; absent or conflicting residue remains unknown. Registration repeats
+all original/Packet/basis comparisons; a save acknowledgement is insufficient.
+Operational collection leases span that final admission and the short core
+writer. No host or file I/O runs inside the core SQLite transaction, and no
+earlier preparation/request/finalization lease is acquired beneath collection.
+
+`review_answer_transport.py` decodes the explicit collected discriminator before
+core access, enforcing canonical base64, the complete framing cap, prepared slot
+order, full raw/range/digest equality and every answer field. It produces typed
+collected/retained-legacy items rather than manufacturing a v1 result document.
+Internal answer failures retain their closed class, field and reason through
+collection admission. The CLI and handoff boundaries map these to the existing
+error code, optional field and fixed message; no rejected content or arbitrary
+exception is forwarded. The shared outer stdin reader still rejects oversized
+or undecodable input before protocol selection without guessing a discriminator.
+`review_collected_results.py` and `review_answer_repository.py` compose the
+existing locked public writer: current ownership/Contract/target, exact source
+and all Findings are revalidated and committed with v2 provenance, source and
+dispatch inventory atomically. The legacy decoder and approval paths are not
+broadened. `reviews.py` derives the effective unable count through the same
+evaluator used by manual completion, finalization and display; `review_unable`
+blocks regardless of other PASS results.
+
+`review_answer_originals.py` and `review_answer_handoff.py` read complete
+collected originals alongside retained legacy sidecars. New selected slots come
+first; retained originals follow in actual session order. Every retained
+collected original has an exact typed capture. Native capture admission receives
+unchanged source metadata under held collection leases, checks settled source
+effects/old cleanup and records both the physical metadata seal and deterministic
+path-free projection atomically. Further pending supersession transfers source
+metadata unchanged, keeps historical captures and preserves required slots.
+Source-context judgment identity is never rewritten as the consumer context.
+The public Evidence Reader recomputes its own projection digest and graph
+relations; it never reads private transport files or claims to validate their
+physical seal. Historical finalizer reporting uses an already admitted saved
+preparation and exact transition without requiring a current live Task basis.
+
+`review_answer_registration.py` and `review_answer_finalization.py` reuse the
+same complete typed submission and public registration boundary. They reserve
+the exact submission digest before dispatch and preserve a possible effect
+without replay. The registration wrapper marks a known commit immediately after
+the core transaction exits successfully, before connection or admission cleanup.
+Later confirmation or cleanup exceptions retain the committed response and the
+existing sanitized acknowledgement warning. Exceptions before that boundary
+retain their failure semantics; response construction alone never proves commit.
+`review_answer_audit.py` validates the paired audit selectors;
+the repository fetches the complete bounded dispatch inventory and checks each
+Receipt/source/digest relation, including retained legacy entries. This exact
+lookup is separate from recent-Receipt display and returns recorded, absent,
+conflict or unknown. A complete matching inventory proves the existing
+registration; snapshot absence alone cannot settle its effects. Normal success
+adds no audit call or new completion gate.
+
+The collected branch performs its reviewer guard and fresh Task match before
+reserving outer registration dispatch. Recovery of an existing reservation with
+an exact absent inventory uses `RegistrationAdmission.prove_not_dispatched`
+only for a complete all-collected submission. Under the existing finalization
+lease and every admitted source lease, it requires complete source coverage
+and exact `not_started` registration tuples with null digest and Receipt ID.
+The existing admission revalidates current preparation, original bytes, source
+identity and retained history. It neither rewrites an intent nor infers rollback.
+Release source leases before invoking the existing public writer to avoid
+recursive acquisition; that writer repeats all-source admission and the
+`not_started` check before marking any dispatch. A competing writer therefore
+cannot turn the observation into duplicate registration. Mixed legacy,
+incomplete or changed sources and conflict/unknown inventory remain unresolved;
+already-dispatched sources require the distinct proof below.
+
+`SettledRegistrationRecovery(preparation_id, submission_digest)` in
+`review_answer_transport.py` is a frozen internal request, not an effect token.
+The retained finalizer passes it as `registration_recovery` through
+`Core.register`, `cli.handle_review_command`, `review_answer_registration.register`
+and the existing `add_collected_review_results` composition. Exact selectors
+and a non-null typed finalization basis are required. No new public flag or
+alternate registration path is introduced.
+
+The registration wrapper acquires every exact source lease and freshly admits
+the complete all-collected batch. Each source must be dispatched/unknown with
+the exact submission digest and null Receipt ID. It holds these leases through
+the normal synchronous connection, writer transaction, close and confirmation;
+it does not redispatch or reset source intent. Lock order remains finalization,
+sorted collection leases, then core writer. File and host work stays outside
+the core transaction.
+
+After the writer lock and current-basis checks, the repository rejects any exact
+dispatch header/entry, preparation/submission source residue, or source with an
+exact submitted reviewer/turn/message identity, including conflicting digests.
+Before continuation or capture adoption, recovery also rejects any existing
+Receipt in the submitted captures or a continuation no longer prepared.
+Historical judgments outside this submitted batch retain their normal meaning.
+Only complete absence under these held locks permits the same atomic writer.
+This establishes settled current-state effects, not historical non-commit
+across arbitrary restoration; known identity/binding discontinuity still fails
+admission. Commit acknowledgement and later-confirmation failure use the
+existing committed-response rule above.
+
+For unresolved collected reservations, `review_answer_finalization` adds the
+[closed registration observation](review-completion-specification.md#exact-collected-registration-inspection)
+to the existing `finalize --check` report. The ordinary check remains unlocked;
+this additional diagnostic alone enters the already existing finalization lease,
+recomposes and matches the saved submission/current basis, then uses
+`RegistrationAdmission.registration_states` under all admitted source leases.
+The public `Core.collection_registration` audit is read while those leases remain
+held. Only validated complete source/native projections survive successful lease
+cleanup. No initial record, lock creation, guard, confirmation, reset or writer
+is invoked, and no observation is persisted or reused as an effect token.
+Legacy-only and non-dispatching checks keep their existing output shape.
+
+`review_answer_host.py` uses only bounded public `read_thread` observations.
+Initial admission reads the exact parent's dispatch turn and a dedicated new
+child's sole own turn, rejecting additional pages, interaction/reuse and known
+or unresolved competing sends. Recovery uses one fixed two-turn page and the
+saved turn/message IDs; commentary, tool output, newest-turn inference and
+private transcript/API fallbacks are ineligible. Observed final-item completeness
+does not certify inaccessible provider omissions. The adapter currently has no
+proven correction/follow-up addressability: `send_correction` returns not-sent,
+and reused-session continuation without an admitted turn remains unavailable.
+It must not relax initial admission to make these paths appear supported.
+Recovery-only construction omits a parent dispatch turn; both fresh-binding
+operations reject that form before host observation rather than substituting
+the reviewer's executor turn for a parent turn.
+
+`review_answer_runtime.py` and the dedicated bounded answer-hook bridge feed the
+same collector from admitted hook/wait or explicit parent recovery. The hook
+neither registers nor commits/completes, and numerical usage collection remains
+separate. Its internal recovery/readback call alone permits a valid published
+answer whose independently observed terminal state is still pending. It skips
+an additional terminal lookup and retains every source, byte, basis, privacy and
+unknown-effect check. Parent/wait recovery, ordinary readback and registration
+keep the completed-terminal default; no terminal value is manufactured for the
+neutral hook result. `project_server` exposes the project-owned `review_answer_collect`
+with two exact argument arms: the typed five-field hook identity event or the
+original Task plus ordered actual reviewer UUIDs. Genuine MCP executor metadata
+is checked independently. The parent arm binds only a fresh same-current-parent-
+turn started dispatch or reuses an immutable saved binding, then performs bounded
+missing-source recovery or exact saved-publication reconciliation. It creates
+no wait, timer, message or registration.
+Hook dispatch selects an already bound slot from parent/reviewer hints and
+ignores the event's turn as a replacement for the saved child turn. This is
+the explicit workerless entry; normal wait already binds/collects, so no
+additional successful-path parent poll is introduced. Workerless recovery uses
+the same saved basis and source checks. One
+correction intent is possible only under the source-format/live-observer rules;
+it consumes the opportunity before any possible send and never creates a second
+send after failure or uncertainty. Existing wait deadlines and parent resumption
+handle unresolved work; add no timer, resident process or scan. Setup/host trust
+and real-host validation are separate activation requirements, not consequences
+of module installation or mock tests.
+
+A reviewer-origin hook matches the genuine executor session to the unique saved
+slot under current-basis admission. `hook_executor_turn_id` tolerates only the
+typed absence of executor-turn metadata. A supplied invalid, embedded-only or
+conflicting turn is still rejected; a supplied valid reviewer turn must match
+the saved active attempt. `ReviewerHookAdmission` pins the saved basis, binding,
+attempt ordinal and turn for the call. Its admission and host-read guards repeat
+those checks before effects and after helper initialization; a newly selected
+attempt cannot redirect an in-flight read or publication. A parent-origin hook
+without executor-turn metadata likewise uses saved-source recovery only. Fresh
+parent dispatch admission still requires its genuine current turn.
+Its dedicated read-only host reuses the existing bounded public relay with
+unchanged executor metadata, permitting only the fixed two-turn `read_thread`
+arguments for that reviewer. The shared parent host retains its rejection of a
+parent listed as its own reviewer. Transport configuration is shared, not caller
+authority; no parent metadata is manufactured and no wait, send, registration
+or publication-reconciliation capability is added to the reviewer route.
+
+Focused tests cover exact fenced/raw Unicode byte ranges, shape/privacy order,
+closed values, per-attempt digest and conflict handling, publication interruption,
+mixed transport, atomic unable registration/gates, exact historical audit,
+protocol persistence and two supersessions with source-preserving capture.
+The independent Reader tests disable product validators and reject recomputed
+corrupt nested source, ancestry, correction, Receipt and capture relations.
+Legacy codecs/sidecars, old request bytes and sealed Evidence remain exact;
+reviewer `save` retirement requires proven drainage of supported old requests.
+
 ### Optional Reviewer Verification Workspace
 
 `review_workspace.py` owns optional caller-invoked restoration and cleanup,
@@ -517,9 +804,8 @@ failure/timeout cleanup, lost output, quoted paths and records-only rejection.
 
 #### Conditional Continuation Composition
 
-This candidate is inactive until the
-[continuation synchronization gate](review-continuation-plan.md#sequential-phases-and-verification).
-The core values and relations are owned by
+Continuation requires its admitted schema, immutable preparation and exact
+settled-effect proof; it grants no migration or host activation. The core values and relations are owned by
 [continuation storage](database-design.md#conditional-review-continuation-storage).
 `review_handoff_continuation.py` composes the helper operation using existing
 Packet/file validators and public registration; it owns no SQL.
@@ -534,10 +820,12 @@ preparation advances the pointer. Existing ignored physical-path validation and
 the canonical resolver apply; older records remain immutable. Missing legacy
 locator never authorizes recursive discovery or invented binding.
 
-The preparation record's exact keys are `version`, `preparation_id`, `basis`,
+The legacy preparation record's exact keys are `version`, `preparation_id`, `basis`,
 `route`, `packet_path`, `packet_digest`, `result_paths`, `finalization_store`,
 and `created_at`. JSON is closed canonical sorted ASCII JSON; byte size includes
-escaping. The nullable finalization identity is the resolver-owned basename,
+escaping. Version two additionally stores the immutable per-slot `collection_bases`
+defined by [collected preparation](#collected-answer-collection); legacy bytes
+remain unchanged. The nullable finalization identity is the resolver-owned basename,
 not a caller path. It is required for integrated and forbidden for manual.
 The repository's singleton `current` points only to an immutable saved record;
 update/delete triggers protect `preparations`. First publication revalidates
@@ -574,7 +862,18 @@ The closed transition/round record has `preparation_id`, `continuation_id`,
 `selection_digest`, `expected_attempt`, nullable `expected_request_digest`,
 nullable `old_automation_id` and `old_request_phase`, `phase`, nullable
 `worker_stop_identity`, planned `packet_path`/`result_paths`, and nullable
-`packet_digest`.
+`packet_digest`. A collected round additionally carries immutable
+`answer_protocol="review-answer-v1"` and, once fixed during settled preparation,
+`collection_basis_digests`: one through eight ordered `sha256:` digests of the
+complete per-slot CollectionBasis, matching the result-path count. The pin tuple
+is written once after collection initialization and before prepared readiness,
+and is preserved by every phase and request-journal copy. An exact repeated pin
+is idempotent; a changed pin or first pin on a ready round is rejected. Empty
+pins are omitted so legacy and older unpinned tagged payloads remain byte-exact;
+older unpinned ready collected rounds remain readable history but cannot admit
+collection or registration. Legacy encoding also omits its default protocol
+tag. Pins remain inside the existing record bound and add no SQL schema or
+public operation. See [collection preparation](#collected-answer-collection).
 The original request digest covers its immutable identity including captured
 pairs and automation, excluding only its monotone cleanup phase. Phases advance
 one step through `fenced`, `settled`, `prepared`, `published`. Destination names
@@ -945,7 +1244,7 @@ bindings and exact native completion state. A new target cannot overwrite an int
 
 The packaged `scripts/review_wait_server.py` runs `project_server` with only
 repository, public bundled MCP wrapper, Codex home and confirmed timezone.
-Its nine closed controls include the normal `wait`, optional `inspect/stop`
+Its nine closed wait controls include the normal `wait`, optional `inspect/stop`
 and six compatible per-reservation controls. Discovery and startup are inert.
 The six compatibility descriptions label the earlier association/recovery use
 and identify the normal alternative without hiding controls or changing schemas.
@@ -1164,6 +1463,29 @@ unknown fallback. It never derives a diagnostic
 code from arbitrary exception text. Successful readiness and the nine control
 inputs remain unchanged.
 
+At a rejected answer-hook caller mismatch only, `project_server`
+compares the admitted executor thread with the event's reviewer hint and sets
+the call-local `hook_caller_relation`. `failure_diagnostics` emits only its two
+fixed values at that exact operation/error/reason boundary, never arbitrary
+values or a relation supplied by a result object. This records no UUID or raw
+metadata and proves no stored binding. Unrelated callers are rejected before
+slot lookup; reviewer candidates require the separate saved-slot admission
+above. Rejection performs no host access or collection write. Successful hook
+output and parent controls are unchanged. A new call starts without the optional
+comparison.
+
+At an answer hook's executor-turn admission failure, `review_wait_host` supplies
+one closed context classification on its typed error. `project_server` copies
+that classification to the call-local diagnostics before propagating the original
+failure. `failure_diagnostics` emits it only at the exact operation-stage
+`review_wait_unavailable`/`executor_context_required` boundary. The hook-only
+adapter consumes `turn_missing` as absence for the saved-source recovery rule
+above, without manufacturing executor metadata. Invalid and embedded-only turns
+remain rejected; conflicting valid aliases still produce `caller_mismatch`.
+The shared turn parser and fresh parent-dispatch rule retain their strict
+requirements. This diagnostic is not persisted and carries no raw metadata or
+rejected value.
+
 Managed orchestration carries call-local evidence of local writes and host
 mutation dispatch separately from admitted retained effects. A failure before
 state inspection cannot certify absence. Preparation/start diagnostics survive
@@ -1182,6 +1504,23 @@ existing-state inspection. Unconfirmed cleanup selects conservative recovery
 without overwriting the original failure boundary. The journal and direct-state owners
 retain intent-before-effect and all replay/competing-cleanup exclusions. These
 diagnostic projections do not settle, rewrite or migrate durable state.
+
+Both answer-collection arms and normal wait's synchronous binding/collection
+attach a temporary repository observer to the call's diagnostics.
+It marks possible local writes before the writer boundary
+and projects retained effects from complete validated inventories only after
+successful read or transaction exit. A publication intent precedes original
+file creation, so an uncertain publication is already covered by that write
+observation. Failed fresh reads and lease exits invalidate current state;
+call-local knowledge of an unresolved effect still requires inspection until
+that same inventory is successfully observed settled. The admitted wait-record
+projection and collection inventories are combined without allowing settlement
+of either to erase the other's unresolved effects. Failed reads remain
+uninspected. The observer is restored on exit and is not shared with a worker
+or saved in operational records.
+Normal wait's successful OFF, absent-preparation or legacy selection leaves its
+prior observation intact; an explicit parent collection with no service instead
+fails with uninspected collection state.
 
 `_ChildSession.close` retains its combined success boolean for the development
 relay while exposing transient `termination_confirmed` and a fixed
@@ -1945,14 +2284,15 @@ ownership before T1, but committed execution cleanup and terminal audit never
 depend on later caller ownership. Packet preparation bindings omit the
 caller-relative ownership projection; ownership freshness is checked separately.
 
-1. validate schema v29, identity/binding, optimistic ownership/Task/authority/target
+1. validate schema v30, identity/binding, optimistic ownership/Task/authority/target
    capture basis, Contract, sequential ordering, and evidence;
 2. reread Verification Receipts and review receipts/findings, evaluate the
    current verification and review gates, and select their deterministic
    bases;
 3. choose canonical completion time and next ordinal;
-4. insert links, Finding snapshots, one immutable Bundle-v2 row carrying the
-   selected caller-attestation, not-required, or Runner-observation basis, and
+4. insert links, Finding snapshots, one immutable current Bundle row carrying the
+   selected caller-attestation, not-required, or Runner-observation basis under
+   the [versioned Evidence contract](evidence-specification.md#collected-answer-evidence), and
    one complete verification/subject/evidence-basis-v1 `native_done` cycle;
 5. link the current execution to that cycle, release ownership and update the
    current Task to done with identical evidence;

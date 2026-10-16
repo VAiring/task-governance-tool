@@ -222,7 +222,7 @@ class Judgment:
 
     def __post_init__(self):
         if (not identifier(self.receipt_id, "tg_review_receipt_") or not _integer(self.revision, 1)
-            or self.verdict not in ("pass", "changes_requested", "not_required")
+            or self.verdict not in ("pass", "changes_requested", "not_required", "unable_to_review")
             or (self.session_id is not None and not is_session_id(self.session_id))
             or type(self.quality_basis) is not tuple or len(self.quality_basis) != len(QUALITY_FIELDS)
             or (self.continuation_id is not None and not identifier(self.continuation_id, "tg_review_continuation_"))

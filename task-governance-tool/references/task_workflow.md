@@ -23,6 +23,7 @@ from `data.selected.task.task_id` (`task context`) or `data.task.task_id`
 - [Review And Completion](#review-and-completion)
 - [Choose The Completion Route](#choose-the-completion-route)
 - [Continue After Reviews](#continue-after-reviews)
+- [Collected Review Answers](#collected-review-answers)
 - [Direct Review Transport](#direct-review-transport)
 - [Manual Completion](#manual-completion)
 - [Review Handoff Recovery](#review-handoff-recovery)
@@ -78,7 +79,10 @@ ON/OFF choices together (or accept deferral). Preserve existing choices; reuse
 answers already given. Explain that new Viewer reload uses 30 seconds, Runner
 ON still needs a separate Task Plan, and usage collection requires user-operated
 hook trust. Review wait ON enables local policy only and separately needs the
-[project MCP connection](review_wait.md#setup-and-connection). Apply only explicit answers with the corresponding
+[project MCP connection](review_wait.md#setup-and-connection). Answer collection
+ON additionally prepares its project hook; it still needs user-operated trust
+and an available host adapter. Optional correction may be unavailable even when
+normal collection works. Apply only explicit answers with the corresponding
 [Setup options](cli_contracts.md#optional-setup-features), using that same answer as authorization;
 no second confirmation is required. Report per-feature selection, effective
 configuration and outcome, not just core `ok`. Unavailable settings need
@@ -649,16 +653,17 @@ the complete Packet and unused result paths; give each reviewer its returned
 and authority. Retain the selected route's generated continuation command.
 Do not extract/serialize a displayed Packet, write preparation/save/validation
 code, issue a routine path check, or re-query the Packet. The full Packet and
-exact read/save instructions arrive in the same request. The read replaces the
+exact read/output instructions arrive in the same request. The read replaces the
 raw Packet read with an independent-role display, preserving required material
 while omitting parent-only registration and inapplicable format explanations.
 Do not additionally deliver the raw Packet or this parent guide to ordinary
 reviewers. Their view is not the complete transport Packet used for save/submit.
-Normal successful reviewers
+For `handoff.answer_protocol=review-answer-v1`, use the
+[collected-answer procedure](#collected-review-answers) below. Legacy successful reviewers
 return the short acknowledgement once, in their final response, without a
 duplicate success message; questions and failure reports remain appropriate.
 
-Each reviewer supplies its actual judgment, provenance and every Finding in
+Each legacy reviewer supplies its actual judgment, provenance and every Finding in
 the returned template, never inferred PASS or filled-in missing declarations.
 Preserve complete originals until registration is known; do not regenerate them
 from summaries. A reviewer's `ok=true,status=saved` acknowledges its save; the
@@ -672,6 +677,35 @@ success directly under the normal loop's conditions; otherwise use
 [Continue after reviews](#continue-after-reviews).
 Missing, failed or uncertain handoff/registration uses [handoff recovery](#review-handoff-recovery).
 If shared ignored files are unavailable, use the [direct route](#direct-review-transport).
+
+### Collected Review Answers
+
+Use this procedure only when the issued handoff names `review-answer-v1`.
+Send each generated request unchanged to a new dedicated independent reviewer
+and retain actual returned IDs in the prepared slot order. Before adding another
+request to those children, use the selected normal wait; it establishes their
+fixed source bindings. With waiting OFF, unavailable or parent-managed, call
+`review_answer_collect` once with the original `task_id` and ordered
+`reviewer_ids` while still in the dispatching turn. This binds the same sources
+and attempts collection without a worker or timer. It may report unfinished
+slots; that is not review failure or Task completion. Do not invent hook events.
+
+Reviewers return the supplied five-field JSON as their final answer. They do
+not save files, submit Receipts, or fill bookkeeping/provenance identifiers.
+The collector preserves the original; the existing generated submit/finalize
+command confirms it and uses the same registration and completion gates.
+`unable_to_review` and invalid/missing answers block completion. Preserve every
+Finding, check and limitation; never convert a rendered summary to an original.
+
+When the parent later handles ended reviews without a working wait, use the same
+tool once for missing bound answers or `save_unknown`, then continue with the
+retained command only after collection succeeds. For an interrupted save, this
+explicit call checks the saved intent and existing file without saving it again.
+If exact recovery remains unavailable, report the limitation and required
+external change, and end the ordinary turn. Do not poll, add a timer, choose a
+newest turn, replay unknown persistence, or manufacture a binding after lost
+dispatch context. Saved protocol and IDs survive restart. Old issued read/save
+requests keep their original procedure; do not translate them into this format.
 
 ### Continue After Reviews
 
@@ -1001,6 +1035,10 @@ extra prerequisite is added.
 
 Fill the provided `result_template` using `result_instructions` and your actual
 judgment, provenance and every Finding, including exact file/line references.
+If the generated request specifies the five-field final answer, follow that
+request directly: preserve all Findings/checks/limitations, use `unable_to_review`
+when the assigned independent review cannot be affirmed, and run no save/submit
+operation. The legacy provenance declarations below apply only to its template.
 Use honest unknown model/Skill identity/version declarations when unavailable;
 do not search internals merely to fill them.
 Keep the supplied identity unchanged. Null claims and collections are unfinished,

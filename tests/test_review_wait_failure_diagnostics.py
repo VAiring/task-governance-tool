@@ -54,6 +54,66 @@ class ExchangeDiagnosticsTests(unittest.TestCase):
         self.assertIsNone(diagnostic.host_failure)
 
 
+class HookCallerProjectionTests(unittest.TestCase):
+    def test_executor_turn_classification_is_closed_and_hook_local(self):
+        for context in ("turn_missing", "turn_invalid", "turn_embedded_only"):
+            diagnostic = CallDiagnostics(stage="operation", hook_executor_context=context)
+            result = diagnostic.failure({"ok": False, "error": "review_wait_unavailable"},
+                error=HostAdapterError("executor_context_required", executor_context=context))
+            self.assertEqual(set(result["diagnostic"]), FIELDS | {"hook_executor_context"})
+            self.assertEqual(result["diagnostic"]["hook_executor_context"], context)
+            self.assertLessEqual(len(json.dumps(result["diagnostic"]).encode("utf-8")), 2048)
+        for context in (None, True, [], {}, PRIVATE, "turnId", ""):
+            diagnostic = CallDiagnostics(stage="operation", hook_executor_context=context)
+            result = diagnostic.failure({"ok": False, "error": "review_wait_unavailable"},
+                error=HostAdapterError("executor_context_required", executor_context=context))
+            self.assertEqual(set(result["diagnostic"]), FIELDS)
+            self.assertNotIn("PRIVATE_PROVIDER_BODY", json.dumps(result))
+
+    def test_other_boundaries_and_result_objects_cannot_supply_turn_classification(self):
+        for stage, reason, result in (
+                ("executor_admission", "executor_context_required", {"ok": False, "error": "review_wait_unavailable"}),
+                ("operation", "caller_mismatch", {"ok": False, "error": "review_wait_unavailable"}),
+                ("operation", "executor_context_required", {"ok": False, "error": "caller_mismatch"}),
+                ("operation", "executor_context_required", {"ok": True, "error": "review_wait_unavailable"})):
+            diagnostic = CallDiagnostics(stage=stage, reason=reason, hook_executor_context="turn_missing")
+            self.assertNotIn("hook_executor_context", diagnostic.failure(result)["diagnostic"])
+        supplied = {"ok": False, "error": "review_wait_unavailable", "hook_executor_context": "turn_missing"}
+        diagnostic = CallDiagnostics(stage="operation", reason="executor_context_required")
+        diagnostic.capture(result=supplied)
+        self.assertNotIn("hook_executor_context", diagnostic.failure(supplied)["diagnostic"])
+
+    def test_only_fixed_relation_at_exact_rejection_is_emitted(self):
+        for relation in ("event_reviewer", "other"):
+            diagnostic = CallDiagnostics(stage="operation", hook_caller_relation=relation)
+            result = diagnostic.failure({"ok": False, "error": "caller_mismatch"})
+            self.assertEqual(set(result["diagnostic"]), FIELDS | {"hook_caller_relation"})
+            self.assertEqual(result["diagnostic"]["hook_caller_relation"], relation)
+            self.assertLessEqual(len(json.dumps(result["diagnostic"]).encode("utf-8")), 2048)
+
+    def test_invalid_values_and_other_boundaries_never_emit_relation(self):
+        for relation in (None, True, [], {}, PRIVATE, "parent", ""):
+            with self.subTest(relation_type=type(relation).__name__):
+                result = CallDiagnostics(stage="operation", hook_caller_relation=relation).failure(
+                    {"ok": False, "error": "caller_mismatch"})
+                self.assertEqual(set(result["diagnostic"]), FIELDS)
+                self.assertNotIn("PRIVATE_PROVIDER_BODY", json.dumps(result))
+        for stage, reason, result in (
+                ("executor_admission", None, {"ok": False, "error": "caller_mismatch"}),
+                ("operation", "unavailable", {"ok": False, "error": "caller_mismatch"}),
+                ("operation", "caller_mismatch", {"ok": False, "error": "review_wait_unavailable"}),
+                ("operation", "caller_mismatch", {"ok": True, "error": "caller_mismatch"})):
+            with self.subTest(stage=stage, reason=reason, result=result):
+                projection = CallDiagnostics(stage=stage, reason=reason, hook_caller_relation="event_reviewer").failure(result)
+                self.assertNotIn("hook_caller_relation", projection["diagnostic"])
+
+    def test_result_object_cannot_supply_relation_to_diagnostic(self):
+        diagnostic = CallDiagnostics(stage="operation")
+        supplied = {"ok": False, "error": "caller_mismatch", "hook_caller_relation": "event_reviewer"}
+        diagnostic.capture(result=supplied)
+        self.assertNotIn("hook_caller_relation", diagnostic.failure(supplied)["diagnostic"])
+
+
 class BoundaryDiagnosticsTests(unittest.TestCase):
     def setUp(self):
         root = Path.cwd()

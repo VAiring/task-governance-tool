@@ -57,7 +57,7 @@ Tier 2 requires two PASS receipts from distinct independent reviewer keys;
 Tier 1 requires one. Tier 2 fallback requires one documented self-review PASS
 plus explicit user approval; Tier 1 fallback requires the self-review PASS.
 Tier 0 permits not-required only with a mechanical-change rationale. Any
-current-generation changes-requested receipt, unresolved high/medium finding
+current-generation changes-requested or effective `unable_to_review` receipt, unresolved high/medium finding
 from any recorded generation, or fresh-review-required condition blocks
 completion. Resolving a blocking finding is insufficient: advance to a newer
 target and obtain fresh receipts.
@@ -68,7 +68,9 @@ reviewer nor proves person/model/process identity, independence, expertise,
 provenance, or summary truth.
 
 Public receipt kinds are exactly `independent`, `self_review_fallback`, and
-`not_required`; verdicts are `pass`, `changes_requested`, and `not_required`.
+`not_required`. Legacy inputs retain `pass`, `changes_requested`, and
+`not_required`; only the [collected-answer arm](#collected-review-answers)
+adds `unable_to_review` for an independent Receipt with v2 provenance.
 Detailed rows remain in `review_receipts` and `review_findings`. Completion
 cycle basis selection is independent of the existing diagnostic
 `fallback_kind` projection.
@@ -79,6 +81,12 @@ target/generation and review tier, so these are not repeated here. Gate retains
 `required_independent_passes`, `qualifying_independent_passes`, `fallback_kind`,
 and `satisfied`. Counts retains `receipts_current_generation`,
 `changes_requested_current_generation`, and `open_high`, `open_medium`, `open_low`.
+Schema 30 additionally reports `unable_current_generation`, counting effective
+unsuspended unable judgments for the exact current basis. The shared gate,
+manual completion and integrated finalizer return `review_unable` while this
+count is nonzero, even with two other PASS receipts. An unable result is valid
+evidence, not malformed JSON or content NG; only legitimate reassessment or a
+fresh target may supersede it.
 
 Current Receipts match the complete current target and generation and expose
 only `review_receipt_id`, `reviewer_key`, `receipt_kind`, `verdict`, `summary`,
@@ -150,7 +158,7 @@ Receipts; current changes-requested and unselected blockers retain their gates.
 
 ## Structured Review Results
 
-`review result add <task-id>` accepts one version-1 UTF-8 JSON document or an
+The legacy arm of `review result add <task-id>` accepts one version-1 UTF-8 JSON document or an
 array of complete version-1 documents on stdin and atomically records new
 Receipts and their nested new Findings for
 one Task, Contract revision, and exact review target. The caller attests the
@@ -304,6 +312,354 @@ caller-owned streams without descriptors remain the caller's lifecycle concern.
 This registration command accepts stdin only, not file paths. The separate
 helper below performs caller-owned transport without changing this writer.
 
+<a id="collected-review-answers"></a>
+
+### Collected Review Answers
+
+An explicitly opted-in preparation on schema 30 fixes protocol
+`review-answer-v1` and attestation `assigned-independent-review-v1` in its
+immutable request basis. The reviewer returns exactly:
+
+```text
+{verdict, summary, findings:[{severity,summary}], checks:[], limitations:[]}
+```
+
+All five keys are mandatory; unknown or duplicate keys are invalid. `verdict`
+is exactly `pass`, `changes_requested` or `unable_to_review`. `summary` is a
+nonempty sanitized string of at most 1,000 Unicode scalar values. Findings are
+zero through 64 objects with exactly `severity=high|medium|low` and a nonempty
+sanitized summary of at most 1,000 scalars. Checks and limitations are each
+zero through 32 nonempty sanitized strings of at most 1,000 scalars. Explicit
+empty arrays remain explicit; checks are reviewer claims, not verification
+Receipts. Preserve every Finding and the exact sanitized strings and array
+order. Existing normalized duplicate-Finding rejection remains controlling.
+No identity, path, provenance, approval or internal transport field is requested
+inside the answer.
+
+The fixed request says that returning PASS or changes-requested attests that
+the responder performed the assigned review in an independent reviewer role.
+A responder unable to affirm that role or sufficient review returns unable
+with an explanatory summary and preserves any concrete Findings obtained.
+Assignment labels, turn completion and empty arrays do not establish an
+independent PASS. A conflicting structural role rejects registration; no prose
+classifier, inferred provenance or parent rewrite supplies missing declarations.
+Self-review fallback and Tier-0 waivers keep their separate approval rules.
+
+Accept bare JSON with surrounding JSON whitespace or one sole `json` fence
+with LF/CRLF fence lines and no indentation or suffix. No mixed prose,
+substring extraction, multiple blocks, parent repair, BOM, duplicate key,
+invalid Unicode, non-finite number or wrong exact type is accepted. The complete
+original is at most 262,144 UTF-8 bytes. Structural types precede privacy;
+privacy precedes enums, scalar/count limits, duplicate semantics and binding.
+The original and payload ranges retain exact delivered UTF-8 bytes; no trimming,
+normalization or reserialization changes their hashes. The payload range
+excludes only surrounding JSON whitespace and, where present, the fence lines.
+
+`review result add` accepts collected originals only through this distinct
+closed stdin discriminator, never by guessing a legacy result's shape:
+
+```text
+{format:"taskgov-collected-review-results-v1", preparation_id,
+ continuation, items, retained_receipt_ids, retained_originals}
+```
+
+Each collected item is exactly `{kind:"collected",slot,original_base64,metadata}`.
+Canonical padded base64 contains one complete original without whitespace or
+alternate alphabet. `metadata` and the nullable continuation identity use the
+[closed collection value schemas](database-design.md#collected-answer-value-schemas).
+They bind the complete project/Task/Contract/authority/criteria/target,
+execution/owner generation, preparation, request, assigned reviewer, exact turn
+and final message, admitted source operations, publication and terminal outcome.
+The helper supplies these machine facts; answer JSON cannot override them.
+`original` includes the exact prepared path, byte/range bounds and both digests;
+readback must reproduce them before dispatch. Only `terminal="completed"`
+qualifies. Unknown, failed or interrupted execution never becomes completion.
+
+Items cover every required unregistered slot in prepared order: newly selected
+slots first, then retained originals in session order. New selected metadata's
+slot equals its outer slot. A retained collected original preserves its source
+slot and metadata and names its consumer slot through the admitted capture.
+The legacy arm is exactly `{kind:"legacy",slot,source_packet_digest,
+original_base64,binding}` and is permitted only for an admitted retained
+unregistered legacy original. It keeps its old bytes and v1/v2 sidecar. New
+selected legacy answers cannot be inserted into a collected batch. Retained
+Receipt IDs and the closed retained-original union are derived from the exact
+continuation inventory, with one-to-one capture consumption and no aliases.
+Both retained arrays are empty without a continuation.
+
+One through eight original slots, at most 64 combined Findings and the complete
+262,144-byte serialized stdin cap include base64, metadata and framing. Do not
+split a failed batch, drop Findings or register successful siblings separately.
+Every slot must have a valid published answer, completed bound turn and settled
+correction/save/registration effects. Exclusive publication, flush and physical
+readback are followed by a separate readback/current-basis confirmation before
+the one public registration dispatch. No file or host I/O spans its SQLite
+writer. The writer atomically records all Receipts, Findings, v2 provenance,
+actual session/source relations, References and exact dispatch inventory, or
+rolls back the whole batch. Normalized Receipt/Finding rows must match the
+retained payload strings under current normalization. The
+[Evidence owner](evidence-specification.md#collected-answer-evidence) defines v2
+provenance, unknown runtime facts, reference attribution and immutable history.
+
+Once the core transaction has confirmed commit, collection acknowledgement or
+connection/admission cleanup failure preserves the successful registration
+response with `collection_registration_acknowledgement_unavailable`. It never
+returns an empty failed-registration result or authorizes resubmission. A
+transaction exit that fails before confirming commit remains unconfirmed;
+creating response data inside that transaction is not commit evidence.
+
+Retain at most two attempts per slot. A privacy-admissible complete answer's
+observed digest survives semantic format failure; syntax/shape that prevents
+privacy admission and rejected privacy retain only source identity and fixed
+failure metadata, never body/hash or a correction intent. Such a failed arrival
+is not duplicate success. Equal known source/digest is idempotent; a changed
+source or digest latches conflict without replacing the first original. Each
+publication compares to its own attempt's digest; a correction's initial digest
+compares only to ordinal zero. Unknown effects are inspected, never replayed.
+
+Failure classes remain distinct through hook, helper, CLI and parent report:
+`format_invalid`, `privacy_rejected`, `capacity_exceeded`,
+`collection_unavailable`, `binding_mismatch`, `save_unknown`,
+`registration_unknown`, `review_unable`, and `review_changes_requested`.
+Diagnostics contain only closed field paths and fixed reasons, with no rejected
+body, unknown key, exception or provider envelope. Capacity/privacy failure
+never asks a reviewer to delete Findings or consumes a format correction.
+Recovery, readback and submission preserve the validated failure stored for an attempt;
+they do not replace it with missing-content failure. An unresolved publication
+still takes precedence as `save_unknown` until its exact effect is settled.
+A latched conflict remains recorded and prevents publication reconciliation.
+The shared bounded stdin reader retains its existing general input error when
+it rejects input before a complete collected discriminator can be decoded;
+it never infers a protocol from a clipped prefix. Typed collected framing and
+admitted collected input preserve the distinct classes above, including the
+whole framed-byte and combined-Finding limits.
+
+<a id="collected-answer-host-boundary"></a>
+
+#### Collected Answer Host Boundary
+
+Adapter `codex-app-tools-review-answer/1` admits an initial binding only for a
+new dedicated child created by this exact parent turn's public `started`
+dispatch. The flow retains its pre-binding creation context, issues no further
+request to that child and rejects reuse, `interacted`, known competing sends or
+unknown send effects. Bounded parent/child public pages must identify the exact
+parent dispatch and exactly one own child turn, with no additional-page signal;
+inherited context is not an own turn. A child already completed at first
+observation can qualify. The durable binding precedes answer admission. A
+restart without the necessary pre-binding context cannot infer it from one page.
+
+Fresh collection rechecks the current preparation and issued continuation at
+each admission boundary, including after a host observation and before original
+publication. An unchanged execution basis or old Packet alone cannot admit a
+superseded selected request. The
+[unchanged initial-slot exception](#continuation-transport-and-failure-contract)
+and exact retained-original capture/registration remain available; retained or
+historical read admission never authorizes fresh collection for an obsolete slot.
+
+Answer recovery is at most one public `read_thread` call per missing slot,
+with `hostId=local`, fixed `turnLimit=2`, `includeOutputs=false`,
+`maxOutputCharsPerItem=256` and no cursor. Select only the saved turn ID and
+exactly one `agentMessage` with `phase=final_answer`; if a message ID is already
+saved, it must match too. A missing ID is discovered inside that same exact-turn
+call. A turn outside the window, ambiguous final item, transport error,
+explicit clipping/incompleteness, invalid shape or size excess fails closed.
+No latest-turn substitute, pagination, preliminary lookup or transcript/private
+API fallback is permitted. `complete:true` means this observed bound public
+final item has no explicit omission; it does not prove absence of inaccessible
+provider omissions. Answer validity and the same turn's terminal outcome remain
+separate checks.
+
+Only one automatic correction intent is allowed for a complete, bounded,
+privacy-admissible format failure, after already accepted work and existing wait
+effects settle and a live observer is available. The saved intent consumes the
+opportunity even when sending fails or is unknown. A correction must reach the
+same actual reviewer and bind its exact follow-up turn before ordinal one is
+admitted. This adapter currently returns correction `not_sent` and supplies no
+follow-up binding: malformed answers take the format-failure path to the parent.
+Reused-session continuation likewise cannot use fresh-child admission; without
+an independently admitted exact follow-up binding, collection is unavailable.
+No implementation or fixture PASS certifies real-host follow-up support.
+
+The project-owned MCP `review_answer_collect` is a separate bounded collection
+entry, not an external host API. Its arguments have exactly one of two closed
+arms: `{event}` or `{task_id,reviewer_ids}`. Event has exactly
+`hook_event_name="SubagentStop"`, `session_id`, `agent_id`, `turn_id` and
+Boolean `stop_hook_active`; UUIDs are identity hints only. It can select only
+an already admitted parent/reviewer slot. Hook `turn_id` never substitutes for
+the saved assigned turn, and no unbound answer body is retained.
+
+The genuine MCP executor thread must be the saved parent or saved reviewer.
+A hook may omit executor-turn metadata: this permits only recovery through an
+independently admitted saved assignment, never fresh dispatch binding. A supplied
+executor turn retains all shape, alias and conflict checks; for a reviewer
+executor it must equal the saved active attempt's turn. One current issued slot
+must bind that reviewer to the event's parent. For that reviewer-origin call,
+pin its complete basis, binding, active attempt ordinal and turn, and revalidate them before
+collection, each host read and publication. An attempt changed during the call
+is rejected rather than followed. Event identities alone grant no admission;
+missing, ambiguous, stale or conflicting bindings fail closed. The reviewer
+route can only read its own bound answer through the fixed two-turn public
+observation. It cannot bind a new slot, reconcile publication, send a message,
+manage waiting, register results or complete a Task. Forward genuine executor
+metadata unchanged; never impersonate the parent. Parent controls retain their
+existing ownership checks.
+
+The synchronous hook may observe a complete final answer before its bound turn
+has ended. Its neutral success confirms only valid original publication and
+exact readback; it does not assert terminal completion. Pending terminal state
+remains pending. Parent/wait collection and every registration admission still
+require independently observed `completed`; failed or interrupted turns never
+qualify. This hook-only distinction changes no conflict, privacy, current-basis
+or unresolved-publication check and performs no extra terminal poll.
+
+The parent arm names the original Task and one through eight distinct actual
+reviewer UUIDs. Parent, wait and hook collection resolve each reviewer against
+the current issued selection and saved exact bindings. The admissible order is
+the current selected requests in prepared order, followed by never-selected
+initial slots in their original prepared order; a requested subset preserves
+that order. Superseded selected slots and retained originals are not fresh-source
+fallbacks. Complete new dispatches still require the full prepared slot set;
+subsets reuse already bound slots. Collection response slot numbers are one-based
+positions in the requested reviewer list, so two sources with the same local
+slot number remain distinct. Native source slots and registration-batch order
+are unchanged. Genuine connected MCP caller
+metadata independently establishes the current parent and turn. Immediately
+after dispatch, before ending that parent turn, this arm may persist exact new
+child bindings under the strict started/sole-own-turn rule above; a prior
+request, reused/interacted child, missing creation context or known conflict
+prevents fresh admission. Later calls may only reuse saved exact bindings and
+recover missing answers once. Normal wait already performs binding/collection;
+the separate parent arm serves authorized workerless preparation or explicit
+missing-source recovery, not an additional parent poll. It also reconciles an
+interrupted publication only against its saved intent, exact prepared path and
+complete matching bytes. This explicit recovery settles the existing state;
+it never reads the answer again from the host, recreates the file or retries an
+unknown effect. Missing, partial or conflicting residue remains `save_unknown`.
+Automatic hook/wait collection and read-only inspection preserve that unknown
+state until explicit parent recovery. The parent arm returns bounded
+collection/unavailable facts without answer bodies and starts no worker/timer,
+correction send, registration or completion.
+
+Collection therefore uses the same bounded operations with waiting OFF,
+unavailable, parent-managed or workerless. Lost hooks and answers received before
+binding use exact recovery after binding. Unrecoverable or uncertain work is
+not complete; the existing ten-minute wait deadline or parent resumption
+handles confirmation. Add no timer, resident monitor, hidden retry or numerical
+usage-hook dependency. Setup selection, hook preparation, host trust/execution,
+collection, correction sending, Git and Task completion remain distinct
+permissions. Optional host model/Skill/method facts stay unknown; this contract
+does not claim runtime hooks enabled or an unverified host activated.
+
+#### Exact Collected Registration Inspection
+
+After a lost registration response, public
+`task show <Task> --audit --collection-preparation <preparation-id>
+--collection-submission <sha256-digest>` inspects only that exact dispatch.
+Both selectors and `--audit` are required together; malformed/partial selection
+is `invalid_argument`. Ordinary show/audit without selectors retains its shape.
+The added `collection_registration` is exactly `{status,preparation_id,
+submission_digest,current_basis,entries,reason}`. Status is
+`recorded|absent|conflict|unknown`; current basis is nullable Boolean, entries
+are the complete slot-ordered inventory of at most eight, and reason is null or
+a fixed diagnostic. The canonical inventory has a 32,768-byte cap.
+Each entry records slot/protocol/Receipt, project/Task/Contract and five-field
+target, source preparation/nullable continuation, actual reviewer/turn/message,
+basis/original/payload/submission digests. Collected-only turn/message/basis/
+payload facts remain null for legacy entries.
+This lookup includes exact historical registrations after target advancement;
+`current_basis=false` never refreshes their authority. A complete matching
+inventory proves the recorded effect. Snapshot absence, conflict or unknown
+alone never proves rollback or authorizes replay, a recent-ten search or another
+send.
+
+An outer finalization reservation can precede the actual registration dispatch.
+For an exact absent inventory, the retained finalizer may establish that no
+registration was issued only by freshly admitting the complete all-collected
+submission and observing every exact source's registration as
+`not_started` with no submission digest or Receipt ID while holding all source
+leases under its finalization lease. Missing or partial source coverage, a
+retained legacy item, changed basis or any dispatched/registered source does not
+qualify. This proves non-dispatch, not rollback, and resets no saved state.
+After releasing those source leases, the same public writer must reacquire and
+recheck them before marking dispatch; an intervening writer prevents duplicate
+registration. Conflict or unknown inventory retains the existing refusal.
+
+For sources already marked `dispatched` or `unknown`, the retained finalizer may
+instead request settled-effect recovery through the same public writer. The
+internal request identifies the exact preparation and submission and requires
+the existing non-null finalization basis; it is intent, not proof. Admission
+must cover the complete all-collected submission, with every exact source in
+one of those two states, matching the submission digest and naming no Receipt.
+All source leases remain held through the fresh core writer transaction,
+connection close and source confirmation, excluding cooperating in-flight
+registration of those sources.
+
+Inside that transaction, current identity, ownership, Contract, preparation and
+target admission must still pass. The writer must establish absence of the
+exact dispatch header and entries, source rows for that preparation/submission,
+and any registered source with a submitted reviewer/turn/message identity.
+Partial or conflicting residue is never repaired or adopted. Any relevant
+continuation must remain prepared, and captured originals being registered
+must name no existing Receipt; retained historical Receipts outside that
+submitted batch keep their existing rules. Only this complete fresh proof
+permits the existing atomic registration once. Source intents remain
+dispatched/unknown until normal confirmation records the committed Receipt;
+they are never reset to `not_started`.
+
+This proof concerns settled effects in the currently admitted canonical state,
+not historical non-commit across an arbitrary database restoration. Known
+identity, binding or restore conflicts, changed basis, incomplete or mixed
+submissions, busy leases, unreadable state and any registration residue remain
+closed. Ordinary registration still requires `not_started` sources; a complete
+matching recorded inventory uses confirmation only. Neither this recovery nor
+the non-dispatch proof adds a normal-loop query, CLI option, schema or separate
+finalizer.
+
+For an unresolved outer registration reservation, retained `finalize --check`
+adds a read-only `registration_observation` for collected or mixed submissions.
+Its closed fields are `version:1`, nullable `preparation_id` and
+`submission_digest`, nullable `native`, `sources`, `classification`, and `reason`.
+The selectors come from the complete saved submission; `native` is the exact
+closed audit above. `sources` is the complete submitted order of at most eight
+rows, each exactly `{slot,protocol,source_slot,state,submission_digest_match,
+receipt_id}`. Collected source state is `not_started|dispatched|unknown|registered`;
+digest match is `absent|matching|different`. Legacy rows use their actual protocol
+and null source fields. No partial source prefix or unvalidated native response
+is returned. Classification is `not_dispatched|dispatched|recorded|inconsistent|
+unavailable`; it describes the observed relation only. Reason is null or
+`finalization_unavailable|submission_unavailable|basis_changed|source_unavailable|
+native_unavailable|busy|mixed_protocol|native_conflict|native_unknown|
+source_native_mismatch`. Complete all-collected sources with absent native
+inventory distinguish no source dispatch from matching dispatched/unknown
+sources; exact current recorded inventory must also agree with source digests
+and any confirmed Receipt IDs. Other valid combinations are inconsistent.
+
+The diagnostic uses existing finalization and source leases in that order,
+then the public native audit. It creates no lease file, retries no busy lease,
+contacts no host, and performs no registration, confirmation or state reset.
+Unreadable, busy, changed or invalid inputs yield a sanitized unavailable
+observation. Source/native fields remain empty/null if full admission or lease
+cleanup fails. This snapshot never authorizes replay or replaces fresh writer
+admission. Normal checks without an unresolved reservation and valid pure-legacy
+checks retain their existing shape; this is not a normal completion prerequisite.
+
+#### Collected Protocol Compatibility
+
+Preparation fixes the protocol and request digest before dispatch. Existing
+issued save-based requests finish as legacy; restart never substitutes the
+installed default. A new continuation has its own immutable protocol tag and
+request bases before readiness; tagged collection with a missing store fails
+closed, without a legacy fallback. Unregistered collected originals transfer
+through explicit supersession with unchanged source metadata and both seals;
+they require the new batch's exact native captures. Disablement cannot turn an
+outstanding collected original into a newly selected legacy result.
+The existing `save` entry remains solely for outstanding legacy requests until
+their supported inventory is proven settled. Unknown drainage is not permission
+to remove it. Keep old readers, originals, sidecars and sealed Evidence; remove
+no material-retrieval, parent-submit or finalization operation. Current runtime
+behavior is owned here and by the linked current database/Evidence owners;
+conditional plans retain implementation acceptance, not a runtime fallback.
+
 ### Conditional Review Continuation
 
 The helper exposes `continue --repo <project> --task-id <Task>
@@ -313,9 +669,10 @@ this exceptional operation only for an admitted manual preparation; an integrate
 locator is rejected before any continuation write and never acquires automatic
 finalization authority from records-only invocation.
 
-The [approved continuation plan](review-continuation-plan.md) owns this Task's
-implementation and activation gates. The following closed extension is inactive
-until its schema, repositories, helper, gate consumers and tests are synchronized.
+This closed extension requires its admitted schema and matching preparation;
+ordinary commands do not migrate or invent either. Its current storage and
+graph rules belong to the [database owner](database-specification.md#conditional-review-continuation-persistence)
+and [Evidence owner](evidence-specification.md#collected-answer-evidence).
 It adds no public MCP operation, new normal-loop call or Git authority.
 
 The core records an explicit continuation for the complete project/Task,
@@ -521,7 +878,7 @@ diagnostic next actions, not authority for new effects or file repair.
 
 ### Caller-Owned Review Handoff
 
-The shipped `scripts/review_handoff.py` has `prepare`, `read`, `material`, `workspace`, `save` and `submit`
+The shipped `scripts/review_handoff.py` has `prepare`, `read`, `material`, `workspace`, legacy `save` and parent `submit`
 operations, separate from the taskgov command inventory. All require explicit
 `--repo`. The Packet remains context, not authenticated evidence, and the helper
 never launches a reviewer or replaces current-state registration checks.
@@ -550,7 +907,8 @@ unchanged; this is not an exception for new caller input or other fields.
 Only ready success creates the explicitly
 named missing physical directory chain and its exclusive `packet.json`, then
 confirms the complete saved bytes and distinct unused `review-N.json` paths.
-It returns the Packet path, exact per-reviewer read/save instructions and the
+It returns the Packet path, exact per-reviewer instructions for the saved
+protocol ([collected answers](#collected-review-answers) or legacy read/save) and the
 selected continuation: parent submit for `prepare`, or the integrated command
 defined below for `prepare-finalization`. There is no LLM extraction/serialization, save-path check call,
 second normal Packet query, new prerequisite or response-count limit. Only the
@@ -580,7 +938,7 @@ also remains `unknown`, never a claimed rollback. Do not replay a target or
 Receipt write. Retain residue, use the existing public-state investigation and
 bound preparation-only recovery with a new unused directory when appropriate.
 
-`save` and `submit` require `--packet`, the complete actual Packet file. A caller
+Legacy `save` and parent `submit` require `--packet`, the complete actual Packet file. A caller
 that already holds a complete Packet may still use them directly; missing,
 display-truncated or differently bound Packets must not reach reviewers.
 Prepare, read, save and submit share one pure complete-Packet validator,
@@ -607,12 +965,14 @@ file must be unchanged. For an older Packet without `authority_ref`, compare
 all its existing Contract fields and omit only that new field from the current
 comparison; keep the saved bytes and display absent, without reconstruction.
 A present reference must match exactly. A stale Contract/generation, mismatched
-index, missing objects, unavailable state or incomplete response returns no view. It has no
-direct storage access, writes nothing and creates no second Packet. Its display is compact
+index, missing objects, unavailable state or incomplete response returns no view.
+It writes nothing and creates no second Packet. Saved-protocol
+lookup additionally reads only the admitted structural preparation/collection
+records; it never upgrades a legacy request. Its display is compact
 UTF-8 JSON plus LF, without shell-codepage conversion or
 ASCII escaping of non-ASCII Contract prose. The generated ordinary
 independent-review row contains only `result_path` and a self-contained `request`.
-The request embeds the exact read and save commands and is
+For the legacy protocol the request embeds the exact read and save commands and is
 directly forwardable; separate `read_command`/`save_command` keys do not repeat
 them. No extraction, reconstruction or command matching is required of the parent.
 The independent assignment and first-read failure boundary form its stable
@@ -623,9 +983,10 @@ does not change steps or require an extra read. A stable request prefix may
 permit cache reuse, but actual host/conversation caching, token use and cost
 effects are unmeasured; neither padding nor a performance gate is introduced.
 The request never supplies the parent's submit
-command. Assignment is not an attestation of actual independence. A different
-or uncertain role requires the existing full-Packet route, not an inferred
-declaration. Direct complete-Packet transport and legitimate fallback/Tier-0
+command. Assignment is not an attestation of actual independence. For legacy
+declarations, a different or uncertain role requires the existing full-Packet
+route, not an inferred declaration. Collected answers instead use the explicit
+unable/attestation rules above. Direct complete-Packet transport and legitimate fallback/Tier-0
 paths remain available with their existing rules and external approval boundary.
 
 The display adds `context_check=matched_at_read`, sanitized public `warnings`,
@@ -1029,7 +1390,7 @@ Capture checks the base/index before and after observation; drift prevents
 preparation. References, unstaged/untracked content and ignored local artifacts
 are not automatically staged or added, and their presence alone is not drift.
 
-All originals must pass the existing complete-batch file/sidecar validation
+All originals must pass complete-batch file and saved-protocol metadata validation
 before any registration. Missing or invalid originals preserve all-or-nothing
 registration while reporting each available and unavailable result. The existing
 registration, current verification/review/Finding, ownership, ordering and
@@ -1170,7 +1531,9 @@ The six earlier controls remain compatible for existing associations:
 They are recovery/compatibility controls, not the normal wait procedure.
 Their discovery descriptions identify that role and point to the corresponding
 normal wait, diagnosis or stop control; normal receipt is automatic. All nine
-controls remain discoverable with unchanged inputs and execution semantics.
+wait controls remain discoverable with unchanged inputs and execution semantics.
+The separate [answer-collection control](#collected-answer-host-boundary) adds
+no wait operation or replacement notification path.
 Normal guidance selects the exact `review_wait_wait` tool in the connected MCP
 namespace and reuses an available complete definition; broad catalogue display
 or rediscovery is not a prerequisite. Host-qualified names follow the actual
@@ -1517,6 +1880,28 @@ only the following fixed fields and allowlisted values:
 | `turn_end` | `report_limitation`: an ordinary turn may end after reporting the limitation and retained continuation, without claiming successful waiting. |
 | `host_failure` | Optional closed object for an observed host exchange: fixed `operation=read_thread|wait_threads|automation_update|send_message_to_thread`, allowlisted host `reason`, and `termination=not_attempted|confirmed|unresolved` for its owned helper process/pipes. It is absent when these facts were not observed; absence is not successful termination. |
 | `read_failure` | Optional closed purpose projection: `purpose=parent_state|reviewer_identity|notification_receipt`, integer `retained_pages=0..17`, `conclusion=unknown`, and the corresponding fixed `next_action=restore_parent_read|restore_identity_read|retain_known_results`. The count describes complete validated pages held transiently in this scan, not a successful identity/receipt conclusion or reusable current parent snapshot. |
+| `hook_caller_relation` | Optional `event_reviewer|other` on an answer-hook `caller_mismatch` rejection of admitted executor metadata. `event_reviewer` means that thread equals the event's `agent_id`; `other` means it equals neither event identity. This is a comparison with event hints, not proof of parent/child relationship, prepared-slot identity or collection permission. |
+| `hook_executor_context` | Optional `turn_missing|turn_invalid|turn_embedded_only` on an answer-hook `review_wait_unavailable` rejection with operation-stage reason `executor_context_required`. It distinguishes no executor turn, an invalid turn value/shape, and an embedded corroborating turn without an independently selectable executor turn. |
+
+The rejected hook caller comparison preserves `error=caller_mismatch`,
+`stage=operation` and `reason=caller_mismatch`, and never starts host access or
+collection writes. An unrelated executor is rejected before slot lookup;
+the reviewer candidate uses only the saved-binding admission above. The
+diagnostic emits no IDs or raw metadata, retains no new state and itself grants
+no retry or alternate caller. Other failures and successful
+responses omit the optional relation; after restart, a past relation cannot be
+reconstructed from ordinary caller or saved-review observations.
+
+The hook executor-context classification is emitted only by the current call's
+executor-turn admission failure, before slot lookup, host access or collection
+writes. It changes no admitted alias, shape or conflict rule and reports no
+identity, rejected value or raw metadata. The hook-only absent-turn recovery
+rule above uses a saved answer source without filling executor metadata;
+invalid or embedded-only supplied turns remain admission failures. The vocabulary
+retains `turn_missing` for compatibility, without making genuine executor-turn
+absence a failure of that hook-only recovery route. Other boundaries and successful responses
+omit the field; absence does not establish valid executor context or reconstruct
+a past failure. The field grants no retry or alternate caller.
 
 Communication and termination are separate results. Preserve the first fixed
 communication reason even if helper termination is unresolved; process exit
@@ -1567,6 +1952,12 @@ recording cannot be reported as `local_state=not_attempted`.
 Before a fresh retained-state read or an uncertain journal write, invalidate
 earlier absence/settled observations. A failed write that may have saved intent
 requires existing-state inspection; it cannot reuse a pre-write absence claim.
+These rules also cover both answer-collection arms and synchronous collection
+inside normal waiting, including binding writes and original-publication intents.
+Settled wait state cannot settle unresolved collection effects, or vice versa.
+A failed fresh inventory read leaves the
+current state uninspected; it does not settle an earlier observed unknown
+effect or remove the need to inspect that effect.
 
 Preparation and start failures retain their original safe stage/reason through
 the normal entry point, including an allowlisted failure reason carried by a
@@ -1990,7 +2381,7 @@ repeating timer changes, Task completion or review registration.
 
 ### Reviewer Session Binding
 
-This section applies from schema 25 (retained by current schema 29) under the
+This section applies from schema 25 (retained by current schema 30) under the
 [approved participation design](session-usage-plan.md#reviewer-participation-without-new-manual-steps)
 and preserves the version-1 reviewer's judgment template. Schema migration
 remains setup-only; numerical collection and lifecycle integration are separate.
@@ -2409,7 +2800,7 @@ order. Allowed readiness codes are `invalid_status_transition`,
 `review_target_required`, `evidence_basis_stale`, `review_target_mismatch`,
 `verification_receipt_required`, `verification_receipt_blocking`,
 `verification_requirement_unspecified`,
-`review_finding_unresolved`, `review_changes_requested`,
+`review_finding_unresolved`, `review_changes_requested`, `review_unable`,
 `review_receipts_insufficient`, `session_identity_required`, `task_not_owned`,
 `task_ownership_changed`, and `completion_check_stale`. Parse/privacy,
 not-found, project/schema/journal/busy/storage/internal failures remain command

@@ -120,6 +120,12 @@ including recent Receipt/provenance and Finding rows and saved completion
 cycles, plus the [current Packet recovery binding](review-completion-specification.md#git-snapshot-and-target-binding).
 It is for explicit investigation/recovery, not another normal-loop read, a
 free-form field selector, an exhaustive export, or a current completion basis.
+The paired `--collection-preparation` and `--collection-submission` selectors
+conditionally add the exact collected-registration inventory under the
+[review-result recovery contract](review-completion-specification.md#collected-review-answers).
+They require `--audit` and each other. Ordinary show/audit retains its shape;
+the selected lookup reads only its consistent core snapshot, without answer
+file access, host calls, mutation, maintenance or retry authority.
 Normal use requires no mode choice, remembered reads, or follow-up detail query.
 Both modes perform all existing selected-Task, evidence, history, privacy, and
 Runner validation before presentation; hiding a detail never bypasses a check

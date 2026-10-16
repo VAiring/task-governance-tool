@@ -38,6 +38,8 @@ BUNDLE_DOMAIN = b"taskgov-completion-evidence-bundle-v1\0"
 INDEX_V2_DOMAIN = b"taskgov-evidence-index-v2\0"
 BUNDLE_V2_DOMAIN = b"taskgov-completion-evidence-bundle-v2\0"
 BUNDLE_V3_DOMAIN = b"taskgov-completion-evidence-bundle-v3\0"
+INDEX_V3_DOMAIN = b"taskgov-evidence-index-v3\0"
+BUNDLE_V4_DOMAIN = b"taskgov-completion-evidence-bundle-v4\0"
 REVIEW_PROVENANCE_DOMAIN = b"taskgov-review-provenance-v1\0"
 FINDING_SNAPSHOT_DOMAIN = b"taskgov-completion-bundle-finding-snapshot-v1\0"
 CRITERION_DOMAIN = b"taskgov-contract-criterion-v1\0"
@@ -1201,7 +1203,7 @@ def _validate_index_entry(
     *,
     index_format_version: int = 1,
 ) -> dict[str, Any]:
-    if index_format_version not in {1, 2}:
+    if index_format_version not in {1, 2, 3}:
         _invalid()
     entry = _mapping(
         value,
@@ -1220,7 +1222,7 @@ def _validate_index_entry(
         "file_digest",
         "sealed_at",
     )
-    if index_format_version == 2:
+    if index_format_version in (2, 3):
         bundle_fields = (*bundle_fields, "bundle_format_version")
     if state == "legacy_unknown":
         if any(entry[field] is not None for field in bundle_fields):
@@ -1233,8 +1235,8 @@ def _validate_index_entry(
         _digest(entry["file_digest"])
         _utc_second(entry["sealed_at"])
         if (
-            index_format_version == 2
-            and _integer(entry["bundle_format_version"]) not in {1, 2, 3}
+            index_format_version in (2, 3)
+            and _integer(entry["bundle_format_version"]) not in ({1, 2, 3, 4} if index_format_version == 3 else {1, 2, 3})
         ):
             _invalid()
     else:
@@ -1262,7 +1264,7 @@ def _validate_source_basis(value: object, *, source_kind: str) -> dict[str, Any]
         _integer(basis["source_schema_version"]),
         _integer(basis["index_format_version"]),
     )
-    if version_pair not in {(19, 1), (20, 2), (21, 2), (22, 2), (23, 2), (24, 2), (25, 2), (26, 2), (27, 2), (28, 2), (29, 2)}:
+    if version_pair not in {(19, 1), (20, 2), (21, 2), (22, 2), (23, 2), (24, 2), (25, 2), (26, 2), (27, 2), (28, 2), (29, 2), (30, 3)}:
         _invalid()
     _project_id(basis["project_id"])
     _integer(basis["projection_generation"])
@@ -1290,7 +1292,7 @@ def _validate_index_envelope(value: object) -> dict[str, Any]:
         _integer(payload["source_schema_version"]),
         _integer(envelope["format_version"]),
     )
-    if version_pair not in {(19, 1), (20, 2), (21, 2), (22, 2), (23, 2), (24, 2), (25, 2), (26, 2), (27, 2), (28, 2), (29, 2)}:
+    if version_pair not in {(19, 1), (20, 2), (21, 2), (22, 2), (23, 2), (24, 2), (25, 2), (26, 2), (27, 2), (28, 2), (29, 2), (30, 3)}:
         _invalid()
     index_format_version = version_pair[1]
     _integer(payload["projection_generation"])
@@ -1299,7 +1301,7 @@ def _validate_index_envelope(value: object) -> dict[str, Any]:
     index_digest = _digest(envelope["index_digest"])
     try:
         expected_digest = _domain_digest(
-            INDEX_DOMAIN if index_format_version == 1 else INDEX_V2_DOMAIN,
+            INDEX_DOMAIN if index_format_version == 1 else INDEX_V3_DOMAIN if index_format_version == 3 else INDEX_V2_DOMAIN,
             payload,
         )
     except EvidenceCodecError as exc:
@@ -1350,6 +1352,7 @@ def _validate_review_provenance(
     task_id: str,
     target: Mapping[str, Any],
     receipt: Mapping[str, Any],
+    allow_v2: bool = False,
 ) -> dict[str, Any] | None:
     kind = receipt["receipt_kind"]
     if value is None:
@@ -1358,6 +1361,12 @@ def _validate_review_provenance(
         return None
     if kind not in {"independent", "self_review_fallback"}:
         _invalid()
+    if type(value) is dict and value.get("provenance_version") == 2:
+        if not allow_v2:
+            _invalid()
+        import sys
+        from tests.review_continuation_evidence_oracle import validate_collected_provenance
+        return validate_collected_provenance(value, project_id, task_id, target, receipt, sys.modules[__name__])
     provenance = _mapping(value, _PROVENANCE_KEYS)
     _identifier(provenance["review_provenance_id"], _PROVENANCE_ID)
     if (
@@ -1393,6 +1402,7 @@ def _validate_reviews(
     project_id: str,
     task: Mapping[str, Any],
     target: Mapping[str, Any],
+    allow_v2: bool = False,
 ) -> list[dict[str, Any]]:
     reviews = _closed_list(value, _REVIEW_KEYS)
     gate_basis: list[tuple[str, str, str]] = []
@@ -1441,6 +1451,7 @@ def _validate_reviews(
             task_id=task["task_id"],
             target=target,
             receipt=receipt,
+            allow_v2=allow_v2,
         )
         gate_basis.append((kind, reviewer_key, receipt_id))
 
@@ -1755,10 +1766,12 @@ def _validate_relations(
         elif source_kind == "review_receipt":
             if source_id not in review_ids:
                 _invalid()
+            source_review = next(row for row in reviews if row["review_receipt_id"] == source_id)
+            collected = type(source_review["review_provenance"]) is dict and source_review["review_provenance"].get("provenance_version") == 2
             expected = (
                 "recorded",
                 source_id,
-                ("bound_attestation", "trusted_caller"),
+                ("bound_attestation", "taskgov_answer_collector" if collected else "trusted_caller"),
                 None,
             )
         elif source_kind == "review_finding":
@@ -2001,18 +2014,18 @@ def _validate_bundle_payload(
     bundle_format_version: int,
     maximum_source_schema_version: int | None = None,
 ) -> dict[str, Any]:
-    if bundle_format_version not in {1, 2, 3}:
+    if bundle_format_version not in {1, 2, 3, 4}:
         _invalid()
     if (
         maximum_source_schema_version is not None
-        and maximum_source_schema_version not in {19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29}
+        and maximum_source_schema_version not in {19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30}
     ):
         _invalid()
     payload = _mapping(
         value,
         _BUNDLE_PAYLOAD_KEYS
         if bundle_format_version == 1
-        else (*_BUNDLE_PAYLOAD_V2_KEYS, "review_continuation_basis") if bundle_format_version == 3 else _BUNDLE_PAYLOAD_V2_KEYS,
+        else (*_BUNDLE_PAYLOAD_V2_KEYS, "review_continuation_basis") if bundle_format_version in (3, 4) else _BUNDLE_PAYLOAD_V2_KEYS,
     )
     sealed_at = _utc_second(payload["sealed_at"])
     observed_version_pair = (
@@ -2029,6 +2042,7 @@ def _validate_bundle_payload(
             and observed_version_pair not in {(20, 2), (21, 2), (22, 2), (23, 2), (24, 2), (25, 2), (26, 2), (27, 2), (28, 2), (29, 2)}
         )
         or (bundle_format_version == 3 and observed_version_pair != (29, 3))
+        or (bundle_format_version == 4 and observed_version_pair != (30, 4))
         or (
             maximum_source_schema_version is not None
             and observed_version_pair[0] > maximum_source_schema_version
@@ -2150,11 +2164,20 @@ def _validate_bundle_payload(
         project_id=project_id,
         task=task,
         target=target,
+        allow_v2=bundle_format_version == 4,
     )
+    if bundle_format_version == 4:
+        for review in reviews:
+            provenance = review["review_provenance"]
+            if type(provenance) is dict and provenance.get("provenance_version") == 2:
+                expected_findings = sorted((item["severity"], item["summary"].strip()) for item in provenance["answer_attestation"]["payload"]["findings"])
+                actual_findings = sorted((item["severity"], item["summary"]) for item in findings if item["review_receipt_id"] == review["review_receipt_id"])
+                if actual_findings != expected_findings:
+                    _invalid()
 
     verification_basis: dict[str, Any] | None = None
     basis_kind: str | None = None
-    if bundle_format_version in (2, 3):
+    if bundle_format_version in (2, 3, 4):
         verification_basis = _mapping(
             payload["verification_basis"],
             _VERIFICATION_BASIS_KEYS,
@@ -2189,7 +2212,7 @@ def _validate_bundle_payload(
     elif runner_branch and not verification_expected:
         _invalid()
 
-    if bundle_format_version in (2, 3):
+    if bundle_format_version in (2, 3, 4):
         if verification_basis is None:
             _invalid()
         verification_receipt_id = (
@@ -2226,7 +2249,7 @@ def _validate_bundle_payload(
             )
             runner_id = verification_basis["runner_observation_id"]
             if (
-                observed_version_pair not in {(21, 2), (22, 2), (23, 2), (24, 2), (25, 2), (26, 2), (27, 2), (28, 2), (29, 2), (29, 3)}
+                observed_version_pair not in {(21, 2), (22, 2), (23, 2), (24, 2), (25, 2), (26, 2), (27, 2), (28, 2), (29, 2), (29, 3), (30, 4)}
                 or verification_basis["verification_receipt_id"] is not None
                 or type(runner_id) is not str
                 or runner_id != runner["observation_id"]
@@ -2260,7 +2283,7 @@ def _validate_bundle_payload(
         findings=findings,
     )
     canonical_json_bytes(payload)
-    if bundle_format_version == 3:
+    if bundle_format_version == 3 or bundle_format_version == 4 and payload["review_continuation_basis"] is not None:
         import sys
         from tests.review_continuation_evidence_oracle import validate_graph
         validate_graph(payload, sys.modules[__name__])
@@ -2387,7 +2410,7 @@ class ValidatedEvidenceSource:
             envelope = _mapping(source, _BUNDLE_ENVELOPE_KEYS)
             bundle_format_version = _integer(envelope["format_version"])
             if (
-                bundle_format_version not in {1, 2, 3}
+                bundle_format_version not in {1, 2, 3, 4}
                 or bundle_format_version != expected_bundle_format_version
                 or envelope["bundle_digest"] != entry["bundle_digest"]
             ):
@@ -2402,7 +2425,7 @@ class ValidatedEvidenceSource:
             domain = (
                 BUNDLE_DOMAIN
                 if bundle_format_version == 1
-                else BUNDLE_V3_DOMAIN if bundle_format_version == 3 else BUNDLE_V2_DOMAIN
+                else BUNDLE_V4_DOMAIN if bundle_format_version == 4 else BUNDLE_V3_DOMAIN if bundle_format_version == 3 else BUNDLE_V2_DOMAIN
             )
             if envelope["bundle_digest"] != _domain_digest(domain, payload):
                 _invalid()
@@ -2549,7 +2572,7 @@ def _load_evidence_source(
         maximum_source_schema_version=index.source_schema_version,
     )
     domain = (
-        BUNDLE_DOMAIN if bundle_format_version == 1 else BUNDLE_V3_DOMAIN if bundle_format_version == 3 else BUNDLE_V2_DOMAIN
+        BUNDLE_DOMAIN if bundle_format_version == 1 else BUNDLE_V4_DOMAIN if bundle_format_version == 4 else BUNDLE_V3_DOMAIN if bundle_format_version == 3 else BUNDLE_V2_DOMAIN
     )
     if envelope["bundle_digest"] != _domain_digest(domain, payload):
         _invalid()

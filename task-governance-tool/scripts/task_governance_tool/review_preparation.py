@@ -19,7 +19,7 @@ def _basis(target, task_id, caller):
         return read_preparation_basis(connection, project_id=target.project.project_id, task_id=task_id, caller=caller)
 
 
-def publish_ready(repo, packet_path, result_paths, caller, *, route):
+def publish_ready(repo, packet_path, result_paths, caller, *, route, collection_requests=()):
     """Called only after complete preparation, and after integrated intent creation.
 
     Schema 28 can publish the forward-compatible structural locator; it does
@@ -64,8 +64,20 @@ def publish_ready(repo, packet_path, result_paths, caller, *, route):
             or intent.candidate is not None):
             files.fail("review_continuation_conflict")
         finalization_store = finalization_path.name
-    record = PreparationRecord(1, "tg_review_preparation_" + secrets.token_hex(8), basis, route, packet_path,
-        sha256(raw).hexdigest(), tuple(result_paths), finalization_store, utc_now())
+    preparation_id = "tg_review_preparation_" + secrets.token_hex(8)
+    collection_bases = ()
+    if collection_requests:
+        from .review_answer_preparation import PROTOCOL, ATTESTATION
+        if (type(collection_requests) is not tuple or len(collection_requests) != len(result_paths)
+            or any(type(request) is not str or not request for request in collection_requests)):
+            files.fail("handoff_invalid_input")
+        collection_bases = tuple(dict(version=1, preparation_id=preparation_id,
+            packet_digest="sha256:" + sha256(raw).hexdigest(),
+            request_digest="sha256:" + sha256(request.encode("utf-8")).hexdigest(),
+            protocol=PROTOCOL, attestation=ATTESTATION, route=route,
+            continuation=None, execution_basis=basis) for request in collection_requests)
+    record = PreparationRecord(2 if collection_bases else 1, preparation_id, basis, route, packet_path,
+        sha256(raw).hexdigest(), tuple(result_paths), finalization_store, utc_now(), collection_bases)
     if not path_lexically_exists(paths.review_wait_root):
         create_physical_directory_exclusive(paths.review_wait_root, root=paths.fixed_root)
     inspect_physical_directory(paths.review_wait_root, root=paths.fixed_root)
@@ -79,6 +91,11 @@ def publish_ready(repo, packet_path, result_paths, caller, *, route):
         for path in result_paths:
             if path_lexically_exists(files.checked_path(repo, path)):
                 files.fail("handoff_destination_exists")
+    if collection_bases:
+        admit()
+        from .review_answer_collection_repository import CollectionRepository
+        CollectionRepository(paths.review_answer_collection_store(caller.require(), basis["task_id"],
+            basis["target_generation"], preparation_id)).initialize(collection_bases)
     with journal.serial(initial=record if fresh else None, admit=admit) as lease:
         if not fresh:
             journal.publish(lease, record)
@@ -112,6 +129,8 @@ def save_admission(repo, packet_path, raw, packet, output, caller):
     journal = PreparationRepository(path)
     with journal.serial():
         _, current = journal.read()
+        if context["version"] == 1 and current.version == 2:
+            files.fail("review_answer_save_not_allowed")
         with closing(connect_initialized_readonly(resolution.target)) as connection:
             fresh = read_review_basis(connection, project_id=basis["project_id"], task_id=basis["task_id"])
             if fresh != basis or current.basis != basis:
@@ -142,4 +161,6 @@ def save_admission(repo, packet_path, raw, packet, output, caller):
                 or rounds[0].packet_path != packet_path or rounds[0].packet_digest != sha256(raw).hexdigest()
                 or rounds[0].result_paths[actors.index(actor)] != output):
                 files.fail("review_packet_stale")
+            if rounds[0].answer_protocol == "review-answer-v1":
+                files.fail("review_answer_save_not_allowed")
         yield

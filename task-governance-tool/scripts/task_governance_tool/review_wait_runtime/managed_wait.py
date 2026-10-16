@@ -166,6 +166,7 @@ class ManagedWait:
         continued = None
         historical = None
         current_round = None
+        previous = None
         diagnostic.stage = "request_read"
         request_path = paths.review_wait_request_store(metadata["threadId"], task_id)
         if path_lexically_exists(request_path):
@@ -192,6 +193,27 @@ class ManagedWait:
         else:
             diagnostic.observe_record(None)
         self.owner._wait_round_current(binding, continued)
+        answer_binding = getattr(self.owner, "_bind_answers", None)
+        if callable(answer_binding):
+            try:
+                # This explicit wait continues the current dispatch flow. A
+                # prior occurrence with this same basis is recovery, not fresh
+                # context; missing bindings then cannot be reconstructed.
+                fresh = previous is None or previous.basis_digest != basis_digest(binding)
+                admitted_pairs = answer_binding(binding, host, reviewers, fresh_context=fresh, diagnostic=diagnostic)
+                if admitted_pairs is not None:
+                    if expected and expected != admitted_pairs:
+                        raise DiagnosticError("reviewer_turn_changed")
+                    expected = admitted_pairs
+            except DiagnosticError:
+                raise
+            except Exception as error:
+                # Collection failure must not disable the existing fallback
+                # timer. The exact limitation accompanies this wait response.
+                from task_governance_tool.review_answer import AnswerError
+                diagnostic.answer_collection = {"collected": [], "unavailable": [
+                    {"failure": error.failure if isinstance(error, AnswerError) else
+                     {"class": "collection_unavailable", "field": None, "reason": "incomplete"}}]}
         pairs = []
         reuse = (current_round is not None and current_round.state == "registered") or (finalizer is not None and finalizer.saved_results_ready())
         if reuse and expected:
@@ -217,6 +239,16 @@ class ManagedWait:
         diagnostic.stage = "basis_after"
         if reader() != binding:
             raise DiagnosticError("binding_changed")
+        if ended and callable(getattr(self.owner, "_collect_answers", None)):
+            try:
+                collected = self.owner._collect_answers(binding, host, tuple(reviewers), diagnostic=diagnostic)
+                if collected is not None:
+                    diagnostic.answer_collection = collected
+            except Exception as error:
+                from task_governance_tool.review_answer import AnswerError
+                diagnostic.answer_collection = {"collected": [], "unavailable": [
+                    {"failure": error.failure if isinstance(error, AnswerError) else
+                     {"class": "collection_unavailable", "field": None, "reason": "incomplete"}}]}
         return reader, binding, tuple(sorted(pairs)), host, ended, finalizer, continued, historical
 
     def _ready(self, task_id, record, *, replayed=False, diagnostic=None):

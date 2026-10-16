@@ -174,6 +174,17 @@ class CanonicalStatePaths:
         finalization = self.review_finalization_store(parent_id, task_id, generation)
         return finalization.with_name("continuation-" + finalization.name.removeprefix("finalize-"))
 
+    def review_answer_collection_store(self, parent_id: str, task_id: str, generation: int,
+                                      preparation_id: str, continuation_id: str | None = None) -> Path:
+        """One bounded collection per immutable preparation/continuation basis."""
+        from .review_continuation import identifier
+        finalization = self.review_finalization_store(parent_id, task_id, generation)
+        if (not identifier(preparation_id, "tg_review_preparation_")
+                or continuation_id is not None and not identifier(continuation_id, "tg_review_continuation_")):
+            raise ValueError("invalid_review_collection_identity")
+        digest = hashlib.sha256((preparation_id + ":" + (continuation_id or "initial")).encode("ascii")).hexdigest()
+        return finalization.with_name("answers-" + finalization.stem.removeprefix("finalize-") + "-" + digest + ".sqlite")
+
     def review_wait_dispatch_store(self, parent_id: str) -> Path:
         """Lock-only namespace shared by this project's same-parent senders."""
         from uuid import UUID
@@ -1281,7 +1292,10 @@ def _inspect_database(
         )
         if classify_recovery_content:
             try:
-                if version == 29:
+                if version == 30:
+                    from task_governance_tool.schema_review_answers import validate_storage
+                    validate_storage(connection, recovery=True)
+                elif version == 29:
                     from task_governance_tool.schema_review_continuation import validate_storage
                     validate_storage(connection, recovery=True)
                 elif version == 28:

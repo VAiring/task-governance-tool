@@ -18,6 +18,7 @@ from pathlib import Path
 from . import review_handoff_transport as files, review_handoff_originals as originals
 from . import session_identity
 from .review_results import REVIEW_RESULTS_INPUT_LIMIT, ReviewResultInputError
+from .review_answer import AnswerError
 from .reviews import ReviewEvidenceError
 from .task_values import TaskValidationError
 from .session_identity import CallerIdentity
@@ -186,6 +187,10 @@ def main(argv=None):
         # child's own normal response (including rejection/exit 2) passes through.
         registration_status = "unknown"
         return subprocess.run(command, input=framed, check=False, shell=False).returncode
+    except AnswerError as exc:
+        from .review_answer_transport import answer_input_error
+        sanitized = answer_input_error(exc)
+        code, field, reason = sanitized.code, sanitized.field, sanitized.message
     except ReviewResultInputError as exc:
         code, field, reason = exc.code, exc.field, exc.message
     except (files.HandoffError, ReviewEvidenceError, TaskValidationError) as exc:

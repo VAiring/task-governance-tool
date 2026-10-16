@@ -66,6 +66,7 @@ PRODUCER_CLASSES = frozenset(
         "taskgov_core",
         "taskgov_git",
         "trusted_caller",
+        "taskgov_answer_collector",
         "legacy_migration",
         "external_system",
         "verification_runner",
@@ -700,6 +701,15 @@ _REVIEW_PROVENANCE_KEYS = frozenset(
 
 def _validate_review_provenance_projection(projection: dict[str, Any]) -> None:
     provenance = projection["review_provenance"]
+    if type(provenance) is dict and type(provenance.get("provenance_version")) is int and provenance["provenance_version"] == 2:
+        if (set(provenance) != {"review_provenance_id","provenance_version","answer_attestation","assignment",
+            "host_observation","assurance_class","producer_class","producer_version","digest"}
+            or projection["receipt_kind"] != "independent" or provenance["assurance_class"] != "bound_attestation"
+            or provenance["producer_class"] != "taskgov_answer_collector" or type(provenance["producer_version"]) is not int
+            or provenance["producer_version"] != 1 or type(provenance["digest"]) is not str or not _DIGEST.fullmatch(provenance["digest"])):
+            raise _inconsistent()
+        _identifier(provenance["review_provenance_id"])
+        return
     if projection["receipt_kind"] == "not_required":
         if provenance is not None:
             raise _inconsistent()
@@ -821,7 +831,7 @@ class EvidenceSource:
                 or projection["receipt_kind"]
                 not in {"independent", "self_review_fallback", "not_required"}
                 or projection["verdict"]
-                not in {"pass", "changes_requested", "not_required"}
+                not in {"pass", "changes_requested", "not_required", "unable_to_review"}
                 or type(projection["user_approved"]) is not int
                 or projection["user_approved"] not in {0, 1}
             ):
@@ -916,6 +926,8 @@ def evidence_source_attribution(
         "review_receipt",
         "review_finding",
     }:
+        if source.source_kind == "review_receipt" and source.source_projection["review_provenance"] is not None and source.source_projection["review_provenance"]["provenance_version"] == 2:
+            return ProducerAttribution("bound_attestation", "taskgov_answer_collector")
         return ProducerAttribution("bound_attestation", "trusted_caller")
     elif source.source_kind == "completion_evidence":
         if source.source_state == "git_commit":

@@ -340,13 +340,14 @@ structural head. It then calls the storage-owned exact Task-verification
 validator with that candidate's source schema. The validator returns normally
 or raises a sanitized internal privacy/capacity rejection; every other storage
 failure remains structural and set-fatal. The current implementation accepts
-at most 500 characters through schema v17 and 1,000 at schema v18-v29. The source
+at most 500 characters through schema v17 and 1,000 at schema v18-v30. The source
 schema is selected before migration or recovery publication; no recovery-only
 limit or migration laundering exists.
 
-For schema 29, both resolver discovery and managed-backup selection dispatch
-to `schema_review_continuation.validate_storage(recovery=True)`. That validator
-finishes Bundle and continuation graph checks before returning a deferred
+For schemas 29 and 30, both resolver discovery and managed-backup selection
+dispatch to their version's validator: `schema_review_continuation` or
+`schema_review_answers`, respectively, with `validate_storage(recovery=True)`.
+Each validator finishes Bundle and continuation graph checks before returning a deferred
 Task-verification rejection; a local rejection cannot hide structural damage.
 
 The structural phase also validates each candidate as the immutable
@@ -680,7 +681,7 @@ updates, or compares upstream state.
 
 ### Setup Plan And Stages
 
-After core and numerical setup, `setup_features.py` applies only the five
+After core and numerical setup, `setup_features.py` applies only the seven
 explicit optional choices and projects saved intent separately from current
 configuration. `setup_feature_config.py` owns the closed local choice file and
 bounded physical compare-before-replace publication for choices/profiles;
@@ -693,6 +694,26 @@ Review wait stores only its Boolean choice. Its runtime reads that policy on
 normal wait, compatible prepare/start and fresh basis checks; Setup performs no
 host configuration or operation. The resolver derives its separate operational subtree, which is
 excluded from core backup/recovery inventory and never resumes on restoration.
+
+Answer collection and correction use distinct saved Boolean choices.
+`review_answer_hook_setup.py` shares bounded physical publication with existing
+hook setup, preserving unrelated content and rejecting conflicting owned or
+inline definitions. Only explicit collection ON prepares the typed MCP event
+handler and appends its tool to an existing server's explicit allowlist. The
+bounded TOML adapter validates the whole document, changes only the normal
+`mcp_servers.taskgov_review_wait` table's `enabled_tools` array, and reparses to
+prove that no other value changed. It preserves text outside that value and
+publishes through the same compare-before-replace primitive. Missing allowlists
+need no edit; malformed settings, conflicting deny rules and unsupported table
+spellings fail closed. No server stanza, launch path, environment or trust is
+created. Its separate `answer_collection_setup` diagnostic reports planned
+hook/allowlist writes, durable completed prefix and missing/disabled connection
+prerequisites, including read-only preview; core success is not host activation.
+Ordinary runtime reads never publish configuration; trust and connected host
+capability remain separate. `state_resolver.py` derives each collection
+store from the retained parent/Task/generation/preparation and optional round,
+under the existing operational subtree. It is not core backup material.
+Neither Setup nor operational restart sends a correction or resumes a wait.
 
 Feature config application and saved-choice publication are separate. A later
 failure rereads observable state and returns an unavailable feature, not a

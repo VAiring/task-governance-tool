@@ -9,6 +9,161 @@ import json
 import re
 
 
+class _CollectedReader:
+    """Independent closed-value checks using only the Reader's local primitives."""
+    def __init__(self, api):
+        self.api = api
+
+    def need(self, condition):
+        if not condition:
+            self.api._invalid()
+
+    def obj(self, value, fields):
+        return self.api._mapping(value, tuple(fields.split()))
+
+    def number(self, value, low=0, high=(1 << 63)-1):
+        self.need(low <= self.api._integer(value, minimum=low) <= high)
+
+    def text(self, value, maximum=1000, required=True):
+        value = self.api._text(value)
+        self.need(len(value) <= maximum and (not required or bool(value.strip())))
+        self.api._privacy_guard("collected_review", value)
+        return value
+
+    def pattern(self, value, pattern):
+        self.need(type(value) is str and re.fullmatch(pattern, value, re.ASCII) is not None)
+        self.api._privacy_guard("collected_review", value)
+
+    def sid(self, value):
+        self.pattern(value, r"[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}")
+
+    def tool(self, value, prefix):
+        self.pattern(value, re.escape(prefix)+r"[0-9a-f]{16}")
+
+    def hostid(self, value):
+        self.pattern(value, r"[A-Za-z0-9][A-Za-z0-9._:/+\-]{0,255}")
+
+    def source(self, value, operation):
+        value=self.obj(value,"adapter version operation")
+        self.number(value["version"],1,1)
+        self.need(value["adapter"] == "codex-app-tools-review-answer" and value["operation"] == operation)
+
+    def assignment(self, value):
+        value=self.obj(value,"kind review_profiles review_lenses requested_model requested_effort requested_skill context_relation")
+        self.need(value["kind"] == "independent")
+        for field, vocabulary, maximum in (("review_profiles",self.api._REVIEW_PROFILES,4),("review_lenses",self.api._REVIEW_LENSES,8)):
+            entries=self.api._array(value[field])
+            self.need(all(type(item) is str for item in entries))
+            self.need(len(entries)<=maximum and len(entries)==len(set(entries)) and entries==[item for item in vocabulary if item in entries])
+        if value["requested_model"] is not None:
+            self.pattern(value["requested_model"],r"[A-Za-z0-9][A-Za-z0-9._:/+\-]{0,127}")
+        self.need(value["requested_effort"] is None or value["requested_effort"] in ("none","minimal","low","medium","high","xhigh","max","ultra"))
+        if value["requested_skill"] is not None:
+            skill=self.obj(value["requested_skill"],"id version")
+            self.pattern(skill["id"],r"[A-Za-z0-9][A-Za-z0-9._:/+\-]{0,127}")
+            self.pattern(skill["version"],r"[A-Za-z0-9][A-Za-z0-9._+\-]{0,63}")
+        self.need(value["context_relation"] is None or value["context_relation"] in self.api._CONTEXT_RELATIONS)
+
+    def original(self, value):
+        value=self.obj(value,"byte_length digest payload_start payload_length payload_digest")
+        self.number(value["byte_length"],1,262144);self.number(value["payload_start"]);self.number(value["payload_length"],1,262144)
+        self.need(value["payload_start"]+value["payload_length"]<=value["byte_length"])
+        self.api._digest(value["digest"]);self.api._digest(value["payload_digest"])
+
+    def answer(self,value):
+        value=self.obj(value,"verdict summary findings checks limitations")
+        self.need(value["verdict"] in ("pass","changes_requested","unable_to_review"))
+        self.text(value["summary"])
+        findings=self.api._array(value["findings"])
+        self.need(len(findings)<=64)
+        pairs=[]
+        for finding in findings:
+            finding=self.obj(finding,"severity summary")
+            self.need(finding["severity"] in ("high","medium","low"));self.text(finding["summary"])
+            pairs.append((finding["severity"],finding["summary"].strip()))
+        self.need(len(set(pairs))==len(pairs))
+        for key in ("checks","limitations"):
+            entries=self.api._array(value[key]);self.need(len(entries)<=32)
+            for entry in entries:self.text(entry)
+
+    def execution(self,value):
+        value=self.obj(value,"version project_id task_id contract_revision authority_snapshot_id acceptance_criterion_id verification_criterion_id artifact_manifest_id review_tier verification_requirement verification_not_required_reason completion_commit_required target_kind target_value target_base_revision target_generation project_path_hash project_binding_generation parent_session_id execution_id ownership_generation")
+        self.need(len(self.api.canonical_json_bytes(value))<=16384)
+        self.number(value["version"],1,1);self.number(value["contract_revision"])
+        self.number(value["review_tier"],0,2);self.number(value["completion_commit_required"],0,1)
+        for key in ("target_generation","project_binding_generation","ownership_generation"):self.number(value[key],1)
+        for key,prefix in (("task_id","tg_task_"),("authority_snapshot_id","tg_authority_snapshot_"),("artifact_manifest_id","tg_artifact_manifest_"),("execution_id","tg_execution_")):
+            self.tool(value[key],prefix)
+        for key in ("acceptance_criterion_id","verification_criterion_id"):
+            if value[key] is not None:self.tool(value[key],"tg_contract_criterion_")
+        self.text(value["project_id"],500);self.text(value["target_value"],500);self.text(value["target_base_revision"],500,False)
+        self.text(value["verification_not_required_reason"],1000,False)
+        self.pattern(value["project_path_hash"],r"[0-9a-f]{64}");self.sid(value["parent_session_id"])
+        self.need(value["target_kind"] in ("git_commit","git_snapshot","diff_fingerprint","external_revision"))
+        self.need((value["target_kind"]=="git_snapshot")==bool(value["target_base_revision"]))
+        self.need(value["verification_requirement"] in ("required","not_required","unspecified") and (value["verification_requirement"]=="not_required")==bool(value["verification_not_required_reason"]))
+        return value
+
+    def metadata(self,value):
+        value=self.obj(value,"basis binding attempt source_identity original answer_source terminal terminal_source correction_binding")
+        self.need(len(self.api.canonical_json_bytes(value))<=32768)
+        basis=self.obj(value["basis"],"version preparation_id packet_digest request_digest protocol attestation route continuation execution_basis")
+        self.number(basis["version"],1,1);self.tool(basis["preparation_id"],"tg_review_preparation_")
+        self.api._digest(basis["packet_digest"]);self.api._digest(basis["request_digest"])
+        self.need(basis["protocol"]=="review-answer-v1" and basis["attestation"]=="assigned-independent-review-v1" and basis["route"] in ("manual","integrated"))
+        execution=self.execution(basis["execution_basis"])
+        if basis["continuation"] is not None:
+            cont=self.obj(basis["continuation"],"continuation_id sequence selection_digest")
+            self.tool(cont["continuation_id"],"tg_review_continuation_");self.number(cont["sequence"],1,64);self.pattern(cont["selection_digest"],r"[0-9a-f]{64}")
+        binding=self.obj(value["binding"],"basis_digest slot reviewer_key dispatch_id parent_session_id reviewer_session_id initial_turn_id binding_source assignment")
+        self.need(binding["basis_digest"]==self.api._domain_digest(b"taskgov-review-answer-basis-v1\0",basis))
+        self.number(binding["slot"],1,8);self.text(binding["reviewer_key"],500)
+        self.need(binding["reviewer_key"]==binding["reviewer_key"].strip())
+        self.hostid(binding["dispatch_id"]);self.sid(binding["initial_turn_id"]);self.sid(binding["parent_session_id"]);self.sid(binding["reviewer_session_id"])
+        self.need(binding["parent_session_id"]==execution["parent_session_id"] and binding["parent_session_id"]!=binding["reviewer_session_id"])
+        self.source(binding["binding_source"],"dispatch_binding");self.assignment(binding["assignment"])
+        identity=self.obj(value["source_identity"],"reviewer_session_id turn_id message_id")
+        self.sid(identity["turn_id"]);self.hostid(identity["message_id"])
+        self.need(identity["reviewer_session_id"]==binding["reviewer_session_id"])
+        self.original(value["original"]);self.number(value["attempt"],0,1)
+        self.need(value["terminal"]=="completed")
+        self.source(value["answer_source"],"answer_observation");self.source(value["terminal_source"],"terminal_observation")
+        correction=value["correction_binding"]
+        if value["attempt"]==0:
+            self.need(correction is None and identity["turn_id"]==binding["initial_turn_id"])
+        else:
+            correction=self.obj(correction,"intent_id initial_turn_id correction_turn_id source")
+            self.tool(correction["intent_id"],"tg_review_correction_")
+            self.need(correction["initial_turn_id"]==binding["initial_turn_id"] and correction["correction_turn_id"]==identity["turn_id"] and identity["turn_id"]!=binding["initial_turn_id"])
+            self.source(correction["source"],"correction_binding")
+        return value
+
+
+def validate_collected_provenance(value, project_id, task_id, target, receipt, api):
+    c=_CollectedReader(api)
+    value=c.obj(value,"review_provenance_id provenance_version answer_attestation assignment host_observation assurance_class producer_class producer_version digest")
+    c.need(len(api.canonical_json_bytes(value))<=262144)
+    c.tool(value["review_provenance_id"],"tg_review_provenance_");c.number(value["provenance_version"],2,2);c.number(value["producer_version"],1,1)
+    c.need(receipt["receipt_kind"]=="independent" and value["assurance_class"]=="bound_attestation" and value["producer_class"]=="taskgov_answer_collector")
+    a=c.obj(value["answer_attestation"],"protocol attestation request_digest original payload")
+    c.need(a["protocol"]=="review-answer-v1" and a["attestation"]=="assigned-independent-review-v1")
+    api._digest(a["request_digest"]);c.original(a["original"]);c.answer(a["payload"]);c.assignment(value["assignment"])
+    c.need(a["payload"]["verdict"]==receipt["verdict"] and a["payload"]["summary"].strip()==receipt["summary"])
+    h=c.obj(value["host_observation"],"basis_digest preparation_id slot attempt parent_session_id reviewer_session_id turn_id message_id binding_source answer_source terminal_source model skill methods")
+    api._digest(h["basis_digest"]);c.tool(h["preparation_id"],"tg_review_preparation_");c.number(h["slot"],1,8);c.number(h["attempt"],0,1)
+    for field in ("parent_session_id","reviewer_session_id","turn_id"):c.sid(h[field])
+    c.need(h["parent_session_id"]!=h["reviewer_session_id"]);c.hostid(h["message_id"])
+    for field,operation in (("binding_source","dispatch_binding"),("answer_source","answer_observation"),("terminal_source","terminal_observation")):c.source(h[field],operation)
+    for field in ("model","skill","methods"):
+        fact=c.obj(h[field],"state value source")
+        c.need(fact==dict(state="unknown",value=None,source=None))
+    sealed_target=dict(target);sealed_target["base_revision"]=sealed_target["base_revision"] or ""
+    digest_input=dict(project_id=project_id,task_id=task_id,review_receipt_id=receipt["review_receipt_id"],receipt_kind=receipt["receipt_kind"],target=sealed_target,
+        provenance={k:v for k,v in value.items() if k not in ("review_provenance_id","digest")})
+    c.need(value["digest"]==api._domain_digest(b"taskgov-review-provenance-v2\0",digest_input))
+    return value
+
+
 def validate_graph(payload, api):
     bad = api._invalid
 
@@ -33,10 +188,12 @@ def validate_graph(payload, api):
     def raw_digest(value):
         return identifier(value, r"[0-9a-f]{64}\Z")
 
-    graph = api._mapping(payload["review_continuation_basis"], (
+    graph_fields = (
         "version", "continuations", "reviewers", "retained_originals", "judgments", "resolutions", "receipts",
-        "session_bindings", "references", "findings", "effective_receipt_ids"))
-    if integer(graph["version"]) != 1:
+        "session_bindings", "references", "findings", "effective_receipt_ids")
+    new_graph = payload["bundle_version"] == 4
+    graph = api._mapping(payload["review_continuation_basis"], (*graph_fields, "collected_captures") if new_graph else graph_fields)
+    if integer(graph["version"]) != (2 if new_graph else 1):
         bad()
 
     def rows(name, fields, identity):
@@ -167,6 +324,72 @@ def validate_graph(payload, api):
             raw_digest(choice["original_result_digest"])
             published.add(result)
     consumed = set()
+    collected_consumers = {}
+    capture_rows = api._array(graph["collected_captures"]) if new_graph else []
+    capture_keys=[]
+    occupied_slots=set()
+    frozen_sources={}
+    c=_CollectedReader(api)
+    for frozen in capture_rows:
+        frozen=c.obj(frozen,"capture_identity source_metadata evidence_digest result_receipt_id")
+        c.need(len(api.canonical_json_bytes(frozen))<=32768)
+        identity=c.obj(frozen["capture_identity"],"kind consumer_continuation_id consumer_slot source_preparation_id source_continuation_id source_slot session_id source_basis_digest original_digest")
+        c.need(identity["kind"]=="collected")
+        cid,sid=identity["consumer_continuation_id"],identity["session_id"]
+        c.tool(cid,"tg_review_continuation_");c.sid(sid);c.number(identity["consumer_slot"],1,8);c.number(identity["source_slot"],1,8)
+        c.tool(identity["source_preparation_id"],"tg_review_preparation_")
+        c.need((cid,sid) not in collected_consumers and (cid,sid) not in retained and (cid,sid) not in reviewers)
+        c.need((cid,identity["consumer_slot"]) not in occupied_slots)
+        occupied_slots.add((cid,identity["consumer_slot"]))
+        capture_keys.append((cid,sid));collected_consumers[(cid,sid)]=frozen
+        metadata=c.metadata(frozen["source_metadata"])
+        source_basis,binding=metadata["basis"],metadata["binding"]
+        source_cont=source_basis["continuation"]
+        source_cid=None if source_cont is None else source_cont["continuation_id"]
+        source_key=(source_basis["preparation_id"],source_cid,sid)
+        if source_key in frozen_sources:
+            c.need(frozen_sources[source_key]==metadata)
+        else:
+            frozen_sources[source_key]=metadata
+        c.need(identity["source_continuation_id"]==source_cid and identity["source_preparation_id"]==source_basis["preparation_id"] and
+            identity["source_slot"]==binding["slot"] and identity["session_id"]==binding["reviewer_session_id"] and
+            identity["source_basis_digest"]==binding["basis_digest"] and identity["original_digest"]==metadata["original"]["digest"])
+        c.need(frozen["evidence_digest"]==api._domain_digest(b"taskgov-collected-review-capture-evidence-v1\0",dict(capture_identity=identity,source_metadata=metadata)))
+        consumer=continuations.get((cid,))
+        c.need(consumer is not None and source_basis["execution_basis"]==bases[cid] and source_basis["route"]==consumer["route"] and source_basis["preparation_id"]==consumer["preparation_id"])
+        ancestors=set();ancestor=consumer["predecessor_id"]
+        while ancestor is not None:
+            c.need(ancestor not in ancestors and (ancestor,) in continuations)
+            ancestors.add(ancestor);ancestor=continuations[(ancestor,)]["predecessor_id"]
+        if source_cid is not None:
+            source=continuations.get((source_cid,))
+            c.need(source_cid in ancestors and source["state"]=="superseded" and source_cont["sequence"]==source["sequence"] and source_cont["selection_digest"]==source["selection_digest"])
+            c.need((source_cid,sid) in reviewers)
+        rid=frozen["result_receipt_id"]
+        if rid is None:
+            c.need(consumer["state"]=="superseded")
+        else:
+            c.tool(rid,"tg_review_receipt_")
+            receipt=receipts.get((rid,));session=sessions.get((rid,));judgment=judgments.get((rid,))
+            c.need(consumer["state"]=="registered" and rid not in consumed and receipt is not None and session is not None and judgment is not None)
+            c.need(judgment["continuation_id"]==source_cid and session["session_id"]==sid and session["binding_source"]=="handoff" and session["execution_id"]==bases[cid]["execution_id"] and
+                session["original_result_digest"]==identity["original_digest"][7:] and receipt["reviewer_key"]==binding["reviewer_key"])
+            provenance=validate_collected_provenance(receipt["review_provenance"],payload["project_id"],payload["task"]["task_id"],payload["target"],receipt,api)
+            attestation,host=provenance["answer_attestation"],provenance["host_observation"]
+            c.need(all(attestation[key]==source_basis[key] for key in ("protocol","attestation","request_digest")) and attestation["original"]==metadata["original"] and provenance["assignment"]==binding["assignment"])
+            overlap=dict(basis_digest=binding["basis_digest"],preparation_id=source_basis["preparation_id"],slot=binding["slot"],attempt=metadata["attempt"],
+                parent_session_id=binding["parent_session_id"],reviewer_session_id=sid,turn_id=metadata["source_identity"]["turn_id"],message_id=metadata["source_identity"]["message_id"],
+                binding_source=binding["binding_source"],answer_source=metadata["answer_source"],terminal_source=metadata["terminal_source"])
+            c.need(all(host[key]==value for key,value in overlap.items()))
+            consumed.add(rid)
+    c.need(capture_keys==sorted(capture_keys,key=lambda key:tuple(value.encode() for value in key)))
+    for (cid,sid),frozen in collected_consumers.items():
+        retained_order=sorted({actor for root,actor in retained if root==cid} |
+            {actor for root,actor in collected_consumers if root==cid})
+        selected_count=sum(root==cid for root,_ in reviewers)
+        c.need(frozen["capture_identity"]["consumer_slot"]==selected_count+retained_order.index(sid)+1)
+    for (cid,),consumer in continuations.items():
+        c.need(sum(root==cid for root,_ in reviewers)+sum(root==cid for root,_ in retained)+sum(root==cid for root,_ in collected_consumers)<=8)
     for (cid,sid), capture in retained.items():
         consumer = continuations.get((cid,))
         old = continuations.get((capture["prior_continuation_id"],))
@@ -195,12 +418,15 @@ def validate_graph(payload, api):
         if api._domain_digest(b"taskgov-review-continuation-retained-metadata-v1\0", metadata)[7:] != capture["metadata_digest"]:
             bad()
         rid = capture["result_receipt_id"]
+        source_receipt = receipts.get((choice["result_receipt_id"],))
+        if source_receipt is not None and type(source_receipt["review_provenance"]) is dict and source_receipt["review_provenance"].get("provenance_version") == 2:
+            bad()
         if rid is None:
             if consumer["state"] != "superseded":
                 bad()
         else:
             session = sessions.get((rid,))
-            if (consumer["state"] != "registered" or choice["result_receipt_id"] != rid
+            if (rid in consumed or consumer["state"] != "registered" or choice["result_receipt_id"] != rid
                 or choice["original_result_digest"] != capture["original_result_digest"] or session is None
                 or session["session_id"] != sid or session["original_result_digest"] != capture["original_result_digest"]):
                 bad()
@@ -216,13 +442,15 @@ def validate_graph(payload, api):
         if row["reviewer_key"] != row["reviewer_key"].strip():
             bad()
         kind, verdict, approval = row["receipt_kind"], row["verdict"], integer(row["user_approved"])
-        if (kind == "independent" and (verdict not in ("pass", "changes_requested") or approval != 0)
+        if (kind == "independent" and (verdict not in (("pass", "changes_requested", "unable_to_review") if new_graph else ("pass", "changes_requested")) or approval != 0)
             or kind == "self_review_fallback" and (verdict not in ("pass", "changes_requested") or approval not in (0, 1))
             or kind == "not_required" and (verdict != "not_required" or approval != 0 or not row["summary"])
             or kind not in ("independent", "self_review_fallback", "not_required")):
             bad()
         api._validate_review_provenance(row["review_provenance"], project_id=payload["project_id"], task_id=payload["task"]["task_id"],
-            target=payload["target"], receipt=row)
+            target=payload["target"], receipt=row, allow_v2=new_graph)
+        if verdict=="unable_to_review" and row["review_provenance"].get("provenance_version")!=2:
+            bad()
         metadata = judgments[(rid,)]
         revision = integer(row["judgment_revision"], minimum=1)
         revision_key = (row["reviewer_key"], revision)
@@ -258,10 +486,23 @@ def validate_graph(payload, api):
                 or cid is None or session is None or (prior,) not in sessions or sessions[(prior,)]["session_id"] != session["session_id"]):
                 bad()
             successors[prior] = rid
+    for (rid,),row in receipts.items():
+        provenance=row["review_provenance"]
+        if type(provenance) is dict and provenance.get("provenance_version")==2:
+            host=provenance["host_observation"]
+            session=sessions.get((rid,))
+            if session is None or session["session_id"]!=host["reviewer_session_id"] or session["binding_source"]!="handoff" or session["original_result_digest"]!=provenance["answer_attestation"]["original"]["digest"][7:]:bad()
+            cid=judgments[(rid,)]["continuation_id"]
+            if cid is not None:
+                if host["preparation_id"]!=continuations[(cid,)]["preparation_id"]:bad()
+                if continuations[(cid,)]["state"]=="superseded" and rid not in consumed:bad()
+            actual=[(f["severity"],f["summary"]) for f in findings.values() if f["review_receipt_id"]==rid]
+            expected_findings=[(f["severity"],f["summary"].strip()) for f in provenance["answer_attestation"]["payload"]["findings"]]
+            if sorted(actual)!=sorted(expected_findings):bad()
     if {row["result_receipt_id"] for row in reviewers.values() if row["result_receipt_id"] is not None} != {rid for (rid,), row in judgments.items() if row["continuation_id"] is not None}:
         bad()
     heads = sorted((row for (rid,), row in receipts.items() if rid not in successors), key=lambda row: (row["reviewer_key"].encode(), row["review_receipt_id"].encode()))
-    if graph["effective_receipt_ids"] != [row["review_receipt_id"] for row in heads] or any(row["verdict"] == "changes_requested" for row in heads):
+    if graph["effective_receipt_ids"] != [row["review_receipt_id"] for row in heads] or any(row["verdict"] in ("changes_requested","unable_to_review") for row in heads):
         bad()
     passes = [row for row in heads if row["receipt_kind"] == "independent" and row["verdict"] == "pass" and row["user_approved"] == 0]
     required = {0: 0, 1: 1, 2: 2}[payload["task"]["review_tier"]]
@@ -287,8 +528,9 @@ def validate_graph(payload, api):
         source_ids.add((kind, rid))
         source = ({field: receipts[(rid,)][field] for field in assertion_fields} if kind == "review_receipt" else
             {field: findings[(rid,)][field] for field in ("review_finding_id", "review_receipt_id", "severity", "summary", "created_at")})
+        collected_reference = kind == "review_receipt" and type(source["review_provenance"]) is dict and source["review_provenance"].get("provenance_version") == 2
         if (ref["source_state"] != "recorded" or ref["completion_cycle_id"] is not None or
-            (ref["assurance_class"], ref["producer_class"], ref["producer_version"]) != ("bound_attestation", "trusted_caller", 1)):
+            (ref["assurance_class"], ref["producer_class"], ref["producer_version"]) != ("bound_attestation", "taskgov_answer_collector" if collected_reference else "trusted_caller", 1)):
             bad()
         digest_value = {key: ref[key] for key in api._REFERENCE_KEYS if key not in ("evidence_reference_id", "digest")}
         digest_value.update(project_id=payload["project_id"], task_id=payload["task"]["task_id"], source_projection=source,

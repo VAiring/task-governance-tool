@@ -18,7 +18,8 @@ Setup orchestration remains with the
 
 ## Conditional Review Continuation Storage
 
-This is the schema-29 implementation specified by the
+This is the schema-29 continuation foundation, preserved and extended by the
+schema-30 collected-answer storage below, specified by the
 [database owner](database-specification.md#conditional-review-continuation-persistence).
 `schema_review_continuation.py` owns exact DDL, predecessor migration and physical
 admission; `review_continuation_repository.py` owns transaction-bound relation
@@ -114,7 +115,9 @@ the object inventory, schema fingerprints and all compatible read consumers.
 
 `completion_evidence_bundles.continuation_basis_json` is nullable TEXT with
 valid JSON and a 16,777,216 UTF-8 byte bound. It is null for formats one/two and
-non-null only for source-schema-29 format three. The existing immutable Bundle
+non-null for source-schema-29 format three or source-schema-30 format four
+when a continuation graph exists. Format four without a continuation keeps it
+null. The existing immutable Bundle
 guards protect this column. It stores the closed sanitized continuation graph
 captured at sealing, not original review bodies or operational observations.
 Projection reuses this frozen value; later continuation/resolution rows never
@@ -127,7 +130,165 @@ separate from source acquisition and frozen-to-native comparison in
 checks share only call-local values; they acquire no connection, retain no
 validation across reads, and do not change the caller's transaction ownership.
 
+<a id="collected-answer-value-schemas"></a>
+
+## Collected Answer Value Schemas
+
+These are the current closed schemas consumed by schema 30, the public writer
+and Evidence; the [review owner](review-completion-specification.md#collected-review-answers)
+owns answer and operation behavior. Every listed key is mandatory, including
+nullable keys; objects admit no extras. JSON integers are exact signed-64-bit
+integers, never Boolean or float. UUIDs use the current canonical session/turn
+validator; tool IDs retain prefix plus sixteen lowercase hexadecimal digits.
+Host dispatch/message IDs contain 1..256 ASCII characters matching
+`[A-Za-z0-9][A-Za-z0-9._:/+-]{0,255}`. New digests are `sha256:` plus 64 lowercase
+hexadecimal digits, except existing continuation selection/basis digests which
+retain their bare-hex domains and grammar. Canonical UTF-8 JSON admits no BOM,
+non-finite value, float, lone surrogate, duplicate or unknown key. Envelope
+nesting is at most sixteen containers. All typed strings receive the common
+privacy check before semantic validation; errors never echo rejected values.
+Text lengths count Unicode scalar values and byte offsets address exact UTF-8.
+
+`CollectionBasis` is exactly:
+
+```text
+{version:1, preparation_id, packet_digest, request_digest,
+ protocol:"review-answer-v1", attestation:"assigned-independent-review-v1",
+ route:"manual"|"integrated", continuation, execution_basis}
+```
+
+`execution_basis` is the complete closed version-one continuation basis above,
+bounded to 16,384 canonical UTF-8 bytes, with known execution and ownership and
+capture-version-one current target. Manifest, authority and criterion IDs must
+match the saved Packet. `continuation` is null or exactly
+`{continuation_id,sequence,selection_digest}` using the existing admitted
+selection; sequence is 1..64 and selection digest retains bare hex. The actual
+`tg_review_preparation_` ID identifies the immutable preparation. Packet/request
+digests hash their exact complete bytes; requests may differ by slot, but all
+other basis fields must agree. Canonical basis bytes are at most 32,768.
+Basis digest is SHA-256 over `taskgov-review-answer-basis-v1\0` plus the complete
+canonical CollectionBasis.
+
+`SlotBinding` is exactly:
+
+```text
+{basis_digest,slot,reviewer_key,dispatch_id,parent_session_id,
+ reviewer_session_id,initial_turn_id,binding_source,assignment}
+```
+
+Slots are 1..8, distinct and contiguous in their preparation. Reviewer keys use
+current normalized nonempty text up to 500 characters; both keys and actual
+reviewer sessions are distinct. Parent/execution matches the basis, child
+differs from parent, and the initial turn is the admitted actual dispatch turn.
+`assignment` is exactly `{kind:"independent",review_profiles,review_lenses,
+requested_model,requested_effort,requested_skill,context_relation}`. Profiles
+and lenses retain the existing fixed-order sets and limits (four/eight).
+Model is null or the existing 128-byte identifier. Effort is null or exactly
+`none|minimal|low|medium|high|xhigh|max|ultra`. Skill is null or `{id,version}`
+using current 128-byte identifier/64-byte version grammar. Context is null or
+the existing context-relation code. Null means no recorded launch request;
+none of these requested values proves an actual runtime fact.
+
+An observation source is exactly `{adapter:"codex-app-tools-review-answer",
+version:1,operation}`. Operation is `dispatch_binding`, `answer_observation`,
+`terminal_observation` or `correction_binding` at its respective field. Only the
+implemented reviewed adapter assigns it; it is not authentication or caller
+authority. `SourceIdentity` is exactly
+`{reviewer_session_id,turn_id,message_id}`, all non-null and exactly bound.
+
+Native `OriginalRef` is exactly `{path,byte_length,digest,payload_start,
+payload_length,payload_digest}`. Its public form removes only `path`. Path is a
+prepared repository-relative ignored physical path under existing transport
+grammar and limit. Byte length is 1..262144, payload start is nonnegative,
+payload length positive and end is within original; both endpoints must be
+UTF-8 scalar boundaries. Original digest hashes the complete delivered Unicode
+answer encoded as UTF-8, preserving all whitespace/fence bytes. Payload range
+selects the exact JSON object, excluding permitted surrounding whitespace and
+sole `json` fence lines. LF/CRLF fences have no indentation or suffix. Payload
+digest hashes those exact selected bytes; neither digest uses a domain prefix
+or reserialized/normalized answer bytes.
+
+Complete collected `Metadata` is exactly:
+
+```text
+{basis,binding,attempt,source_identity,original,answer_source,
+ terminal:"completed",terminal_source,correction_binding}
+```
+
+The first two members use the closed types above; attempt is integer zero or
+one. Initial source identity matches binding's initial turn and has null
+correction binding. Attempt one requires exactly `{intent_id,initial_turn_id,
+correction_turn_id,source}`, with `tg_review_correction_` ID, distinct exactly
+bound initial/correction turns, and correction source operation. Its source
+identity is the correction turn. Answer/terminal source operations are exact.
+Complete metadata is capped at 32,768 canonical UTF-8 bytes. Its physical seal
+is SHA-256 over `taskgov-collected-review-metadata-v1\0` plus all metadata,
+including the prepared path. It cannot validate a legacy sidecar arm.
+
+A collected envelope capture is exactly `{kind:"collected",
+consumer_continuation_id,consumer_slot,source_preparation_id,
+source_continuation_id,source_slot,session_id,source_basis_digest,
+original_digest,metadata_digest}`. Only source continuation may be null; slots
+are 1..8. Native storage retains this identity plus unchanged complete source
+metadata and one-time nullable result Receipt link. Consumer slot is the new
+dispatch slot: selected reviewers occupy the leading slots, followed by the
+combined legacy and collected retained originals in session-ID order, without
+collisions or gaps. Source slot and every source identity remain the original values.
+An existing legacy capture retains its old four keys and old hash domain.
+
+Public `capture_identity` removes only `metadata_digest` from that collected
+capture. Public `source_metadata` removes only `original.path` from complete
+Metadata. A frozen public row is exactly `{capture_identity,source_metadata,
+evidence_digest,result_receipt_id}`; its full canonical size is at most 32,768
+UTF-8 bytes. Evidence digest is SHA-256 over
+`taskgov-collected-review-capture-evidence-v1\0` plus exactly
+`{capture_identity,source_metadata}`, excluding the separately validated nullable
+Receipt link. No path placeholder/hash, original body or provider envelope is
+included. Rows order by consumer continuation/session in unsigned UTF-8 order.
+The distinct native/public seals and deterministic native projection are stored
+atomically; readers cannot supply independent public metadata as proof.
+
 ## Migration Sequence
+
+Schema 30 is owned by `schema_review_answers.py`; the exact code-defined owned
+DDL fingerprint covers the Receipt/Evidence Reference/Bundle rebuilds, coupled
+continuation/publication guards and five new relations. The migration uses the
+same admitted idle connection, foreign-key/legacy-alter protocol and before/
+after predecessor-projection/object checks as schema 29. Marker insertion is
+last within the single transaction. All exits restore connection flags.
+
+`review_receipt_provenance_v2` has primary/FK Receipt ID, unique provenance ID,
+bounded canonical `provenance_json` (262,144 bytes) and its contextual digest.
+`review_collection_sources` has one Receipt primary/FK, preparation/slot/attempt,
+reviewer-session/turn/message, bounded canonical CollectionBasis JSON and
+basis/original/payload/submission digests;
+both the complete source tuple and session/turn/message are unique. Its deferred
+preparation/submission FK requires the dispatch inventory in the same commit.
+`review_collection_dispatches` has preparation/submission composite primary key,
+project/Task and canonical inventory JSON capped at 32,768 UTF-8 bytes.
+`review_collection_dispatch_entries` has the dispatch/slot primary key, unique
+dispatch/Receipt, Receipt FK and exact canonical entry JSON. These tables are
+immutable. The repository compares both inventories and all immutable source
+and Receipt/session relations; a missing subset is conflict, not a prefix.
+
+`review_collected_captures` has consumer continuation/session primary key,
+nullable source continuation, bounded complete native metadata JSON, native
+metadata digest, bounded immutable path-free projection JSON, and nullable
+unique Receipt FK. Only that Receipt link may publish once. The frozen projection
+stores a null link initially; readers substitute the actual native link without
+changing its immutable source metadata or evidence digest. Capture construction
+derives both seals from the same validated metadata. `review_answer_repository.py`
+owns these reads/writes, exact inventory reconciliation, deterministic projection
+comparison and source/capture validation; it performs no file/host I/O and never
+commits the caller's transaction. Operational collection storage is separate.
+
+Receipt version two uses its separate relation; the former v1-only Receipt FK
+is replaced by exact union admission, without creating a v1 row for v2. Legacy
+v1 code rows and bytes remain unchanged. Read admission rejects orphan/multiple
+arms, invalid kind/version/source/target/digest matrices, missing Findings or
+normalization mismatches. New Bundle 4 uses source 30 and the existing nullable
+`continuation_basis_json` for graph 2; the coupled native-cycle guard requires
+null graph with ordinary gate basis one and a graph with continuation basis two.
 
 `schema_migrations` is contiguous, named, and validated with required objects
 and known later-version markers. Only explicit setup invokes migration. Other
@@ -167,6 +328,7 @@ Current sequential migrations are:
 | 27 | `review_pending_reacquisition_guard`: forward correction of legacy pending reacquisition |
 | 28 | `task_event_note_bodies`: nullable full-body retention on Task events |
 | 29 | `review_continuations`: successor judgments, explicit reassessment resolution and frozen continuation evidence |
+| 30 | `collected_review_answers`: v2 provenance/source, immutable dispatch inventory and typed collected captures |
 
 Every migration is ordered, idempotent on reentry, transactional, and
 rollback-tested. Reentry validates rather than synthesizing missing data.
@@ -179,10 +341,10 @@ checkpoint, maintenance, identity, and completion traces. The sole current
 exception is migration 20's Bundle-rebuild retirement of the
 unsupported attached residue defined below; it changes no other migration.
 
-The fixed-state setup migrator accepts complete source schemas v1-v28 and
-treats v29 as current. Legacy `state/projects` discovery is intentionally
+The fixed-state setup migrator accepts complete source schemas v1-v29 and
+treats v30 as current. Legacy `state/projects` discovery is intentionally
 narrower: v1-v13 plus the explicit schema-v14 legacy-layout transition.
-Viewer compatibility is independent and accepts source schemas v5-v29.
+Viewer compatibility is independent and accepts source schemas v5-v30.
 Incomplete history, a missing required object/row, a later marker, too-new
 state, unsupported layout, foreign identity, or corrupt integrity fails closed.
 
@@ -208,6 +370,9 @@ only Task/execution/generation, source/destination status, resulting ownership s
 actor UUID, optional sanitized recovery reason and timestamp. `task_execution_cycles`
 links one exact native cycle to its unique execution; its insert guard checks the
 cycle's project/Task and immutable triggers prevent rewriting the relation.
+The shared ownership row validator also rejects missing links for native Bundle
+sources 24 through 30 in ordinary global and recovery admission. Earlier retained
+completion history remains valid without an invented execution/cycle link.
 No prompt, response body, environment, cost, session liveness or caller-specific
 flags are retained. This schema does not create the later numerical usage store
 or review-session binding tables.

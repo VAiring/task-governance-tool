@@ -97,8 +97,10 @@ def build_task_show_data(
                 key: review["counts"][key]
                 for key in (
                     "receipts_current_generation", "changes_requested_current_generation",
+                    "unable_current_generation",
                     "open_high", "open_medium", "open_low",
                 )
+                if key != "unable_current_generation" or key in review["counts"]
             },
             "current_receipts": result.current_review_receipts,
             "current_findings": result.current_review_findings,

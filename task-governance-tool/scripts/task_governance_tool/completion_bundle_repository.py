@@ -270,7 +270,7 @@ def persist_completion_evidence_bundle_locked(
     if bundle.source_schema_version != current_schema_version(connection):
         raise evidence_ledger_inconsistent()
     _validate_prepared_completion_bundle(bundle, expected_cycle=expected_cycle)
-    if bundle.bundle_version == 3:
+    if bundle.bundle_version in (3,4) and bundle.continuation_basis_json is not None:
         from .review_continuation_evidence import decode_graph_json
         from .review_continuation_evidence_repository import validate_frozen_against_core
         validate_frozen_against_core(connection, decode_graph_json(bundle.continuation_basis_json))

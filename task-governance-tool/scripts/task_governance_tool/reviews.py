@@ -833,19 +833,20 @@ def normalize_receipt(
     verdict: Any,
     summary: Any = "",
     user_approved: bool = False,
+    collected: bool = False,
 ) -> dict[str, Any]:
     reviewer_key = validate_text("reviewer_key", reviewer, required=True, limit=500)
     receipt_kind = validate_choice(
         "receipt_kind", kind, RECEIPT_KINDS, "invalid_review_evidence"
     )
     receipt_verdict = validate_choice(
-        "verdict", verdict, REVIEW_VERDICTS, "invalid_review_evidence"
+        "verdict", verdict, (*REVIEW_VERDICTS, "unable_to_review") if collected else REVIEW_VERDICTS, "invalid_review_evidence"
     )
     receipt_summary = validate_text("review_receipt_summary", summary, limit=1000)
     approval = bool(user_approved)
 
     if receipt_kind == "independent":
-        if receipt_verdict not in {"pass", "changes_requested"} or approval:
+        if receipt_verdict not in ({"pass", "changes_requested", "unable_to_review"} if collected else {"pass", "changes_requested"}) or approval:
             raise review_error(
                 "invalid_review_evidence",
                 "independent receipts require pass or changes_requested and cannot use user approval",
@@ -924,6 +925,7 @@ def add_review_receipt(
     caller: CallerIdentity = CallerIdentity(None),
     session_binding: review_sessions.ReviewSessionBinding | None = None,
     _continued_publication=None,
+    collected_answer=None,
 ) -> ReviewReceiptResult:
     normalized_task_id = validate_task_id(task_id)
     observed_task, ownership = read_mutation_basis(connection, project.project_id, normalized_task_id)
@@ -955,9 +957,19 @@ def add_review_receipt(
         verdict=verdict,
         summary=summary,
         user_approved=user_approved,
+        collected=collected_answer is not None,
     )
+    if collected_answer is not None:
+        from .review_answer_repository import CollectedReceiptInput
+        if (type(collected_answer) is not CollectedReceiptInput or current_schema_version(connection) < 30
+            or normalized["receipt_kind"] != "independent" or session_binding is None
+            or session_binding.binding_source != "handoff"
+            or any(value is not None for value in (reviewer_class, model_state, declared_model_id,
+                skill_state, declared_skill_id, declared_skill_version, review_profiles,
+                review_lenses, context_relation, review_methods))):
+            raise review_error("invalid_review_evidence", "collected evidence requires its typed source binding")
     try:
-        normalized_provenance = normalize_review_provenance_input(
+        normalized_provenance = None if collected_answer is not None else normalize_review_provenance_input(
             receipt_kind=normalized["receipt_kind"],
             reviewer_class=reviewer_class,
             model_state=model_state,
@@ -988,6 +1000,9 @@ def add_review_receipt(
     )
     validate_stored_review_target(task)
     require_current_capture(task)
+    if collected_answer is not None:
+        from .review_continuation_repository import require_current_basis
+        require_current_basis(connection,collected_answer.metadata["basis"]["execution_basis"],caller)
     judgment_revision = 1
     if _continued_publication is not None:
         if current_schema_version(connection) < 29 or session_binding is None or session_binding.binding_source != "handoff":
@@ -1005,7 +1020,20 @@ def add_review_receipt(
     now = utc_now()
     receipt_id = generate_review_id("tg_review_receipt")
     provenance = None
-    if normalized_provenance is not None:
+    if collected_answer is not None:
+        from .review_answer_provenance import build_provenance_v2
+        from .review_answer import AnswerError
+        try:
+            provenance = build_provenance_v2(project_id=project.project_id,task_id=normalized_task_id,
+                review_receipt_id=receipt_id,receipt_kind=normalized["receipt_kind"],
+                target={"kind":task["review_target_kind"],"value":task["review_target_value"],
+                    "base_revision":task["review_target_base_revision"],"generation":task["review_target_generation"],"capture_version":1},
+                metadata=collected_answer.metadata,answer=collected_answer.answer)
+            if provenance["answer_attestation"]["payload"]["verdict"] != normalized["verdict"] or provenance["answer_attestation"]["payload"]["summary"].strip() != normalized["summary"]:
+                raise review_error("invalid_review_evidence", "collected payload does not match receipt")
+        except AnswerError as exc:
+            raise review_error("invalid_review_evidence", "collected provenance is invalid") from exc
+    elif normalized_provenance is not None:
         try:
             provenance = build_review_provenance_v1(
                 project_id=project.project_id,
@@ -1051,7 +1079,7 @@ def add_review_receipt(
             ("method", "method_codes"),
         )
         for ordinal, code in enumerate(provenance[field])
-    ) if provenance is not None else ()
+    ) if provenance is not None and collected_answer is None else ()
     try:
         stored = insert_review_receipt_with_provenance_locked(
             connection,
@@ -1059,6 +1087,7 @@ def add_review_receipt(
             provenance,
             code_rows,
             judgment_revision=judgment_revision,
+            collected_answer=collected_answer,
         )
     except sqlite3.IntegrityError as exc:
         current_revision = current_schema_version(connection) >= 29
@@ -1184,7 +1213,7 @@ def add_review_receipt(
     if current_schema_version(connection) >= 29:
         from .review_continuation_repository import append_judgment_locked
         append_judgment_locked(connection, receipt_id=receipt_id, revision=judgment_revision,
-            continuation_id=_continued_publication.record.continuation_id if _continued_publication else None,
+            continuation_id=(getattr(_continued_publication,"judgment_continuation_id",_continued_publication.record.continuation_id) if _continued_publication else None),
             prior_receipt_id=_continued_publication.selected.prior_receipt_id if _continued_publication else None)
     connection.execute(
         "UPDATE tasks SET updated_at = ? WHERE project_id = ? AND task_id = ?",
@@ -1790,7 +1819,7 @@ def _project_stored_review_receipt(
                     "generation": receipt["target_generation"],
                     "capture_version": 1,
                 }
-                if basis_version == 1
+                if basis_version in (1,2)
                 else None
             ),
         )
@@ -2103,10 +2132,13 @@ def _read_review_evidence(
     }
     if physical_schema >= 29:
         empty_evidence["continuation"] = None
+    if physical_schema >= 30:
+        empty_evidence["counts"]["unable_current_generation"] = 0
     total_receipts = 0
     current_receipts = 0
     qualifying = 0
     changes_requested = 0
+    unable = 0
     fallback_kind: str | None = None
     open_counts = {"high": 0, "medium": 0, "low": 0}
     receipt_recent_candidates: list[tuple[str, int, sqlite3.Row]] = []
@@ -2278,6 +2310,11 @@ def _read_review_evidence(
                 )
             for row in chunk:
                 total_receipts += 1
+                if physical_schema >= 30:
+                    from .review_answer_repository import validate_payload_findings
+                    stored_collected=read_review_receipt_with_provenance(connection,review_receipt_id=row["review_receipt_id"])
+                    if stored_collected is not None and stored_collected["receipt"]["review_provenance_basis_version"] == 2:
+                        validate_payload_findings(connection,row["review_receipt_id"],stored_collected["provenance"])
                 _retain_recent_candidate(
                     receipt_recent_candidates,
                     created_at=row["created_at"],
@@ -2327,6 +2364,8 @@ def _read_review_evidence(
                     qualifying += 1
                 if qualified and row["verdict"] == "changes_requested":
                     changes_requested += 1
+                if qualified and row["verdict"] == "unable_to_review":
+                    unable += 1
                 if tier in {1, 2}:
                     expected_approval = 1 if tier == 2 else 0
                     if (
@@ -2558,6 +2597,7 @@ def _read_review_evidence(
         target_set
         and tier_satisfied
         and changes_requested == 0
+        and unable == 0
         and not blocking_rows
         and (continuation_view is None or continuation_view.pending_continuation_id is None)
     )
@@ -2584,6 +2624,8 @@ def _read_review_evidence(
     }
     if physical_schema >= 29:
         projected["continuation"] = continuation_view.projection() if continuation_view else None
+    if physical_schema >= 30:
+        projected["counts"]["unable_current_generation"] = unable
     return projected
 
 
@@ -2632,6 +2674,8 @@ def first_review_gate_error(
             "a current-generation changes_requested receipt requires a newer target and fresh review",
             "review_receipt",
         )
+    if evidence["counts"].get("unable_current_generation", 0):
+        return review_error("review_unable", "a current effective reviewer was unable to complete the review", "review_receipt")
     if not evidence["gate"]["satisfied"]:
         return review_error(
             "review_receipts_insufficient",

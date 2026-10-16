@@ -17,7 +17,8 @@ remain with the [Setup/state owner](setup-state-specification.md#setup-recovery-
 
 ## Conditional Review Continuation Persistence
 
-The combined implementation supports schema 29, migration `review_continuations`.
+Schema 29 introduces migration `review_continuations`; the current combined
+implementation supports schema 30 with the collected-answer extension below.
 Actual upgrade remains explicit Setup; managed host activation requires the
 combined verification/review and host gates in the
 [continuation plan](review-continuation-plan.md#sequential-phases-and-verification).
@@ -99,8 +100,8 @@ Missing state is `db_not_initialized`; supported older state is
 `migration_required`; a newer schema is `schema_too_new`. Old binaries reject
 newer state and never downgrade/write it.
 
-Fresh setup creates schema v29. Structurally complete contiguous source schemas
-v1-v28 are setup-only migration inputs; v29 is idempotent current state.
+Fresh setup creates schema v30. Structurally complete contiguous source schemas
+v1-v29 are setup-only migration inputs; v30 is idempotent current state.
 Schema sequence is:
 
 | Version | Durable addition |
@@ -131,6 +132,7 @@ Schema sequence is:
 | v27 | forward repair of the legacy pending-to-active acquisition guard |
 | v28 | validated Task note bodies retained separately from event summaries |
 | v29 | explicit review continuations, immutable successor judgments and Finding-resolution links; frozen continuation Evidence |
+| v30 | immutable collected-answer provenance/source and complete registration inventories; typed retained collected originals; Bundle 4/index 3 |
 
 Each migration is transactional, idempotent, rollback-tested, validates
 contiguous history and required objects/rows, preserves project/business IDs
@@ -142,7 +144,7 @@ private prose to invent structure.
 ### Schema-v28 Task Note Bodies
 
 Explicit Setup migrates schema 27 to 28 by adding nullable `task_events.note_body`
-and three ownership/immutability guards. Current core state has 40 tables,
+and three ownership/immutability guards. Schema 28 has 40 tables,
 46 indexes and 76 triggers. Each accepted `task edit --add-note` body is retained
 in full, up to 2,000 characters, on its corresponding event; the existing display
 summary remains bounded to 1,000 characters. Note-bearing `note_added`,
@@ -219,10 +221,11 @@ every cycle/Bundle Runner-observation pointer remains null; native Bundle-v2
 This check occurs before any database or sidecar write, migration backup,
 recovery copy/publication, Viewer publication, or managed-backup write. A complete v19 source alone may invoke migration
 20; a complete v20 source continues through migrations 21 and 22, and a complete
-v21 source invokes migration 22, followed by 23 through 29. Complete v22 invokes 23
-through 29; complete v23 invokes 24 through 29; complete v24 invokes 25 through 29;
-complete v25 invokes 26 through 29, complete v26 invokes 27 through 29, complete v27
-invokes 28 and 29, complete v28 invokes 29, and exact v29 receives validation-only reentry. Unrelated extra
+v21 source invokes migration 22, followed by 23 through 30. Complete v22 invokes 23
+through 30; complete v23 invokes 24 through 30; complete v24 invokes 25 through 30;
+complete v25 invokes 26 through 30, complete v26 invokes 27 through 30, complete v27
+invokes 28 through 30, complete v28 invokes 29 and 30, complete v29 invokes 30,
+and exact v30 receives validation-only reentry. Unrelated extra
 objects retain the existing policy, including deliberate removal of
 unsupported unowned indexes/triggers attached to the rebuilt Bundle table and
 preservation of unrelated standalone objects.
@@ -242,9 +245,9 @@ qualifying Runner protocol with explicit manual fallback.
 
 <a id="current-schema-v28-persistence-contract"></a>
 
-## Current Schema-v29 Persistence Contract
+## Current Schema-v30 Persistence Contract
 
-Schema v29 is the public setup target. Its predecessor migration `24/task_session_ownership`
+Schema v30 is the public setup target. Its predecessor migration `24/task_session_ownership`
 adds `task_executions`, `task_ownership`, `task_owner_transitions` and
 `task_execution_cycles` (39 tables, 45 explicit indexes, 67 triggers).
 Execution/transition/cycle links are append-only. The one current ownership row
@@ -263,12 +266,64 @@ Only the Bundle table and its coupled native-cycle guard are rebuilt to admit
 source 24/format 2. New native completion must link its execution to its exact cycle
 within the same transaction. Older Bundles/cycles remain unlinked and unchanged;
 format 2 is retained and the index reports the actual container. No per-caller display or
-usage fields are added to sealed Evidence or Viewer v4. Viewer accepts v5-v29.
+usage fields are added to sealed Evidence or Viewer v4. Viewer accepts v5-v30.
 Reentry validates exact DDL, markers, retained graph and integrity without repair.
 Setup retains its existing backup/rollback protocol; no normal command migrates.
 Unsupported attached residue/hybrid state fails closed before writes. Global
 consumers retain full admitted-row validation and recovery retains only its
 existing verification-field-local exception.
+
+### Collected Answer Persistence
+
+Explicit Setup migration `30/collected_review_answers` requires admitted schema
+29 and preserves all predecessor column values, row identities, unrelated
+objects, and sealed Evidence bytes. It rebuilds only Review Receipts, Evidence
+References and completion Bundles, then updates their coupled guards. An
+unowned rebuilt-table attachment, conflicting name, incomplete marker history
+or invalid predecessor fails before mutation; any failure rolls back the full
+schema/row change and restores foreign keys. Reentry validates without repair.
+Current state has 50 tables, 47 explicit indexes and 101 triggers.
+
+Receipt provenance is an exact union: version zero owns no provenance row;
+version one owns only its existing normalized row/codes; version two owns one
+immutable bounded canonical row in `review_receipt_provenance_v2`. Only a v2
+independent Receipt may use `unable_to_review`. No migration synthesizes v2
+answers or changes an old assertion, digest or model/Skill declaration.
+
+`review_collection_sources` uniquely binds the exact preparation, source slot,
+attempt, reviewer session, turn and message to one Receipt, basis/original/
+payload digests and exact submission digest. A source item cannot register a
+second Receipt. `review_collection_dispatches` and immutable per-slot
+`review_collection_dispatch_entries` commit the complete 1..8-entry submitted
+inventory, including retained legacy items, in the same public writer as all
+Receipts, Findings, provenance, session bindings and References. The source's
+deferred relation requires its dispatch inventory before commit. This inventory
+is independent of recent-Receipt display limits; no response-loss recovery may
+interpret absence as rollback or authorize replay.
+
+`review_collected_captures` stores an immutable native metadata seal and the
+deterministically derived path-free public projection for an explicitly admitted
+consumer continuation/session. Its Receipt link can publish once. Source
+preparation, complete execution basis, route, original slot/attempt/turn and
+nullable initial-source context remain unchanged through later supersession.
+A non-null source continuation must be a superseded ancestor, and its ID,
+sequence and selection digest must match the source metadata during capture
+admission and native reentry. Capture admission
+requires separately settled source publication/effects and old wait cleanup;
+core readers do not inspect operational files. Admission rejects selected-session
+aliases, duplicate sources, dropped required captures and mismatched metadata.
+Registered consumers require every capture consumed; superseded unused captures
+retain null links as history. Native reentry compares the frozen projection
+against its original metadata rather than treating an opaque seal as proof.
+
+New schema-30 completions seal Bundle 4 and project index 3 under the
+[versioned Evidence contract](evidence-specification.md#collected-answer-evidence).
+They retain the mandatory exact execution/cycle link: ordinary global admission
+and recovery reject a missing link without repairing it. This does not require
+links for preserved completion history from before schema 24.
+The existing gate basis remains version one without continuation or version two
+with continuation. Backup, recovery and Viewer use the same exact schema and
+row validation; ordinary commands never migrate or activate a host collector.
 
 <a id="conditional-schema-v25-reviewer-relation"></a>
 
@@ -775,7 +830,7 @@ Capture and display revalidate immutable execution/cycle/reviewer identities.
 A core-basis mismatch after restore or later transitions returns unavailable
 until replay; missing references are never rebound to the newest Task cycle.
 Restored numerical state with a different project/path binding stays unavailable.
-The main schema is independently versioned (currently 29); no numerical table joins a core transaction or gate.
+The main schema is independently versioned (currently 30); no numerical table joins a core transaction or gate.
 Optional lifecycle invocation follows the separate Setup/state contract and
 cannot alter these quality or completion boundaries.
 

@@ -24,7 +24,8 @@ New `independent` and `self_review_fallback` Receipts use `review receipt add`
 or [structured result registration](review-completion-specification.md#structured-review-results).
 Both retain the same individual evidence and provenance. Every public Review Receipt has exactly one
 `review_provenance` union. A native independent/fallback Receipt exposes one v1
-object with exactly these keys:
+object with exactly these keys. These are the unchanged legacy-protocol ingress
+and version-one arm; collected answers use the explicit version-two arm below:
 
 ```text
 review_provenance_id provenance_version reviewer_class model_state
@@ -171,7 +172,7 @@ and projection-generation advance. Schema v20 and the marker-zero schema-v21
 baseline instead insert one version-2 Bundle whose basis is
 `caller_attestation` with the qualifying Receipt for nonempty verification or
 `not_required` with no Receipt for trimmed-empty verification, and its Runner
-observation is null. The current schema-v29 writer requires an explicit Task
+observation is null. Schema-v29 and the current schema-v30 writer require an explicit Task
 waiver reason for the not-required branch and additionally
 admits the exact qualifying schema-v21-protocol `runner_observation` branch, reusing its
 existing Runner Reference and criterion link as Bundle members. The sole partial
@@ -196,7 +197,7 @@ domain, bytes, and digest are unchanged.
 
 Evidence JSON is a deterministic one-way SQLite projection. Canonical sorted-key compact UTF-8 JSON uses integer-only JSON values where numeric, preserves valid Unicode without normalization, and ends each file with one LF. A schema-v20-through-v29 index uses envelope `format_version=2`, digest domain `taskgov-evidence-index-v2\0`, and adds exactly nullable `bundle_format_version` to each entry: null for `legacy_unknown`, 1 for a preserved v1 Bundle, 2 for a native v2 Bundle, and 3 for a validated continuation Bundle. Native entries reference `bundles/<completion-evidence-bundle-id>.json`; the projection may therefore reference preserved source-19/v1 and source-20/21/22/23/24/25/26/27/28/v2 Bundles alongside new source-29/v2 or v3 Bundles without rewriting existing payload bytes or digests. The index reports its actual database source schema. Pre-v19 entries are `legacy_unknown` with null Bundle/file fields.
 The index includes every cycle, is ordered by Task ID, ordinal, and cycle ID, and is capped at 100,000 entries and 64 MiB without truncation. Publication flushes immutable Bundle files and atomically replaces `index.json` last; SQLite remains canonical, unreferenced files are ignored, and JSON is never imported or used to repair the database.
-Contention or failure preserves the last-good index and committed Task result, leaves projection due, and adds only `evidence_projection_deferred` or `evidence_projection_failed`. Setup is the sole explicit repair; doctor only reports stored projection facts. Evidence JSON exposes no Evidence command, custom path, Viewer field/UI, browser launch, server, watcher, or network action and invokes neither Analyzer nor Runner. A current schema-v29 Runner-backed Bundle projects only the already-sanitized stored observation under the [shared Runner protocol](specification.md#schema-v21-persistence-compatibility-and-shared-runner-protocol); publication adds no normal-loop call.
+Contention or failure preserves the last-good index and committed Task result, leaves projection due, and adds only `evidence_projection_deferred` or `evidence_projection_failed`. Setup is the sole explicit repair; doctor only reports stored projection facts. Evidence JSON exposes no Evidence command, custom path, Viewer field/UI, browser launch, server, watcher, or network action and invokes neither Analyzer nor Runner. A current schema-v30 Runner-backed Bundle, like its schema-v29 predecessor, projects only the already-sanitized stored observation under the [shared Runner protocol](specification.md#schema-v21-persistence-compatibility-and-shared-runner-protocol); publication adds no normal-loop call.
 
 <a id="assurance-evidence-references-and-finding-snapshots"></a>
 
@@ -209,7 +210,7 @@ versioned producer:
 assurance_class = machine_observed | bound_attestation |
   deterministically_derived | external_reference | legacy_unknown
 producer_class = taskgov_core | taskgov_git | trusted_caller |
-  legacy_migration | external_system | verification_runner
+  legacy_migration | external_system | verification_runner | taskgov_answer_collector
 producer_version = positive integer
 ```
 
@@ -236,6 +237,7 @@ The v1 source dispatch is exact and uses producer version 1:
 | `artifact_manifest/opaque_target/external_revision` | `external_reference/external_system` | the same closed opaque projection | acceptance `completion_basis`, when present |
 | `verification_receipt/recorded` | `bound_attestation/trusted_caller` | Receipt ID, subject basis and IDs, result, duration, coverage, creation time; no legacy label or compatibility value | verification `verification_attestation`, exactly once |
 | `review_receipt/recorded` | `bound_attestation/trusted_caller` | Receipt ID, reviewer key, kind, verdict, summary, approval, creation time, and native v1/null provenance | acceptance `review_assessment` for each selected qualifying Receipt, when present |
+| `review_receipt/recorded` with v2 provenance | `bound_attestation/taskgov_answer_collector` | the same Receipt assertion with complete native v2 provenance | acceptance `review_assessment` for each selected qualifying Receipt, when present |
 | `review_finding/recorded` | `bound_attestation/trusted_caller` | Finding ID, Receipt ID, severity, original summary, creation time | acceptance `review_finding` for current-generation Findings, when present |
 | `completion_evidence/git_commit` | `machine_observed/taskgov_git` | cycle ID/time and exact six-field completion evidence | acceptance `completion_basis`, when present |
 | `completion_evidence/external_revision` | `external_reference/external_system` | the same closed completion projection | acceptance `completion_basis`, when present |
@@ -480,6 +482,93 @@ existing closed fields; session rows keep their five existing binding fields.
 Every graph item binds the Bundle's same project/Task, Contract/criteria and
 four-part target. Extra current or historical relations are not silently
 added to a sealed graph. A re-opened Task's later links cannot alter old bytes.
+
+<a id="collected-answer-evidence"></a>
+
+## Collected Answer Evidence
+
+Schema 30 adds the closed collected-answer provenance arm below, using the
+[current collection value schemas](database-design.md#collected-answer-value-schemas)
+and [five-field answer contract](review-completion-specification.md#collected-review-answers).
+Its exact fields are `review_provenance_id`, integer `provenance_version=2`,
+`answer_attestation`, `assignment`, `host_observation`,
+`assurance_class="bound_attestation"`,
+`producer_class="taskgov_answer_collector"`, integer `producer_version=1`,
+and `digest`. This arm applies only to independent Receipts, including a valid
+`unable_to_review`; unable makes no completed-review assertion and blocks the
+shared completion gate independently of other PASS results.
+
+`answer_attestation` is exactly `{protocol,attestation,request_digest,original,
+payload}`. Protocol is `review-answer-v1`; attestation is
+`assigned-independent-review-v1`; request digest matches the saved immutable
+request, `original` is the current OriginalRef without path, and `payload` is
+exactly the five-field answer. `assignment` is exactly the current SlotBinding
+assignment. `host_observation` is exactly `{basis_digest,preparation_id,slot,
+attempt,parent_session_id,reviewer_session_id,turn_id,message_id,binding_source,
+answer_source,terminal_source,model,skill,methods}`. Its identities, source
+operations and digests match validated Metadata; no mandatory fact is nullable.
+Each of model/skill/methods has the exact unknown object specified below.
+No other keys are admitted. The entire canonical provenance object is capped
+at 262,144 UTF-8 bytes, separately from the whole-Bundle bound.
+
+Attestation retains the exact protocol/attestation/request digest, path-free
+original/payload byte metadata and all five sanitized answer fields, with every
+Finding/check/limitation in original order. Normalized Receipt/Finding strings
+must equal the corresponding retained payload strings after current
+normalization; no Finding is dropped. Assignment records requested profile,
+lens, model/effort/Skill/context only. Host observation binds the actual
+preparation/slot/attempt, parent/reviewer/turn/message, basis digest and admitted
+dispatch/answer/terminal source. Actual model, Skill and methods remain exactly
+`{state:"unknown",value:null,source:null}` for adapter version one. Requested
+values and free-text checks cannot fill these unknowns. Assurance remains an
+attestation; observation does not authenticate identity, review quality or truth.
+
+The v2 provenance digest is SHA-256 over `taskgov-review-provenance-v2\0` plus
+canonical JSON of `{project_id,task_id,review_receipt_id,receipt_kind,target,
+provenance}`. Target contains the existing five fields; provenance excludes only
+its random ID and digest. Old v0 absence, v1 assertion bytes/domains, null
+not-required provenance, and already sealed Bundles retain their exact meaning.
+
+All newly sealed source-30 Bundles use integer format/version four and domain
+`taskgov-completion-evidence-bundle-v4\0`. They retain format-three root members,
+including mandatory `review_continuation_basis`, which is null without a
+continuation. A non-null value is graph version two: exactly graph-one fields
+plus `collected_captures`. Each collected capture is the closed path-free
+`{capture_identity,source_metadata,evidence_digest,result_receipt_id}` row.
+Its digest uses `taskgov-collected-review-capture-evidence-v1\0` over exactly
+`{capture_identity,source_metadata}`, excluding the separately validated
+one-time Receipt link. The Reader does not access private original paths or
+claim to recompute their native physical metadata seal.
+
+Graph validation checks source/consumer ancestry and root preparation, the
+source continuation's exact ID, sequence and selection digest, complete
+execution basis/route, slot/session uniqueness, unchanged source metadata across
+transfers, correction and completed-turn facts, session/original binding and
+every overlapping linked v2 provenance field. A consumed capture's source
+binding reviewer key must equal its linked Receipt's reviewer key; matching
+session IDs and recomputed seals do not replace that comparison. Superseded
+source continuation results require exactly one consumed capture in a registered descendant;
+superseded unused consumers may retain null links. Pending consumers never enter
+a sealed graph. A retained, already registered initial Receipt remains usable
+by its existing ID; an initial null source context is not evidence of whether
+registration previously occurred. Native registration/capture admission owns
+that distinction. Recomputed hashes never excuse inconsistent declared graphs.
+
+Native sealing, reentry and projection compare the complete ordered capture
+inventory for every consumer continuation in the frozen graph, including
+historical and registered consumers. A missing capture or an empty replacement
+list fails even when Bundle digests are recomputed. The comparison excludes
+consumers created after that frozen snapshot; later Task history cannot rewrite
+or invalidate an otherwise unchanged sealed Bundle. This native completeness
+check does not give the independent public Reader unavailable initial-source
+registration history.
+
+Source-30 Evidence indexes use envelope format three and digest domain
+`taskgov-evidence-index-v3\0`; entry fields remain those of index two, with
+`bundle_format_version` additionally admitting four. Indexes may reference
+preserved Bundle versions one through three without rewriting them. Old index
+formats, Bundle formats and graph versions are not broadened in place. Existing
+whole-Bundle/index size bounds, publication and last-good behavior remain.
 
 ## Evidence Interpretation And Retired Analyzer Boundary
 

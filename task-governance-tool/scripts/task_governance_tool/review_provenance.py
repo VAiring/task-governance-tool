@@ -667,8 +667,17 @@ def project_review_provenance(
     """Project the exact v1/v0/null public union from a stored basis."""
 
     normalized_kind = _normalized_choice(receipt_kind, ALL_RECEIPT_KINDS)
-    if type(basis_version) is not int or basis_version not in {0, 1}:
+    if type(basis_version) is not int or basis_version not in {0, 1, 2}:
         raise _invalid()
+    if basis_version == 2:
+        from .review_answer_provenance import validate_provenance_v2
+        from .review_answer import AnswerError
+        try:
+            return validate_provenance_v2(provenance, project_id=project_id,
+                task_id=task_id, review_receipt_id=review_receipt_id,
+                receipt_kind=normalized_kind, target=target)
+        except (AnswerError, TypeError, ValueError, KeyError) as exc:
+            raise _invalid() from exc
     if normalized_kind == "not_required":
         if basis_version != 0 or provenance is not None:
             raise _invalid()

@@ -1,12 +1,13 @@
 """Transient, closed diagnostics for the normal MCP boundary; no recovery effects."""
 
 from contextlib import contextmanager
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import json
 
 from .review_wait_server import _BOOTSTRAP_REASONS, _BOOTSTRAP_STAGES, _bootstrap_failure
 from .review_wait_host import (HOST_BOUNDARY_REASONS, HOST_OPERATIONS, HOST_TERMINATION,
-                              HostAdapterError, host_failure, read_failure, validated_read_failure)
+                              EXECUTOR_TURN_FAILURES, HostAdapterError, host_failure,
+                              read_failure, validated_read_failure)
 from .review_wait_direct_repository import DIRECT_REASONS
 
 
@@ -70,6 +71,51 @@ class CallDiagnostics:
     cleanup: str = "not_attempted"
     host_failure: dict | None = None
     read_failure: dict | None = None
+    hook_caller_relation: str | None = None
+    hook_executor_context: str | None = None
+    _collection_effects: dict = field(default_factory=dict, repr=False)
+    _record_effects: str | None = field(default=None, repr=False)
+
+    def _with_collection_effects(self, current=None):
+        states = [value[0] for value in self._collection_effects.values()]
+        if current is not None:
+            states.append(current)
+        return ("not_inspected" if "not_inspected" in states else
+            "present_unresolved" if "present_unresolved" in states else
+            "settled" if "settled" in states else "absent")
+
+    @contextmanager
+    def collecting(self, repository):
+        """Observe only this call's bounded, complete collection inventories."""
+        key = repository.path
+        previous = repository._observation
+        self._collection_effects.setdefault(key, ("not_inspected", False))
+
+        def observed(event, records):
+            _state, unresolved = self._collection_effects[key]
+            state = "not_inspected"
+            if event == "writing":
+                self.local_state = "may_have_changed"
+            elif event == "observed":
+                publications = [attempt["publication"] for row in records for attempt in row["attempts"]
+                                if attempt["publication"] is not None]
+                corrections = [row["correction"] for row in records if row["correction"] is not None]
+                registrations = [row["registration"]["state"] for row in records]
+                unresolved = (any(value["state"] != "saved" for value in publications)
+                    or any(value["effect"] == "unknown" or value["effect"] == "accepted"
+                           and value["correction_turn_id"] is None for value in corrections)
+                    or any(value in ("dispatched", "unknown") for value in registrations))
+                state = ("present_unresolved" if unresolved else "settled"
+                    if publications or corrections or any(value != "not_started" for value in registrations)
+                    else "absent")
+            self._collection_effects[key] = (state, unresolved)
+            self.retained_effects = self._with_collection_effects(self._record_effects)
+
+        repository._observation = observed
+        try:
+            yield
+        finally:
+            repository._observation = previous
 
     def capture(self, *, error=None, result=None):
         read = validated_read_failure(result.get("read_failure")) if type(result) is dict else read_failure(error)
@@ -125,8 +171,9 @@ class CallDiagnostics:
             raise
 
     def observe_record(self, record):
-        self.retained_effects = ("absent" if record is None else
-                                 "settled" if record.phase == "closed" else "present_unresolved")
+        self._record_effects = ("absent" if record is None else
+                               "settled" if record.phase == "closed" else "present_unresolved")
+        self.retained_effects = self._with_collection_effects(self._record_effects)
 
     def observe_operation(self, result, previous):
         self.invalidate_record()
@@ -138,6 +185,10 @@ class CallDiagnostics:
             self.retained_effects = "present_unresolved"
 
     def failure(self, result, *, error=None):
+        if self.retained_effects in ("absent", "settled"):
+            # A later wait-only observation cannot settle collection effects.
+            # Failed fresh reads keep not_inspected instead of reviving facts.
+            self.retained_effects = self._with_collection_effects(self.retained_effects)
         if error is not None and self.reason is None:
             self.capture(error=error)
         reason = self.reason
@@ -159,6 +210,7 @@ class CallDiagnostics:
             recovery = "check_connection"
         if (self.host_mutation == "may_have_occurred" or self.cleanup == "unresolved"
                 or self.retained_effects == "present_unresolved"
+                or any(value[1] for value in self._collection_effects.values())
                 or (self.local_state == "may_have_changed"
                     and self.retained_effects == "not_inspected")):
             recovery = "inspect_existing"
@@ -179,6 +231,16 @@ class CallDiagnostics:
         read = validated_read_failure(self.read_failure)
         if read is not None:
             diagnostic["read_failure"] = read
+        if (stage == "operation" and reason == "caller_mismatch"
+                and result.get("ok") is False and result.get("error") == "caller_mismatch"
+                and type(self.hook_caller_relation) is str
+                and self.hook_caller_relation in {"event_reviewer", "other"}):
+            diagnostic["hook_caller_relation"] = self.hook_caller_relation
+        if (stage == "operation" and reason == "executor_context_required"
+                and result.get("ok") is False and result.get("error") == "review_wait_unavailable"
+                and type(self.hook_executor_context) is str
+                and self.hook_executor_context in EXECUTOR_TURN_FAILURES):
+            diagnostic["hook_executor_context"] = self.hook_executor_context
         # All members are fixed vocabulary, independent of rejected input size.
         assert len(json.dumps(diagnostic).encode("utf-8")) <= MAX_DIAGNOSTIC_BYTES
         return {**result, "diagnostic": diagnostic}

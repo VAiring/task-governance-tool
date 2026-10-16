@@ -11,13 +11,15 @@ from .review_wait_host import read_failure, host_failure
 
 class ManagedDirectProbe(DirectProbe):
     def __init__(self, *args, finalization_factory=None, dispatch_path=None,
-                 observation_factory=None, runtime_observer=None, occurrence_guard=None, **kwargs):
+                 observation_factory=None, runtime_observer=None, occurrence_guard=None, answer_collector=None, **kwargs):
         super().__init__(*args, **kwargs)
         self.finalization_factory = finalization_factory
         self.dispatch_path = dispatch_path
         self.observation_factory = observation_factory
         self.runtime_observer = runtime_observer
         self.occurrence_guard = occurrence_guard
+        self.answer_collector = answer_collector
+        self._answers_collected = False
         self._finalization_prepared = False
         self.read_diagnostic = None
         self._read_diagnostic_identity = None
@@ -228,6 +230,16 @@ class ManagedDirectProbe(DirectProbe):
             host.set_finalization_result(record.probe_id, result)
             self._finalization_result = result
             return
+        if not self._answers_collected and self.answer_collector is not None:
+            # Exactly one collection attempt at this existing ended-reviewer
+            # boundary; no independent worker or changed notification route.
+            self._answers_collected = True
+            try:
+                self.answer_collector(host, controller)
+            except Exception:
+                # The existing finalizer reports missing/unknown originals;
+                # manual end notification leaves recovery with the parent.
+                pass
         finalizer = self._finalizer(controller)
         if finalizer is None:
             return

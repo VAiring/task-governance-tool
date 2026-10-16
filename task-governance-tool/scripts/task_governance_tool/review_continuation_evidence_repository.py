@@ -205,7 +205,7 @@ def effective_for_task(connection, task) -> EffectiveTaskReviews | None:
 
 def freeze_basis_locked(connection, task):
     """Capture the exact graph now; never reconstruct a sealed graph later."""
-    from .storage import _require_evidence_writer
+    from .storage import _require_evidence_writer, current_schema_version
     from .review_repository import read_review_receipt_with_provenance
     from .review_continuation_evidence import ASSERTION_KEYS, REFERENCE_KEYS, validate_graph
     from .evidence_ledger import canonical_json_bytes
@@ -245,12 +245,15 @@ WHERE receipt.project_id=? AND receipt.task_id=? AND receipt.target_generation=?
     references = connection.execute("""SELECT * FROM evidence_references
 WHERE (source_kind='review_receipt' AND source_id IN (SELECT value FROM json_each(?)))
 OR (source_kind='review_finding' AND source_id IN (SELECT value FROM json_each(?))) ORDER BY evidence_reference_id""", (selected, finding_ids)).fetchall()
-    graph = dict(version=1, continuations=[dict(row) for row in rows], reviewers=[dict(row) for row in reviewers],
+    graph = dict(version=2 if current_schema_version(connection)>=30 else 1, continuations=[dict(row) for row in rows], reviewers=[dict(row) for row in reviewers],
         retained_originals=[dict(row) for row in retained],
         judgments=[dict(row) for row in judgments], resolutions=[dict(row) for row in resolutions], receipts=receipts,
         session_bindings=[dict(row) for row in sessions], findings=[dict(row) for row in findings],
         references=[_reference_projection(dict(row)) for row in references],
         effective_receipt_ids=[row.receipt_id for row in view.effective.heads])
+    if graph["version"] == 2:
+        from .review_answer_repository import read_collected_captures
+        graph["collected_captures"] = [capture for cid in sorted(continuation_ids) for capture in read_collected_captures(connection,cid)]
     validate_graph(graph)
     # The caller stores these canonical bytes in the immutable Bundle row.
     canonical_json_bytes(graph)
@@ -258,7 +261,7 @@ OR (source_kind='review_finding' AND source_id IN (SELECT value FROM json_each(?
 
 
 def completion_selection_locked(connection, task):
-    from .storage import _require_evidence_writer, CompletionGateBasis
+    from .storage import _require_evidence_writer, CompletionGateBasis, current_schema_version
     from .reviews import read_review_evidence, first_review_gate_error
     _require_evidence_writer(connection)
     with effective_review_snapshot(connection, task) as snapshot:
@@ -266,7 +269,7 @@ def completion_selection_locked(connection, task):
         if view is None:
             return None
         evidence = read_review_evidence(connection, task["project_id"], task["task_id"],
-            validated_task=task, source_schema_version=29, _continuation_snapshot=snapshot)
+            validated_task=task, source_schema_version=current_schema_version(connection), _continuation_snapshot=snapshot)
     if first_review_gate_error(evidence) is not None:
         raise records._inconsistent()
     import json
@@ -298,6 +301,15 @@ def validate_frozen_against_core(connection, graph):
     from .review_repository import read_review_receipt_with_provenance
     from .evidence_projection import _reference_projection
     validate_graph(graph)
+    if graph["version"] == 2:
+        from .review_answer_repository import read_collected_captures
+        # A supplied-row comparison cannot detect omitted captures. The frozen
+        # consumers are settled, so their full native inventories are immutable;
+        # later consumers remain outside this historical Bundle's boundary.
+        captures = [capture for consumer in graph["continuations"]
+            for capture in read_collected_captures(connection, consumer["continuation_id"])]
+        if graph["collected_captures"] != captures:
+            raise records._inconsistent()
     for name, table, keys in (
         ("continuations", "review_continuations", ("continuation_id",)),
         ("reviewers", "review_continuation_reviewers", ("continuation_id", "session_id")),

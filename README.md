@@ -5,8 +5,8 @@ keeping long-running work resumable, reviewable, and bounded. It stores local
 task state without replacing the target project's `AGENTS.md`, specifications,
 design documents, tests, or current user decisions.
 
-Release `0.13.0` uses SQLite schema v29 and Viewer snapshot v4 with
-source schemas 5 through 29 as the current unpublished local candidate contract. No
+Release `0.13.0` uses SQLite schema v30 and Viewer snapshot v4 with
+source schemas 5 through 30 as the current unpublished local candidate contract. No
 exact final candidate commit, tag, archive, checksum, or GitHub Release identity
 is fixed. An ordinary push to `main` is CI input, not release publication. The
 immutable published release remains v0.10.0 at its recorded commit, tag, and
@@ -176,9 +176,9 @@ single bounded effective-ignore preflight may inspect Git. Doctor is optional
 and is not a prerequisite for setup or normal task work.
 
 Candidate validation rehearses the isolated transition from the exact legacy
-v0.1.0/schema-v2 baseline to v0.13.0/schema v29. Paired rollback restores the
+v0.1.0/schema-v2 baseline to v0.13.0/schema v30. Paired rollback restores the
 matched pre-migration package, database, and managed artifacts together; it
-never runs legacy code against schema v29 or treats a Git checkout alone as
+never runs legacy code against schema v30 or treats a Git checkout alone as
 state rollback. The published v0.10.0/schema-v16 and unpublished
 v0.11.0/schema-v17 and v0.12.0/schema-v21 rehearsal records remain immutable
 lineage and do not satisfy the current candidate gate. See
@@ -333,8 +333,9 @@ only the caller's bounded verification facts; it never executes the command or
 stores its body, arguments, exit code, output, logs, or environment. The
 verification subject is derived from the locked capture-version-1 target; no
 caller label or replacement subject input exists. Native Review Receipts carry
-the declared v1 provenance fields, migrated receipts project v0
-absence, and `not_required` projects null. Provenance never upgrades the
+the declared v1 provenance fields or the explicit
+[collected v2 arm](docs/evidence-specification.md#collected-answer-evidence);
+migrated receipts project v0 absence, and `not_required` projects null. Provenance never upgrades the
 Receipt assurance or proves reviewer identity, model/Skill execution,
 competence, independence, diversity, quality, or truth. The completion commit
 must have exactly one parent equal to the captured base and the same tree.
@@ -343,17 +344,27 @@ review receipts. Taskgov never stages files, creates branches, pushes, opens a
 PR, or creates an Issue. Authorized integrated completion can commit only the
 fixed reviewed snapshot; other completion evidence is validated read-only.
 
+Opted-in schema-30 preparations use the
+[collected answer protocol](docs/review-completion-specification.md#collected-review-answers):
+the reviewer returns exactly verdict, summary, findings, checks and limitations;
+the collector binds and saves the complete answer under the assigned source.
+The typed parent registration preserves every Finding and blocks completion
+for an effective unable result. Real host admission and optional hook trust
+remain separate; unsupported follow-up binding stays unavailable. Newly sealed
+completion Evidence uses [Bundle 4/index 3 and graph 2](docs/evidence-specification.md#collected-answer-evidence),
+preserving old sealed bytes.
+
 The packet tells each reviewer how to inspect the exact target rather than
 ambient `HEAD` or worktree content. The independent reviewer returns the
-complete versioned structured result. In a shared-file workflow, the helper
+complete structured result for its saved protocol. In a shared-file workflow, the helper
 captures the complete source response before display, prepares the explicit
 unused ignored area, Packet and distinct result paths, and supplies exact
-reviewer/save and route-specific parent continuation before dispatch. No parent-LLM
+reviewer instructions and route-specific parent continuation before dispatch. No parent-LLM
 extraction or command assembly is needed. Source mutation success is separate
 from handoff failure; only Packet and original results are saved, never raw
 envelopes/logs. Questions/failures may be reported as needed; a normal saved
 acknowledgement is returned once without a duplicate success notification.
-Each reviewer pipes their completed original JSON to the bundled
+For a saved legacy request, each reviewer pipes their completed original JSON to the bundled
 `review_handoff.py save` operation, which validates before exclusive creation,
 checks the saved bytes against the Packet, and returns a short acknowledgement.
 Failed or uncertain handoff is not ready; recover before registration. The
@@ -378,8 +389,8 @@ operations remain available for explicit individual registration, for example:
 python .agents/skills/task-governance-tool/scripts/taskgov.py review receipt add <task-id> --reviewer <reviewer-key> --kind independent --verdict pass --summary "No blocking findings" --reviewer-class llm --model-state declared --declared-model-id <model-id> --skill-state not_used --context-relation fresh_context --review-profile general --review-lens correctness --review-method review_packet_inspection --json
 ```
 
-Taskgov deterministically evaluates qualifying PASS receipts and changes-requested
-receipts only for the current review target and generation. Any unresolved high
+Taskgov deterministically evaluates qualifying PASS receipts, changes-requested
+receipts and effective unable judgments for the current review target and generation. Any unresolved high
 or medium finding from any recorded generation of that Task continues to block
 the gate. Distinct reviewer keys prove distinct stored strings only; they do
 not prove distinct people, LLMs, machines, independent processes,
@@ -430,7 +441,7 @@ bounded newest-first completion history as `task show --audit`. Sources 5-14 are
 honestly as empty legacy-incomplete history. The Viewer contains only sanitized
 task/review/audit projections and has no write controls or network dependency.
 It validates schema-v18+ subject/provenance/capture bindings, the schema-v19
-through schema-v29 Bundle discriminators, and the source-appropriate Bundle-v2/v3
+through schema-v30 Bundle discriminators, and the source-appropriate Bundle-v2/v3/v4
 and Runner tagged graph, but adds no provenance/Bundle field, panel, filter, or
 other snapshot-v4 UI surface.
 

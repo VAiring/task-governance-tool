@@ -24,14 +24,32 @@ class SavedOriginal:
     sidecar_raw: bytes = field(repr=False)
     bound: transport.BoundResult
     verdict: str
+    collected_metadata: dict | None = None
 
 
-def read_original(repo, packet_path, result_path, *, approvals=()):
+def read_original(repo, packet_path, result_path, *, approvals=(), preparation=None, current=True):
     packet_file = files.checked_path(repo, packet_path)
     packet_raw = files.read_bounded(packet_file, files.PACKET_LIMIT)
     packet = files.decode_packet(packet_raw)
     if "review_session_context" not in packet:
         files.fail("review_continuation_unavailable")
+    collection = collection_location(repo, packet_path, packet_raw, packet, preparation=preparation, current=current)
+    if collection is not None:
+        if approvals:
+            files.fail()
+        resolution, root, bases = collection
+        from .review_answer_handoff import service_for
+        service = service_for(repo, resolution, root, bases[0], current=current, retained=True)
+        if result_path not in service.original_paths:
+            files.fail("review_continuation_conflict")
+        slot = service.original_paths.index(result_path) + 1
+        raw, metadata = service.readback(slot)
+        from .review_answer import decode_answer
+        from .review_answer_transport import CollectedItem
+        item = CollectedItem(slot, raw, metadata, decode_answer(raw))
+        sealed = json.dumps(metadata, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
+        return SavedOriginal(packet_path, result_path, raw, metadata, sealed,
+            transport.BoundResult(item.target, item.session_binding), item.answer.payload["verdict"], metadata)
     result_file = files.checked_path(repo, result_path)
     raw = files.read_bounded(result_file, REVIEW_RESULTS_INPUT_LIMIT)
     normalized = files.validate_results(raw, packet, approvals, original=True)
@@ -46,12 +64,29 @@ def read_original(repo, packet_path, result_path, *, approvals=()):
     return SavedOriginal(packet_path, result_path, raw, metadata, sidecar_raw, bound, normalized["receipts"][0]["verdict"])
 
 
+def collection_location(repo, packet_path, packet_raw, packet, *, preparation=None, current=True):
+    if packet.get("review_session_context", {}).get("version") == 2:
+        from .review_answer_continuation_preparation import locate_continuation
+        return locate_continuation(repo, packet_path, packet_raw, packet, admitted=preparation, current=current)
+    if preparation is not None:
+        resolution, root = preparation
+        if root.packet_path != packet_path or root.packet_digest != hashlib.sha256(packet_raw).hexdigest():
+            files.fail("review_packet_stale")
+        return (resolution, root, root.collection_bases) if root.version == 2 else None
+    from .review_answer_preparation import locate
+    found = locate(repo, packet_path, packet_raw, packet)
+    if found is None:
+        return None
+    resolution, root = found
+    return resolution, root, root.collection_bases
+
+
 def same_original(first, second):
     return (first.packet_path, first.result_path, hashlib.sha256(first.raw).digest(), first.sidecar_raw) == (
         second.packet_path, second.result_path, hashlib.sha256(second.raw).digest(), second.sidecar_raw)
 
 
-def read_sources(repo, root, transitions):
+def read_sources(repo, root, transitions, *, resolution=None):
     """Read saved originals from admitted locations, without discovering files.
 
     The caller supplies validated structural records under its own admission.
@@ -66,13 +101,14 @@ def read_sources(repo, root, transitions):
     for packet, result in locations:
         path = files.relative_path(repo, result)
         if path_lexically_exists(path):
-            sources.append(read_original(repo, packet, result))
+            sources.append(read_original(repo, packet, result,
+                preparation=(resolution, root) if resolution is not None else None))
         elif path_lexically_exists(files.relative_path(repo, result + ".session.json")):
             files.fail("handoff_file_changed")
     return sources
 
 
-def compose_inventory(repo, root, record, state, sources, packet_path, originals, approvals=()):
+def compose_inventory(repo, root, record, state, sources, packet_path, originals, approvals=(), *, resolution=None):
     """Frame complete selected/captured/retained originals for either route.
 
     Callers supply the same validated native snapshot and own their distinct
@@ -80,7 +116,12 @@ def compose_inventory(repo, root, record, state, sources, packet_path, originals
     connection, grants no effect authority, and uses no completion judgment.
     Exact original bytes and sidecars remain attached to their own Packet.
     """
-    selected = [read_original(repo, packet_path, path, approvals=approvals) for path in originals]
+    selected = [read_original(repo, packet_path, path, approvals=approvals,
+        preparation=(resolution, root) if resolution is not None else None) for path in originals]
+    if (any(source.collected_metadata is not None for source in (*selected, *sources))
+        or getattr(state, "collected_captures", {}).get(record.continuation_id)):
+        from .review_answer_originals import compose_collected_inventory
+        return compose_collected_inventory(repo, root, record, state, sources, selected)
     if tuple(source.bound.binding.session_id for source in selected) != tuple(choice.session_id for choice in record.selected):
         files.fail("review_continuation_conflict")
     captures = tuple(values.RetainedOriginal(**{key: row[key] for key in values.RetainedOriginal.__dataclass_fields__})
@@ -131,6 +172,14 @@ def submission(repo, packet_path, originals, approvals=()):
     if packet.get("review_session_context", {}).get("version") == 2:
         from task_governance_tool.review_handoff_continuation import assemble_submission
         return assemble_submission(repo, packet_path, originals, approvals)
+    from .review_answer_preparation import locate
+    collection = locate(repo, packet_path, packet_raw, packet)
+    if collection is not None:
+        if approvals:
+            files.fail()
+        from .review_answer_handoff import initial_submission
+        resolution, root = collection
+        return initial_submission(repo, root, resolution, originals)
     paths = [files.checked_path(repo, item) for item in originals]
     if len(set(os.path.normcase(str(path)) for path in paths)) != len(paths):
         files.fail()

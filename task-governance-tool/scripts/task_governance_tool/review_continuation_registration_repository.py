@@ -119,3 +119,135 @@ def existing_acknowledgement(connection, receipt_id):
     return {"receipt": {key: row[key] for key in ("review_receipt_id", "reviewer_key", "receipt_kind", "verdict",
         "summary", "user_approved", "judgment_revision")}, "findings": [{"finding": {key: finding[key]
         for key in ("review_finding_id", "review_receipt_id", "severity", "summary", "status")}} for finding in findings]}
+
+
+def begin_collected_locked(connection, *, project_id, task_id, submission, caller, database_target=None):
+    """Admit every collected/legacy item against native immutable source facts.
+
+    Operational file/host observations are admitted outside this writer. This
+    boundary still compares the full current execution basis and capture graph.
+    """
+    from .review_answer_transport import CollectedItem, LegacyItem, CollectedSubmission
+    from .review_answer_values import validate_metadata
+    from .review_answer_repository import read_collected_captures
+    if type(submission) is not CollectedSubmission:
+        raise _conflict()
+    identity = submission.continuation
+    record = None
+    publications = {}
+    captures = {}
+    selected = {}
+    if identity is not None:
+        records = repository.read_continuations(connection,project_id=project_id,task_id=task_id)
+        record = next((r for r in records if r.continuation_id == identity["continuation_id"]),None)
+        if record is None or record.preparation_id != submission.preparation_id or record.sequence != identity["sequence"] or record.state not in ("prepared","registered"):
+            raise _conflict()
+        repository.require_current_basis(connection,record.basis,caller)
+        selected = {s.session_id:s for s in record.selected}
+        captures = {r["capture_identity"]["session_id"]:r for r in read_collected_captures(connection,record.continuation_id)}
+        if record.state == "prepared":
+            publications = repository.prepare_publications_locked(connection,record,caller)
+            nodes = repository.read_judgments(connection,basis=record.basis)
+            by_id = {n.receipt_id:n for n in nodes}
+            by_record = {r.continuation_id:r for r in records}
+            for actor,capture in captures.items():
+                source_id = capture["capture_identity"]["source_continuation_id"]
+                source_record = by_record[source_id] if source_id is not None else record
+                choice = next((s for s in source_record.selected if s.session_id == actor),None) if source_id else values.SelectedReviewer(actor,"supplement",None,"Retained initial collected original")
+                if choice is None:
+                    raise _conflict()
+                revision = by_id[choice.prior_receipt_id].revision+1 if choice.prior_receipt_id else 1
+                publications[actor] = repository.CollectedJudgmentPublication(source_record,choice,revision,record.continuation_id,capture,source_id)
+            values.select_effective(nodes,quality_basis=values.quality_identity(record.basis),pending=tuple(p.selected for p in publications.values()))
+    supplied_captures = [r for r in submission.retained_originals if type(r) is dict]
+    if len(supplied_captures) != len(captures) or {r["session_id"] for r in supplied_captures} != set(captures):
+        raise _conflict()
+    seen = set()
+    existing = []
+    legacy_bindings = []
+    for item in submission.items:
+        session = item.session_binding.session_id
+        if session in seen:
+            raise _conflict()
+        seen.add(session)
+        if type(item) is CollectedItem:
+            metadata = validate_metadata(item.metadata,raw=item.raw)
+            basis = metadata["basis"]
+            execution = basis["execution_basis"]
+            if execution["project_id"] != project_id or execution["task_id"] != task_id or basis["preparation_id"] != submission.preparation_id:
+                raise _conflict()
+            repository.require_current_basis(connection,execution,caller)
+            if database_target is not None and (execution["project_path_hash"] != database_target.binding_path_hash or execution["project_binding_generation"] != database_target.binding_generation):
+                raise _conflict()
+            source_context = basis["continuation"]
+            if session in captures:
+                capture = captures[session]
+                from .review_answer_values import metadata_digest, source_metadata_projection
+                supplied = next(r for r in supplied_captures if r["session_id"] == session)
+                if (supplied["metadata_digest"] != metadata_digest(metadata)
+                    or {k:v for k,v in supplied.items() if k != "metadata_digest"} != capture["capture_identity"]
+                    or source_metadata_projection(metadata) != capture["source_metadata"]):
+                    raise _conflict()
+            elif record is not None:
+                if session not in selected or source_context != dict(continuation_id=record.continuation_id,sequence=record.sequence,selection_digest=values.selection_digest(record.selected)):
+                    raise _conflict()
+            elif source_context is not None:
+                raise _conflict()
+            source = metadata["source_identity"]
+            row = connection.execute("SELECT * FROM review_collection_sources WHERE reviewer_session_id=? AND turn_id=? AND message_id=?", (session,source["turn_id"],source["message_id"])).fetchone()
+            if row is not None:
+                from .review_answer_values import basis_digest
+                if any(row[k] != v for k,v in (("preparation_id",basis["preparation_id"]),("slot",metadata["binding"]["slot"]),("attempt",metadata["attempt"]),("basis_digest",basis_digest(basis)),("original_digest",metadata["original"]["digest"]),("payload_digest",metadata["original"]["payload_digest"]),("submission_digest",submission.submission_digest))):
+                    raise _conflict()
+            existing.append(row["review_receipt_id"] if row is not None else None)
+        elif type(item) is LegacyItem:
+            legacy_bindings.append(item.bound)
+            saved=connection.execute("SELECT review_receipt_id FROM review_collection_dispatch_entries WHERE preparation_id=? AND submission_digest=? AND slot=?",(submission.preparation_id,submission.submission_digest,item.slot)).fetchone()
+            if saved is not None:
+                binding=connection.execute("SELECT * FROM review_receipt_sessions WHERE review_receipt_id=?",(saved["review_receipt_id"],)).fetchone()
+                if binding is None or (binding["session_id"],binding["execution_id"],binding["binding_source"],binding["original_result_digest"]) != (session,item.session_binding.execution_id,"handoff",item.session_binding.original_result_digest):
+                    raise _conflict()
+            existing.append(saved["review_receipt_id"] if saved else None)
+        else:
+            raise _conflict()
+    expected = set(selected)|set(captures)
+    legacy_captures = repository.read_retained_originals(connection,record.continuation_id) if record else ()
+    if record is not None and not expected|{r["session_id"] for r in legacy_captures} <= seen:
+        raise _conflict()
+    if record is None and (submission.retained_receipt_ids or submission.retained_originals or legacy_bindings):
+        raise _conflict()
+    if record is not None:
+        heads = values.select_effective(repository.read_judgments(connection,basis=record.basis),quality_basis=values.quality_identity(record.basis))
+        retained = {r.receipt_id for r in heads.heads if r.session_id not in selected} - set(existing)
+        if set(submission.retained_receipt_ids) != retained:
+            raise _conflict()
+    # Legacy retained arms keep their exact existing sidecar validation.
+    if legacy_bindings:
+        legacy_expected = {values.RetainedOriginal(**{k:r[k] for k in values.RetainedOriginal.__dataclass_fields__}) for r in legacy_captures}
+        legacy_supplied = {r for r in submission.retained_originals if type(r) is values.RetainedOriginal}
+        if legacy_expected != legacy_supplied:
+            raise _conflict()
+        for item in legacy_bindings:
+            capture = next((r for r in legacy_captures if r["session_id"] == item.binding.session_id),None)
+            if capture is None or item.continuation is None or item.continuation.identity.continuation_id != capture["prior_continuation_id"] or item.binding.original_result_digest != capture["original_result_digest"] or bound_metadata_digest(item) != capture["metadata_digest"]:
+                raise _conflict()
+    return ContinuedBatch(record,publications,tuple(existing),submission.retained_receipt_ids)
+
+
+def finish_collected_locked(connection, batch, receipts, submission):
+    if batch.record is None or batch.record.state != "prepared":
+        return
+    from .review_answer_transport import CollectedItem
+    for result,item in zip(receipts,submission.items):
+        actor = item.session_binding.session_id
+        receipt_id = result["receipt"]["review_receipt_id"]
+        publication = batch.publications.get(actor)
+        if publication is not None:
+            if not isinstance(publication,repository.CollectedJudgmentPublication) or publication.judgment_continuation_id is not None:
+                repository.publish_result_locked(connection,record=publication.record,session_id=actor,
+                    receipt_id=receipt_id,original_digest=item.session_binding.original_result_digest)
+            if publication.consumer_id is not None and not isinstance(publication,repository.CollectedJudgmentPublication):
+                connection.execute("UPDATE review_continuation_retained_originals SET result_receipt_id=? WHERE continuation_id=? AND session_id=? AND result_receipt_id IS NULL",(receipt_id,publication.consumer_id,actor))
+        if type(item) is CollectedItem:
+            connection.execute("UPDATE review_collected_captures SET result_receipt_id=? WHERE continuation_id=? AND session_id=? AND result_receipt_id IS NULL",(receipt_id,batch.record.continuation_id,actor))
+    repository.advance_registered_locked(connection,batch.record)

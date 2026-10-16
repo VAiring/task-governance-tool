@@ -65,7 +65,8 @@ class TransitionRepository(ReviewWaitRepository):
             prior = next((row for row in rounds if row.continuation_id == record.continuation_id), None)
             if prior is not None:
                 # Later phases reconcile an identical immutable admission.
-                if replace(prior, phase="fenced", worker_stop_identity=None, packet_digest=None) != record:
+                if replace(prior, phase="fenced", worker_stop_identity=None, packet_digest=None,
+                           collection_basis_digests=()) != record:
                     raise RepositoryError("binding_mismatch")
                 return prior
             group = [row for row in rounds if row.preparation_id == record.preparation_id]
@@ -91,6 +92,29 @@ class TransitionRepository(ReviewWaitRepository):
                 return record
             after = replace(record, packet_digest=digest)
             connection.execute("UPDATE rounds SET payload=? WHERE continuation_id=?", (encode(after), record.continuation_id))
+            self._load(connection)
+        return after
+
+    def bind_collection_bases(self, lease, record, digests):
+        """Freeze ordered complete-basis digests before collected readiness."""
+        lease._check()
+        if (type(record) is not RequestRound or record.phase not in ("settled", "prepared", "published")
+            or record.answer_protocol != "review-answer-v1" or record.packet_digest is None
+            or type(digests) is not tuple or not digests):
+            raise RepositoryError("state_transition_invalid")
+        if not record.collection_basis_digests and record.phase != "settled":
+            raise RepositoryError("state_transition_invalid")
+        if record.collection_basis_digests and record.collection_basis_digests != digests:
+            raise RepositoryError("binding_mismatch")
+        after = replace(record, collection_basis_digests=digests)
+        payload = encode(after)
+        with self._connection(write=True) as connection:
+            rounds = self._load(connection)
+            if not rounds or rounds[-1] not in (record, after):
+                raise RepositoryError("state_transition_invalid")
+            if rounds[-1] == after:
+                return after  # Exact retry, including a lost freeze acknowledgement.
+            connection.execute("UPDATE rounds SET payload=? WHERE continuation_id=?", (payload, record.continuation_id))
             self._load(connection)
         return after
 

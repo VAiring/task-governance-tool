@@ -17,7 +17,8 @@ from task_governance_tool.state_paths import (
     read_physical_file_bounded, unlink_validated_file,
 )
 
-FEATURES = ("usage_collection", "verification_runner", "effort_advisory", "viewer_reload", "review_wait")
+FEATURES = ("usage_collection", "verification_runner", "effort_advisory", "viewer_reload", "review_wait",
+            "review_answer_collection", "review_answer_correction")
 CHOICES_PATH = Path("config/setup-features.json")
 MAX_BYTES = 16 * 1024
 
@@ -96,5 +97,22 @@ def collection_allowed(skill_root):
     try:
         _original, choices = read_choices(Path(skill_root))
         return choices.get("usage_collection", True)
+    except Exception:
+        return False
+
+
+def answer_collection_allowed(skill_root):
+    """Separate explicit answer-retention policy; absence is disabled."""
+    try:
+        return read_choices(Path(skill_root))[1].get("review_answer_collection") is True
+    except Exception:
+        return False
+
+
+def answer_correction_allowed(skill_root):
+    """Local send selection is necessary, never sufficient host authority."""
+    try:
+        choices = read_choices(Path(skill_root))[1]
+        return choices.get("review_answer_collection") is True and choices.get("review_answer_correction") is True
     except Exception:
         return False

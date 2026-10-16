@@ -192,13 +192,17 @@ def _iter_validated_review_receipts_with_provenance(
             or type(receipt_id) is not str
             or not receipt_id
             or type(basis) is not int
-            or basis not in {0, 1}
+            or basis not in {0, 1, 2}
         ):
             raise evidence_ledger_inconsistent()
         if basis == 0:
             if provenance_id is not None:
                 raise evidence_ledger_inconsistent()
             yield receipt, None
+            continue
+        if basis == 2:
+            from .review_answer_repository import validate_provenance_relation
+            yield receipt, validate_provenance_relation(connection, receipt)
             continue
         if (
             receipt["receipt_kind"] == "not_required"
@@ -418,7 +422,7 @@ def _validate_review_receipt_base_row(
         or receipt_kind
         not in {"independent", "self_review_fallback", "not_required"}
         or type(verdict) is not str
-        or verdict not in {"pass", "changes_requested", "not_required"}
+        or verdict not in {"pass", "changes_requested", "not_required", "unable_to_review"}
         or type(target_kind) is not str
         or type(target_value) is not str
         or type(target_base_revision) is not str
@@ -428,7 +432,8 @@ def _validate_review_receipt_base_row(
         or user_approved not in {0, 1}
         or type(created_at) is not str
         or type(provenance_basis) is not int
-        or provenance_basis not in {0, 1}
+        or provenance_basis not in {0, 1, 2}
+        or (verdict == "unable_to_review" and (provenance_basis != 2 or receipt_kind != "independent"))
     ):
         raise evidence_ledger_inconsistent()
     cache = privacy_success_cache if privacy_success_cache is not None else set()
@@ -451,7 +456,7 @@ def _validate_review_receipt_base_row(
         or len(summary) > 1_000
         or (
             receipt_kind == "independent"
-            and (verdict not in {"pass", "changes_requested"} or user_approved != 0)
+            and (verdict not in {"pass", "changes_requested", "unable_to_review"} or user_approved != 0)
         )
         or (
             receipt_kind == "self_review_fallback"
@@ -666,8 +671,11 @@ def read_review_receipt_with_provenance(
     )
     basis = receipt["review_provenance_basis_version"]
     provenance_id = receipt["review_provenance_id"]
-    if type(basis) is not int or basis not in {0, 1}:
+    if type(basis) is not int or basis not in {0, 1, 2}:
         raise evidence_ledger_inconsistent()
+    if basis == 2:
+        from .review_answer_repository import validate_provenance_relation
+        return {"receipt": dict(receipt), "provenance": validate_provenance_relation(connection,receipt)}
     if basis == 0:
         if provenance_id is not None:
             raise evidence_ledger_inconsistent()
@@ -721,7 +729,7 @@ def insert_review_receipt_with_provenance_locked(
     receipt: dict[str, Any],
     provenance: dict[str, Any] | None,
     code_rows: tuple[dict[str, Any], ...],
-    *, judgment_revision: int = 1,
+    *, judgment_revision: int = 1, collected_answer=None,
 ) -> dict[str, Any]:
     """Atomically append one current Receipt and its exact provenance union."""
     from task_governance_tool.storage import (
@@ -761,6 +769,12 @@ def insert_review_receipt_with_provenance_locked(
             raise evidence_ledger_inconsistent()
         basis = 0
         provenance_id = None
+    elif collected_answer is not None:
+        from .storage import current_schema_version
+        if current_schema_version(connection) < 30 or kind != "independent" or code_rows or provenance is None:
+            raise evidence_ledger_inconsistent()
+        basis = 2
+        provenance_id = provenance["review_provenance_id"]
     else:
         if kind not in {"independent", "self_review_fallback"} or provenance is None:
             raise evidence_ledger_inconsistent()
@@ -841,7 +855,10 @@ def insert_review_receipt_with_provenance_locked(
         """,
         stored_receipt,
     )
-    if provenance_id is not None:
+    if basis == 2:
+        from .review_answer_repository import insert_provenance_locked
+        insert_provenance_locked(connection,receipt=stored_receipt,provenance=provenance,collected=collected_answer)
+    elif provenance_id is not None:
         connection.execute(
             """
             INSERT INTO review_receipt_provenance(

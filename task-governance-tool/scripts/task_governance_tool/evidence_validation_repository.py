@@ -320,7 +320,7 @@ def _validate_selected_schema21_completion_bundle_history(
 
 
     container_schema_version = current_schema_version(connection)
-    if container_schema_version not in {23, 24, 25, 26, 27, 28, 29,
+    if container_schema_version not in {23, 24, 25, 26, 27, 28, 29, 30,
         PRIVATE_SCHEMA21_VERSION, PRIVATE_SCHEMA22_VERSION,
     } or not any(
         cycle.evidence_basis_version == 1 for cycle in cycles
@@ -586,11 +586,11 @@ def _validate_evidence_reference_storage(
             )
             basis = stored["review_provenance_basis_version"]
             kind = stored["receipt_kind"]
-            native = basis == 1 or (kind == "not_required" and manifest is not None)
+            native = basis in (1,2) or (kind == "not_required" and manifest is not None)
             if (
                 type(basis) is not int
-                or basis not in {0, 1}
-                or (basis == 1 and (kind == "not_required" or manifest is None))
+                or basis not in {0, 1, 2}
+                or (basis in (1,2) and (kind == "not_required" or manifest is None))
                 or (
                     basis == 0
                     and kind in {"independent", "self_review_fallback"}
@@ -1036,10 +1036,10 @@ def _validate_selected_reference_source_chunk(
                 receipt_kind = row["receipt_kind"]
                 if (
                     type(basis) is not int
-                    or basis not in {0, 1}
+                    or basis not in {0, 1, 2}
                     or type(receipt_kind) is not str
                     or (
-                        basis == 1
+                        basis in (1,2)
                         and receipt_kind
                         not in {"independent", "self_review_fallback"}
                     )
@@ -1081,7 +1081,7 @@ def _validate_selected_reference_source_chunk(
             elif source_kind == "runner_observation":
                 admitted_eligibility_versions = (
                     {0, 1}
-                    if source_schema_version in {23, 24, 25, 26, 27, 28, 29,
+                    if source_schema_version in {23, 24, 25, 26, 27, 28, 29, 30,
                         PRIVATE_SCHEMA21_VERSION, PRIVATE_SCHEMA22_VERSION,
                     }
                     else {0}
@@ -1510,7 +1510,7 @@ def _validate_evidence_ledger_rows(
     if type(expected_project_id) is not str or not expected_project_id:
         raise evidence_ledger_inconsistent()
     physical_schema_version = current_schema_version(connection)
-    if physical_schema_version not in {23, 24, 25, 26, 27, 28, 29,
+    if physical_schema_version not in {23, 24, 25, 26, 27, 28, 29, 30,
         18,
         19,
         PRIVATE_SCHEMA20_VERSION,
@@ -1822,7 +1822,7 @@ def _validate_one_completion_evidence_bundle_row(
     )
     if (
         runner_eligibility_one
-        and row["source_schema_version"] not in {23, 24, 25, 26, 27, 28, 29,
+        and row["source_schema_version"] not in {23, 24, 25, 26, 27, 28, 29, 30,
             PRIVATE_SCHEMA21_VERSION, PRIVATE_SCHEMA22_VERSION,
         }
     ):
@@ -2124,7 +2124,7 @@ def _validate_completion_evidence_bundle_rows(
     if (
         _validated_runner_generations is None
         and bundle_rows
-        and container_schema_version in {23, 24, 25, 26, 27, 28, 29,
+        and container_schema_version in {23, 24, 25, 26, 27, 28, 29, 30,
             PRIVATE_SCHEMA21_VERSION, PRIVATE_SCHEMA22_VERSION,
         }
     ):
@@ -2810,7 +2810,7 @@ def read_native_completion_bundle_basis_locked(
 
     review_continuation_basis = None
     if cycle.gate_basis.version == 2:
-        if source_schema_version != 29:
+        if source_schema_version not in (29,30):
             raise evidence_ledger_inconsistent()
         from .review_continuation_evidence_repository import freeze_basis_locked
         review_continuation_basis = freeze_basis_locked(connection, task)
@@ -3350,7 +3350,7 @@ def _capture_evidence_projection_basis_rows(
     if type(project_id) is not str or not project_id:
         raise evidence_ledger_inconsistent()
     source_schema_version = current_schema_version(connection)
-    if source_schema_version not in {23, 24, 25, 26, 27, 28, 29,
+    if source_schema_version not in {23, 24, 25, 26, 27, 28, 29, 30,
         19,
         PRIVATE_SCHEMA20_VERSION,
         PRIVATE_SCHEMA21_VERSION,

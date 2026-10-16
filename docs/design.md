@@ -2,14 +2,14 @@
 
 Status: the immutable published product remains v0.10.0/schema v16/Viewer v4
 sources v5-v16/20 leaves; its identity is fixed in `docs/release-install.md`.
-The current unpublished candidate is v0.13.0 with SQLite schema v29, Viewer
-snapshot v4 accepting source schemas v5-v29, and 23 public command leaves. Its
+The current unpublished candidate is v0.13.0 with SQLite schema v30, Viewer
+snapshot v4 accepting source schemas v5-v30, and 23 public command leaves. Its
 active implementation includes tool-owned Verification Receipt subjects,
 versioned Review provenance, immutable Evidence References and completion
 Bundles, deterministic Evidence JSON, and the explicitly opted-in trusted-local
 verification Runner with a closed manual fallback. Schema v20 remains a
 supported migration source and
-audit-only Runner lineage; schema v29 is current persistence and retains the
+audit-only Runner lineage; schema v30 is current persistence and retains the
 schema-v21 Runner gate protocol unchanged.
 Select-Split-Merge-Register is active only in the Skill instruction layer.
 The Task database owns live state and evidence; completed execution narrative
@@ -20,6 +20,11 @@ in `docs/specification.md`. The [authority index](authority.md) and live Task
 Contract select the applicable current owners and sections. Historical design captures
 under `docs/history/` are non-authoritative and are never needed to implement,
 operate, migrate, or review the supported product.
+
+Collected source/registration/capture persistence uses the
+[current collection value/storage design](database-design.md#collected-answer-value-schemas),
+the [collection orchestration](review-completion-design.md#collected-answer-collection),
+and [Bundle 4/index 3 graph validation](evidence-design.md#continuation-graph-validation).
 
 ## Design Summary
 
@@ -634,7 +639,9 @@ Current detail is owned by the [Database persistence and migration design](datab
 
 <a id="current-schema-v28-ownership-reviewer-binding-and-task-notes-design"></a>
 
-## Current Schema-v29 Ownership, Reviewer Binding, And Task Notes Design
+<a id="current-schema-v29-ownership-reviewer-binding-and-task-notes-design"></a>
+
+## Current Schema-v30 Ownership, Reviewer Binding, And Task Notes Design
 
 Current detail is owned by the [Database persistence and migration design](database-design.md#session-ownership-migration)
 and its [reviewer binding migration](database-design.md#conditional-reviewer-binding-migration)

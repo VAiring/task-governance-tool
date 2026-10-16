@@ -145,7 +145,8 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     add_common_options(setup_parser)
-    for feature in ("usage-collection", "verification-runner", "effort-advisory", "viewer-reload", "review-wait"):
+    for feature in ("usage-collection", "verification-runner", "effort-advisory", "viewer-reload", "review-wait",
+                    "review-answer-collection", "review-answer-correction"):
         setup_parser.add_argument("--" + feature, choices=("on", "off"), default=None,
             help="explicitly save/apply this optional choice after core setup; omission preserves it")
     setup_parser.add_argument(
@@ -260,6 +261,10 @@ def build_parser() -> argparse.ArgumentParser:
         default=False,
         help="include bounded historical events, receipts, and completion details",
     )
+    task_show_parser.add_argument("--collection-preparation",
+        help="with --audit and --collection-submission, inspect one exact collected registration")
+    task_show_parser.add_argument("--collection-submission",
+        help="exact prefixed SHA-256 submission digest for collection reconciliation")
     task_checkpoint_parser = task_subparsers.add_parser(
         "checkpoint",
         help="record an optional typed continuation checkpoint",

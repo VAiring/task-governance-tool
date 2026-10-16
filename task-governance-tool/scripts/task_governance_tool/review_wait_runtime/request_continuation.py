@@ -33,6 +33,8 @@ class RequestRound:
     packet_path: str | None = None
     packet_digest: str | None = None
     result_paths: tuple[str, ...] = ()
+    answer_protocol: str = "legacy"
+    collection_basis_digests: tuple[str, ...] = ()
 
     def __post_init__(self):
         try:
@@ -42,6 +44,8 @@ class RequestRound:
                 or not values._digest(self.basis_digest) or not values._digest(self.wait_basis_digest) or not values._digest(self.selection_digest)
                 or not values._integer(self.expected_attempt, 0, 64)
                 or self.phase not in PHASES):
+                raise ValueError
+            if type(self.answer_protocol) is not str or self.answer_protocol not in ("legacy", "review-answer-v1"):
                 raise ValueError
             if (self.expected_attempt == 0) != (self.expected_request_digest is None):
                 raise ValueError
@@ -71,6 +75,14 @@ class RequestRound:
                 raise ValueError
             if not 1 <= len(self.result_paths) <= 8:
                 raise ValueError
+            if type(self.collection_basis_digests) is not tuple:
+                raise ValueError
+            if self.collection_basis_digests:
+                if (self.answer_protocol != "review-answer-v1" or self.phase == "fenced"
+                    or self.packet_digest is None or len(self.collection_basis_digests) != len(self.result_paths)
+                    or any(type(digest) is not str or not re.fullmatch(r"sha256:[0-9a-f]{64}", digest)
+                           for digest in self.collection_basis_digests)):
+                    raise ValueError
             from pathlib import Path
             from task_governance_tool.review_handoff_transport import relative_path
             paths = (self.packet_path, *self.result_paths)
@@ -87,7 +99,14 @@ class RequestRound:
 def encode(record):
     if type(record) is not RequestRound:
         raise RepositoryError("invalid_snapshot")
-    raw = json.dumps(asdict(RequestRound(**asdict(record))), ensure_ascii=True, sort_keys=True, separators=(",", ":"), allow_nan=False)
+    value = asdict(RequestRound(**asdict(record)))
+    if record.answer_protocol == "legacy":
+        del value["answer_protocol"]
+    if not record.collection_basis_digests:
+        # Preserve legacy and already-issued unanchored collected round bytes.
+        # Operational admission rejects an unanchored collected ready round.
+        del value["collection_basis_digests"]
+    raw = json.dumps(value, ensure_ascii=True, sort_keys=True, separators=(",", ":"), allow_nan=False)
     if len(raw.encode()) > 32768:
         raise RepositoryError("invalid_snapshot")
     return raw
@@ -96,9 +115,16 @@ def encode(record):
 def decode(raw):
     try:
         value = json.loads(raw)
-        if type(value) is not dict or set(value) != set(RequestRound.__dataclass_fields__):
+        fields = set(RequestRound.__dataclass_fields__)
+        if type(value) is not dict or set(value) not in (
+            fields, fields - {"collection_basis_digests"},
+            fields - {"collection_basis_digests", "answer_protocol"}):
             raise ValueError
         value["result_paths"] = tuple(value["result_paths"])
+        if "collection_basis_digests" in value:
+            if type(value["collection_basis_digests"]) is not list:
+                raise ValueError
+            value["collection_basis_digests"] = tuple(value["collection_basis_digests"])
         record = RequestRound(**value)
         if encode(record) != raw:
             raise ValueError

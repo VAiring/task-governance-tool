@@ -205,6 +205,9 @@ def decode_submission(raw: bytes) -> ReviewSubmission:
                            parse_float=_invalid_number, parse_constant=_invalid_number)
         if type(value) is not dict or "format" not in value:
             return ReviewSubmission(decode_review_results(raw), None)
+        from .review_answer_transport import FORMAT as COLLECTED_FORMAT, decode_collected_submission
+        if value["format"] == COLLECTED_FORMAT:
+            return decode_collected_submission(raw)
         continued = None
         retained = ()
         captures = ()

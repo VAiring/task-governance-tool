@@ -400,6 +400,8 @@ def read_for_reviewer(repo, packet_path, *, material_details=False, records_only
             "verification_evidence": current["data"]["verification_evidence"],
             "verification_guidance": GUIDANCE,
             "context_check": "matched_at_read", "warnings": current["warnings"]}
+    from .review_answer_preparation import reviewer_view
+    view = reviewer_view(repo, packet_path, raw, packet, view)
     from task_governance_tool.review_read_delivery import bound
     return bound(view, repo, packet_path, raw, section=section, start=start, expected=content_sha256, records_only=records_only)
 
@@ -441,7 +443,7 @@ def _shell(arguments):
     return shlex.join(arguments)
 
 
-def _requests(repo, args, packet_path):
+def _requests(repo, args, packet_path, *, collected=False):
     entry = str(Path(__file__).parent.parent / "review_handoff.py")
     base = [sys.executable, "-B", entry]
     if getattr(args, "records_only", False) is True:
@@ -451,6 +453,10 @@ def _requests(repo, args, packet_path):
     reviewers = []
     paths = [args.directory + f"/review-{index}.json" for index in range(1, args.reviewers + 1)]
     for path in paths:
+        if collected:
+            from .review_answer_preparation import answer_request
+            reviewers.append({"result_path": path, "request": answer_request(read)})
+            continue
         save = _shell([*base, "save", *common, "--output=" + path])
         if os.name == "nt":
             invocation = "$OutputEncoding = [Console]::InputEncoding = [System.Text.UTF8Encoding]::new($false)\n@'\n<completed original JSON>\n'@ | " + save
@@ -469,11 +475,16 @@ def _requests(repo, args, packet_path):
         wait_status = "enabled" if choices.get("review_wait") is True else "disabled"
     except Exception:
         wait_status = "unavailable"
-    return {"status": "ready", "packet_path": packet_path, "review_requests": reviewers,
+    result = {"status": "ready", "packet_path": packet_path, "review_requests": reviewers,
             "review_wait": {"status": wait_status, "task_id": args.task_id,
                             "wait_tool": "review_wait_wait",
                             "guide": "references/review_wait.md#normal-wait"},
             "submit_command": _shell([*base, "submit", *common, "--", *paths])}
+    if collected:
+        result.update(answer_protocol="review-answer-v1", answer_collection={
+            "tool": "review_answer_collect", "task_id": args.task_id,
+            "instructions": "Use the actual returned dedicated reviewer IDs in prepared slot order. Normal accepted waiting binds these sources. Otherwise call this tool with task_id and reviewer_ids once in the dispatching turn, before any extra child request or ending that turn; it creates no wait. On later parent-managed continuation, use it only for missing bound answers, then run the retained submit/finalize command. Unavailable or unknown results never authorize replay or invented hook events."})
+    return result
 
 
 def prepare(repo, args):
@@ -547,7 +558,11 @@ def prepare(repo, args):
             if os.path.lexists(target_result):
                 files.fail("handoff_destination_exists")
         files.check_parents(parents)
-        result.update(ok=True, handoff=_requests(repo, args, packet_path))
+        from .review_answer_preparation import selected as answer_selected
+        collected = answer_selected(repo, packet)
+        result.update(ok=True, handoff=_requests(repo, args, packet_path, collected=collected))
+        if collected:
+            result["handoff"]["answer_protocol"] = "review-answer-v1"
         if getattr(args, "operation", "prepare") == "prepare-finalization":
             from task_governance_tool.review_finalization import prepare_intent
             try:
@@ -566,7 +581,8 @@ def prepare(repo, args):
         from task_governance_tool.review_preparation import publish_ready
         try:
             locator = publish_ready(repo, packet_path, result_paths, session_identity.capture_caller_identity(),
-                route="integrated" if getattr(args, "operation", "prepare") == "prepare-finalization" else "manual")
+                route="integrated" if getattr(args, "operation", "prepare") == "prepare-finalization" else "manual",
+                collection_requests=tuple(row["request"] for row in result["handoff"]["review_requests"]) if collected else ())
         except Exception as exc:
             from task_governance_tool.review_handoff_scope import error_code as _code
             files.fail(_code(exc))

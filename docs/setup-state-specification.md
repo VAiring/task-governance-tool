@@ -381,7 +381,7 @@ write. Retry recomputes from the canonical state and the restore temporary is
 cleaned in either case; no later failure authorizes reselection or another
 canonical publication.
 
-The current classifier admits 500 for schema v17 and 1,000 for schema v18-v29,
+The current classifier admits 500 for schema v17 and 1,000 for schema v18-v30,
 rejecting the next character in each source schema. It does not generalize
 local rejection to another field
 or to structural, identity, lineage, metadata, or TOCTOU failure.
@@ -550,7 +550,7 @@ Setup always includes `data.relocation` with exactly `required`,
 successful relocation preview. Fresh preview has null top-level ID and null
 identity/generation/token/expiry.
 
-Relocation failure has status null, required schema 29, empty warnings, one
+Relocation failure has status null, required schema 30, empty warnings, one
 error, null token/expiry, and no rejected value. A no-token mismatch preserves
 the read-only future `planned_writes`; invalid/expired/stale/used/not-required
 token rows have empty write arrays and mechanically observed bounded context.
@@ -676,7 +676,7 @@ Setup output data is exactly `status`, `planned_writes`, `completed_writes`,
 `schema_from`, `schema_to`, `maintenance_enabled`,
 `backup_interval_minutes`, `backup_generations`, `evidence_status`,
 `viewer_status`, `relocation`, `usage`, `usage_hooks`, and `optional_features`.
-`schema_to` is always 29. `schema_from` is safely observed source
+`schema_to` is always 30. `schema_from` is safely observed source
 schema, selected recovery schema, or null. Policy values are effective
 requested/stored values, not persistence claims. `maintenance_enabled`,
 Evidence status, and Viewer status describe durable post-command state.
@@ -759,7 +759,8 @@ Preview creates neither lock nor artifact.
 
 After core setup, the noninteractive CLI accepts any subset of
 `--usage-collection on|off`, `--verification-runner on|off`,
-`--effort-advisory on|off`, `--viewer-reload on|off`, and `--review-wait on|off`. These explicit choices
+`--effort-advisory on|off`, `--viewer-reload on|off`, `--review-wait on|off`,
+`--review-answer-collection on|off`, and `--review-answer-correction on|off`. These explicit choices
 authorize only their configuration and choice-record writes below. Omission
 preserves existing choices/configuration; it is not OFF and never enables an
 absent feature. Setup without choices offers unresolved items together. The
@@ -769,15 +770,16 @@ setup or ordinary Tasks, and no normal-loop question or call is added.
 The physical package's `config/setup-features.json` is strict UTF-8 JSON,
 at most 16,384 bytes, with exactly `schema_version=1` and `choices`, an object
 whose only optional keys are `usage_collection`, `verification_runner`,
-`effort_advisory`, `viewer_reload`, `review_wait`, each a Boolean. Missing keys are undecided.
+`effort_advisory`, `viewer_reload`, `review_wait`, `review_answer_collection`,
+`review_answer_correction`, each a Boolean. Missing keys are undecided.
 Both ON and OFF persist; valid existing feature configs also count as resolved
 without copying or rewriting them merely to remember a choice. This local
 file is not core DB state, host trust, or Task authority; preserve it with the
 other supported settings under the [installation contract](release-install.md#supported-installation).
 Exclude package `config/` from source/release artifacts.
 
-`optional_features` contains exactly `features`, `offer`, and
-`viewer_default_interval_seconds=30`. `features` has those five fixed names.
+`optional_features` contains `features`, `offer`, and
+`viewer_default_interval_seconds=30`. `features` has those seven fixed names.
 Each row contains exactly `requested` (Boolean or null), `selection`
 (`on|off|undecided|unknown`), `selection_source` (`saved|existing|none|unknown`),
 `effective` (`on|off|unknown`), `status`
@@ -788,6 +790,20 @@ in the feature order above. Invalid/uninspectable settings are unknown and
 need inspection, not an inferred ON/OFF answer. A saved choice is intent:
 direct user configuration changes can make `selection` differ from `effective`.
 Text output reports the same choice, effective configuration, outcome, and offer.
+
+After successful core setup, if answer collection is requested ON or was already
+selected ON, `optional_features` additionally contains exactly
+`answer_collection_setup`. Its closed fields are `status`
+(`disabled|current|prepared|preparation_required|connection_required|unavailable`),
+`planned_writes`, `completed_writes`, `connection`
+(`configured|missing|disabled|unknown`), `trust="unknown"`, and `error`
+(null or `review_answer_setup_unavailable`). Ordered write identifiers are only
+`review_answer_hook_prepare` and `review_answer_tool_allowlist_prepare`;
+completed writes are the durable prefix and preview completes none. Configured
+means an existing enabled server declaration, not a connected or trusted host.
+A missing or disabled declaration reports `connection_required`; preparation of
+the local choice or hook never silently activates a server. This diagnostic is
+absent when the answer feature is not involved or core setup failed.
 
 The application boundary is per feature, not a multi-file transaction. A
 failure may leave an applied config without a saved choice or a saved choice
@@ -830,6 +846,37 @@ no new choice. Same-choice replay preserves bytes when no repair is necessary.
   the packaged entry point described in [review waiting](review-completion-specification.md#host-owned-review-waiting).
   OFF preserves state and permits original-parent inspection/cleanup/ack;
   running workers stop at their next fresh basis check with bounded cleanup.
+- Answer collection ON saves its separate local choice and prepares its
+  owned `SubagentStop` MCP handler in the project's physical `.codex/hooks.json`.
+  The handler addresses the existing connected `taskgov_review_wait` server's
+  `review_answer_collect` tool. Its typed `event` input interpolates only
+  `hook_event_name`, `session_id`, `agent_id`, `turn_id`, and `stop_hook_active`;
+  it forwards no body or transcript path. The status marker is
+  `taskgov: collect structured review answer`, with a 30-second hook timeout.
+  Preserve unrelated hooks and metadata. A conflicting owned handler or inline
+  definition is unavailable, not silently replaced or duplicated. Same-choice
+  replay preserves an already matching definition. If the existing physical
+  `.codex/config.toml` has a `taskgov_review_wait` server with an explicit
+  `enabled_tools` list, this selection also appends only `review_answer_collect`
+  when absent. An omitted allowlist already admits tools and needs no edit.
+  Preserve every other parsed setting and text outside that array. Malformed,
+  conflicting disabled-tool, or unsupported table spellings are unavailable;
+  never remove a deny rule or rewrite the whole configuration. Missing server
+  configuration requires a separately reviewed connection setup: do not invent
+  command, arguments, public-wrapper path, timezone, environment, trust, or
+  enablement. OFF leaves existing tool admission intact. Feature effective ON
+  requires the saved choice, matching hook and physically admitted tool; live
+  connection, trust and host acceptance remain separate. Setup never connects a
+  server, trusts or executes the hook, launches a reviewer, or certifies host
+  capabilities. OFF preserves definitions and durable evidence while preventing
+  future automatic collection; missing or malformed choice is disabled.
+  Issued request protocol remains immutable across restart or choice changes.
+- Answer correction ON saves only its separate opt-in and requires collection
+  ON to be effective. It grants no message permission or observation owner.
+  An unavailable exact follow-up-turn adapter returns the fixed unavailable
+  outcome without sending. Normal valid answers remain usable. The bounded
+  [answer collection contract](review-completion-specification.md#collected-review-answers)
+  owns dispatch, original retention, recovery and existing completion gates.
 
 ### Optional Lifecycle Usage Collection
 

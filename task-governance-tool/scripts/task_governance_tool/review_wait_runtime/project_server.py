@@ -6,6 +6,7 @@ No worker is recovered or retried when the process starts or reads old state.
 """
 
 from dataclasses import asdict, dataclass, replace
+from contextlib import nullcontext
 from pathlib import Path
 import sys
 
@@ -17,7 +18,7 @@ from task_governance_tool.state_paths import (
 from task_governance_tool.state_resolver import resolve_project_state
 from task_governance_tool.task_values import validate_task_id
 from .review_wait_basis import BasisError, PublicTaskBasisReader
-from .review_wait_host import PublicMcpHost, admit_executor_metadata, executor_turn_id
+from .review_wait_host import PublicMcpHost, HostAdapterError, admit_executor_metadata, executor_turn_id
 from .review_wait_repository import ReviewWaitRepository
 from .review_wait_server import ReviewWaitSession, SessionConfig, serve
 from .review_wait_service import ServiceConfig
@@ -29,7 +30,15 @@ from . import review_wait_mcp_relay as protocol
 
 
 _ID = {"type": "string"}
+_ANSWER_EVENT = {"type": "object", "properties": {
+    "hook_event_name": {"type": "string", "const": "SubagentStop"}, "session_id": _ID,
+    "agent_id": _ID, "turn_id": _ID, "stop_hook_active": {"type": "boolean"}},
+    "required": ["hook_event_name", "session_id", "agent_id", "turn_id", "stop_hook_active"],
+    "additionalProperties": False}
+_ANSWER_REVIEWERS = {"type": "array", "minItems": 1, "maxItems": 8, "uniqueItems": True,
+    "items": {"type": "string"}, "description": "Actual returned child UUIDs in immutable prepared-slot order."}
 OPERATIONS = {
+    "answer_collect": {"event": _ANSWER_EVENT, "task_id": _ID, "reviewer_ids": _ANSWER_REVIEWERS},
     "wait": {"task_id": _ID, "reviewer_ids": {"type": "array", "minItems": 1,
         "maxItems": 64, "uniqueItems": True, "items": {"type": "string"}}},
     "inspect": {"task_id": _ID},
@@ -66,9 +75,12 @@ class ProjectConfig:
 
 class ProjectReviewWaitSession:
     operations = OPERATIONS
+    tool_operations = {"review_answer_collect": "answer_collect"}
+    argument_shapes = {"answer_collect": ({"event"}, {"task_id", "reviewer_ids"})}
 
     def __init__(self, config, *, host_factory=None, basis_factory=None,
-                 session_factory=None, clock=None, managed_host_factory=None, runtime_identity=None):
+                 session_factory=None, clock=None, managed_host_factory=None, runtime_identity=None,
+                 answer_read_host_factory=None):
         if type(config) is not ProjectConfig or any(
                 not path.is_absolute() for path in (config.repo, config.server_path, config.codex_home)):
             raise ValueError("invalid_configuration")
@@ -76,6 +88,8 @@ class ProjectReviewWaitSession:
         self.skill = Path(__file__).absolute().parents[3]
         self.host_factory = host_factory or ProjectHost.from_environment
         self.managed_host_factory = managed_host_factory or ManagedHost.from_environment
+        from task_governance_tool.review_answer_read_host import AnswerReadHost
+        self.answer_read_host_factory = answer_read_host_factory or AnswerReadHost.from_environment
         self.basis_factory = basis_factory or PublicTaskBasisReader
         self.session_factory = session_factory or ReviewWaitSession
         self.clock = clock
@@ -87,6 +101,7 @@ class ProjectReviewWaitSession:
     @staticmethod
     def catalogue():
         descriptions = {
+            "answer_collect": "Explicitly enabled answer collection, independent of waiting. Hook arm accepts typed event identity hints only. Parent arm accepts the original Task and ordered actual child UUIDs: binds fresh dedicated dispatches in this current parent turn or reuses saved exact bindings, then recovers each missing answer once. Use the parent arm after launching reviewers when no accepted wait owns binding, or for exact missing-source recovery. Only the parent arm may reconcile an interrupted publication against its saved intent, exact path and full bytes, without fetching or publishing that original again. Returns bounded collected/unavailable facts without answer bodies. No latest substitution, correction sends, workers, timers, registration or completion. Unavailable collection stays with the existing parent recovery.",
             "wait": "Wait for the original Task and actual returned reviewers using the authorized connected service. Creates and starts its same-parent timer; delegate waiting and end the turn on ok=true,status=waiting,parent_may_end=true. On failure, report the limitation and recovery condition before ordinary turn end; no automatic resumption is promised. A matching prepare-finalization intent runs fixed registration, gates, local commit and completion before notification; otherwise it notifies review end only. A received body matching the original Task/target generation with status=completed, successful stages, actual Task done and sufficient reporting facts without unresolved contradiction or action permits direct reporting without another guide read, routine query or replay. Include all Findings (also low/resolved), warnings, limitations and not_recorded work; these alone do not exclude success. Labels (including delivery.source_body=complete), correlation, ok=true, review end/PASS and send acceptance alone prove neither completion nor unseen content. Follow references/review_wait.md#normal-wait for waiting; other results, including incomplete, unknown, failed, conflicting or action-requiring reports, use references/task_workflow.md#continue-after-reviews. No separate ACK or routine status call; next-Task authority reads and existing gates still apply.",
             "inspect": "Optional read-only diagnosis of this parent's Task wait and runtime identity. observation distinguishes request phase, exact worker running/stopped/unknown, direct versus saved joined termination, timer/send/receipt and observation time. No saved start flag proves life or exit; never starts/retries effects or writes evidence. Old notification observations are not current state. No routine poll or completion gate.",
             "stop": "Explicitly stop this parent's Task wait and clean up only known effects; no unknown-operation retry. operation reports cleanup separately from observation of the same worker running/stopped/unknown. Successful cleanup survives a later observation failure; unknown observation alone requires no repeat stop. Saved joined termination remains readable after restart.",
@@ -97,9 +112,13 @@ class ProjectReviewWaitSession:
             "direct_cancel": "Compatibility/recovery only: cancel an earlier wait and clean up known-ACTIVE state; never retry unknown effects. Normal cancellation uses review_wait_stop.",
             "direct_ack": "Compatibility only: acknowledge an earlier wait in a genuinely new turn of this same parent, without review evidence. Normal waiting records receipt automatically.",
         }
-        return [{"name": "review_wait_" + operation, "description": descriptions[operation],
+        return [{"name": "review_answer_collect" if operation == "answer_collect" else "review_wait_" + operation, "description": descriptions[operation],
                  "inputSchema": {"type": "object", "properties": fields,
-                                 "required": list(fields), "additionalProperties": False},
+                                 **({"oneOf": [{"type": "object", "properties": {key: fields[key] for key in shape},
+                                     "required": sorted(shape), "additionalProperties": False}
+                                     for shape in ProjectReviewWaitSession.argument_shapes[operation]]}
+                                    if operation == "answer_collect" else {"required": list(fields)}),
+                                 "additionalProperties": False},
                  "annotations": {"readOnlyHint": operation in {"view", "direct_status", "inspect"}}}
                 for operation, fields in OPERATIONS.items()]
 
@@ -111,6 +130,141 @@ class ProjectReviewWaitSession:
             return self._enabled()
         except Exception:
             raise DiagnosticError("policy_unreadable") from None
+
+    def _collect_answers(self, binding, host, reviewers=None, *, explicit_recovery=False, diagnostic=None):
+        from task_governance_tool.review_answer_host import PublicAnswerHost
+        from task_governance_tool.review_answer_runtime import sources_for_reviewers, collect_sources
+        with diagnostic.reading_retained() if diagnostic is not None else nullcontext():
+            groups = sources_for_reviewers(self.config.repo, self.skill, binding, reviewers)
+        if groups is None:
+            # OFF, no preparation and legacy are normal wait non-applicability.
+            return None
+        adapter = PublicAnswerHost(host, binding.parent_thread_id, executor_turn_id(host._metadata))
+        result = dict(collected=[], unavailable=[])
+        for group in groups:
+            with diagnostic.collecting(group.service.repository) if diagnostic is not None else nullcontext():
+                observed = collect_sources(group, adapter, explicit_recovery=explicit_recovery)
+                result["collected"].extend(observed["collected"])
+                result["unavailable"].extend(observed["unavailable"])
+        return result
+
+    def _bind_answers(self, binding, host, reviewers, *, fresh_context, diagnostic=None):
+        from task_governance_tool.review_answer_host import PublicAnswerHost
+        from task_governance_tool.review_answer_runtime import sources_for_reviewers, bind_sources
+        with diagnostic.reading_retained() if diagnostic is not None else nullcontext():
+            groups = sources_for_reviewers(self.config.repo, self.skill, binding, reviewers)
+        if groups is None:
+            return None
+        adapter = PublicAnswerHost(host, binding.parent_thread_id, executor_turn_id(host._metadata))
+        bound = {}
+        for group in groups:
+            with diagnostic.collecting(group.service.repository) if diagnostic is not None else nullcontext():
+                records = bind_sources(group, adapter, creation_context=fresh_context)
+                bound.update({row["binding"]["reviewer_session_id"]: row["attempts"][-1]["turn_id"] for row in records})
+        return bound
+
+    def _collect_hook(self, event, metadata, diagnostic):
+        from task_governance_tool.review_answer import AnswerError
+        from task_governance_tool.review_answer_hook import decode_event
+        from task_governance_tool.review_answer_host import PublicAnswerHost
+        from task_governance_tool.review_answer_read_host import hook_executor_turn_id
+        from task_governance_tool.review_answer_runtime import (
+            service_for_event, collect_hook_event, reviewer_hook_admission)
+        from task_governance_tool.setup_feature_config import answer_collection_allowed
+        if not answer_collection_allowed(self.skill):
+            return {"ok": True, "status": "disabled"}
+        self._location(enabling=True)
+        # Hook hints only locate a candidate. A reviewer executor also needs
+        # its independently saved assignment and pinned active source below.
+        hint = decode_event(protocol._encode(event))
+        reviewer_caller = hint["reviewer_session_id"] == metadata["threadId"]
+        if hint["parent_session_id"] != metadata["threadId"] and not reviewer_caller:
+            diagnostic.hook_caller_relation = "other"
+            return {"ok": False, "error": "caller_mismatch"}
+        try:
+            caller_turn = hook_executor_turn_id(metadata)
+        except HostAdapterError as error:
+            diagnostic.hook_executor_context = error.executor_context
+            raise
+        service, binding = service_for_event(self.config.repo, self.skill,
+            hint["parent_session_id"], hint["reviewer_session_id"])
+        if binding.parent_thread_id != hint["parent_session_id"]:
+            raise AnswerError("binding_mismatch", reason="identity")
+        if reviewer_caller:
+            source_admission = service.admit_basis
+            def admit_current(value, slot):
+                with diagnostic.reading_retained():
+                    source_admission.check_hook(value, slot, parent_id=binding.parent_thread_id)
+            try:
+                with reviewer_hook_admission(service, binding.parent_thread_id,
+                        metadata["threadId"], caller_turn, admit_current=admit_current) as admission:
+                    host = self.answer_read_host_factory(metadata=metadata,
+                        reviewer_id=metadata["threadId"], reviewer_turn_id=admission.turn_id, admit=admission.check,
+                        server_path=self.config.server_path, automation_id="answer-hook",
+                        codex_home=self.config.codex_home, confirmed_timezone=self.config.timezone,
+                        timezone_source="host_node_intl")
+                    adapter = PublicAnswerHost(host, binding.parent_thread_id)
+                    with diagnostic.collecting(service.repository):
+                        collect_hook_event(event, service=service, host=adapter)
+            except HostAdapterError as error:
+                if error.code != "caller_mismatch":
+                    raise
+                diagnostic.hook_caller_relation = "event_reviewer"
+                return {"ok": False, "error": "caller_mismatch"}
+            return {"ok": True, "status": "collected"}
+        host = self.managed_host_factory(metadata=metadata, task_id=binding.task_id,
+            server_path=self.config.server_path, automation_id="answer-hook", codex_home=self.config.codex_home,
+            confirmed_timezone=self.config.timezone, timezone_source="host_node_intl", reviewer_ids=(hint["reviewer_session_id"],))
+        adapter = PublicAnswerHost(host, binding.parent_thread_id, caller_turn)
+        with diagnostic.collecting(service.repository):
+            collect_hook_event(event, service=service, host=adapter)
+        return {"ok": True, "status": "collected"}
+
+    def _collect_parent(self, arguments, metadata, diagnostic):
+        from task_governance_tool.review_answer import AnswerError
+        from task_governance_tool.review_answer_host import _uuid as answer_uuid
+        from task_governance_tool.setup_feature_config import answer_collection_allowed
+        from .request_repository import RequestRepository
+        from .managed_wait import basis_digest
+        if not answer_collection_allowed(self.skill):
+            return {"ok": False, "error": "collection_unavailable"}
+        reviewers = arguments["reviewer_ids"]
+        if (type(reviewers) is not list or not 1 <= len(reviewers) <= 8
+                or any(type(value) is not str for value in reviewers)
+                or len(set(reviewers)) != len(reviewers)):
+            raise AnswerError("binding_mismatch", reason="shape")
+        for reviewer in reviewers:
+            answer_uuid(reviewer)
+        if metadata["threadId"] in reviewers:
+            raise AnswerError("binding_mismatch", reason="identity")
+        paths = self._location(enabling=True)
+        task_id = validate_task_id(arguments["task_id"])
+        # The public basis reader itself is independent of the wait switch.
+        reader = self.basis_factory(self.config.repo, task_id, metadata["threadId"], "answer-parent",
+                                   helper=self.skill / "scripts/review_handoff.py")
+        binding = reader()
+        if binding.parent_thread_id != metadata["threadId"] or binding.task_id != task_id:
+            return {"ok": False, "error": "caller_mismatch"}
+        host = self.managed_host_factory(metadata=metadata, task_id=task_id,
+            server_path=self.config.server_path, automation_id="answer-parent", codex_home=self.config.codex_home,
+            confirmed_timezone=self.config.timezone, timezone_source="host_node_intl", reviewer_ids=arguments["reviewer_ids"])
+        request_path = paths.review_wait_request_store(metadata["threadId"], task_id)
+        previous = RequestRepository(request_path).read()[1] if path_lexically_exists(request_path) else None
+        fresh = previous is None or previous.basis_digest != basis_digest(binding)
+        # bind_initial validates the exact ordered UUID set and the current
+        # same-parent started dispatch before any missing binding is admitted.
+        bound = self._bind_answers(binding, host, arguments["reviewer_ids"], fresh_context=fresh, diagnostic=diagnostic)
+        with diagnostic.reading_retained():
+            if bound is None or reader() != binding:
+                raise AnswerError("collection_unavailable", reason="identity")
+        # This explicit parent arm alone may settle a publication intent by
+        # exact physical readback. Hook/wait/restart never adopt unknown residue.
+        result = self._collect_answers(binding, host, arguments["reviewer_ids"], explicit_recovery=True, diagnostic=diagnostic)
+        if result is None:
+            diagnostic.invalidate_record()
+            raise AnswerError("collection_unavailable", reason="missing")
+        return {"ok": not result["unavailable"], "status": "collected" if not result["unavailable"] else "collection_unavailable",
+                "task_id": task_id, "bound": True, **result}
 
     def _location(self, *, enabling):
         inspection = inspect_project_scope(repo=self.config.repo, repo_explicit=True,
@@ -271,6 +425,8 @@ class ProjectReviewWaitSession:
                 observation_factory=lambda controller: self.managed.observe(task_id,
                     {"threadId": controller.binding.parent_thread_id}, self._location(enabling=False)),
                 runtime_observer=self._runtime,
+                answer_collector=lambda host, controller: self._collect_answers(controller.binding, host,
+                    tuple(reviewer.reviewer_id for reviewer in controller.reviewers)),
                 occurrence_guard=lambda controller: self._wait_occurrence_current(controller.binding, automation_id), **kwargs)
         session = self.session_factory(config, host_factory=host_factory,
             basis_factory=self._reader, clock=self.clock, **options)
@@ -303,6 +459,8 @@ class ProjectReviewWaitSession:
             admitted = diagnostic.stage not in {"request", "executor_admission"}
         if result.get("ok") is not True and "diagnostic" not in result:
             result = diagnostic.failure(result)
+        if getattr(diagnostic, "answer_collection", None) is not None:
+            result = {**result, "answer_collection": diagnostic.answer_collection}
         if operation == "inspect" and admitted and self.runtime_identity is not None:
             from task_governance_tool.state_resolver import SCHEMA_VERSION
             try:
@@ -344,10 +502,19 @@ class ProjectReviewWaitSession:
             if self.closed:
                 return {"ok": False, "error": "service_closed"}
             if (operation not in OPERATIONS or type(arguments) is not dict
-                    or set(arguments) != set(OPERATIONS[operation])):
+                    or set(arguments) not in self.argument_shapes.get(operation, (set(OPERATIONS[operation]),))):
                 return {"ok": False, "error": "invalid_request"}
             diagnostic.stage = "executor_admission"
             actual = admit_executor_metadata(metadata)
+            if operation == "answer_collect":
+                diagnostic.stage = "operation"
+                from task_governance_tool.review_answer import AnswerError
+                try:
+                    if "event" in arguments:
+                        return self._collect_hook(arguments["event"], actual, diagnostic)
+                    return self._collect_parent(arguments, actual, diagnostic)
+                except AnswerError as error:
+                    return {"ok": False, "error": error.failure["class"], "failure": error.failure}
             enabling = operation in {"wait", "prepare", "direct_delete_start"}
             if enabling:
                 executor_turn_id(actual)

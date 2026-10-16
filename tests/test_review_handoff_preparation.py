@@ -23,6 +23,7 @@ from tests.test_review_results import encode, receipt, FINGERPRINT
 from task_governance_tool import review_handoff_transport as handoff_transport
 from task_governance_tool import review_handoff as handoff
 from task_governance_tool import review_handoff_preparation as preparation
+from task_governance_tool import review_handoff_scope as handoff_scope
 from task_governance_tool.review_results import review_result_instructions
 
 
@@ -500,6 +501,8 @@ class ReviewerDisplayTests(PreparationFixture):
             original = path.read_bytes()
             with mock.patch.object(preparation, "__file__", str(self.install.skill_root /
                     "scripts/task_governance_tool/review_handoff_preparation.py")), \
+                 mock.patch.object(handoff_scope, "__file__", str(self.install.skill_root /
+                    "scripts/task_governance_tool/review_handoff_scope.py")), \
                  mock.patch.object(preparation, "_capture", wraps=preparation._capture) as capture:
                 view = preparation.read_for_reviewer(self.root, packet_path)
             capture.assert_called_once()
@@ -554,6 +557,8 @@ class ReviewerDisplayTests(PreparationFixture):
                 original_packet = path.read_bytes()
                 with mock.patch.object(preparation, "__file__", str(self.install.skill_root /
                         "scripts/task_governance_tool/review_handoff_preparation.py")), \
+                     mock.patch.object(handoff_scope, "__file__", str(self.install.skill_root /
+                        "scripts/task_governance_tool/review_handoff_scope.py")), \
                      mock.patch.object(preparation, "_capture", wraps=preparation._capture) as source:
                     view = preparation.read_for_reviewer(self.root, context["packet_path"])
                 source.assert_called_once()  # No extra lookup for the reference.
@@ -1932,7 +1937,9 @@ class PreparationFailureTests(PreparationFixture):
                 raise capture_error
             return code, encode(self.response) if response is None else response
         output = io.StringIO()
-        with mock.patch.object(preparation, "_capture", side_effect=captured) as capture, redirect_stdout(output):
+        with mock.patch.object(preparation, "_capture", side_effect=captured) as capture, \
+             mock.patch.object(handoff_scope, "__file__", str(self.install.skill_root /
+                 "scripts/task_governance_tool/review_handoff_scope.py")), redirect_stdout(output):
             exit_code = handoff.main(["prepare", "--repo", str(self.root), "--directory", directory,
                 "target", self.task_id, "--kind", "diff_fingerprint", "--revision", FINGERPRINT])
         return exit_code, json.loads(output.getvalue()), capture
@@ -1961,7 +1968,7 @@ class PreparationFailureTests(PreparationFixture):
                 capture.assert_called_once()
                 publish.assert_called_once_with(self.root, f"reviews/{name}/middle/g1/packet.json",
                     [f"reviews/{name}/middle/g1/review-{index}.json" for index in (1, 2)],
-                    caller, route="manual")
+                    caller, route="manual", collection_requests=())
                 expected = {} if name == "nt" else {"mode": 0o700}
                 self.assertEqual(seen, [(self.root / path, (), expected) for path in
                     (f"reviews/{name}", f"reviews/{name}/middle", f"reviews/{name}/middle/g1")])

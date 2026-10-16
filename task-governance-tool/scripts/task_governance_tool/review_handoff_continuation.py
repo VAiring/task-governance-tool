@@ -46,6 +46,7 @@ class ContinuationScope:
     paths: CanonicalStatePaths
     caller: CallerIdentity
     root: PreparationRecord
+    records_only: bool = False
 
 
 @dataclass(frozen=True)
@@ -158,7 +159,7 @@ def assemble_submission(repo, packet_path, originals, approvals=(), *, caller=No
         if (transition is None or transition.phase not in ("prepared", "published") or transition.packet_path != packet_path
             or transition.packet_digest != sha256(raw).hexdigest() or tuple(originals) != transition.result_paths):
             files.fail("review_continuation_conflict")
-        framed, _, _ = compose_inventory(repo, root, record, state, _sources(repo, root, history), packet_path, originals, approvals)
+        framed, _, _ = compose_inventory(repo, root, record, state, _sources(repo, root, history,resolution=resolution), packet_path, originals, approvals,resolution=resolution)
         if core.read_state(resolution.target, record.basis["task_id"], caller).basis != state.basis or files.read_bounded(files.checked_path(repo, packet_path), files.PACKET_LIMIT) != raw:
             files.fail("review_continuation_basis_changed")
         return record.basis["task_id"], framed
@@ -183,17 +184,23 @@ def _new_packet(repo, target, directory, count, raw):
 
 
 def _response(repo, args, root, record, transition, *, replayed=False):
-    generated = preparation._requests(repo, SimpleNamespace(directory=args.directory, reviewers=len(record.selected),
-        records_only=getattr(args, "records_only", False), task_id=args.task_id), transition.packet_path)
+    from .review_answer_continuation_preparation import requests_for
+    generated = requests_for(repo,root,record,transition,records_only=getattr(args,"records_only",False))
+    if not replayed and transition.answer_protocol == "review-answer-v1":
+        from .review_answer_values import basis_digest
+        identity = dict(continuation_id=record.continuation_id,sequence=record.sequence,
+            selection_digest=transition.selection_digest)
+        issued = tuple(basis_digest(dict(version=1,preparation_id=root.preparation_id,
+            packet_digest="sha256:"+transition.packet_digest,
+            request_digest="sha256:"+sha256(request["request"].encode("utf-8")).hexdigest(),
+            protocol="review-answer-v1",attestation="assigned-independent-review-v1",route=root.route,
+            continuation=identity,execution_basis=record.basis)) for request in generated["review_requests"])
+        if issued != transition.collection_basis_digests:
+            files.fail("review_continuation_conflict")
     generated.update(continuation_id=record.continuation_id, continuation_sequence=record.sequence,
         preparation_id=root.preparation_id, route=root.route, basis=record.basis, replayed=replayed)
     if replayed:
         generated["review_requests"] = []  # Recovery is not redispatch authority.
-    else:
-        for request, choice in zip(generated["review_requests"], record.selected):
-            request["session_id"] = choice.session_id
-            request["request"] += ("\n\nExplicit continuation: " + choice.action + ". Reason: " + choice.reason
-                + "\nKeep the same reviewed basis. This explanation changes no acceptance or permission. If material/conditions changed, stop and report that a fresh target is needed.")
     if root.route == "integrated":
         generated.pop("submit_command", None)
         generated["finalization_command"] = preparation._shell([sys.executable, "-B", str(preparation.Path(__file__).parent.parent / "review_handoff.py"),
@@ -283,6 +290,9 @@ def _ready(scope: ContinuationScope, leases: ContinuationLeases,
     if record is None or record.state not in ("prepared", "registered") or transition.phase not in ("prepared", "published"):
         files.fail("review_continuation_pending")
     raw = _read_packet(repo, root, record, transition)
+    if transition.answer_protocol == "review-answer-v1":
+        from .review_answer_continuation_preparation import locate_from_preparation
+        locate_from_preparation(repo,SimpleNamespace(target=target,paths=paths),root,transition.packet_path,raw,files.decode_packet(raw),current=True)
     _, occurrence = _request_round(leases.request, transition, selected)
     if occurrence is not None:
         observed = observe_current_occurrence(paths, caller.require(), root.basis["task_id"], occurrence)
@@ -306,7 +316,7 @@ def _settle_previous(scope: ContinuationScope, leases: ContinuationLeases,
     boundary, including a lost acknowledgement between its two local writes.
     """
     attempt, old_request = previous.attempt, previous.record
-    observation = replace(prior, phase="fenced", packet_digest=None, worker_stop_identity=None,
+    observation = replace(prior, phase="fenced", packet_digest=None, collection_basis_digests=(), worker_stop_identity=None,
         expected_attempt=attempt, expected_request_digest=request_identity_digest(old_request) if old_request else None,
         old_automation_id=old_request.automation_id if old_request else None,
         old_request_phase=old_request.phase if old_request else None)
@@ -324,16 +334,23 @@ def _settle_previous(scope: ContinuationScope, leases: ContinuationLeases,
     return cleanup
 
 
-def _retained_inventory(repo, root, history, state, selected):
-    sources = _sources(repo, root, history)
+def _retained_inventory(repo, root, history, state, selected, *, resolution=None):
+    sources = _sources(repo, root, history,resolution=resolution)
     selected_actors = {choice.session_id for choice in selected}
     registered = {node.session_id for node in state.heads}
     if any(source.bound.binding.session_id in selected_actors - registered for source in sources):
         files.fail("review_continuation_original_registration_required")
-    return tuple(values.RetainedOriginal(source.bound.continuation.identity.continuation_id,
+    retained=[source for source in sources if source.bound.binding.session_id not in selected_actors | registered]
+    actors=[source.bound.binding.session_id for source in retained]
+    if len(set(actors))!=len(actors) or len(retained)+len(selected)>8:
+        files.fail("review_continuation_conflict")
+    retained.sort(key=lambda source:source.bound.binding.session_id)
+    legacy=tuple(values.RetainedOriginal(source.bound.continuation.identity.continuation_id,
         source.bound.binding.session_id, source.bound.binding.original_result_digest, metadata_digest(source.metadata))
-        for source in sources if source.bound.continuation is not None
-        and source.bound.binding.session_id not in selected_actors | registered)
+        for source in retained if getattr(source,"collected_metadata",None) is None and source.bound.continuation is not None)
+    collected=tuple((len(selected)+index,source.collected_metadata) for index,source in enumerate(retained,1)
+        if getattr(source,"collected_metadata",None) is not None)
+    return legacy,collected
 
 
 def _prior_admission(scope: ContinuationScope, leases: ContinuationLeases,
@@ -458,6 +475,12 @@ def _complete_preparation(scope: ContinuationScope, leases: ContinuationLeases,
     installed = next((row for row in rounds if row.continuation_id == record.continuation_id), None)
     packet = _packet_for_preparation(scope, leases, settled)
     raw, transition = packet.raw, packet.transition
+    from .review_answer_continuation_preparation import initialize
+    collection_bases = initialize(scope,record,transition,raw)
+    if collection_bases:
+        from .review_answer_values import basis_digest
+        transition = leases.transitions.bind_collection_bases(leases.transition,transition,
+            tuple(basis_digest(basis) for basis in collection_bases))
     fresh = core.read_state(target, root.basis["task_id"], caller)
     if _current_record(fresh, root, record.continuation_id, record.selected) is None:
         files.fail("review_continuation_conflict")
@@ -526,7 +549,7 @@ def _admission_scope(repo: Path, args, caller: CallerIdentity
                 or current.completion != "not_started"):
                 files.fail("review_continuation_effect_unknown")
             integrated = IntegratedAdmission(journal, journal_lease)
-        yield (ContinuationScope(repo, resolution.target, paths, caller, root),
+        yield (ContinuationScope(repo, resolution.target, paths, caller, root,getattr(args,"records_only",False)),
             ContinuationLeases(transitions, transition_lease, request, request_lease, integrated),
             AdmissionSnapshot(state, history, previous))
 
@@ -564,9 +587,14 @@ def _admit_operation(scope: ContinuationScope, leases: ContinuationLeases,
             if history and history[-1].phase in ("fenced", "settled"):
                 files.fail("review_continuation_effect_unknown")
             preparation._directory(scope.repo, directory)
-        captures = _retained_inventory(scope.repo, root, predecessor_history, state, selected)
+        captures,collected_sources = _retained_inventory(scope.repo, root, predecessor_history, state, selected,resolution=SimpleNamespace(paths=scope.paths,target=scope.target))
         retirement = _prior_admission(scope, leases, replace(snapshot, history=predecessor_history), historical)
         if transition is None:
+            from .review_answer_continuation_preparation import choose_protocol
+            original_packet=files.decode_packet(files.read_bounded(files.checked_path(scope.repo,root.packet_path),files.PACKET_LIMIT))
+            answer_protocol=choose_protocol(scope,original_packet)
+            if collected_sources and answer_protocol=="legacy":
+                files.fail("review_continuation_unavailable")
             group = [row for row in state.records if row.preparation_id == root.preparation_id]
             sequence = group[-1].sequence + 1 if group else 1
             if sequence > values.CONTINUATION_LIMIT:
@@ -578,10 +606,14 @@ def _admit_operation(scope: ContinuationScope, leases: ContinuationLeases,
                 request_identity_digest(old_request) if old_request else None,
                 old_request.automation_id if old_request else None, old_request.phase if old_request else None,
                 packet_path=directory + "/packet.json",
-                result_paths=tuple(directory + f"/review-{index}.json" for index in range(1, len(selected) + 1))))
+                result_paths=tuple(directory + f"/review-{index}.json" for index in range(1, len(selected) + 1)),answer_protocol=answer_protocol))
             progress.transition = transition
-        record = core.admit(scope.target, root.basis, root.preparation_id, root.route, selected, scope.caller,
-            retirement=retirement, retained_originals=captures, continuation_id=transition.continuation_id)
+        if collected_sources and transition.answer_protocol=="legacy":
+            files.fail("review_continuation_unavailable")
+        from .review_answer_continuation_preparation import retained_admission
+        with retained_admission(scope,transition.continuation_id,collected_sources) as collected:
+            record = core.admit(scope.target, root.basis, root.preparation_id, root.route, selected, scope.caller,
+                retirement=retirement, retained_originals=captures, retained_collected=collected,continuation_id=transition.continuation_id)
         progress.record = record
         if record.sequence != transition.continuation_sequence:
             files.fail("review_continuation_conflict")

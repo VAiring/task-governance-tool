@@ -53,6 +53,7 @@ COMPLETION_BLOCKING_CODES = (
     "review_target_mismatch",
     "review_finding_unresolved",
     "review_changes_requested",
+    "review_unable",
     "review_receipts_insufficient",
     "completion_check_stale",
     "task_not_owned",

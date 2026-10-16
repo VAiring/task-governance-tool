@@ -32,6 +32,7 @@ HOST_BOUNDARY_REASONS = frozenset({
 }) | frozenset("host_" + reason for reason in relay.RESPONSE_FAILURE_REASONS)
 HOST_OPERATIONS = frozenset({"read_thread", "wait_threads", "automation_update", "send_message_to_thread"})
 HOST_TERMINATION = frozenset({"not_attempted", "confirmed", "unresolved"})
+EXECUTOR_TURN_FAILURES = frozenset({"turn_missing", "turn_invalid", "turn_embedded_only"})
 READ_PURPOSES = frozenset({"parent_state", "reviewer_identity", "notification_receipt"})
 READ_NEXT_ACTIONS = {"parent_state": "restore_parent_read", "reviewer_identity": "restore_identity_read",
                      "notification_receipt": "retain_known_results"}
@@ -50,7 +51,8 @@ class HostAdapterError(Exception):
     """Only a fixed code crosses this boundary; never include rejected values."""
 
     def __init__(self, code: str, *, boundary_reason: str | None = None,
-                 operation: str | None = None, termination: str | None = None):
+                 operation: str | None = None, termination: str | None = None,
+                 executor_context: str | None = None):
         self.code = code
         self.boundary_reason = (boundary_reason if type(boundary_reason) is str
                                 and boundary_reason in HOST_BOUNDARY_REASONS else None)
@@ -58,6 +60,8 @@ class HostAdapterError(Exception):
         self.termination = (termination if type(termination) is str
                             and termination in HOST_TERMINATION else None)
         self.read_failure = None
+        self.executor_context = (executor_context if code == "executor_context_required"
+            and type(executor_context) is str and executor_context in EXECUTOR_TURN_FAILURES else None)
         super().__init__(code)
 
 
@@ -388,34 +392,44 @@ def executor_turn_id(metadata: object) -> str:
     request; it does not authenticate arbitrary JSON or recover stored identity.
     """
     admitted = admit_executor_metadata(metadata)
+    def invalid_turn():
+        return HostAdapterError("executor_context_required", executor_context="turn_invalid")
+
+    def turn_uuid(value):
+        try:
+            return _uuid(value, "executor_context_required")
+        except HostAdapterError:
+            raise invalid_turn() from None
+
     values = []
     primary = False
     for key in ("turnId", "openai/turnId", "openai/turn_id", "codexTurnId", "codex_turn_id", "turn_id"):
         if key in admitted:
-            values.append(_uuid(admitted[key], "executor_context_required"))
+            values.append(turn_uuid(admitted[key]))
             primary = True  # Every listed alias is selected by the public wrapper.
     if "turn" in admitted:
         nested = admitted["turn"]
         if type(nested) is not dict or "id" not in nested:
-            _fail("executor_context_required")
-        values.append(_uuid(nested["id"], "executor_context_required"))
+            raise invalid_turn()
+        values.append(turn_uuid(nested["id"]))
         primary = True
     if "x-codex-turn-metadata" in admitted:
         embedded = admitted["x-codex-turn-metadata"]
         if type(embedded) is str:
             embedded = relay.strict_json_loads(embedded)  # already admitted above
         if "turn_id" in embedded:
-            values.append(_uuid(embedded["turn_id"], "executor_context_required"))
+            values.append(turn_uuid(embedded["turn_id"]))
             primary = True
         if "turn" in embedded:
             nested = embedded["turn"]
             if type(nested) is not dict or "id" not in nested:
-                _fail("executor_context_required")
+                raise invalid_turn()
             # This is corroboration only: the bundled wrapper does not select
             # an embedded turn.id as its actual executor turn.
-            values.append(_uuid(nested["id"], "executor_context_required"))
+            values.append(turn_uuid(nested["id"]))
     if not primary or not values:
-        _fail("executor_context_required")
+        raise HostAdapterError("executor_context_required", executor_context=(
+            "turn_embedded_only" if values else "turn_missing"))
     if any(value != values[0] for value in values):
         _fail("caller_mismatch")
     return values[0]
@@ -542,22 +556,29 @@ class PublicMcpHost:
                     or len(set(self._reviewers)) != len(self._reviewers)
                     or self._parent_id in self._reviewers):
                 _fail("invalid_child_set")
-            if (isinstance(command, (str, bytes)) or not command
-                    or any(not isinstance(x, str) or not x for x in command)
-                    or type(timeout_seconds) not in (int, float) or not 0 < timeout_seconds <= 60):
-                _fail("invalid_host_configuration")
-            self._automation_id = _automation_id(automation_id)
-            self._codex_home = Path(codex_home)
-            self._timezone, self._timezone_source = _timezone(confirmed_timezone, timezone_source)
-            if timezone_reader is not None and not callable(timezone_reader):
-                _fail("timezone_not_admitted")
-            self._timezone_reader = timezone_reader
-            self._command, self._cwd = tuple(command), cwd
-            self._timeout = timeout_seconds
+            self._configure_transport(automation_id=automation_id, codex_home=codex_home,
+                confirmed_timezone=confirmed_timezone, timezone_source=timezone_source,
+                command=command, cwd=cwd, timeout_seconds=timeout_seconds, timezone_reader=timezone_reader)
         except HostAdapterError:
             raise
         except Exception:
             raise HostAdapterError("invalid_host_configuration") from None
+
+    def _configure_transport(self, *, automation_id, codex_home, confirmed_timezone,
+                             timezone_source, command, cwd, timeout_seconds, timezone_reader):
+        """Shared bounded relay setup; caller admission stays with each host."""
+        if (isinstance(command, (str, bytes)) or not command
+                or any(not isinstance(x, str) or not x for x in command)
+                or type(timeout_seconds) not in (int, float) or not 0 < timeout_seconds <= 60):
+            _fail("invalid_host_configuration")
+        self._automation_id = _automation_id(automation_id)
+        self._codex_home = Path(codex_home)
+        self._timezone, self._timezone_source = _timezone(confirmed_timezone, timezone_source)
+        if timezone_reader is not None and not callable(timezone_reader):
+            _fail("timezone_not_admitted")
+        self._timezone_reader = timezone_reader
+        self._command, self._cwd = tuple(command), cwd
+        self._timeout = timeout_seconds
 
     @property
     def parent_thread_id(self) -> str:

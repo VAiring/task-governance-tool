@@ -71,12 +71,33 @@ def _wait_policy(skill, enabled, read_only):
     return "review_wait" in choices, enabled if enabled is not None and not read_only else current, changed
 
 
-def _configuration(root, skill, name, enabled, read_only):
+def _configuration(root, skill, name, enabled, read_only, answer_setup=None):
     if name == "verification_runner":
         return _runner(root, skill, enabled, read_only)
     if name == "review_wait":
         return _wait_policy(skill, enabled, read_only)
+    if name in ("review_answer_collection", "review_answer_correction"):
+        return _answer_policy(root, skill, name, enabled, read_only, answer_setup)
     return _profile(skill, name, enabled, read_only)
+
+
+def _answer_policy(root, skill, name, enabled, read_only, answer_setup=None):
+    from .review_answer_hook_setup import setup_answer_hook
+    _original, choices = config.read_choices(skill)
+    current = choices.get(name) is True
+    changed = enabled is not None and choices.get(name) is not enabled
+    if enabled is not None and not read_only:
+        changed = _save_choice(skill, name, enabled) or changed
+    effective = enabled if enabled is not None and not read_only else current
+    if name == "review_answer_collection":
+        desired = enabled if enabled is not None else current
+        definition, definition_changed = setup_answer_hook(root, enabled=desired, read_only=read_only,
+                                                          diagnostic=answer_setup)
+        changed = changed or definition_changed
+        effective = effective and definition == "on"
+    else:
+        effective = effective and config.answer_collection_allowed(skill)
+    return name in choices, effective, changed
 
 
 def _save_choice(skill, feature, enabled):
@@ -145,7 +166,12 @@ def setup_features(inspection, core_result, *, selections, read_only):
                     effective = ("on" if observed["status"] == "current" else
                                  "off" if observed["status"] in {"disabled", "not_requested"} else "unknown")
             else:
-                present, effective_bool, changed = _configuration(root, skill, name, requested, read_only)
+                answer_setup = None
+                if name == "review_answer_collection" and (requested is True or choices.get(name) is True):
+                    answer_setup = result["answer_collection_setup"] = dict(status="unavailable",
+                        planned_writes=[], completed_writes=[], connection="unknown", trust="unknown",
+                        error="review_answer_setup_unavailable")
+                present, effective_bool, changed = _configuration(root, skill, name, requested, read_only, answer_setup)
                 effective = "on" if effective_bool else "off"
             row.update(effective=effective, status="observed")
             if name not in choices and present and requested is None:
@@ -185,4 +211,14 @@ def feature_notice(result):
         lines.append("Optional choices (ON/OFF or defer): " + ", ".join(result["offer"]))
     if result["features"].get("review_wait", {}).get("effective") == "on":
         lines.append("Review wait: local policy enabled; host MCP configuration, authorization and connection remain separate. See references/review_wait.md#setup-and-connection.")
+    if result["features"].get("review_answer_collection", {}).get("effective") == "on":
+        lines.append("Review answers: local retention policy, hook definition and existing MCP tool admission prepared; live connection, trust and activation checks remain separate. No reviewer message or collection was executed by Setup.")
+    answer_setup = result.get("answer_collection_setup")
+    if answer_setup:
+        lines.append("Review answer setup: " + answer_setup["status"] + "; planned=" +
+                     ",".join(answer_setup["planned_writes"]) + "; completed=" + ",".join(answer_setup["completed_writes"]))
+        if answer_setup["connection"] in ("missing", "disabled"):
+            lines.append("Review answers require separately reviewed taskgov_review_wait connection configuration; Setup did not create or enable a server.")
+    if result["features"].get("review_answer_correction", {}).get("selection") == "on":
+        lines.append("Review answer correction: selected locally; this adapter reports correction transport unavailable until exact native reviewer send/turn linkage is supported.")
     return "\n".join(lines)

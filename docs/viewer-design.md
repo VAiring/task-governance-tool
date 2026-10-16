@@ -36,7 +36,7 @@ command, output choice, browser launch, server, or browser-to-SQLite path.
 
 The repository selects complete rows for all project Tasks in list order and
 validates them as one source-schema-aware stored-Task/Contract batch before any
-Task, review, or history projection. Exact v18-v22 snapshot validation first
+Task, review, or history projection. Exact v18-v30 snapshot validation first
 validates the complete Task batch as part of the full Evidence Ledger, then the
 same-transaction list-order query consumes the
 [private batch proof](task-operation-design.md#shared-stored-task-rowbatch-validator) instead of
@@ -72,14 +72,24 @@ before projection, while the event allow-list remains summary-only. Full note
 bodies never enter Viewer snapshot JSON or generated HTML.
 
 Source schemas v5-v14 synthesize empty/incomplete completion history;
-v15-v22 use stored cycles, reading completion histories in batches of at most
-500 Task IDs. Sources v17-v22 validate version-1 cycle Receipt links; v19-v22
-also validate and discard Bundle linkage, and v20-v22 validate the source-
-appropriate closed verification basis and Runner graph. Sources v21 and v22 validate
+v15-v30 use stored cycles, reading completion histories in batches of at most
+500 Task IDs. Sources v17-v30 validate version-1 cycle Receipt links; v19-v30
+also validate and discard Bundle linkage, and v20-v30 validate the source-
+appropriate closed verification basis and Runner graph. Sources v21-v30 validate
 the complete tagged union before discarding every Runner field. Every snapshot
 reports its actual source schema and selects all
 project Tasks; 500 Tasks is the accepted performance fixture rather than a
 selection cap. The rendered artifact is capped at 64 MiB.
+
+Source 30 goes through the same current-schema storage admission, including
+[collected-answer persistence](database-specification.md#collected-answer-persistence)
+and [versioned continuation graph validation](evidence-design.md#continuation-graph-validation).
+The batch proof remains transaction-local. Bundle 4/graph 2 and v2 provenance
+are validated before projection and then discarded like their predecessor
+formats; preserved sealed formats retain their exact version routes. The shared
+gate supplies effective unable behavior without a parallel Viewer predicate.
+Snapshot v4, its allow-lists, byte cap and publication sequence do not expand to
+include original answers, transport paths, collection state or an Evidence UI.
 
 Snapshot JSON is deterministic UTF-8 and base64-encoded before insertion.
 The template has exactly one snapshot placeholder and one decimal refresh

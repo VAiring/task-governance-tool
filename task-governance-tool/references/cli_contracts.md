@@ -431,7 +431,7 @@ and retry using [outcome and retry rules](#setup-outcomes-and-recovery):
     "state_layout_activate"
   ],
   "schema_from": null,
-  "schema_to": 29,
+  "schema_to": 30,
   "maintenance_enabled": true,
   "backup_interval_minutes": 30,
   "backup_generations": 3,
@@ -467,7 +467,9 @@ and retry using [outcome and retry rules](#setup-outcomes-and-recovery):
 
 Setup additionally accepts `--usage-collection on|off`,
 `--verification-runner on|off`, `--effort-advisory on|off`,
-`--viewer-reload on|off`, and `--review-wait on|off`, only for explicit user selections. Omission keeps
+`--viewer-reload on|off`, `--review-wait on|off`,
+`--review-answer-collection on|off`, and `--review-answer-correction on|off`,
+only for explicit user selections. Omission keeps
 prior configuration/choices; OFF is remembered across later setup. New Viewer
 reload uses 30 seconds and retains any existing interval. Runner ON with an
 empty Plan does not run verification; Task entries are authored separately.
@@ -482,8 +484,19 @@ configuration use [Setup and connection](review_wait.md#setup-and-connection);
 ordinary use follows [normal waiting](review_wait.md#normal-wait).
 OFF preserves inspection and cleanup.
 
-`optional_features` has `features` (five entries named `usage_collection`,
-`verification_runner`, `effort_advisory`, `viewer_reload`, `review_wait`), `offer` (unresolved
+Answer collection prepares its project MCP hook and local policy. For an existing
+`taskgov_review_wait` server with an explicit `enabled_tools` list, ON also adds
+only `review_answer_collect`; it preserves other settings and never removes a
+deny rule. Missing server configuration remains a separate connection prerequisite:
+Setup creates no launch command, environment, enablement or trust. Live connection,
+trust and actual source binding remain separate. Correction is an independent
+opt-in requiring collection; unsupported exact follow-up binding returns
+unavailable without sending. Follow the issued request's protocol, including
+old read/save requests after upgrade.
+
+`optional_features` has `features` (seven entries named `usage_collection`,
+`verification_runner`, `effort_advisory`, `viewer_reload`, `review_wait`,
+`review_answer_collection`, `review_answer_correction`), `offer` (unresolved
 names), and `viewer_default_interval_seconds=30`. Each feature has `requested`
 (Boolean/null), `selection=on|off|undecided|unknown`,
 `selection_source=saved|existing|none|unknown`, `effective=on|off|unknown`,
@@ -496,6 +509,20 @@ features honestly; do not rerun completed Task/core operations. User answers
 authorize those feature writes without a second approval; no normal-loop call
 or completion requirement is added. Host trust and actual collection remain
 unknown even when usage configuration is ON.
+
+After core success, requested or previously selected answer collection ON adds
+`optional_features.answer_collection_setup` with exactly `status`
+(`disabled|current|prepared|preparation_required|connection_required|unavailable`),
+`planned_writes`, `completed_writes`, `connection`
+(`configured|missing|disabled|unknown`), `trust="unknown"`, and `error`
+(null or `review_answer_setup_unavailable`). Write IDs are only
+`review_answer_hook_prepare` and `review_answer_tool_allowlist_prepare` in that
+order; completed writes retain the durable prefix, and preview completes none.
+`configured` describes an existing enabled server declaration, not live readiness.
+`connection_required` means the local choice/hook does not make the missing or
+disabled server usable. Effective ON requires the prepared local hook and tool
+admission; actual host/trust checks still apply. This diagnostic is omitted when
+answer collection is uninvolved or core setup failed.
 
 ### Setup Outcomes And Recovery
 
@@ -552,7 +579,7 @@ Preview reports current durable state, not planned state:
 `completed_writes=[]`, and a fresh preview keeps
 `maintenance_enabled=false`. A healthy replay has empty write lists. Every
 error has `status=null`; preflight/policy failures use empty write lists and
-null observed values except `schema_to=29`. A later-stage failure reports only
+null observed values except `schema_to=30`. A later-stage failure reports only
 the durable ordered prefix. Inspect `data.completed_writes` before retrying;
 `setup_incomplete` permits a retry that recomputes from durable state rather
 than repeating an assumed failed stage; it does not guarantee automatic repair
@@ -606,8 +633,8 @@ A ready result has this structure:
     },
     "project_state": {
       "code": "ready",
-      "schema_version": 29,
-      "required_schema_version": 29
+      "schema_version": 30,
+      "required_schema_version": 30
     },
     "task_summary": {
       "code": "ready",
@@ -1084,6 +1111,14 @@ python .agents/skills/task-governance-tool/scripts/taskgov.py task show --repo <
 Audit does not change saved Evidence, validation, or current gates. Its
 `review_evidence` retains the target, full gate/counts, blocking Findings, and
 bounded recent Receipt/provenance and Finding rows; events retain the newest ten.
+For a lost collected-registration response only, pair
+`--collection-preparation <saved-id>` and
+`--collection-submission <saved-sha256:digest>` with `--audit`.
+This adds `collection_registration` with `recorded|absent|conflict|unknown`,
+the exact saved source inventory and current-basis observation. It reads no
+answer files and sends nothing. Resolve an unknown outcome only when every
+entry matches the retained operation; `absent` alone does not prove rollback
+or authorize retry. Normal successful registration needs no such read.
 Audit `completion_history` retains exactly:
 
 ```text
@@ -1834,7 +1869,7 @@ python .agents/skills/task-governance-tool/scripts/taskgov.py review target set 
 generation. Git commits are resolved read-only and stored canonically. A diff
 fingerprint is `sha256:` plus 64 lowercase hexadecimal characters.
 
-At schema v21 through v29, this same target-set operation may use the explicitly opted-in
+At schema v21 through v30, this same target-set operation may use the explicitly opted-in
 trusted-local Runner route. It adds no argument or public Runner command. JSON
 success data is `task`, `changed_fields`, `event`, `verification_route`,
 `blocking_code`, and `review_preparation`; failure
@@ -2065,6 +2100,12 @@ resolution still needs a newer target and fresh qualifying review. This mode
 never infers resolution from PASS.
 
 ### Structured Review Results
+
+The collected-answer route supplies a separate typed envelope to this same
+writer through the generated submit/finalize command. Follow the
+[collected-answer procedure](task_workflow.md#collected-review-answers); do not
+hand-author host metadata or reinterpret its five-field answer as a version-1
+document. The legacy direct-input contract below remains available unchanged.
 
 Register the reviewers' concise structured results together, using UTF-8 JSON
 stdin with `review result add <task-id> --json`. There is no input-file argument
@@ -2385,9 +2426,27 @@ not run. A lost or unknown result first uses the retained `finalization_command`
 with `--check` to observe the report without effects; this is not a normal
 completion prerequisite. It does not itself add a new review requirement.
 
+For unresolved collected registration, this check includes the closed
+`registration_observation`: exact saved preparation/submission selectors, native
+audit, complete per-slot source registration states and digest matches, plus a
+fixed classification/reason. `not_dispatched`, `dispatched`, `recorded`,
+`inconsistent`, and `unavailable` describe a read-only snapshot; none is a reusable
+write permit. Existing leases protect the observation without creating files or
+calling a host. Invalid/busy observations expose no partial source inventory.
+Use the reported distinction to diagnose the blocker, never to edit the journal,
+reset a source or replay an uncertain registration.
+
 Partial success is preserved. Before explicit recovery, resolve the reported
 blocker. The helper observes immutable registration bindings, actual publication
-and native completion before continuing. It reuses the saved candidate and
+and native completion before continuing. For collected answers, the same
+public writer can proceed only after a complete fresh proof that source dispatch
+never occurred, or that dispatched/unknown sources have no registration effect
+in the currently admitted state while all source leases and the core writer
+lock are held. Partial or conflicting records remain unresolved. Snapshot
+absence, a generic database error or a prior check classification never permits
+another write by itself. The caller uses only the retained command; it never
+resets sources, directly edits records or supplies a separate recovery token.
+The helper reuses the saved candidate and
 requires the original base/index and current gates before publishing a still
 unpublished candidate. Changed/unknown basis cannot authorize recapture or a
 replacement commit. Successful completion is not repeated. Only a demonstrated
@@ -2678,8 +2737,8 @@ to a new combined 32,768-byte cap.
 
 ### Review Provenance Output
 
-Each public Review Receipt contains `review_provenance`. Native independent
-or self-review Receipts have a v1 object with exactly:
+Each public Review Receipt contains `review_provenance`. Native legacy-protocol
+independent or self-review Receipts have a v1 object with exactly:
 
 ```text
 review_provenance_id, provenance_version, reviewer_class, model_state,
@@ -2688,8 +2747,15 @@ review_profiles, review_lenses, context_relation, method_codes,
 assurance_class, producer_class, producer_version, digest
 ```
 
-Native assurance/producer/version is `bound_attestation/trusted_caller/1`.
-Migrated pre-v18 independent/self-review Receipts use the same keys as v0:
+The v1 assurance/producer/version is `bound_attestation/trusted_caller/1`.
+Independent Receipts from the [collected-answer route](#structured-review-results)
+instead use a v2 object with exactly `review_provenance_id`, `provenance_version`,
+`answer_attestation`, `assignment`, `host_observation`, `assurance_class`,
+`producer_class`, `producer_version`, and `digest`. Their attribution is
+`bound_attestation/taskgov_answer_collector/1`. Assignment records requested
+settings; actual model, Skill, and methods remain explicitly unknown. A valid
+`unable_to_review` answer also has v2 provenance and blocks completion.
+Migrated pre-v18 independent/self-review Receipts use the v1 field set as v0:
 null ID/digest and semantic fields/collections, with
 `legacy_unknown/legacy_migration/1`. This records missing historical provenance,
 not explicit v1 `unknown` or empty code sets. `not_required` instead has null

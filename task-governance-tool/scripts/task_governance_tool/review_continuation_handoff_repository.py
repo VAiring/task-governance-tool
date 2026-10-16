@@ -5,7 +5,7 @@ short writer, and delegates all continuation writes to the core repository.
 """
 
 from contextlib import closing
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from . import review_continuation as values, review_continuation_repository as records
 from .review_wait_basis_repository import read_preparation_basis
@@ -21,6 +21,7 @@ class HandoffState:
     heads: tuple
     bindings: dict
     captures: dict
+    collected_captures: dict = field(default_factory=dict)
 
 
 def read_state(target, task_id, caller):
@@ -34,15 +35,20 @@ def read_state(target, task_id, caller):
         bindings = read_bindings(connection, receipt_ids={row.receipt_id for row in effective.heads})
         captures = {record.continuation_id: records.read_retained_originals(connection, record.continuation_id)
             for record in history if record.basis["target_generation"] == basis["target_generation"]}
-        return HandoffState(basis, history, effective.heads, bindings, captures)
+        collected = {}
+        if current_schema_version(connection) >= 30:
+            from .review_answer_repository import read_native_collected_captures
+            collected = {record.continuation_id: read_native_collected_captures(connection, record.continuation_id)
+                for record in history if record.basis["target_generation"] == basis["target_generation"]}
+        return HandoffState(basis, history, effective.heads, bindings, captures, collected)
 
 
-def admit(target, basis, preparation_id, route, selected, caller, *, retirement=None, retained_originals=(), continuation_id=None):
+def admit(target, basis, preparation_id, route, selected, caller, *, retirement=None, retained_originals=(), retained_collected=(), continuation_id=None):
     with closing(connect_initialized(target)) as connection, connection:
         connection.execute("BEGIN IMMEDIATE")
         return records.admit_locked(connection, basis=basis, preparation_id=preparation_id,
             route=route, selected=selected, caller=caller, retirement=retirement, retained_originals=retained_originals,
-            continuation_id=continuation_id)
+            retained_collected=retained_collected, continuation_id=continuation_id)
 
 
 def prepared(target, record, caller):

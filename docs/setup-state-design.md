@@ -72,6 +72,35 @@ projection mechanically; it is not a CLI or LLM choice. Every DB-backed leaf
 uses the same resolver observation. Feature code may not reconstruct a
 project ID or state path.
 
+Reviewer-origin answer hooks may supply a `DatabaseValidationReuse` object
+owned by one `reviewer_hook_admission` call. Only an activated fixed primary,
+ordinary retained read can use it; Setup, doctor, legacy and recovery inspection
+keep full admission. Each boundary opens a fresh query-only connection and
+acquires its read snapshot. On Windows only, it compares the exact primary bytes' SHA-256
+and canonical root/layout/physical file identity with the preceding successful
+full validation. Only an exact match reuses that global proof, avoiding repeated
+integrity, foreign-key and full-graph traversal. Changed content requires full
+validation before replacing the proof; uncertainty or failure clears it.
+
+On POSIX and other platforms the resolver repeats full validation at every
+boundary and does not open a separate descriptor to hash the database. Closing
+such a descriptor can cancel SQLite's process-wide POSIX advisory locks while
+its connection remains open; see [SQLite's locking caveat](https://sqlite.org/howtocorrupt.html#posix_advisory_locks_canceled_by_a_separate_thread_doing_close_).
+Successful admission retains only physical device/inode continuity on this
+fallback, never a reusable content proof. A known physical replacement is
+rejected on every platform. No child process, retained file handle or new
+SQLite capability is required for the optimization.
+
+Every boundary still performs physical placement and journal preflight,
+schema/binding and target-specific reads in its fresh native snapshot. No row,
+connection, transaction or permission is cached. The hook closes that snapshot
+before operational-store, Packet or host I/O and rechecks those separate stores
+normally. The proof expires on hook exit and is never persisted, shared with
+another operation or inferred from size, mtime or `data_version` alone. This
+reduces repeated validation work; it does not eliminate the full-file read or
+establish a real-host latency or timeout guarantee. The work reduction applies
+only to the Windows path; other platforms retain their existing validation cost.
+
 `CanonicalStatePaths.usage_database` owns the numerical sibling path. It is not
 part of core admission or core recovery inventory. Only the explicit outer
 `run_setup` entry adds independent usage initialization/validation after the

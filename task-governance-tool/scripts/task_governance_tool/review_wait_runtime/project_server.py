@@ -192,9 +192,10 @@ class ProjectReviewWaitSession:
             raise AnswerError("binding_mismatch", reason="identity")
         if reviewer_caller:
             source_admission = service.admit_basis
-            def admit_current(value, slot):
+            def admit_current(value, slot, *, validation_reuse):
                 with diagnostic.reading_retained():
-                    source_admission.check_hook(value, slot, parent_id=binding.parent_thread_id)
+                    source_admission.check_hook(value, slot, parent_id=binding.parent_thread_id,
+                        validation_reuse=validation_reuse)
             try:
                 with reviewer_hook_admission(service, binding.parent_thread_id,
                         metadata["threadId"], caller_turn, admit_current=admit_current) as admission:

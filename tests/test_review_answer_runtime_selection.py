@@ -456,6 +456,74 @@ class RuntimeSelectionTests(unittest.TestCase):
         host._json_call.assert_called_once()
         self.assert_native_reads_closed()
 
+    def test_reviewer_hook_rechecks_ownership_after_host_observation(self):
+        from tests.verification_receipt_test_support import run_taskgov, payload
+        from task_governance_tool.session_identity import CallerIdentity
+        self.ready(version=2)
+        service = self.bound_service()
+        call, host, _, _ = self.public_hook(A, reviewer_caller=True)
+        observed = host._json_call.side_effect
+        before = service.repository.read()
+        def transferred(operation, arguments):
+            result = observed(operation, arguments)
+            self.assert_native_reads_closed()
+            with patch("task_governance_tool.cli.capture_caller_identity", return_value=CallerIdentity(B)):
+                for status, extra in (("paused", ("--pause-reason", "Isolated ownership transfer")),
+                                      ("in_progress", ())):
+                    changed = payload(run_taskgov("task", "edit", self.binding.task_id,
+                        "--repo", str(self.fixture.repo), "--db", str(self.fixture.db),
+                        "--status", status, *extra, "--json"))
+                    self.assertTrue(changed["ok"], changed)
+            self.assertEqual(changed["data"]["task"]["ownership"]["owner_session_id"], B)
+            return result
+        host._json_call.side_effect = transferred
+        self.assertEqual(call()["error"], "binding_mismatch")
+        self.assertEqual(service.repository.read(), before)
+        self.assertFalse((self.fixture.repo / service.original_paths[0]).exists())
+        host._json_call.assert_called_once()
+        self.assert_native_reads_closed()
+
+    def test_reviewer_hook_rechecks_preparation_after_host_observation(self):
+        self.ready(version=2)
+        service = self.bound_service()
+        call, host, _, _ = self.public_hook(A, reviewer_caller=True)
+        observed = host._json_call.side_effect
+        before = service.repository.read()
+        def replaced(operation, arguments):
+            result = observed(operation, arguments)
+            self.assert_native_reads_closed()
+            identity = ident("tg_review_preparation_", 3)
+            replacement = replace(self.root, preparation_id=identity,
+                collection_bases=tuple({**basis, "preparation_id": identity} for basis in self.root.collection_bases))
+            with self.preparation.serial() as lease:
+                self.preparation.publish(lease, replacement)
+            return result
+        host._json_call.side_effect = replaced
+        self.assertEqual(call()["error"], "binding_mismatch")
+        self.assertEqual(service.repository.read(), before)
+        self.assertFalse((self.fixture.repo / service.original_paths[0]).exists())
+        host._json_call.assert_called_once()
+        self.assert_native_reads_closed()
+
+    def test_reviewer_hook_rechecks_canonical_collection_path_after_host_observation(self):
+        self.ready(version=2)
+        service = self.bound_service()
+        call, host, _, _ = self.public_hook(A, reviewer_caller=True)
+        observed = host._json_call.side_effect
+        before = service.repository.read()
+        alternate = self.fixture.root / "other-collection.sqlite"
+        def relocated(operation, arguments):
+            result = observed(operation, arguments)
+            self.fixture.resolution.paths.review_answer_collection_store = lambda *_: alternate
+            return result
+        host._json_call.side_effect = relocated
+        self.assertEqual(call()["error"], "binding_mismatch")
+        self.assertEqual(service.repository.read(), before)
+        self.assertFalse((self.fixture.repo / service.original_paths[0]).exists())
+        self.assertFalse(alternate.exists())
+        host._json_call.assert_called_once()
+        self.assert_native_reads_closed()
+
     def test_reviewer_hook_packet_drift_after_observation_prevents_publication(self):
         self.ready(version=2)
         service = self.bound_service()

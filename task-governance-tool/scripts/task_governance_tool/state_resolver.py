@@ -29,7 +29,9 @@ from task_governance_tool.state_paths import (
     EVIDENCE_LOCK_FILENAME,
     EVIDENCE_MAX_BUNDLE_FILES,
     StatePathError,
+    ValidatedFile,
     evidence_relative_file_kind,
+    hash_physical_file,
     inspect_physical_directory,
     inspect_physical_file,
 )
@@ -87,6 +89,10 @@ MAX_LEGACY_PROJECT_ENTRIES = 64
 LEGACY_PROJECTS_SCHEMA_MAX = 14
 MAX_MANAGED_BACKUP_ARTIFACTS = 21
 MAX_EXTRA_ARTIFACT_BYTES = 16_777_216
+
+# Closing a separate descriptor cancels this process's SQLite advisory locks
+# on POSIX. Only Windows may hash an open database through a separate handle.
+_PHYSICAL_HASH_REUSE_SUPPORTED = os.name == "nt"
 
 _BACKUP_FILENAME = re.compile(
     r"^taskgov-backup-v1_(?P<time>\d{8}T\d{6}Z)_"
@@ -314,6 +320,46 @@ class _FileStamp:
     modified_ns: int
 
 
+class DatabaseValidationReuse:
+    """One caller-owned operation's exact-content global-validation proof.
+
+    This stores no connection or native row observations. Each resolver call
+    still opens its own read snapshot and admits current physical/layout and
+    project binding state. Callers clear it when their bounded operation exits.
+    """
+
+    def __init__(self) -> None:
+        self._scope: tuple | None = None
+        self._validated: ValidatedFile | None = None
+        self._identity: tuple[int, int] | None = None
+
+    def clear(self) -> None:
+        self._scope = None
+        self._validated = None
+        self._identity = None
+
+    def _select(self, paths, current_root, transition) -> None:
+        scope = (paths, current_root, transition)
+        if self._scope != scope:
+            self.clear()
+            self._scope = scope
+
+    def _check_identity(self, observed: _FileStamp) -> None:
+        if self._identity is not None and self._identity != (
+                observed.device, observed.inode):
+            # A known replacement cannot continue one admitted operation, even
+            # on platforms where every admission repeats full validation.
+            self.clear()
+            raise _ResolverFailure("project_state_unreadable")
+
+    def _matches(self, observed: ValidatedFile) -> bool:
+        return self._validated == observed
+
+    def _record_success(self, stamp: _FileStamp, fingerprint: ValidatedFile | None) -> None:
+        self._identity = (stamp.device, stamp.inode)
+        self._validated = fingerprint
+
+
 @dataclass(frozen=True)
 class _DatabaseObservation:
     stored_project: StoredProjectObservation
@@ -414,16 +460,31 @@ def resolve_project_state(
     repo: Path,
     include_doctor_state: bool = False,
     retain_read_connection: bool = False,
+    validation_reuse: DatabaseValidationReuse | None = None,
 ) -> ProjectStateResolution:
     """Admit activated state or report setup work without exposing old targets."""
 
-    return _resolve_separated_state(
-        skill_root=skill_root,
-        repo=repo,
-        setup_mode=False,
-        include_doctor_state=include_doctor_state,
-        retain_read_connection=retain_read_connection,
-    )
+    reusable = (validation_reuse if retain_read_connection and not include_doctor_state else None)
+    if validation_reuse is not None and reusable is None:
+        validation_reuse.clear()
+    try:
+        resolution = _resolve_separated_state(
+            skill_root=skill_root,
+            repo=repo,
+            setup_mode=False,
+            include_doctor_state=include_doctor_state,
+            retain_read_connection=retain_read_connection,
+            validation_reuse=reusable,
+        )
+    except BaseException:
+        if validation_reuse is not None:
+            validation_reuse.clear()
+        raise
+    if validation_reuse is not None and (
+            resolution.error_code is not None or resolution.binding != "matching"
+            or resolution.target is None or resolution.read_connection is None):
+        validation_reuse.clear()
+    return resolution
 
 
 def resolve_setup_project_state(
@@ -467,6 +528,7 @@ def _resolve_separated_state(
     setup_mode: bool,
     include_doctor_state: bool,
     retain_read_connection: bool,
+    validation_reuse: DatabaseValidationReuse | None = None,
 ) -> ProjectStateResolution:
     paths = canonical_state_paths(skill_root, repo=repo)
     old_paths = package_state_paths(skill_root)
@@ -482,6 +544,9 @@ def _resolve_separated_state(
         return _error_resolution(paths, current_root, "project_state_unreadable")
 
     if transition.state in {"activated", "repair_barrier"}:
+        reusable = validation_reuse if transition.state == "activated" else None
+        if reusable is not None:
+            reusable._select(paths, current_root, transition)
         resolution = _resolve_with_paths(
             paths,
             current_root,
@@ -494,6 +559,7 @@ def _resolve_separated_state(
             retain_read_connection=(
                 retain_read_connection and transition.state == "activated"
             ),
+            validation_reuse=reusable,
         )
         if resolution.error_code is not None:
             return resolution
@@ -656,6 +722,7 @@ def _resolve_with_paths(
     repair_evidence_artifacts: bool,
     include_doctor_state: bool,
     retain_read_connection: bool,
+    validation_reuse: DatabaseValidationReuse | None = None,
 ) -> ProjectStateResolution:
     try:
         _validate_optional_directory(paths.state_root)
@@ -667,6 +734,7 @@ def _resolve_with_paths(
             repair_evidence_artifacts=repair_evidence_artifacts,
             include_doctor_state=include_doctor_state,
             retain_read_connection=retain_read_connection,
+            validation_reuse=validation_reuse,
         )
         if fixed is not None:
             return fixed
@@ -793,6 +861,7 @@ def _resolve_fixed(
     repair_evidence_artifacts: bool,
     include_doctor_state: bool,
     retain_read_connection: bool,
+    validation_reuse: DatabaseValidationReuse | None = None,
 ) -> ProjectStateResolution | None:
     fixed_exists = _validate_optional_directory(paths.fixed_root)
     if not fixed_exists:
@@ -811,6 +880,7 @@ def _resolve_fixed(
             consumer_current_root=(
                 current_root if retain_read_connection else None
             ),
+            validation_reuse=validation_reuse,
         )
         if not validate_artifacts:
             return _fixed_resolution(
@@ -1228,12 +1298,17 @@ def _inspect_database(
     retain_connection: bool = False,
     consumer_current_root: CurrentRootObservation | None = None,
     classify_recovery_content: bool = False,
+    validation_reuse: DatabaseValidationReuse | None = None,
 ) -> _DatabaseObservation:
     before = _stamp(path)
     connection: sqlite3.Connection | None = None
     recovery_content_valid = True
+    fingerprint: ValidatedFile | None = None
     try:
         connection = connect_readonly(path)
+        # This schema read acquires the snapshot's SQLite read lock; deferred
+        # BEGIN alone would not protect the exact physical bytes below from an
+        # ordinary rollback-journal writer committing during the observation.
         version = current_schema_version(connection)
         if version > SCHEMA_VERSION:
             raise _ResolverFailure("schema_too_new")
@@ -1248,23 +1323,33 @@ def _inspect_database(
             and schema_objects_inconsistent_with_version(connection, version)
         ):
             raise _ResolverFailure("project_state_unreadable")
-        quick = [
-            str(row[0])
-            for row in connection.execute("PRAGMA quick_check").fetchall()
-        ]
-        if quick != ["ok"] or connection.execute(
-            "PRAGMA foreign_key_check"
-        ).fetchall():
-            raise _ResolverFailure("project_state_unreadable")
+        reuse_validated = False
+        if validation_reuse is not None and version == SCHEMA_VERSION:
+            if (not connection.in_transaction
+                    or connection.execute("PRAGMA query_only").fetchone()[0] != 1):
+                raise _ResolverFailure("project_state_unreadable")
+            validation_reuse._check_identity(before)
+            if _PHYSICAL_HASH_REUSE_SUPPORTED:
+                fingerprint = hash_physical_file(path, root=path.parent)
+                reuse_validated = validation_reuse._matches(fingerprint)
+        if not reuse_validated:
+            quick = [
+                str(row[0])
+                for row in connection.execute("PRAGMA quick_check").fetchall()
+            ]
+            if quick != ["ok"] or connection.execute(
+                "PRAGMA foreign_key_check"
+            ).fetchall():
+                raise _ResolverFailure("project_state_unreadable")
 
         if version >= 14:
             stored = _read_bound_project(connection, version)
-            if version == SCHEMA_VERSION:
+            if version == SCHEMA_VERSION and not reuse_validated:
                 validate_current_database_structure(
                     connection,
                     stored.project_id,
                 )
-            elif read_viewer_maintenance(
+            elif version != SCHEMA_VERSION and read_viewer_maintenance(
                 connection,
                 stored.project_id,
             ) is None:
@@ -1366,6 +1451,10 @@ def _inspect_database(
         if connection is not None:
             connection.close()
         raise
+    except StatePathError as exc:
+        if connection is not None:
+            connection.close()
+        raise _ResolverFailure("project_state_unreadable") from exc
     except StorageError as exc:
         if connection is not None:
             connection.close()
@@ -1390,6 +1479,12 @@ def _inspect_database(
     if (
         (before.device, before.inode) != (after.device, after.inode)
         or (not mutable and after != before)
+        or fingerprint is not None and (
+            after.device, after.inode, after.size, after.modified_ns
+        ) != (
+            fingerprint.identity.device, fingerprint.identity.inode,
+            fingerprint.identity.size, fingerprint.identity.modified_ns
+        )
     ):
         connection.close()
         raise _ResolverFailure("project_state_unreadable")
@@ -1397,6 +1492,8 @@ def _inspect_database(
     retained_connection = connection if keep_connection else None
     if not keep_connection:
         connection.close()
+    if validation_reuse is not None and version == SCHEMA_VERSION:
+        validation_reuse._record_success(after, fingerprint)
     return _DatabaseObservation(
         stored_project=stored,
         generation_rows=generations,

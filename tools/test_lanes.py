@@ -62,6 +62,10 @@ PLATFORM_RUNNER_GATE_TEST_IDS = (
     "test_posix_pending_cleanup_only_and_stale_target_refuse_completion",
 )
 PLATFORM_ORDINARY_TEST_IDS = (
+    "test_state_resolver_validation_reuse.DatabaseValidationReuseTests."
+    "test_retained_snapshot_blocks_process_writer_after_admission_returns",
+    "test_state_resolver_validation_reuse.DatabaseValidationReuseTests."
+    "test_unsupported_hash_reuse_validates_fresh_state_and_ignores_prior_proof",
     "test_m224_package_forward.M224PackageForwardTests."
     "test_qualified_old_executables_refuse_real_setup_retirement_barrier",
     "test_m14_integrated_acceptance.M14IntegratedAcceptanceTests."
@@ -207,6 +211,7 @@ LANE_MODULES: dict[str, tuple[str, ...]] = {
     "integration": (
         "test_completion_cycle_activation",
         "test_completion_cycle_history",
+        "test_criterion_link_collector_migration",
         "test_db_init",
         "test_doctor",
         "test_legacy_cleanup_pending",
@@ -256,7 +261,6 @@ LANE_MODULES: dict[str, tuple[str, ...]] = {
         "test_project_identity_bindings",
         "test_review_answer_collection",
         "test_review_answer_continuation_preparation",
-        "test_criterion_link_collector_migration",
         "test_review_answer_contract_completion",
         "test_review_answer_core",
         "test_review_answer_diagnostics",
@@ -274,11 +278,11 @@ LANE_MODULES: dict[str, tuple[str, ...]] = {
         "test_review_continuation_registration",
         "test_review_continuation_retirement",
         "test_review_continuation_snapshot",
-        "test_review_migration_preservation",
         "test_review_finalization",
         "test_review_finalization_continuation",
         "test_review_handoff_continuation",
         "test_review_handoff_continuation_recovery",
+        "test_review_migration_preservation",
         "test_review_preparation",
         "test_review_session_install",
         "test_review_session_migration",
@@ -312,6 +316,7 @@ LANE_MODULES: dict[str, tuple[str, ...]] = {
         "test_setup_recovery",
         "test_setup_state_separation",
         "test_state_resolver",
+        "test_state_resolver_validation_reuse",
         "test_state_separation",
         "test_state_transition_primitives",
         "test_task_note_bodies",

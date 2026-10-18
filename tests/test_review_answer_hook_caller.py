@@ -12,6 +12,7 @@ from unittest.mock import Mock, patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "task-governance-tool/scripts"))
 from task_governance_tool import review_handoff_transport as files
+from task_governance_tool import state_resolver
 from task_governance_tool.review_answer import AnswerError
 from task_governance_tool.review_answer_collection import CollectionService, source
 from task_governance_tool.review_answer_collection_repository import CollectionRepository
@@ -56,7 +57,7 @@ class ReviewerHookTests(unittest.TestCase):
         self.lookup = self.enterContext(patch(
             "task_governance_tool.review_answer_runtime.service_for_event",
             return_value=(self.service, self.current)))
-        def admit_current(value, slot, *, parent_id):
+        def admit_current(value, slot, *, parent_id, validation_reuse):
             # This fixture supplies the same fresh-source boundary as the real
             # admission object; real native/operational reads have separate tests.
             current, binding = self.lookup()
@@ -125,6 +126,74 @@ class ReviewerHookTests(unittest.TestCase):
         self.parent_factory.assert_not_called()
         self.assertIs(self.service.admit_basis, self.basis_admit)
 
+    def track_validation_cleanup(self):
+        cleared = []
+        original = state_resolver.DatabaseValidationReuse.clear
+        def clear(reuse):
+            cleared.append(reuse)
+            original(reuse)
+        self.enterContext(patch.object(state_resolver.DatabaseValidationReuse, "clear", new=clear))
+        return cleared
+
+    def test_reviewer_validation_reuse_is_scoped_to_one_call_even_for_saved_duplicate(self):
+        cleared = self.track_validation_cleanup()
+        contexts = []
+        for _ in range(2):
+            self.basis_admit.check_hook.reset_mock()
+            self.assertFalse(self.call()["isError"])
+            calls = self.basis_admit.check_hook.call_args_list
+            self.assertGreater(len(calls), 1)
+            reuse = calls[0].kwargs["validation_reuse"]
+            self.assertIsInstance(reuse, state_resolver.DatabaseValidationReuse)
+            self.assertTrue(all(call.kwargs["validation_reuse"] is reuse for call in calls))
+            self.assertIn(reuse, cleared)
+            contexts.append(reuse)
+        self.assertIsNot(contexts[0], contexts[1])
+        self.assertEqual(self.public.call_count, 1)
+        self.assertEqual(self.original.read_bytes(), self.answer.raw)
+        self.assertIs(self.service.admit_basis, self.basis_admit)
+
+    def test_validation_reuse_is_cleared_before_a_failed_gate_returns_to_its_caller(self):
+        cleared = self.track_validation_cleanup()
+        for failure in ("native_admission", "basis", "slot"):
+            current = Mock()
+            with self.subTest(failure=failure), reviewer_hook_admission(
+                    self.service, self.parent, self.child, TURN1, admit_current=current) as admission:
+                reuse = current.call_args.kwargs["validation_reuse"]
+                self.assertNotIn(reuse, cleared)
+                if failure == "native_admission":
+                    current.side_effect = AnswerError("binding_mismatch", reason="identity")
+                    operation = admission.check
+                else:
+                    basis = copy.deepcopy(self.metadata["basis"])
+                    if failure == "basis":
+                        basis["request_digest"] = "sha256:" + "f" * 64
+                    operation = lambda: self.service.admit_basis(basis, 2 if failure == "slot" else 1)
+                with self.assertRaises(AnswerError):
+                    operation()
+                self.assertIn(reuse, cleared)
+            self.assertIs(self.service.admit_basis, self.basis_admit)
+        self.public.assert_not_called()
+        self.assertFalse(self.original.exists())
+
+    def test_validation_reuse_clears_on_initial_admission_failure_and_body_exception(self):
+        cleared = self.track_validation_cleanup()
+        for failure in ("initial_admission", "body"):
+            current = Mock(side_effect=AnswerError("binding_mismatch", reason="identity")
+                if failure == "initial_admission" else None)
+            entered = False
+            with self.subTest(failure=failure), self.assertRaises(AnswerError):
+                with reviewer_hook_admission(self.service, self.parent, self.child, TURN1,
+                        admit_current=current):
+                    entered = True
+                    raise AnswerError("collection_unavailable", reason="incomplete")
+            reuse = current.call_args.kwargs["validation_reuse"]
+            self.assertEqual(entered, failure == "body")
+            self.assertIn(reuse, cleared)
+            self.assertIs(self.service.admit_basis, self.basis_admit)
+        self.public.assert_not_called()
+        self.assertFalse(self.original.exists())
+
     def test_parent_hook_preserves_existing_host_and_neutral_result(self):
         wire = self.call(caller=dict(threadId=self.parent, turnId=TURN2))
         self.assertFalse(wire["isError"], wire)
@@ -132,6 +201,7 @@ class ReviewerHookTests(unittest.TestCase):
         self.parent_factory.assert_called_once()
         self.reader_factory.assert_not_called()
         self.assertEqual(self.public.call_count, 1)
+        self.basis_admit.check_hook.assert_not_called()
 
     def test_missing_executor_turn_uses_saved_source_not_event_or_newest_answer(self):
         caller = {"threadId": self.child}

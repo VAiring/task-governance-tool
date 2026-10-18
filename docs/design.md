@@ -1072,6 +1072,10 @@ SKIP makes that platform run unsuccessful. Base-lane and `all` execution retain
 legitimate OS-inapplicable skips, including POSIX-only tests on Windows.
 `PLATFORM_ORDINARY_TEST_IDS` adds selected existing physical-install, Task
 completion, Evidence, Viewer, Backup, and recovery cases on Linux and macOS. The host
+selection also runs resolver admission's retained-reader subprocess locking
+regression and its full-validation fallback when physical-hash reuse is unsafe.
+These exercise the native host's SQLite behavior without substituting Windows.
+The host
 selection is repository CI policy, not a product command or LLM choice. Missing
 selected identities fail before execution. This is not a fourth base lane and
 does not disable or duplicate tests in the exhaustive suite.

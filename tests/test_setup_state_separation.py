@@ -21,6 +21,7 @@ from task_governance_tool.state_separation import read_record
 from task_governance_tool.storage import (
     SCHEMA_VERSION,
     DatabaseTarget, UnboundDatabaseTarget, connect, connect_snapshot_readonly,
+    current_schema_version,
     initialize_uuid_database, project_identity, ensure_project_meta,
     apply_initial_schema_migration, apply_completion_commit_migration,
     inspect_setup_state,
@@ -246,7 +247,7 @@ class SetupStateSeparationTests(unittest.TestCase):
         before = original.read_bytes()
         resolved = self.assert_success(self.run_setup())
         self.assertEqual(resolved.project_id, project.project_id)
-        self.assertEqual(resolved.source_schema_version, 29)
+        self.assertEqual(resolved.source_schema_version, SCHEMA_VERSION)
         self.assertEqual(original.read_bytes(), before)
         self.assertEqual(read_record(self.new_root).source_schema_version, 2)
 
@@ -441,12 +442,12 @@ class SetupStateSeparationTests(unittest.TestCase):
         self.assertTrue(preview.ok, preview.error_code)
         self.assertEqual(preview.data["status"], "setup_preview")
         self.assertTrue(preview.data["maintenance_enabled"])
-        self.assertEqual(preview.data["schema_from"], 29)
+        self.assertEqual(preview.data["schema_from"], SCHEMA_VERSION)
         self.assertEqual(file_snapshot(self.install.project_root), before)
         repaired = self.run_setup()
         self.assertTrue(repaired.ok, repaired.error_code)
         self.assertEqual(repaired.data["completed_writes"], ["state_layout_retire"])
-        self.assertEqual(repaired.data["schema_from"], 29)
+        self.assertEqual(repaired.data["schema_from"], SCHEMA_VERSION)
 
     def test_barrier_repair_preserves_recorded_source_and_new_root_recovery(self):
         for origin in ("fresh", "fixed", "legacy"):
@@ -512,7 +513,8 @@ class SetupStateSeparationTests(unittest.TestCase):
                                        "selection_source": "none", "effective": "unknown",
                                        "status": "not_attempted", "error": None}
                                 for name in ("usage_collection", "verification_runner",
-                                             "effort_advisory", "viewer_reload", "review_wait")
+                                             "effort_advisory", "viewer_reload", "review_wait",
+                                             "review_answer_collection", "review_answer_correction")
                             },
                             "offer": [], "viewer_default_interval_seconds": 30,
                         },
@@ -578,7 +580,7 @@ class SetupStateSeparationTests(unittest.TestCase):
                 self.assertEqual(result.error_code, "project_state_unreadable")
                 self.assertEqual(result.data["completed_writes"], [])
                 self.assertEqual(result.data["planned_writes"], ["state_layout_retire"])
-                self.assertEqual(result.data["schema_from"], 29)
+                self.assertEqual(result.data["schema_from"], SCHEMA_VERSION)
                 self.assertIsNotNone(after_drift)
                 self.assertEqual(file_snapshot(self.install.project_root), after_drift)
 
@@ -623,7 +625,13 @@ class SetupStateSeparationTests(unittest.TestCase):
                 try:
                     previous = temporary_root / "previous"
                     previous.mkdir()
-                    target = self.old_current(repo=previous)
+                    # Relocation admits fixed-current sources only through v29.
+                    # Pin creation alone; all retry/migration operations use the
+                    # current runtime and must preserve the original identity.
+                    with mock.patch("task_governance_tool.storage.SCHEMA_VERSION", 29):
+                        target = self.old_current(repo=previous)
+                    with closing(connect_snapshot_readonly(target.db_path)) as connection:
+                        self.assertEqual(current_schema_version(connection), 29)
                     preview = self.run_setup(read_only=True)
                     self.assertTrue(preview.ok, preview.error_code)
                     token = preview.data["relocation"]["confirmation_token"]

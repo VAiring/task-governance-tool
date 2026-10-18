@@ -41,6 +41,7 @@ from task_governance_tool.backup_metadata_repository import (  # noqa: E402
     MigrationBackupMetadata,
 )
 from task_governance_tool.storage import (  # noqa: E402
+    SCHEMA_VERSION,
     DatabaseTarget,
     UnboundDatabaseTarget,
     apply_initial_schema_migration,
@@ -528,7 +529,7 @@ class StateResolverTests(unittest.TestCase):
             self.assertEqual(resolution.binding, "matching")
             self.assertEqual(resolution.project_id, UUID_PROJECT_ID)
             self.assertEqual(resolution.stored_project.identity_scheme, "uuid_v1")
-            self.assertEqual(resolution.source_schema_version, 29)
+            self.assertEqual(resolution.source_schema_version, SCHEMA_VERSION)
             self.assertIsNone(consumer_error_code(resolution))
             self.assertEqual(before, tree_snapshot(fixture.root))
 

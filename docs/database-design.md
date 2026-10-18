@@ -98,6 +98,12 @@ continuation inventory once, groups it by project/Task, and applies the same
 complete validator to every Task; it does not repeat a whole-table acquisition
 per Task. These values live only within the caller's existing snapshot, with
 no cached validation across operations or change to schema or read permissions.
+The [resolver's call-local hook proof](setup-state-design.md#fixed-state-resolver)
+may reuse successful global validation on its supported Windows path across
+fresh snapshots of exactly the same primary bytes within one reviewer hook.
+Other platforms keep full validation without a separate database-file read.
+It retains no graph rows; current
+binding and Task-specific reads still belong to each new snapshot.
 Selection validates the original Reference and provenance,
 then derives heads from links, never time order. A matching pending continuation
 blocks completion and suspends selected reassessments; unselected PASS is

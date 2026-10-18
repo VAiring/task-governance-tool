@@ -133,6 +133,7 @@ def reviewer_hook_admission(service, parent_id, reviewer_id, turn_id, *, admit_c
     lease, so a correction or changed preparation cannot redirect this caller.
     """
     from .review_wait_runtime.review_wait_host import HostAdapterError
+    from .state_resolver import DatabaseValidationReuse
     parent, reviewer = _uuid(parent_id), _uuid(reviewer_id)
     caller_turn = None if turn_id is None else _uuid(turn_id)
     if not callable(admit_current):
@@ -170,27 +171,35 @@ def reviewer_hook_admission(service, parent_id, reviewer_id, turn_id, *, admit_c
     if caller_turn is not None and caller_turn != saved_source[1]:
         raise HostAdapterError("caller_mismatch")
 
+    validation_reuse = DatabaseValidationReuse()
+
     def check():
         # One admission rechecks the active Task, complete captured preparation,
         # native/issued source and Packet. It closes its native snapshot before
         # operational reads; every invocation is fresh at this effect boundary.
-        admit_current(saved_basis, slot)
-        current_slot, row = selected()
-        if current_slot != slot or row["basis"] != saved_basis or row["binding"] != saved_binding:
-            _fail()
-        if active_source(row) != saved_source:
-            raise HostAdapterError("caller_mismatch")
+        try:
+            admit_current(saved_basis, slot, validation_reuse=validation_reuse)
+            current_slot, row = selected()
+            if current_slot != slot or row["basis"] != saved_basis or row["binding"] != saved_binding:
+                _fail()
+            if active_source(row) != saved_source:
+                raise HostAdapterError("caller_mismatch")
+        except BaseException:
+            validation_reuse.clear()
+            raise
 
     def admitted(value, index):
         if index != slot or value != saved_basis:
+            validation_reuse.clear()
             _fail()
         check()
 
-    check()
-    service.admit_basis = admitted
     try:
+        check()
+        service.admit_basis = admitted
         yield ReviewerHookAdmission(turn_id=saved_source[1], check=check)
     finally:
+        validation_reuse.clear()
         service.admit_basis = current_admission
 
 

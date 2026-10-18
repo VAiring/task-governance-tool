@@ -129,11 +129,12 @@ class _CollectionAdmission:
                 self._source(self.resolution.paths, value, slot, history)
         self._packet()
 
-    def check_hook(self, value, slot, *, parent_id):
+    def check_hook(self, value, slot, *, parent_id, validation_reuse=None):
         """One fresh native observation per hook boundary, never an effect token.
 
-        The resolver performs full database admission. Its retained query-only
-        snapshot is consumed and closed before any operational or Packet read.
+        The resolver admits a fresh query-only snapshot, optionally reusing a
+        call-local proof for byte-identical database content. Target rows stay
+        fresh, and the snapshot closes before any operational or Packet read.
         No connection or observed native values survive this invocation.
         """
         from .review_continuation_repository import read_continuations
@@ -142,7 +143,8 @@ class _CollectionAdmission:
         self._issued(value, slot)
         if not self.current or self.retained or self.root.basis["parent_session_id"] != parent_id:
             raise _bad()
-        resolution = resolve(self.repo, writing=False, retain_read_connection=True)
+        resolution = resolve(self.repo, writing=False, retain_read_connection=True,
+            **({"validation_reuse": validation_reuse} if validation_reuse is not None else {}))
         with closing(resolution.read_connection) as connection:
             current = list_current_tasks(connection, resolution.target.project, limit=2,
                 caller=CallerIdentity(parent_id), for_context=True)

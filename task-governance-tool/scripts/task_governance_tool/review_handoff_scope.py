@@ -17,7 +17,7 @@ class ReviewHandoffScopeError(ValueError):
         super().__init__(code)
 
 
-def resolve(repo, *, writing, retain_read_connection=False):
+def resolve(repo, *, writing, retain_read_connection=False, validation_reuse=None):
     """Resolve the existing project; writing additionally requires ignored state."""
     skill = Path(__file__).absolute().parents[2]
     inspection = inspect_project_scope(repo=repo, repo_explicit=True,
@@ -27,7 +27,8 @@ def resolve(repo, *, writing, retain_read_connection=False):
     if inspection.first_issue(allowed_codes=codes) or inspection.scope is None:
         raise ReviewHandoffScopeError()
     resolution = resolve_project_state(skill_root=inspection.scope.skill_root, repo=inspection.scope.canonical_repo,
-        **({"retain_read_connection": True} if retain_read_connection else {}))
+        **({"retain_read_connection": True} if retain_read_connection else {}),
+        **({"validation_reuse": validation_reuse} if validation_reuse is not None else {}))
     if (resolution.error_code or resolution.binding != "matching" or resolution.target is None
             or retain_read_connection and resolution.read_connection is None):
         if resolution.read_connection is not None:

@@ -537,13 +537,21 @@ checks still run at each effect boundary. Retained-source reads keep their
 separate admission and cannot supply a fresh-source fallback.
 
 For reviewer-origin hooks, `_CollectionAdmission.check_hook` obtains one fresh,
-fully validated query-only native snapshot per existing admission boundary. It
+admitted query-only native snapshot per existing admission boundary. It
 checks the active Task, complete execution basis and native continuation history,
 then closes that connection before operational-store or Packet reads. It also
 rechecks the canonical collection path, complete captured preparation, current
-issued source, opt-in and exact Packet bytes. Nothing is cached across boundaries;
-this shares validation within one observation without removing any effect check
-or weakening the ordinary parent/wait and retained-source admissions.
+issued source, opt-in and exact Packet bytes. `reviewer_hook_admission` pins the
+basis, binding and active attempt and owns one call-local
+[resolver validation proof](setup-state-design.md#fixed-state-resolver).
+Only the resolver's supported Windows path may reuse global validation for
+exact byte-identical core content under a fresh acquired read snapshot. Other
+platforms repeat full validation without independently opening the database
+file; mutable target and operational checks always run on every platform.
+Any admission failure clears the proof, as does normal or exceptional hook exit.
+It retains no native rows or open connection across boundaries and removes no
+effect check. Source lookup, ordinary parent/wait and retained-source admissions
+remain unchanged; each later or restarted hook starts with full validation.
 
 `review_answer_collection_repository.py` stores at most eight contiguous slots
 per preparation/continuation in the resolver-derived operational database.

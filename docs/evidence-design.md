@@ -298,6 +298,10 @@ captures project/schema, generation, all cycles, native Bundles/members, and
 legacy state in one query-only transaction and closes SQLite before rendering.
 One encoder owns the exact canonical JSON and array orders. There is no clock
 input, so same-basis repair is byte-identical.
+`evidence_projection` owns native Bundle format selection and the shared index
+format/domain selector. The completion writer stores the version from the
+validated Bundle plan instead of selecting it again. Structural validators and
+the independent test Reader retain their existing admission responsibilities.
 
 Under the zero-wait Evidence lock publication validates or atomically writes
 all required Bundle files through flushed same-directory temporaries, flushes

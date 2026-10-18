@@ -1307,6 +1307,11 @@ def build_native_bundle_plan(
     if historical_reference_absent:
         omissions.append("historical_finding_reference_absent")
 
+    bundle_version = (
+        4 if basis.source_schema_version in {30, 31}
+        else 3 if getattr(basis, "review_continuation_basis", None) is not None
+        else 2
+    )
     payload = {
         "artifact_manifest": {
             "artifact_manifest_id": manifest["artifact_manifest_id"],
@@ -1323,7 +1328,7 @@ def build_native_bundle_plan(
             "digest": snapshot["basis_digest"],
         },
         "bundle_id": completion_identity.completion_evidence_bundle_id,
-        "bundle_version": 4 if basis.source_schema_version in {30, 31} else 3 if getattr(basis, "review_continuation_basis", None) is not None else 2,
+        "bundle_version": bundle_version,
         "completion_cycle_id": completion_identity.completion_cycle_id,
         "cycle_ordinal": completion_identity.saved_cycle_ordinal,
         "sealed_at": sealed_at,
@@ -1394,7 +1399,7 @@ def build_native_bundle_plan(
             else None
         ),
     }
-    if basis.source_schema_version in {30, 31} or getattr(basis, "review_continuation_basis", None) is not None:
+    if bundle_version in (3, 4):
         payload["review_continuation_basis"] = basis.review_continuation_basis
     artifact = build_bundle_artifact(payload)
     reference_ids = tuple(
@@ -1474,14 +1479,22 @@ def _validate_index_entry(
     return entry
 
 
+def _index_domain_and_format(source_schema_version: object) -> tuple[bytes, int]:
+    version = _integer(source_schema_version)
+    if version == 19:
+        return INDEX_DOMAIN, 1
+    if version in {20, 21, 22, 23, 24, 25, 26, 27, 28, 29}:
+        return INDEX_V2_DOMAIN, 2
+    if version in {30, 31}:
+        return INDEX_V3_DOMAIN, 3
+    raise _inconsistent()
+
+
 def assemble_index_payload(
     basis: Mapping[str, Any],
 ) -> dict[str, Any]:
     payload = _mapping(basis, _INDEX_PAYLOAD_KEYS)
-    source_schema_version = _integer(payload["source_schema_version"])
-    if source_schema_version not in {23, 24, 25, 26, 27, 28, 29, 30, 31, 19, 20, 21, 22}:
-        raise _inconsistent()
-    index_format_version = 3 if source_schema_version in {30, 31} else 1 if source_schema_version == 19 else 2
+    _, index_format_version = _index_domain_and_format(payload["source_schema_version"])
     _utf8(payload["project_id"])
     _integer(payload["projection_generation"])
     _integer(payload["bundle_count"])
@@ -1526,11 +1539,7 @@ def assemble_index_payload(
 
 def index_payload_digest(payload: Mapping[str, Any]) -> str:
     normalized = assemble_index_payload(payload)
-    domain = (
-        INDEX_DOMAIN
-        if normalized["source_schema_version"] == 19
-        else INDEX_V3_DOMAIN if normalized["source_schema_version"] in {30, 31} else INDEX_V2_DOMAIN
-    )
+    domain, _ = _index_domain_and_format(normalized["source_schema_version"])
     return _domain_digest(
         domain,
         canonical_json_bytes(normalized),
@@ -1542,8 +1551,7 @@ def build_index_artifact(
 ) -> IndexArtifact:
     payload = assemble_index_payload(basis)
     payload_bytes = canonical_json_bytes(payload)
-    format_version = 3 if payload["source_schema_version"] in {30, 31} else 1 if payload["source_schema_version"] == 19 else 2
-    domain = INDEX_DOMAIN if format_version == 1 else INDEX_V3_DOMAIN if format_version == 3 else INDEX_V2_DOMAIN
+    domain, format_version = _index_domain_and_format(payload["source_schema_version"])
     digest = _domain_digest(domain, payload_bytes)
     envelope = {
         "format_version": format_version,

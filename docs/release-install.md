@@ -9,7 +9,7 @@ published v0.10.0 artifact and its exact commit, tag, Release, archive,
 checksum, and Release body remain unchanged. This record also does not
 authorize installing or overwriting a Skill in any project.
 
-The current v0.13.0 candidate uses schema-v30 Evidence storage with the unchanged
+The current v0.13.0 candidate uses schema-v31 Evidence storage with the unchanged
 schema-v21 Runner gate protocol while preserving the published v0.10.0 identity and the fixed v0.13.0
 package boundary described below. Explicit `task edit --runner-plan-action`
 supports `replace`, `rebind`, `detach`, and `disable`; the first absent-Plan
@@ -79,8 +79,8 @@ total LLM token or elapsed-time savings.
 | Item | Value |
 |---|---|
 | Package version | `0.13.0` |
-| SQLite schema | v30 |
-| Viewer snapshot | v4, accepting source schemas v5-v30 (v5 through v30) |
+| SQLite schema | v31 |
+| Viewer snapshot | v4, accepting source schemas v5-v31 (v5 through v31) |
 | Public command leaves | 23 |
 | Supported runtime | Python 3.12 or newer on Windows, Linux, and macOS (ordinary functions) |
 | Verified platform | Windows x86-64; Ubuntu 24.04 x86-64; macOS 15 Apple Silicon |
@@ -285,7 +285,7 @@ prerequisite to reporting the limitation and ordinary turn end. Follow the
 no automatic restart, configuration/trust change or additional normal-loop
 diagnostic is authorized.
 
-Setup reports `schema_to=30` and `evidence_status` as `not_present`, `current`,
+Setup reports `schema_to=31` and `evidence_status` as `not_present`, `current`,
 `published`, or `repair_required`. Its ordered write vocabulary includes
 `evidence_projection_publish` after maintenance/binding and before
 `viewer_publish`; read-only preview plans it without writing.
@@ -424,7 +424,7 @@ A failed migration backup prevents the migration.
 The immutable v0.10.0 release acceptance rehearsed the transition from the
 exact legacy v0.1.0/schema-v2 baseline to v0.10.0/schema v16. The current
 v0.13.0 candidate must separately rehearse that isolated baseline through
-schema v30, including schema-v17 Receipt/completion preservation, subject and
+schema v31, including schema-v17 Receipt/completion preservation, subject and
 provenance migration, capture-v0/fresh retargeting, 500/1,000 capacity,
 preserved Bundle-v1 and native Bundle-v2 projection recovery, backup recovery,
 and no-partial-write behavior before it can become a release.
@@ -443,7 +443,7 @@ continue to prove that release artifacts contain no `config/` content.
 
 Rollback restores one matched pre-migration package, database, and managed
 artifact set as a single compatibility point, then proves that the legacy
-package can read that restored state. Running old code against schema v30,
+package can read that restored state. Running old code against schema v31,
 reverse-migrating in place, mixing generations, or treating a Git checkout
 alone as rollback is unsupported. After cutover, a defect is handled by a
 forward fix and new candidate/version, not a force update, history rewrite,
@@ -816,11 +816,14 @@ executing/review-pending slots and versions interval semantics; it uses source-2
 Bundles without changing the quality gates or old history. Schema v29 adds
 same-basis review continuations and explicit successor judgments, preserving old
 Receipts and Bundle bytes; source-29 continuation completions retain validated
-Bundle v3. Current schema v30 adds the
+Bundle v3. Schema v30 adds the
 [collected-answer boundary](review-completion-specification.md#collected-review-answers)
 and seals [Bundle 4/index 3 with graph 2](evidence-specification.md#collected-answer-evidence)
 for new completion Evidence without rewriting previous sealed history.
-Its [storage contract](database-specification.md#collected-answer-persistence)
+Current schema v31 adds the explicit-Setup
+[criterion-link producer repair](database-specification.md#collected-answer-criterion-link-repair)
+and identifies new Bundles as source 31 with the same formats and digest domains.
+The [storage contract](database-specification.md#collected-answer-persistence)
 preserves v0/v1 provenance and all older original/sidecar readers. Dedicated
 answer collection remains separately opted in; host trust, observed initial
 binding/completeness and unavailable correction/follow-up capabilities retain
@@ -830,7 +833,7 @@ the independent numerical store to schema 7 for resumable history validation/pub
 deferred prefix audits, inclusive-turn and review-wait
 decision attribution and immutable usage publication. Lifecycle hooks require separate local approval
 and host trust; no setup side effect enables them.
-Viewer snapshot v4 accepts source schemas v5-v30 while exposing no
+Viewer snapshot v4 accepts source schemas v5-v31 while exposing no
 Evidence UI. That schema activation adds no Analyzer, network/model invocation,
 command leaf, or Skill trigger. The separate read-only `task context` leaf now
 combines ordinary selection and full detail without changing those gates.

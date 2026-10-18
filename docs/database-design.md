@@ -19,7 +19,7 @@ Setup orchestration remains with the
 ## Conditional Review Continuation Storage
 
 This is the schema-29 continuation foundation, preserved and extended by the
-schema-30 collected-answer storage below, specified by the
+schema-30 collected-answer storage and schema-31 criterion-link repair below, specified by the
 [database owner](database-specification.md#conditional-review-continuation-persistence).
 `schema_review_continuation.py` owns exact DDL, predecessor migration and physical
 admission; `review_continuation_repository.py` owns transaction-bound relation
@@ -106,7 +106,8 @@ chain and an actually resolved Finding. Only that explicit typed relation
 satisfies the same-generation fresh-review exception.
 
 Migration requires the exact schema-28 physical fingerprint and admitted rows.
-It snapshots old projections and unaffected objects, rejects name collisions
+It uses the shared predecessor snapshot described under
+[migration sequence](#migration-sequence), rejects name collisions
 and unowned rebuilt-table attachments, rebuilds under the existing idle
 connection/foreign-key protocol, inserts revision-one metadata and restores
 owned objects, validates before and after the final marker, and commits once.
@@ -115,7 +116,7 @@ the object inventory, schema fingerprints and all compatible read consumers.
 
 `completion_evidence_bundles.continuation_basis_json` is nullable TEXT with
 valid JSON and a 16,777,216 UTF-8 byte bound. It is null for formats one/two and
-non-null for source-schema-29 format three or source-schema-30 format four
+non-null for source-schema-29 format three or source-schema-30/31 format four
 when a continuation graph exists. Format four without a continuation keeps it
 null. The existing immutable Bundle
 guards protect this column. It stores the closed sanitized continuation graph
@@ -134,7 +135,8 @@ validation across reads, and do not change the caller's transaction ownership.
 
 ## Collected Answer Value Schemas
 
-These are the current closed schemas consumed by schema 30, the public writer
+These are the current closed schemas introduced by schema 30 and retained by
+schema 31, the public writer
 and Evidence; the [review owner](review-completion-specification.md#collected-review-answers)
 owns answer and operation behavior. Every listed key is mandatory, including
 nullable keys; objects admit no extras. JSON integers are exact signed-64-bit
@@ -250,12 +252,38 @@ atomically; readers cannot supply independent public metadata as proof.
 
 ## Migration Sequence
 
+`schema_preservation.py` owns the read-only predecessor snapshot and comparison
+used by migrations 29, 30 and 31. Each caller fixes its exact allowed object
+changes before the delta. The helper captures all predecessor tables, typed
+column/row-identity projections, unaffected objects and the complete
+`(rowid,version,name,applied_at)` migration history. It performs no DDL, marker
+insertion, admission, commit or rollback; each migrator retains those duties.
+Both after the delta and after marker insertion, it compares the same frozen
+old basis, permitting only the exact new marker with the caller's single chosen
+timestamp. New schema-29 columns such as `judgment_revision` and
+`continuation_basis_json` do not change that old projection. Exact owned-schema
+and domain validation still checks intentional additions; schema 29 retains its
+revision-one/no-predecessor judgment check.
+
+The snapshot adds each table's actual rowid to the same typed value projection,
+detecting identity changes and identity/value reassociations. Unshadowed `rowid`,
+`_rowid_` or `oid` names are selected using complete column metadata; when all are
+shadowed, only a proven `INTEGER PRIMARY KEY` alias is used. An indexed primary
+key, including column-level `PRIMARY KEY DESC`, is not a rowid alias.
+`WITHOUT ROWID` tables retain their named-column projection; unaddressable rowid
+identities fail before the delta. Classification uses `index_info(table)` metadata
+(SQLite 3.30 or later); missing identity capabilities fail closed. The inventory
+excludes only the literal reserved `sqlite_` prefix, and includes `sqlite_sequence`
+when present; engine optimizer statistics are not business-row projections.
+No prefix wildcard may omit a legal user table such as `sqliteXkeep`.
+
 Schema 30 is owned by `schema_review_answers.py`; the exact code-defined owned
 DDL fingerprint covers the Receipt/Evidence Reference/Bundle rebuilds, coupled
 continuation/publication guards and five new relations. The migration uses the
 same admitted idle connection, foreign-key/legacy-alter protocol and before/
-after predecessor-projection/object checks as schema 29. Marker insertion is
-last within the single transaction. All exits restore connection flags.
+after predecessor-projection/object checks as schema 29, including the shared
+post-marker comparison. Marker insertion is last within the single transaction.
+All exits restore connection flags.
 
 `review_receipt_provenance_v2` has primary/FK Receipt ID, unique provenance ID,
 bounded canonical `provenance_json` (262,144 bytes) and its contextual digest.
@@ -286,9 +314,32 @@ Receipt version two uses its separate relation; the former v1-only Receipt FK
 is replaced by exact union admission, without creating a v1 row for v2. Legacy
 v1 code rows and bytes remain unchanged. Read admission rejects orphan/multiple
 arms, invalid kind/version/source/target/digest matrices, missing Findings or
-normalization mismatches. New Bundle 4 uses source 30 and the existing nullable
+normalization mismatches. Bundle 4 uses source 30 or 31 and the existing nullable
 `continuation_basis_json` for graph 2; the coupled native-cycle guard requires
 null graph with ordinary gate basis one and a graph with continuation basis two.
+
+Schema 31 is owned by `schema_criterion_link_collector.py`, with migration name
+`criterion_link_collector` and its own exact owned-DDL fingerprint. It admits
+the unchanged schema-30 fingerprint and rows before rebuilding only
+`criterion_evidence_links` and `completion_evidence_bundles`. The link producer
+CHECK adds `taskgov_answer_collector`; its Reference-equality guard is retained.
+The Bundle discriminator and `trg_task_completion_cycles_evidence_basis_insert`
+admit native source 31/format four with the same gate-basis/nullable-graph matrix.
+No columns, tables, indexes or triggers are added: the current inventory stays
+50 tables, 47 explicit indexes and 101 triggers.
+
+This forward migration uses the admitted idle connection and existing
+foreign-key/legacy-alter protocol, with one `BEGIN IMMEDIATE`, exact predecessor
+column/rowid and unaffected-object comparisons, marker-last insertion, and
+validation before commit through the same shared preservation helper.
+All exits restore connection flags; failures roll
+back the complete delta. Unknown attached DDL or conflicting temporary names
+fail closed. Existing links, original provenance and sealed Bundle bytes remain
+unchanged. Source-30 DDL, fingerprints and validators remain exact; current
+schema-31 reentry validates without repairing or replaying the migration.
+Setup, recovery, backup, relocation, Viewer and Evidence readers dispatch by
+the actual source version. Bundle format four, index three and their digest
+domains remain unchanged.
 
 `schema_migrations` is contiguous, named, and validated with required objects
 and known later-version markers. Only explicit setup invokes migration. Other
@@ -329,6 +380,7 @@ Current sequential migrations are:
 | 28 | `task_event_note_bodies`: nullable full-body retention on Task events |
 | 29 | `review_continuations`: successor judgments, explicit reassessment resolution and frozen continuation evidence |
 | 30 | `collected_review_answers`: v2 provenance/source, immutable dispatch inventory and typed collected captures |
+| 31 | `criterion_link_collector`: collected producer on criterion links and native source-31 Bundle/cycle discriminators |
 
 Every migration is ordered, idempotent on reentry, transactional, and
 rollback-tested. Reentry validates rather than synthesizing missing data.
@@ -341,10 +393,10 @@ checkpoint, maintenance, identity, and completion traces. The sole current
 exception is migration 20's Bundle-rebuild retirement of the
 unsupported attached residue defined below; it changes no other migration.
 
-The fixed-state setup migrator accepts complete source schemas v1-v29 and
-treats v30 as current. Legacy `state/projects` discovery is intentionally
+The fixed-state setup migrator accepts complete source schemas v1-v30 and
+treats v31 as current. Legacy `state/projects` discovery is intentionally
 narrower: v1-v13 plus the explicit schema-v14 legacy-layout transition.
-Viewer compatibility is independent and accepts source schemas v5-v30.
+Viewer compatibility is independent and accepts source schemas v5-v31.
 Incomplete history, a missing required object/row, a later marker, too-new
 state, unsupported layout, foreign identity, or corrupt integrity fails closed.
 
@@ -371,7 +423,7 @@ actor UUID, optional sanitized recovery reason and timestamp. `task_execution_cy
 links one exact native cycle to its unique execution; its insert guard checks the
 cycle's project/Task and immutable triggers prevent rewriting the relation.
 The shared ownership row validator also rejects missing links for native Bundle
-sources 24 through 30 in ordinary global and recovery admission. Earlier retained
+sources 24 through 31 in ordinary global and recovery admission. Earlier retained
 completion history remains valid without an invented execution/cycle link.
 No prompt, response body, environment, cost, session liveness or caller-specific
 flags are retained. This schema does not create the later numerical usage store

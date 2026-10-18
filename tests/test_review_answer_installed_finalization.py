@@ -131,9 +131,18 @@ class InstalledAnswerFinalizationTests(fixtures.PreparationFixture):
         super().setUp()
         self.cli('setup','--review-answer-collection','on','--review-wait','off')
 
-    def prepared(self):
+    def prepared(self, *, contract=False):
         self.committed_fixture()
-        task=self.task('Focused isolated verification')
+        if contract:
+            task = self.cli('task', 'add', '--title', 'Contract-bearing collected completion',
+                '--review-tier', '2', '--status', 'ready',
+                '--verification', 'Focused isolated verification')['task']['task_id']
+            self.cli('task', 'edit', task, '--contract-scope', 'Implement bounded task',
+                '--contract-acceptance', 'Two independent collected passes',
+                '--contract-authority-ref', 'user:isolated-completion-regression', '--status', 'in_progress')
+            self.cli('task', 'edit', task, '--status', 'review_pending')
+        else:
+            task=self.task('Focused isolated verification')
         (self.root/'source.py').write_text('value = 2\n',encoding='utf-8')
         self.git('add','source.py')
         targeted=self.invoke('prepare-finalization','--repo',str(self.root),'--directory=reviews/g1',
@@ -151,8 +160,8 @@ class InstalledAnswerFinalizationTests(fixtures.PreparationFixture):
         self.assertEqual(context['answer_protocol'],'review-answer-v1')
         return task,context
 
-    def ready(self,mode='collect-parent'):
-        self.task_id,self.handoff=self.prepared()
+    def ready(self,mode='collect-parent', *, contract=False):
+        self.task_id,self.handoff=self.prepared(contract=contract)
         self.packet=self.handoff['packet_path']
         self.results=tuple(row['result_path'] for row in self.handoff['review_requests'])
         observed=self.collect(mode)
@@ -278,6 +287,35 @@ class InstalledAnswerFinalizationTests(fixtures.PreparationFixture):
             self.assertNotIn('registration_observation', second)
             self.assert_preserved(originals,second)
             self.assertEqual(self.git('rev-parse','HEAD'),commit)
+
+    def test_contract_bearing_finalizer_writes_completion_after_successful_check(self):
+        originals = self.ready(contract=True)
+        shown = self.cli('task', 'show', self.task_id)
+        self.assertEqual(shown['contract']['revision'], 1)
+        checked, check = self.finalize(self.task_id, check=True)
+        self.assertEqual(checked.returncode, 0, check)
+        completed, report = self.finalize(self.task_id)
+        self.assertEqual(completed.returncode, 0, report)
+        self.assert_preserved(originals, report)
+        repeated, report = self.finalize(self.task_id)
+        self.assertEqual(repeated.returncode, 0, report)
+        self.assert_preserved(originals, report)
+
+    def test_contract_bearing_public_submit_and_manual_completion_write_same_gate(self):
+        originals = self.ready(contract=True)
+        submitted = self.invoke('submit', '--repo', str(self.root), '--packet', self.packet,
+            '--', *self.results)
+        self.assertEqual(submitted.returncode, 0, submitted.stdout or submitted.stderr)
+        self.git('commit', '-m', 'Complete isolated collected review target')
+        commit = self.git('rev-parse', 'HEAD').decode().strip()
+        arguments = ('task', 'complete', self.task_id, '--verification-complete', '--review-complete',
+            '--completion-evidence-kind', 'git_commit', '--completion-revision', commit)
+        checked = self.cli(*arguments, '--check', '--read-only')
+        self.assertTrue(checked['ready'], checked)
+        completed = self.cli(*arguments)
+        self.assertEqual(completed['task']['status'], 'done')
+        self.assertEqual({path: hashlib.sha256((self.root/path).read_bytes()).hexdigest()
+            for path in self.results}, originals)
 
     def test_public_registration_keeps_success_when_admission_exit_fails(self):
         originals=self.ready()

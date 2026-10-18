@@ -1264,7 +1264,7 @@ def _validate_source_basis(value: object, *, source_kind: str) -> dict[str, Any]
         _integer(basis["source_schema_version"]),
         _integer(basis["index_format_version"]),
     )
-    if version_pair not in {(19, 1), (20, 2), (21, 2), (22, 2), (23, 2), (24, 2), (25, 2), (26, 2), (27, 2), (28, 2), (29, 2), (30, 3)}:
+    if version_pair not in {(19, 1), (20, 2), (21, 2), (22, 2), (23, 2), (24, 2), (25, 2), (26, 2), (27, 2), (28, 2), (29, 2), (30, 3), (31, 3)}:
         _invalid()
     _project_id(basis["project_id"])
     _integer(basis["projection_generation"])
@@ -1292,7 +1292,7 @@ def _validate_index_envelope(value: object) -> dict[str, Any]:
         _integer(payload["source_schema_version"]),
         _integer(envelope["format_version"]),
     )
-    if version_pair not in {(19, 1), (20, 2), (21, 2), (22, 2), (23, 2), (24, 2), (25, 2), (26, 2), (27, 2), (28, 2), (29, 2), (30, 3)}:
+    if version_pair not in {(19, 1), (20, 2), (21, 2), (22, 2), (23, 2), (24, 2), (25, 2), (26, 2), (27, 2), (28, 2), (29, 2), (30, 3), (31, 3)}:
         _invalid()
     index_format_version = version_pair[1]
     _integer(payload["projection_generation"])
@@ -2018,7 +2018,7 @@ def _validate_bundle_payload(
         _invalid()
     if (
         maximum_source_schema_version is not None
-        and maximum_source_schema_version not in {19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30}
+        and maximum_source_schema_version not in {19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31}
     ):
         _invalid()
     payload = _mapping(
@@ -2042,7 +2042,7 @@ def _validate_bundle_payload(
             and observed_version_pair not in {(20, 2), (21, 2), (22, 2), (23, 2), (24, 2), (25, 2), (26, 2), (27, 2), (28, 2), (29, 2)}
         )
         or (bundle_format_version == 3 and observed_version_pair != (29, 3))
-        or (bundle_format_version == 4 and observed_version_pair != (30, 4))
+        or (bundle_format_version == 4 and observed_version_pair not in {(30, 4), (31, 4)})
         or (
             maximum_source_schema_version is not None
             and observed_version_pair[0] > maximum_source_schema_version
@@ -2249,7 +2249,7 @@ def _validate_bundle_payload(
             )
             runner_id = verification_basis["runner_observation_id"]
             if (
-                observed_version_pair not in {(21, 2), (22, 2), (23, 2), (24, 2), (25, 2), (26, 2), (27, 2), (28, 2), (29, 2), (29, 3), (30, 4)}
+                observed_version_pair not in {(21, 2), (22, 2), (23, 2), (24, 2), (25, 2), (26, 2), (27, 2), (28, 2), (29, 2), (29, 3), (30, 4), (31, 4)}
                 or verification_basis["verification_receipt_id"] is not None
                 or type(runner_id) is not str
                 or runner_id != runner["observation_id"]

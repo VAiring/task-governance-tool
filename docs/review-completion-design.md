@@ -490,7 +490,7 @@ detached closed values. `review_answer_provenance.py` builds and validates v2
 after the actual Receipt ID is known; requested assignment and observed sources
 remain separate, and actual model/Skill/methods stay unknown.
 
-`review_answer_preparation.py` selects the opt-in only for admitted schema-30
+`review_answer_preparation.py` selects the opt-in only for admitted current-schema
 preparations with known execution and a nonzero review tier. Preparation-record
 version two adds per-slot `collection_bases`; version one remains exact and
 omits that member. Each basis binds complete Packet bytes and the exact request
@@ -2284,7 +2284,7 @@ ownership before T1, but committed execution cleanup and terminal audit never
 depend on later caller ownership. Packet preparation bindings omit the
 caller-relative ownership projection; ownership freshness is checked separately.
 
-1. validate schema v30, identity/binding, optimistic ownership/Task/authority/target
+1. validate schema v31, identity/binding, optimistic ownership/Task/authority/target
    capture basis, Contract, sequential ordering, and evidence;
 2. reread Verification Receipts and review receipts/findings, evaluate the
    current verification and review gates, and select their deterministic

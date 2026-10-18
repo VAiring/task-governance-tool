@@ -161,6 +161,7 @@ def _apply_delta_locked(connection):
 
 def migrate(connection):
     from . import storage as s
+    from . import schema_preservation
     from .schema_review_continuation import validate_storage as predecessor
     if connection.in_transaction:
         raise s.StorageError("internal_error", "answer migration requires an idle connection")
@@ -186,19 +187,15 @@ def migrate(connection):
         new_names = {s._schema20_statement_identity(statement)[1] for statement in relation_statements()}
         if connection.execute("SELECT 1 FROM sqlite_master WHERE name IN (SELECT value FROM json_each(?)) COLLATE NOCASE", (json.dumps(sorted(new_names)),)).fetchone():
             raise s._unreadable_project_state()
-        tables = tuple(row["name"] for row in connection.execute("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name!='schema_migrations' ORDER BY name"))
-        before = s._selected_table_projection_snapshot(connection, tables)
-        columns = {name: value[0] for name, value in before.items()}
         changed_names = {row["name"] for row in connection.execute("SELECT name FROM sqlite_master WHERE tbl_name IN (SELECT value FROM json_each(?)) AND sql IS NOT NULL", (json.dumps(REBUILT_TABLES),))} | new_names | {"trg_review_continuation_reviewers_publication","trg_review_receipt_judgments_binding","trg_review_continuations_monotone","trg_task_completion_cycles_evidence_basis_insert"}
-        def unaffected():
-            return tuple(tuple(row) for row in connection.execute("SELECT type,name,tbl_name,sql FROM sqlite_master WHERE sql IS NOT NULL AND name NOT LIKE 'sqlite_%' AND name NOT IN (SELECT value FROM json_each(?)) ORDER BY type,name", (json.dumps(sorted(changed_names)),)))
-        old_objects = unaffected()
+        before = schema_preservation.capture(connection, changed_object_names=changed_names)
         _apply_delta_locked(connection)
         validate_owned_contract(connection)
-        if s._selected_table_projection_snapshot(connection, tables, column_basis=columns) != before or unaffected() != old_objects:
-            raise s._unreadable_project_state()
-        connection.execute("INSERT INTO schema_migrations(version,name,applied_at) VALUES (30,?,?)", (MIGRATION_NAME, s.utc_now()))
+        schema_preservation.assert_preserved(connection, before)
+        marker_time = s.utc_now()
+        connection.execute("INSERT INTO schema_migrations(version,name,applied_at) VALUES (30,?,?)", (MIGRATION_NAME, marker_time))
         validate_storage(connection)
+        schema_preservation.assert_preserved(connection, before, added_marker=(VERSION, MIGRATION_NAME, marker_time))
         connection.commit()
         return True
     except sqlite3.Error as exc:

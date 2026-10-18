@@ -311,7 +311,7 @@ records the fixed maintenance outcome, and does not undo the business mutation.
 
 ## Continuation Graph Validation
 
-Schema-30 sealing uses Bundle 4 and index 3 under their new digest domains,
+Schema-30 and schema-31 sealing use Bundle 4 and index 3 under their versioned digest domains,
 without changing a previously sealed format. Format 4 always carries nullable
 `review_continuation_basis`; continuation completions freeze graph 2, whose
 only added root field is `collected_captures`. Ordinary completion keeps null.

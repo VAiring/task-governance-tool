@@ -352,6 +352,7 @@ def _apply_delta_locked(connection: sqlite3.Connection) -> None:
 def migrate(connection: sqlite3.Connection) -> bool:
     """Setup-owned schema/row transaction; ordinary readers never invoke this."""
     from . import storage as s
+    from . import schema_preservation
     from .schema_task_event_notes import validate_storage as validate_v28
     if connection.in_transaction:
         raise s.StorageError("internal_error", "review continuation migration requires an idle connection")
@@ -378,32 +379,22 @@ def migrate(connection: sqlite3.Connection) -> bool:
         new_names = {s._schema20_statement_identity(statement)[1] for statement in relation_statements()}
         if connection.execute("SELECT 1 FROM sqlite_master WHERE name IN (SELECT value FROM json_each(?)) COLLATE NOCASE LIMIT 1", (json.dumps(sorted(new_names)),)).fetchone():
             raise s._unreadable_project_state()
-        tables = tuple(row["name"] for row in connection.execute("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name!='schema_migrations' ORDER BY name"))
-        before = s._selected_table_projection_snapshot(connection, tables)
-        columns = {name: value[0] for name, value in before.items()}
         replaced_objects = {row["name"] for row in connection.execute("SELECT name FROM sqlite_master WHERE tbl_name IN (SELECT value FROM json_each(?)) AND sql IS NOT NULL", (json.dumps(REBUILT_TABLES),))}
-
-        def unaffected_objects():
-            return tuple(tuple(row) for row in connection.execute("SELECT type,name,tbl_name,sql FROM sqlite_master WHERE sql IS NOT NULL AND name NOT IN (SELECT value FROM json_each(?)) AND name NOT LIKE 'sqlite_%' ORDER BY type,name", (json.dumps(sorted(replaced_objects | new_names)),)))
-
-        objects = unaffected_objects()
-        receipt_rowids = tuple(tuple(row) for row in connection.execute("SELECT rowid,review_receipt_id FROM review_receipts ORDER BY rowid"))
+        before = schema_preservation.capture(connection, changed_object_names=replaced_objects | new_names)
         _apply_delta_locked(connection)
         validate_owned_contract(connection)
         s._schema20_integrity_checks(connection)
 
-        def preserved():
-            return (s._selected_table_projection_snapshot(connection, tables, column_basis=columns) == before
-                and unaffected_objects() == objects
-                and tuple(tuple(row) for row in connection.execute("SELECT rowid,review_receipt_id FROM review_receipts ORDER BY rowid")) == receipt_rowids
-                and connection.execute("SELECT 1 FROM review_receipt_judgments WHERE judgment_revision!=1 OR prior_receipt_id IS NOT NULL OR continuation_id IS NOT NULL LIMIT 1").fetchone() is None)
+        def assert_preserved(added_marker=None):
+            schema_preservation.assert_preserved(connection, before, added_marker=added_marker)
+            if connection.execute("SELECT 1 FROM review_receipt_judgments WHERE judgment_revision!=1 OR prior_receipt_id IS NOT NULL OR continuation_id IS NOT NULL LIMIT 1").fetchone() is not None:
+                raise s._unreadable_project_state()
 
-        if not preserved():
-            raise s._unreadable_project_state()
-        connection.execute("INSERT INTO schema_migrations(version,name,applied_at) VALUES (29,?,?)", (MIGRATION_NAME, s.utc_now()))
+        assert_preserved()
+        marker_time = s.utc_now()
+        connection.execute("INSERT INTO schema_migrations(version,name,applied_at) VALUES (29,?,?)", (MIGRATION_NAME, marker_time))
         validate_storage(connection)
-        if not preserved():
-            raise s._unreadable_project_state()
+        assert_preserved((VERSION, MIGRATION_NAME, marker_time))
         connection.commit()
         return True
     except sqlite3.Error as exc:

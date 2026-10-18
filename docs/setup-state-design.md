@@ -340,13 +340,14 @@ structural head. It then calls the storage-owned exact Task-verification
 validator with that candidate's source schema. The validator returns normally
 or raises a sanitized internal privacy/capacity rejection; every other storage
 failure remains structural and set-fatal. The current implementation accepts
-at most 500 characters through schema v17 and 1,000 at schema v18-v30. The source
+at most 500 characters through schema v17 and 1,000 at schema v18-v31. The source
 schema is selected before migration or recovery publication; no recovery-only
 limit or migration laundering exists.
 
-For schemas 29 and 30, both resolver discovery and managed-backup selection
-dispatch to their version's validator: `schema_review_continuation` or
-`schema_review_answers`, respectively, with `validate_storage(recovery=True)`.
+For schemas 29, 30 and 31, both resolver discovery and managed-backup selection
+dispatch to their version's validator: `schema_review_continuation`,
+`schema_review_answers` or `schema_criterion_link_collector`, respectively,
+with `validate_storage(recovery=True)`.
 Each validator finishes Bundle and continuation graph checks before returning a deferred
 Task-verification rejection; a local rejection cannot hide structural damage.
 

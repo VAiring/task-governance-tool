@@ -80,6 +80,36 @@ class CollectedReaderTests(unittest.TestCase):
         with self.assertRaises(reader.EvidenceConsumerError):reader._validate_index_envelope(old_index)
         with self.assertRaises(reader.EvidenceConsumerError):reader._validate_bundle_payload(payload,entry=native,project_id=payload["project_id"],bundle_format_version=3)
 
+    def test_source31_keeps_bundle_four_index_three_and_closed_version_dispatch(self):
+        payload = _source21_not_required_payload()
+        payload.update(source_schema_version=31, bundle_version=4, review_continuation_basis=None)
+        bundle = dict(format_version=4, payload=payload,
+            bundle_digest=reader._domain_digest(reader.BUNDLE_V4_DOMAIN, payload))
+        entries = index_entries(reference_json_bytes(bundle) + b"\n", bundle["bundle_digest"])
+        for entry in entries:
+            entry["bundle_format_version"] = 4 if entry["bundle_state"] == "native" else None
+        index_payload = dict(source_schema_version=31, project_id=payload["project_id"],
+            projection_generation=8, bundle_count=1, legacy_count=1, entries=entries)
+        index = dict(format_version=3, payload=index_payload,
+            index_digest=reader._domain_digest(reader.INDEX_V3_DOMAIN, index_payload))
+        self.assertEqual(reader._validate_index_envelope(index), index)
+        native = next(entry for entry in entries if entry["bundle_state"] == "native")
+        self.assertEqual(reader._validate_bundle_payload(payload, entry=native,
+            project_id=payload["project_id"], bundle_format_version=4,
+            maximum_source_schema_version=31), payload)
+        for format_version, maximum in ((3, 31), (4, 30)):
+            with self.subTest(format=format_version, maximum=maximum), self.assertRaises(reader.EvidenceConsumerError):
+                reader._validate_bundle_payload(payload, entry=native, project_id=payload["project_id"],
+                    bundle_format_version=format_version, maximum_source_schema_version=maximum)
+        for source, version in ((31, 2), (32, 3)):
+            changed = copy.deepcopy(index)
+            changed["format_version"] = version
+            changed["payload"]["source_schema_version"] = source
+            domain = reader.INDEX_V2_DOMAIN if version == 2 else reader.INDEX_V3_DOMAIN
+            changed["index_digest"] = reader._domain_digest(domain, changed["payload"])
+            with self.subTest(source=source, version=version), self.assertRaises(reader.EvidenceConsumerError):
+                reader._validate_index_envelope(changed)
+
 
 class CollectedGraphReaderTests(unittest.TestCase):
     def setUp(self):

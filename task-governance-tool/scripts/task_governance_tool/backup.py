@@ -383,7 +383,10 @@ def _validate_publication_source(
     version = _validate_database(connection, target, expected_version)
     if version == SCHEMA_VERSION:
         validate_current_database(connection, target)
-    if version == 30:
+    if version == 31:
+        from task_governance_tool.schema_criterion_link_collector import validate_storage
+        validate_storage(connection, _privacy_success_cache=privacy_success_cache)
+    elif version == 30:
         from task_governance_tool.schema_review_answers import validate_storage
         validate_storage(connection, _privacy_success_cache=privacy_success_cache)
     elif version == 29:
@@ -435,7 +438,10 @@ def _recovery_content_valid(
     privacy_success_cache: set[tuple[str, str, str]] | None = None,
 ) -> bool:
     try:
-        if version == 30:
+        if version == 31:
+            from task_governance_tool.schema_criterion_link_collector import validate_storage
+            validate_storage(connection, recovery=True, _privacy_success_cache=privacy_success_cache)
+        elif version == 30:
             from task_governance_tool.schema_review_answers import validate_storage
             validate_storage(connection, recovery=True, _privacy_success_cache=privacy_success_cache)
         elif version == 29:

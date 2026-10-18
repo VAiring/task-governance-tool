@@ -24,6 +24,18 @@ class CollectedReviewEndpoint:
     binding: ReviewSessionBinding
 
 
+@dataclass(frozen=True)
+class _UsageReviewInputs:
+    """Body-free inputs owned by one usage capture's admitted core read.
+
+    These are local values, not a cache or an admission token. Callers must not
+    retain them on a repository/connection or reuse them in a later read.
+    """
+
+    reviews: tuple[tuple[str, ReviewSessionTarget, ReviewSessionBinding], ...]
+    collected_endpoints: tuple[CollectedReviewEndpoint, ...]
+
+
 def _bad():
     from .storage import evidence_ledger_inconsistent
     return evidence_ledger_inconsistent()
@@ -107,28 +119,64 @@ def read_collected_review_endpoints(connection, *, receipt_ids):
     Validate the saved Receipt/source/provenance/session relation before
     discarding the answer body; no numerical write or host access occurs.
     """
-    from .review_session_repository import read_bindings, _receipt_target
-
     rows = connection.execute(
         "SELECT * FROM review_receipts WHERE review_provenance_basis_version=2 "
         "AND review_receipt_id IN (SELECT value FROM json_each(?)) ORDER BY review_receipt_id",
         (json.dumps(sorted(receipt_ids)),),
     ).fetchall()
-    bindings = read_bindings(connection, receipt_ids={row["review_receipt_id"] for row in rows})
+    reviews = _read_usage_reviews(connection, {row["review_receipt_id"] for row in rows})
+    return _collected_usage_endpoints(connection, rows, reviews)
+
+
+def _read_usage_reviews(connection, receipt_ids):
+    from .review_session_repository import read_bindings, _receipt_target
+
+    # Preserve the complete binding/target/alias validation performed by both
+    # existing readers. Only repeated calls from one capture are eliminated.
+    bindings = read_bindings(connection, receipt_ids=receipt_ids)
+    return tuple((receipt_id, _receipt_target(connection, receipt_id)[0], binding)
+                 for receipt_id, binding in bindings.items())
+
+
+def _collected_usage_endpoints(connection, rows, reviews):
+    """Private projection; inputs come only from this module's fresh readers."""
+    validated = {receipt_id: (target, binding) for receipt_id, target, binding in reviews}
     result = []
     for row in rows:
         receipt_id = row["review_receipt_id"]
         provenance = validate_provenance_relation(connection, row)
-        binding = bindings.get(receipt_id)
+        target, binding = validated.get(receipt_id, (None, None))
         host = provenance["host_observation"]
         original = provenance["answer_attestation"]["original"]["digest"]
         if (binding is None or binding.binding_source != "handoff"
                 or binding.session_id != host["reviewer_session_id"]
                 or "sha256:" + binding.original_result_digest != original):
             raise _bad()
-        target, _, _ = _receipt_target(connection, receipt_id)
         result.append(CollectedReviewEndpoint(receipt_id, host["turn_id"], target, binding))
     return tuple(result)
+
+
+def _read_usage_review_inputs(connection, *, project_id):
+    """Read once for one capture; never expose an unvalidated-input option.
+
+    The owning usage capture passes the returned typed values explicitly to
+    its basis and partition calculations before leaving this core transaction.
+    Standalone readers and later publication guards make fresh reads instead.
+    """
+    from .storage import current_schema_version
+
+    if not connection.in_transaction:
+        raise RuntimeError("usage review inputs require an existing core read")
+    version = current_schema_version(connection)
+    if version < 25:
+        return _UsageReviewInputs((), ())
+    rows = connection.execute(
+        "SELECT * FROM review_receipts WHERE project_id=? ORDER BY review_receipt_id",
+        (project_id,),
+    ).fetchall()
+    reviews = _read_usage_reviews(connection, {row["review_receipt_id"] for row in rows})
+    collected = [row for row in rows if row["review_provenance_basis_version"] == 2] if version >= 30 else []
+    return _UsageReviewInputs(reviews, _collected_usage_endpoints(connection, collected, reviews))
 
 
 def insert_provenance_locked(connection, *, receipt, provenance, collected):

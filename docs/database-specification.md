@@ -729,6 +729,14 @@ cycle links and publishes successors through the existing mechanism. There is
 no core or numerical schema migration, extra reviewer action, host query, Task
 replay or change to completion gates.
 
+Within one numerical refresh and its admitted core read transaction, validated
+review identities and endpoints may be shared by capture-basis calculation and
+attribution. This removes duplicate retrieval and validation without changing
+their identity checks or the captured input. The shared value contains only
+typed metadata, not answer bodies. It is local to that update: a later update,
+standalone read or publication guard obtains and validates fresh input. No
+persistent verification cache or cross-transaction reuse is permitted.
+
 ### Response-Boundary Attribution
 
 Schema 6 associates successful state operations with the numerical response

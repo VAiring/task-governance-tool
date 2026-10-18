@@ -180,9 +180,7 @@ class UsageEvidenceRepository(UsageAttributionRepository):
 
     def _refresh(self, core, connection):
         """One admitted writer/read basis; callers own both transactions."""
-        fingerprint, periods = self._core_basis(core, connection)
-        previous = self._snapshots(connection, current=True)
-        projected = self._project_for_refresh(core, connection, previous)
+        fingerprint, periods, previous, projected = self._capture_projection(core, connection)
         adopted = []
         for component in projected["components"]:
             if projected["unresolved_operations"]:
@@ -210,6 +208,13 @@ class UsageEvidenceRepository(UsageAttributionRepository):
         self._adopt_projection(connection, projected, adopted)
         self._before_snapshot_commit(connection)
         return {"current": adopted, "fingerprint": fingerprint, "periods": periods, "projected": projected}
+
+    def _capture_projection(self, core, connection):
+        """Prepare inputs locally while the caller's admitted reads are open."""
+        fingerprint, periods = self._core_basis(core, connection)
+        previous = self._snapshots(connection, current=True)
+        projected = self._project_for_refresh(core, connection, previous)
+        return fingerprint, periods, previous, projected
 
     def _project_for_refresh(self, core, connection, previous):
         return self.attribution(core, numerical_connection=connection)

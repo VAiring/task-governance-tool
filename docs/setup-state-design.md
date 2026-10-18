@@ -188,9 +188,25 @@ most 1,024 newly visited entries and 15 candidate sources per event, leaving a
 slot for the invoking participant's hint. An inventory cycle marks lost known
 sources only after its slices finish. Enumeration may reread preceding names;
 renames can defer discovery to a later cycle, but unrelated headers are never
-opened. Candidate attempts are ordered by oldest persisted attempt, with one
-invoking-participant slot after the oldest. Failed candidates advance attempt
-order without advancing any data cursor. Each inventory page retains an attempt
+opened. Candidate attempts retain the oldest persisted attempt first. Within
+the existing 16 ingest-attempt slots, the invoking participant then receives up
+to four priority slots, counting the first slot if it served that participant.
+Its exact admitted host hint is first within that allocation; otherwise use its
+oldest discovered segment. Further slots rotate among its discovered segments,
+repeating a source only after a committed `more_records` result with forward
+complete-record or drain progress. Partial tails, replay, errors and no progress
+end repetition for that source. Remaining slots visit the other unattempted
+candidates in the original fair order, including any other current-participant
+segments. There is no extra discovery scan when a hint is missing.
+
+An ingest result supplies its pending state and committed progress separately
+from bytes read: rereading a header is not progress. An audit or budget stop
+before ingest progress must not consume a page candidate. Failed invalid
+candidates advance attempt order without advancing any data cursor. For lifecycle
+collection, successful ingest progress or confirmed EOF saves the attempt
+watermark in the same cursor/CAS transaction; a deadline immediately after that
+commit cannot erase the successful attempt. Other collector callers do not
+change attempt ordering. Each inventory page retains an attempt
 watermark; already attempted candidates remain covered across partial events.
 Once all page candidates have been attempted, continuation can advance even if
 no single event processed the whole page. A page completed earlier is advanced
@@ -199,8 +215,11 @@ discarded merely because the event budget ended. Completed inventory cycles
 also report `source_unreadable` for registered participants with no admitted
 source, including those never located before.
 
-Each selected source receives an audit slice before an ingest slice, so append
-does not starve deferred verification. Cooperative event budgets are 20 seconds
+Each known selected source receives at most one audit slice per event before
+its ingest slices, so extra catch-up does not repeatedly audit the same prefix
+or starve deferred verification. The reported collected-source count is the
+number of distinct successfully visited sources, not the number of slices.
+Cooperative event budgets are 20 seconds
 (1.5 seconds for SessionEnd), with 50 ms SQLite lock waits and query progress
 interrupts for these numerical workers and their admitted core readers. They
 do not alter ordinary Task connection budgets or admission checks. Filesystem

@@ -44,8 +44,8 @@ class UsagePublicationRepository(UsageResponseRepository):
     def _before_publication_marker(self, connection):
         """Fault seam before the complete numerical migration commits."""
 
-    def _core_basis(self, core, connection):
-        basis, periods = super()._core_basis(core, connection)
+    def _core_basis(self, core, connection, *, _review_inputs=None):
+        basis, periods = super()._core_basis(core, connection, _review_inputs=_review_inputs)
         # Include every mutable structural classifier input as closed metadata.
         # No counters or private bodies enter this guard. Original-counter integrity is
         # checked by the snapshot audit, not certified by this fingerprint.

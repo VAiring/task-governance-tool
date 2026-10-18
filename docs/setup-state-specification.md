@@ -962,7 +962,14 @@ events never initialize, migrate, repair or rebind a database.
 Collection reserves bounded work for previous participants, old segments and
 prefix audits as well as the invoking participant. Directory inventory and
 source attempts resume across events; new traffic cannot continually select
-only the newest source. Later cycles catch moved directory entries. Work and
+only the newest source. After the oldest candidate, the invoking participant
+may receive bounded additional ingest slices when the preceding committed slice
+reports more records and advances its complete-record or oversized-record drain
+position. Its exact host hint takes priority within that allocation; other
+discovered segments retain fair turns. Partial tails, replay, errors or no
+forward progress do not trigger immediate repetition. The allocation uses the
+existing event budget and does not discover extra paths or infer attribution.
+Later cycles catch moved directory entries. Work and
 database-lock budgets yield neutral pending/unavailable results, preserving
 committed progress and last-good publication. Prefix integrity is explicitly
 [deferred](database-specification.md#numerical-usage-store); immutable snapshot

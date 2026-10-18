@@ -154,13 +154,14 @@ class UsageIncrementalRepository(UsageWaitRepository):
         from task_governance_tool.usage_incremental_projection import adopt
         adopt(connection, projected, adopted)
 
-    def work_order(self, sources, thread):
+    def work_order(self, sources, thread, *, hint_id=None):
         with self.connection() as connection:
             attempts = dict(connection.execute("SELECT source_id,last_attempt FROM usage_work_order"))
         fair = sorted(sources, key=lambda key: (attempts.get(key, -1), key))
         # Reserve the first slot for globally oldest work, then one caller slot.
         # Even tiny budgets therefore advance old sessions/segments under load.
-        priority = next((key for key in fair if sources[key].thread_id == thread), None)
+        priority = (hint_id if hint_id in sources and sources[hint_id].thread_id == thread else
+                    next((key for key in fair if sources[key].thread_id == thread), None))
         return list(dict.fromkeys([*fair[:1], *([priority] if priority else []), *fair[1:]]))
 
     def discovery_position(self):
@@ -221,10 +222,13 @@ class UsageIncrementalRepository(UsageWaitRepository):
         if not _hex(source):
             raise UsageError("source_unreadable")
         with self.connection(write=True) as connection:
-            connection.execute("INSERT INTO usage_work_order VALUES (?,(SELECT coalesce(max(last_attempt),0)+1 FROM usage_work_order)) "
-                               "ON CONFLICT(source_id) DO UPDATE SET last_attempt=excluded.last_attempt", (source,))
+            self._record_attempt(connection, source)
 
-    def collect_source(self, source, *, lane="ingest", **limits):
+    def _record_attempt(self, connection, source):
+        connection.execute("INSERT INTO usage_work_order VALUES (?,(SELECT coalesce(max(last_attempt),0)+1 FROM usage_work_order)) "
+                           "ON CONFLICT(source_id) DO UPDATE SET last_attempt=excluded.last_attempt", (source,))
+
+    def collect_source(self, source, *, lane="ingest", record_attempt=False, **limits):
         """Read without a writer, then CAS continuation+observations atomically."""
         with self.connection() as connection:
             source_row = connection.execute("SELECT * FROM usage_sources WHERE source_id=? AND thread_id=?",
@@ -236,15 +240,16 @@ class UsageIncrementalRepository(UsageWaitRepository):
             revision = row["revision"] if row else 0
             reset = document is None or document["incarnation"] != expected.incarnation or document["reset"]
             if lane == "audit" and not expected.offset:
-                return {"bytes_read": 0, "records": 0}
+                return {"bytes_read": 0, "records": 0, "pending": "none", "progressed": False}
             if lane == "audit" and connection.execute(
                     "SELECT 1 FROM usage_scan_state WHERE source_id=? AND lane='ingest'", (source.source_id,)).fetchone() is None:
                 # Old prefix format has no resumable context. Setup preserves it;
                 # ingest bootstraps a new incarnation before auditing that format.
-                return {"bytes_read": 0, "records": 0}
+                return {"bytes_read": 0, "records": 0, "pending": "none", "progressed": False}
             if lane == "audit" and document and document["state"].offset == document["goal"]:
                 reset = True
             state = ScanState() if reset else document["state"]
+            start_position = max(state.offset, state.drain)
             goal = expected.offset if lane == "audit" and reset else (document["goal"] if lane == "audit" else None)
             goal_prefix = expected.prefix if lane == "audit" and reset else (document["goal_prefix"] if lane == "audit" else "")
             lookup = lambda turn: None if reset else self._model(connection, source.source_id, lane, turn)
@@ -259,14 +264,17 @@ class UsageIncrementalRepository(UsageWaitRepository):
                 result = None
         if result is None:
             self._invalidate(source.source_id, expected, revision, lane)
-            return {"bytes_read": 0, "records": 0, "replay": True}
+            return {"bytes_read": 0, "records": 0, "replay": True,
+                    "pending": "none", "progressed": False}
         broken_boundary = (lane == "audit" and result.state.offset < goal
                            and (result.pending == "partial_tail" or result.state.drain == goal))
         if lane == "audit" and (broken_boundary or (result.state.offset == goal and result.state.prefix != goal_prefix)):
             self._invalidate(source.source_id, expected, revision, lane)
-            return {"bytes_read": result.bytes_read, "records": result.records, "replay": True}
+            return {"bytes_read": result.bytes_read, "records": result.records, "replay": True,
+                    "pending": result.pending, "progressed": False}
         incarnation = expected.incarnation + int(reset) if lane == "ingest" else expected.incarnation
         incarnation = max(1, incarnation)
+        progressed = max(result.state.offset, result.state.drain) > start_position
         value = {"state": asdict(result.state), "incarnation": incarnation,
                  "goal": goal if lane == "audit" else result.state.offset,
                  "goal_prefix": goal_prefix if lane == "audit" else result.state.prefix, "reset": False}
@@ -302,8 +310,14 @@ class UsageIncrementalRepository(UsageWaitRepository):
                                         Cursor(incarnation, result.state.offset, result.state.prefix, result.file_id),
                                         result.responses, tuple(sorted(gaps)), result.pending, result.attribution)
                 self.commit_batch(batch, numerical_connection=connection)
+                if record_attempt and (result.pending != "more_records" or progressed):
+                    # Couple page coverage to the committed ingest observation:
+                    # a deadline after this transaction cannot lose its attempt.
+                    self._record_attempt(connection, source.source_id)
             self._before_scan_commit(connection)
-        return {"bytes_read": result.bytes_read, "records": result.records}
+        return {"bytes_read": result.bytes_read, "records": result.records,
+                "pending": result.pending,
+                "progressed": progressed}
 
     def _model(self, connection, source, lane, turn):
         row = connection.execute("SELECT model,effort FROM usage_scan_models WHERE source_id=? AND lane=? AND turn_id=?",

@@ -702,6 +702,18 @@ Changed geometry uses existing component invalidation and immutable
 snapshot successors; old numerical readers and stored history retain their
 meaning. The integration adds no persisted table, host operation or core write.
 
+The response repository's refresh capture obtains one immutable review-input
+value containing the validated Receipt/session/target relationships and native
+endpoints. It passes this value explicitly to capture-basis and attribution
+calculation within the same admitted core read transaction. The answer repository
+owns endpoint validation; numerical code receives no answer body. A base capture
+hook preserves the original refresh transaction and snapshot adoption, and the
+publication repository forwards the input while retaining its additional basis
+checks. The value is not stored on a repository or connection and has no durable
+cache. Standalone reads and the later publication guard still retrieve fresh
+input, so later registration, changed provenance and invalid Evidence are
+reconsidered rather than hidden by an earlier successful validation.
+
 ### Response Relation And Partition Structure
 
 `usage_response_adapter.py` owns closed call/result/response metadata and

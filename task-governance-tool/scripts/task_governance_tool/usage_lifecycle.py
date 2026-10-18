@@ -6,6 +6,7 @@ project event. Unknown coverage is never promoted to complete.
 """
 
 from contextlib import closing
+from collections import deque
 import json
 import os
 from pathlib import Path
@@ -28,6 +29,71 @@ MAX_INPUT = 2 * 1024 * 1024
 EVENT_SECONDS = 20.0
 END_SECONDS = 1.5
 MAX_SOURCES = 16
+CURRENT_SLICES = 4
+
+
+def _collect_incremental(repository, sources, known_sources, thread, hint, deadline):
+    """Bounded current catch-up between oldest work and the remaining fair page.
+
+    The existing event allowance counts ingest attempts, including extra slices.
+    Only committed forward continuation can requeue a source; a header reread
+    or a partial tail is not progress. Each known source is audited once.
+    """
+    identities = repository.work_order(sources, thread, hint_id=hint.source_id if hint else None)
+    attempted, successful, repeatable, audited = set(), set(), set(), set()
+    gaps, slots, current_slots = set(), 0, 0
+
+    def collect(identity):
+        nonlocal slots, current_slots
+        if slots >= MAX_SOURCES or monotonic() >= deadline:
+            gaps.add("usage_pending")
+            return False
+        slots += 1
+        source = sources[identity]
+        current_slots += int(source.thread_id == thread)
+        attempted.add(identity)
+        repeatable.discard(identity)
+        try:
+            replay = False
+            if identity in known_sources and identity not in audited:
+                audit = repository.collect_source(source, lane="audit")
+                audited.add(identity)
+                replay = audit.get("replay", False)
+            result = repository.collect_source(source, record_attempt=True)
+            successful.add(identity)
+            # A budget stop between audit and ingest must not finish this page
+            # candidate. Unchanged EOF and real failed candidates remain attempts.
+            if result.get("replay"):
+                repository.attempted(identity)
+            if not replay and not result.get("replay") and result["pending"] == "more_records" and result["progressed"]:
+                repeatable.add(identity)
+        except UsageError as error:
+            gaps.add(error.code)
+            if error.code != "usage_pending":
+                repository.attempted(identity)
+                if identity in known_sources:
+                    repository.record_gap(identity, source.thread_id, error.code)
+        return True
+
+    if identities:
+        collect(identities[0])
+    current = [key for key in identities if sources[key].thread_id == thread]
+    if hint is not None and hint.source_id in current:
+        current.remove(hint.source_id)
+        current.insert(0, hint.source_id)
+    queue = deque(current)
+    while queue and current_slots < CURRENT_SLICES:
+        identity = queue.popleft()
+        if identity in attempted and identity not in repeatable:
+            continue
+        if not collect(identity):
+            break
+        if identity in repeatable:
+            queue.append(identity)
+    for identity in identities:
+        if identity not in attempted and not collect(identity):
+            break
+    return len(successful), gaps
 
 
 def _target(skill_root, repo, *, repo_explicit=False):
@@ -116,27 +182,19 @@ def collect_event(payload, *, skill_root, repo, environment, repo_explicit=False
                 discovery_saved = True
             sources = {key: source for key, source in sources.items()
                        if key in pending_sources or (hint is not None and key == hint.source_id)}
-        identities = repository.work_order(sources, thread) if incremental else sources
-        for attempt, identity in enumerate(identities):
+        if incremental:
+            collected, slice_gaps = _collect_incremental(repository, sources, known_sources, thread, hint, deadline)
+            gaps.update(slice_gaps)
+        for identity in (() if incremental else sources):
             source = sources[identity]
-            if incremental and (monotonic() >= deadline or attempt >= MAX_SOURCES):
-                gaps.add("usage_pending")
-                break
             try:
                 # Validate the entire batch outside any writer, before admitting
                 # a discovered path. A filename never registers another session.
-                if incremental:
-                    repository.attempted(identity)
-                    # Audit precedes append, so ongoing traffic cannot starve it.
-                    if identity in known_sources:
-                        repository.collect_source(source, lane="audit")
-                    repository.collect_source(source)
-                else:
-                    expected = repository.cursor(identity, source.thread_id) if identity in known_sources else Cursor()
-                    batch = read_batch(source, expected, include_attribution=True,
-                                       attribution_project_id=target.project.project_id)
-                    repository.register_source(identity, CallerIdentity(source.thread_id))
-                    repository.commit_batch(batch)
+                expected = repository.cursor(identity, source.thread_id) if identity in known_sources else Cursor()
+                batch = read_batch(source, expected, include_attribution=True,
+                                   attribution_project_id=target.project.project_id)
+                repository.register_source(identity, CallerIdentity(source.thread_id))
+                repository.commit_batch(batch)
                 collected += 1
             except UsageError as error:
                 gaps.add(error.code)

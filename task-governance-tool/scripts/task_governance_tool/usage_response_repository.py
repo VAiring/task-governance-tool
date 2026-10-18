@@ -144,7 +144,7 @@ class UsageResponseRepository(UsageIncrementalRepository):
             "SELECT review_receipt_id FROM review_receipts WHERE project_id=?", (self.basis[0],))}
         return read_collected_review_endpoints(core, receipt_ids=receipts)
 
-    def _core_basis(self, core, connection):
+    def _core_basis(self, core, connection, *, _review_inputs=None):
         basis, periods = super()._core_basis(core, connection)
         positions, boundaries = self._relations(connection, history=True)
         relations = [[source, incarnation, asdict(item)] for source, incarnation, item in positions + boundaries]
@@ -155,11 +155,12 @@ class UsageResponseRepository(UsageIncrementalRepository):
             value = ResponseTracker(thread, "validation", value).state
             contexts.append((row["source_id"], value))
         sources = list(map(tuple, connection.execute("SELECT source_id,thread_id,incarnation,offset,pending FROM usage_sources ORDER BY source_id")))
-        endpoints = [asdict(item) for item in self._collected_review_endpoints(core)]
+        endpoints = [asdict(item) for item in (self._collected_review_endpoints(core)
+                     if _review_inputs is None else _review_inputs.collected_endpoints)]
         return digest([basis, ALGORITHM, sorted(relations, key=lambda item: encode(item)), contexts, sources,
                        [_COLLECTED_ENDPOINT_BASIS, endpoints]]), periods
 
-    def attribution(self, core_connection, *, numerical_connection=None, geometry_only=False):
+    def attribution(self, core_connection, *, numerical_connection=None, geometry_only=False, _review_inputs=None):
         with (self.connection() if numerical_connection is None else nullcontext(numerical_connection)) as connection:
             transitions = core_transitions(core_connection, self.basis[0])
             positions, boundaries = self._relations(connection)
@@ -236,7 +237,9 @@ class UsageResponseRepository(UsageIncrementalRepository):
             additional = self._additional_intervals(core_connection, connection, owners, turns, turn_conflicts)
             from task_governance_tool.storage import current_schema_version
             reviews = []
-            if current_schema_version(core_connection) >= 25:
+            if _review_inputs is not None:
+                reviews = _review_inputs.reviews
+            elif current_schema_version(core_connection) >= 25:
                 from task_governance_tool.review_session_repository import read_bindings, _receipt_target
                 receipts = {row[0] for row in core_connection.execute(
                     "SELECT review_receipt_id FROM review_receipts WHERE project_id=?", (self.basis[0],))}
@@ -246,7 +249,8 @@ class UsageResponseRepository(UsageIncrementalRepository):
             review_boundaries = tuple(ReviewBoundary(**dict(row)) for row in connection.execute("SELECT * FROM usage_review_boundaries"))
             receipt_turns = tuple(ReviewReceiptTurn(**dict(row)) for row in connection.execute("SELECT * FROM usage_review_receipt_turns"))
             additional += reviewer_intervals(owners, turns, review_boundaries, receipt_turns, reviews,
-                                             collected_endpoints=self._collected_review_endpoints(core_connection),
+                                             collected_endpoints=(self._collected_review_endpoints(core_connection)
+                                                 if _review_inputs is None else _review_inputs.collected_endpoints),
                                              conflicting_turns=turn_conflicts)
             pending = {}
             for row in connection.execute("SELECT context.document,source.source_id,source.incarnation,source.thread_id,scan.document AS scan FROM usage_response_context context "
@@ -270,8 +274,19 @@ class UsageResponseRepository(UsageIncrementalRepository):
                 pending=tuple(pending.values()), fallback=owners,
                 fallback_origins=tuple((origin, endpoint) for _, origin, endpoint in segments))
 
-    def _project_for_refresh(self, core, connection, previous):
-        geometry = self.attribution(core, numerical_connection=connection, geometry_only=True)
+    def _capture_projection(self, core, connection):
+        from task_governance_tool.review_answer_repository import _read_usage_review_inputs
+
+        # The inputs never outlive this capture or enter a repository cache.
+        # The final publication guard opens and validates its own fresh read.
+        reviews = _read_usage_review_inputs(core, project_id=self.basis[0])
+        fingerprint, periods = self._core_basis(core, connection, _review_inputs=reviews)
+        previous = self._snapshots(connection, current=True)
+        projected = self._project_for_refresh(core, connection, previous, _review_inputs=reviews)
+        return fingerprint, periods, previous, projected
+
+    def _project_for_refresh(self, core, connection, previous, *, _review_inputs=None):
+        geometry = self.attribution(core, numerical_connection=connection, geometry_only=True, _review_inputs=_review_inputs)
         dirty = {tuple(row) for row in connection.execute("SELECT * FROM usage_dirty_turns")}
         cached = {row["component_id"]: dict(row) for row in connection.execute("SELECT * FROM usage_component_basis")}
         snapshots = {item["snapshot_id"]: item for item in previous}

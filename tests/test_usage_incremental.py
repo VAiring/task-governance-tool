@@ -55,6 +55,68 @@ class IncrementalCollectionTests(unittest.TestCase):
         self.assertEqual(self.repository.summary()["models"][0]["response_count"], 2001)
         self.assertIn("prefix_verification_deferred", self.repository.summary()["diagnostics"])
 
+    def test_committed_progress_distinguishes_backlog_eof_and_partial_tail(self):
+        self.write(self.records(usage("first"), usage("second")))
+        first = self.ingest(max_records=1)
+        self.assertEqual((first["pending"], first["progressed"]), ("more_records", True))
+        while self.repository.cursor(self.source.source_id, THREAD).offset < self.source.path.stat().st_size:
+            self.ingest(max_records=1)
+        unchanged = self.ingest()
+        self.assertGreater(unchanged["bytes_read"], 0)  # Header bytes are not progress.
+        self.assertEqual((unchanged["pending"], unchanged["progressed"]), ("none", False))
+        with self.source.path.open("ab") as stream:
+            stream.write(b'{"unfinished":')
+        partial = self.ingest()
+        self.assertEqual((partial["pending"], partial["progressed"]), ("partial_tail", False))
+
+    def test_oversized_drain_progress_does_not_require_complete_record(self):
+        from task_governance_tool import usage_incremental_adapter
+        self.write(self.records())
+        self.ingest()
+        with self.source.path.open("ab") as stream:
+            stream.write(b"x" * 2048 + b"\n")
+        boundary = self.repository.cursor(self.source.source_id, THREAD)
+        with mock.patch.object(usage_incremental_adapter, "MAX_LINE", 512):
+            result = self.ingest(max_bytes=256)
+        self.assertEqual((result["pending"], result["progressed"], result["records"]),
+                         ("more_records", True, 0))
+        self.assertEqual(self.repository.cursor(self.source.source_id, THREAD), boundary)
+
+    def test_page_attempt_and_ingest_progress_commit_or_rollback_together(self):
+        self.write(self.records(usage("first")))
+        self.ingest(record_attempt=True)
+        cursor = self.repository.cursor(self.source.source_id, THREAD)
+        with self.repository.connection() as connection:
+            previous = connection.execute("SELECT last_attempt FROM usage_work_order WHERE source_id=?",
+                                          (self.source.source_id,)).fetchone()[0]
+        self.append(usage("second"))
+        with mock.patch.object(self.repository, "_before_scan_commit", side_effect=UsageError()):
+            with self.assertRaises(UsageError):
+                self.ingest(record_attempt=True)
+        self.assertEqual(self.repository.cursor(self.source.source_id, THREAD), cursor)
+        with self.repository.connection() as connection:
+            self.assertEqual(connection.execute("SELECT last_attempt FROM usage_work_order WHERE source_id=?",
+                                                (self.source.source_id,)).fetchone()[0], previous)
+            self.assertEqual(connection.execute("SELECT count(*) FROM usage_responses WHERE response_id='second'").fetchone()[0], 0)
+        self.ingest(record_attempt=True)
+        with self.repository.connection() as connection:
+            self.assertEqual(connection.execute("SELECT last_attempt FROM usage_work_order WHERE source_id=?",
+                                                (self.source.source_id,)).fetchone()[0], previous + 1)
+            self.assertEqual(connection.execute("SELECT count(*) FROM usage_responses WHERE response_id='second'").fetchone()[0], 1)
+
+    def test_no_progress_backlog_does_not_advance_attempt_watermark(self):
+        self.write(self.records(usage("first")))
+        self.ingest(record_attempt=True)
+        self.append(usage("second"))
+        with self.repository.connection() as connection:
+            previous = connection.execute("SELECT last_attempt FROM usage_work_order WHERE source_id=?",
+                                          (self.source.source_id,)).fetchone()[0]
+        result = self.ingest(record_attempt=True, max_records=0)
+        self.assertEqual((result["pending"], result["progressed"]), ("more_records", False))
+        with self.repository.connection() as connection:
+            self.assertEqual(connection.execute("SELECT last_attempt FROM usage_work_order WHERE source_id=?",
+                                                (self.source.source_id,)).fetchone()[0], previous)
+
     def test_fixed_audit_goal_finishes_under_constant_append_and_detects_preserved_mtime(self):
         self.write(self.records(*(usage(f"r{i}") for i in range(40))))
         self.ingest()

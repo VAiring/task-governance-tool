@@ -1,8 +1,9 @@
 """Native collected Receipts bound reviewer usage without a fabricated save."""
 
-from contextlib import closing
+from contextlib import closing, contextmanager
 import json
 import unittest
+from unittest import mock
 
 from tests.review_answer_fixture_support import review_fixture
 from tests.test_review_answer_pure_values import TURN1
@@ -97,6 +98,89 @@ class CollectedReviewUsageTests(unittest.TestCase):
     def history(self):
         with self.repository.connection() as connection:
             return dict(connection.execute("SELECT snapshot_id,document FROM usage_snapshots"))
+
+    def observed_refresh(self, operation=None):
+        """Count feature validation after unchanged core admission has finished."""
+        from task_governance_tool import review_answer_repository, review_session_repository
+
+        observations = []
+        @contextmanager
+        def reader():
+            with self.reader() as core:
+                with mock.patch.object(review_answer_repository, "validate_provenance_relation",
+                        wraps=review_answer_repository.validate_provenance_relation) as provenance, \
+                        mock.patch.object(review_session_repository, "read_bindings",
+                        wraps=review_session_repository.read_bindings) as bindings:
+                    yield core
+                    observations.append((provenance.call_count, bindings.call_count))
+        (operation or self.repository.refresh)(reader)
+        return observations
+
+    def test_capture_shares_review_inputs_without_changing_projection_or_history(self):
+        from task_governance_tool.usage_evidence_repository import UsageEvidenceRepository
+
+        items = self.items((1, 2))
+        self.register(items)
+        for index, item in enumerate(items):
+            source = self.source(item.session_binding.session_id)
+            self.write(source, self.records(source.thread_id, prefix=f"slot{index}-"))
+            self.ingest(source)
+        # The previous unshared pipeline remains an independent baseline for
+        # capture bytes, membership, diagnostics and immutable successors.
+        previous_pipeline = lambda core, connection: UsageEvidenceRepository._capture_projection(
+            self.repository, core, connection)
+        with mock.patch.object(self.repository, "_capture_projection", side_effect=previous_pipeline):
+            self.assertEqual(self.observed_refresh(), [(4, 3)])
+        before, index_before, task_before = self.history(), self.read(audit=True), self.read()
+        with self.repository.connection() as connection:
+            members_before = list(map(tuple, connection.execute("SELECT * FROM usage_snapshot_members")))
+        self.assertEqual(self.observed_refresh(), [(2, 1)])
+        self.assertEqual(self.history(), before)
+        self.assertEqual(self.read(audit=True), index_before)
+        self.assertEqual(self.read(), task_before)
+        with self.repository.connection() as connection:
+            self.assertEqual(list(map(tuple, connection.execute("SELECT * FROM usage_snapshot_members"))), members_before)
+        # Reusing the repository object does not reuse the preceding read's
+        # verification, even when every core row is unchanged.
+        self.assertEqual(self.observed_refresh(), [(2, 1)])
+
+    def test_next_capture_reloads_registered_review_inputs(self):
+        items = self.items((1, 2))
+        self.register(items[:1])
+        for index, item in enumerate(items):
+            source = self.source(item.session_binding.session_id)
+            self.write(source, self.records(source.thread_id, prefix=f"slot{index}-"))
+            self.ingest(source)
+        self.assertEqual(self.observed_refresh(), [(1, 1)])
+        self.assertEqual(self.read()["total"]["response_count"], 3)
+        before = self.history()
+        self.register(items[1:])
+        self.assertEqual(self.observed_refresh(), [(2, 1)])
+        self.assertEqual(self.read()["total"]["response_count"], 6)
+        self.assertEqual({key: self.history()[key] for key in before}, before)
+
+    def test_publication_guard_and_standalone_read_revalidate_inputs(self):
+        from task_governance_tool import review_answer_repository
+
+        self.register(self.items())
+        captured = []
+        def prepare(reader):
+            captured.append(self.repository.prepare_publication(reader))
+        self.assertEqual(self.observed_refresh(prepare), [(1, 1)])
+        index, state = captured[0]
+        while state["position"] < state["total"]:
+            state = self.repository.advance_publication(state)
+        # A later guard has its own admitted core transaction. It cannot use
+        # capture's earlier verification, nor can a standalone read.
+        def guard(reader):
+            with self.repository.publication_guard(reader, index, state):
+                pass
+        self.assertEqual(self.observed_refresh(guard), [(1, 1)])
+        with self.reader() as core:
+            with mock.patch.object(review_answer_repository, "validate_provenance_relation",
+                    wraps=review_answer_repository.validate_provenance_relation) as provenance:
+                self.repository.read(core, task_id=self.fixture.task_id)
+                self.assertEqual(provenance.call_count, 1)
 
     def test_native_endpoint_includes_middle_work_and_excludes_later_and_parent_forward(self):
         item, = self.items()
@@ -584,11 +668,15 @@ class CollectedReviewUsageTests(unittest.TestCase):
 
     def test_native_reader_rejects_source_mismatch_or_missing_session_without_repairs(self):
         from task_governance_tool.review_answer_repository import read_collected_review_endpoints
+        from task_governance_tool.usage_values import UsageError
         item, = self.items()
         registered = self.register((item,))
         identity = registered["receipts"][0]["receipt"]["review_receipt_id"]
+        self.repository.refresh(self.reader)
+        numerical_before = self.repository.path.read_bytes()
         cases = (("review_collection_sources", "turn_id", turn(9)),
             ("review_collection_sources", "original_digest", "sha256:" + "f" * 64),
+            ("review_receipts", "target_generation", 999),
             ("review_receipt_sessions", None, None))
         for table, field, replacement in cases:
             with self.subTest(table=table, field=field), closing(storage.connect_initialized(self.fixture.target)) as core:
@@ -608,6 +696,14 @@ class CollectedReviewUsageTests(unittest.TestCase):
                     core.execute("PRAGMA query_only=ON")
                     with self.assertRaises(storage.StorageError):
                         read_collected_review_endpoints(core, receipt_ids={identity})
+                    # A previously successful capture cannot exempt a later
+                    # read from source/binding/target validation. This bypasses
+                    # global admission only to exercise the feature boundary.
+                    with self.assertRaises(UsageError) as failure:
+                        with self.repository.connection(write=True) as connection:
+                            self.repository._refresh(core, connection)
+                    self.assertEqual(failure.exception.code, "usage_unavailable")
+                    self.assertEqual(self.repository.path.read_bytes(), numerical_before)
                 finally:
                     core.execute("PRAGMA query_only=OFF")
                     core.rollback()

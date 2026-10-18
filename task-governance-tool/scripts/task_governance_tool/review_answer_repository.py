@@ -4,12 +4,24 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 
+from .review_session_repository import ReviewSessionBinding, ReviewSessionTarget
+
 
 @dataclass(frozen=True)
 class CollectedReceiptInput:
     metadata: dict
     answer: object
     submission_digest: str
+
+
+@dataclass(frozen=True)
+class CollectedReviewEndpoint:
+    """Registered answer identity for read-only consumers, without its body."""
+
+    receipt_id: str
+    turn_id: str
+    target: ReviewSessionTarget
+    binding: ReviewSessionBinding
 
 
 def _bad():
@@ -86,6 +98,37 @@ def validate_provenance_relation(connection, receipt, *, row=None):
     if session is not None and (session["session_id"]!=observed["reviewer_session_id"] or session["execution_id"]!=execution["execution_id"] or session["binding_source"]!="handoff" or "sha256:"+session["original_result_digest"]!=source["original_digest"]):
         raise _bad()
     return value
+
+
+def read_collected_review_endpoints(connection, *, receipt_ids):
+    """Project only registered schema-30+ answers from an admitted core read.
+
+    Operational captures and parent registration turns are not endpoints.
+    Validate the saved Receipt/source/provenance/session relation before
+    discarding the answer body; no numerical write or host access occurs.
+    """
+    from .review_session_repository import read_bindings, _receipt_target
+
+    rows = connection.execute(
+        "SELECT * FROM review_receipts WHERE review_provenance_basis_version=2 "
+        "AND review_receipt_id IN (SELECT value FROM json_each(?)) ORDER BY review_receipt_id",
+        (json.dumps(sorted(receipt_ids)),),
+    ).fetchall()
+    bindings = read_bindings(connection, receipt_ids={row["review_receipt_id"] for row in rows})
+    result = []
+    for row in rows:
+        receipt_id = row["review_receipt_id"]
+        provenance = validate_provenance_relation(connection, row)
+        binding = bindings.get(receipt_id)
+        host = provenance["host_observation"]
+        original = provenance["answer_attestation"]["original"]["digest"]
+        if (binding is None or binding.binding_source != "handoff"
+                or binding.session_id != host["reviewer_session_id"]
+                or "sha256:" + binding.original_result_digest != original):
+            raise _bad()
+        target, _, _ = _receipt_target(connection, receipt_id)
+        result.append(CollectedReviewEndpoint(receipt_id, host["turn_id"], target, binding))
+    return tuple(result)
 
 
 def insert_provenance_locked(connection, *, receipt, provenance, collected):

@@ -1,13 +1,14 @@
 """Known inclusive-turn arithmetic, cumulative periods and shared components."""
 
 from dataclasses import replace
+from itertools import permutations
 from pathlib import Path
 import sys
 import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "task-governance-tool" / "scripts"))
 
-from task_governance_tool.usage_attribution import Interval, Transition, owner_intervals, project
+from task_governance_tool.usage_attribution import Interval, Transition, owner_intervals, project, safe_turn_starts
 from task_governance_tool.usage_turn_adapter import TurnObservation
 from task_governance_tool.usage_values import ResponseUsage
 
@@ -110,6 +111,30 @@ class UsageAttributionTests(unittest.TestCase):
         self.assertEqual(result["tasks"][0]["response_keys"], [("openai", "r4")])
         self.assertIn("boundary_unknown", result["components"][0]["diagnostics"])
 
+    def test_identity_only_coverage_never_expands_equal_time_peers_or_endpoint(self):
+        value = replace(interval("A", "A1", 2, 4), identity_only=True)
+        for turns in ((), (TurnObservation(THREAD, turn(1), 2), TurnObservation(THREAD, turn(2), 2),
+                           TurnObservation(THREAD, turn(3), 3), TurnObservation(THREAD, turn(4), 4))):
+            with self.subTest(turns=turns):
+                result = self.project([value, value], turns=turns)
+                self.assertEqual(result["tasks"][0]["response_keys"], [("openai", "r2")])
+                self.assertEqual(result["tasks"][0]["models"][0]["total_tokens"], 120)
+                self.assertIn("boundary_unknown", result["components"][0]["diagnostics"])
+
+    def test_identity_only_coverage_without_start_never_borrows_endpoint(self):
+        value = replace(interval("A", "A1", 2, 4), start_turn=None, identity_only=True)
+        result = self.project([value])
+        self.assertEqual(result["tasks"][0]["response_keys"], [])
+        self.assertEqual(result["tasks"][0]["models"], [])
+        self.assertIn("boundary_unknown", result["components"][0]["diagnostics"])
+
+    def test_identity_only_coverage_does_not_create_missing_numerical_values(self):
+        value = replace(interval("A", "A1", 2, 4), identity_only=True)
+        result = project((value,), (), ())
+        self.assertEqual(result["components"][0]["turns"], [(THREAD, turn(2))])
+        self.assertEqual(result["tasks"][0]["models"], [])
+        self.assertIn("usage_pending", result["components"][0]["diagnostics"])
+
     def test_conflicting_response_excluded_and_optional_metrics_stay_unknown(self):
         conflict = replace(response(3), counts=(101, 20, 121, 60, 5, None))
         result = self.project([interval("A", "A1", 2, 3)], extra_responses=(conflict,))
@@ -128,6 +153,26 @@ class UsageAttributionTests(unittest.TestCase):
         result = self.project([interval("A", "A1", 2, 2)], turns=turns)
         self.assertEqual(result["tasks"][0]["models"], [])
         self.assertIn("boundary_unknown", result["components"][0]["diagnostics"])
+
+    def test_safe_turn_order_excludes_every_colliding_identity_regardless_of_input_order(self):
+        observations = (TurnObservation(THREAD, turn(1), 1000),
+                        TurnObservation(THREAD, turn(2), 1000),
+                        TurnObservation(THREAD, turn(2), 2000),
+                        TurnObservation(THREAD, turn(3), 2000),
+                        TurnObservation(THREAD, turn(4), 4000))
+        for turns in permutations(observations):
+            self.assertEqual(safe_turn_starts(turns), {(THREAD, turn(4)): 4000})
+
+    def test_explicitly_conflicting_identity_still_disqualifies_its_order_peer(self):
+        turns = (TurnObservation(THREAD, turn(1), 1000), TurnObservation(THREAD, turn(2), 1000),
+                 TurnObservation(THREAD, turn(3), 3000))
+        self.assertEqual(safe_turn_starts(turns, frozenset({(THREAD, turn(1))})), {(THREAD, turn(3)): 3000})
+
+    def test_turn_order_duplicates_and_other_session_times_remain_independent(self):
+        turns = (TurnObservation(THREAD, turn(1), 1000), TurnObservation(THREAD, turn(1), 1000),
+                 TurnObservation(OTHER, turn(1), 1000), TurnObservation(OTHER, turn(2), 2000))
+        self.assertEqual(safe_turn_starts(turns),
+                         {(THREAD, turn(1)): 1000, (OTHER, turn(1)): 1000, (OTHER, turn(2)): 2000})
 
 
 if __name__ == "__main__":

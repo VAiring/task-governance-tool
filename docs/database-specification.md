@@ -684,6 +684,51 @@ for known turn IDs, not an estimated Task-time interval. Conflicting identities
 are not last-writer-wins. A lost/cross-thread endpoint retains only a definite
 observed endpoint with an unknown boundary, never unbounded future-session usage.
 
+### Collected-Review Usage Boundaries
+
+For current response attribution, a registered collected-answer Receipt may
+establish its reviewer's terminal turn from its validated native collection
+source. The Receipt, reviewer session, execution, Contract, full review target,
+original digest and source turn must agree with the stored provenance and
+session binding. An operational capture without a committed Receipt supplies
+no participation. The submitting parent's turn never substitutes for the
+reviewer's answer turn, including retained and reassessed judgments.
+
+This native endpoint replaces the absent legacy save event for that collected
+Receipt; it does not fabricate a save acknowledgement or change legacy
+read/save and direct-registration handling. A matching observed review read
+starts the inclusive reviewer interval. Missing read history retains only the
+known endpoint turn with explicit partial coverage; missing or conflicting turn
+order remains unknown. Both conflicting starts for one turn and equal starts
+for different turns in the same session invalidate those turns' ordering.
+Repeated identical observations and equal starts in different sessions do not.
+Apply this ordering check before selecting either native interval boundary.
+The numerical store retains the first start and conflict identity for a turn,
+not every contradictory start. A same-ID start disagreement therefore makes
+native range ordering unknown throughout that reviewer session, even when its
+retained value appears outside the range. It does not affect another session
+or change legacy handling. In that case, retain only an explicitly matching
+read whose own identity is not conflicted. Exclude conflicted IDs before
+checking the remaining read candidates for equal-start collisions, then count
+the selected read by identity alone. A discarded peer timestamp cannot add
+other turns or remove that definite read. Its observed response keys remain
+partial assignments because the session's range ordering is unproven, even if
+the retained first timestamps happen to look consistent. If no eligible read
+remains, retain no inferred membership, including the native endpoint.
+An otherwise unordered native endpoint must not discard an already observed
+matching read: retain the definite read turn with partial coverage, without
+inferring the intervening or later turns. Delayed numerical
+records can fill the established range, but a stored endpoint alone supplies
+neither token counts nor final coverage. Original response identities remain
+deduplicated across all bindings.
+
+The validated endpoint metadata and its projection version participate in the
+current capture basis. Old captures require ordinary numerical refresh before
+being presented as current. Refresh preserves prior immutable snapshots and
+cycle links and publishes successors through the existing mechanism. There is
+no core or numerical schema migration, extra reviewer action, host query, Task
+replay or change to completion gates.
+
 ### Response-Boundary Attribution
 
 Schema 6 associates successful state operations with the numerical response

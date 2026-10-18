@@ -7,7 +7,7 @@ from task_governance_tool.task_ownership import _identifier
 from task_governance_tool.task_values import validate_task_id, TaskValidationError
 from task_governance_tool.reviews import validate_stored_review_target, ReviewEvidenceError
 from task_governance_tool.usage_values import UsageError
-from task_governance_tool.usage_attribution import Interval
+from task_governance_tool.usage_attribution import Interval, safe_turn_starts
 
 
 @dataclass(frozen=True)
@@ -96,14 +96,44 @@ def project_review(item, thread, turn, project_id):
                  and "review_receipt_id" in entry["receipt"])
 
 
-def reviewer_intervals(owners, turns, boundaries, receipt_turns, reviews):
+def reviewer_intervals(owners, turns, boundaries, receipt_turns, reviews, *, collected_endpoints=(),
+                       conflicting_turns=frozenset()):
     """Only committed exact core review bindings authorize numerical membership.
 
     `reviews` contains (Receipt ID, ReviewSessionTarget, ReviewSessionBinding).
-    Missing read/save leaves explicit partial coverage, never parent attribution.
+    Registered collected answers supply their actual reviewer turn separately
+    from legacy save observations. Missing boundaries retain partial coverage.
     """
     periods = {item.execution_id: item.preceding_completion for item in owners}
-    starts = {(item.thread_id, item.turn_id): item.started_at for item in turns}
+    # Preserve legacy selection while retaining every observation for native
+    # order validation. Prefiltering a conflicting ID could hide another ID's
+    # same-session order collision with it.
+    legacy_starts = {(item.thread_id, item.turn_id): item.started_at for item in turns
+                     if (item.thread_id, item.turn_id) not in conflicting_turns}
+    native_starts = safe_turn_starts(turns, conflicting_turns)
+    # Persistence retains the first start and a conflicting identity, not its
+    # alternate starts. Any same-session disagreement can therefore conceal a
+    # collision with either native boundary. Do not infer a range from it, even
+    # when the retained conflicting turn appears outside that range. Apply the
+    # same rule to complete in-memory observations before they are persisted.
+    native_conflicts = set(conflicting_turns)
+    observed_starts = {}
+    for item in turns:
+        key = (item.thread_id, item.turn_id)
+        if key in observed_starts and observed_starts[key] != item.started_at:
+            native_conflicts.add(key)
+        observed_starts[key] = item.started_at
+    conflicted_sessions = {thread for thread, _ in native_conflicts}
+    # A matching read proves its identity even when an unrelated conflicting
+    # turn prevents range inference. Its discarded alternate starts cannot
+    # taint this identity through the arbitrary first value kept in storage.
+    # The read's own disagreement and ties among nonconflicting IDs remain
+    # ineligible. The selected key is later projected without consulting time.
+    identity_starts = safe_turn_starts(tuple(item for item in turns
+        if (item.thread_id, item.turn_id) not in native_conflicts))
+    endpoints_by_receipt = {}
+    for endpoint in collected_endpoints:
+        endpoints_by_receipt.setdefault(endpoint.receipt_id, []).append(endpoint)
     result = []
     for receipt, target, binding in reviews:
         if binding.execution_id not in periods:
@@ -114,18 +144,39 @@ def reviewer_intervals(owners, turns, boundaries, receipt_turns, reviews):
                     == (binding.session_id, target.project_id, target.task_id, binding.execution_id,
                         target.contract_revision, target.target_kind, target.target_value,
                         target.target_base_revision, target.target_generation)]
-        closes = ({item.turn_id for item in matching if item.phase == "save"
-                   and item.original_result_digest == binding.original_result_digest}
-                  if binding.binding_source == "handoff" else
-                  {item.turn_id for item in receipt_turns if item.receipt_id == receipt
-                   and item.thread_id == binding.session_id})
+        native = endpoints_by_receipt.get(receipt, ())
+        identity_only = bool(native) and binding.session_id in conflicted_sessions
+        starts = identity_starts if identity_only else native_starts if native else legacy_starts
+        if native:
+            # A collected Receipt uses its exact registered source, not an old
+            # save echo or the parent's later forwarding/registration turn.
+            # Contradictory supplied identities never fall back to legacy proof.
+            valid = [item for item in native if item.target == target and item.binding == binding
+                     and binding.binding_source == "handoff" and is_session_id(item.turn_id)]
+            closes = {item.turn_id for item in valid} if len(valid) == len(native) else set()
+        else:
+            closes = ({item.turn_id for item in matching if item.phase == "save"
+                       and item.original_result_digest == binding.original_result_digest}
+                      if binding.binding_source == "handoff" else
+                      {item.turn_id for item in receipt_turns if item.receipt_id == receipt
+                       and item.thread_id == binding.session_id})
         end = next(iter(closes)) if len(closes) == 1 else None
         end_order = starts.get((binding.session_id, end))
+        unordered_native_end = bool(native) and (identity_only
+                                                or (end is not None and end_order is None))
         reads = [item.turn_id for item in matching if item.phase == "read"
                  and (binding.session_id, item.turn_id) in starts
-                 and (end is None or (end_order is not None and starts[binding.session_id, item.turn_id] <= end_order))]
+                 and (end is None or unordered_native_end
+                      or (end_order is not None and starts[binding.session_id, item.turn_id] <= end_order))]
         start = min(reads, key=lambda turn: starts[binding.session_id, turn]) if reads else end
+        if unordered_native_end:
+            # The source identifies the answer, but cannot establish a range.
+            # Keep a definite read and close with an unknown end so neither
+            # projection can infer intermediate turns from conflicting order.
+            end = None
+            if not reads:
+                start = None
         gaps = () if reads and end is not None else ("review_boundary_unknown",)
         result.append(Interval(target.task_id, binding.execution_id, periods[binding.execution_id],
-                               binding.session_id, start, end, True, gaps))
+                               binding.session_id, start, end, True, gaps, identity_only=identity_only))
     return tuple(result)

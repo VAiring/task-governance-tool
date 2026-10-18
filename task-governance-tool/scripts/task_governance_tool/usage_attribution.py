@@ -35,6 +35,7 @@ class Interval:
     end_turn: str | None
     closed: bool
     diagnostics: tuple[str, ...] = ()
+    identity_only: bool = False
 
 
 def owner_intervals(transitions: tuple[Transition, ...], bindings: dict[str, tuple[str, str]]) -> tuple[Interval, ...]:
@@ -68,8 +69,28 @@ def owner_segments(transitions: tuple[Transition, ...], bindings: dict[str, tupl
     return tuple(result)
 
 
+def safe_turn_starts(turns, conflicting_turns=frozenset()):
+    """Keep only unique turn identities and unique order within each session."""
+    starts, invalid, orders = {}, set(conflicting_turns), {}
+    for turn in turns:
+        key = (turn.thread_id, turn.turn_id)
+        order = (turn.thread_id, turn.started_at)
+        if key in starts and starts[key] != turn.started_at:
+            invalid.add(key)
+        if order in orders and orders[order] != key:
+            invalid.update((key, orders[order]))
+        orders[order] = key
+        starts[key] = turn.started_at
+    return {key: value for key, value in starts.items() if key not in invalid}
+
+
 def _coverage(interval: Interval, starts: dict[tuple[str, str], int]):
     first = (interval.thread_id, interval.start_turn)
+    if interval.identity_only:
+        # A validated native read is a definite identity, not a time range.
+        # Missing or conflicting ordering must never substitute equal-time
+        # peers, its endpoint, or intervening turns for that explicit key.
+        return ({first} if interval.start_turn is not None else set()), {"boundary_unknown"}
     if interval.start_turn is None or first not in starts:
         last = (interval.thread_id, interval.end_turn)
         known_end = {last} if interval.closed and last in starts else set()
@@ -108,18 +129,7 @@ Turn start values order explicitly identified turns in one thread; they never
 join a Task to a log record or connect different threads by overlapping time.
 This projection reports observed/pending usage, not final coverage or billing.
 """
-    starts, invalid = {}, set(conflicting_turns)
-    orders = {}
-    for turn in turns:
-        key = (turn.thread_id, turn.turn_id)
-        order = (turn.thread_id, turn.started_at)
-        if (key in starts and starts[key] != turn.started_at):
-            invalid.add(key)
-        if order in orders and orders[order] != key:
-            invalid.update((key, orders[order]))
-        orders[order] = key
-        starts[key] = turn.started_at
-    starts = {key: value for key, value in starts.items() if key not in invalid}
+    starts = safe_turn_starts(turns, conflicting_turns)
     execution_turns, execution_gaps, periods = {}, {}, {}
     for interval in intervals:
         covered, gaps = _coverage(interval, starts)

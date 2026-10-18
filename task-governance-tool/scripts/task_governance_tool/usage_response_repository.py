@@ -44,6 +44,8 @@ _RESPONSE_DDL = (
         document TEXT NOT NULL, PRIMARY KEY(source_id,lane))""",
 )
 
+_COLLECTED_ENDPOINT_BASIS = "collected-review-endpoints-v4"
+
 
 @dataclass(frozen=True)
 class ResponseIdentity:
@@ -134,6 +136,15 @@ class UsageResponseRepository(UsageIncrementalRepository):
             boundaries.append((row["source_id"], row["incarnation"], item))
         return positions, boundaries
 
+    def _collected_review_endpoints(self, core):
+        from task_governance_tool.storage import current_schema_version
+        if current_schema_version(core) < 30:
+            return ()
+        from task_governance_tool.review_answer_repository import read_collected_review_endpoints
+        receipts = {row[0] for row in core.execute(
+            "SELECT review_receipt_id FROM review_receipts WHERE project_id=?", (self.basis[0],))}
+        return read_collected_review_endpoints(core, receipt_ids=receipts)
+
     def _core_basis(self, core, connection):
         basis, periods = super()._core_basis(core, connection)
         positions, boundaries = self._relations(connection, history=True)
@@ -145,7 +156,9 @@ class UsageResponseRepository(UsageIncrementalRepository):
             ResponseTracker(thread, "validation", value)
             contexts.append((row["source_id"], value))
         sources = list(map(tuple, connection.execute("SELECT source_id,thread_id,incarnation,offset,pending FROM usage_sources ORDER BY source_id")))
-        return digest([basis, ALGORITHM, sorted(relations, key=lambda item: encode(item)), contexts, sources]), periods
+        endpoints = [asdict(item) for item in self._collected_review_endpoints(core)]
+        return digest([basis, ALGORITHM, sorted(relations, key=lambda item: encode(item)), contexts, sources,
+                       [_COLLECTED_ENDPOINT_BASIS, endpoints]]), periods
 
     def attribution(self, core_connection, *, numerical_connection=None, geometry_only=False):
         with (self.connection() if numerical_connection is None else nullcontext(numerical_connection)) as connection:
@@ -233,8 +246,9 @@ class UsageResponseRepository(UsageIncrementalRepository):
                     reviews.append((receipt_id, target, binding))
             review_boundaries = tuple(ReviewBoundary(**dict(row)) for row in connection.execute("SELECT * FROM usage_review_boundaries"))
             receipt_turns = tuple(ReviewReceiptTurn(**dict(row)) for row in connection.execute("SELECT * FROM usage_review_receipt_turns"))
-            safe_turns = tuple(item for item in turns if (item.thread_id, item.turn_id) not in turn_conflicts)
-            additional += reviewer_intervals(owners, safe_turns, review_boundaries, receipt_turns, reviews)
+            additional += reviewer_intervals(owners, turns, review_boundaries, receipt_turns, reviews,
+                                             collected_endpoints=self._collected_review_endpoints(core_connection),
+                                             conflicting_turns=turn_conflicts)
             pending = {}
             for row in connection.execute("SELECT context.document,source.source_id,source.incarnation,source.thread_id,scan.document AS scan FROM usage_response_context context "
                     "JOIN usage_sources source USING(source_id) JOIN usage_scan_state scan "

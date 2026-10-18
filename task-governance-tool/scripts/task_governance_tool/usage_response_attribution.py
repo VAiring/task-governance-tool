@@ -368,6 +368,11 @@ def project_responses(transitions, bindings, checks, positions, turns, responses
         for key, row in good.items():
             if (row.thread_id, row.turn_id) in covered and (trimmed is None or key in trimmed):
                 owners[key].add(interval.execution_id)
+                if interval.identity_only:
+                    # Definite native read membership does not prove its place
+                    # in the conflicted session's ordering. Keep its partial
+                    # classification independent of the stored first clock.
+                    unknown.add(key)
     groups = defaultdict(set)
     for key, members in owners.items():
         if key not in good:

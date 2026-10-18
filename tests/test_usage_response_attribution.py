@@ -342,6 +342,27 @@ class ResponsePartitionTests(unittest.TestCase):
         self.assertEqual(self.keys(result, X), {"r0", "r1", "r2", "r4", "r5", "r6", "r7"})
         self.assertEqual(result["unassigned_response_keys"], [("fixture", "r3")])
 
+    def test_identity_only_additional_read_is_partial_without_tainting_other_turns(self):
+        read = Interval(A, X, None, THREAD, turn(3), None, True,
+                        ("review_boundary_unknown",), identity_only=True)
+        result = self.build(((A, X, "ready", "in_progress", 0), (A, X, "in_progress", "paused", 2)),
+                            second_turn=4, additional=(read,))
+        self.assertEqual(self.keys(result, X, "exclusive"), {"r0", "r1", "r2"})
+        self.assertEqual(self.keys(result, X, "partial"), {"r4", "r5", "r6", "r7"})
+        self.assertEqual(set(result["unknown_response_keys"]), {("fixture", "r" + str(i)) for i in range(4, 8)})
+        self.assertEqual(result["unassigned_response_keys"], [("fixture", "r3")])
+        self.assertTrue(all("review_boundary_unknown" in item["diagnostics"] for item in result["components"]))
+        self.assertEqual(sum(model["response_count"] for part in result["components"] for model in part["models"]), 7)
+
+    def test_identity_only_additional_without_read_does_not_mark_endpoint_partial(self):
+        missing = Interval(A, X, None, THREAD, None, turn(3), True,
+                           ("review_boundary_unknown",), identity_only=True)
+        result = self.build(((A, X, "ready", "in_progress", 0), (A, X, "in_progress", "paused", 2)),
+                            second_turn=4, additional=(missing,))
+        self.assertEqual(self.keys(result, X, "exclusive"), {"r0", "r1", "r2"})
+        self.assertFalse(result["unknown_response_keys"])
+        self.assertEqual(set(result["unassigned_response_keys"]), {("fixture", "r" + str(i)) for i in range(3, 8)})
+
     def test_unrelated_blocked_exit_preserves_completion_tail_and_preparation(self):
         for status in ("ready", "cancelled"):
             for preparation in (False, True):

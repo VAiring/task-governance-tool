@@ -7,11 +7,10 @@ import os
 import tempfile
 import unittest
 from contextlib import closing
-from dataclasses import replace
 from pathlib import Path
 from unittest import mock
 
-from tests import test_review_answer_core as collected
+from tests.review_answer_fixture_support import attach_existing, review_fixture
 from tests.test_review_session_migration import candidate_runtime
 from tests.test_m23s_schema22_migration import (
     _add_unrelated_objects, _logical_snapshot, _mutating_statements, _source_copy,
@@ -21,9 +20,6 @@ from task_governance_tool import storage
 from task_governance_tool import schema_review_answers as predecessor
 from task_governance_tool import schema_criterion_link_collector as schema
 from tests.m14_test_support import make_physical_install, refresh_test_manifest
-from tests.test_review_continuation import basis
-from task_governance_tool.session_identity import CallerIdentity
-from task_governance_tool.task_ownership import read_basis
 
 
 def _row_identity_snapshot(connection, *, fixture_aliases=None):
@@ -53,10 +49,7 @@ def _row_identity_snapshot(connection, *, fixture_aliases=None):
 class CriterionLinkCollectorMigrationTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        # Compose one real historical fixture, without inheriting its test suite.
-        cls.fixture = collected.CollectedCoreTests()
-        cls.fixture.setUp()
-        cls.addClassCleanup(cls.fixture.doCleanups)
+        cls.fixture = cls.enterClassContext(review_fixture(schema_version=30, contract=None))
         cls.artifact = cls.fixture.collected_source_artifact()
         cls.db = cls.fixture.db
         cls.project_id = cls.fixture.basis["project_id"]
@@ -464,24 +457,11 @@ class PublicCriterionLinkCollectorSetupTests(unittest.TestCase):
             "user:isolated-public-setup", "--status", "in_progress")
         self.cli("review", "target", "set", active, "--kind", "diff_fingerprint",
             "--revision", "sha256:" + "b" * 64)
-        fixture = collected.CollectedCoreTests()
-        fixture.db = self.install.db_path
-        fixture.target = self.install.target
+        with candidate_runtime(30):
+            fixture = attach_existing(db=self.install.db_path, repo=self.install.project_root,
+                task_id=active, schema_version=30, target=self.install.target)
         with candidate_runtime(30), closing(storage.connect_initialized(fixture.target)) as connection:
             task = connection.execute("SELECT * FROM tasks WHERE task_id=?", (active,)).fetchone()
-            meta = connection.execute("SELECT * FROM project_meta").fetchone()
-            owner = read_basis(connection, project_id=task["project_id"], task_id=active)
-            fixture.target = replace(fixture.target, binding_path_hash=meta["canonical_path_hash"],
-                binding_generation=meta["binding_generation"])
-            fixture.caller = CallerIdentity(owner.owner_session_id)
-            fixture.basis = basis(project_id=task["project_id"], task_id=active,
-                contract_revision=task["current_contract_revision"],
-                **{key: task["review_target_" + key] for key in
-                    ("authority_snapshot_id", "acceptance_criterion_id", "verification_criterion_id", "artifact_manifest_id")},
-                **{"target_" + key: task["review_target_" + key] for key in ("kind", "value", "base_revision", "generation")},
-                completion_commit_required=task["completion_commit_required"],
-                project_path_hash=meta["canonical_path_hash"], project_binding_generation=meta["binding_generation"],
-                parent_session_id=owner.owner_session_id, execution_id=owner.execution_id, ownership_generation=owner.generation)
             for index in (1, 2):
                 fixture.add(connection, index)
             connection.commit()

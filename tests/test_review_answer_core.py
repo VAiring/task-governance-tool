@@ -7,15 +7,12 @@ import unittest
 from unittest import mock
 from contextlib import closing
 
-from tests import test_review_continuation_registration as continuation_fixture
+from tests.review_answer_fixture_support import ReviewFixture, review_fixture
 from tests.test_review_session_migration import candidate_runtime
-from tests.test_review_answer_pure_values import metadata_fixture
 from task_governance_tool import storage, reviews
 from task_governance_tool import schema_review_answers as schema
 from task_governance_tool import review_answer_values as values
-from task_governance_tool.review_answer import decode_answer
-from task_governance_tool.review_answer_repository import CollectedReceiptInput, record_dispatch_locked, read_registration
-from task_governance_tool.review_session_repository import ReviewSessionBinding
+from task_governance_tool.review_answer_repository import record_dispatch_locked, read_registration
 from task_governance_tool.task_values import TaskValidationError
 from tests.verification_receipt_test_support import add_receipt, completion, set_target
 from tests.test_m23s_schema22_validation import _bundle_artifacts
@@ -24,110 +21,20 @@ from tests.test_m23s_schema22_migration import _logical_snapshot, _add_unrelated
 
 class CollectedCoreTests(unittest.TestCase):
     def setUp(self):
-        self.fixture=continuation_fixture.ContinuationRegistrationTests()
-        self.fixture.setUp()
-        self.addCleanup(self.fixture.doCleanups)
-        self.enterContext(candidate_runtime(30))
-        self.db,self.target,self.basis,self.caller=self.fixture.db,self.fixture.target,self.fixture.basis,self.fixture.caller
-        with closing(storage.connect(self.db)) as connection:
-            schema.migrate(connection)
+        fixture = self.enterContext(review_fixture(schema_version=30, contract=None))
+        self.repo, self.db = fixture.repo, fixture.db
+        self.task, self.task_id = fixture.task, fixture.task_id
+        self.target, self.caller = fixture.target, fixture.caller
+        self.basis, self.packet = fixture.basis, fixture.packet
+        self.schema_version = fixture.schema_version
 
-    def metadata(self,index=1,verdict="pass",findings=None):
-        metadata,_=metadata_fixture()
-        metadata["basis"].update(execution_basis=self.basis,route="manual")
-        metadata["binding"].update(basis_digest=values.basis_digest(metadata["basis"]),slot=index,
-            reviewer_key="reviewer-"+str(index),parent_session_id=self.basis["parent_session_id"],
-            reviewer_session_id=f"10000000-0000-4000-8000-{index:012x}")
-        metadata["source_identity"].update(reviewer_session_id=metadata["binding"]["reviewer_session_id"],message_id="message-"+str(index))
-        answer=decode_answer(json.dumps(dict(verdict=verdict,summary="review complete",findings=findings or [],checks=["source inspection"],limitations=[])).encode())
-        metadata["original"].update(byte_length=len(answer.raw),digest=answer.original_digest,payload_start=answer.payload_start,payload_length=answer.payload_length,payload_digest=answer.payload_digest)
-        return metadata,answer
-
-    def add(self,connection,index=1,verdict="pass"):
-        metadata,answer=self.metadata(index,verdict)
-        submission_digest="sha256:"+format(index+11,"x")*64
-        result=reviews.add_review_receipt(connection,self.target.project,self.basis["task_id"],
-            reviewer=metadata["binding"]["reviewer_key"],kind="independent",verdict=verdict,summary=answer.payload["summary"],
-            caller=self.caller,database_target=self.target,
-            session_binding=ReviewSessionBinding(metadata["source_identity"]["reviewer_session_id"],self.basis["execution_id"],"handoff",answer.original_digest.removeprefix("sha256:")),
-            collected_answer=CollectedReceiptInput(metadata,answer,submission_digest))
-        record_dispatch_locked(connection,preparation_id=metadata["basis"]["preparation_id"],submission_digest=submission_digest,
-            project_id=self.basis["project_id"],task_id=self.basis["task_id"],entries=[self.entry(result.receipt,metadata,submission_digest)])
-        return result.receipt,metadata
-
-    def entry(self,receipt,metadata,submission_digest):
-        host=receipt["review_provenance"]["host_observation"]
-        return dict(slot=metadata["binding"]["slot"],protocol="review-answer-v1",receipt_id=receipt["review_receipt_id"],project_id=self.basis["project_id"],task_id=self.basis["task_id"],contract_revision=self.basis["contract_revision"],target={"kind":self.basis["target_kind"],"value":self.basis["target_value"],"base_revision":self.basis["target_base_revision"],"generation":self.basis["target_generation"],"capture_version":1},source_preparation_id=metadata["basis"]["preparation_id"],source_continuation_id=None,
-            reviewer_session_id=host["reviewer_session_id"],turn_id=host["turn_id"],message_id=host["message_id"],basis_digest=host["basis_digest"],original_digest=metadata["original"]["digest"],payload_digest=metadata["original"]["payload_digest"],submission_digest=submission_digest)
-
-    def collected_source_continuation(self):
-        from task_governance_tool import review_continuation as cv, review_continuation_repository as cr
-        metadata,answer=self.metadata(1)
-        selected=(cv.SelectedReviewer(metadata["binding"]["reviewer_session_id"],"supplement",None,"Inspect the source request"),)
-        with closing(storage.connect_initialized(self.target)) as connection,connection:
-            connection.execute("BEGIN IMMEDIATE")
-            source=cr.admit_locked(connection,basis=self.basis,preparation_id=metadata["basis"]["preparation_id"],
-                route="manual",selected=selected,caller=self.caller)
-            source=cr.advance_prepared_locked(connection,source,self.caller)
-        metadata["basis"]["continuation"]=dict(continuation_id=source.continuation_id,sequence=source.sequence,
-            selection_digest=cv.selection_digest(source.selected))
-        metadata["binding"]["basis_digest"]=values.basis_digest(metadata["basis"])
-        return source,metadata,answer
-
-    def retain_collected_source(self, predecessor, metadata):
-        from task_governance_tool import review_continuation as cv, review_continuation_repository as cr
-        current,_=self.metadata(2)
-        selected=(cv.SelectedReviewer(current["binding"]["reviewer_session_id"],"supplement",None,"Inspect the consumer request"),)
-        cid="tg_review_continuation_"+f"{predecessor.sequence+1:016x}"
-        capture=dict(kind="collected",consumer_continuation_id=cid,consumer_slot=2,
-            source_preparation_id=metadata["basis"]["preparation_id"],
-            source_continuation_id=metadata["basis"]["continuation"]["continuation_id"],
-            source_slot=metadata["binding"]["slot"],session_id=metadata["source_identity"]["reviewer_session_id"],
-            source_basis_digest=values.basis_digest(metadata["basis"]),original_digest=metadata["original"]["digest"],
-            metadata_digest=values.metadata_digest(metadata))
-        with closing(storage.connect_initialized(self.target)) as connection,connection:
-            connection.execute("BEGIN IMMEDIATE")
-            consumer=cr.admit_locked(connection,basis=self.basis,preparation_id=metadata["basis"]["preparation_id"],
-                route="manual",selected=selected,caller=self.caller,continuation_id=cid,
-                retirement=cv.RetirementProof(predecessor.continuation_id,cv.basis_digest(self.basis),None,None),
-                retained_collected=((capture,metadata),))
-            consumer=cr.advance_prepared_locked(connection,consumer,self.caller)
-        return consumer
-
-    def register_collected_source(self):
-        from task_governance_tool import review_continuation as cv
-        from task_governance_tool.review_answer_repository import read_native_collected_captures
-        from task_governance_tool.review_answer_transport import CollectedItem, frame_collected_submission, decode_collected_submission
-        from task_governance_tool.review_collected_results import add_collected_review_results
-        source,metadata,answer=self.collected_source_continuation()
-        consumer=self.retain_collected_source(source,metadata)
-        consumer=self.retain_collected_source(consumer,metadata)
-        current,current_answer=self.metadata(2)
-        context=dict(continuation_id=consumer.continuation_id,sequence=consumer.sequence,
-            selection_digest=cv.selection_digest(consumer.selected))
-        current["basis"]["continuation"]=context
-        current["binding"].update(slot=1,basis_digest=values.basis_digest(current["basis"]))
-        with closing(storage.connect_initialized(self.target)) as connection:
-            captures=tuple(c for c,m in read_native_collected_captures(connection,consumer.continuation_id))
-        raw=frame_collected_submission(metadata["basis"]["preparation_id"],
-            (CollectedItem(1,current_answer.raw,current,current_answer),CollectedItem(2,answer.raw,metadata,answer)),
-            continuation=context,retained_originals=captures)
-        with closing(storage.connect_initialized(self.target)) as connection,connection:
-            registered=add_collected_review_results(connection,self.target.project,self.basis["task_id"],
-                decode_collected_submission(raw),caller=self.caller,database_target=self.target)
-            self.assertIsNone(registered["review_gate"]["blocking_code"])
-        return consumer
-
-    def collected_source_artifact(self):
-        self.register_collected_source()
-        verified=add_receipt(self.db,self.fixture.repo,self.basis["task_id"],self.basis["target_generation"])
-        self.assertEqual(verified.returncode,0,verified.stdout)
-        completed=completion(self.db,self.fixture.repo,self.basis["task_id"])
-        self.assertEqual(completed.returncode,0,completed.stdout)
-        with closing(storage.connect_initialized(self.target)) as connection:
-            schema.validate_storage(connection)
-            _,artifacts=_bundle_artifacts(connection,self.basis["project_id"])
-            return next(iter(artifacts.values()))
+    metadata = ReviewFixture.metadata
+    add = ReviewFixture.add
+    entry = ReviewFixture.entry
+    collected_source_continuation = ReviewFixture.collected_source_continuation
+    retain_collected_source = ReviewFixture.retain_collected_source
+    register_collected_source = ReviewFixture.register_collected_source
+    collected_source_artifact = ReviewFixture.collected_source_artifact
 
     def test_capture_admission_binds_source_sequence_and_selection_with_recomputed_seals(self):
         from task_governance_tool import review_continuation_repository as cr
@@ -339,7 +246,7 @@ class CollectedCoreTests(unittest.TestCase):
             incomplete=read_registration(connection,**args)
             self.assertEqual((incomplete["status"],incomplete["reason"],incomplete["entries"]),("conflict","partial_inventory",[]))
             connection.rollback()
-        set_target(self.db,self.fixture.repo,self.basis["task_id"],fingerprint="sha256:"+"e"*64)
+        set_target(self.db,self.repo,self.basis["task_id"],fingerprint="sha256:"+"e"*64)
         with closing(storage.connect_initialized(self.target)) as connection:
             historical=read_registration(connection,**args)
             self.assertEqual(historical["status"],"recorded")
@@ -357,9 +264,9 @@ class CollectedCoreTests(unittest.TestCase):
             self.add(connection,1)
             self.add(connection,2)
             connection.commit()
-        verified=add_receipt(self.db,self.fixture.repo,self.basis["task_id"],self.basis["target_generation"])
+        verified=add_receipt(self.db,self.repo,self.basis["task_id"],self.basis["target_generation"])
         self.assertEqual(verified.returncode,0,verified.stdout)
-        completed=completion(self.db,self.fixture.repo,self.basis["task_id"])
+        completed=completion(self.db,self.repo,self.basis["task_id"])
         self.assertEqual(completed.returncode,0,completed.stdout)
         with closing(storage.connect_initialized(self.target)) as connection:
             basis,bundles=_bundle_artifacts(connection,self.basis["project_id"])
@@ -375,9 +282,9 @@ class CollectedCoreTests(unittest.TestCase):
             self.add(connection,1)
             self.add(connection,2)
             connection.commit()
-        verified=add_receipt(self.db,self.fixture.repo,self.basis["task_id"],self.basis["target_generation"])
+        verified=add_receipt(self.db,self.repo,self.basis["task_id"],self.basis["target_generation"])
         self.assertEqual(verified.returncode,0,verified.stdout)
-        completed=completion(self.db,self.fixture.repo,self.basis["task_id"])
+        completed=completion(self.db,self.repo,self.basis["task_id"])
         self.assertEqual(completed.returncode,0,completed.stdout)
         with closing(storage.connect_initialized(self.target)) as connection:
             bundle=connection.execute("SELECT * FROM completion_evidence_bundles WHERE task_id=?",
@@ -466,9 +373,9 @@ class CollectedCoreTests(unittest.TestCase):
         with closing(storage.connect_initialized(self.target)) as connection,connection:
             registered=add_collected_review_results(connection,self.target.project,self.basis["task_id"],decode_collected_submission(raw),caller=self.caller,database_target=self.target)
             self.assertIsNone(registered["review_gate"]["blocking_code"])
-        verified=add_receipt(self.db,self.fixture.repo,self.basis["task_id"],self.basis["target_generation"])
+        verified=add_receipt(self.db,self.repo,self.basis["task_id"],self.basis["target_generation"])
         self.assertEqual(verified.returncode,0,verified.stdout)
-        completed=completion(self.db,self.fixture.repo,self.basis["task_id"])
+        completed=completion(self.db,self.repo,self.basis["task_id"])
         self.assertEqual(completed.returncode,0,completed.stdout)
         with closing(storage.connect_initialized(self.target)) as connection:
             schema.validate_storage(connection)
@@ -572,10 +479,10 @@ class CollectedCoreTests(unittest.TestCase):
         from task_governance_tool.session_identity import CallerIdentity
         from task_governance_tool.review_continuation_evidence_repository import validate_frozen_against_core
         artifact=self.initial_source_artifact()
-        reopened=run_taskgov("task","edit",self.basis["task_id"],"--repo",str(self.fixture.repo),"--db",str(self.db),
+        reopened=run_taskgov("task","edit",self.basis["task_id"],"--repo",str(self.repo),"--db",str(self.db),
             "--status","in_progress","--reopen-reason","Inspect a later target","--json")
         self.assertEqual(reopened.returncode,0,reopened.stdout)
-        set_target(self.db,self.fixture.repo,self.basis["task_id"],fingerprint="sha256:"+"e"*64)
+        set_target(self.db,self.repo,self.basis["task_id"],fingerprint="sha256:"+"e"*64)
         with closing(storage.connect_initialized(self.target)) as connection:
             task=connection.execute("SELECT * FROM tasks WHERE task_id=?",(self.basis["task_id"],)).fetchone()
             owner=read_basis(connection,project_id=self.basis["project_id"],task_id=self.basis["task_id"])
@@ -615,8 +522,7 @@ class CollectedCoreTests(unittest.TestCase):
 
 class AnswerMigrationTests(unittest.TestCase):
     def test_predecessor_sealed_bytes_and_unrelated_rows_survive_migration_and_failure(self):
-        fixture=continuation_fixture.ContinuationRegistrationTests()
-        fixture.setUp();self.addCleanup(fixture.doCleanups)
+        fixture = self.enterContext(review_fixture(schema_version=29, contract=None))
         fixture.native_continuation_artifact()
         with closing(storage.connect(fixture.db)) as connection:
             _add_unrelated_objects(connection)

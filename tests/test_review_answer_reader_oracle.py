@@ -16,7 +16,7 @@ from tests.evidence_test_support import index_entries, reference_json_bytes
 from tests.test_review_answer_pure_values import metadata_fixture
 from tests.test_review_answer_pure_provenance import context
 from task_governance_tool import review_answer_values as values, review_answer_provenance as producer
-from tests import test_review_continuation_registration as continuation_fixture
+from tests.review_answer_fixture_support import review_fixture
 from tests.review_continuation_evidence_oracle import validate_graph
 import json
 
@@ -113,9 +113,8 @@ class CollectedReaderTests(unittest.TestCase):
 
 class CollectedGraphReaderTests(unittest.TestCase):
     def setUp(self):
-        fixture=continuation_fixture.ContinuationRegistrationTests()
-        fixture.setUp();self.addCleanup(fixture.doCleanups)
-        artifact,_=fixture.native_continuation_artifact()
+        with review_fixture(schema_version=29, contract=None) as fixture:
+            artifact,_=fixture.native_continuation_artifact()
         self.payload=copy.deepcopy(artifact.payload)
         self.payload.update(bundle_version=4,source_schema_version=30)
         graph=self.payload["review_continuation_basis"]
@@ -181,12 +180,10 @@ class CollectedGraphReaderTests(unittest.TestCase):
             with self.subTest(mutate=mutate),self.assertRaises(reader.EvidenceConsumerError):validate_graph(changed,reader)
 
     def test_resealed_capture_reviewer_key_matches_linked_receipt_for_both_source_kinds(self):
-        from tests import test_review_answer_core as core_fixture
         from task_governance_tool import review_continuation_evidence as product_graph
         from task_governance_tool.evidence_ledger import EvidenceLedgerError
-        fixture=core_fixture.CollectedCoreTests()
-        fixture.setUp();self.addCleanup(fixture.doCleanups)
-        continued=fixture.collected_source_artifact().payload
+        with review_fixture(schema_version=30, contract=None) as fixture:
+            continued=fixture.collected_source_artifact().payload
         for source_kind,payload in (("initial",self.payload),("continuation",continued)):
             with self.subTest(source_kind=source_kind):
                 graph=payload["review_continuation_basis"]
@@ -210,12 +207,10 @@ class CollectedGraphReaderTests(unittest.TestCase):
 
 class CollectedSourceGraphReaderTests(unittest.TestCase):
     def test_resealed_source_context_requires_product_and_independent_reader_agreement(self):
-        from tests import test_review_answer_core as core_fixture
         from task_governance_tool import review_continuation_evidence as product_graph
         from task_governance_tool.evidence_ledger import EvidenceLedgerError
-        fixture=core_fixture.CollectedCoreTests()
-        fixture.setUp();self.addCleanup(fixture.doCleanups)
-        artifact=fixture.collected_source_artifact()
+        with review_fixture(schema_version=30, contract=None) as fixture:
+            artifact=fixture.collected_source_artifact()
         payload=artifact.payload
         graph=payload["review_continuation_basis"]
         self.assertEqual(len(graph["collected_captures"]),2)

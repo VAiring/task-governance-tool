@@ -1009,6 +1009,20 @@ a real consuming project or Git state. Tests cover:
   legacy upgrade/paired rollback, exact workflow identity, and sanitized
   release evidence.
 
+Review-answer and continuation tests share
+`tests/review_answer_fixture_support.py`: callers select the schema and optional
+Contract explicitly. Its context manager owns isolated state, real predecessor
+migrations and runtime cleanup; its read-only attachment helper reuses an
+existing test database without creating or migrating it. Scenario helpers are
+ordinary fixture methods, separate from `TestCase` lifecycle and assertions
+about product behavior. Failure injection remains in the tests that own each
+failure case.
+
+The narrow `tests/review_handoff_fixture_support.py` composes that fixture for
+handoff publication and continuation. Its context owns resolver patches as
+well as the underlying state; shared operations accept an explicit context
+registrar when the calling test owns their lifetime.
+
 Repository release consistency uses the same offline read-only checker from
 focused unit fixtures and CI. Negative fixtures independently cover a missing
 manifest or declared file, extra packaged core, digest mismatch, license or

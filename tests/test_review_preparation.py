@@ -1,16 +1,12 @@
 """Candidate schema-29 preparation with native core authority/ownership reads."""
 
 from contextlib import closing
-from pathlib import Path
-from types import SimpleNamespace
 import unittest
-import subprocess
 import threading
 from unittest import mock
 
-from tests import test_review_continuation_registration as registration_fixture
-from tests.test_review_handoff import packet_for
-from tests.test_review_results import document, encode
+from tests.review_answer_fixture_support import ReviewFixture, review_fixture
+from tests.review_handoff_fixture_support import physical_handoff, publish_handoff
 from task_governance_tool import review_preparation as preparation, storage
 from task_governance_tool.review_preparation_repository import PreparationRepository
 from task_governance_tool.review_wait_basis_repository import read_preparation_basis
@@ -24,32 +20,16 @@ from task_governance_tool.review_wait_runtime.review_wait_repository import Repo
 
 
 class PreparationPublicationTests(unittest.TestCase):
-    setUp = registration_fixture.ContinuationRegistrationTests.setUp
+    def setUp(self):
+        fixture = self.enterContext(review_fixture(schema_version=29, contract=None))
+        self.repo, self.db, self.task_id = fixture.repo, fixture.db, fixture.task_id
+        self.target, self.basis = fixture.target, fixture.basis
+        self.caller, self.packet = fixture.caller, fixture.packet
 
     def physical(self):
-        subprocess.run(["git", "init", "--quiet", str(self.repo)], check=True, capture_output=True)
-        with (self.repo / ".gitignore").open("a", encoding="utf-8") as target:
-            target.write("\n/reviews/\n")
-        (self.repo / "reviews").mkdir()
-        self.path = self.repo / "reviews/packet.json"
-        self.packet = packet_for(document(self.task_id, revision=self.basis["contract_revision"],
-            generation=self.basis["target_generation"]))
-        self.packet["review_target"] = {key: self.basis["target_" + key] for key in ("kind", "value", "base_revision", "generation")}
-        from task_governance_tool.review_results import review_result_template
-        self.packet["result_template"] = review_result_template(self.task_id, self.basis["contract_revision"], self.packet["review_target"])
-        self.packet["task"].update(verification="Fixture verification", verification_not_required_reason="")
-        self.packet["review_session_context"] = dict(version=1, project_id=self.basis["project_id"], execution_id=self.basis["execution_id"])
-        self.path.write_bytes(encode(self.packet))
-        self.root = self.repo / "operational"
-        self.root.mkdir()
-        paths = SimpleNamespace(review_wait_root=self.root, fixed_root=self.repo,
-            review_preparation_store=lambda *_: self.root / "preparation.sqlite",
-            review_finalization_store=lambda *_: self.root / "finalization.sqlite")
-        self.resolution = SimpleNamespace(target=self.target, paths=paths)
-        self.enterContext(mock.patch.object(preparation, "resolve", return_value=self.resolution))
+        physical_handoff(self, enter_context=self.enterContext)
 
-    def publish(self, *, route="manual", caller=None):
-        return preparation.publish_ready(self.repo, "reviews/packet.json", ["reviews/a.json", "reviews/b.json"], caller or self.caller, route=route)
+    publish = publish_handoff
 
     def test_native_full_basis_is_read_only_and_actual_owner_required(self):
         with closing(storage.connect_initialized_readonly(self.target)) as connection:
@@ -102,7 +82,7 @@ class PreparationPublicationTests(unittest.TestCase):
         self.physical()
         self.publish()
         self.pending(A)
-        raw = registration_fixture.ContinuationRegistrationTests.original(self, A)[0]
+        raw = ReviewFixture.original(self, A)[0]
         with mock.patch("task_governance_tool.session_identity.capture_caller_identity", return_value=CallerIdentity(A)):
             with self.assertRaises(HandoffError) as caught:
                 files.save(self.repo, "reviews/packet.json", "reviews/a.json", raw)
@@ -114,7 +94,7 @@ class PreparationPublicationTests(unittest.TestCase):
         self.physical()
         self.publish()
         self.pending(B)
-        raw = registration_fixture.ContinuationRegistrationTests.original(self, A)[0]
+        raw = ReviewFixture.original(self, A)[0]
         with mock.patch("task_governance_tool.session_identity.capture_caller_identity", return_value=CallerIdentity(A)), \
              mock.patch("task_governance_tool.usage_lifecycle.register_reviewer"):
             result = files.save(self.repo, "reviews/packet.json", "reviews/a.json", raw)

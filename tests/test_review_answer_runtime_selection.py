@@ -12,13 +12,12 @@ import sqlite3
 import unittest
 from unittest.mock import Mock, patch
 
-from tests import test_review_handoff_continuation as fixture_support
+from tests.review_handoff_fixture_support import handoff_fixture
 from tests import test_review_preparation as preparation_fixtures
 from tests.test_review_answer_pure_values import metadata_fixture, TURN1, TURN2
 from tests.test_review_continuation import A, B, ident
-from tests.test_review_session_migration import candidate_runtime
 from task_governance_tool import review_answer_runtime as runtime
-from task_governance_tool import review_handoff_scope, setup_feature_config, storage, schema_review_answers
+from task_governance_tool import review_handoff_scope, setup_feature_config, storage
 from task_governance_tool import review_handoff_transport as files
 from task_governance_tool.review_answer import AnswerError
 from task_governance_tool.review_answer_collection_repository import CollectionRepository, _encode as encode_record
@@ -39,13 +38,8 @@ C = "00000000-0000-4000-8000-000000000004"
 
 class RuntimeSelectionTests(unittest.TestCase):
     def ready(self, *, version=1, protocol=None, count=2):
-        fixture = fixture_support.HandoffContinuationTests()
-        fixture.setUp()
-        self.addCleanup(fixture.doCleanups)
+        fixture = self.enterContext(handoff_fixture(schema_version=30, contract=None))
         fixture.ready()
-        self.enterContext(candidate_runtime(30))
-        with closing(storage.connect(fixture.db)) as connection:
-            schema_review_answers.migrate(connection)
         self.fixture = fixture
         paths = fixture.resolution.paths
         paths.review_answer_collection_store = lambda parent, task, generation, preparation, continuation=None: (
@@ -64,6 +58,7 @@ class RuntimeSelectionTests(unittest.TestCase):
         preparation = PreparationRepository(fixture.root / "preparation.sqlite")
         self.preparation = preparation
         self.root = preparation.read()[1]
+        self.assertEqual(self.root.version, 1)
         if version == 2:
             initial = metadata_fixture()[0]["basis"]
             initial.update(preparation_id=ident("tg_review_preparation_", 2), execution_basis=self.root.basis,

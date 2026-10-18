@@ -3,12 +3,7 @@ from __future__ import annotations
 
 import unittest
 from contextlib import closing
-from unittest import mock
-
-from tests import test_review_answer_core as collected
-from tests import test_review_continuation_registration as continuation
-from tests.test_task_contracts import edit_contract
-from tests.test_review_session_migration import candidate_runtime
+from tests.review_answer_fixture_support import ReviewContract, review_fixture
 from tests.test_m23s_schema22_validation import _bundle_artifacts
 from tests import evidence_reader_oracle as reader
 from tests.verification_receipt_test_support import add_receipt, completion
@@ -17,25 +12,14 @@ from task_governance_tool import storage
 
 class CollectedContractCompletionTests(unittest.TestCase):
     def setUp(self):
-        original_add = continuation.add_task
-
-        def with_contract(db, repo, **kwargs):
-            task = original_add(db, repo, **{**kwargs, "status": "ready"})
-            result, response = edit_contract(db, repo, task["task_id"],
-                "Implement bounded task", "Two independent passes",
-                "--contract-authority-ref", "user:isolated-completion-regression",
-                "--status", "in_progress")
-            self.assertEqual(result.returncode, 0, response)
-            return task
-
-        self.fixture = collected.CollectedCoreTests()
-        with mock.patch.object(continuation, "add_task", side_effect=with_contract):
-            self.fixture.setUp()
-        self.addCleanup(self.fixture.doCleanups)
-        from task_governance_tool import schema_criterion_link_collector as schema
-        self.enterContext(candidate_runtime(31))
-        with closing(storage.connect(self.fixture.db)) as connection:
-            schema.migrate(connection)
+        self.fixture = self.enterContext(review_fixture(
+            schema_version=31,
+            contract=ReviewContract(
+                scope="Implement bounded task",
+                acceptance="Two independent passes",
+                authority_ref="user:isolated-completion-regression",
+            ),
+        ))
 
     def test_check_and_actual_completion_agree_with_contract_and_v2_passes(self):
         fixture = self.fixture
@@ -54,12 +38,12 @@ class CollectedContractCompletionTests(unittest.TestCase):
 
     def assert_completion(self, *, gate_basis_version):
         fixture = self.fixture
-        verified = add_receipt(fixture.db, fixture.fixture.repo,
+        verified = add_receipt(fixture.db, fixture.repo,
             fixture.basis["task_id"], fixture.basis["target_generation"])
         self.assertEqual(verified.returncode, 0, verified.stdout)
-        checked = completion(fixture.db, fixture.fixture.repo, fixture.basis["task_id"], check=True)
+        checked = completion(fixture.db, fixture.repo, fixture.basis["task_id"], check=True)
         self.assertEqual(checked.returncode, 0, checked.stdout)
-        completed = completion(fixture.db, fixture.fixture.repo, fixture.basis["task_id"])
+        completed = completion(fixture.db, fixture.repo, fixture.basis["task_id"])
         self.assertEqual(completed.returncode, 0, completed.stdout)
         with closing(storage.connect_initialized(fixture.target)) as connection:
             self.assertEqual(connection.execute("SELECT status FROM tasks WHERE task_id=?",

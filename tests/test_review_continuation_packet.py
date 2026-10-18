@@ -4,17 +4,21 @@ from contextlib import closing
 import unittest
 from unittest import mock
 
-from tests import test_review_continuation_registration as fixture
+from tests.review_answer_fixture_support import ReviewFixture, review_fixture
 from tests.test_review_continuation import A, ident
 from task_governance_tool import storage, review_packet
 from task_governance_tool import review_continuation as values, review_continuation_repository as repository
 
 
 class ContinuationPacketTests(unittest.TestCase):
-    setUp = fixture.ContinuationRegistrationTests.setUp
-    prepare = fixture.ContinuationRegistrationTests.prepare
-    original = fixture.ContinuationRegistrationTests.original
-    register = fixture.ContinuationRegistrationTests.register
+    def setUp(self):
+        fixture = self.enterContext(review_fixture(schema_version=29, contract=None))
+        self.task_id, self.target = fixture.task_id, fixture.target
+        self.basis, self.caller, self.packet = fixture.basis, fixture.caller, fixture.packet
+
+    prepare = ReviewFixture.prepare
+    original = ReviewFixture.original
+    register = ReviewFixture.register
 
     def context(self):
         with closing(storage.connect_initialized_readonly(self.target)) as connection:

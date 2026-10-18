@@ -14,6 +14,7 @@ from unittest import mock
 
 from tests import test_review_handoff_continuation as manual
 from tests import test_review_finalization_continuation as integrated
+from tests.review_answer_fixture_support import review_fixture
 from tests.test_review_continuation import A, B
 from tests.test_review_wait_direct import ORIGINAL
 from tests.test_review_wait_service import TURN
@@ -251,7 +252,12 @@ class RecoveryAssertions:
 
 
 class ManualContinuationRecoveryTests(RecoveryAssertions, unittest.TestCase):
-    setUp = manual.HandoffContinuationTests.setUp
+    def setUp(self):
+        fixture = self.enterContext(review_fixture(schema_version=29, contract=None))
+        self.repo, self.db, self.task_id = fixture.repo, fixture.db, fixture.task_id
+        self.target, self.basis = fixture.target, fixture.basis
+        self.caller, self.packet = fixture.caller, fixture.packet
+
     physical = manual.HandoffContinuationTests.physical
     publish = manual.HandoffContinuationTests.publish
     ready = manual.HandoffContinuationTests.ready
@@ -602,7 +608,12 @@ class ManualContinuationRecoveryTests(RecoveryAssertions, unittest.TestCase):
 
 
 class IntegratedContinuationRecoveryTests(RecoveryAssertions, unittest.TestCase):
-    setUp = integrated.FinalizationContinuationTests.setUp
+    def setUp(self):
+        fixture = self.enterContext(review_fixture(schema_version=29, contract=None))
+        self.repo, self.db, self.task_id = fixture.repo, fixture.db, fixture.task_id
+        self.target, self.basis = fixture.target, fixture.basis
+        self.caller, self.packet = fixture.caller, fixture.packet
+
     physical = integrated.FinalizationContinuationTests.physical
     publish = integrated.FinalizationContinuationTests.publish
     git = integrated.FinalizationContinuationTests.git
@@ -1024,7 +1035,12 @@ class HistoricalRequestAssertions:
 
 
 class ManualHistoricalRequestTests(HistoricalRequestAssertions, unittest.TestCase):
-    setUp = manual.HandoffContinuationTests.setUp
+    def setUp(self):
+        fixture = self.enterContext(review_fixture(schema_version=29, contract=None))
+        self.repo, self.db, self.task_id = fixture.repo, fixture.db, fixture.task_id
+        self.target, self.basis = fixture.target, fixture.basis
+        self.caller, self.packet = fixture.caller, fixture.packet
+
     physical = manual.HandoffContinuationTests.physical
     publish = manual.HandoffContinuationTests.publish
     ready = manual.HandoffContinuationTests.ready
@@ -1032,7 +1048,12 @@ class ManualHistoricalRequestTests(HistoricalRequestAssertions, unittest.TestCas
 
 
 class IntegratedHistoricalRequestTests(HistoricalRequestAssertions, unittest.TestCase):
-    setUp = integrated.FinalizationContinuationTests.setUp
+    def setUp(self):
+        fixture = self.enterContext(review_fixture(schema_version=29, contract=None))
+        self.repo, self.db, self.task_id = fixture.repo, fixture.db, fixture.task_id
+        self.target, self.basis = fixture.target, fixture.basis
+        self.caller, self.packet = fixture.caller, fixture.packet
+
     physical = integrated.FinalizationContinuationTests.physical
     publish = integrated.FinalizationContinuationTests.publish
     git = integrated.FinalizationContinuationTests.git

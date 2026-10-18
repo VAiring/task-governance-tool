@@ -6,119 +6,40 @@ the shipped admission ceiling and the user's canonical state are unchanged.
 
 from __future__ import annotations
 
-import tempfile
 import copy
 import hashlib
 import json
 import unittest
 from contextlib import closing
-from dataclasses import replace
-from pathlib import Path
 from unittest import mock
 
-from tests.verification_receipt_test_support import initialize, add_task, set_target, target_for, run_taskgov, payload, completion
-from tests.test_m23s_schema22_validation import _bundle_artifacts
-from tests.test_review_session_migration import candidate_runtime
-from tests.test_review_results import document, receipt, encode
-from tests.test_review_continuation import A, B, ident, basis
-from task_governance_tool import storage, review_results, reviews, review_session_transport as transport
+from tests.verification_receipt_test_support import run_taskgov
+from tests.review_answer_fixture_support import ReviewFixture, review_fixture
+from tests.test_review_continuation import A, B, ident
+from task_governance_tool import storage, review_results, reviews
 from task_governance_tool import review_continuation as values, review_continuation_repository as repository
 from task_governance_tool import schema_review_continuation as schema
-from task_governance_tool.session_identity import CallerIdentity
-from task_governance_tool.task_ownership import read_basis
 from task_governance_tool import review_continuation_evidence as frozen
-from task_governance_tool.review_continuation_evidence_repository import freeze_basis_locked
 from task_governance_tool.evidence_ledger import canonical_json_bytes, EvidenceLedgerError
 
 
 class ContinuationRegistrationTests(unittest.TestCase):
     def setUp(self):
-        temporary = tempfile.TemporaryDirectory(prefix="taskgov-continuation-registration-")
-        self.addCleanup(temporary.cleanup)
-        with candidate_runtime(28):
-            self.repo, self.db = initialize(Path(temporary.name))
-            self.task = add_task(self.db, self.repo, review_tier=2)
-            self.task_id = self.task["task_id"]
-            set_target(self.db, self.repo, self.task_id)
-        self.enterContext(candidate_runtime(29))
-        with closing(storage.connect(self.db)) as connection:
-            schema.migrate(connection)
-        self.target = target_for(self.db, self.repo)
-        with closing(storage.connect_initialized(self.target)) as connection:
-            project_meta = connection.execute("SELECT canonical_path_hash,binding_generation FROM project_meta WHERE project_id=?", (self.target.project.project_id,)).fetchone()
-            # Explicit-path test targets omit these optional observations. Bind
-            # them to the admitted fixture's actual metadata, as public fixed
-            # state resolution does; do not relax the production value contract.
-            self.target = replace(self.target, binding_path_hash=project_meta["canonical_path_hash"],
-                                  binding_generation=project_meta["binding_generation"])
-            task = connection.execute("SELECT * FROM tasks WHERE task_id=?", (self.task_id,)).fetchone()
-            ownership = read_basis(connection, project_id=task["project_id"], task_id=self.task_id)
-            self.caller = CallerIdentity(ownership.owner_session_id)
-            self.basis = basis(project_id=task["project_id"], task_id=self.task_id,
-                contract_revision=task["current_contract_revision"], authority_snapshot_id=task["review_target_authority_snapshot_id"],
-                acceptance_criterion_id=task["review_target_acceptance_criterion_id"], verification_criterion_id=task["review_target_verification_criterion_id"],
-                artifact_manifest_id=task["review_target_artifact_manifest_id"],
-                target_kind=task["review_target_kind"], target_value=task["review_target_value"],
-                target_base_revision=task["review_target_base_revision"], target_generation=task["review_target_generation"],
-                project_path_hash=self.target.binding_path_hash, project_binding_generation=self.target.binding_generation,
-                parent_session_id=ownership.owner_session_id, execution_id=ownership.execution_id, ownership_generation=ownership.generation)
-        self.packet = dict(task={"task_id": self.task_id}, contract={"revision": self.basis["contract_revision"]},
-            review_target={key: self.basis["target_" + key] for key in ("kind", "value", "base_revision", "generation")},
-            review_session_context=dict(version=1, project_id=self.basis["project_id"], execution_id=self.basis["execution_id"]))
+        fixture = self.enterContext(review_fixture(schema_version=29, contract=None))
+        self.repo, self.db = fixture.repo, fixture.db
+        self.task, self.task_id = fixture.task, fixture.task_id
+        self.target, self.caller = fixture.target, fixture.caller
+        self.basis, self.packet = fixture.basis, fixture.packet
+        self.schema_version = fixture.schema_version
 
-    def original(self, actor, *, verdict="pass", findings=(), continued=None):
-        raw = encode(document(self.task_id, revision=self.basis["contract_revision"],
-            generation=self.basis["target_generation"], receipts=[receipt("a" if actor == A else "b", verdict=verdict, findings=findings)]))
-        packet = dict(self.packet)
-        if continued is not None:
-            packet["review_session_context"] = dict(version=2, project_id=self.basis["project_id"], execution_id=self.basis["execution_id"],
-                preparation_id=continued.preparation_id, continuation_id=continued.continuation_id,
-                continuation_sequence=continued.sequence, selected_reviewers=[
-                    dict(session_id=row.session_id, action=row.action, prior_receipt_id=row.prior_receipt_id) for row in continued.selected])
-        return raw, transport.metadata_for(packet, raw, CallerIdentity(actor))
-
-    def register(self, originals, *, continued=None, retained=()):
-        identity = transport.ContinuationIdentity(continued.preparation_id, continued.continuation_id, continued.sequence) if continued else None
-        decoded = transport.decode_submission(transport.frame_submission([row[0] for row in originals], [row[1] for row in originals],
-            continuation=identity, retained_receipt_ids=retained))
-        with closing(storage.connect_initialized(self.target)) as connection, connection:
-            return review_results.add_review_results(connection, self.target.project, self.task_id, decoded.document,
-                database_target=self.target, caller=self.caller, session_bindings=decoded.bindings,
-                continuation_identity=decoded.continuation, retained_receipt_ids=decoded.retained_receipt_ids)
-
-    def prepare(self, *, actor=A, prior=None, selected=None):
-        with closing(storage.connect_initialized(self.target)) as connection, connection:
-            connection.execute("BEGIN IMMEDIATE")
-            record = repository.admit_locked(connection, basis=self.basis, preparation_id=ident("tg_review_preparation_"),
-                route="manual", selected=selected or (values.SelectedReviewer(actor, "reassess" if prior else "supplement", prior, "Explicit result continuation"),), caller=self.caller)
-            return repository.advance_prepared_locked(connection, record, self.caller)
-
-    def evidence(self, *, detail=None):
-        with closing(storage.connect_initialized(self.target)) as connection:
-            return reviews.read_review_evidence(connection, self.basis["project_id"], self.task_id,
-                source_schema_version=29, task_show_details=detail)
-
-    def resolve(self, finding_id, *, successor=None, summary="Explicit finding resolution"):
-        with closing(storage.connect_initialized(self.target)) as connection, connection:
-            return reviews.resolve_review_finding(connection, self.target.project, finding_id, resolution=summary,
-                database_target=self.target, caller=self.caller, reassessment_receipt=successor)
-
-    def freeze(self):
-        with closing(storage.connect_initialized(self.target)) as connection:
-            connection.execute("BEGIN IMMEDIATE")
-            task = connection.execute("SELECT * FROM tasks WHERE task_id=?", (self.task_id,)).fetchone()
-            value = freeze_basis_locked(connection, task)
-            connection.rollback()
-            return value
-
-    def reassess_with_finding(self):
-        initial = self.register([self.original(A, verdict="changes_requested", findings=[dict(severity="medium", summary="Reconsider this precise condition")]), self.original(B)])
-        old = initial["receipts"][0]["receipt"]["review_receipt_id"]
-        finding = initial["receipts"][0]["findings"][0]["finding"]["review_finding_id"]
-        retained = initial["receipts"][1]["receipt"]["review_receipt_id"]
-        record = self.prepare(prior=old)
-        result = self.register([self.original(A, continued=record)], continued=record, retained=(retained,))
-        return old, finding, result["receipts"][0]["receipt"]["review_receipt_id"]
+    original = ReviewFixture.original
+    register = ReviewFixture.register
+    prepare = ReviewFixture.prepare
+    evidence = ReviewFixture.evidence
+    resolve = ReviewFixture.resolve
+    freeze = ReviewFixture.freeze
+    reassess_with_finding = ReviewFixture.reassess_with_finding
+    native_continuation_artifact = ReviewFixture.native_continuation_artifact
 
     def test_ordinary_native_registration_creates_revision_one_and_preserves_gate(self):
         result = self.register([self.original(A), self.original(B)])
@@ -352,38 +273,6 @@ class ContinuationRegistrationTests(unittest.TestCase):
         with self.assertRaises(EvidenceLedgerError):
             self.freeze()
 
-    def native_continuation_artifact(self):
-        old, finding, successor = self.reassess_with_finding()
-        self.resolve(finding, successor=successor)
-        recorded = run_taskgov("verification", "receipt", "add", self.task_id,
-            "--result", "pass", "--duration-ms", "1", "--scope-coverage", "full",
-            "--expected-target-generation", str(self.basis["target_generation"]),
-            "--repo", str(self.repo), "--db", str(self.db), "--json")
-        self.assertEqual(recorded.returncode, 0, recorded.stdout + recorded.stderr)
-        result = completion(self.db, self.repo, self.task_id)
-        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertTrue(payload(result)["ok"])
-        with closing(storage.connect_initialized(self.target)) as connection:
-            schema.validate_storage(connection)
-            bundle = connection.execute("SELECT * FROM completion_evidence_bundles WHERE task_id=?", (self.task_id,)).fetchone()
-            self.assertEqual(bundle["bundle_version"], 3)
-            self.assertIsNotNone(bundle["continuation_basis_json"])
-            graph = frozen.decode_graph_json(bundle["continuation_basis_json"])
-            self.assertIn(successor, graph["effective_receipt_ids"])
-            self.assertNotIn(old, graph["effective_receipt_ids"])
-            _, artifacts = _bundle_artifacts(connection, self.basis["project_id"])
-            artifact = artifacts[bundle["completion_evidence_bundle_id"]]
-            self.assertEqual(artifact.payload["review_continuation_basis"], graph)
-            from tests.evidence_reader_oracle import ValidatedEvidenceSource
-            entry = dict(task_id=self.task_id, completion_cycle_id=bundle["completion_cycle_id"],
-                cycle_ordinal=bundle["cycle_ordinal"], bundle_state="native", bundle_id=bundle["completion_evidence_bundle_id"],
-                bundle_file="bundles/" + bundle["completion_evidence_bundle_id"] + ".json", bundle_digest=artifact.bundle_digest,
-                file_digest=artifact.file_digest, sealed_at=bundle["sealed_at"], bundle_format_version=3)
-            source_basis = dict(index_format_version=2, source_schema_version=29, project_id=self.basis["project_id"],
-                projection_generation=1, index_digest="sha256:" + "0" * 64, entry=entry)
-            source = ValidatedEvidenceSource("native_bundle", source_basis, artifact.envelope)
-            self.assertEqual(source.source["payload"]["review_continuation_basis"], graph)
-            return artifact, source_basis
 
     def test_native_completion_seals_format_three_and_reentry_reuses_frozen_graph(self):
         self.native_continuation_artifact()
@@ -468,14 +357,21 @@ class ContinuationRegistrationTests(unittest.TestCase):
 class ContinuationEvidenceValidationTests(unittest.TestCase):
     """Responsibility boundaries and their public whole-graph composition."""
 
-    setUp = ContinuationRegistrationTests.setUp
-    original = ContinuationRegistrationTests.original
-    register = ContinuationRegistrationTests.register
-    prepare = ContinuationRegistrationTests.prepare
-    resolve = ContinuationRegistrationTests.resolve
-    freeze = ContinuationRegistrationTests.freeze
-    reassess_with_finding = ContinuationRegistrationTests.reassess_with_finding
-    native_continuation_artifact = ContinuationRegistrationTests.native_continuation_artifact
+    def setUp(self):
+        fixture = self.enterContext(review_fixture(schema_version=29, contract=None))
+        self.repo, self.db = fixture.repo, fixture.db
+        self.task, self.task_id = fixture.task, fixture.task_id
+        self.target, self.caller = fixture.target, fixture.caller
+        self.basis, self.packet = fixture.basis, fixture.packet
+        self.schema_version = fixture.schema_version
+
+    original = ReviewFixture.original
+    register = ReviewFixture.register
+    prepare = ReviewFixture.prepare
+    resolve = ReviewFixture.resolve
+    freeze = ReviewFixture.freeze
+    reassess_with_finding = ReviewFixture.reassess_with_finding
+    native_continuation_artifact = ReviewFixture.native_continuation_artifact
 
     def settled_graph(self):
         old, finding, successor = self.reassess_with_finding()

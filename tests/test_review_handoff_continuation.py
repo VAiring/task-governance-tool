@@ -1,15 +1,14 @@
 """Public-helper composition in an isolated candidate project; no host mutation."""
 
-from pathlib import Path
 from types import SimpleNamespace
 import json
 import io
 import unittest
 from unittest import mock
 
-from tests import test_review_preparation as fixtures
 from tests.test_review_continuation import A, B
-from tests import test_review_continuation_registration as registration
+from tests.review_answer_fixture_support import ReviewFixture, review_fixture
+from tests.review_handoff_fixture_support import physical_handoff, publish_handoff, ready_handoff, call_handoff
 from task_governance_tool import review_handoff_transport as handoff_transport
 from task_governance_tool import review_handoff as files, review_results, storage, review_session_transport as transport
 from task_governance_tool.review_continuation_handoff_repository import read_state
@@ -43,23 +42,21 @@ class ContinuationEntryTests(unittest.TestCase):
 
 
 class HandoffContinuationTests(unittest.TestCase):
-    setUp = fixtures.PreparationPublicationTests.setUp
-    physical = fixtures.PreparationPublicationTests.physical
-    publish = fixtures.PreparationPublicationTests.publish
+    def setUp(self):
+        fixture = self.enterContext(review_fixture(schema_version=29, contract=None))
+        self.repo, self.db, self.task_id = fixture.repo, fixture.db, fixture.task_id
+        self.target, self.basis = fixture.target, fixture.basis
+        self.caller, self.packet = fixture.caller, fixture.packet
+
+    def physical(self):
+        physical_handoff(self, enter_context=self.enterContext)
+
+    publish = publish_handoff
 
     def ready(self):
-        self.physical()
-        self.root_preparation = self.publish()
-        paths = self.resolution.paths
-        paths.review_wait_request_store = lambda *_: self.root / "request.sqlite"
-        paths.review_wait_dispatch_store = lambda *_: self.root / "dispatch.sqlite"
-        paths.review_continuation_store = lambda *_: self.root / "transition.sqlite"
-        self.enterContext(mock.patch.object(continuation, "resolve", return_value=self.resolution))
-        self.args = SimpleNamespace(task_id=self.task_id, target_generation=self.basis["target_generation"], directory="reviews/continue-1", records_only=False)
-        self.raw = json.dumps(dict(version=1, reviewers=[dict(session_id=A, action="supplement", prior_receipt_id=None, reason="Restore the missing source material")])).encode()
+        ready_handoff(self, enter_context=self.enterContext)
 
-    def call(self):
-        return continuation.continue_reviews(self.repo, self.args, self.raw, caller=self.caller)
+    call = call_handoff
 
     def test_missing_legacy_locator_never_searches_or_invents_binding(self):
         self.physical()
@@ -99,7 +96,7 @@ class HandoffContinuationTests(unittest.TestCase):
         self.assertEqual({path.relative_to(self.repo).as_posix(): path.read_bytes() for path in (self.repo / "reviews").rglob("*") if path.is_file()}, before)
 
     def save_actor(self, actor, packet_path, output):
-        raw = registration.ContinuationRegistrationTests.original(self, actor)[0]
+        raw = ReviewFixture.original(self, actor)[0]
         with mock.patch("task_governance_tool.session_identity.capture_caller_identity", return_value=CallerIdentity(actor)), \
              mock.patch("task_governance_tool.usage_lifecycle.register_reviewer"):
             result = files.save(self.repo, packet_path, output, raw)

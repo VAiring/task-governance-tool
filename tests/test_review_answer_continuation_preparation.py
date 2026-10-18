@@ -2,7 +2,6 @@ from __future__ import annotations
 import hashlib
 import json
 import unittest
-from contextlib import closing
 from dataclasses import replace
 from types import SimpleNamespace
 from pathlib import Path
@@ -183,15 +182,11 @@ class ContinuedAnswerPreparationTests(unittest.TestCase):
 
 class ContinuedAnswerPublicationTests(unittest.TestCase):
     def test_new_round_under_legacy_root_freezes_collection_before_publication(self):
-        from tests import test_review_handoff_continuation as legacy_fixture
-        from tests.test_review_session_migration import candidate_runtime
-        from task_governance_tool import storage,schema_review_answers
+        from tests.review_handoff_fixture_support import handoff_fixture
         from task_governance_tool import setup_feature_config
-        fixture=legacy_fixture.HandoffContinuationTests()
-        fixture.setUp();self.addCleanup(fixture.doCleanups)
+        fixture=self.enterContext(handoff_fixture(schema_version=30, contract=None))
         fixture.ready()
-        self.enterContext(candidate_runtime(30))
-        with closing(storage.connect(fixture.db)) as connection:schema_review_answers.migrate(connection)
+        self.assertEqual(p.PreparationRepository(fixture.root/"preparation.sqlite").read()[1].version,1)
         fixture.resolution.paths.review_answer_collection_store=lambda *_:fixture.root/"answers.sqlite"
         with patch.object(setup_feature_config,"answer_collection_allowed",return_value=True):
             result=fixture.call()

@@ -7,7 +7,7 @@ import sqlite3
 from types import SimpleNamespace
 from unittest import TestCase, mock
 
-from tests import test_review_answer_core as core_fixture
+from tests.review_answer_fixture_support import review_fixture
 from task_governance_tool import storage, review_answer_audit, review_answer_registration
 from task_governance_tool.review_answer_transport import CollectedItem, frame_collected_submission, decode_collected_submission
 from task_governance_tool.review_collected_results import add_collected_review_results, dispatch_entry
@@ -19,9 +19,7 @@ from task_governance_tool.review_wait_runtime.review_wait_repository import Repo
 
 class RegistrationTests(TestCase):
     def setUp(self):
-        self.fixture = core_fixture.CollectedCoreTests()
-        self.fixture.setUp()
-        self.addCleanup(self.fixture.doCleanups)
+        self.fixture = self.enterContext(review_fixture(schema_version=30, contract=None))
 
     def submission(self, verdicts=("pass", "pass")):
         items = []
@@ -113,7 +111,7 @@ class RegistrationTests(TestCase):
 
 class RetainedSourceAdmissionTests(TestCase):
     def setUp(self):
-        RegistrationTests.setUp(self)
+        self.fixture = self.enterContext(review_fixture(schema_version=30, contract=None))
         from task_governance_tool import review_continuation as values
         from task_governance_tool.review_answer_repository import read_native_collected_captures
         from task_governance_tool.review_answer_values import basis_digest
@@ -144,7 +142,7 @@ class RetainedSourceAdmissionTests(TestCase):
             return service
         with mock.patch.object(handoff, "root_for", return_value=(resolution, mock.Mock())), \
              mock.patch.object(handoff, "service_for", side_effect=service_for):
-            with handoff.registration_admission(self.fixture.fixture.repo, self.submitted, self.fixture.caller):
+            with handoff.registration_admission(self.fixture.repo, self.submitted, self.fixture.caller):
                 pass
         self.assertCountEqual(admitted, [(self.submitted.continuation, False),
             (self.submitted.items[1].metadata["basis"]["continuation"], True)])
@@ -479,8 +477,8 @@ class RegistrationBoundaryTests(TestCase):
     submission = RegistrationTests.submission
 
     def setUp(self):
-        RegistrationTests.setUp(self)
-        self.context = SimpleNamespace(repo=self.fixture.fixture.repo,
+        self.fixture = self.enterContext(review_fixture(schema_version=30, contract=None))
+        self.context = SimpleNamespace(repo=self.fixture.repo,
             caller=self.fixture.caller,
             args=SimpleNamespace(task_id=self.fixture.basis["task_id"],
                 user_approved_reviewers=()))
@@ -655,7 +653,7 @@ class SettledRecoveryTests(TestCase):
     """Actual storage, with only physical source admission replaced by a fixture."""
 
     def setUp(self):
-        RegistrationTests.setUp(self)
+        self.fixture = self.enterContext(review_fixture(schema_version=30, contract=None))
         from task_governance_tool.review_answer_handoff import RegistrationAdmission
         from task_governance_tool.review_answer_transport import SettledRegistrationRecovery
         from task_governance_tool.review_answer_values import basis_digest
@@ -670,7 +668,7 @@ class SettledRecoveryTests(TestCase):
         values = {**self.fixture.basis, "parent_thread_id": self.fixture.basis["parent_session_id"]}
         self.basis = FinalizationBasis(**{key: values[key] for key in FinalizationBasis.__dataclass_fields__})
         self.request = SettledRegistrationRecovery(self.submitted.preparation_id, self.submitted.submission_digest)
-        self.context = SimpleNamespace(repo=self.fixture.fixture.repo, caller=self.fixture.caller,
+        self.context = SimpleNamespace(repo=self.fixture.repo, caller=self.fixture.caller,
             args=SimpleNamespace(task_id=self.fixture.basis["task_id"], user_approved_reviewers=()))
         self.records = [dict(registration=dict(state="dispatched", submission_digest=self.submitted.submission_digest,
             receipt_id=None)) for _ in self.submitted.items]

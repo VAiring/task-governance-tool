@@ -13,6 +13,7 @@ import unittest
 from unittest import mock
 
 from tests import test_review_handoff_continuation as fixtures
+from tests.review_answer_fixture_support import review_fixture
 from tests.test_review_continuation import A, B
 from tests.verification_receipt_test_support import run_taskgov
 from task_governance_tool import storage, review_finalization as finalization
@@ -23,7 +24,12 @@ from task_governance_tool.review_results import review_result_template
 
 
 class FinalizationContinuationTests(unittest.TestCase):
-    setUp = fixtures.HandoffContinuationTests.setUp
+    def setUp(self):
+        fixture = self.enterContext(review_fixture(schema_version=29, contract=None))
+        self.repo, self.db, self.task_id = fixture.repo, fixture.db, fixture.task_id
+        self.target, self.basis = fixture.target, fixture.basis
+        self.caller, self.packet = fixture.caller, fixture.packet
+
     physical = fixtures.HandoffContinuationTests.physical
     publish = fixtures.HandoffContinuationTests.publish
     call = fixtures.HandoffContinuationTests.call
@@ -78,6 +84,11 @@ class FinalizationContinuationTests(unittest.TestCase):
         paths.review_continuation_store = lambda *_: self.root / "transition.sqlite"
         self.enterContext(mock.patch.object(fixtures.continuation, "resolve", return_value=self.resolution))
         self.enterContext(mock.patch.object(finalization, "resolve", return_value=self.resolution))
+        # Initial-round submission discovers the saved protocol independently.
+        # Give that boundary the same real internal-path DB; keep locate and
+        # its schema/preparation checks intact.
+        from task_governance_tool import review_answer_preparation
+        self.enterContext(mock.patch.object(review_answer_preparation, "resolve", return_value=self.resolution))
         self.resolution.stored_project = SimpleNamespace(canonical_path_hash=self.basis["project_path_hash"],
             binding_generation=self.basis["project_binding_generation"])
         # Internal-path fixture: the subprocess provider has no public alternate

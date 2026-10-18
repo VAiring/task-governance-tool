@@ -4,7 +4,7 @@ from contextlib import closing
 from dataclasses import replace
 import unittest
 
-from tests import test_review_continuation_registration as fixture
+from tests.review_answer_fixture_support import ReviewFixture, review_fixture
 from tests.test_review_continuation import A, B, ident
 from task_governance_tool import storage, review_results, review_session_transport as transport
 from task_governance_tool import review_continuation as values, review_continuation_repository as repository
@@ -15,11 +15,17 @@ from tests.test_m23s_schema22_validation import _bundle_artifacts
 
 
 class ContinuationRetirementTests(unittest.TestCase):
-    setUp = fixture.ContinuationRegistrationTests.setUp
-    prepare = fixture.ContinuationRegistrationTests.prepare
-    original = fixture.ContinuationRegistrationTests.original
-    evidence = fixture.ContinuationRegistrationTests.evidence
-    freeze = fixture.ContinuationRegistrationTests.freeze
+    def setUp(self):
+        fixture = self.enterContext(review_fixture(schema_version=29, contract=None))
+        self.repo, self.db, self.task_id = fixture.repo, fixture.db, fixture.task_id
+        self.target, self.basis = fixture.target, fixture.basis
+        self.caller, self.packet = fixture.caller, fixture.packet
+        self.schema_version = fixture.schema_version
+
+    prepare = ReviewFixture.prepare
+    original = ReviewFixture.original
+    evidence = ReviewFixture.evidence
+    freeze = ReviewFixture.freeze
 
     def initial(self):
         return self.prepare(selected=(values.SelectedReviewer(A, "supplement", None, "Missing A"),

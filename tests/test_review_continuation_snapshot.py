@@ -4,20 +4,23 @@ from contextlib import closing
 import unittest
 from unittest import mock
 
-from tests import test_review_continuation_registration as fixtures
+from tests.review_answer_fixture_support import ReviewFixture, review_fixture
 from tests.test_review_continuation import A, B, ident
 from task_governance_tool import storage, reviews
 from task_governance_tool import review_continuation_evidence_repository as evidence
 
 
 class ContinuationSnapshotTests(unittest.TestCase):
-    # Reuse only fixture operations, not the registration suite's test methods.
-    setUp = fixtures.ContinuationRegistrationTests.setUp
-    original = fixtures.ContinuationRegistrationTests.original
-    register = fixtures.ContinuationRegistrationTests.register
-    prepare = fixtures.ContinuationRegistrationTests.prepare
-    resolve = fixtures.ContinuationRegistrationTests.resolve
-    reassess_with_finding = fixtures.ContinuationRegistrationTests.reassess_with_finding
+    def setUp(self):
+        fixture = self.enterContext(review_fixture(schema_version=29, contract=None))
+        self.task_id, self.target = fixture.task_id, fixture.target
+        self.basis, self.caller, self.packet = fixture.basis, fixture.caller, fixture.packet
+
+    original = ReviewFixture.original
+    register = ReviewFixture.register
+    prepare = ReviewFixture.prepare
+    resolve = ReviewFixture.resolve
+    reassess_with_finding = ReviewFixture.reassess_with_finding
 
     def task_row(self, connection):
         return connection.execute("SELECT * FROM tasks WHERE task_id=?", (self.task_id,)).fetchone()

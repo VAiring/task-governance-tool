@@ -731,6 +731,10 @@ is a JSON Pointer to its exact matched summary in the same response, with
 `registered_receipt_id` preserving the link. Use that body directly without
 another read or restoration code; keep original provenance, all Findings and
 resolution states, warnings and unavailable facts in the report.
+Use `reported_receipts` to explain retained judgments and registered reassessment
+predecessors alongside `registered_findings`; these report relationships do not
+replace the current gate. Saved combined-edit note bodies are included in
+`recorded_work.recent_notes` with their existing coverage, not reconstructed prose.
 
 - **Complete integrated success received:** when the body actually available
   matches the original Task/target generation, shows `status=completed` with

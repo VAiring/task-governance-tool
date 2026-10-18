@@ -38,12 +38,12 @@ class FinalizationContinuationTests(unittest.TestCase):
         result = subprocess.run(["git", "-C", str(self.repo), *args], capture_output=True, check=True)
         return result.stdout
 
-    def save_actor(self, actor, packet_path, output):
+    def save_actor(self, actor, packet_path, output, *, verdict="pass", findings=()):
         from tests.test_review_results import receipt, encode
         from task_governance_tool import review_handoff as files
         from task_governance_tool.session_identity import CallerIdentity
         payload = json.loads((self.repo / packet_path).read_bytes())["result_template"]
-        payload["receipts"] = [receipt("a" if actor == A else "b")]
+        payload["receipts"] = [receipt("a" if actor == A else "b", verdict=verdict, findings=findings)]
         raw = encode(payload)
         with mock.patch("task_governance_tool.session_identity.capture_caller_identity", return_value=CallerIdentity(actor)), \
              mock.patch("task_governance_tool.usage_lifecycle.register_reviewer"):
@@ -309,6 +309,153 @@ class FinalizationContinuationTests(unittest.TestCase):
         result = service.execute()
         self.assertEqual(result["stages"]["registration"], "succeeded", result)
         self.assertNotEqual(result["registered_receipt_ids"], [prior])
+
+    def test_report_keeps_retained_and_reassessed_findings_through_completion_and_delivery(self):
+        self.ready()
+        original_a = self.save_actor(A, "reviews/packet.json", "reviews/a.json",
+            verdict="changes_requested", findings=[dict(severity="medium", summary="Check the unchanged condition")])
+        original_b = self.save_actor(B, "reviews/packet.json", "reviews/b.json",
+            findings=[dict(severity="low", summary="Document the accepted choice")])
+        service = finalization.Finalizer(self.repo, self.task_id, self.caller,
+                                        generation=self.basis["target_generation"])
+        first = service.execute()
+        self.assertEqual(first["stages"]["registration"], "succeeded", first)
+        by_reviewer = {row["reviewer_key"]: row for row in first["registered_findings"]}
+        prior, retained = (by_reviewer[key]["review_receipt_id"] for key in ("a", "b"))
+        expected_findings = {row["review_finding_id"] for row in by_reviewer.values()}
+
+        def command(*args):
+            result = run_taskgov(*args, "--repo", str(self.repo), "--db", str(self.db), "--json")
+            self.assertEqual(result.returncode, 0, result.stdout or result.stderr)
+            return json.loads(result.stdout)["data"]
+
+        command("review", "finding", "resolve", by_reviewer["b"]["review_finding_id"],
+                "--resolution", "Accepted documented choice")
+        chain = [prior]
+        for number in (1, 2):
+            self.args.directory = f"reviews/reassess-{number}"
+            self.raw = json.dumps(dict(version=1, reviewers=[dict(session_id=A, action="reassess",
+                prior_receipt_id=chain[-1], reason="Reconsider the unchanged condition")])).encode()
+            continued = self.call()
+            self.assertTrue(continued["ok"], continued)
+            pending = service.execute(check=True)
+            # A selected but unregistered successor is not applied history.
+            self.assertEqual(pending["registered_findings"], [])
+            handoff = continued["handoff"]
+            self.save_actor(A, handoff["packet_path"], handoff["review_requests"][0]["result_path"])
+            registered = service.execute()
+            self.assertEqual(registered["stages"]["registration"], "succeeded", registered)
+            self.assertEqual(len(registered["observed_registered_receipt_ids"]), 1)
+            chain.append(registered["observed_registered_receipt_ids"][0])
+            self.assertEqual({row["review_finding_id"] for row in registered["registered_findings"]}, expected_findings)
+            if number == 1:
+                command("review", "finding", "resolve", by_reviewer["a"]["review_finding_id"],
+                    "--resolution", "Actual reviewer confirmed the unchanged condition",
+                    "--reassessment-receipt", chain[-1])
+
+        command("verification", "receipt", "add", self.task_id, "--result", "pass", "--duration-ms", "1",
+                "--scope-coverage", "full", "--expected-target-generation", str(self.basis["target_generation"]))
+        completed = service.execute()
+        self.assertEqual(completed["status"], "completed", completed)
+        shown = command("task", "show", self.task_id)
+        self.assertEqual(shown["review_evidence"]["current_findings"], [])
+        with mock.patch.object(service.core, "register", side_effect=AssertionError("no replay")), \
+             mock.patch.object(service.core, "complete", side_effect=AssertionError("no replay")):
+            repeated = service.execute(check=True)
+        self.assertEqual(repeated["registered_findings"], completed["registered_findings"])
+        self.assertEqual(repeated["reported_receipts"], completed["reported_receipts"])
+        self.assertEqual(len(completed["registered_findings"]), 2)
+        self.assertTrue(all(row["status"] == "resolved" for row in completed["registered_findings"]))
+        sources = {row["review_receipt_id"]: row for row in completed["reported_receipts"]}
+        self.assertEqual(set(sources), {*chain, retained})
+        self.assertEqual(sources[retained]["roles"], ["retained"])
+        self.assertEqual(sources[chain[-1]]["roles"], ["registered"])
+        for predecessor, successor in zip(chain, chain[1:]):
+            self.assertEqual(sources[predecessor]["roles"], ["reassessment_source"])
+            self.assertEqual(sources[predecessor]["successor_receipt_ids"], [successor])
+        self.assertEqual(completed["observed_registered_receipt_ids"], [chain[-1]])
+        self.assertEqual((self.repo / "reviews/a.json").read_bytes(), original_a)
+        self.assertEqual((self.repo / "reviews/b.json").read_bytes(), original_b)
+        self.assertIn("summary_ref", completed["originals"][0]["review"])
+        from tests.test_review_wait_managed import ManagedHostTests, OTHER
+        host = ManagedHostTests().host()
+        host.task_id = self.task_id
+        host.set_finalization_result(OTHER, completed)
+        delivered = json.loads(host._direct_prompt(OTHER).splitlines()[2])
+        self.assertEqual({key: value for key, value in delivered.items() if key != "delivery"}, completed)
+
+        with mock.patch.object(finalization, "reported_review_evidence", side_effect=ValueError("unreadable")):
+            unavailable = service.execute(check=True)
+        self.assertEqual(unavailable["observed_registered_receipt_ids"], [chain[-1]])
+        self.assertIsNone(unavailable["registered_findings"])
+        self.assertIsNone(unavailable["reported_receipts"])
+        self.assertIn("reported_reviews_and_findings", unavailable["unavailable"])
+        with mock.patch.object(service.core, "read", side_effect=ValueError("unreadable")):
+            unavailable = service.execute(check=True)
+        self.assertIsNone(unavailable["observed_registered_receipt_ids"])
+        self.assertIsNone(unavailable["registered_findings"])
+        self.assertIsNone(unavailable["recorded_work"])
+        with mock.patch.object(finalization, "registered_originals", return_value=()):
+            unavailable = service.execute(check=True)
+        self.assertIsNone(unavailable["observed_registered_receipt_ids"])
+        self.assertIsNone(unavailable["registered_findings"])
+        self.assertIn("registered_reviews_and_findings", unavailable["unavailable"])
+
+        from task_governance_tool.review_finalization_repository import reported_review_evidence, RepositoryError
+        current = self.journal.read()
+        for changed in (
+            replace(current, basis={**current.basis, "task_id": "tg_task_ffffffffffffffff"}),
+            replace(current, basis={**current.basis, "target_generation": self.basis["target_generation"] + 1}),
+            replace(current, retained_receipt_ids=("tg_review_receipt_ffffffffffffffff",)),
+        ):
+            with self.subTest(basis=changed.basis, retained=changed.retained_receipt_ids), self.assertRaises(RepositoryError):
+                reported_review_evidence(self.target, changed, [chain[-1]])
+
+    def test_report_validates_complete_history_across_finding_batch_limit(self):
+        self.ready()
+        findings = [dict(severity="low", summary=f"Recorded condition {index}") for index in range(64)]
+        self.save_actor(A, "reviews/packet.json", "reviews/a.json", findings=findings)
+        self.save_actor(B, "reviews/packet.json", "reviews/b.json")
+        service = finalization.Finalizer(self.repo, self.task_id, self.caller,
+                                        generation=self.basis["target_generation"])
+        report = service.execute()
+        prior = next(row["review_receipt_id"] for row in report["reviews"]["current_receipts"]
+                     if row["reviewer_key"] == "a")
+        for number in range(1, 7):
+            self.args.directory = f"reviews/many-findings-{number}"
+            self.raw = json.dumps(dict(version=1, reviewers=[dict(session_id=A, action="reassess",
+                prior_receipt_id=prior, reason="Reconsider the unchanged recorded conditions")])).encode()
+            continued = self.call()
+            self.assertTrue(continued["ok"], continued)
+            handoff = continued["handoff"]
+            self.save_actor(A, handoff["packet_path"], handoff["review_requests"][0]["result_path"], findings=findings)
+            report = service.execute()
+            self.assertEqual(report["stages"]["registration"], "succeeded", report)
+            self.assertIsNotNone(report["registered_findings"], report["unavailable"])
+            self.assertEqual(len(report["registered_findings"]), 64 * (number + 1))
+            prior = report["observed_registered_receipt_ids"][0]
+        expected = {row["review_finding_id"] for row in service.core.read(self.task_id)["review_evidence"]["current_findings"]}
+        self.assertEqual(len(expected), 448)
+        with mock.patch.object(service.core, "register", side_effect=AssertionError("no replay")):
+            checked = service.execute(check=True)
+        self.assertEqual({row["review_finding_id"] for row in checked["registered_findings"]}, expected)
+        self.assertEqual(len(checked["reported_receipts"]), 8)
+        self.assertEqual(checked["registered_findings"], report["registered_findings"])
+
+        from task_governance_tool import evidence_validation_repository as validation
+        validate = validation.validate_selected_task_receipt_evidence
+        finding_batches = []
+        def fail_later_batch(*args, **kwargs):
+            if kwargs["review_finding_ids"]:
+                finding_batches.append(kwargs["review_finding_ids"])
+                if len(finding_batches) == 2:
+                    raise ValueError("Unavailable later batch")
+            return validate(*args, **kwargs)
+        from task_governance_tool.review_finalization_repository import reported_review_evidence
+        with mock.patch.object(validation, "validate_selected_task_receipt_evidence", side_effect=fail_later_batch):
+            with self.assertRaisesRegex(ValueError, "Unavailable later batch"):
+                reported_review_evidence(self.target, self.journal.read(), [prior])
+        self.assertEqual([len(batch) for batch in finding_batches], [400, 48])
 
 
 if __name__ == "__main__":

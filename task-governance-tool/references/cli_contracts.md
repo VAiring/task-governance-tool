@@ -2391,6 +2391,12 @@ matched Receipt and summary in this same response. The JSON Pointer needs no
 additional read; provenance, Findings and resolution states remain visible.
 Unmatched or unavailable originals are not combined. Saved originals and gates
 remain unchanged.
+`reported_receipts` explains the report-only `registered`, `retained` and
+`reassessment_source` relationships, including direct `successor_receipt_ids`.
+`registered_findings` includes their low/resolved Findings once per ID; historical
+relationships do not make an old judgment a current PASS. Null collections and
+named unavailable facts require disclosure. `recorded_work.recent_notes` also
+retains validated bodies saved with other edits, without changing work coverage.
 
 #### Explicit Integrated Continuation
 

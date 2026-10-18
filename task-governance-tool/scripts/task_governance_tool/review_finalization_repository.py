@@ -330,22 +330,82 @@ def registered_originals(target, record, receipt_ids):
         return tuple(found)
 
 
-def registered_findings(target, record, receipt_ids):
-    """Project every registered Finding, including resolved low-severity entries."""
+def reported_review_evidence(target, record, registered_receipt_ids):
+    """Read report-only history; never expand registration/replay identities.
+
+    Roots are this batch's observed originals and explicitly retained Receipts.
+    Only registered predecessor edges reachable from those roots add history;
+    a pending selection is not a successor judgment. One read transaction owns
+    graph validation, receipt selection and complete Finding projection.
+    """
     from .evidence_validation_repository import validate_selected_task_receipt_evidence
     from .review_repository import validate_stored_review_finding_projection
-    if not receipt_ids:
-        return []
+    from .storage import COMPLETION_RECEIPT_VALIDATION_CHUNK_SIZE
+    roles = {key: {"registered"} for key in registered_receipt_ids}
+    for key in record.retained_receipt_ids:
+        roles.setdefault(key, set()).add("retained")
+    if not roles:
+        return [], []
     with closing(connect_initialized_readonly(target)) as connection:
+        successors = {}
+        if record.continuation_id is not None:
+            from .review_continuation import quality_identity
+            from .review_continuation_repository import read_continuations, read_judgments
+            history = read_continuations(connection, project_id=record.basis["project_id"],
+                                        task_id=record.basis["task_id"])
+            current = next((row for row in history if row.continuation_id == record.continuation_id), None)
+            if (current is None or current.preparation_id != record.preparation_id
+                    or current.sequence != record.continuation_sequence
+                    or current.basis["parent_session_id"] != record.basis["parent_thread_id"]
+                    or any(current.basis[key] != value for key, value in record.basis.items()
+                           if key not in ("task_status", "parent_thread_id"))):
+                raise RepositoryError("state_unreadable")
+            nodes = {row.receipt_id: row for row in read_judgments(connection,
+                basis=current.basis, _validated_continuations=history)}
+            quality = quality_identity(current.basis)
+            pending = list(roles)
+            visited = set()
+            while pending:
+                receipt_id = pending.pop()
+                if receipt_id in visited:
+                    continue
+                node = nodes.get(receipt_id)
+                if node is None or node.quality_basis != quality:
+                    raise RepositoryError("state_unreadable")
+                visited.add(receipt_id)
+                if node.prior_receipt_id is not None:
+                    prior = node.prior_receipt_id
+                    roles.setdefault(prior, set()).add("reassessment_source")
+                    successors.setdefault(prior, set()).add(receipt_id)
+                    pending.append(prior)
+        receipt_ids = sorted(roles)
+        receipts = connection.execute("""SELECT * FROM review_receipts
+            WHERE project_id=? AND task_id=? AND review_receipt_id IN (SELECT value FROM json_each(?))""",
+            (record.basis["project_id"], record.basis["task_id"], json.dumps(receipt_ids))).fetchall()
+        if (len(receipts) != len(receipt_ids) or any(
+                row["target_" + key] != record.basis["target_" + key]
+                for row in receipts for key in ("generation", "kind", "value", "base_revision"))):
+            raise RepositoryError("state_unreadable")
         rows = connection.execute("""SELECT finding.*, receipt.target_generation, receipt.reviewer_key
             FROM review_findings AS finding
             JOIN review_receipts AS receipt ON receipt.review_receipt_id=finding.review_receipt_id
             WHERE receipt.project_id=? AND receipt.task_id=? AND receipt.review_receipt_id IN
               (SELECT value FROM json_each(?)) ORDER BY finding.created_at, finding.review_finding_id""",
             (record.basis["project_id"], record.basis["task_id"], json.dumps(receipt_ids))).fetchall()
-        validate_selected_task_receipt_evidence(connection, project_id=record.basis["project_id"],
-            task_id=record.basis["task_id"], review_receipt_ids=set(receipt_ids),
-            review_finding_ids={row["review_finding_id"] for row in rows}, verification_receipt_ids=set())
+        size = COMPLETION_RECEIPT_VALIDATION_CHUNK_SIZE
+        for offset in range(0, len(receipt_ids), size):
+            validate_selected_task_receipt_evidence(connection, project_id=record.basis["project_id"],
+                task_id=record.basis["task_id"], review_receipt_ids=set(receipt_ids[offset:offset + size]),
+                review_finding_ids=set(), verification_receipt_ids=set())
+        # Finding validation includes its parents. Do not add an unrelated
+        # Receipt batch to that union or it could exceed the same bounded API.
+        for offset in range(0, len(rows), size):
+            validate_selected_task_receipt_evidence(connection, project_id=record.basis["project_id"],
+                task_id=record.basis["task_id"], review_receipt_ids=set(),
+                review_finding_ids={row["review_finding_id"] for row in rows[offset:offset + size]},
+                verification_receipt_ids=set())
         for row in rows:
             validate_stored_review_finding_projection(row)
-        return [dict(row) for row in rows]
+        return ([dict(review_receipt_id=key, roles=sorted(roles[key]),
+                      successor_receipt_ids=sorted(successors.get(key, ()))) for key in receipt_ids],
+                [dict(row) for row in rows])

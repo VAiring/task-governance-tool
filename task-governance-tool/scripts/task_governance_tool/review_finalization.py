@@ -13,7 +13,7 @@ from hashlib import sha256
 from . import review_handoff_originals as original_files
 from . import cli, review_handoff_transport as files, review_finalization_git as git
 from .review_handoff_scope import resolve, error_code as _code
-from .review_finalization_repository import FinalizationRecord, FinalizationRepository, registered_originals, registered_findings
+from .review_finalization_repository import FinalizationRecord, FinalizationRepository, registered_originals, reported_review_evidence
 from .review_finalization_basis import FinalizationBasis, require_no_findings
 from .review_session_transport import decode_submission, frame_submission
 from .review_wait_basis import wait_basis
@@ -577,15 +577,26 @@ class Finalizer:
             if observed is not None:
                 result["registration_observation"] = observed
         try:
-            ids = [item["review_receipt_id"] for item in state["review_evidence"]["current_receipts"]] if state else []
-            actual = registered_originals(self.resolution.target, record, ids) if record.originals and state else ()
+            if state is None:
+                _fail("state_unreadable")
+            ids = [item["review_receipt_id"] for item in state["review_evidence"]["current_receipts"]]
+            actual = registered_originals(self.resolution.target, record, ids) if record.originals else ()
+            if record.registration == "succeeded" and actual != record.receipt_ids:
+                _fail("finalization_registration_incomplete")
             result["observed_registered_receipt_ids"] = list(actual)
-            result["registered_findings"] = registered_findings(self.resolution.target, record, actual)
             result["originals"] = project_original_summaries(result, record, actual)
         except Exception:
             result["observed_registered_receipt_ids"] = None
-            result["registered_findings"] = None
             result["unavailable"].append("registered_reviews_and_findings")
+        try:
+            if result["observed_registered_receipt_ids"] is None:
+                _fail("state_unreadable")
+            result["reported_receipts"], result["registered_findings"] = reported_review_evidence(
+                self.resolution.target, record, result["observed_registered_receipt_ids"])
+        except Exception:
+            result["reported_receipts"] = None
+            result["registered_findings"] = None
+            result["unavailable"].append("reported_reviews_and_findings")
         result["commit_observation"] = "not_attempted" if record.candidate is None else "unavailable"
         if record.candidate:
             binding = dict(base=record.basis["target_base_revision"], fingerprint=record.basis["target_value"],
@@ -637,7 +648,8 @@ def project_original_summaries(result, record, matched_receipt_ids):
 def report(record, state, available, error, gate):
     task = state["task"] if state else None
     completed = bool(task and task["status"] == "done" and record.completion == "succeeded")
-    notes = [item for item in state["events"] if item["event_type"] == "note_added"] if state else []
+    notes = [item for item in state["events"] if
+             item["event_type"] == "note_added" or item.get("note_body") is not None] if state else []
     return {
         **({"continuation_id": record.continuation_id, "continuation_sequence": record.continuation_sequence}
            if getattr(record, "continuation_id", None) else {}),

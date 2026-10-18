@@ -1473,6 +1473,20 @@ present, carries `observation=before_completion`: its retained status/decision
 describes the pre-completion check, not the current Task. Its old
 `suggested_action` is omitted; current `task_status`, stages, observations and
 root `next_action` remain distinct and control continuation.
+`registered_findings` covers the report's related Receipt set: the observed
+newly registered originals, explicitly retained `retained_receipt_ids`, and
+registered reassessment predecessors reachable from those Receipts, including
+multiple revisions. It contains each Finding ID once, with its saved resolution
+state, including low/resolved Findings omitted by ordinary current gate detail.
+`reported_receipts` identifies that set as rows of `review_receipt_id`, `roles`
+(`registered`, `retained`, `reassessment_source`) and `successor_receipt_ids`.
+Roles may overlap; successor IDs describe direct registered reassessment edges.
+These are reporting relationships, not current qualifying PASS judgments.
+Unrelated Tasks, target generations and unregistered reassessment selections
+are excluded. Missing or inconsistent related evidence returns null report
+collections and a named unavailable field, never an empty successful history.
+Registration reconciliation, `observed_registered_receipt_ids` and original
+summary matching continue to use only the exact newly registered original set.
 Only after the existing immutable session/original-digest/execution bindings
 confirm the complete original batch's registered Receipt IDs may an exact
 matching original summary be replaced by `originals[].review.summary_ref`.
@@ -1487,7 +1501,11 @@ registration/gates. Direct CLI results and same-parent notifications use the
 same report; consumers need no restoration code or follow-up read.
 Recorded work uses the
 latest checkpoint and recent Task notes with explicit coverage or `not_recorded`;
-it never invents a work summary. Maintenance warnings remain visible. Missing
+notes include legacy `note_added` events and every validated non-null `note_body`
+in normal Task detail, including combined edits and review-tier changes. Event
+IDs, bodies, order and the existing coverage label are preserved; bodyless edits
+are not inferred to be notes. It never invents a work summary. Maintenance
+warnings remain visible. Missing
 current data is named, and no unknown effect is presented as successful.
 
 ### Host-Owned Review Waiting

@@ -1237,7 +1237,7 @@ No prose, result bodies, raw Git output or variable notification is journaled.
 The report labels a retained completion check `observation=before_completion`
 and omits that check's obsolete action hint; current Task/stage observations and
 the root next action retain their own meaning. After the existing
-`registered_originals` reconciliation and Finding projection succeed,
+`registered_originals` reconciliation succeeds,
 `project_original_summaries` uses their ordered immutable Receipt bindings and
 exact reviewer/kind/verdict/summary equality to emit same-response JSON Pointers
 with explicit Receipt IDs. It copies only the affected output dictionaries;
@@ -1247,6 +1247,24 @@ introduced. `ManagedHost` transports this same report and explains the pointer
 and observation meanings without changing delivery or completion gates.
 Unknown registration/completion acknowledgements are settled by observed immutable
 bindings and exact native completion state. A new target cannot overwrite an intent.
+
+The repository's `reported_review_evidence` separately constructs reporting
+Receipt roles from the observed original IDs and frozen retained IDs. For a
+continuation it reuses the validated native same-basis judgment graph and walks
+only registered predecessor edges from those roots. Pending selections cannot
+introduce history. Receipt selection, complete Finding validation and projection
+share one read transaction; Receipt IDs and Finding IDs are validated in separate
+batches using the existing validator capacity, so each Finding batch's implied
+parent union also remains bounded. IDs are deduplicated and relationships are
+returned as `reported_receipts`. Other Task/target evidence is rejected. A failed history
+read returns null collections and `reported_reviews_and_findings` unavailable,
+without discarding independently observed original registration or replaying it.
+The original-summary projection never consumes this expanded reporting set.
+`recorded_work.recent_notes` filters already validated normal Task events by
+`note_added` or non-null `note_body`; it does not parse summaries, widen history,
+revalidate by weaker rules, or synthesize missing legacy bodies. The same report
+is used by execution, completed `--check`, and existing bounded notification
+assembly. Overflow retains its explicit incomplete-report behavior.
 
 ### Host-Owned Review Waiting
 

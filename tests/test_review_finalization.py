@@ -98,6 +98,9 @@ class FinalizationReportProjectionTests(unittest.TestCase):
         self.assertEqual(partial["stages"]["completion"], "dispatching")
         self.assertEqual(partial["blocking_code"], "completion_ack_unknown")
         self.assertEqual(partial["completion_gate"]["observation"], "before_completion")
+        legacy = {"event_type": "note_added", "summary": "Retained legacy note", "note_body": None}
+        state["events"] = [legacy, {"event_type": "task_updated", "note_body": None}]
+        self.assertEqual(finalization.report(record, state, [], None, None)["recorded_work"]["recent_notes"], [legacy])
 
 
 class InstalledFinalizationTests(fixtures.PreparationFixture):
@@ -107,6 +110,9 @@ class InstalledFinalizationTests(fixtures.PreparationFixture):
     def prepared(self):
         self.committed_fixture()
         task = self.task("Focused isolated verification")
+        return self.prepare_task(task)
+
+    def prepare_task(self, task):
         (self.root / "source.py").write_text("value = 2\n", encoding="utf-8")
         self.git("add", "source.py")
         target_call = self.invoke("prepare-finalization", "--repo", str(self.root), "--directory=reviews/g1",
@@ -126,6 +132,36 @@ class InstalledFinalizationTests(fixtures.PreparationFixture):
         self.assertEqual(context["preparation"]["route"], "integrated")
         self.assertNotIn("--commit-approved", context["finalization_command"])
         return task, context
+
+    def test_saved_note_bodies_survive_show_completion_and_check(self):
+        self.committed_fixture()
+        task = self.cli("task", "add", "--title", "Note reporting", "--review-tier", "2",
+                        "--status", "in_progress", "--verification", "Focused isolated verification")["task"]["task_id"]
+        notes = []
+        for number, edits in enumerate(((), ("--priority", "high"),
+                ("--review-tier", "1", "--review-tier-change-reason", "Before target capture"))):
+            body = f"作業メモ{number}\n" + "確認した境界" * 220
+            event = self.cli("task", "edit", task, *edits, "--add-note", body)["event"]
+            notes.append(event)
+        self.assertEqual([row["event_type"] for row in notes],
+                         ["note_added", "task_updated", "review_tier_changed"])
+        no_body = self.cli("task", "edit", task, "--review-tier", "2",
+                          "--review-tier-change-reason", "Restore required independent reviews")["event"]
+        shown = self.cli("task", "show", task)
+        expected = {row["task_event_id"]: row for row in shown["events"] if row.get("note_body") is not None}
+        self.assertEqual(set(expected), {row["task_event_id"] for row in notes})
+        task, context = self.prepare_task(task)
+        for index in range(2):
+            self.save(context, index)
+        service = self.service(task)
+        for check in (False, True):
+            report = service.execute(check=check)
+            self.assertEqual(report["status"], "completed", report)
+            work = report["recorded_work"]
+            self.assertEqual(work["status"], "recorded")
+            self.assertEqual({row["task_event_id"]: row for row in work["recent_notes"]}, expected)
+            self.assertNotIn(no_body["task_event_id"], expected)
+            self.assertEqual(work["coverage"], "latest_checkpoint_and_recent_task_events")
 
     def save(self, context, index, *, finding=False):
         packet = json.loads((self.root / context["packet_path"]).read_bytes())

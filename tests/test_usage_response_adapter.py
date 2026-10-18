@@ -28,6 +28,16 @@ def response(identity, *, number=2):
     return ResponseUsage("fixture", identity, THREAD, turn(number), "fixture-model", "medium", (10, 2, 12, None, None, None))
 
 
+def batch_input(*calls, store=False):
+    saved = 'store("PRIVATE_LITERAL_"+i,results[i]);' if store else ""
+    return ("const results = await Promise.allSettled([" + ",".join(calls)
+            + "]);for(let i=0;i<results.length;i++){" + saved + "text({i,result:results[i]});}")
+
+
+def settled(index, value):
+    return {"type": "input_text", "text": json.dumps({"i": index, "result": {"status": "fulfilled", "value": value}})}
+
+
 class ResponseTransportTests(unittest.TestCase):
     def setUp(self):
         self.tracker = ResponseTracker(THREAD, "fixture")
@@ -98,7 +108,7 @@ class ResponseTransportTests(unittest.TestCase):
         body = json.dumps(acknowledgement())
         self.assertEqual(len(objects(body + "\n" + body)), 2)
 
-    def test_observed_runtime_short_name_and_separate_header_blocks(self):
+    def test_observed_runtime_short_name_cannot_bind_indexed_results_without_input_proof(self):
         record = call("a", name="exec")
         record["payload"]["type"] = "custom_tool_call"
         self.feed(record, 10)
@@ -107,7 +117,7 @@ class ResponseTransportTests(unittest.TestCase):
                  {"type": "input_text", "text": json.dumps({"i": 0, "result": {"status": "fulfilled",
                     "value": {"exit_code": 0, "output": json.dumps(acknowledgement())}}})}]
         found = self.feed(output("a", value), 30)
-        self.assertEqual(found[0].response_id, "r1")
+        self.assertIsNone(found[0].response_id)
 
     def test_missing_call_and_wrong_turn_supply_no_invented_origin(self):
         self.assertEqual(self.feed(output("absent", acknowledgement()), 10), ())
@@ -178,9 +188,13 @@ class ResponseTransportTests(unittest.TestCase):
 
     def test_poll_literal_integer_range_is_closed(self):
         from task_governance_tool.usage_response_adapter import _handle_input
-        for handle in ("07", str(2**63), "9" * 100):
+        for handle in ("07", str(2**63), "9" * 100, str(2**53 + 1), str(2**63 - 1)):
             self.assertEqual(_handle_input("exec", "text(await tools.write_stdin({session_id:" + handle + "}));"),
                              ("unresolved", ""))
+        for handle in (2**53, 2**54):
+            self.assertEqual(_handle_input("exec", "text(await tools.write_stdin({session_id:" + str(handle) + "}));"),
+                             ("session", str(handle)))
+        self.assertEqual(_handle_input("write_stdin", {"session_id": 2**53 + 1}), ("session", str(2**53 + 1)))
 
     def test_live_handle_collision_invalidates_origin_and_already_issued_poll(self):
         for kind in ("session", "cell"):
@@ -230,6 +244,416 @@ class ResponseTransportTests(unittest.TestCase):
         self.assertFalse(self.tracker.state["calls"])
         self.assertTrue(self.tracker.state["limited"])
         self.assertEqual(self.tracker.state["overflow"]["order"], 138)
+
+    def test_batch_mixed_poll_and_exec_preserve_separate_origins(self):
+        self.feed(call("original", response_id="origin"), 10)
+        self.feed(output("original", {"session_id": 7}), 20)
+        arguments = batch_input('tools.write_stdin({session_id:7,chars:""})',
+                                'tools.exec_command({cmd:"PRIVATE_COMMAND",max_output_tokens:3000})', store=True)
+        self.feed(call("batch", arguments=arguments, response_id="batch-response", number=3), 30)
+        self.tracker = ResponseTracker(THREAD, "fixture", json.loads(json.dumps(self.tracker.state)))
+        found = self.feed(output("batch", [settled(1, acknowledgement()), settled(0, acknowledgement())], number=3), 40)
+        self.assertEqual([(item.call_id, item.response_id, item.turn_id, item.record_order) for item in found],
+                         [("batch", "batch-response", turn(3), 30), ("original", "origin", turn(2), 10)])
+        self.assertFalse(self.tracker.state["batches"])
+        self.assertNotIn("PRIVATE", json.dumps(self.tracker.state))
+
+    def test_observed_batch_running_poll_preserves_later_sole_poll_origin(self):
+        self.feed(call("original", response_id="origin"), 10)
+        self.feed(output("original", {"session_id": 7}), 20)
+        arguments = batch_input('tools.write_stdin({session_id:7,chars:"",yield_time_ms:25000,max_output_tokens:6500})',
+                                'tools.exec_command({cmd:"PRIVATE_COMMAND","max_output_tokens":3000})', store=True)
+        self.feed(call("batch", arguments=arguments, response_id="batch-response", number=3), 30)
+        self.feed(output("batch", [settled(0, {"session_id": 7, "output": ""}),
+                                   settled(1, {"exit_code": 0, "output": ""})], number=3), 40)
+        self.tracker = ResponseTracker(THREAD, "fixture", json.loads(json.dumps(self.tracker.state)))
+        self.feed(call("final", arguments='text(await tools.write_stdin({session_id:7,chars:""}));', number=4), 50)
+        found = self.feed(output("final", acknowledgement(), number=4), 60)
+        self.assertEqual((found[0].call_id, found[0].response_id, found[0].turn_id), ("original", "origin", turn(2)))
+
+    def test_batch_multiple_polls_use_index_not_arrival_order(self):
+        for index in (0, 1):
+            self.feed(call(f"origin-{index}", response_id=f"r{index}"), 10 + index)
+            self.feed(output(f"origin-{index}", {"session_id": index + 7}), 20 + index)
+        self.feed(call("batch", arguments=batch_input('tools.write_stdin({session_id:7})',
+                       'tools.write_stdin({session_id:8})'), number=3), 30)
+        found = self.feed(output("batch", [settled(1, acknowledgement()), settled(0, acknowledgement())], number=3), 40)
+        self.assertEqual([(item.call_id, item.response_id) for item in found], [("origin-1", "r1"), ("origin-0", "r0")])
+
+    def test_batch_unreadable_or_missing_sibling_stays_pending_after_restart(self):
+        for sibling in (None, {"type": "input_text", "text": json.dumps({"i": 1, "result":
+                         {"status": "rejected", "reason": "PRIVATE_REASON"}})},
+                        settled(1, {"private": "PRIVATE_BODY"})):
+            with self.subTest(sibling=sibling is None):
+                self.setUp()
+                self.feed(call("batch", arguments=batch_input('tools.exec_command({cmd:"first"})',
+                               'tools.exec_command({cmd:"second"})'), response_id="origin"), 10)
+                values = [settled(0, acknowledgement())] + ([] if sibling is None else [sibling])
+                found = self.feed(output("batch", values), 20)
+                self.assertEqual(len(found), 1)
+                self.assertEqual(self.tracker.state["batches"]["batch"][0], None)
+                self.assertIsNotNone(self.tracker.state["batches"]["batch"][1])
+                self.tracker = ResponseTracker(THREAD, "fixture", json.loads(json.dumps(self.tracker.state)))
+                self.assertNotIn("PRIVATE", json.dumps(self.tracker.state))
+                self.feed(output("batch", [settled(1, {"exit_code": 1})]), 30)
+                self.assertFalse(self.tracker.state["batches"])
+
+    def test_batch_same_call_handle_collision_is_preflighted_before_any_boundary(self):
+        self.feed(call("batch", arguments=batch_input('tools.exec_command({cmd:"first"})',
+                       'tools.exec_command({cmd:"second"})'), response_id="origin"), 10)
+        result = {"session_id": 7, "output": json.dumps(acknowledgement())}
+        found = self.feed(output("batch", [settled(0, result), settled(1, result)]), 20)
+        self.assertEqual(len(found), 2)
+        self.assertTrue(all(item.response_id is None for item in found))
+        self.assertTrue(self.tracker.state["handles"]["session:7"]["ambiguous"])
+        self.tracker = ResponseTracker(THREAD, "fixture", json.loads(json.dumps(self.tracker.state)))
+        self.feed(call("poll", name="write_stdin", arguments={"session_id": 7}), 30)
+        found = self.feed(output("poll", acknowledgement()), 40)
+        self.assertIsNone(found[0].response_id)
+
+    def test_batch_duplicate_index_or_unknown_wrapper_never_confirms_origin(self):
+        for invalid in ([settled(0, acknowledgement()), settled(0, acknowledgement())],
+                        [settled(2, acknowledgement())], {"private": [settled(0, acknowledgement())]}):
+            self.setUp()
+            self.feed(call("batch", arguments=batch_input('tools.exec_command({cmd:"first"})',
+                           'tools.exec_command({cmd:"second"})'), response_id="origin"), 10)
+            self.assertEqual(self.feed(output("batch", invalid), 20), ())
+            self.assertEqual(len(list(self.tracker.pending_frames())), 2)
+
+    def test_unsupported_batch_is_not_a_fresh_origin(self):
+        self.feed(call("unknown", arguments="const results=await Promise.allSettled(variable);text(results);",
+                       response_id="unproven"), 10)
+        found = self.feed(output("unknown", [settled(0, acknowledgement())]), 20)
+        self.assertIsNone(found[0].response_id)
+
+    def test_outer_yielded_batch_stays_pending_without_cell_origin_alias(self):
+        self.feed(call("batch", arguments=batch_input('tools.exec_command({cmd:"first"})'), response_id="origin"), 10)
+        self.feed(output("batch", "Script running with cell ID batch-cell"), 20)
+        self.assertIn("batch", self.tracker.state["batches"])
+        self.assertNotIn("cell:batch-cell", self.tracker.state["handles"])
+
+    def test_batch_slots_share_pending_capacity_with_single_calls(self):
+        from task_governance_tool.usage_response_adapter import MAX_CONTEXT
+        for index in range(MAX_CONTEXT - 1):
+            self.feed(call(f"pending-{index}", response_id="prior"), index)
+        self.feed(call("batch", arguments=batch_input('tools.exec_command({cmd:"first"})',
+                       'tools.exec_command({cmd:"second"})'), response_id="lost"), 200)
+        self.assertNotIn("batch", self.tracker.state["batches"])
+        self.assertEqual(self.tracker.state["overflow"]["response"], "lost")
+        self.assertTrue(self.tracker.state["limited"])
+        self.tracker = ResponseTracker(THREAD, "fixture", json.loads(json.dumps(self.tracker.state)))
+
+    def test_sparse_batch_positions_remain_bounded_until_the_batch_drains(self):
+        from task_governance_tool.usage_response_adapter import MAX_CONTEXT
+        self.feed(call("batch", arguments=batch_input(*['tools.exec_command({cmd:"command"})'] * MAX_CONTEXT),
+                       response_id="origin"), 10)
+        self.feed(output("batch", [settled(index, {"exit_code": 0}) for index in range(MAX_CONTEXT - 1)]), 20)
+        self.feed(call("extra", response_id="lost"), 30)
+        self.assertNotIn("extra", self.tracker.state["calls"])
+        self.assertEqual(self.tracker.state["overflow"]["response"], "lost")
+        self.tracker = ResponseTracker(THREAD, "fixture", json.loads(json.dumps(self.tracker.state)))
+
+    def test_simultaneous_terminal_and_running_polls_retain_unknown_lifetime(self):
+        for reverse in (False, True):
+            self.setUp()
+            self.feed(call("original", response_id="origin"), 10)
+            self.feed(output("original", {"session_id": 7}), 20)
+            self.feed(call("batch", arguments=batch_input('tools.write_stdin({session_id:7})',
+                           'tools.write_stdin({session_id:7})')), 30)
+            values = [settled(0, acknowledgement()), settled(1, {"session_id": 7})]
+            found = self.feed(output("batch", list(reversed(values)) if reverse else values), 40)
+            self.assertEqual(len(found), 1)
+            self.assertIsNone(found[0].response_id)
+            self.assertTrue(self.tracker.state["handles"]["session:7"]["ambiguous"])
+            self.assertNotIn("session:7", self.tracker.state["retired"])
+            self.tracker = ResponseTracker(THREAD, "fixture", json.loads(json.dumps(self.tracker.state)))
+
+    def test_later_slot_handle_collision_invalidates_previously_issued_poll(self):
+        self.feed(call("batch", arguments=batch_input('tools.exec_command({cmd:"first"})',
+                       'tools.exec_command({cmd:"second"})'), response_id="origin"), 10)
+        self.feed(output("batch", [settled(0, {"session_id": 7})]), 20)
+        self.feed(call("poll", name="write_stdin", arguments={"session_id": 7}), 30)
+        self.feed(output("batch", [settled(1, {"session_id": 7})]), 40)
+        self.tracker = ResponseTracker(THREAD, "fixture", json.loads(json.dumps(self.tracker.state)))
+        found = self.feed(output("poll", acknowledgement()), 50)
+        self.assertIsNone(found[0].response_id)
+
+    def test_exact_previous_continuation_is_decoded_without_corruption_repair(self):
+        self.feed(call("pending", response_id="origin"), 10)
+        legacy = json.loads(json.dumps(self.tracker.state))
+        legacy["version"] = 1
+        del legacy["batches"]
+        del legacy["calls"]["pending"]["slot"]
+        del legacy["calls"]["pending"]["bracket_closed"]
+        restored = ResponseTracker(THREAD, "fixture", legacy)
+        self.assertEqual(restored.state["version"], 3)
+        self.assertIsNone(restored.state["calls"]["pending"]["slot"])
+        self.assertTrue(restored.state["calls"]["pending"]["bracket_closed"])
+        self.assertNotIn("slot", legacy["calls"]["pending"])
+        for change in (lambda value: value["calls"]["pending"].pop("method"),
+                       lambda value: value.update(batches={}),
+                       lambda value: value["calls"]["pending"].update(slot=None)):
+            altered = json.loads(json.dumps(legacy))
+            change(altered)
+            with self.assertRaises(UsageError):
+                ResponseTracker(THREAD, "fixture", altered)
+
+    def test_ordinary_first_opaque_result_freezes_bracket_across_restart(self):
+        for initial in ((), ("origin",), ("origin", "conflict")):
+            for restart in (False, True):
+                with self.subTest(initial=initial, restart=restart):
+                    self.setUp()
+                    self.feed(call("pending"), 10)
+                    for index, identity in enumerate(initial):
+                        self.feed({}, 11 + index, response(identity))
+                    self.feed(output("pending", {"private": "opaque"}), 20)
+                    frozen = json.loads(json.dumps(self.tracker.state))
+                    self.assertTrue(frozen["calls"]["pending"]["bracket_closed"])
+                    if restart:
+                        self.tracker = ResponseTracker(THREAD, "fixture", frozen)
+                    self.feed({}, 30, response("later"))
+                    found = self.feed(output("pending", acknowledgement()), 40)
+                    self.assertEqual(len(found), 1)
+                    self.assertEqual(found[0].response_id, "origin" if len(initial) == 1 else None)
+                    self.assertNotIn("pending", self.tracker.state["calls"])
+
+    def test_batch_first_host_result_closes_all_slots_even_without_routed_values(self):
+        cases = (
+            [settled(0, {"private": "opaque"})],
+            [{"type": "text", "text": json.dumps({"i": 0, "result": {"status": "rejected", "reason": "opaque"}})}],
+            [settled(0, acknowledgement()), settled(0, acknowledgement())],
+            [settled(7, acknowledgement())],
+            [settled(0, {"exit_code": 0})],
+            [],
+            "Script running with cell ID outer-cell",
+            '{"i":0,"i":1,"result":{"status":"fulfilled","value":{}}}',
+        )
+        for case_index, first in enumerate(cases):
+            for initial in ((), ("origin",), ("origin", "conflict")):
+                for restart in (False, True):
+                    with self.subTest(case=case_index, initial=initial, restart=restart):
+                        self.setUp()
+                        self.feed(call("batch", arguments=batch_input('tools.exec_command({cmd:"one"})',
+                                       'tools.exec_command({cmd:"two"})')), 10)
+                        for index, identity in enumerate(initial):
+                            self.feed({}, 11 + index, response(identity))
+                        self.feed(output("batch", first), 20)
+                        self.assertTrue(all(frame is None or frame["bracket_closed"]
+                                            for frame in self.tracker.state["batches"]["batch"]))
+                        if restart:
+                            self.tracker = ResponseTracker(THREAD, "fixture", json.loads(json.dumps(self.tracker.state)))
+                        self.feed({}, 30, response("later"))
+                        found = self.feed(output("batch", [settled(1, acknowledgement())]), 40)
+                        self.assertEqual(len(found), 1)
+                        self.assertEqual(found[0].response_id, "origin" if len(initial) == 1 else None)
+
+    def test_first_result_closure_preserves_explicit_and_unrelated_pending_origins(self):
+        for use_batch in (False, True):
+            with self.subTest(batch=use_batch):
+                self.setUp()
+                args = batch_input('tools.exec_command({cmd:"one"})') if use_batch else ""
+                self.feed(call("explicit", arguments=args, response_id="explicit-origin"), 10)
+                self.feed(call("unrelated"), 11)
+                first = [settled(0, {"private": "opaque"})] if use_batch else {"private": "opaque"}
+                self.feed(output("explicit", first), 20)
+                self.tracker = ResponseTracker(THREAD, "fixture", json.loads(json.dumps(self.tracker.state)))
+                self.feed({}, 30, response("later"))
+                final = [settled(0, acknowledgement())] if use_batch else acknowledgement()
+                found = self.feed(output("explicit", final), 40)
+                self.assertEqual(found[0].response_id, "explicit-origin")
+                other = self.feed(output("unrelated", acknowledgement()), 50)
+                self.assertEqual(other[0].response_id, "later")
+
+    def test_missing_or_invalid_first_output_turn_cannot_leave_a_bracket_open(self):
+        for use_batch in (False, True):
+            for metadata in (None, {}, {"turn_id": "invalid"}):
+                with self.subTest(batch=use_batch, metadata=metadata):
+                    self.setUp()
+                    args = batch_input('tools.exec_command({cmd:"one"})') if use_batch else ""
+                    self.feed(call("pending", arguments=args), 10)
+                    self.feed({}, 15, response("origin"))
+                    first = output("pending", acknowledgement())
+                    first["payload"]["internal_chat_message_metadata_passthrough"] = metadata
+                    self.assertEqual(self.feed(first, 20), ())
+                    self.tracker = ResponseTracker(THREAD, "fixture", json.loads(json.dumps(self.tracker.state)))
+                    self.feed({}, 30, response("later"))
+                    final = [settled(0, acknowledgement())] if use_batch else acknowledgement()
+                    found = self.feed(output("pending", final), 40)
+                    self.assertEqual(len(found), 1)
+                    self.assertIsNone(found[0].response_id)
+
+    def test_closed_missing_origin_is_preserved_through_handle_and_pending_poll_alias(self):
+        for use_batch in (False, True):
+            for initial in (None, "origin"):
+                with self.subTest(batch=use_batch, initial=initial):
+                    self.setUp()
+                    args = batch_input('tools.exec_command({cmd:"one"})') if use_batch else ""
+                    self.feed(call("original", arguments=args), 10)
+                    if initial:
+                        self.feed({}, 15, response(initial))
+                    first = [settled(0, {"private": "opaque"})] if use_batch else {"private": "opaque"}
+                    self.feed(output("original", first), 20)
+                    self.feed({}, 30, response("late-before-handle"))
+                    running = [settled(0, {"session_id": 7})] if use_batch else {"session_id": 7}
+                    self.feed(output("original", running), 40)
+                    self.feed(call("poll", name="write_stdin", arguments={"session_id": 7}), 50)
+                    self.tracker = ResponseTracker(THREAD, "fixture", json.loads(json.dumps(self.tracker.state)))
+                    self.assertTrue(self.tracker.state["handles"]["session:7"]["bracket_closed"])
+                    self.assertTrue(self.tracker.state["calls"]["poll"]["bracket_closed"])
+                    self.feed({}, 60, response("late-before-poll-result"))
+                    found = self.feed(output("poll", acknowledgement()), 70)
+                    self.assertEqual((found[0].call_id, found[0].response_id), ("original", initial))
+
+    def test_current_open_bracket_survives_restart_before_first_result(self):
+        self.feed(call("pending"), 10)
+        self.tracker = ResponseTracker(THREAD, "fixture", json.loads(json.dumps(self.tracker.state)))
+        self.assertFalse(self.tracker.state["calls"]["pending"]["bracket_closed"])
+        self.feed({}, 20, response("origin"))
+        found = self.feed(output("pending", acknowledgement()), 30)
+        self.assertEqual(found[0].response_id, "origin")
+
+    def test_legacy_contexts_never_reuse_unproven_brackets_or_attach_late_candidates(self):
+        for version in (1, 2):
+            with self.subTest(version=version):
+                def old_frame(identity, *, method="single_bracket", handle=None):
+                    frame = {"call": identity, "turn": turn(2), "order": 10, "response": "old-origin",
+                             "method": method, "ambiguous": False, "handle": handle}
+                    if method == "unavailable":
+                        frame["response"] = None
+                    if version == 2:
+                        frame["slot"] = None
+                    return frame
+                legacy = {"version": version, "calls": {
+                    "pending": old_frame("pending"), "unknown": old_frame("unknown", method="unavailable"),
+                    "poll": old_frame("original", handle="session:7")},
+                    "handles": {"session:7": old_frame("original"),
+                                "session:8": old_frame("explicit", method="explicit")},
+                    "retired": ["session:9"], "limited": True, "overflow": old_frame("lost")}
+                if version == 2:
+                    legacy["batches"] = {"batch": [None, {**old_frame("batch"), "slot": 1},
+                                                  {**old_frame("batch", method="explicit"), "slot": 2}]}
+                original = json.loads(json.dumps(legacy))
+                self.tracker = ResponseTracker(THREAD, "fixture", legacy)
+                self.assertEqual(legacy, original)
+                self.assertEqual(self.tracker.state["version"], 3)
+                for frame in self.tracker.pending_frames():
+                    self.assertTrue(frame["bracket_closed"])
+                    self.assertEqual(frame["response"], "old-origin" if frame["method"] == "explicit" else None)
+                    self.assertNotEqual(frame["method"], "single_bracket")
+                self.feed({}, 20, response("late"))
+                for identity in ("pending", "unknown", "poll"):
+                    found = self.feed(output(identity, acknowledgement()), 30)
+                    self.assertIsNone(found[0].response_id)
+                self.assertEqual(self.tracker.state["handles"]["session:8"]["response"], "old-origin")
+
+    def test_continuation_bracket_marker_is_closed_and_validated_in_every_frame_group(self):
+        self.feed(call("origin", response_id="explicit"), 10)
+        self.feed(output("origin", {"session_id": 7}), 20)
+        self.feed(call("poll", name="write_stdin", arguments={"session_id": 7}), 30)
+        self.feed(call("batch", arguments=batch_input('tools.exec_command({cmd:"one"})')), 40)
+        self.tracker.state["limited"] = True
+        self.tracker.state["overflow"] = {**self.tracker.state["handles"]["session:7"], "call": "lost"}
+        def selected(state, location):
+            if location == "call":
+                return state["calls"]["poll"]
+            if location == "handle":
+                return state["handles"]["session:7"]
+            if location == "batch":
+                return state["batches"]["batch"][0]
+            return state["overflow"]
+        for location in ("call", "handle", "batch", "overflow"):
+            for invalid in (None, 0, 1, "true"):
+                with self.subTest(location=location, invalid=invalid):
+                    altered = json.loads(json.dumps(self.tracker.state))
+                    frame = selected(altered, location)
+                    if invalid is None:
+                        frame.pop("bracket_closed")
+                    else:
+                        frame["bracket_closed"] = invalid
+                    with self.assertRaises(UsageError):
+                        ResponseTracker(THREAD, "fixture", altered)
+        for location in ("call", "handle", "overflow"):
+            altered = json.loads(json.dumps(self.tracker.state))
+            frame = selected(altered, location)
+            frame["bracket_closed"] = False
+            with self.assertRaises(UsageError):
+                ResponseTracker(THREAD, "fixture", altered)
+        for version in (1, 2):
+            altered = json.loads(json.dumps(self.tracker.state))
+            altered["version"] = version
+            with self.assertRaises(UsageError):
+                ResponseTracker(THREAD, "fixture", altered)
+
+    def test_batch_depth_budget_spans_outer_and_inner_containers(self):
+        def nested(value, count):
+            for _ in range(count):
+                value = {"output": value}
+            return value
+        for outer in range(10):
+            for inner in range(10):
+                with self.subTest(outer=outer, inner=inner):
+                    self.setUp()
+                    self.feed(call("batch", arguments=batch_input('tools.exec_command({cmd:"command"})'),
+                                   response_id="origin"), 10)
+                    body = {"i": 0, "result": {"status": "fulfilled", "value": nested(acknowledgement(), inner)}}
+                    found = self.feed(output("batch", nested(body, outer)), 20)
+                    self.assertEqual(len(found), int(outer + 1 + inner <= 8))
+
+    def test_sole_literal_poll_allsettled_argument_preserves_original_origin(self):
+        self.feed(call("original", response_id="origin"), 10)
+        self.feed(output("original", {"session_id": 7}), 20)
+        self.feed(call("poll", arguments='text(await tools.write_stdin({session_id:7,chars:"allSettled"}));',
+                       response_id="later", number=3), 30)
+        found = self.feed(output("poll", acknowledgement(), number=3), 40)
+        self.assertEqual((found[0].call_id, found[0].response_id), ("original", "origin"))
+
+    def test_literal_comment_and_regex_batch_words_do_not_make_fresh_exec_ambiguous(self):
+        for arguments in ('text(await tools.exec_command({cmd:"Promise.allSettled([])"}));',
+                          'store("Promise.allSettled([])",0);text(await tools.exec_command({cmd:"command"}));',
+                          '// Promise.allSettled([])\ntext(await tools.exec_command({cmd:"command"}));',
+                          'const pattern=/Promise.allSettled\\(/;text(await tools.exec_command({cmd:"command"}));'):
+            with self.subTest(arguments=arguments):
+                self.setUp()
+                self.feed(call("original", arguments=arguments, response_id="origin"), 10)
+                found = self.feed(output("original", acknowledgement()), 20)
+                self.assertEqual(found[0].response_id, "origin")
+
+    def test_overdepth_or_unreadable_cell_headers_do_not_create_handles(self):
+        from task_governance_tool.usage_response_adapter import _output_handles, MAX_TEXT
+        header = "Script running with cell ID fixture-cell"
+        self.assertEqual(_output_handles(header, [], depth=9), set())
+        self.assertEqual(_output_handles([{"type": "text", "text": header}], [], depth=8), set())
+        for value in (header + "\nPRIVATE", header + "\n" + "x" * MAX_TEXT,
+                      header + '\nOutput:\n{"output":{"private":"body"}}'):
+            with self.subTest(length=len(value)):
+                self.assertEqual(_output_handles(value, []), set())
+        self.assertEqual(_output_handles(header, [], depth=8), {("cell", "fixture-cell")})
+
+    def test_unsupported_executable_batch_forms_cannot_bind_indexed_results_as_fresh(self):
+        for source in ('Promise["all"+"Settled"]([tools["write_stdin"]({session_id:7})])',
+                       '(Promise.allSettled)([tools["write_stdin"]({session_id:7})])',
+                       'Promise?.allSettled([tools["write_stdin"]({session_id:7})])',
+                       'Promise.all\\u0053ettled([tools["write_stdin"]({session_id:7})])'):
+            with self.subTest(source=source):
+                self.setUp()
+                self.feed(call("original", response_id="origin"), 10)
+                self.feed(output("original", {"session_id": 7}), 20)
+                self.feed(call("unsupported", arguments=source, response_id="later"), 30)
+                found = self.feed(output("unsupported", [settled(0, acknowledgement())]), 40)
+                self.assertEqual(len(found), 1)
+                self.assertIsNone(found[0].response_id)
+                self.assertIn("session:7", self.tracker.state["handles"])
+
+    def test_conflicting_cell_headers_never_choose_the_first_declaration(self):
+        self.feed(call("batch", arguments=batch_input('tools.exec_command({cmd:"command"})'),
+                       response_id="origin"), 10)
+        body = "Script running with cell ID cell-a\nScript running with cell ID cell-b\nOutput:\n{}"
+        self.feed(output("batch", [settled(0, body)]), 20)
+        self.assertEqual(set(self.tracker.state["handles"]), {"cell:cell-a", "cell:cell-b"})
+        self.assertTrue(all(frame["ambiguous"] for frame in self.tracker.state["handles"].values()))
+        self.feed(call("poll", name="wait", arguments={"cell_id": "cell-a"}), 30)
+        found = self.feed(output("poll", acknowledgement()), 40)
+        self.assertIsNone(found[0].response_id)
 
 
 if __name__ == "__main__":

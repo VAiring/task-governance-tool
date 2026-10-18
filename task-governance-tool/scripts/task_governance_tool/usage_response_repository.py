@@ -85,8 +85,7 @@ class UsageResponseRepository(UsageIncrementalRepository):
         try:
             value = json.loads(row[0])
             thread = connection.execute("SELECT thread_id FROM usage_sources WHERE source_id=?", (source,)).fetchone()[0]
-            ResponseTracker(thread, "validation", value)
-            return value
+            return ResponseTracker(thread, "validation", value).state
         except (ValueError, TypeError, KeyError):
             raise UsageError("usage_schema_invalid") from None
 
@@ -153,7 +152,7 @@ class UsageResponseRepository(UsageIncrementalRepository):
         for row in connection.execute("SELECT source_id,document FROM usage_response_context WHERE lane='ingest' ORDER BY source_id"):
             value = json.loads(row["document"])
             thread = connection.execute("SELECT thread_id FROM usage_sources WHERE source_id=?", (row["source_id"],)).fetchone()[0]
-            ResponseTracker(thread, "validation", value)
+            value = ResponseTracker(thread, "validation", value).state
             contexts.append((row["source_id"], value))
         sources = list(map(tuple, connection.execute("SELECT source_id,thread_id,incarnation,offset,pending FROM usage_sources ORDER BY source_id")))
         endpoints = [asdict(item) for item in self._collected_review_endpoints(core)]
@@ -254,12 +253,11 @@ class UsageResponseRepository(UsageIncrementalRepository):
                     "JOIN usage_sources source USING(source_id) JOIN usage_scan_state scan "
                     "ON scan.source_id=context.source_id AND scan.lane=context.lane WHERE context.lane='ingest'"):
                 state = json.loads(row["document"])
-                ResponseTracker(row["thread_id"], "validation", state)
+                tracker = ResponseTracker(row["thread_id"], "validation", state)
                 from task_governance_tool.usage_incremental_repository import _document
                 provider = _document({"document": row["scan"]})["state"].provider
-                overflow = () if state["overflow"] is None else (state["overflow"],)
-                for frame in (*state["calls"].values(), *state["handles"].values(), *overflow):
-                    identity = (row["source_id"], row["incarnation"], frame["call"], frame["turn"], frame["order"])
+                for frame in tracker.pending_frames():
+                    identity = (row["source_id"], row["incarnation"], frame["call"], frame["slot"], frame["turn"], frame["order"])
                     origin = (row["source_id"], row["incarnation"], row["thread_id"], frame["turn"], provider,
                               None if frame["ambiguous"] else frame["response"], frame["order"])
                     previous = pending.get(identity)

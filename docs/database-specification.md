@@ -742,15 +742,62 @@ separate observations and never synthesize a state transition.
 Only admitted registered source records supply this association. Explicit
 same-thread/turn response IDs may bind a call before its numerical values
 arrive. The source-order bracket adapter is closed to the observed Codex
-`0.162.0-alpha.17.2` format: exactly one response in the call's turn between
+`0.162.0-alpha.17.2` and `0.163.0-alpha.10.2` formats: exactly one response in the call's turn between
 its call and first matching result, without an invalid/foreign or conflicting
 record. This is a supported observed format, not a guarantee for every host or
 version. Other versions retain numerical values and may use explicit IDs;
 unsupported or nonunique brackets remain unknown. No proximity timestamp,
 ID prefix, command meaning or arbitrary transcript search supplies a link.
+The first matching host output closes this bracket even when its body is
+opaque, rejected, malformed or lacks a result for one batch position. Every
+unresolved fresh slot in that outer call closes together. Later numerical
+records cannot replace the retained candidate or fill a missing one; terminal
+resolution and handle/poll continuation preserve that closed origin across
+restart. Missing or invalid output-turn metadata also invalidates its proof.
 
 Known direct JSON session/cell waits and a sole literal `tools.write_stdin`
 exec wrapper can trace a verified handle lifetime to its originating call.
+The observed indexed batch also admits exactly `const results = await
+Promise.allSettled([...]); for(let i=0;i<results.length;i++){...}` with literal
+`tools.exec_command` or `tools.write_stdin` argument objects and
+`text({i,result:results[i]});` in that loop. The only optional loop statement is
+`store("literal"+i,results[i]);` immediately before `text`. Whitespace and the
+existing bounded exec pragma do not change correspondence. Static object keys
+and JSON literal values are accepted; variables, spread, computed/duplicate
+keys, other calls, altered result printing and additional JavaScript are not.
+Batch rejection detects executable `Promise` references, including aliases
+declared from that identifier, and conservatively rejects unknown identifier
+escapes or template expressions outside the admitted grammar. It ignores
+recognized literal, comment and regex text and preserves a validated
+sole-literal poll. Line comments end at any JavaScript line terminator. A
+slash is skipped as a regex only at a recognized expression-start position;
+ambiguous slash contexts remain unbound, including postfix and property-name
+contexts, rather than potentially hiding executable code. It does not evaluate
+arbitrary aliases or computed global properties, or claim to recognize all
+JavaScript compositions.
+JavaScript poll literals must represent the same integer as their runtime Number;
+rounded large integers are unbound in both batch and sole-literal exec wrappers.
+The fixed input position, not arrival order, matches each whole indexed result.
+An indexed result without an admitted matching batch input remains unbound.
+Detected batch candidates outside the admitted grammar remain unbound even
+when their output is flattened and has no index.
+Poll slots retain their verified original response; fresh exec slots use the
+outer call's response. Independent fulfilled slots remain usable when another
+slot is missing, rejected or opaque; that slot remains unresolved. Duplicate,
+Boolean, negative or out-of-range indices reject the correspondence before any
+slot is confirmed. Duplicate JSON keys also reject the whole batch correspondence,
+including keys decoded inside fulfilled values' admitted JSON strings and
+output/content/text containers. Validate those values before registering any
+handle or emitting any slot observation, including a repeated resolved slot.
+The same validation follows a fresh batch slot's handle through a later sole
+poll; rejection preserves its pending call and handle for a valid later result.
+Rejected reasons and unknown containers remain opaque; no arbitrary body scan
+is added to search for duplicate-looking text.
+Distinct fresh slots are distinct handle lifetimes even when
+they share an outer call ID; collisions invalidate their retained poll aliases.
+A batch that yields an outer cell without indexed results remains unresolved;
+this adapter does not infer or transfer its slots through that cell. Support is
+limited to observed transport structure, not a host delivery guarantee.
 Variables, unsupported compositions, reused/conflicting or absent handles
 remain unbound, including retained origins and pending polls of a live
 colliding handle. Opaque results and bounded continuation exhaustion retain
@@ -759,7 +806,9 @@ Only supported terminal evidence resolves a tracked operation; lost-lifetime
 coverage survives until safe source replay. Headers, whole JSON bodies, text/input_text blocks, existing
 exec output/content containers and the closed `{i,result:{status:"fulfilled",
 value:...}}` result wrapper are recognized within eight levels and 2 MiB per
-text. Separate complete blocks can remain usable when another block is opaque.
+text. The depth limit spans outer containers, the indexed wrapper and its
+fulfilled value together; crossing that wrapper never starts a fresh budget.
+Separate complete blocks can remain usable when another block is opaque.
 Partial JSON and unknown text appended to one body never yield early success.
 Only the exact leading `Failed to find real location of <absolute Python
 executable>` warning grammar may be stripped (at most four lines); its text

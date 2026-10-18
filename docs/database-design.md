@@ -705,7 +705,8 @@ meaning. The integration adds no persisted table, host operation or core write.
 ### Response Relation And Partition Structure
 
 `usage_response_adapter.py` owns closed call/result/response metadata and
-bounded continuation (128 pending calls, handles and retired-handle entries,
+bounded continuation (128 retained call/slot positions in total, 128 handles
+and 128 retired-handle entries,
 262,144 bytes). `usage_response_attribution.py` owns response ordering and
 whole-response start/stop/resume/completion partitions. `usage_response_repository.py`
 owns numerical schema 6, core-reference resolution,
@@ -732,8 +733,66 @@ be validated. Historical qualified event/call origins are compared across
 incarnations; a replacement cannot silently relabel an old success. Candidate
 read acknowledgements require the essential public selection/list/show shape,
 not merely a known command name with an arbitrary data object.
-The response adapter's sanitized prefix is `codex-response-relations-v2` for
-compact selection admission. Bounded audit/replay replaces an older prefix's
+`usage_batch_adapter.py` parses only the observed whole indexed batch grammar,
+without evaluating JavaScript. It returns ordered tool kinds and canonical
+literal poll handles; command text, argument values and store keys are discarded.
+It retains output indices before the ordinary transport parser unwraps results,
+using the same closed text/header parser and eight-level/2 MiB bounds. Each result
+carries its consumed transport depth transiently into value parsing and handle
+extraction; it is not persisted and the indexed boundary does not reset it.
+The rejection guard treats every executable `Promise` identifier reference,
+unknown identifier escape and dynamic template as a batch candidate. Known
+quoted/comment/regex tokens are inert; a validated sole-literal poll still
+wins. This guard does not evaluate aliases or computed global properties and
+does not expand the positively admitted grammar. No text is evaluated.
+Line-comment scanning recognizes LF, CR, U+2028 and U+2029. Regex skipping
+requires start-of-input or a typed punctuation token that cannot end an
+expression; token values alone and keyword names never grant that permission.
+Plus/minus and other uncertain slash contexts stop with an unknown candidate.
+An unclosed regex or a line terminator inside it, including after an escape,
+also stays unknown. This deliberately avoids implementing general JavaScript
+lexical-goal or postfix/property parsing.
+Results are matched by index, with malformed or duplicate indices rejected before any
+slot is processed. Independent missing/rejected/opaque slots remain pending.
+The batch's unique-key decoder mode follows every admitted fulfilled-value
+text/container traversal, including header validation. Its ambiguity signal
+is not converted into an opaque-block marker. Preflight every routed fulfilled
+value, even a resolved slot, before registering handles or emitting observations;
+one duplicate rejects that whole output without confirming a slot or changing
+handles. First-output bracket closure is independent and still persists.
+A sole poll inheriting a non-null original slot uses the same preflight before
+removing its pending call or changing the handle. Ordinary non-batch origins
+and opaque rejected reasons retain their prior rules.
+Strict parsing returns leaf bodies with transport output/content removed after
+checking those children at the inherited depth, including mixed acknowledgement
+and transport objects. The legacy turn projector receives only these validated
+leaves and cannot re-decode discarded children under weaker or renewed bounds.
+Continuation version 3 retains positional batch frames, each frame's original
+slot index and a required Boolean `bracket_closed`. Close matching ordinary
+frames and all unresolved batch slots before parsing the first host output,
+including invalid turn metadata; the latter also invalidates their proof.
+Only open fresh frames accept numerical bracket candidates. Explicit origins
+start closed; live handles, inherited polls and lost-origin markers stay
+closed. Poll frames inherit the original call/slot/turn/order/response;
+fresh exec frames retain their batch call and position. Collision checks examine
+all returned handles before publishing any slot's observations and invalidate
+all retained aliases. Pending projection, interruption and capacity accounting
+include ordinary calls and batch slots through one shared frame traversal.
+Resolved slots retain their position until their batch drains, so their positions
+continue to consume capacity; partial batches cannot multiply retained metadata.
+Exact version-1 and version-2 contexts are validated before normalization;
+version 1 adds empty batches and null slot identities. Both old codecs lack
+proof of first-output closure, so normalization closes every frame, preserves
+explicit origins and clears all nonexplicit response candidates, including
+handles and pending polls. Identities, ambiguity, retired handles and capacity
+state remain. Malformed or unknown contexts still fail closed. Normalization
+does not reset cursors or claim an old prefix used the new parser.
+Capture fingerprints use this normalized context too; a pre-upgrade capture
+with old bracket candidates must be refreshed before current read acceptance.
+The refresh preserves immutable snapshots and original numerical observations.
+The response adapter's sanitized prefix is `codex-response-relations-v7` for
+indexed batch admission, persisted first-output closure and conservative
+lexical rejection. Bounded audit/replay replaces an older prefix's
 discarded check results and continuation without changing numerical schema or
 deleting original counters/history; normal reads never perform that replay.
 Live session/cell handles retain the same unresolved origin between polls;

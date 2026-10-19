@@ -13,7 +13,7 @@ import binascii
 import hashlib
 import re
 import unicodedata
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterator, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path, PurePosixPath
@@ -1038,7 +1038,7 @@ def _validate_artifact_entry(
     object_id_length: int,
 ) -> None:
     _integer(item["ordinal"])
-    kind = item["kind"]
+    kind = _text(item["kind"])
     if kind not in _ARTIFACT_KIND_RANK:
         _invalid()
     old_path = item["old_path"]
@@ -1112,7 +1112,7 @@ def _validate_artifact(
 
     state = artifact["state"]
     if state == "complete_git":
-        object_format = artifact["object_format"]
+        object_format = _text(artifact["object_format"])
         comparison_base = artifact["comparison_base"]
         if (
             target["kind"] not in {"git_snapshot", "git_commit"}
@@ -1413,12 +1413,14 @@ def _validate_reviews(
         reviewer_key = _text(receipt["reviewer_key"])
         summary = _text(receipt["summary"])
         _utc_second(receipt["created_at"])
-        kind = receipt["receipt_kind"]
-        verdict = receipt["verdict"]
+        kind = _text(receipt["receipt_kind"])
+        verdict = _text(receipt["verdict"])
         if (
             receipt_id in seen_receipts
             or not reviewer_key
             or reviewer_key != reviewer_key.strip()
+            or len(reviewer_key) > 500
+            or len(summary) > 1_000
             or kind not in {"independent", "self_review_fallback", "not_required"}
             or verdict not in {"pass", "changes_requested", "not_required"}
             or type(receipt["user_approved"]) is not int
@@ -1497,8 +1499,8 @@ def _validate_findings(
         if (
             finding_id in seen_ids
             or generation > target_generation
-            or finding["severity"] not in {"high", "medium", "low"}
-            or finding["status"] not in {"open", "resolved"}
+            or _text(finding["severity"]) not in {"high", "medium", "low"}
+            or _text(finding["status"]) not in {"open", "resolved"}
             or _integer(finding["producer_version"], minimum=1) != 1
         ):
             _invalid()
@@ -1709,7 +1711,7 @@ def _validate_relations(
     source_keys: set[tuple[str, str]] = set()
     for reference in references:
         reference_id = _identifier(reference["evidence_reference_id"], _REFERENCE_ID)
-        source_kind = reference["source_kind"]
+        source_kind = _text(reference["source_kind"])
         source_state = _text(reference["source_state"])
         source_id = _text(reference["source_id"])
         _digest(reference["digest"])
@@ -1894,9 +1896,11 @@ def _validate_relations(
     seen_relations: set[tuple[str, str, str]] = set()
     for link in links:
         link_id = _identifier(link["criterion_evidence_link_id"], _LINK_ID)
-        reference = reference_by_id.get(link["evidence_reference_id"])
-        criterion = criteria_by_id.get(link["criterion_id"])
-        relation = link["relation"]
+        reference = reference_by_id.get(
+            _identifier(link["evidence_reference_id"], _REFERENCE_ID)
+        )
+        criterion = criteria_by_id.get(_identifier(link["criterion_id"], _CRITERION_ID))
+        relation = _text(link["relation"])
         if (
             reference is None
             or criterion is None
@@ -2094,11 +2098,11 @@ def _validate_bundle_payload(
     criteria = _closed_list(payload["criteria"], _CRITERION_KEYS)
     for criterion in criteria:
         _identifier(criterion["criterion_id"], _CRITERION_ID)
-        if criterion["kind"] not in _CRITERION_KIND_ORDER:
+        if _text(criterion["kind"]) not in _CRITERION_KIND_ORDER:
             _invalid()
         criterion_text = _text(criterion["text"])
         if (
-            type(criterion_text) is not str
+            not criterion_text.strip()
             or _digest(criterion["digest"])
             != _criterion_digest(criterion["kind"], criterion_text)
         ):
@@ -2117,7 +2121,7 @@ def _validate_bundle_payload(
     ):
         _invalid()
     criteria_by_kind = {item["kind"]: item for item in criteria}
-    acceptance_expected = revision > 0 and bool(contract["acceptance"].strip())
+    acceptance_expected = revision > 0
     verification_expected = bool(task["verification"].strip())
     if (
         ("acceptance" in criteria_by_kind) != acceptance_expected
@@ -2183,7 +2187,7 @@ def _validate_bundle_payload(
             _VERIFICATION_BASIS_KEYS,
         )
         _integer(verification_basis["basis_version"], minimum=1)
-        basis_kind = verification_basis["kind"]
+        basis_kind = _text(verification_basis["kind"])
 
     verification = payload["verification_receipt"]
     runner_branch = basis_kind == "runner_observation"
@@ -2567,9 +2571,9 @@ def _load_evidence_source(
     payload = _validate_bundle_payload(
         envelope["payload"],
         entry=selected,
-        project_id=index.project_id,
+        project_id=basis["project_id"],
         bundle_format_version=bundle_format_version,
-        maximum_source_schema_version=index.source_schema_version,
+        maximum_source_schema_version=basis["source_schema_version"],
     )
     domain = (
         BUNDLE_DOMAIN if bundle_format_version == 1 else BUNDLE_V4_DOMAIN if bundle_format_version == 4 else BUNDLE_V3_DOMAIN if bundle_format_version == 3 else BUNDLE_V2_DOMAIN
@@ -2611,10 +2615,44 @@ def validate_evidence_source(
     )
 
 
+def iter_evidence_sources(
+    index: ValidatedEvidenceIndex,
+) -> Iterator[ValidatedEvidenceSource]:
+    """Read every bound source from one revalidated, call-local index snapshot.
+
+    Only entries from that snapshot can be selected. Each yielded source keeps
+    the same full basis and physical/semantic checks as the single-entry API;
+    after iteration starts, caller projections and later index mutations cannot
+    change its selected entries. Bundle bytes are checked when each is read.
+    """
+
+    stable_index = revalidate_validated_index(index)
+    envelope = stable_index._fresh_envelope()
+    payload = envelope["payload"]
+    common_basis = {
+        "index_format_version": envelope["format_version"],
+        "source_schema_version": payload["source_schema_version"],
+        "project_id": payload["project_id"],
+        "projection_generation": payload["projection_generation"],
+        "index_digest": envelope["index_digest"],
+    }
+    for selected in payload["entries"]:
+        source_kind = (
+            "native_bundle" if selected["bundle_state"] == "native" else "legacy_index_entry"
+        )
+        yield _load_evidence_source(
+            stable_index,
+            selected=selected,
+            source_kind=source_kind,
+            basis={**common_basis, "entry": selected},
+        )
+
+
 __all__ = (
     "EvidenceConsumerError",
     "ValidatedEvidenceIndex",
     "ValidatedEvidenceSource",
+    "iter_evidence_sources",
     "read_evidence_index",
     "revalidate_validated_index",
     "revalidate_validated_source",

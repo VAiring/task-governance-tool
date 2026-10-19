@@ -8,11 +8,22 @@ import unittest
 from copy import deepcopy
 from contextlib import closing
 from pathlib import Path
+from unittest.mock import patch
 
 from tests.m14_test_support import (
     json_payload,
     make_physical_install,
     tree_snapshot,
+)
+from tests.evidence_test_support import (
+    refresh_inner_digests,
+    v1_native_payload,
+    write_evidence_tree,
+)
+from tests.evidence_reader_oracle import (
+    EvidenceConsumerError,
+    read_evidence_index,
+    validate_evidence_source,
 )
 from tests.m214c_test_support import inject_contract_pointer_fault
 from tests.m223_test_support import logical_database_digest
@@ -46,10 +57,18 @@ from task_governance_tool.storage import (  # noqa: E402
 VERIFICATION_1000 = "界" * 1_000
 COMMON_CODE_COUNT = len(REVIEW_PROVENANCE_V1_CASES) + 5
 PROJECTED_CODE_COUNT = len(REVIEW_PROVENANCE_V1_CASES) + 5
-BUNDLE_DOMAIN = b"taskgov-completion-evidence-bundle-v1\0"
-INDEX_DOMAIN = b"taskgov-evidence-index-v1\0"
-BUNDLE_V2_DOMAIN = b"taskgov-completion-evidence-bundle-v2\0"
-INDEX_V2_DOMAIN = b"taskgov-evidence-index-v2\0"
+# Literal test expectations; never obtain domains from the producing selector.
+BUNDLE_DOMAINS = {
+    1: b"taskgov-completion-evidence-bundle-v1\0",
+    2: b"taskgov-completion-evidence-bundle-v2\0",
+    3: b"taskgov-completion-evidence-bundle-v3\0",
+    4: b"taskgov-completion-evidence-bundle-v4\0",
+}
+INDEX_DOMAINS = {
+    1: b"taskgov-evidence-index-v1\0",
+    2: b"taskgov-evidence-index-v2\0",
+    3: b"taskgov-evidence-index-v3\0",
+}
 REVIEW_PROVENANCE_DOMAIN = b"taskgov-review-provenance-v1\0"
 PROVENANCE_DIGEST_FIELDS = (
     "provenance_version",
@@ -245,6 +264,79 @@ def domain_digest(domain: bytes, value: object) -> str:
     ).hexdigest()
 
 
+def reseal_evidence_tree(
+    evidence_root: Path,
+    index: dict,
+    bundle: dict | None = None,
+    *,
+    bundle_domain: bytes | None = None,
+    index_domain: bytes | None = None,
+) -> None:
+    """Seal a test mutation with each envelope's own literal digest domain."""
+
+    if bundle is not None:
+        payload = bundle["payload"]
+        entry = next(
+            item for item in index["payload"]["entries"]
+            if item["bundle_id"] == payload["bundle_id"]
+        )
+        bundle["bundle_digest"] = domain_digest(
+            BUNDLE_DOMAINS[bundle["format_version"]]
+            if bundle_domain is None else bundle_domain,
+            payload,
+        )
+        document = canonical_json_bytes(bundle) + b"\n"
+        evidence_root.joinpath(*entry["bundle_file"].split("/")).write_bytes(document)
+        entry["bundle_digest"] = bundle["bundle_digest"]
+        entry["file_digest"] = "sha256:" + hashlib.sha256(document).hexdigest()
+    index["index_digest"] = domain_digest(
+        INDEX_DOMAINS[index["format_version"]]
+        if index_domain is None else index_domain,
+        index["payload"],
+    )
+    (evidence_root / "index.json").write_bytes(canonical_json_bytes(index) + b"\n")
+
+
+def write_versioned_report_tree(
+    root: Path,
+    *,
+    index_source: int = 31,
+    index_format: int = 3,
+    bundle_source: int = 31,
+    bundle_format: int = 4,
+) -> tuple[Path, dict, dict]:
+    """Transform only a temporary copy of the retained source-19 fixture."""
+
+    evidence_root = write_evidence_tree(root)
+    index, bundles = load_native_bundles(evidence_root)
+    bundle = next(iter(bundles.values()))
+    bundle["format_version"] = bundle_format
+    payload = bundle["payload"]
+    payload["source_schema_version"] = bundle_source
+    payload["bundle_version"] = bundle_format
+    if bundle_format != 1:
+        payload["verification_basis"] = {
+            "basis_version": 1,
+            "kind": "caller_attestation",
+            "verification_receipt_id": payload["verification_receipt"][
+                "verification_receipt_id"
+            ],
+            "runner_observation_id": None,
+        }
+        payload["runner_observation"] = None
+    if bundle_format in (3, 4):
+        payload["review_continuation_basis"] = None
+    index["format_version"] = index_format
+    index["payload"]["source_schema_version"] = index_source
+    if index_format != 1:
+        for entry in index["payload"]["entries"]:
+            entry["bundle_format_version"] = (
+                bundle_format if entry["bundle_state"] == "native" else None
+            )
+    reseal_evidence_tree(evidence_root, index, bundle)
+    return evidence_root, index, bundle
+
+
 def expected_v1_provenance(case, recorded: dict) -> dict[str, object]:
     """Build literal semantics from the shared oracle plus recorded identity."""
 
@@ -360,22 +452,428 @@ def rewrite_gate_basis(
     else:
         raise AssertionError(f"unsupported test mutation: {mutation}")
 
-    bundle_digest = domain_digest(
-        BUNDLE_DOMAIN if bundle["format_version"] == 1 else BUNDLE_V2_DOMAIN,
-        payload,
-    )
-    bundle["bundle_digest"] = bundle_digest
-    bundle_document = canonical_json_bytes(bundle) + b"\n"
-    bundle_path.write_bytes(bundle_document)
-    entry["bundle_digest"] = bundle_digest
-    entry["file_digest"] = "sha256:" + hashlib.sha256(
-        bundle_document
-    ).hexdigest()
-    index["index_digest"] = domain_digest(
-        INDEX_DOMAIN if index["format_version"] == 1 else INDEX_V2_DOMAIN,
-        index["payload"],
-    )
-    index_path.write_bytes(canonical_json_bytes(index) + b"\n")
+    reseal_evidence_tree(evidence_root, index, bundle)
+
+
+class M224ReportVersionTests(unittest.TestCase):
+    def assert_invalid_readonly(self, evidence_root: Path, project_id: str) -> None:
+        before = tree_snapshot(evidence_root)
+        with self.assertRaises(EvidenceReportError) as rejected:
+            read_evidence_report(evidence_root, expected_project_id=project_id)
+        self.assertEqual(rejected.exception.code, "evidence_report_invalid")
+        self.assertEqual(str(rejected.exception), "Evidence report input is invalid")
+        self.assertEqual(tree_snapshot(evidence_root), before)
+
+    def test_whole_index_work_is_constant_for_legacy_and_mixed_reports(self):
+        from tests import evidence_reader_oracle as oracle
+
+        operation_counts = []
+        for include_native in (False, True):
+            for legacy_count in (1, 32):
+                with self.subTest(native=include_native, legacy=legacy_count), tempfile.TemporaryDirectory() as temporary:
+                    evidence, index, _ = write_versioned_report_tree(Path(temporary))
+                    entries = index["payload"]["entries"]
+                    legacy = next(row for row in entries if row["bundle_state"] == "legacy_unknown")
+                    selected = [row for row in entries if row["bundle_state"] == "native"] if include_native else []
+                    selected.extend({
+                        **legacy,
+                        "task_id": f"tg_task_{ordinal:016x}",
+                        "completion_cycle_id": f"tg_completion_cycle_{ordinal:016x}",
+                    } for ordinal in range(legacy_count))
+                    selected.sort(key=lambda row: (row["task_id"], row["cycle_ordinal"], row["completion_cycle_id"]))
+                    index["payload"].update(
+                        entries=selected, bundle_count=int(include_native), legacy_count=legacy_count,
+                    )
+                    reseal_evidence_tree(evidence, index)
+                    before = tree_snapshot(evidence)
+                    with patch.object(
+                        oracle, "_validate_index_envelope", wraps=oracle._validate_index_envelope,
+                    ) as validation, patch.object(
+                        oracle.ValidatedEvidenceIndex, "_fresh_envelope", autospec=True,
+                        side_effect=oracle.ValidatedEvidenceIndex._fresh_envelope,
+                    ) as decoding:
+                        report = read_evidence_report(evidence)
+                    self.assertEqual((report["bundle_count"], report["legacy_count"]),
+                                     (int(include_native), legacy_count))
+                    self.assertEqual(len(report["entries"]), len(selected))
+                    self.assertEqual(tree_snapshot(evidence), before)
+                    operation_counts.append((validation.call_count, decoding.call_count))
+        self.assertGreater(operation_counts[0][0], 0)
+        self.assertGreater(operation_counts[0][1], 0)
+        self.assertEqual(len(set(operation_counts)), 1, operation_counts)
+
+    def test_resealed_receipt_character_limits_preserve_boundary_and_rejection(self):
+        for source, bundle_format, index_format in ((19, 1, 1), (29, 2, 2), (31, 4, 3)):
+            for provenance in (None, "v1"):
+                for field, limit in (("reviewer_key", 500), ("summary", 1_000)):
+                    for length in (limit, limit + 1):
+                        with self.subTest(source=source, provenance=provenance, field=field, length=length), tempfile.TemporaryDirectory() as temporary:
+                            evidence, index, bundle = write_versioned_report_tree(
+                                Path(temporary), index_source=source, index_format=index_format,
+                                bundle_source=source, bundle_format=bundle_format,
+                            )
+                            payload = bundle["payload"]
+                            if provenance == "v1":
+                                payload["task"]["review_tier"] = 1
+                                payload["review_receipts"] = v1_native_payload()["review_receipts"]
+                            receipt = payload["review_receipts"][0]
+                            # Multibyte text proves these are character, not byte, limits.
+                            receipt[field] = "界" * length
+                            reseal_review_provenance(payload, receipt)
+                            refresh_inner_digests(payload)
+                            reseal_evidence_tree(evidence, index, bundle)
+                            before = tree_snapshot(evidence)
+                            validated = read_evidence_index(evidence)
+                            native = next(row for row in validated.entries if row["bundle_state"] == "native")
+                            if length <= limit:
+                                read_evidence_report(evidence)
+                                validate_evidence_source(validated, native)
+                            else:
+                                self.assert_invalid_readonly(evidence, payload["project_id"])
+                                with self.assertRaises(EvidenceConsumerError) as rejected:
+                                    validate_evidence_source(validated, native)
+                                self.assertEqual(rejected.exception.code, "source_invalid")
+                            self.assertEqual(tree_snapshot(evidence), before)
+
+    def test_resealed_acceptance_absence_requires_revision_zero(self):
+        for source, bundle_format, index_format in ((19, 1, 1), (29, 2, 2), (31, 4, 3)):
+            for revision, acceptance, keep_criterion in (
+                (0, "", False), (1, "", False), (1, "   ", False),
+                (1, "", True), (1, "   ", True),
+            ):
+                with self.subTest(source=source, revision=revision, acceptance=acceptance, keep_criterion=keep_criterion), tempfile.TemporaryDirectory() as temporary:
+                    evidence, index, bundle = write_versioned_report_tree(
+                        Path(temporary), index_source=source, index_format=index_format,
+                        bundle_source=source, bundle_format=bundle_format,
+                    )
+                    read_evidence_report(evidence)
+                    payload = bundle["payload"]
+                    payload["contract"]["revision"] = revision
+                    payload["contract"]["specified"] = revision > 0
+                    payload["contract"]["acceptance"] = acceptance
+                    if revision == 0:
+                        for field in ("scope", "constraints", "authority_ref"):
+                            payload["contract"][field] = ""
+                    criterion = next(row for row in payload["criteria"] if row["kind"] == "acceptance")
+                    criterion["text"] = acceptance
+                    if not keep_criterion:
+                        payload["criteria"].remove(criterion)
+                        payload["criterion_links"] = [
+                            row for row in payload["criterion_links"]
+                            if row["criterion_id"] != criterion["criterion_id"]
+                        ]
+                        payload["omissions"].insert(0, "acceptance_criterion_absent")
+                    for reference in payload["evidence_references"]:
+                        reference["contract_revision"] = revision
+                        if not keep_criterion:
+                            reference["acceptance_criterion_id"] = None
+                    # Rebind every inner digest: rejection must concern the
+                    # acceptance rule, not a stale criterion/Reference seal.
+                    refresh_inner_digests(payload)
+                    reseal_evidence_tree(evidence, index, bundle)
+                    before = tree_snapshot(evidence)
+                    validated = read_evidence_index(evidence)
+                    native = next(row for row in validated.entries if row["bundle_state"] == "native")
+                    if revision == 0:
+                        read_evidence_report(evidence)
+                        validate_evidence_source(validated, native)
+                    else:
+                        self.assert_invalid_readonly(evidence, payload["project_id"])
+                        with self.assertRaises(EvidenceConsumerError) as rejected:
+                            validate_evidence_source(validated, native)
+                        self.assertEqual(rejected.exception.code, "source_invalid")
+                    self.assertEqual(tree_snapshot(evidence), before)
+
+    def test_nonstring_enums_return_fixed_errors_without_writes(self):
+        for source, bundle_format, index_format in ((19, 1, 1), (29, 2, 2), (31, 4, 3)):
+            for field in ("receipt_kind", "verdict", "criterion_kind"):
+                for invalid in ([], {}, None, False, 0):
+                    with self.subTest(source=source, field=field, invalid=invalid), tempfile.TemporaryDirectory() as temporary:
+                        evidence, index, bundle = write_versioned_report_tree(
+                            Path(temporary), index_source=source, index_format=index_format,
+                            bundle_source=source, bundle_format=bundle_format,
+                        )
+                        read_evidence_report(evidence)
+                        payload = bundle["payload"]
+                        if field == "criterion_kind":
+                            # A nonstring kind has no legal criterion digest;
+                            # reject its type before hashing or dict lookup.
+                            payload["criteria"][0]["kind"] = invalid
+                        else:
+                            payload["review_receipts"][0][field] = invalid
+                            refresh_inner_digests(payload)
+                        reseal_evidence_tree(evidence, index, bundle)
+                        before = tree_snapshot(evidence)
+                        self.assert_invalid_readonly(evidence, payload["project_id"])
+                        validated = read_evidence_index(evidence)
+                        native = next(row for row in validated.entries if row["bundle_state"] == "native")
+                        with self.assertRaises(EvidenceConsumerError) as rejected:
+                            validate_evidence_source(validated, native)
+                        self.assertEqual(rejected.exception.code, "source_invalid")
+                        self.assertEqual(tree_snapshot(evidence), before)
+
+    def test_resealed_nested_hash_keys_return_fixed_errors_without_writes(self):
+        paths = (
+            ("artifact_manifest", "object_format"),
+            ("artifact_manifest", "entries", 0, "kind"),
+            ("finding_snapshots", 0, "severity"),
+            ("finding_snapshots", 0, "status"),
+            ("evidence_references", 0, "source_kind"),
+            ("criterion_links", 0, "relation"),
+            ("criterion_links", 0, "criterion_id"),
+            ("criterion_links", 0, "evidence_reference_id"),
+            ("verification_basis", "kind"),
+        )
+        finding_domain = b"taskgov-completion-bundle-finding-snapshot-v1\0"
+        for source, bundle_format, index_format in ((19, 1, 1), (29, 2, 2), (31, 4, 3)):
+            for path in paths:
+                if source == 19 and path[0] == "verification_basis":
+                    continue  # Bundle v1 has no verification-basis object.
+                for invalid in ([], {}):
+                    with self.subTest(source=source, path=path, invalid=invalid), tempfile.TemporaryDirectory() as temporary:
+                        evidence, index, bundle = write_versioned_report_tree(
+                            Path(temporary), index_source=source, index_format=index_format,
+                            bundle_source=source, bundle_format=bundle_format,
+                        )
+                        payload = bundle["payload"]
+                        payload["artifact_manifest"]["entries"] = [{
+                            "ordinal": 0, "kind": "add", "old_path": None,
+                            "new_path": "fixture.txt", "before_mode": None,
+                            "before_object_id": None, "after_mode": "100644",
+                            "after_object_id": "a" * 40,
+                        }]
+                        finding = {
+                            "review_finding_id": "tg_review_finding_aaaaaaaaaaaaaaaa",
+                            "review_receipt_id": payload["review_receipts"][0]["review_receipt_id"],
+                            "target_generation": payload["target"]["generation"] - 1,
+                            "severity": "medium", "summary": "Historical resolved finding.",
+                            "status": "resolved", "resolution_summary": "Resolved in retained history.",
+                            "created_at": "2026-08-05T00:00:00Z",
+                            "resolved_at": "2026-08-05T00:01:00Z",
+                            "evidence_reference_id": None, "assurance_class": "legacy_unknown",
+                            "producer_class": "legacy_migration", "producer_version": 1,
+                        }
+                        finding["digest"] = domain_digest(finding_domain, finding)
+                        payload["finding_snapshots"] = [finding]
+                        payload["omissions"].append("historical_finding_reference_absent")
+                        refresh_inner_digests(payload)
+                        reseal_evidence_tree(evidence, index, bundle)
+                        # Establish validity of the full nested fixture before
+                        # introducing exactly one malformed lookup value.
+                        read_evidence_report(evidence)
+                        validated = read_evidence_index(evidence)
+                        native = next(row for row in validated.entries if row["bundle_state"] == "native")
+                        validate_evidence_source(validated, native)
+
+                        selected = payload
+                        for component in path[:-1]:
+                            selected = selected[component]
+                        selected[path[-1]] = invalid
+                        finding["digest"] = domain_digest(
+                            finding_domain, {key: value for key, value in finding.items() if key != "digest"},
+                        )
+                        if path != ("evidence_references", 0, "source_kind"):
+                            refresh_inner_digests(payload)
+                        # A nonstring Reference source kind has no valid source
+                        # projection; its type must be rejected before lookup.
+                        reseal_evidence_tree(evidence, index, bundle)
+                        before = tree_snapshot(evidence)
+                        self.assert_invalid_readonly(evidence, payload["project_id"])
+                        validated = read_evidence_index(evidence)
+                        native = next(row for row in validated.entries if row["bundle_state"] == "native")
+                        with self.assertRaises(EvidenceConsumerError) as rejected:
+                            validate_evidence_source(validated, native)
+                        self.assertEqual(rejected.exception.code, "source_invalid")
+                        self.assertEqual(tree_snapshot(evidence), before)
+
+    def test_native_continuation_and_collected_provenance_keep_distinct_meaning(self):
+        from tests.review_answer_fixture_support import review_fixture
+
+        for schema, expected_format, provenance_state in ((29, 3, "v1"), (30, 4, "v2")):
+            with self.subTest(schema=schema), review_fixture(schema_version=schema) as fixture:
+                if schema == 29:
+                    artifact, _ = fixture.native_continuation_artifact()
+                else:
+                    artifact = fixture.collected_source_artifact()
+                bundle = artifact.envelope
+                payload = bundle["payload"]
+                self.assertEqual(bundle["format_version"], expected_format)
+                with tempfile.TemporaryDirectory() as temporary:
+                    evidence = Path(temporary) / "evidence"
+                    bundles = evidence / "bundles"
+                    bundles.mkdir(parents=True)
+                    bundle_file = f"bundles/{payload['bundle_id']}.json"
+                    evidence.joinpath(*bundle_file.split("/")).write_bytes(artifact.document)
+                    index = {
+                        "format_version": 2 if schema == 29 else 3,
+                        "payload": {
+                            # Preserve source-30 collected bytes under the current index.
+                            "source_schema_version": 29 if schema == 29 else 31,
+                            "project_id": payload["project_id"],
+                            "projection_generation": 1,
+                            "bundle_count": 1,
+                            "legacy_count": 0,
+                            "entries": [{
+                                "task_id": payload["task"]["task_id"],
+                                "completion_cycle_id": payload["completion_cycle_id"],
+                                "cycle_ordinal": payload["cycle_ordinal"],
+                                "bundle_state": "native",
+                                "bundle_id": payload["bundle_id"],
+                                "bundle_file": bundle_file,
+                                "bundle_digest": artifact.bundle_digest,
+                                "file_digest": artifact.file_digest,
+                                "sealed_at": payload["sealed_at"],
+                                "bundle_format_version": expected_format,
+                            }],
+                        },
+                    }
+                    reseal_evidence_tree(evidence, index)
+                    before = tree_snapshot(evidence)
+                    with patch(
+                        "task_governance_tool.review_continuation_evidence.validate_graph",
+                        side_effect=AssertionError("producer graph validator called"),
+                    ), patch(
+                        "task_governance_tool.review_answer_provenance.validate_provenance_v2",
+                        side_effect=AssertionError("producer provenance validator called"),
+                    ):
+                        report = read_evidence_report(evidence)
+                    self.assertEqual(tree_snapshot(evidence), before)
+                    projected = report["entries"][0]["review_receipts"]
+                    self.assertEqual(len(projected), len(payload["review_receipts"]))
+                    self.assertEqual({row["provenance_state"] for row in projected}, {provenance_state})
+                    if schema == 30:
+                        for receipt in projected:
+                            self.assertEqual(set(receipt), {
+                                "review_receipt_id", "receipt_kind", "verdict", "provenance_state",
+                            })
+                        self.assertEqual(report["code_occurrences"], {
+                            "review_profiles": {}, "review_lenses": {}, "method_codes": {},
+                        })
+
+                    # The newly admitted graph formats must preserve the
+                    # report's fixed rejection even when their independent
+                    # graph oracle encounters an invalid lookup/regex value.
+                    paths = (
+                        ("continuations", 0, "preparation_id"),
+                        ("judgments", 0, "continuation_id"),
+                        ("references", 0, "source_id"),
+                    ) if schema == 29 else (
+                        ("continuations", 0, "predecessor_id"),
+                        ("reviewers", 0, "result_receipt_id"),
+                    )
+                    mutations = [(path, value) for path in paths for value in ([], {})]
+                    if schema == 29:
+                        mutations.append((("findings",), []))
+                    for path, invalid in mutations:
+                        with self.subTest(schema=schema, graph_path=path, invalid=invalid):
+                            mutated = deepcopy(bundle)
+                            selected = mutated["payload"]["review_continuation_basis"]
+                            for component in path[:-1]:
+                                selected = selected[component]
+                            selected[path[-1]] = invalid
+                            # Only outer seals change: the malformed graph
+                            # field must fail before its assertion is trusted.
+                            reseal_evidence_tree(evidence, index, mutated)
+                            self.assert_invalid_readonly(evidence, payload["project_id"])
+
+    def test_current_and_retained_ordinary_formats_keep_report_and_bytes(self):
+        for source in range(19, 32):
+            bundle_format = 1 if source == 19 else 4 if source >= 30 else 2
+            index_format = 1 if source == 19 else 3 if source >= 30 else 2
+            with self.subTest(source=source), tempfile.TemporaryDirectory() as temporary:
+                evidence, index, bundle = write_versioned_report_tree(
+                    Path(temporary), index_source=source, index_format=index_format,
+                    bundle_source=source, bundle_format=bundle_format,
+                )
+                before = tree_snapshot(evidence)
+                report = read_evidence_report(evidence)
+                self.assertEqual(tree_snapshot(evidence), before)
+                self.assertEqual(report["format_version"], index_format)
+                self.assertEqual((report["bundle_count"], report["legacy_count"]), (1, 1))
+                self.assertEqual(report["declared_projection_generation"], 7)
+                native = next(row for row in report["entries"] if row["bundle_state"] == "native")
+                self.assertEqual(native["review_receipts"][0]["provenance_state"], "not_required")
+                legacy = next(row for row in report["entries"] if row["bundle_state"] == "legacy_unknown")
+                self.assertNotIn("review_receipts", legacy)
+                self.assertEqual(report["code_occurrences"], {
+                    "review_profiles": {}, "review_lenses": {}, "method_codes": {},
+                })
+                if source == 19:
+                    # Retained independent vector, never regenerated as an expectation.
+                    self.assertEqual(bundle["bundle_digest"],
+                        "sha256:98d79472e8909bbe01285f52e59b94215023d27783ad08d3491284fad397a992")
+                # A new index may point to these exact old Bundle bytes.
+                index["format_version"] = 3
+                index["payload"]["source_schema_version"] = 31
+                for entry in index["payload"]["entries"]:
+                    entry["bundle_format_version"] = (
+                        bundle_format if entry["bundle_state"] == "native" else None
+                    )
+                bundle_bytes = tree_snapshot(evidence / "bundles")
+                reseal_evidence_tree(evidence, index)
+                retained_before = tree_snapshot(evidence)
+                retained_report = read_evidence_report(evidence)
+                self.assertEqual(retained_report, {**report, "format_version": 3})
+                self.assertEqual(tree_snapshot(evidence), retained_before)
+                self.assertEqual(tree_snapshot(evidence / "bundles"), bundle_bytes)
+
+    def test_resealed_invalid_source_format_pairs_and_version_ceiling_reject(self):
+        cases = (
+            # index source/format, Bundle source/format
+            (19, 2, 19, 1), (29, 3, 29, 2), (30, 2, 29, 2), (31, 2, 29, 2),
+            (32, 3, 31, 4), (30, 3, 31, 4),
+            (31, 3, 20, 1), (31, 3, 19, 2), (31, 3, 30, 2), (31, 3, 31, 2),
+            (31, 3, 28, 3), (31, 3, 29, 3),  # v3 needs a real continuation.
+            (31, 3, 29, 4), (31, 3, 32, 4),
+        )
+        for index_source, index_format, bundle_source, bundle_format in cases:
+            with self.subTest(versions=(index_source, index_format, bundle_source, bundle_format)), tempfile.TemporaryDirectory() as temporary:
+                evidence, index, _ = write_versioned_report_tree(
+                    Path(temporary), index_source=index_source, index_format=index_format,
+                    bundle_source=bundle_source, bundle_format=bundle_format,
+                )
+                self.assert_invalid_readonly(evidence, index["payload"]["project_id"])
+
+    def test_wrong_domains_reject_even_with_matching_file_and_index_seals(self):
+        for source, bundle_format, index_format in ((19, 1, 1), (29, 2, 2), (31, 4, 3)):
+            for part in ("index", "bundle"):
+                with self.subTest(source=source, part=part), tempfile.TemporaryDirectory() as temporary:
+                    evidence, index, bundle = write_versioned_report_tree(
+                        Path(temporary), index_source=source, index_format=index_format,
+                        bundle_source=source, bundle_format=bundle_format,
+                    )
+                    read_evidence_report(evidence)  # Establish a valid semantic baseline.
+                    if part == "index":
+                        wrong_domain = INDEX_DOMAINS[2 if index_format == 1 else 1]
+                        reseal_evidence_tree(evidence, index, index_domain=wrong_domain)
+                    else:
+                        wrong_domain = BUNDLE_DOMAINS[2 if bundle_format == 1 else 1]
+                        reseal_evidence_tree(evidence, index, bundle, bundle_domain=wrong_domain)
+                    self.assert_invalid_readonly(evidence, index["payload"]["project_id"])
+
+    def test_unsupported_envelopes_and_entry_discriminator_reject(self):
+        for part in ("index", "bundle", "entry", "required_root", "project"):
+            with self.subTest(part=part), tempfile.TemporaryDirectory() as temporary:
+                evidence, index, bundle = write_versioned_report_tree(Path(temporary))
+                read_evidence_report(evidence)
+                if part == "index":
+                    index["format_version"] = 4
+                    reseal_evidence_tree(evidence, index, index_domain=b"taskgov-evidence-index-v4\0")
+                elif part == "bundle":
+                    bundle["format_version"] = 5
+                    bundle["payload"]["bundle_version"] = 5
+                    next(row for row in index["payload"]["entries"] if row["bundle_state"] == "native")["bundle_format_version"] = 5
+                    reseal_evidence_tree(evidence, index, bundle, bundle_domain=b"taskgov-completion-evidence-bundle-v5\0")
+                elif part == "entry":
+                    next(row for row in index["payload"]["entries"] if row["bundle_state"] == "native")["bundle_format_version"] = 3
+                    reseal_evidence_tree(evidence, index)
+                elif part == "required_root":
+                    del bundle["payload"]["review_continuation_basis"]
+                    reseal_evidence_tree(evidence, index, bundle)
+                project_id = index["payload"]["project_id"]
+                if part == "project":
+                    project_id = "tg_project_" + "f" * 32
+                self.assert_invalid_readonly(evidence, project_id)
 
 
 class M224EvidenceAcceptanceTests(unittest.TestCase):
@@ -766,31 +1264,26 @@ class M224EvidenceAcceptanceTests(unittest.TestCase):
                 expected_project_id=project_id,
             )
             self.assertEqual(tree_snapshot(report_copy), before_report)
-            self.assertEqual(index["payload"]["source_schema_version"], 29)
-            self.assertEqual(primary_bundle["source_schema_version"], 29)
-            self.assertEqual(primary_bundle["bundle_version"], 2)
+            self.assertEqual(index["format_version"], 3)
+            self.assertEqual(index["payload"]["source_schema_version"], 31)
+            self.assertEqual(primary_bundle["source_schema_version"], 31)
+            self.assertEqual(primary_bundle["bundle_version"], 4)
+            self.assertEqual(bundles[primary_task_id]["format_version"], 4)
+            self.assertIsNone(primary_bundle["review_continuation_basis"])
             # Re-seal unsupported source versions so rejection cannot depend
-            # merely on a stale digest after this reader's schema-29 admission.
+            # merely on a stale digest after this reader's schema-31 admission.
             for changed_part in ("index", "bundle"):
                 with self.subTest(future_source=changed_part):
                     future_root = root / f"evidence-future-{changed_part}"
                     shutil.copytree(report_copy, future_root)
                     future_index = deepcopy(index)
                     if changed_part == "index":
-                        future_index["payload"]["source_schema_version"] = 30
+                        future_index["payload"]["source_schema_version"] = 32
+                        reseal_evidence_tree(future_root, future_index)
                     else:
-                        entry = next(item for item in future_index["payload"]["entries"]
-                                     if item["task_id"] == primary_task_id)
                         future_bundle = deepcopy(bundles[primary_task_id])
-                        future_bundle["payload"]["source_schema_version"] = 30
-                        future_bundle["bundle_digest"] = domain_digest(
-                            BUNDLE_V2_DOMAIN, future_bundle["payload"])
-                        document = canonical_json_bytes(future_bundle) + b"\n"
-                        future_root.joinpath(*entry["bundle_file"].split("/")).write_bytes(document)
-                        entry["bundle_digest"] = future_bundle["bundle_digest"]
-                        entry["file_digest"] = "sha256:" + hashlib.sha256(document).hexdigest()
-                    future_index["index_digest"] = domain_digest(INDEX_V2_DOMAIN, future_index["payload"])
-                    (future_root / "index.json").write_bytes(canonical_json_bytes(future_index) + b"\n")
+                        future_bundle["payload"]["source_schema_version"] = 32
+                        reseal_evidence_tree(future_root, future_index, future_bundle)
                     future_before = tree_snapshot(future_root)
                     with self.assertRaises(EvidenceReportError) as rejected:
                         read_evidence_report(future_root, expected_project_id=project_id)

@@ -9,6 +9,7 @@ import unittest
 from copy import deepcopy
 from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import patch
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -19,6 +20,7 @@ if str(SCRIPTS_ROOT) not in sys.path:
 from tests.evidence_reader_oracle import (  # noqa: E402
     EvidenceConsumerError,
     ValidatedEvidenceSource,
+    iter_evidence_sources,
     read_evidence_index,
     revalidate_validated_index,
     revalidate_validated_source,
@@ -191,6 +193,136 @@ class EvidenceReaderOracleTests(unittest.TestCase):
             self.assertEqual(source.source, bundle)
             self.assertEqual(source.source["format_version"], 1)
             self.assertEqual(tree_snapshot(evidence), before)
+
+    def test_batch_preserves_exact_mixed_sources_for_retained_formats(self):
+        for version in ("v1", "v2", "v2_preserved_v1"):
+            with self.subTest(version=version), tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary)
+                if version == "v1":
+                    evidence = write_evidence_tree(root)
+                else:
+                    evidence, _, _ = _write_v2_tree(
+                        root, preserved_v1=version == "v2_preserved_v1",
+                    )
+                # Readers select only indexed files, even when an unlisted
+                # Bundle-shaped name contains an invalid document.
+                unlisted = "tg_completion_evidence_bundle_" + "f" * 16 + ".json"
+                (evidence / "bundles" / unlisted).write_bytes(b"invalid")
+                before = tree_snapshot(evidence)
+                index = read_evidence_index(evidence)
+                expected = [
+                    validate_evidence_source(index, entry) for entry in index.entries
+                ]
+                observed = list(iter_evidence_sources(index))
+                self.assertEqual(len(observed), len(expected))
+                for actual, single in zip(observed, expected):
+                    self.assertEqual(actual.source_kind, single.source_kind)
+                    self.assertEqual(actual.source_basis, single.source_basis)
+                    self.assertEqual(actual.source, single.source)
+                self.assertEqual(tree_snapshot(evidence), before)
+
+    def test_started_batch_owns_its_snapshot_and_returns_fresh_copies(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            evidence, bundle, expected_index = _write_v2_tree(Path(temporary))
+            payload = expected_index["payload"]
+            tail = deepcopy(payload["entries"][0])
+            tail["task_id"] = "tg_task_" + "f" * 16
+            tail["completion_cycle_id"] = "tg_completion_cycle_" + "f" * 16
+            tail["cycle_ordinal"] = 3
+            payload["entries"].append(tail)
+            payload["legacy_count"] += 1
+            expected_index["index_digest"] = domain_digest(INDEX_V2_DOMAIN, payload)
+            (evidence / "index.json").write_bytes(
+                reference_json_bytes(expected_index) + b"\n",
+            )
+            before = tree_snapshot(evidence)
+            index = read_evidence_index(evidence)
+            iterator = iter_evidence_sources(index)
+            first = next(iterator)  # Capture the index snapshot on first iteration.
+            leaked_entries = index.entries
+            leaked_entries[1]["bundle_format_version"] = 1
+            leaked_basis = first.source_basis
+            leaked_basis["entry"]["task_id"] = "tg_task_" + "e" * 16
+            # Even deliberate mutation outside the frozen dataclass contract
+            # must not change the already selected call-local snapshot.
+            object.__setattr__(index, "_index_bytes", b"{}")
+            native = next(iterator)
+            changed_bundle = native.source
+            changed_bundle["payload"]["task"]["title"] = "Changed copy"
+            changed_basis = native.source_basis
+            changed_basis["entry"]["cycle_ordinal"] = 99
+            last = next(iterator)
+            with self.assertRaises(StopIteration):
+                next(iterator)
+            for source, entry in zip((first, native, last), payload["entries"]):
+                self.assertEqual(source.source_basis, _basis(expected_index, entry))
+            self.assertEqual(native.source, bundle)
+            fresh_index = read_evidence_index(evidence)
+            self.assertEqual(fresh_index.entries, tuple(payload["entries"]))
+            self.assertEqual(
+                [source.source_basis for source in iter_evidence_sources(fresh_index)],
+                [_basis(expected_index, entry) for entry in payload["entries"]],
+            )
+            self.assertEqual(tree_snapshot(evidence), before)
+
+    def test_batch_rejects_spoof_and_invalid_index_before_bundle_io(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            evidence, _, _ = _write_v2_tree(Path(temporary))
+            index = read_evidence_index(evidence)
+            spoof = SimpleNamespace(entries=index.entries, evidence_root=evidence)
+            damaged = read_evidence_index(evidence)
+            envelope = json.loads(damaged._index_bytes)
+            envelope["index_digest"] = "sha256:" + "0" * 64
+            object.__setattr__(damaged, "_index_bytes", reference_json_bytes(envelope))
+            before = tree_snapshot(evidence)
+            with patch(
+                "tests.evidence_reader_oracle.read_physical_file_bounded",
+                side_effect=AssertionError("invalid index reached Bundle I/O"),
+            ) as physical_read:
+                for candidate in (spoof, damaged):
+                    with self.subTest(candidate=type(candidate).__name__):
+                        with self.assertRaises(EvidenceConsumerError) as raised:
+                            list(iter_evidence_sources(candidate))
+                        self.assertEqual(raised.exception.code, "source_invalid")
+                physical_read.assert_not_called()
+            self.assertEqual(tree_snapshot(evidence), before)
+
+    def test_batch_rejects_native_file_and_index_binding_mismatches_without_write(self):
+        for mutation in ("file", "project", "schema", "ordinal", "bundle_version"):
+            with self.subTest(mutation=mutation), tempfile.TemporaryDirectory() as temporary:
+                evidence, _, envelope = _write_v2_tree(Path(temporary))
+                self.assertEqual(
+                    len(list(iter_evidence_sources(read_evidence_index(evidence)))), 2,
+                )
+                payload = envelope["payload"]
+                native = next(
+                    row for row in payload["entries"] if row["bundle_state"] == "native"
+                )
+                if mutation == "file":
+                    bundle_path = evidence.joinpath(*native["bundle_file"].split("/"))
+                    bundle_path.write_bytes(bundle_path.read_bytes() + b" ")
+                else:
+                    if mutation == "project":
+                        payload["project_id"] = "tg_project_" + "f" * 32
+                    elif mutation == "schema":
+                        payload["source_schema_version"] = 20
+                    elif mutation == "ordinal":
+                        native["cycle_ordinal"] += 1
+                    else:
+                        native["bundle_format_version"] = 1
+                    envelope["index_digest"] = domain_digest(INDEX_V2_DOMAIN, payload)
+                    (evidence / "index.json").write_bytes(
+                        reference_json_bytes(envelope) + b"\n",
+                    )
+                before = tree_snapshot(evidence)
+                # The resealed index remains valid; source binding must reject.
+                index = read_evidence_index(evidence)
+                iterator = iter_evidence_sources(index)
+                self.assertEqual(next(iterator).source_kind, "legacy_index_entry")
+                with self.assertRaises(EvidenceConsumerError) as raised:
+                    next(iterator)
+                self.assertEqual(raised.exception.code, "source_invalid")
+                self.assertEqual(tree_snapshot(evidence), before)
 
     def test_membership_and_project_mismatches_are_rejected_without_write(self):
         with tempfile.TemporaryDirectory() as temporary:

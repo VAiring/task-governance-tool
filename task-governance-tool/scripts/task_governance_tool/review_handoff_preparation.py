@@ -455,7 +455,7 @@ def _requests(repo, args, packet_path, *, collected=False):
     for path in paths:
         if collected:
             from .review_answer_preparation import answer_request
-            reviewers.append({"result_path": path, "request": answer_request(read)})
+            reviewers.append({"result_path": path, "request": answer_request(read, args.task_id)})
             continue
         save = _shell([*base, "save", *common, "--output=" + path])
         if os.name == "nt":

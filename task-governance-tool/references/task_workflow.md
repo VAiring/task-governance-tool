@@ -692,6 +692,11 @@ slots; that is not review failure or Task completion. Do not invent hook events.
 
 Reviewers return the supplied five-field JSON as their final answer. They do
 not save files, submit Receipts, or fill bookkeeping/provenance identifiers.
+New requests include one best-effort read-only MCP connection-preparation call
+in the reviewer's own context before the fixed read. It is already in the
+generated request: add no parent preflight, follow-up message or repeated call
+on material rereads. Missing/failed connection preparation does not stop review;
+the reviewer reports a sanitized limitation and parent recovery remains available.
 The collector preserves the original; the existing generated submit/finalize
 command confirms it and uses the same registration and completion gates.
 `unable_to_review` and invalid/missing answers block completion. Preserve every

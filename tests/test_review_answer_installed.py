@@ -222,10 +222,13 @@ class InstalledAnswerTests(fixtures.PreparationFixture):
         request=self.handoff['review_requests'][0]['request']
         self.assertIn('verdict, summary, findings, checks, limitations',request)
         self.assertNotIn('Save command:',request)
+        self.assertEqual(request.count('review_wait_inspect'),1)
+        self.assertIn('once with {"task_id":"'+self.task_id+'"}',request)
         read=self.invoke('read','--repo',str(self.root),'--packet',self.packet,reviewer=0)
         self.assertEqual(read.returncode,0,read.stdout or read.stderr)
         view=json.loads(read.stdout)
         self.assertEqual(set(view['result_template']),{'verdict','summary','findings','checks','limitations'})
+        self.assertNotIn('review_wait_inspect',' '.join(view['result_instructions']))
         observed=self.collect('collect-parent')
         self.assertEqual(observed['publications'],['saved','saved'])
         self.assertFalse(observed['body_retained'])

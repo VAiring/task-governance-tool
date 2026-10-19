@@ -56,9 +56,63 @@ class HostTests(unittest.TestCase):
             self.host.bind_dispatch("dispatch-1", self.child)
         self.assertFalse(self.public._json_call.called)
 
+    def test_parent_completion_notice_keeps_the_original_dispatch(self):
+        for single in (False, True):
+            for status in ("inProgress", "completed"):
+                with self.subTest(single=single, status=status):
+                    values = self.bind_pages(status)
+                    values[0]["turns"][0]["items"].append(dict(type="subAgentActivity",
+                        id="completed-1", kind="completed", agentThreadId=self.child))
+                    self.public.reset_mock()
+                    self.public._json_call.side_effect = values
+                    bound = (self.host.bind_dispatch("dispatch-1", self.child, creation_context=True)
+                             if single else self.host.bind_reviewers((self.child,), creation_context=True)[0])
+                    self.assertEqual(bound["initial_turn_id"], TURN1)
+                    self.assertEqual(self.public._json_call.call_count, 2)
+
+    def test_completion_notice_does_not_hide_reuse_or_ambiguous_activity(self):
+        completion = dict(type="subAgentActivity", id="completed-1", kind="completed", agentThreadId=self.child)
+        extras = [dict(completion, id="other", kind=kind)
+                  for kind in ("started", "interacted", "interrupted", "failed", "unknown", "completed")]
+        extras += [dict(completion, agentThreadId="40000000-0000-4000-8000-000000000001"),
+                   dict(self.started, agentThreadId="40000000-0000-4000-8000-000000000001")]
+        for single in (False, True):
+            for extra in extras:
+                with self.subTest(single=single, extra=extra):
+                    values = self.bind_pages()
+                    values[0]["turns"][0]["items"].extend([completion, extra])
+                    self.public.reset_mock()
+                    self.public._json_call.side_effect = values
+                    with self.assertRaises(AnswerError):
+                        if single:
+                            self.host.bind_dispatch("dispatch-1", self.child, creation_context=True)
+                        else:
+                            self.host.bind_reviewers((self.child,), creation_context=True)
+                    self.public._json_call.assert_called_once()
+
+    def test_completion_notice_retains_content_and_single_child_turn_checks(self):
+        for single in (False, True):
+            for fault in ("clipped", "missing_id", "dispatch_id", "extra_turn", "extra_page"):
+                with self.subTest(single=single, fault=fault):
+                    values = self.bind_pages()
+                    completion = dict(type="subAgentActivity", id="completed-1", kind="completed", agentThreadId=self.child)
+                    values[0]["turns"][0]["items"].append(completion)
+                    if fault == "clipped": completion["truncated"] = True
+                    elif fault == "missing_id": completion.pop("id")
+                    elif fault == "dispatch_id": completion["id"] = "dispatch-1"
+                    elif fault == "extra_turn": values[1]["turns"].append(turn(TURN2))
+                    else: values[1]["page"].update(hasMore=True, nextCursor="older")
+                    self.public._json_call.side_effect = values
+                    with self.assertRaises(AnswerError):
+                        if single:
+                            self.host.bind_dispatch("dispatch-1", self.child, creation_context=True)
+                        else:
+                            self.host.bind_reviewers((self.child,), creation_context=True)
+
     def test_runtime_multi_binding_reads_one_parent_and_each_exact_child_once(self):
         other = "40000000-0000-4000-8000-000000000001"
         parent = page(self.parent, 1, turn(self.parent_turn, items=[self.started,
+            dict(type="subAgentActivity", id="completed-1", kind="completed", agentThreadId=self.child),
             dict(type="subAgentActivity", id="dispatch-2", kind="started", agentThreadId=other)]))
         self.public._json_call.side_effect = [parent, page(self.child, 1, turn(TURN1)), page(other, 1, turn(TURN2))]
         result = self.host.bind_reviewers((self.child, other), creation_context=True)

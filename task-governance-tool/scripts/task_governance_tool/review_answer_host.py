@@ -83,6 +83,30 @@ def _page(value, expected_thread, limit):
     return page, turns
 
 
+def _dispatch_activity(items, child, expected_dispatch=None):
+    """A completion notice is not another dispatch or permission to reuse a child."""
+    activities = [item for item in items if type(item) is dict
+                  and item.get("type") == "subAgentActivity"
+                  and (item.get("agentThreadId") == child
+                       or expected_dispatch is not None and item.get("id") == expected_dispatch)]
+    starts = [item for item in activities if item.get("kind") == "started"]
+    completions = [item for item in activities if item.get("kind") == "completed"]
+    if (len(starts) != 1 or len(completions) > 1
+            or len(activities) != len(starts) + len(completions)):
+        _fail("conflict", "binding_mismatch")
+    for item in activities:
+        _content_complete(item)
+        identifier = _host_id(item.get("id"))
+        if (item.get("agentThreadId") != child
+                or sum(type(other) is dict and other.get("type") == "subAgentActivity"
+                       and other.get("id") == identifier for other in items) != 1):
+            _fail("conflict", "binding_mismatch")
+    dispatch = starts[0]["id"]
+    if expected_dispatch is not None and dispatch != expected_dispatch:
+        _fail("conflict", "binding_mismatch")
+    return dispatch
+
+
 class PublicAnswerHost:
     def __init__(self, host, parent_session_id, parent_turn_id=None):
         self.host = host
@@ -116,12 +140,7 @@ class PublicAnswerHost:
         _content_complete(turns[0])
         if turns[0]["error"] is not None:
             _fail("incomplete")
-        activities = [item for item in turns[0]["items"] if type(item) is dict and item.get("type") == "subAgentActivity"
-                      and (item.get("agentThreadId") == child or item.get("id") == dispatch_id)]
-        if (len(activities) != 1 or activities[0].get("kind") != "started"
-                or activities[0].get("id") != dispatch_id or activities[0].get("agentThreadId") != child):
-            _fail("conflict", "binding_mismatch")
-        _content_complete(activities[0])
+        _dispatch_activity(turns[0]["items"], child, dispatch_id)
         child_page, child_turns = _page(self._read(child, 1), child, 1)
         if child_page["hasMore"] is not False or child_page["nextCursor"] is not None or len(child_turns) != 1:
             _fail()
@@ -146,16 +165,7 @@ class PublicAnswerHost:
             _fail("identity", "binding_mismatch")
         dispatches = []
         for child in children:
-            matches = [item for item in parent["items"] if type(item) is dict
-                       and item.get("type") == "subAgentActivity" and item.get("agentThreadId") == child]
-            if len(matches) != 1 or matches[0].get("kind") != "started":
-                _fail("conflict", "binding_mismatch")
-            _content_complete(matches[0])
-            dispatch = _host_id(matches[0].get("id"))
-            if sum(type(item) is dict and item.get("type") == "subAgentActivity" and item.get("id") == dispatch
-                   for item in parent["items"]) != 1:
-                _fail("conflict", "binding_mismatch")
-            dispatches.append(dispatch)
+            dispatches.append(_dispatch_activity(parent["items"], child))
         if len(set(dispatches)) != len(dispatches):
             _fail("conflict", "binding_mismatch")
         results = []

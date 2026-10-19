@@ -6,6 +6,7 @@ answer protocol and request digest; an inspection never upgrades an old request.
 
 from contextlib import closing
 from hashlib import sha256
+import json
 
 from . import review_handoff_transport as files
 from .review_handoff_scope import resolve
@@ -13,6 +14,7 @@ from .review_preparation_repository import PreparationRepository
 from .review_wait_basis_repository import read_review_basis, read_wait_basis
 from .storage import connect_initialized_readonly, current_schema_version
 from .state_paths import path_lexically_exists
+from .task_values import validate_task_id
 
 
 PROTOCOL = "review-answer-v1"
@@ -27,8 +29,16 @@ INSTRUCTIONS = (
 )
 
 
-def answer_request(read_command):
+def answer_request(read_command, task_id):
+    arguments = json.dumps({"task_id": validate_task_id(task_id)}, separators=(",", ":"))
     return ("You are assigned an independent review of the complete exact target under current project authority. "
+        "Before the fixed read, use your own tool context to call the configured taskgov_review_wait server's "
+        "review_wait_inspect once with " + arguments + ", if available. "
+        "Reuse its available tool definition; discover only this tool if needed. This read-only connection preparation "
+        "does not bind a reviewer, start waiting or prove Hook success. An absent wait is expected in a new child. "
+        "If unavailable or failed, continue the review and state the limitation without raw diagnostics. "
+        "Do not retry, reconnect, change settings, call collection, or request another parent message for this step. "
+        "Do not repeat it when rereading material. "
         "Run the fixed read below and follow its supplied material and verification guidance. "
         "Follow explicit section/page/range commands until required content is complete.\n\nRead command:\n"
         + read_command + "\n\nFinal answer:\n" + "\n".join(INSTRUCTIONS))

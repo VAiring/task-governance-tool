@@ -438,6 +438,21 @@ whole framed-byte and combined-Finding limits.
 
 #### Collected Answer Host Boundary
 
+Each newly generated collected-review request, initial or continuation, includes
+one connection-preparation instruction before its fixed material read. The
+reviewer uses its own tool context to call the configured project's existing
+`review_wait_inspect` once with the request's fixed Task ID, if available. Reuse
+an available definition; discover only that tool when needed. The call is
+read-only and independent of waiting policy or reviewer registration. `absent`
+is expected when that reviewer owns no wait; it proves neither a binding nor
+Hook success. Unavailable/failed preparation leaves review work enabled and is
+reported as a sanitized limitation. No retry, reconnect, settings change,
+collection call or extra parent message is introduced. Material rereads do not
+repeat the instruction. Existing parent collection remains the fallback; one
+successful call cannot guarantee a connection through an arbitrary later Hook.
+The complete instruction is fixed before the request digest; saved requests
+are never rewritten. Legacy requests retain their issued procedure.
+
 Adapter `codex-app-tools-review-answer/1` admits an initial binding only for a
 new dedicated child created by this exact parent turn's public `started`
 dispatch. The flow retains its pre-binding creation context, issues no further
@@ -445,7 +460,12 @@ request to that child and rejects reuse, `interacted`, known competing sends or
 unknown send effects. Bounded parent/child public pages must identify the exact
 parent dispatch and exactly one own child turn, with no additional-page signal;
 inherited context is not an own turn. A child already completed at first
-observation can qualify. The durable binding precedes answer admission. A
+observation can qualify: one distinct, complete `completed` activity for that
+same child may accompany its unique `started` activity. It is not another
+dispatch or proof of the child's terminal outcome. Duplicate starts/completions,
+reused activity IDs, interactions and other activity kinds remain conflicts;
+the child's exact sole own turn is still checked independently.
+The durable binding precedes answer admission. A
 restart without the necessary pre-binding context cannot infer it from one page.
 
 Fresh collection rechecks the current preparation and issued continuation at
@@ -1537,7 +1557,9 @@ reviewer references; it accepts no destination, prompt, schedule, automation or
 probe ID, path or arbitrary downstream operation. Optional diagnosis
 `review_wait_inspect(task_id)` is read-only. Explicit
 `review_wait_stop(task_id)` stops that parent's wait and cleans up known effects.
-Neither is a routine success-path duty or a Task completion gate.
+Neither is a routine parent success-path duty or a Task completion gate. The
+generated reviewer-only connection preparation follows the separate
+[collected-answer host boundary](#collected-answer-host-boundary).
 
 The six earlier controls remain compatible for existing associations:
 `review_wait_prepare(task_id, automation_id, reviewer_ids)`,

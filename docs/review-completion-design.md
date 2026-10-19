@@ -499,6 +499,16 @@ the five-field final answer and contains no reviewer save/submit command.
 The complete Packet's material/template representation stays unchanged; the
 admitted read projects result instructions for the saved protocol.
 
+`answer_request(read_command, task_id)` prefixes the generated request with one
+best-effort reviewer-owned `review_wait_inspect` call using the validated Task
+ID. `_requests` supplies that ID for both initial and continuation generation.
+The instruction belongs only to the generated request, outside the reusable
+result instructions/read view, so material rereads do not repeat it. Initial
+publication and continuation request hashing include it before dispatch. No
+generator executes the call, rewrites an issued request or sends a second child
+message. Missing tools or call failures leave the review and existing parent
+recovery enabled; no new connection result, binding or completion gate is stored.
+
 `review_answer_continuation_preparation.py` freezes a separate basis/store for
 each new continuation and includes the exact action/reason suffix in its request
 digest. `RequestRound.answer_protocol` is an immutable discriminator:
@@ -691,7 +701,11 @@ Legacy-only and non-dispatching checks keep their existing output shape.
 `review_answer_host.py` uses only bounded public `read_thread` observations.
 Initial admission reads the exact parent's dispatch turn and a dedicated new
 child's sole own turn, rejecting additional pages, interaction/reuse and known
-or unresolved competing sends. Recovery uses one fixed two-turn page and the
+or unresolved competing sends. Both initial binding entries share
+`_dispatch_activity`: exactly one start remains required, while one distinct
+complete completion notice for the same child is permitted. Other activities
+and reused IDs still reject; the notice never supplies a turn or terminal state.
+Recovery uses one fixed two-turn page and the
 saved turn/message IDs; commentary, tool output, newest-turn inference and
 private transcript/API fallbacks are ineligible. Observed final-item completeness
 does not certify inaccessible provider omissions. The adapter currently has no

@@ -24,6 +24,19 @@ def fixture():
     return root,record,round
 
 class ContinuedAnswerPreparationTests(unittest.TestCase):
+    def test_generated_continuation_binds_bootstrap_and_action_together(self):
+        root,record,round=fixture()
+        round=replace(round,answer_protocol="review-answer-v1")
+        with patch("task_governance_tool.setup_feature_config.read_choices",return_value=(None,{})):
+            for records_only in (False,True):
+                with self.subTest(records_only=records_only):
+                    request=p.requests_for(Path.cwd(),root,record,round,records_only=records_only)["review_requests"][0]["request"]
+                    bases=p.expected_bases(Path.cwd(),root,record,round,b"fixed packet",records_only=records_only)
+                    self.assertEqual(request.count("review_wait_inspect"),1)
+                    self.assertIn('once with {"task_id":"'+record.basis["task_id"]+'"}',request)
+                    self.assertIn("Explicit continuation: supplement. Reason: Review the updated source",request)
+                    self.assertEqual(bases[0]["request_digest"],"sha256:"+hashlib.sha256(request.encode()).hexdigest())
+
     def test_initial_handoff_admission_compares_complete_basis_at_exact_slot(self):
         from copy import deepcopy
         from task_governance_tool import review_answer_handoff as handoff

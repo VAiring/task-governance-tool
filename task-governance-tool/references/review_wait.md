@@ -201,8 +201,11 @@ does not establish that prior effects were absent; preserve known successes
 and inspect unknown outcomes through the applicable recovery there. Missing
 Git or send permission remains a boundary on every route.
 
-Use `review_wait_inspect(task_id)` only for requested diagnosis or a failure,
-and `review_wait_stop(task_id)` for explicit cancellation or known-state recovery.
+Use `review_wait_inspect(task_id)` for requested diagnosis or a failure. A
+[generated collected-review request](task_workflow.md#collected-review-answers)
+also includes one best-effort call in that reviewer's own context before review;
+it adds no parent preflight, retry or stop on unavailable connection preparation.
+Use `review_wait_stop(task_id)` for explicit cancellation or known-state recovery.
 They need no saved automation/probe IDs and add no normal completion gate.
 Discover the applicable exact name in the same connected namespace when needed;
 an already available complete definition needs no repeat lookup.

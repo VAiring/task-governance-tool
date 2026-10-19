@@ -77,6 +77,48 @@ class PreparationFixture(unittest.TestCase):
 
 
 class ReviewRequestLayoutTests(unittest.TestCase):
+    def test_collected_requests_prepare_connection_once_in_the_child_context(self):
+        from task_governance_tool.review_answer_preparation import INSTRUCTIONS
+        task_id = "tg_task_0123456789abcdef"
+        for platform in ("nt", "posix"):
+            for records_only in (False, True):
+                with self.subTest(platform=platform, records_only=records_only):
+                    args = SimpleNamespace(directory="reviews/bootstrap", reviewers=2,
+                                           records_only=records_only, task_id=task_id)
+                    with mock.patch.object(preparation, "os", SimpleNamespace(name=platform)), \
+                         mock.patch("task_governance_tool.setup_feature_config.read_choices", return_value=(None, {})):
+                        generated = preparation._requests(Path.cwd(), args, "reviews/bootstrap/packet.json", collected=True)
+                        legacy = preparation._requests(Path.cwd(), args, "reviews/bootstrap/packet.json")
+                    for row in generated["review_requests"]:
+                        request = row["request"]
+                        prefix, rest = request.split("\n\nRead command:\n", 1)
+                        self.assertEqual(request.count("review_wait_inspect"), 1)
+                        self.assertIn('once with {"task_id":"' + task_id + '"}', prefix)
+                        self.assertIn("your own tool context", prefix)
+                        self.assertIn("If unavailable or failed, continue the review", prefix)
+                        self.assertIn("without raw diagnostics", prefix)
+                        self.assertIn("Do not retry, reconnect, change settings, call collection", prefix)
+                        self.assertIn("Do not repeat it when rereading material", prefix)
+                        self.assertNotIn("review_wait_inspect", rest)
+                        self.assertNotIn("Save command:", request)
+                        self.assertEqual(row["result_path"].rsplit("/", 1)[0], args.directory)
+                    self.assertEqual(generated["review_requests"][0]["request"], generated["review_requests"][1]["request"])
+                    self.assertTrue(all("review_wait_inspect" not in row["request"] for row in legacy["review_requests"]))
+        self.assertNotIn("review_wait_inspect", " ".join(INSTRUCTIONS))
+
+    def test_connection_instruction_rejects_non_task_input(self):
+        from task_governance_tool.review_answer_preparation import answer_request
+        from task_governance_tool.task_values import TaskValidationError
+        for task_id in (None, "", 123, "x" * 129):
+            with self.subTest(task_id=task_id), self.assertRaises(TaskValidationError):
+                answer_request("fixed read", task_id)
+        # Keep the existing text-ID contract; encode its values as JSON instead
+        # of interpolating them into tool arguments or inventing a stricter ID.
+        task_id = 'legacy-"quoted"-日本語'
+        request = answer_request("fixed read", task_id)
+        encoded = request.split("once with ", 1)[1].split(", if available.", 1)[0]
+        self.assertEqual(json.loads(encoded), {"task_id": task_id})
+
     def test_shared_rules_precede_case_commands_without_changing_bindings(self):
         prefixes = []
         for platform in ("nt", "posix"):

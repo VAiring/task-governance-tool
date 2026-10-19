@@ -1,6 +1,6 @@
 """Publish a ready physical handoff's bounded locator; no core or host writes."""
 
-from contextlib import closing, contextmanager
+from contextlib import closing, contextmanager, ExitStack
 from hashlib import sha256
 import secrets
 
@@ -17,6 +17,41 @@ from .verification_declaration import verification_requirement
 def _basis(target, task_id, caller):
     with closing(connect_initialized_readonly(target)) as connection:
         return read_preparation_basis(connection, project_id=target.project.project_id, task_id=task_id, caller=caller)
+
+
+@contextmanager
+def _replacement_collection_fence(paths, current):
+    """Serialize replacement against the predecessor's source registration.
+
+    Called under preparation admission, before collection leases. Finalization
+    never acquires a preparation lease beneath its own lease; replacement waits
+    on its existing source leases instead of reversing that lock order.
+    """
+    from .review_answer_collection_repository import CollectionRepository
+    from .review_wait_runtime.continuation_transition_repository import TransitionRepository
+    basis = current.basis
+    stores = ([paths.review_answer_collection_store(basis["parent_session_id"], basis["task_id"],
+        basis["target_generation"], current.preparation_id)] if current.version == 2 else [])
+    transition_path = paths.review_continuation_store(basis["parent_session_id"], basis["task_id"],
+        basis["target_generation"])
+    if path_lexically_exists(transition_path):
+        rounds = TransitionRepository(transition_path).read()
+        # A currently selected batch can also consume an older unregistered
+        # capture. Include every explicitly indexed collected source rather
+        # than guessing only the latest round or scanning the filesystem.
+        for row in sorted(rounds, key=lambda row: row.continuation_id):
+            if (row.preparation_id == current.preparation_id and row.answer_protocol == "review-answer-v1"
+                    and row.collection_basis_digests):
+                stores.append(paths.review_answer_collection_store(basis["parent_session_id"], basis["task_id"],
+                    basis["target_generation"], current.preparation_id, row.continuation_id))
+    with ExitStack() as stack:
+        if current.route == "integrated":
+            path = paths.review_finalization_store(basis["parent_session_id"], basis["task_id"],
+                basis["target_generation"])
+            stack.enter_context(FinalizationRepository(path).serial())
+        for path in stores:
+            stack.enter_context(CollectionRepository(path).serial())
+        yield
 
 
 def publish_ready(repo, packet_path, result_paths, caller, *, route, collection_requests=()):
@@ -71,7 +106,7 @@ def publish_ready(repo, packet_path, result_paths, caller, *, route, collection_
         if (type(collection_requests) is not tuple or len(collection_requests) != len(result_paths)
             or any(type(request) is not str or not request for request in collection_requests)):
             files.fail("handoff_invalid_input")
-        collection_bases = tuple(dict(version=1, preparation_id=preparation_id,
+        collection_bases = tuple(dict(version=2, preparation_id=preparation_id,
             packet_digest="sha256:" + sha256(raw).hexdigest(),
             request_digest="sha256:" + sha256(request.encode("utf-8")).hexdigest(),
             protocol=PROTOCOL, attestation=ATTESTATION, route=route,
@@ -98,7 +133,10 @@ def publish_ready(repo, packet_path, result_paths, caller, *, route, collection_
             basis["target_generation"], preparation_id)).initialize(collection_bases)
     with journal.serial(initial=record if fresh else None, admit=admit) as lease:
         if not fresh:
-            journal.publish(lease, record)
+            _, current = journal.read()
+            with _replacement_collection_fence(paths, current):
+                admit()
+                journal.publish(lease, record)
     return {"preparation_id": record.preparation_id, "route": route}
 
 

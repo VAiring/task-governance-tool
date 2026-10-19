@@ -106,8 +106,9 @@ class ProjectWaitTests(PreparationFixture):
         self.assertNotIn("review_wait_direct_start", [tool["name"] for tool in catalogue])
         self.assertTrue(all(tool["inputSchema"]["additionalProperties"] is False for tool in catalogue))
         tools = {tool["name"]: tool for tool in catalogue}
-        self.assertEqual([{"event"}, {"reviewer_ids", "task_id"}],
+        self.assertEqual([{"event"}, {"reviewer_ids", "task_id"}, {"action", "reviewer_ids", "task_id"}],
             [set(arm["properties"]) for arm in tools["review_answer_collect"]["inputSchema"]["oneOf"]])
+        self.assertEqual("arm", tools["review_answer_collect"]["inputSchema"]["oneOf"][2]["properties"]["action"]["const"])
         for operation in ("prepare", "view", "direct_delete_start", "direct_status", "direct_cancel", "direct_ack"):
             self.assertIn("Compatibility", tools["review_wait_" + operation]["description"])
         self.assertEqual({"task_id", "reviewer_ids"}, set(tools["review_wait_wait"]["inputSchema"]["properties"]))

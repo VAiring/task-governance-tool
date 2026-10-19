@@ -93,6 +93,7 @@ def validate_provenance_relation(connection, receipt, *, row=None):
     from .review_answer_values import validate_basis, basis_digest
     basis=validate_basis(_decode(source["basis_json"],32768))
     if (basis_digest(basis)!=source["basis_digest"] or basis["preparation_id"]!=source["preparation_id"]
+        or basis["version"]!=observed["binding_source"]["version"]
         or any(basis[key]!=value["answer_attestation"][key] for key in ("protocol","attestation","request_digest"))):
         raise _bad()
     execution=basis["execution_basis"]

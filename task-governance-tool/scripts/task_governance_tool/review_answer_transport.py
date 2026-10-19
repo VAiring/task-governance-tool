@@ -219,8 +219,8 @@ def decode_collected_submission(raw):
                 original = _bytes(entry["original_base64"])
                 # Admit structural metadata before answer privacy; semantic
                 # identity checks must not hide an answer privacy rejection.
-                from .review_answer_values import shape, METADATA
-                shape(entry["metadata"], METADATA)
+                from .review_answer_values import shape, metadata_schema
+                shape(entry["metadata"], metadata_schema(entry["metadata"]))
                 answer = decode_answer(original)
                 metadata = validate_metadata(entry["metadata"], raw=original)
                 basis, binding = metadata["basis"], metadata["binding"]

@@ -563,11 +563,28 @@ It retains no native rows or open connection across boundaries and removes no
 effect check. Source lookup, ordinary parent/wait and retained-source admissions
 remain unchanged; each later or restarted hook starts with full validation.
 
+New initial and continuation issuance uses `CollectionBasis.version=2` to
+select dedicated-reviewer tracking. The answer format remains `review-answer-v1`;
+older basis versions retain their original decoding and behavior. A tracking
+binding holds the actual dedicated reviewer and an observation boundary rather
+than claiming a new parent dispatch-to-turn relation. Initial binding retains
+strict child creation proof and an inclusive first-turn boundary. Explicit
+parent `review_answer_collect action=arm` establishes a continuation's exclusive
+latest-terminal-turn boundary before the caller sends the additional request.
+Arming an existing slot never moves that boundary. Issued digests and original
+source metadata are not rewritten during runtime upgrade or restart.
+Before reusing the initial dedicated assignment, arming compares its complete
+source basis with that original slot's immutable preparation issuance pin.
+This historical assignment check is separate from fresh-source eligibility;
+selecting a continuation does not invalidate the original dedication proof.
+
 `review_answer_collection_repository.py` stores at most eight contiguous slots
 per preparation/continuation in the resolver-derived operational database.
 Every read/write validates the exact schema and closed record. Each record is
-at most 32,768 canonical UTF-8 bytes with at most two ordinal attempts, one
-correction intent, publication reference and monotone registration state.
+at most 32,768 canonical UTF-8 bytes. Version one retains at most two ordinal
+attempts and one correction intent. Version two retains one eventual adopted
+attempt plus bounded tracking/failure state, publication reference and monotone
+registration state; rejected candidates never grow a history array.
 It contains no answer body, prompt, provider envelope or growing observation
 array. Call-local validation never becomes a cross-operation cache.
 `review_answer_collection.py` owns the effect state machine. It latches exact
@@ -580,6 +597,32 @@ and reason after checking unresolved publication, before the generic incomplete
 branch. Parent submission and finalizer reporting consume that same readback.
 Explicit recovery does not reconcile a publication with a stored attempt failure;
 it retains both the unresolved effect and conflict evidence without I/O replay.
+
+In tracking mode host observation runs outside the source lease. Under that
+lease the service validates the candidate's complete bytes/privacy and completed
+terminal state, rechecks current admission, and atomically freezes the first
+valid source identity/digest with its publication intent. Invalid candidates
+remain unadopted; a valid negative or unable answer freezes just as PASS does.
+Once frozen, no latest-answer observation may replace it. Saved originals and
+unresolved publication intents retain their existing
+readback/reconciliation rules. Explicit reassessment uses a fresh continuation
+slot and never resets the predecessor. No automatic follow-up sender is added.
+
+Fresh tracking admission checks active Task/owner, complete native basis,
+current preparation, current issued selection and the existing exact reviewed
+Git snapshot where applicable. It repeats after host I/O and before publication
+and registration. A proven material mismatch during collection permanently
+invalidates that slot; read-only inspection rejects it without writing.
+Temporary transport errors do not invalidate the slot or create a replacement
+assignment. A replacement preparation acquires the predecessor's finalization
+lease and relevant
+collection leases before switching the current pointer. Registration already
+retains those source leases through core commit and rechecks active native
+eligibility under the writer. This closes a new-preparation race without
+acquiring an earlier preparation lease beneath finalization or changing native
+schema.
+Finalization keeps its existing exact Git checks and publication locks; these
+checks do not claim an atomic snapshot of unrelated mutable workspace files.
 
 Publication uses only the prepared ignored physical original path and shared
 `review_handoff_transport.py` exclusive-create/flush/readback checks. The service
@@ -699,6 +742,7 @@ is invoked, and no observation is persisted or reused as an effect token.
 Legacy-only and non-dispatching checks keep their existing output shape.
 
 `review_answer_host.py` uses only bounded public `read_thread` observations.
+The following exact-turn recovery behavior is retained for version-one bases.
 Initial admission reads the exact parent's dispatch turn and a dedicated new
 child's sole own turn, rejecting additional pages, interaction/reuse and known
 or unresolved competing sends. Both initial binding entries share
@@ -716,6 +760,14 @@ Recovery-only construction omits a parent dispatch turn; both fresh-binding
 operations reject that form before host observation rather than substituting
 the reviewer's executor turn for a parent turn.
 
+Version-two observations use the same fixed bounded public page to select the
+latest own turn beyond the saved boundary. An in-progress turn does not fall
+back to an older completed PASS. Only its unique complete final item from a
+completed turn is eligible. The adapter reports actual source IDs and version
+two observation operations; it does not infer a request ID, dispatch identity
+or chronological first answer from time. The source boundary and first-admitted
+answer rule replace the unavailable strict follow-up binding guarantee.
+
 `review_answer_runtime.py` and the dedicated bounded answer-hook bridge feed the
 same collector from admitted hook/wait or explicit parent recovery. The hook
 neither registers nor commits/completes, and numerical usage collection remains
@@ -724,9 +776,12 @@ answer whose independently observed terminal state is still pending. It skips
 an additional terminal lookup and retains every source, byte, basis, privacy and
 unknown-effect check. Parent/wait recovery, ordinary readback and registration
 keep the completed-terminal default; no terminal value is manufactured for the
-neutral hook result. `project_server` exposes the project-owned `review_answer_collect`
+neutral hook result. This pending-publication exception is version-one only;
+version-two tracking waits for observed completion before adopting a response.
+`project_server` exposes the project-owned `review_answer_collect`
 with two exact argument arms: the typed five-field hook identity event or the
-original Task plus ordered actual reviewer UUIDs. Genuine MCP executor metadata
+original Task plus ordered actual reviewer UUIDs, optionally `action=arm` only
+for explicit pre-send continuation admission. Genuine MCP executor metadata
 is checked independently. The parent arm binds only a fresh same-current-parent-
 turn started dispatch or reuses an immutable saved binding, then performs bounded
 missing-source recovery or exact saved-publication reconciliation. It creates
@@ -736,21 +791,37 @@ ignores the event's turn as a replacement for the saved child turn. This is
 the explicit workerless entry; normal wait already binds/collects, so no
 additional successful-path parent poll is introduced. Workerless recovery uses
 the same saved basis and source checks. One
-correction intent is possible only under the source-format/live-observer rules;
+version-one correction intent is possible only under the source-format/live-observer rules;
 it consumes the opportunity before any possible send and never creates a second
 send after failure or uncertainty. Existing wait deadlines and parent resumption
 handle unresolved work; add no timer, resident process or scan. Setup/host trust
 and real-host validation are separate activation requirements, not consequences
 of module installation or mock tests.
 
+Managed waiting recognizes version-two tracking explicitly. A later turn from
+the same dedicated reviewer does not itself terminate the wait as a mismatch;
+the existing collection callback decides whether a valid answer was frozen.
+Reviewer readiness and finalization use that frozen completed source, not an
+incidental latest completed turn or a format-invalid response. Legacy waits
+retain exact-turn semantics. Preparation uses the same tracking boundary as
+the worker even when a later reviewer turn is already running. Optional initial
+collection that has not established an assignment leaves ordinary exact-turn
+waiting available after current-basis validation; invalidated or mismatched
+assignments still fail closed. This adds no worker, timer or independent poll.
+Managed worker callbacks retain the resolved prepared-slot reviewer order from
+preflight and recheck its membership against the controller. The controller's
+UUID-sorted occurrence identity does not replace collection's slot ordering.
+
 A reviewer-origin hook matches the genuine executor session to the unique saved
 slot under current-basis admission. `hook_executor_turn_id` tolerates only the
 typed absence of executor-turn metadata. A supplied invalid, embedded-only or
-conflicting turn is still rejected; a supplied valid reviewer turn must match
-the saved active attempt. `ReviewerHookAdmission` pins the saved basis, binding,
-attempt ordinal and turn for the call. Its admission and host-read guards repeat
-those checks before effects and after helper initialization; a newly selected
-attempt cannot redirect an in-flight read or publication. A parent-origin hook
+conflicting turn is still rejected. For version one, a supplied valid reviewer
+turn must match the saved active attempt. `ReviewerHookAdmission` pins the saved
+basis and binding, plus the version-one attempt ordinal and turn, for the call.
+Version two obtains the candidate turn only from the bounded public observation;
+the executor turn is not an answer selector. Its admission and host-read guards
+repeat these checks before effects and after helper initialization; a newly
+selected request cannot redirect an in-flight read or publication. A parent-origin hook
 without executor-turn metadata likewise uses saved-source recovery only. Fresh
 parent dispatch admission still requires its genuine current turn.
 Its dedicated read-only host reuses the existing bounded public relay with

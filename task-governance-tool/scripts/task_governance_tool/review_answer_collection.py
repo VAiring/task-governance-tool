@@ -14,8 +14,8 @@ from . import review_answer_values as values
 from . import review_handoff_transport as files
 
 
-def source(operation):
-    return dict(adapter="codex-app-tools-review-answer", version=1, operation=operation)
+def source(operation, version=1):
+    return dict(adapter="codex-app-tools-review-answer", version=version, operation=operation)
 
 
 def _fail(classification="collection_unavailable", reason="missing"):
@@ -39,6 +39,13 @@ def _attempt(record, ordinal):
     return record["attempts"][ordinal]
 
 
+class CollectionInvalidated(AnswerError):
+    """Positive observation that the accepted tracking material is obsolete."""
+
+    def __init__(self):
+        super().__init__("binding_mismatch", reason="identity")
+
+
 class CollectionService:
     def __init__(self, repo, repository, *, original_paths, admit_basis):
         if not callable(admit_basis) or type(original_paths) not in (tuple, list) or not 1 <= len(original_paths) <= 8:
@@ -53,6 +60,32 @@ class CollectionService:
         self.original_paths = tuple(original_paths)
         self.admit_basis = admit_basis
 
+    def check_basis(self, basis, slot, *, lease=None, persist_invalidation=True):
+        """Close proven obsolete tracking; inspection rejects without writing.
+
+        Unavailable observations never close an arm. Effect callers supply an
+        already-held source lease so invalidation does not reacquire that lock.
+        """
+        if basis["version"] == 2 and self._record(slot)["tracking_state"] == "invalidated":
+            raise CollectionInvalidated()
+        try:
+            self.admit_basis(basis, slot)
+        except CollectionInvalidated:
+            def close(admitted_lease):
+                record = self._record(slot)
+                if record["version"] == 2 and record["basis"] == basis and record["tracking_state"] != "invalidated":
+                    def invalidated(row):
+                        row["tracking_state"] = "invalidated"
+                        return row
+                    self.repository.update(admitted_lease, slot, invalidated)
+            if basis["version"] == 2 and persist_invalidation:
+                if lease is None:
+                    with self.repository.serial() as acquired:
+                        close(acquired)
+                else:
+                    close(lease)
+            raise
+
     def _record(self, slot):
         records = self.repository.read()
         if type(slot) is not int or not 1 <= slot <= len(records) or len(records) != len(self.original_paths):
@@ -62,7 +95,9 @@ class CollectionService:
     def bind(self, slot, binding):
         with self.repository.serial() as lease:
             record = self._record(slot)
-            self.admit_basis(record["basis"], slot)
+            self.check_basis(record["basis"], slot, lease=lease)
+            if record.get("tracking_state") == "invalidated":
+                _fail("binding_mismatch", "identity")
             binding = values.validate_binding(binding, record["basis"])
             if binding["slot"] != slot:
                 _fail("binding_mismatch", "identity")
@@ -72,7 +107,8 @@ class CollectionService:
                 return record
             def change(row):
                 row["binding"] = binding
-                row["attempts"][0]["turn_id"] = binding["initial_turn_id"]
+                if row["version"] == 1:
+                    row["attempts"][0]["turn_id"] = binding["initial_turn_id"]
                 return row
             return self.repository.update(lease, slot, change)
 
@@ -86,9 +122,16 @@ class CollectionService:
         ordinal = _ordinal(record)
         if (type(identity) is not dict or set(identity) != {"reviewer_session_id", "turn_id", "message_id"}
                 or identity["reviewer_session_id"] != record["binding"]["reviewer_session_id"]
-                or identity["turn_id"] != record["attempts"][ordinal]["turn_id"]):
+                or record["version"] == 1 and identity["turn_id"] != record["attempts"][ordinal]["turn_id"]):
             _fail("binding_mismatch", "identity")
+        values._identity(identity)
+        if record["version"] == 2:
+            tracking = record["binding"]["tracking"]
+            if tracking["boundary"] == "exclusive" and identity["turn_id"] == tracking["boundary_turn_id"]:
+                _fail("binding_mismatch", "identity")
         values.validate_source(observation["answer_source"], "answer_observation")
+        if observation["answer_source"]["version"] != record["version"]:
+            _fail("binding_mismatch", "identity")
         terminal = observation["terminal"]
         if terminal not in ("unknown", "in_progress", "completed", "failed", "interrupted"):
             _fail(reason="shape")
@@ -97,13 +140,17 @@ class CollectionService:
                 _fail(reason="shape")
         else:
             values.validate_source(observation["terminal_source"], "terminal_observation")
+            if observation["terminal_source"]["version"] != record["version"]:
+                _fail("binding_mismatch", "identity")
         return ordinal, identity
 
     def observe(self, slot, observation):
         """Accept one observation; duplicate bodies do not repeat publication."""
+        if self._record(slot)["version"] == 2:
+            return self._observe_tracking(slot, observation)
         with self.repository.serial() as lease:
             record = self._record(slot)
-            self.admit_basis(record["basis"], slot)
+            self.check_basis(record["basis"], slot, lease=lease)
             ordinal, identity = self._observation(record, observation)
             attempt = _attempt(record, ordinal)
             if (attempt["terminal"] in ("completed", "failed", "interrupted")
@@ -153,20 +200,20 @@ class CollectionService:
             # was not published). There is one accepted original path per slot.
             values.validate_original(original, decoded.raw)
             path = files.checked_path(self.repo, original["path"])
-            self.admit_basis(record["basis"], slot)
+            self.check_basis(record["basis"], slot, lease=lease)
             def intent(row):
                 row["attempts"][ordinal]["publication"] = dict(state="intent", original=original)
                 return row
             record = self.repository.update(lease, slot, intent)
             try:
-                self.admit_basis(record["basis"], slot)
+                self.check_basis(record["basis"], slot, lease=lease)
                 # Privacy and the full original are revalidated immediately
                 # before I/O; no transaction spans this operation.
                 decode_answer(decoded.raw)
                 files.write_exclusive(path, decoded.raw)
                 if files.read_bounded(files.checked_path(self.repo, original["path"]), 262144) != decoded.raw:
                     _fail("save_unknown", "conflict")
-                self.admit_basis(record["basis"], slot)
+                self.check_basis(record["basis"], slot, lease=lease)
                 def saved(row):
                     row["attempts"][ordinal]["publication"]["state"] = "saved"
                     return row
@@ -177,6 +224,83 @@ class CollectionService:
                     return row
                 self.repository.update(lease, slot, uncertain)
                 _fail("save_unknown", "effect_unknown")
+
+    def _observe_tracking(self, slot, observation):
+        """Freeze the first valid completed result, independently of verdict."""
+        with self.repository.serial() as lease:
+            record = self._record(slot)
+            self.check_basis(record["basis"], slot, lease=lease)
+            if record["tracking_state"] == "invalidated":
+                _fail("binding_mismatch", "identity")
+            if record["tracking_state"] == "frozen":
+                # No later candidate, including a valid different verdict,
+                # changes an accepted source or triggers another file effect.
+                return record
+            ordinal, identity = self._observation(record, observation)
+            if record["registration"]["state"] != "not_started":
+                _fail("registration_unknown", "effect_unknown")
+            failure, decoded = None, None
+            try:
+                decoded = decode_answer(observation["answer_bytes"])
+            except AnswerError as error:
+                failure = error.failure
+            if failure is None and observation["terminal"] != "completed":
+                failure = _failure(reason="incomplete")
+            if failure is not None:
+                def rejected(row):
+                    row["attempts"][0].update(turn_id=identity["turn_id"], source_identity=deepcopy(identity),
+                        observation="complete", observed_digest=None, terminal=observation["terminal"],
+                        terminal_source=observation["terminal_source"], publication=None, failure=failure)
+                    return row
+                self.check_basis(record["basis"], slot, lease=lease)
+                self.repository.update(lease, slot, rejected)
+                raise AnswerError(**self._error_kwargs(failure))
+            original = dict(path=self.original_paths[slot - 1], byte_length=len(decoded.raw),
+                digest=decoded.original_digest, payload_start=decoded.payload_start,
+                payload_length=decoded.payload_length, payload_digest=decoded.payload_digest)
+            values.validate_original(original, decoded.raw)
+            path = files.checked_path(self.repo, original["path"])
+            self.check_basis(record["basis"], slot, lease=lease)
+            def freeze(row):
+                row["tracking_state"] = "frozen"
+                row["attempts"][0].update(turn_id=identity["turn_id"], source_identity=deepcopy(identity),
+                    observation="complete", observed_digest=decoded.original_digest, terminal="completed",
+                    terminal_source=observation["terminal_source"],
+                    publication=dict(state="intent", original=original), failure=None)
+                return row
+            # Source, digest and publication intent commit together. A crash
+            # cannot cause restart to choose a different final response.
+            record = self.repository.update(lease, slot, freeze)
+            try:
+                self.check_basis(record["basis"], slot, lease=lease)
+                decode_answer(decoded.raw)
+                files.write_exclusive(path, decoded.raw)
+                if files.read_bounded(files.checked_path(self.repo, original["path"]), 262144) != decoded.raw:
+                    _fail("save_unknown", "conflict")
+                self.check_basis(record["basis"], slot, lease=lease)
+                def saved(row):
+                    row["attempts"][0]["publication"]["state"] = "saved"
+                    return row
+                return self.repository.update(lease, slot, saved)
+            except CollectionInvalidated:
+                raise
+            except Exception:
+                def uncertain(row):
+                    row["attempts"][0]["publication"]["state"] = "unknown"
+                    return row
+                self.repository.update(lease, slot, uncertain)
+                _fail("save_unknown", "effect_unknown")
+
+    def invalidate(self, slot):
+        """Latch a proven obsolete tracking arm; transport failure is not proof."""
+        with self.repository.serial() as lease:
+            record = self._record(slot)
+            if record["version"] != 2:
+                _fail("binding_mismatch", "identity")
+            def change(row):
+                row["tracking_state"] = "invalidated"
+                return row
+            return self.repository.update(lease, slot, change)
 
     @staticmethod
     def _error_kwargs(failure):
@@ -191,6 +315,8 @@ class CollectionService:
         _fail("binding_mismatch", "conflict")
 
     def _readback(self, record, slot, ordinal, *, require_terminal=True):
+        if record.get("tracking_state") == "invalidated":
+            _fail("binding_mismatch", "identity")
         attempt = record["attempts"][ordinal]
         if attempt["publication"] is not None and attempt["publication"]["state"] != "saved":
             _fail("save_unknown", "effect_unknown")
@@ -208,7 +334,7 @@ class CollectionService:
         decode_answer(raw)
         correction = record["correction"]
         metadata = dict(basis=record["basis"], binding=record["binding"], attempt=ordinal,
-            source_identity=attempt["source_identity"], original=original, answer_source=source("answer_observation"),
+            source_identity=attempt["source_identity"], original=original, answer_source=source("answer_observation", record["version"]),
             terminal=attempt["terminal"], terminal_source=attempt["terminal_source"], correction_binding=None)
         if ordinal == 1:
             metadata["correction_binding"] = dict(intent_id=correction["intent_id"],
@@ -221,10 +347,10 @@ class CollectionService:
     def readback(self, slot, *, require_terminal=True):
         """Confirm exact saved bytes; hook-only reads preserve pending terminal facts."""
         record = self._record(slot)
-        self.admit_basis(record["basis"], slot)
+        self.check_basis(record["basis"], slot, persist_invalidation=False)
         ordinal = _ordinal(record)
         result = self._readback(record, slot, ordinal, require_terminal=require_terminal)
-        self.admit_basis(record["basis"], slot)
+        self.check_basis(record["basis"], slot, persist_invalidation=False)
         if self._record(slot) != record:
             _fail("binding_mismatch", "conflict")
         # The helper's subsequent framing performs the second whole-batch
@@ -238,7 +364,7 @@ class CollectionService:
         """Explicit recovery only: adopt exact complete residue, never rewrite."""
         with self.repository.serial() as lease:
             record = self._record(slot)
-            self.admit_basis(record["basis"], slot)
+            self.check_basis(record["basis"], slot, lease=lease)
             ordinal = _ordinal(record)
             attempt = record["attempts"][ordinal]
             if (attempt["publication"] is None or attempt["publication"]["state"] not in ("intent", "unknown")
@@ -255,7 +381,7 @@ class CollectionService:
                 # Missing, partial, changed or unsafe residue does not settle
                 # the saved effect and never authorizes a new publication.
                 _fail("save_unknown", "effect_unknown")
-            self.admit_basis(record["basis"], slot)
+            self.check_basis(record["basis"], slot, lease=lease)
             def change(row):
                 row["attempts"][ordinal]["publication"]["state"] = "saved"
                 return row
@@ -267,7 +393,9 @@ class CollectionService:
     def recover(self, slot, host, *, explicit_recovery=False, require_terminal=True):
         """Recover one exact source; only the parent may reconcile saved intent."""
         record = self._record(slot)
-        self.admit_basis(record["basis"], slot)
+        self.check_basis(record["basis"], slot)
+        if record["version"] == 2:
+            return self._recover_tracking(slot, record, host, explicit_recovery=explicit_recovery)
         if record["binding"] is None:
             _fail("binding_mismatch", "identity")
         ordinal = _ordinal(record)
@@ -302,7 +430,7 @@ class CollectionService:
             # a hash of incomplete/shape-unknown content. This is not a retry.
             with self.repository.serial() as lease:
                 current = self._record(slot)
-                self.admit_basis(current["basis"], slot)
+                self.check_basis(current["basis"], slot, lease=lease)
                 if (_ordinal(current) == ordinal and current["binding"] == record["binding"]
                         and current["attempts"][ordinal]["observation"] in ("missing", "unavailable")
                         and current["registration"]["state"] == "not_started"):
@@ -314,10 +442,40 @@ class CollectionService:
         self.observe(slot, observed)
         return self.readback(slot, require_terminal=require_terminal)
 
+    def _recover_tracking(self, slot, record, host, *, explicit_recovery=False):
+        if record["binding"] is None or record["tracking_state"] == "invalidated":
+            _fail("binding_mismatch", "identity")
+        attempt = record["attempts"][0]
+        if record["tracking_state"] == "frozen":
+            if attempt["publication"]["state"] != "saved":
+                if explicit_recovery is not True:
+                    _fail("save_unknown", "effect_unknown")
+                self.reconcile_publication(slot)
+            return self.readback(slot)
+        tracking = record["binding"]["tracking"]
+        try:
+            observed = host.observe_latest_answer(basis_digest=values.basis_digest(record["basis"]),
+                slot=slot, reviewer_session_id=record["binding"]["reviewer_session_id"],
+                boundary_turn_id=tracking["boundary_turn_id"], boundary=tracking["boundary"])
+        except Exception as error:
+            failure = error.failure if isinstance(error, AnswerError) else _failure(reason="transport_unavailable")
+            with self.repository.serial() as lease:
+                current = self._record(slot)
+                self.check_basis(current["basis"], slot, lease=lease)
+                if (current["tracking_state"] == "watching" and current["binding"] == record["binding"]
+                        and current["registration"]["state"] == "not_started"):
+                    def unavailable(row):
+                        row["attempts"][0].update(observation="unavailable", failure=failure)
+                        return row
+                    self.repository.update(lease, slot, unavailable)
+            raise AnswerError(**self._error_kwargs(failure)) from None
+        self.observe(slot, observed)
+        return self.readback(slot)
+
     def observe_terminal(self, slot, observation):
         with self.repository.serial() as lease:
             record = self._record(slot)
-            self.admit_basis(record["basis"], slot)
+            self.check_basis(record["basis"], slot, lease=lease)
             ordinal = _ordinal(record)
             attempt = record["attempts"][ordinal]
             if (type(observation) is not dict or set(observation) != {"reviewer_session_id", "turn_id", "terminal", "terminal_source"}
@@ -337,7 +495,9 @@ class CollectionService:
         """Reserve one format correction; a possible send is never repeated."""
         with self.repository.serial() as lease:
             record = self._record(slot)
-            self.admit_basis(record["basis"], slot)
+            self.check_basis(record["basis"], slot, lease=lease)
+            if record["version"] != 1:
+                _fail(reason="shape")
             if record["correction"] is not None:
                 return record
             initial = record["attempts"][0]
@@ -354,7 +514,7 @@ class CollectionService:
             try:
                 if observer is None or observer(record) is not True:
                     _fail(reason="observer_unavailable")
-                self.admit_basis(record["basis"], slot)
+                self.check_basis(record["basis"], slot, lease=lease)
             except Exception:
                 def unavailable(row):
                     row["correction"]["failure"] = _failure(reason="observer_unavailable")
@@ -413,7 +573,7 @@ class CollectionService:
             _fail("binding_mismatch", "identity")
         for slot in slots:
             record = records[slot - 1]
-            self.admit_basis(record["basis"], slot)
+            self.check_basis(record["basis"], slot, lease=lease)
             self._readback(record, slot, _ordinal(record))
             if record["registration"]["state"] != "not_started":
                 _fail("registration_unknown", "effect_unknown")
@@ -437,7 +597,7 @@ class CollectionService:
             results = []
             for slot in selected:
                 record = self._record(slot)
-                self.admit_basis(record["basis"], slot)
+                self.check_basis(record["basis"], slot, lease=lease, persist_invalidation=False)
                 results.append(self._readback(record, slot, _ordinal(record)))
             yield lease, tuple(results)
 

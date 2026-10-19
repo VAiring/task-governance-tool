@@ -210,6 +210,66 @@ class HostTests(unittest.TestCase):
         self.assertEqual(self.host.send_correction(), dict(effect="not_sent", correction_turn_id=None, source=None))
         self.assertFalse(self.public._json_call.called)
 
+    def test_tracking_arm_requires_terminal_latest_turn_and_records_no_answer(self):
+        for status in ("completed", "failed", "interrupted"):
+            self.public._json_call.return_value = page(self.child, 2, turn(TURN1, status=status,
+                items=[dict(self.final, text="not retained during arming")]))
+            baseline = self.host.observe_tracking_baseline(self.child)
+            self.assertEqual(baseline, dict(turn_id=TURN1, terminal=status,
+                binding_source=dict(adapter="codex-app-tools-review-answer", version=2, operation="reviewer_tracking")))
+        self.public._json_call.return_value = page(self.child, 2, turn(TURN1, status="inProgress"))
+        with self.assertRaises(AnswerError):
+            self.host.observe_tracking_baseline(self.child)
+
+    def tracking_arguments(self, boundary="exclusive"):
+        return dict(basis_digest=self.metadata["binding"]["basis_digest"], slot=1,
+            reviewer_session_id=self.child, boundary_turn_id=TURN1, boundary=boundary)
+
+    def test_tracking_excludes_prior_turn_then_selects_latest_completed_final(self):
+        self.public._json_call.return_value = page(self.child, 2, turn(TURN1, items=[self.final]))
+        with self.assertRaises(AnswerError):
+            self.host.observe_latest_answer(**self.tracking_arguments())
+        self.public._json_call.return_value = page(self.child, 2,
+            turn(TURN2, items=[dict(self.final, id="later-final")]), turn(TURN1, items=[self.final]))
+        result = self.host.observe_latest_answer(**self.tracking_arguments())
+        self.assertEqual(result["source_identity"], dict(reviewer_session_id=self.child,
+            turn_id=TURN2, message_id="later-final"))
+        self.assertEqual(result["terminal"], "completed")
+        self.assertEqual(result["answer_source"]["version"], 2)
+
+    def test_tracking_never_falls_back_from_running_failed_or_missing_latest_final(self):
+        for status, items in (("inProgress", [self.final]), ("failed", [self.final]),
+                              ("interrupted", [self.final]), ("completed", [])):
+            self.public._json_call.return_value = page(self.child, 2,
+                turn(TURN2, items=items, status=status), turn(TURN1, items=[self.final]))
+            with self.subTest(status=status, items=bool(items)), self.assertRaises(AnswerError):
+                self.host.observe_latest_answer(**self.tracking_arguments())
+
+    def test_initial_tracking_accepts_its_original_turn_but_requires_completion(self):
+        for status in ("inProgress", "completed"):
+            self.public._json_call.return_value = page(self.child, 2, turn(TURN1, status=status, items=[self.final]))
+            if status == "completed":
+                result = self.host.observe_latest_answer(**self.tracking_arguments("inclusive"))
+                self.assertEqual(result["source_identity"]["turn_id"], TURN1)
+            else:
+                with self.assertRaises(AnswerError):
+                    self.host.observe_latest_answer(**self.tracking_arguments("inclusive"))
+
+    def test_initial_tracking_never_upgrades_an_invalid_dispatch_proof_source(self):
+        from task_governance_tool.review_answer_runtime import bind_initial
+        basis = {**self.metadata["basis"], "version": 2}
+        service = Mock()
+        service.repository.read.return_value = [dict(basis=basis, binding=None)]
+        host = Mock()
+        fact = dict(dispatch_id="dispatch-1", parent_session_id=self.parent,
+            reviewer_session_id=self.child, initial_turn_id=TURN1)
+        for invalid in (None, {}, dict(adapter="other", version=1, operation="dispatch_binding"),
+                        dict(adapter="codex-app-tools-review-answer", version=2, operation="reviewer_tracking")):
+            host.bind_reviewers.return_value = ({**fact, "source": invalid},)
+            with self.subTest(source=invalid), self.assertRaises(AnswerError):
+                bind_initial(service, host, (self.child,), creation_context=True)
+        service.bind.assert_not_called()
+
     def test_hook_is_identity_hint_and_discards_body_and_parent_turn(self):
         event = dict(hook_event_name="SubagentStop", session_id=self.parent, agent_id=self.child,
             turn_id=self.parent_turn, stop_hook_active=False, last_assistant_message="not an answer",

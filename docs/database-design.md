@@ -160,7 +160,7 @@ Text lengths count Unicode scalar values and byte offsets address exact UTF-8.
 `CollectionBasis` is exactly:
 
 ```text
-{version:1, preparation_id, packet_digest, request_digest,
+{version:1|2, preparation_id, packet_digest, request_digest,
  protocol:"review-answer-v1", attestation:"assigned-independent-review-v1",
  route:"manual"|"integrated", continuation, execution_basis}
 ```
@@ -177,7 +177,12 @@ other basis fields must agree. Canonical basis bytes are at most 32,768.
 Basis digest is SHA-256 over `taskgov-review-answer-basis-v1\0` plus the complete
 canonical CollectionBasis.
 
-`SlotBinding` is exactly:
+Version one retains exact dispatch/turn collection. New issuance selects
+version two for dedicated-reviewer first-valid-answer tracking. The version
+is inside the immutable basis and its digest; reopening an older preparation
+does not upgrade it. Both versions use the same five-field answer protocol.
+
+Version-one `SlotBinding` is exactly:
 
 ```text
 {basis_digest,slot,reviewer_key,dispatch_id,parent_session_id,
@@ -197,11 +202,31 @@ using current 128-byte identifier/64-byte version grammar. Context is null or
 the existing context-relation code. Null means no recorded launch request;
 none of these requested values proves an actual runtime fact.
 
+Version-two `SlotBinding` is exactly:
+
+```text
+{basis_digest,slot,reviewer_key,parent_session_id,reviewer_session_id,
+ binding_source,assignment,tracking}
+```
+
+The common identity/assignment fields keep the bounds above. `tracking` is
+exactly `{kind,boundary,boundary_turn_id,dispatch_id}`. Initial kind uses
+`kind="initial"`, `boundary="inclusive"`, the admitted sole own turn UUID,
+and the actual initial dispatch ID. Continuation kind uses
+`kind="continuation"`, `boundary="exclusive"`, the latest terminal own turn
+observed before the additional request, and null dispatch ID. It records an
+observation boundary, not a proven additional-request dispatch. The actual
+adopted turn and message belong to the frozen SourceIdentity below.
+
 An observation source is exactly `{adapter:"codex-app-tools-review-answer",
 version:1,operation}`. Operation is `dispatch_binding`, `answer_observation`,
 `terminal_observation` or `correction_binding` at its respective field. Only the
 implemented reviewed adapter assigns it; it is not authentication or caller
-authority. `SourceIdentity` is exactly
+authority. Version two uses the same source shape, with
+`version=2` and operations `reviewer_tracking`, `answer_observation` or
+`terminal_observation`. A version-two binding requires `reviewer_tracking`;
+it cannot be labelled `dispatch_binding`. Answer and terminal source versions
+must agree with the collection basis. `SourceIdentity` is exactly
 `{reviewer_session_id,turn_id,message_id}`, all non-null and exactly bound.
 
 Native `OriginalRef` is exactly `{path,byte_length,digest,payload_start,
@@ -224,14 +249,35 @@ Complete collected `Metadata` is exactly:
 ```
 
 The first two members use the closed types above; attempt is integer zero or
-one. Initial source identity matches binding's initial turn and has null
+one. For version one, source identity matches binding's initial turn and has null
 correction binding. Attempt one requires exactly `{intent_id,initial_turn_id,
 correction_turn_id,source}`, with `tg_review_correction_` ID, distinct exactly
 bound initial/correction turns, and correction source operation. Its source
 identity is the correction turn. Answer/terminal source operations are exact.
+Version two has exactly attempt zero and null correction binding. Its source
+identity identifies the frozen completed answer from the assigned reviewer,
+under the admitted tracking boundary; it does not assert an exact additional
+dispatch-to-turn relation. New continuation metadata never rewrites a retained
+version-one source, and mixed retained inventories preserve each source version.
 Complete metadata is capped at 32,768 canonical UTF-8 bytes. Its physical seal
 is SHA-256 over `taskgov-collected-review-metadata-v1\0` plus all metadata,
 including the prepared path. It cannot validate a legacy sidecar arm.
+
+The version-two operational record is exactly
+`{version,basis,binding,attempts,correction,registration,tracking_state}`.
+Version and basis version are two; binding is null or the version-two binding,
+and correction is null. `tracking_state` is `watching|frozen|invalidated`.
+`attempts` contains one entry with ordinal zero and the existing bounded
+attempt fields: `turn_id`, `source_identity`, `observation`, `observed_digest`,
+`terminal`, `terminal_source`, `publication`, and `failure`.
+While watching, rejected observations can replace only these bounded diagnostic
+facts; digest and publication stay null. Freezing requires a complete valid
+answer, completed terminal state and an atomic publication intent, fixing its
+source identity, digest and original reference. Publication then follows
+`intent|saved|unknown`; registration retains its existing monotone tuple.
+Watching may become frozen or invalidated, and frozen may become invalidated.
+An invalidated record cannot change again. The physical operational schema
+remains version one, and old record versions are never rewritten by reading.
 
 A collected envelope capture is exactly `{kind:"collected",
 consumer_continuation_id,consumer_slot,source_preparation_id,

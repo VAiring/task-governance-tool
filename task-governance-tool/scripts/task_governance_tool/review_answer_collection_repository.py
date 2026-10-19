@@ -39,10 +39,12 @@ def _decode(raw):
 
 
 def initial_record(basis):
-    return values.validate_record(dict(version=1, basis=values.validate_basis(basis), binding=None,
+    basis = values.validate_basis(basis)
+    return values.validate_record(dict(version=basis["version"], basis=basis, binding=None,
         attempts=[dict(ordinal=0, turn_id=None, source_identity=None, observation="missing",
             observed_digest=None, terminal="unknown", terminal_source=None, publication=None, failure=None)],
-        correction=None, registration=dict(state="not_started", submission_digest=None, receipt_id=None)))
+        correction=None, registration=dict(state="not_started", submission_digest=None, receipt_id=None),
+        **({"tracking_state": "watching"} if basis["version"] == 2 else {})))
 
 
 def _inventory(records):
@@ -67,9 +69,23 @@ def _forward(old, new):
             raise RepositoryError("state_transition_invalid")
     require(old["version"] == new["version"] and old["basis"] == new["basis"])
     require(old["binding"] is None or old["binding"] == new["binding"])
+    tracking = old["version"] == 2
+    if tracking:
+        allowed_states = {"watching": {"watching", "frozen", "invalidated"},
+                          "frozen": {"frozen", "invalidated"}, "invalidated": {"invalidated"}}
+        require(new["tracking_state"] in allowed_states[old["tracking_state"]])
+        if old["tracking_state"] == "invalidated":
+            require(old == new)
     require(len(old["attempts"]) <= len(new["attempts"]) <= len(old["attempts"]) + 1)
     for left, right in zip(old["attempts"], new["attempts"]):
         require(left["ordinal"] == right["ordinal"])
+        if tracking and old["tracking_state"] == "watching":
+            # Rejected candidates are replaceable bounded diagnostics. Only
+            # the first complete, valid result becomes an immutable source.
+            continue
+        if tracking:
+            require({k: v for k, v in left.items() if k != "publication"}
+                    == {k: v for k, v in right.items() if k != "publication"})
         for key in ("turn_id", "source_identity", "observed_digest"):
             require(left[key] is None or right[key] == left[key])
         require(left["observation"] != "conflict" or right["observation"] == "conflict")

@@ -426,6 +426,10 @@ class ManagedHostTests(unittest.TestCase):
 
 class ManagedFlowTests(unittest.TestCase):
     def setUp(self):
+        # This wait-only fixture has no installed collection preparation or
+        # native Task store. Do not inherit the checkout's optional policy.
+        self.enterContext(mock.patch("task_governance_tool.setup_feature_config.answer_collection_allowed",
+                                     return_value=False))
         temporary = tempfile.TemporaryDirectory(prefix="taskgov-managed-")
         self.addCleanup(temporary.cleanup)
         self.root = Path(temporary.name)
@@ -1159,6 +1163,183 @@ class ManagedFlowTests(unittest.TestCase):
             with repository.serial():
                 self.fail("corrupt lock admitted")
         self.assertEqual(repository.lock_path.read_bytes(), b"")
+
+
+class ManagedTrackingAdmissionTests(unittest.TestCase):
+    """Real issued collection/native admission through the public wait entry."""
+
+    def setUp(self):
+        self.flow = ManagedFlowTests(methodName="runTest")
+        self.flow.setUp()
+        self.addCleanup(self.flow.doCleanups)
+
+    def issued_collection(self, *, tracking=True):
+        from tests import test_review_answer_runtime_selection as selections
+        from tests.test_review_answer_tracking_collection import tracking_fixture
+        from tests.test_review_continuation import A, B
+        self.selection = selections.RuntimeSelectionTests(methodName="runTest")
+        self.addCleanup(self.selection.doCleanups)
+        # Issue tracking bases from the outset; no persisted request is upgraded.
+        if tracking:
+            self.enterContext(mock.patch.object(selections, "metadata_fixture", side_effect=tracking_fixture))
+        native = self.selection.ready(version=2)
+        self.native = native
+        flow = self.flow
+        flow.root, flow.paths, flow.basis = native.repo, native.resolution.paths, self.selection.binding
+        flow.paths.review_wait_store = lambda automation: native.root / (automation + ".sqlite")
+        self.parent, self.task = flow.basis.parent_thread_id, flow.basis.task_id
+        self.metadata = dict(threadId=self.parent, turnId=ORIGINAL)
+        flow.current_parent = ChildTurn(self.parent, ORIGINAL, "inProgress", "active")
+        self.reviewers = (A, B)
+        self.turns = {A: TURN, B: TURN}
+        self.completed = False
+        self.answer_text = None
+        self.binding_unavailable = False
+        self.answer_reads = []
+        self.worker_cycle = threading.Event()
+        original_factory = flow.factory
+
+        def factory(**kwargs):
+            host = original_factory(**kwargs)
+            host._metadata = kwargs["metadata"]
+            host.value = replace(host.value, parent_thread_id=self.parent)
+            host.read_child = lambda child: ChildTurn(child, self.turns[child],
+                "completed" if self.completed else "inProgress", "idle" if self.completed else "active")
+            def read_parent():
+                if threading.current_thread() is not threading.main_thread():
+                    # The worker reads its parent only after all reviewer
+                    # checks in this iteration have succeeded.
+                    self.worker_cycle.set()
+                return flow.current_parent
+            host.read_parent = read_parent
+            host._json_call = self.public_page
+            return host
+
+        flow.factory = factory
+        flow.session = flow.make()
+        # Workers must stop before native stores and resolver patches are removed.
+        self.addCleanup(flow.close_all)
+
+    def public_page(self, operation, arguments):
+        self.assertEqual(operation, "read_thread")
+        child = arguments["threadId"]
+        self.answer_reads.append((child, arguments["turnLimit"]))
+        if self.binding_unavailable and child == self.parent:
+            raise HostAdapterError("host_call_failed")
+        items = ([dict(type="subAgentActivity", id="dispatch-" + str(index),
+                       kind="started", agentThreadId=reviewer)
+                  for index, reviewer in enumerate(self.reviewers)] if child == self.parent else [])
+        if child != self.parent and self.completed and self.answer_text is not None:
+            items = [dict(type="agentMessage", id="invalid-final", phase="final_answer", text=self.answer_text)]
+        status = "completed" if child != self.parent and self.completed else "inProgress"
+        return dict(schemaVersion=1, thread=dict(id=child, kind="codex", hostId="local"),
+            page=dict(order="newest_first", limit=arguments["turnLimit"], hasMore=False, nextCursor=None),
+            turns=[dict(id=ORIGINAL if child == self.parent else self.turns[child],
+                status=status, items=items, error=None, startedAt=1,
+                completedAt=2 if status == "completed" else None,
+                durationMs=1 if status == "completed" else None)])
+
+    def wait(self):
+        from task_governance_tool.review_wait_runtime.review_wait_server import _call
+        response = _call(dict(name="review_wait_wait", arguments=dict(task_id=self.task,
+            reviewer_ids=list(self.reviewers)), _meta=self.metadata), self.flow.session)
+        return json.loads(response["content"][0]["text"])
+
+    def bind_public(self):
+        from task_governance_tool.review_wait_runtime.review_wait_server import _call
+        response = _call(dict(name="review_answer_collect", arguments=dict(task_id=self.task,
+            reviewer_ids=list(self.reviewers)), _meta=self.metadata), self.flow.session)
+        value = json.loads(response["content"][0]["text"])
+        self.assertTrue(value["bound"], value)
+        self.assertFalse(value["ok"], value)  # No valid completed answer is available.
+
+    def assert_waiting(self, result):
+        self.assertTrue(result["ok"], result)
+        self.assertTrue(result["parent_may_end"], result)
+        self.assertEqual(self.flow.effects, ["create", "arm"])
+        completed_iteration = self.worker_cycle.wait(10)
+        observed = self.flow.session.handle("inspect", {"task_id": self.task}, self.metadata)
+        self.assertTrue(completed_iteration, observed)
+        self.assertEqual(observed["observation"]["worker"]["status"], "running", observed)
+        self.assertEqual(observed["delivery"]["status"], "waiting", observed)
+
+    def test_enabled_unbound_collection_keeps_real_tracking_resolver_and_wait_worker(self):
+        self.issued_collection()
+        self.binding_unavailable = True
+        result = self.wait()
+        self.assert_waiting(result)
+        self.assertTrue(result["answer_collection"]["unavailable"], result)
+        records = self.selection.service().repository.read()
+        self.assertTrue(all(row["binding"] is None for row in records))
+        # Repeated real tracking lookup remains optional for a validated unbound
+        # initial source, but still traverses native and issued-basis admission.
+        self.assertEqual(self.flow.session._answer_tracking(self.flow.basis, self.reviewers), {})
+
+    def test_already_running_correction_turn_uses_saved_tracking_boundary(self):
+        self.issued_collection()
+        self.completed, self.answer_text = True, "not a structured review"
+        self.bind_public()
+        self.completed = False
+        self.turns = {child: NEW_TURN for child in self.reviewers}
+        result = self.wait()
+        self.assert_waiting(result)
+        from task_governance_tool.review_wait_runtime.review_wait_repository import ReviewWaitRepository
+        automation = next(iter(self.flow.hosts))
+        controller = ReviewWaitRepository.open_existing(self.flow.paths.review_wait_store(automation)).read().controller
+        self.assertEqual({row.turn_id for row in controller.reviewers}, {TURN})
+        self.assertEqual({row.turn_id for row in controller.reviewers},
+                         {row["binding"]["tracking"]["boundary_turn_id"]
+                          for row in self.selection.service().repository.read()})
+        self.assertNotIn("delete", self.flow.effects)
+
+    def test_invalidated_tracking_source_cannot_fall_back_to_ordinary_wait(self):
+        self.issued_collection()
+        self.bind_public()
+        self.selection.service().invalidate(1)
+        result = self.wait()
+        self.assertFalse(result["ok"], result)
+        self.assertEqual(self.flow.effects, [])
+
+    def test_worker_uses_issued_slot_order_when_uuid_sort_order_differs(self):
+        self.issued_collection()
+        self.reviewers = tuple(reversed(self.reviewers))
+        self.bind_public()
+        self.turns = {child: NEW_TURN for child in self.reviewers}
+        result = self.wait()
+        self.assert_waiting(result)
+        _, request = RequestRepository(self.flow.paths.review_wait_request_store(self.parent, self.task)).read()
+        self.assertEqual(tuple(row[0] for row in request.reviewers), tuple(sorted(self.reviewers)))
+
+    def test_issued_version_one_still_rejects_changed_turn_before_create(self):
+        self.issued_collection(tracking=False)
+        self.bind_public()
+        self.turns = {child: NEW_TURN for child in self.reviewers}
+        result = self.wait()
+        self.assertFalse(result["ok"], result)
+        self.assertEqual(self.flow.effects, [])
+
+    def test_public_arm_then_running_continuation_starts_tracking_wait(self):
+        from task_governance_tool import review_answer_continuation_preparation as continued
+        from task_governance_tool.review_wait_runtime.review_wait_server import _call
+        self.issued_collection()
+        self.bind_public()
+        # This fixture also serves compatibility tests; choose the new protocol
+        # at issuance, never by changing a saved continuation record.
+        legacy_issue = continued.expected_bases
+        with mock.patch.object(continued, "expected_bases", side_effect=lambda *args, **kwargs:
+                tuple({**basis, "version": 2} for basis in legacy_issue(*args, **kwargs))):
+            prepared = self.native.call()
+        self.assertTrue(prepared["ok"], prepared)
+        self.reviewers = self.reviewers[:1]
+        self.completed = True
+        armed = _call(dict(name="review_answer_collect", arguments=dict(action="arm",
+            task_id=self.task, reviewer_ids=list(self.reviewers)), _meta=self.metadata), self.flow.session)
+        arm_result = json.loads(armed["content"][0]["text"])
+        self.assertTrue(arm_result["ok"], arm_result)
+        self.assertEqual(arm_result["status"], "armed")
+        self.completed = False
+        self.turns[self.reviewers[0]] = NEW_TURN
+        self.assert_waiting(self.wait())
 
 
 class WorkerObservationTests(unittest.TestCase):

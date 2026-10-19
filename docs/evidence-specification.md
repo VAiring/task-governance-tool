@@ -518,8 +518,15 @@ must equal the corresponding retained payload strings after current
 normalization; no Finding is dropped. Assignment records requested profile,
 lens, model/effort/Skill/context only. Host observation binds the actual
 preparation/slot/attempt, parent/reviewer/turn/message, basis digest and admitted
-dispatch/answer/terminal source. Actual model, Skill and methods remain exactly
-`{state:"unknown",value:null,source:null}` for adapter version one. Requested
+dispatch/answer/terminal source. For a version-two collection basis, the
+binding source is instead adapter version two `reviewer_tracking`: it attests
+to the dedicated reviewer and admitted observation boundary, not an exact
+additional-request dispatch-to-turn relation. Its answer/terminal sources also
+use adapter version two and identify the frozen first successfully observed
+valid completed answer. The existing producer version remains one; the
+explicit basis/source versions distinguish these guarantees without relabelling
+older provenance or changing Reference attribution. Actual model, Skill and methods remain exactly
+`{state:"unknown",value:null,source:null}` for both adapter versions. Requested
 values and free-text checks cannot fill these unknowns. Assurance remains an
 attestation; observation does not authenticate identity, review quality or truth.
 

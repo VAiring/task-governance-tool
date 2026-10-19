@@ -126,6 +126,59 @@ class ReviewerHookTests(unittest.TestCase):
         self.parent_factory.assert_not_called()
         self.assertIs(self.service.admit_basis, self.basis_admit)
 
+    def tracking_continuation(self):
+        """Isolate hook admission after the public arm covered by installed E2E."""
+        basis = copy.deepcopy(self.metadata["basis"])
+        basis.update(version=2, continuation=dict(
+            continuation_id="tg_review_continuation_1111111111111111", sequence=1,
+            selection_digest="a" * 64))
+        binding = {key: copy.deepcopy(value) for key, value in self.metadata["binding"].items()
+                   if key not in ("dispatch_id", "initial_turn_id", "binding_source")}
+        binding.update(basis_digest=basis_digest(basis), tracking=dict(kind="continuation",
+            boundary_turn_id=TURN1, boundary="exclusive", dispatch_id=None),
+            binding_source={**source("reviewer_tracking"), "version": 2})
+        self.store = CollectionRepository(self.root / "tracking.sqlite3")
+        self.store.initialize((basis,))
+        self.service = CollectionService(self.root, self.store,
+            original_paths=(self.metadata["original"]["path"],), admit_basis=self.basis_admit)
+        self.service.bind(1, binding)
+        self.lookup.return_value = (self.service, self.current)
+
+    def test_reviewer_hook_tracks_later_continuation_turn_and_preserves_executor(self):
+        self.tracking_continuation()
+        self.active_turn = TURN2
+        caller = dict(threadId=self.child, turnId=TURN2, nested={"kept": True})
+        self.assertFalse(self.call(caller=caller)["isError"])
+        self.assertEqual(self.reader_factory.call_args.kwargs["metadata"], caller)
+        self.assertIsNone(self.reader_factory.call_args.kwargs["reviewer_turn_id"])
+        saved = self.store.read()[0]
+        self.assertEqual(saved["tracking_state"], "frozen")
+        self.assertEqual(saved["attempts"][0]["source_identity"]["turn_id"], TURN2)
+        self.assertEqual(self.original.read_bytes(), self.answer.raw)
+        self.assertFalse(self.call(caller={"threadId": self.child})["isError"])
+        self.assertEqual(self.public.call_count, 1)
+        self.parent_factory.assert_not_called()
+
+    def test_reviewer_hook_invalid_tracking_answer_can_be_followed_by_valid_later_turn(self):
+        self.tracking_continuation()
+        self.active_turn = TURN2
+        original_response = self.response
+        def malformed(name, arguments, **kwargs):
+            result = original_response(name, arguments, **kwargs)
+            value = json.loads(result["content"][0]["text"])
+            value["turns"][0]["items"][0]["text"] = "invalid review answer"
+            result["content"][0]["text"] = json.dumps(value)
+            return result
+        self.public.side_effect = malformed
+        self.assertTrue(self.call(caller=dict(threadId=self.child, turnId=TURN2))["isError"])
+        self.assertEqual(self.store.read()[0]["tracking_state"], "watching")
+        self.assertFalse(self.original.exists())
+        self.active_turn = OTHER
+        self.public.side_effect = original_response
+        self.assertFalse(self.call(caller=dict(threadId=self.child, turnId=OTHER))["isError"])
+        self.assertEqual(self.store.read()[0]["attempts"][0]["source_identity"]["turn_id"], OTHER)
+        self.assertEqual(self.original.read_bytes(), self.answer.raw)
+
     def track_validation_cleanup(self):
         cleared = []
         original = state_resolver.DatabaseValidationReuse.clear

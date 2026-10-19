@@ -4,7 +4,7 @@ Only explicit wait/stop mutate. An unresolved intent, restart or inspection
 never restarts a worker or creates a competing reservation.
 """
 
-from dataclasses import asdict
+from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 import hashlib
 import json
@@ -25,6 +25,14 @@ def basis_digest(binding):
     value = asdict(binding)
     value.pop("wait_id")
     return hashlib.sha256(json.dumps(value, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+
+
+@dataclass(frozen=True)
+class _PreparedReviewerIdentity:
+    """Stored occurrence identity, not an observation of current turn status."""
+
+    child_id: str
+    turn_id: str
 
 
 class ManagedWait:
@@ -215,6 +223,10 @@ class ManagedWait:
                     {"failure": error.failure if isinstance(error, AnswerError) else
                      {"class": "collection_unavailable", "field": None, "reason": "incomplete"}}]}
         pairs = []
+        tracking = {}
+        tracking_reader = getattr(self.owner, "_answer_tracking", None)
+        if callable(tracking_reader):
+            tracking = tracking_reader(binding, tuple(reviewers))
         reuse = (current_round is not None and current_round.state == "registered") or (finalizer is not None and finalizer.saved_results_ready())
         if reuse and expected:
             # Qualified judgments need no new child observation. Retain only
@@ -228,6 +240,21 @@ class ManagedWait:
             diagnostic.stage = "child_read"
             if finalizer is not None:
                 diagnostic.local_state = "may_have_changed"
+            if reviewer in tracking:
+                tracked = tracking[reviewer]
+                if reviewer not in expected or tracked["boundary_turn_id"] != expected[reviewer]:
+                    raise DiagnosticError("reviewer_turn_changed")
+                if not tracked["frozen"]:
+                    collected = self.owner._collect_answers(binding, host, (reviewer,), diagnostic=diagnostic)
+                    if collected is not None:
+                        diagnostic.answer_collection = collected
+                    tracked = tracking_reader(binding, tuple(reviewers))[reviewer]
+                pairs.append((reviewer, expected[reviewer]))
+                ready = tracked["frozen"] and tracked["terminal"] == "completed"
+                if ready and finalizer is not None:
+                    finalizer.observe_reviewers(((reviewer, tracked["source_identity"]["turn_id"], "completed"),))
+                ended = ready and ended
+                continue
             turn = self._read_reviewer(host, reviewer, expected, finalizer)
             pairs.append((reviewer, turn.turn_id))
             ended = _terminal(turn) and ended
@@ -249,7 +276,7 @@ class ManagedWait:
                 diagnostic.answer_collection = {"collected": [], "unavailable": [
                     {"failure": error.failure if isinstance(error, AnswerError) else
                      {"class": "collection_unavailable", "field": None, "reason": "incomplete"}}]}
-        return reader, binding, tuple(sorted(pairs)), host, ended, finalizer, continued, historical
+        return reader, binding, tuple(sorted(pairs)), host, ended, finalizer, continued, historical, tuple(reviewers)
 
     def _ready(self, task_id, record, *, replayed=False, diagnostic=None):
         diagnostic = diagnostic or CallDiagnostics()
@@ -371,7 +398,7 @@ class ManagedWait:
                 observed = self.observe_safely(task_id, metadata, paths, expected=(attempt, record))
             return {"ok": True, "status": "stopped", "task_id": task_id, "observation": observed}
 
-        reader, binding, pairs, host, ended, finalizer, continued, historical = self._preflight(
+        reader, binding, pairs, host, ended, finalizer, continued, historical, collection_reviewers = self._preflight(
             task_id, arguments["reviewer_ids"], metadata, paths, diagnostic)
         diagnostic.stage = "state_create"
         diagnostic.local_state = "may_have_changed"
@@ -461,11 +488,22 @@ class ManagedWait:
                 def prepare_reviewer_reader(current_binding, current_host, reviewer):
                     if basis_digest(current_binding) != digest:
                         raise DiagnosticError("binding_changed")
+                    tracking_reader = getattr(self.owner, "_answer_tracking", None)
+                    tracked = (tracking_reader(current_binding, collection_reviewers).get(reviewer)
+                               if callable(tracking_reader) else None)
+                    if tracked is not None:
+                        # The controller pins the admitted tracking boundary,
+                        # not the latest own turn. Collection alone decides
+                        # whether a later completed answer is ready.
+                        if tracked["boundary_turn_id"] != dict(pairs).get(reviewer):
+                            raise DiagnosticError("reviewer_turn_changed")
+                        return _PreparedReviewerIdentity(reviewer, tracked["boundary_turn_id"])
                     # The preparation reread is part of this same admission;
                     # retain its outcome before startup or another host read.
                     return self._read_reviewer(current_host, reviewer, dict(pairs), finalizer)
                 session = self.owner._session(paths.review_wait_store(automation), task_id, automation,
-                    managed=True, prepare_reviewer_reader=prepare_reviewer_reader)
+                    managed=True, prepare_reviewer_reader=prepare_reviewer_reader,
+                    collection_reviewers=collection_reviewers)
                 diagnostic.stage = "prepare"
                 prepared = session.handle("prepare", {"reviewer_ids": [p[0] for p in pairs]}, metadata)
                 if prepared.get("ok") is not True:

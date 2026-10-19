@@ -1,7 +1,8 @@
-"""Select the issued protocol with real local stores and native Task basis.
+"""Preserve issued exact-turn protocol selection with real stores/native basis.
 
 Public host pages and already admitted follow-up bindings are offline fixtures;
-these tests do not establish real-host follow-up support or activate hooks.
+these tests explicitly issue legacy collection bases. New tracking issuance and
+its public pre-send arm are covered by test_review_answer_tracking_installed.
 """
 
 from contextlib import closing
@@ -38,6 +39,13 @@ C = "00000000-0000-4000-8000-000000000004"
 
 class RuntimeSelectionTests(unittest.TestCase):
     def ready(self, *, version=1, protocol=None, count=2):
+        from task_governance_tool import review_answer_continuation_preparation as continued
+        issue = continued.expected_bases
+        def legacy_bases(*args, **kwargs):
+            # Compatibility fixture at issuance, never rewrite a saved basis or
+            # weaken an assertion to reinterpret old exact-turn evidence.
+            return tuple({**basis, "version": 1} for basis in issue(*args, **kwargs))
+        self.enterContext(patch.object(continued, "expected_bases", side_effect=legacy_bases))
         fixture = self.enterContext(handoff_fixture(schema_version=30, contract=None))
         fixture.ready()
         self.fixture = fixture

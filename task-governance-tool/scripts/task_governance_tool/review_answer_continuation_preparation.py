@@ -51,7 +51,7 @@ def collection_path(paths, root, continuation_id):
 def expected_bases(repo, root, record, transition, raw, *, records_only=False):
     requests=requests_for(repo,root,record,transition,records_only=records_only)["review_requests"]
     identity=dict(continuation_id=record.continuation_id,sequence=record.sequence,selection_digest=transition.selection_digest)
-    return tuple(validate_basis(dict(version=1,preparation_id=root.preparation_id,packet_digest="sha256:"+sha256(raw).hexdigest(),
+    return tuple(validate_basis(dict(version=2,preparation_id=root.preparation_id,packet_digest="sha256:"+sha256(raw).hexdigest(),
         request_digest="sha256:"+sha256(request["request"].encode("utf-8")).hexdigest(),protocol="review-answer-v1",
         attestation="assigned-independent-review-v1",route=root.route,continuation=identity,execution_basis=record.basis)) for request in requests)
 

@@ -114,8 +114,12 @@ manually create another heartbeat.
 Exceptional same-basis supplementation/reassessment uses the
 [explicit continuation](task_workflow.md#same-basis-review-continuation), then
 waits only for the returned selected actual reviewers. Retained qualified
-judgments do not depend on their old chat turns. Within a new active occurrence,
-unexpected turn changes still invalidate waiting. A failure notice reports an
+judgments do not depend on their old chat turns. Follow its pre-send arm
+instruction for newly issued version-two collected reviews. Their dedicated
+reviewer may advance to a later answer while tracking remains current; waiting
+finishes for that reviewer only when the first valid completed answer is frozen.
+An invalid-format response is not a completed review result. Older exact-turn
+occurrences retain their unexpected-turn invalidation. A failure notice reports an
 invalidated wait and a safe next action, never PASS or Task completion. Its
 continuation/occurrence identity belongs to that outcome; an old notice or
 receiving turn cannot acknowledge the new one. Unknown send/cleanup prevents

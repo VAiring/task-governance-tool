@@ -122,6 +122,7 @@ print(json.dumps(report))
 
 
 class InstalledAnswerFinalizationTests(fixtures.PreparationFixture):
+    invoke=collection_fixture.legacy_invoke
     git=fixtures.ReviewerMaterialTests.git
     committed_fixture=fixtures.ReviewerMaterialTests.committed_fixture
     finalize=old_finalization.InstalledFinalizationTests.finalize

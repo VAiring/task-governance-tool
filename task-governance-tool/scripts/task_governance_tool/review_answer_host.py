@@ -1,8 +1,9 @@
-"""Observed public answer adapter; no transcripts, latest substitution or sends.
+"""Bounded public answer observations; no transcripts or automatic sends.
 
 Only the known public Codex own-turn enumeration is admitted. Initial creation
 context is supplied by the dispatching flow and cannot be reconstructed after
-restart from a one-turn page. Saved bindings need no new initial selection.
+restart from a one-turn page. Legacy bindings keep exact-turn recovery. Explicit
+version-two tracking follows its dedicated session until one answer is frozen.
 """
 
 import json
@@ -221,6 +222,56 @@ class PublicAnswerHost:
         turn = self._bound_turn(reviewer_session_id, turn_id)
         return dict(reviewer_session_id=reviewer_session_id, turn_id=turn_id,
                     terminal=_TERMINALS[turn["status"]], terminal_source=source("terminal_observation"))
+
+    def observe_tracking_baseline(self, reviewer_session_id):
+        """Observe the closed prior turn before an explicit continuation send."""
+        child = _uuid(reviewer_session_id)
+        _page_info, turns = _page(self._read(child, 2), child, 2)
+        turn = turns[0]
+        _content_complete(turn)
+        if turn["status"] not in ("completed", "failed", "interrupted"):
+            _fail("incomplete")
+        if turn["error"] is not None and turn["status"] == "completed":
+            _fail("incomplete")
+        return dict(turn_id=turn["id"], terminal=_TERMINALS[turn["status"]],
+                    binding_source={**source("reviewer_tracking"), "version": 2})
+
+    def observe_latest_answer(self, *, basis_digest, slot, reviewer_session_id,
+                              boundary_turn_id, boundary):
+        """Observe the latest own final under an explicitly armed dedicated session.
+
+        This is session tracking, not proof that a particular send created a
+        turn. Completed source identity is frozen by the collector, not here.
+        """
+        child, excluded = _uuid(reviewer_session_id), _uuid(boundary_turn_id)
+        if boundary not in ("inclusive", "exclusive"):
+            _fail("shape", "binding_mismatch")
+        _page_info, turns = _page(self._read(child, 2), child, 2)
+        turn = turns[0]
+        _content_complete(turn)
+        if boundary == "exclusive" and turn["id"] == excluded:
+            _fail("missing")
+        if turn["status"] != "completed" or turn["error"] is not None:
+            _fail("incomplete")
+        finals = [item for item in turn["items"] if type(item) is dict
+                  and item.get("type") == "agentMessage" and item.get("phase") == "final_answer"]
+        if len(finals) != 1:
+            _fail("missing" if not finals else "conflict")
+        item = finals[0]
+        _content_complete(item)
+        identifier = _host_id(item.get("id"))
+        if type(item.get("text")) is not str:
+            _fail("shape")
+        try:
+            raw = item["text"].encode("utf-8")
+        except UnicodeError:
+            _fail("unicode")
+        if not raw or len(raw) > 262144:
+            _fail("bound", "capacity_exceeded")
+        return dict(source_identity=dict(reviewer_session_id=child, turn_id=turn["id"], message_id=identifier),
+            answer_bytes=raw, complete=True, terminal="completed",
+            answer_source={**source("answer_observation"), "version": 2},
+            terminal_source={**source("terminal_observation"), "version": 2})
 
     def send_correction(self, **_arguments):
         # This adapter has not established native reviewer addressability and

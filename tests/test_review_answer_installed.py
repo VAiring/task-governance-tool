@@ -1,7 +1,9 @@
-"""Physical installed package: issued request -> public observation -> writer.
+"""Physical installed package: issued legacy exact-turn collection compatibility.
 
 Host pages are deterministic offline fixtures. Preparation, resolver, physical
 originals, operational journal, public CLI and core database are real.
+Issuance explicitly models basis version one; new version-two production
+issuance and the public arm path live in test_review_answer_tracking_installed.
 """
 from __future__ import annotations
 import json
@@ -9,6 +11,33 @@ import subprocess
 import sys
 
 from tests import test_review_handoff_preparation as fixtures
+
+
+LEGACY_INVOKE = r'''
+import sys
+from unittest.mock import patch
+sys.path.insert(0,sys.argv[1])
+from task_governance_tool import review_preparation as initial
+from task_governance_tool import review_answer_continuation_preparation as continued
+from task_governance_tool.review_handoff import main
+def initial_basis(**value):
+ assert set(value)=={'version','preparation_id','packet_digest','request_digest','protocol','attestation','route','continuation','execution_basis'}
+ assert value['version']==2 and value['protocol']=='review-answer-v1'
+ return {**value,'version':1}
+issue=continued.expected_bases
+def continued_bases(*args,**kwargs):
+ return tuple({**value,'version':1} for value in issue(*args,**kwargs))
+# Replace only the issuance factories before the first write. No saved request,
+# operational binding, original or Receipt is rewritten by this fixture.
+with patch.object(initial,'dict',initial_basis,create=True),patch.object(continued,'expected_bases',continued_bases):
+ raise SystemExit(main(sys.argv[2:]))
+'''
+
+
+def legacy_invoke(self, *args, raw=None, reviewer=None):
+    return subprocess.run([sys.executable, '-I', '-S', '-B', '-c', LEGACY_INVOKE,
+        str(self.install.skill_root / 'scripts'), *args], input=raw, capture_output=True,
+        cwd=self.root, check=False, env=None if reviewer is None else self.review_environment(reviewer))
 
 
 COLLECT = r'''
@@ -145,6 +174,8 @@ print(json.dumps(dict(preparation_id=root.preparation_id,states=[r['registration
 
 
 class InstalledAnswerTests(fixtures.PreparationFixture):
+    invoke = legacy_invoke
+
     def setUp(self):
         super().setUp()
         self.cli('setup','--review-answer-collection','on')

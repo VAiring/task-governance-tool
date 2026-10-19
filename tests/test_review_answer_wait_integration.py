@@ -107,6 +107,48 @@ class AnswerWaitTests(unittest.TestCase):
         self.assertFalse(fixture.session._bind_answers.call_args.kwargs["fresh_context"])
         self.assertEqual(fixture.effects, before)
 
+    def test_tracking_wait_keeps_invalid_answer_pending_and_accepts_later_turn(self):
+        fixture = self.fixture
+        later = "40000000-0000-4000-8000-000000000001"
+        state = dict(boundary_turn_id=TURN, frozen=False, source_identity=None, terminal="unknown")
+        fixture.session._answer_tracking = Mock(side_effect=lambda *_: {CHILD: dict(state)})
+        ready = [False]
+        def collect(*_args, **_kwargs):
+            if ready[0]:
+                state.update(frozen=True, terminal="completed", source_identity=dict(
+                    reviewer_session_id=CHILD, turn_id=later, message_id="new-final"))
+                return {"collected": [1], "unavailable": []}
+            return {"collected": [], "unavailable": [dict(slot=1,
+                failure=dict(**{"class": "format_invalid"}, field=None, reason="shape"))]}
+        fixture.session._collect_answers.side_effect = collect
+        fixture.child = ChildTurn(CHILD, TURN, "completed", "idle")
+        result = fixture.call()
+        self.assertTrue(result["ok"], result)
+        self.assertEqual(result["status"], "waiting")
+        fixture.current_parent = ChildTurn(PARENT, ORIGINAL, "completed", "idle")
+        fixture.until(lambda: fixture.session._collect_answers.call_count >= 3)
+        self.assertNotIn("send", fixture.effects)
+        fixture.child = ChildTurn(CHILD, later, "completed", "idle")
+        ready[0] = True
+        fixture.until(lambda: "send" in fixture.effects)
+        self.assertEqual(fixture.effects.count("create"), 1)
+        self.assertEqual(fixture.effects.count("send"), 1)
+
+    def test_frozen_tracking_result_stops_host_answer_observation(self):
+        fixture = self.fixture
+        later = "40000000-0000-4000-8000-000000000001"
+        fixture.session._answer_tracking = Mock(return_value={CHILD: dict(boundary_turn_id=TURN,
+            frozen=True, source_identity=dict(reviewer_session_id=CHILD, turn_id=later,
+                message_id="accepted-final"), terminal="completed")})
+        fixture.child = ChildTurn(CHILD, "50000000-0000-4000-8000-000000000001", "inProgress", "active")
+        result = fixture.call()
+        self.assertTrue(result["ok"], result)
+        self.assertEqual(result["status"], "reviews_ended")
+        # The normal whole-batch readback may run, but no worker follows the
+        # reviewer's incidental newer activity after an accepted answer.
+        fixture.session._collect_answers.assert_called_once()
+        self.assertEqual(fixture.effects, [])
+
 
 if __name__ == "__main__":
     unittest.main()

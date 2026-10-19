@@ -33,6 +33,10 @@ BASIS = dict(version=int, preparation_id=str, packet_digest=str, request_digest=
              attestation=str, route=str, continuation=nullable(CONTINUATION), execution_basis=EXECUTION)
 BINDING = dict(basis_digest=str, slot=int, reviewer_key=str, dispatch_id=str, parent_session_id=str,
                reviewer_session_id=str, initial_turn_id=str, binding_source=SOURCE, assignment=ASSIGNMENT)
+TRACKING = dict(kind=str, boundary=str, boundary_turn_id=str, dispatch_id=nullable(str))
+TRACKING_BINDING = {key: schema for key, schema in BINDING.items()
+                    if key not in ("dispatch_id", "initial_turn_id")}
+TRACKING_BINDING["tracking"] = TRACKING
 ORIGINAL = dict(path=str, byte_length=int, digest=str, payload_start=int, payload_length=int, payload_digest=str)
 CORRECTION_BINDING = dict(intent_id=str, initial_turn_id=str, correction_turn_id=str, source=SOURCE)
 METADATA = dict(basis=BASIS, binding=BINDING, attempt=int, source_identity=IDENTITY, original=ORIGINAL,
@@ -47,6 +51,7 @@ CORRECTION = dict(intent_id=str, initial_source_identity=IDENTITY, initial_diges
 REGISTRATION = dict(state=str, submission_digest=nullable(str), receipt_id=nullable(str))
 RECORD = dict(version=int, basis=BASIS, binding=nullable(BINDING), attempts=[ATTEMPT],
               correction=nullable(CORRECTION), registration=REGISTRATION)
+TRACKING_RECORD = {**RECORD, "binding": nullable(TRACKING_BINDING), "tracking_state": str}
 CAPTURE = dict(kind=str, consumer_continuation_id=str, consumer_slot=int, source_preparation_id=str,
                source_continuation_id=nullable(str), source_slot=int, session_id=str, source_basis_digest=str,
                original_digest=str, metadata_digest=str)
@@ -96,8 +101,10 @@ def session(value):
     require(is_session_id(value), "identity")
 
 def _source(value, operation=None):
-    require(value["adapter"] == "codex-app-tools-review-answer" and value["version"] == 1)
-    require(value["operation"] in ("dispatch_binding", "answer_observation", "terminal_observation", "correction_binding"))
+    require(value["adapter"] == "codex-app-tools-review-answer" and value["version"] in (1, 2))
+    operations = (("dispatch_binding", "answer_observation", "terminal_observation", "correction_binding")
+                  if value["version"] == 1 else ("reviewer_tracking", "answer_observation", "terminal_observation"))
+    require(value["operation"] in operations)
     require(operation is None or value["operation"] == operation)
 
 def validate_source(value, operation=None):
@@ -106,7 +113,7 @@ def validate_source(value, operation=None):
     return result
 
 def _basis(value):
-    require(value["version"] == 1 and value["protocol"] == "review-answer-v1" and value["attestation"] == "assigned-independent-review-v1")
+    require(value["version"] in (1, 2) and value["protocol"] == "review-answer-v1" and value["attestation"] == "assigned-independent-review-v1")
     identifier(value["preparation_id"], "tg_review_preparation_")
     digest(value["packet_digest"]); digest(value["request_digest"])
     require(value["route"] in ("manual", "integrated"))
@@ -151,16 +158,33 @@ def _binding(value, basis=None):
     digest(value["basis_digest"]); integer(value["slot"], 1, 8)
     key = value["reviewer_key"]
     require(bool(key) and key == key.strip() and len(key) <= 500, "bound")
-    host_id(value["dispatch_id"]); session(value["initial_turn_id"])
     session(value["parent_session_id"]); session(value["reviewer_session_id"])
     require(value["parent_session_id"] != value["reviewer_session_id"], "identity")
-    _source(value["binding_source"], "dispatch_binding"); _assignment(value["assignment"])
+    tracking = value.get("tracking")
+    if tracking is None:
+        host_id(value["dispatch_id"]); session(value["initial_turn_id"])
+        _source(value["binding_source"], "dispatch_binding")
+        require(value["binding_source"]["version"] == 1)
+    else:
+        _source(value["binding_source"], "reviewer_tracking")
+        require(value["binding_source"]["version"] == 2)
+        require(tracking["kind"] in ("initial", "continuation"))
+        session(tracking["boundary_turn_id"])
+        if tracking["kind"] == "initial":
+            require(tracking["boundary"] == "inclusive" and tracking["dispatch_id"] is not None)
+            host_id(tracking["dispatch_id"])
+        else:
+            require(tracking["boundary"] == "exclusive" and tracking["dispatch_id"] is None)
+    _assignment(value["assignment"])
     if basis is not None:
+        require((basis["version"] == 2) == (tracking is not None), "identity")
+        if tracking is not None:
+            require((basis["continuation"] is None) == (tracking["kind"] == "initial"), "identity")
         require(value["basis_digest"] == basis_digest(basis), "identity")
         require(value["parent_session_id"] == basis["execution_basis"]["parent_session_id"], "identity")
 
 def validate_binding(value, basis=None):
-    result = prepare(value, BINDING)
+    result = prepare(value, TRACKING_BINDING if type(value) is dict and "tracking" in value else BINDING)
     _binding(result, validate_basis(basis) if basis is not None else None)
     return result
 
@@ -199,8 +223,14 @@ def _metadata(value, raw=None, include_path=True):
     require(identity["reviewer_session_id"] == binding["reviewer_session_id"], "identity")
     require(value["terminal"] == "completed")
     _source(value["answer_source"], "answer_observation"); _source(value["terminal_source"], "terminal_observation")
+    require(value["answer_source"]["version"] == value["terminal_source"]["version"] == value["basis"]["version"], "identity")
     correction = value["correction_binding"]
-    if value["attempt"] == 0:
+    if value["basis"]["version"] == 2:
+        require(value["attempt"] == 0 and correction is None, "identity")
+        require(value["answer_source"]["version"] == value["terminal_source"]["version"] == 2, "identity")
+        tracking = binding["tracking"]
+        require(tracking["boundary"] != "exclusive" or identity["turn_id"] != tracking["boundary_turn_id"], "identity")
+    elif value["attempt"] == 0:
         require(correction is None and identity["turn_id"] == binding["initial_turn_id"], "identity")
     else:
         require(correction is not None, "identity")
@@ -209,7 +239,7 @@ def _metadata(value, raw=None, include_path=True):
         _source(correction["source"], "correction_binding")
 
 def validate_metadata(value, raw=None):
-    result = prepare(value, METADATA)
+    result = prepare(value, metadata_schema(value))
     _metadata(result, raw)
     return result
 
@@ -221,8 +251,15 @@ CAPTURE_IDENTITY = {k:s for k,s in CAPTURE.items() if k != "metadata_digest"}
 CAPTURE_EVIDENCE = dict(capture_identity=CAPTURE_IDENTITY, source_metadata=PUBLIC_METADATA,
                         evidence_digest=str, result_receipt_id=nullable(str))
 
+def metadata_schema(value, *, public=False):
+    schema = PUBLIC_METADATA if public else METADATA
+    basis = value.get("basis") if type(value) is dict else None
+    if type(basis) is dict and basis.get("version") == 2:
+        return {**schema, "binding": TRACKING_BINDING}
+    return schema
+
 def validate_public_metadata(value):
-    result = prepare(value, PUBLIC_METADATA)
+    result = prepare(value, metadata_schema(value, public=True))
     _metadata(result, include_path=False)
     return result
 
@@ -249,7 +286,8 @@ def capture_evidence_digest(capture_identity, source_metadata):
                          dict(capture_identity=identity, source_metadata=metadata))
 
 def validate_capture_evidence(value):
-    result = prepare(value, CAPTURE_EVIDENCE)
+    metadata = value.get("source_metadata") if type(value) is dict else None
+    result = prepare(value, {**CAPTURE_EVIDENCE, "source_metadata": metadata_schema(metadata, public=True)})
     identity, metadata = result["capture_identity"], result["source_metadata"]
     _capture_identity(identity); _metadata(metadata, include_path=False)
     continuation_value = metadata["basis"]["continuation"]
@@ -274,9 +312,13 @@ def _failure(value):
     require((value["class"] == "privacy_rejected") == (value["reason"] == "privacy"))
 
 def validate_record(value):
-    result = prepare(value, RECORD)
-    require(result["version"] == 1)
+    tracked = type(value) is dict and value.get("version") == 2
+    result = prepare(value, TRACKING_RECORD if tracked else RECORD)
+    require(result["version"] in (1, 2))
     _basis(result["basis"])
+    require(result["version"] == result["basis"]["version"], "identity")
+    if tracked:
+        return _tracking_record(result)
     binding, attempts, correction = result["binding"], result["attempts"], result["correction"]
     if binding is not None:
         _binding(binding, result["basis"])
@@ -326,6 +368,55 @@ def validate_record(value):
     require(reg["state"] in ("not_started", "dispatched", "registered", "unknown"))
     require((reg["state"] == "not_started") == (reg["submission_digest"] is None), "identity")
     require((reg["state"] == "registered") == (reg["receipt_id"] is not None), "identity")
+    if reg["submission_digest"] is not None:
+        digest(reg["submission_digest"])
+    if reg["receipt_id"] is not None:
+        identifier(reg["receipt_id"], "tg_review_receipt_")
+    return result
+
+def _tracking_record(result):
+    binding, attempts = result["binding"], result["attempts"]
+    state = result["tracking_state"]
+    require(state in ("watching", "frozen", "invalidated"))
+    require(result["correction"] is None and len(attempts) == 1, "identity")
+    if binding is not None:
+        _binding(binding, result["basis"])
+    attempt = attempts[0]
+    require(attempt["ordinal"] == 0 and attempt["observation"] in ("missing", "complete", "unavailable"))
+    identity = attempt["source_identity"]
+    if identity is None:
+        require(attempt["turn_id"] is None, "identity")
+    else:
+        _identity(identity)
+        require(binding is not None and identity["reviewer_session_id"] == binding["reviewer_session_id"]
+                and attempt["turn_id"] == identity["turn_id"], "identity")
+        tracking = binding["tracking"]
+        require(tracking["boundary"] != "exclusive" or identity["turn_id"] != tracking["boundary_turn_id"], "identity")
+    require(attempt["terminal"] in ("unknown", "in_progress", "completed", "failed", "interrupted"))
+    require((attempt["terminal"] == "unknown") == (attempt["terminal_source"] is None), "identity")
+    if attempt["terminal_source"] is not None:
+        require(identity is not None, "identity")
+        _source(attempt["terminal_source"], "terminal_observation")
+        require(attempt["terminal_source"]["version"] == 2)
+    _failure(attempt["failure"])
+    frozen = state == "frozen" or state == "invalidated" and attempt["publication"] is not None
+    if frozen:
+        require(binding is not None and identity is not None and attempt["terminal"] == "completed"
+                and attempt["observation"] == "complete" and attempt["failure"] is None
+                and attempt["publication"] is not None, "identity")
+        digest(attempt["observed_digest"])
+        publication = attempt["publication"]
+        require(publication["state"] in ("intent", "saved", "unknown"))
+        _original(publication["original"])
+        require(publication["original"]["digest"] == attempt["observed_digest"], "identity")
+    else:
+        require(attempt["publication"] is None and attempt["observed_digest"] is None, "identity")
+        require(identity is None or attempt["failure"] is not None, "identity")
+    reg = result["registration"]
+    require(reg["state"] in ("not_started", "dispatched", "registered", "unknown"))
+    require((reg["state"] == "not_started") == (reg["submission_digest"] is None), "identity")
+    require((reg["state"] == "registered") == (reg["receipt_id"] is not None), "identity")
+    require(reg["state"] == "not_started" or frozen, "identity")
     if reg["submission_digest"] is not None:
         digest(reg["submission_digest"])
     if reg["receipt_id"] is not None:

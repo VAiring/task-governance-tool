@@ -55,8 +55,12 @@ def validate_provenance_v2(provenance, *, project_id, task_id, review_receipt_id
     v.session(host["parent_session_id"]); v.session(host["reviewer_session_id"])
     v.require(host["parent_session_id"] != host["reviewer_session_id"], "identity")
     v.session(host["turn_id"]); v.host_id(host["message_id"])
-    for field, operation in (("binding_source", "dispatch_binding"), ("answer_source", "answer_observation"), ("terminal_source", "terminal_observation")):
+    adapter_version = host["binding_source"]["version"]
+    if adapter_version == 2:
+        v.require(host["attempt"] == 0)
+    for field, operation in (("binding_source", "dispatch_binding" if adapter_version == 1 else "reviewer_tracking"), ("answer_source", "answer_observation"), ("terminal_source", "terminal_observation")):
         v._source(host[field], operation)
+        v.require(host[field]["version"] == adapter_version, "identity")
     for field in ("model", "skill", "methods"):
         v.require(host[field] == dict(state="unknown", value=None, source=None))
     v.digest(result["digest"])

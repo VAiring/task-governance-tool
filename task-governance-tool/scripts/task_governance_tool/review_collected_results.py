@@ -78,6 +78,9 @@ def add_collected_review_results(connection, project, task_id, submission, *, ca
     locked = lock_and_reread_target_owner(connection, project, task_id,
         database_target=database_target, caller=caller, ownership=ownership,
         review_session=submission.items[0].session_binding)
+    if (any(type(item) is CollectedItem and item.metadata["basis"]["version"] == 2 for item in submission.items)
+            and locked["status"] not in ("in_progress", "review_pending")):
+        raise _basis_mismatch()
     if finalization_basis is not None:
         finalization_basis.require_target(database_target)
         finalization_basis.require_task(locked, task_ownership.read_basis(

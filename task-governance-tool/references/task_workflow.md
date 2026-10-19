@@ -702,14 +702,23 @@ command confirms it and uses the same registration and completion gates.
 `unable_to_review` and invalid/missing answers block completion. Preserve every
 Finding, check and limitation; never convert a rendered summary to an original.
 
+Newly issued version-two collection bases track that dedicated reviewer until
+the first valid completed answer is captured, then freeze it. A valid NG or
+unable answer also stops tracking; it is not a PASS. An invalid-format answer
+may be followed by a later corrected answer while the same review remains
+current. Do not reuse the child for unrelated work or start competing review
+requests. A changed Task/target or superseding preparation makes its old
+tracking ineligible; do not revive it by presenting an old final answer.
+Previously issued version-one bases retain their fixed-turn recovery rules.
+
 When the parent later handles ended reviews without a working wait, use the same
 tool once for missing bound answers or `save_unknown`, then continue with the
 retained command only after collection succeeds. For an interrupted save, this
 explicit call checks the saved intent and existing file without saving it again.
 If exact recovery remains unavailable, report the limitation and required
-external change, and end the ordinary turn. Do not poll, add a timer, choose a
-newest turn, replay unknown persistence, or manufacture a binding after lost
-dispatch context. Saved protocol and IDs survive restart. Old issued read/save
+external change, and end the ordinary turn. Do not poll, add a timer, replace a
+fixed/frozen answer with a newest turn, replay unknown persistence, or manufacture
+a binding after lost dispatch context. Saved protocol and IDs survive restart. Old issued read/save
 requests keep their original procedure; do not translate them into this format.
 
 ### Continue After Reviews
@@ -811,7 +820,16 @@ commit permission, intent, reviewer dispatch or host effect is authorized.
 If known cleanup is required, use the existing authorized `review_wait_stop`
 once, then reconcile the same saved request/directory. Unknown effect or worker
 exit blocks replacement; do not replay or choose another output location.
-Dispatch only the returned selected read/save requests under existing permission.
+For a newly issued version-two collected continuation, use the returned
+pre-send arm instructions: call `review_answer_collect` with the original
+Task, the selected actual reviewer IDs in order, and `action="arm"` before
+sending the returned requests. It records the prior terminal turn as excluded;
+it does not send anything. Do not arm after sending, reset an existing
+boundary, or resend after an unknown outcome. An unfinished previous turn must
+settle first. Then send only the returned selected requests under existing
+permission and use the normal wait/collection route. Valid results are frozen
+once; further reassessment needs another explicit continuation. Legacy issued
+requests keep their returned read/save instructions.
 A reconciled request returns no redispatch instructions. A fenced or settled
 transition with no Packet digest has not exposed executable requests; after known cleanup
 settles, its first ready response supplies the selected requests. Retain its new Packet,

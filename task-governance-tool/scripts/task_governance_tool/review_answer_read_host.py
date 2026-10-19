@@ -33,10 +33,10 @@ class AnswerReadHost(PublicMcpHost):
         try:
             self._metadata = protocol.strict_json_loads(protocol._encode(admit_executor_metadata(metadata)))
             reviewer = _uuid(reviewer_id, "caller_mismatch")
-            turn = _uuid(reviewer_turn_id, "caller_mismatch")
+            turn = None if reviewer_turn_id is None else _uuid(reviewer_turn_id, "caller_mismatch")
             caller_turn = hook_executor_turn_id(self._metadata)
             if (self._metadata["threadId"] != reviewer
-                    or (caller_turn is not None and caller_turn != turn)):
+                    or (turn is not None and caller_turn is not None and caller_turn != turn)):
                 raise HostAdapterError("caller_mismatch")
             if not callable(admit):
                 raise HostAdapterError("invalid_host_configuration")

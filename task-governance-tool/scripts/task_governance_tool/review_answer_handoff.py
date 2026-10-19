@@ -12,7 +12,7 @@ from pathlib import Path
 
 from . import review_handoff_transport as files
 from .review_answer import AnswerError, decode_answer
-from .review_answer_collection import CollectionService
+from .review_answer_collection import CollectionService, CollectionInvalidated
 from .review_answer_collection_repository import CollectionRepository
 from .review_answer_transport import (CollectedItem, CollectedSubmission, LegacyItem, SettledRegistrationRecovery, frame_collected_submission,
     answer_input_error)
@@ -113,6 +113,20 @@ class _CollectionAdmission:
         if sha256(files.read_bounded(files.checked_path(self.repo, self.packet_path), files.PACKET_LIMIT)).hexdigest() != self.packet_digest:
             raise _bad()
 
+    def _material(self, value):
+        """Reobserve only the governed HEAD/index target, outside core SQLite."""
+        execution = value["execution_basis"]
+        if not self.current or value["version"] != 2 or execution["target_kind"] != "git_snapshot":
+            return
+        from .git_snapshot import capture_git_snapshot
+        try:
+            snapshot = capture_git_snapshot(self.repo)
+        except Exception:
+            raise AnswerError("collection_unavailable", reason="transport_unavailable") from None
+        if (snapshot.base_revision != execution["target_base_revision"]
+                or snapshot.fingerprint != execution["target_value"]):
+            raise CollectionInvalidated()
+
     def __call__(self, value, slot):
         self._issued(value, slot)
         if self.current:
@@ -128,6 +142,7 @@ class _CollectionAdmission:
             if not self.retained:
                 self._source(self.resolution.paths, value, slot, history)
         self._packet()
+        self._material(value)
 
     def check_hook(self, value, slot, *, parent_id, validation_reuse=None):
         """One fresh native observation per hook boundary, never an effect token.
@@ -166,6 +181,7 @@ class _CollectionAdmission:
         self._preparation(resolution.paths)
         self._source(resolution.paths, value, slot, history)
         self._packet()
+        self._material(value)
 
 
 def service_for(repo, resolution, root, collection_basis, *, current=True, retained=False, enabled=None):

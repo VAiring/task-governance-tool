@@ -11,7 +11,8 @@ from .review_wait_host import read_failure, host_failure
 
 class ManagedDirectProbe(DirectProbe):
     def __init__(self, *args, finalization_factory=None, dispatch_path=None,
-                 observation_factory=None, runtime_observer=None, occurrence_guard=None, answer_collector=None, **kwargs):
+                 observation_factory=None, runtime_observer=None, occurrence_guard=None, answer_collector=None,
+                 answer_tracking=None, tracked_answer_collector=None, **kwargs):
         super().__init__(*args, **kwargs)
         self.finalization_factory = finalization_factory
         self.dispatch_path = dispatch_path
@@ -19,6 +20,8 @@ class ManagedDirectProbe(DirectProbe):
         self.runtime_observer = runtime_observer
         self.occurrence_guard = occurrence_guard
         self.answer_collector = answer_collector
+        self.answer_tracking = answer_tracking
+        self.tracked_answer_collector = tracked_answer_collector
         self._answers_collected = False
         self._finalization_prepared = False
         self.read_diagnostic = None
@@ -141,6 +144,47 @@ class ManagedDirectProbe(DirectProbe):
         finalizer = self._finalizer(controller)
         if finalizer is not None:
             finalizer.observe_reviewers((observation,))
+
+    def _tracking(self, controller, expected):
+        values = self.answer_tracking(controller) if self.answer_tracking is not None else {}
+        return values.get(expected.reviewer_id)
+
+    def _read_reviewer(self, host, controller, expected, *, terminal=False, reviewer_observer=None):
+        tracked = self._tracking(controller, expected)
+        if tracked is None:
+            return super()._read_reviewer(host, controller, expected, terminal=terminal,
+                                         reviewer_observer=reviewer_observer)
+        if tracked["boundary_turn_id"] != expected.turn_id:
+            raise DirectError("reviewer_turn_changed")
+        if not tracked["frozen"] and self.tracked_answer_collector is not None:
+            self.tracked_answer_collector(host, controller, expected.reviewer_id)
+            tracked = self._tracking(controller, expected)
+        if tracked is None or tracked["boundary_turn_id"] != expected.turn_id:
+            raise DirectError("reviewer_turn_changed")
+        if tracked["frozen"]:
+            source = tracked["source_identity"]
+            if source is None or tracked["terminal"] != "completed":
+                raise DirectError("child_status_unavailable")
+            observe = reviewer_observer or (lambda value: self._observe_reviewer(controller, value))
+            observe((expected.reviewer_id, source["turn_id"], "completed"))
+        # The collector independently observes the source. No synthetic latest
+        # turn or invented current thread activity is returned to the wait loop.
+        with self._observations_lock:
+            self._reviewer_observations.pop(expected.reviewer_id, None)
+        return None
+
+    def _reviewer_matches(self, controller, expected, child):
+        tracked = self._tracking(controller, expected)
+        if tracked is not None:
+            return tracked["boundary_turn_id"] == expected.turn_id
+        return super()._reviewer_matches(controller, expected, child)
+
+    def _reviewer_ended(self, controller, expected, child):
+        tracked = self._tracking(controller, expected)
+        if tracked is not None:
+            return (tracked["boundary_turn_id"] == expected.turn_id and tracked["frozen"]
+                    and tracked["terminal"] == "completed")
+        return super()._reviewer_ended(controller, expected, child)
 
     def _reviewers_to_observe(self, controller):
         finalizer = self._finalizer(controller)

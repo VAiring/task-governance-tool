@@ -186,21 +186,29 @@ def _new_packet(repo, target, directory, count, raw):
 def _response(repo, args, root, record, transition, *, replayed=False):
     from .review_answer_continuation_preparation import requests_for
     generated = requests_for(repo,root,record,transition,records_only=getattr(args,"records_only",False))
-    if not replayed and transition.answer_protocol == "review-answer-v1":
+    tracking = False
+    if transition.answer_protocol == "review-answer-v1":
         from .review_answer_values import basis_digest
         identity = dict(continuation_id=record.continuation_id,sequence=record.sequence,
             selection_digest=transition.selection_digest)
-        issued = tuple(basis_digest(dict(version=1,preparation_id=root.preparation_id,
+        def issued(version):
+            return tuple(basis_digest(dict(version=version,preparation_id=root.preparation_id,
             packet_digest="sha256:"+transition.packet_digest,
             request_digest="sha256:"+sha256(request["request"].encode("utf-8")).hexdigest(),
             protocol="review-answer-v1",attestation="assigned-independent-review-v1",route=root.route,
             continuation=identity,execution_basis=record.basis)) for request in generated["review_requests"])
-        if issued != transition.collection_basis_digests:
+        tracking = issued(2) == transition.collection_basis_digests
+        if not replayed and not tracking and issued(1) != transition.collection_basis_digests:
             files.fail("review_continuation_conflict")
     generated.update(continuation_id=record.continuation_id, continuation_sequence=record.sequence,
         preparation_id=root.preparation_id, route=root.route, basis=record.basis, replayed=replayed)
     if replayed:
         generated["review_requests"] = []  # Recovery is not redispatch authority.
+    if tracking:
+        generated["answer_collection_arm"] = dict(tool="review_answer_collect",
+            arguments=dict(action="arm", task_id=record.basis["task_id"],
+                reviewer_ids=[choice.session_id for choice in record.selected]),
+            instruction="Before sending these continuation requests, call this arm operation once. It requires each dedicated reviewer to have ended its previous turn and excludes that turn. An existing arm is reused unchanged. After confirmed arming, send each request to its same reviewer and use the existing collect/wait route. Unknown send results do not authorize resending; collection proves only the observed post-boundary answer, not delivery of a particular message.")
     if root.route == "integrated":
         generated.pop("submit_command", None)
         generated["finalization_command"] = preparation._shell([sys.executable, "-B", str(preparation.Path(__file__).parent.parent / "review_handoff.py"),

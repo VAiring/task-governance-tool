@@ -43,9 +43,9 @@ class _CollectedReader:
     def hostid(self, value):
         self.pattern(value, r"[A-Za-z0-9][A-Za-z0-9._:/+\-]{0,255}")
 
-    def source(self, value, operation):
+    def source(self, value, operation, version=1):
         value=self.obj(value,"adapter version operation")
-        self.number(value["version"],1,1)
+        self.number(value["version"],version,version)
         self.need(value["adapter"] == "codex-app-tools-review-answer" and value["operation"] == operation)
 
     def assignment(self, value):
@@ -108,28 +108,44 @@ class _CollectedReader:
         value=self.obj(value,"basis binding attempt source_identity original answer_source terminal terminal_source correction_binding")
         self.need(len(self.api.canonical_json_bytes(value))<=32768)
         basis=self.obj(value["basis"],"version preparation_id packet_digest request_digest protocol attestation route continuation execution_basis")
-        self.number(basis["version"],1,1);self.tool(basis["preparation_id"],"tg_review_preparation_")
+        self.number(basis["version"],1,2);self.tool(basis["preparation_id"],"tg_review_preparation_")
         self.api._digest(basis["packet_digest"]);self.api._digest(basis["request_digest"])
         self.need(basis["protocol"]=="review-answer-v1" and basis["attestation"]=="assigned-independent-review-v1" and basis["route"] in ("manual","integrated"))
         execution=self.execution(basis["execution_basis"])
         if basis["continuation"] is not None:
             cont=self.obj(basis["continuation"],"continuation_id sequence selection_digest")
             self.tool(cont["continuation_id"],"tg_review_continuation_");self.number(cont["sequence"],1,64);self.pattern(cont["selection_digest"],r"[0-9a-f]{64}")
-        binding=self.obj(value["binding"],"basis_digest slot reviewer_key dispatch_id parent_session_id reviewer_session_id initial_turn_id binding_source assignment")
+        tracking=basis["version"]==2
+        fields="basis_digest slot reviewer_key parent_session_id reviewer_session_id binding_source assignment "
+        binding=self.obj(value["binding"],fields+("tracking" if tracking else "dispatch_id initial_turn_id"))
         self.need(binding["basis_digest"]==self.api._domain_digest(b"taskgov-review-answer-basis-v1\0",basis))
         self.number(binding["slot"],1,8);self.text(binding["reviewer_key"],500)
         self.need(binding["reviewer_key"]==binding["reviewer_key"].strip())
-        self.hostid(binding["dispatch_id"]);self.sid(binding["initial_turn_id"]);self.sid(binding["parent_session_id"]);self.sid(binding["reviewer_session_id"])
+        self.sid(binding["parent_session_id"]);self.sid(binding["reviewer_session_id"])
+        if tracking:
+            window=self.obj(binding["tracking"],"kind boundary boundary_turn_id dispatch_id")
+            self.need(window["kind"] in ("initial","continuation"))
+            self.sid(window["boundary_turn_id"])
+            self.need((basis["continuation"] is None)==(window["kind"]=="initial"))
+            if window["kind"]=="initial":
+                self.need(window["boundary"]=="inclusive");self.hostid(window["dispatch_id"])
+            else:
+                self.need(window["boundary"]=="exclusive" and window["dispatch_id"] is None)
+        else:
+            self.hostid(binding["dispatch_id"]);self.sid(binding["initial_turn_id"])
         self.need(binding["parent_session_id"]==execution["parent_session_id"] and binding["parent_session_id"]!=binding["reviewer_session_id"])
-        self.source(binding["binding_source"],"dispatch_binding");self.assignment(binding["assignment"])
+        self.source(binding["binding_source"],"reviewer_tracking" if tracking else "dispatch_binding",basis["version"]);self.assignment(binding["assignment"])
         identity=self.obj(value["source_identity"],"reviewer_session_id turn_id message_id")
         self.sid(identity["turn_id"]);self.hostid(identity["message_id"])
         self.need(identity["reviewer_session_id"]==binding["reviewer_session_id"])
         self.original(value["original"]);self.number(value["attempt"],0,1)
         self.need(value["terminal"]=="completed")
-        self.source(value["answer_source"],"answer_observation");self.source(value["terminal_source"],"terminal_observation")
+        self.source(value["answer_source"],"answer_observation",basis["version"]);self.source(value["terminal_source"],"terminal_observation",basis["version"])
         correction=value["correction_binding"]
-        if value["attempt"]==0:
+        if tracking:
+            self.need(value["attempt"]==0 and correction is None)
+            self.need(window["boundary"]!="exclusive" or identity["turn_id"]!=window["boundary_turn_id"])
+        elif value["attempt"]==0:
             self.need(correction is None and identity["turn_id"]==binding["initial_turn_id"])
         else:
             correction=self.obj(correction,"intent_id initial_turn_id correction_turn_id source")
@@ -153,7 +169,10 @@ def validate_collected_provenance(value, project_id, task_id, target, receipt, a
     api._digest(h["basis_digest"]);c.tool(h["preparation_id"],"tg_review_preparation_");c.number(h["slot"],1,8);c.number(h["attempt"],0,1)
     for field in ("parent_session_id","reviewer_session_id","turn_id"):c.sid(h[field])
     c.need(h["parent_session_id"]!=h["reviewer_session_id"]);c.hostid(h["message_id"])
-    for field,operation in (("binding_source","dispatch_binding"),("answer_source","answer_observation"),("terminal_source","terminal_observation")):c.source(h[field],operation)
+    source=c.obj(h["binding_source"],"adapter version operation")
+    version=source["version"];c.number(version,1,2)
+    if version==2:c.need(h["attempt"]==0)
+    for field,operation in (("binding_source","reviewer_tracking" if version==2 else "dispatch_binding"),("answer_source","answer_observation"),("terminal_source","terminal_observation")):c.source(h[field],operation,version)
     for field in ("model","skill","methods"):
         fact=c.obj(h[field],"state value source")
         c.need(fact==dict(state="unknown",value=None,source=None))

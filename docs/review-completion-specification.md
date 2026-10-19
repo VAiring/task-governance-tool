@@ -408,7 +408,7 @@ returns an empty failed-registration result or authorizes resubmission. A
 transaction exit that fails before confirming commit remains unconfirmed;
 creating response data inside that transaction is not commit evidence.
 
-Retain at most two attempts per slot. A privacy-admissible complete answer's
+Version-one collection retains at most two attempts per slot. A privacy-admissible complete answer's
 observed digest survives semantic format failure; syntax/shape that prevents
 privacy admission and rejected privacy retain only source identity and fixed
 failure metadata, never body/hash or a correction intent. Such a failed arrival
@@ -416,6 +416,17 @@ is not duplicate success. Equal known source/digest is idempotent; a changed
 source or digest latches conflict without replacing the first original. Each
 publication compares to its own attempt's digest; a correction's initial digest
 compares only to ordinal zero. Unknown effects are inspected, never replayed.
+
+Newly issued collection bases use version two: dedicated-reviewer tracking
+until the first successfully observed, valid, completed answer. This is the
+first answer admitted by observation, not a claim to find the chronologically
+first answer in inaccessible history. A valid `changes_requested` or
+`unable_to_review` is also a result: freeze it and stop tracking; it does not
+satisfy the PASS gate. Format-invalid responses are not adopted. Retain only
+bounded sanitized failure/source facts while awaiting a later answer, without
+an automatic correction send. A frozen answer is never replaced by a newer
+turn. Further review requires an explicit new continuation; prior results and
+Findings retain their history and existing reassessment rules.
 
 Failure classes remain distinct through hook, helper, CLI and parent report:
 `format_invalid`, `privacy_rejected`, `capacity_exceeded`,
@@ -453,7 +464,8 @@ successful call cannot guarantee a connection through an arbitrary later Hook.
 The complete instruction is fixed before the request digest; saved requests
 are never rewritten. Legacy requests retain their issued procedure.
 
-Adapter `codex-app-tools-review-answer/1` admits an initial binding only for a
+Adapter `codex-app-tools-review-answer/1`, retained for issued version-one
+bases, admits an initial binding only for a
 new dedicated child created by this exact parent turn's public `started`
 dispatch. The flow retains its pre-binding creation context, issues no further
 request to that child and rejects reuse, `interacted`, known competing sends or
@@ -476,7 +488,7 @@ superseded selected request. The
 and exact retained-original capture/registration remain available; retained or
 historical read admission never authorizes fresh collection for an obsolete slot.
 
-Answer recovery is at most one public `read_thread` call per missing slot,
+Version-one answer recovery is at most one public `read_thread` call per missing slot,
 with `hostId=local`, fixed `turnLimit=2`, `includeOutputs=false`,
 `maxOutputCharsPerItem=256` and no cursor. Select only the saved turn ID and
 exactly one `agentMessage` with `phase=final_answer`; if a message ID is already
@@ -500,9 +512,59 @@ Reused-session continuation likewise cannot use fresh-child admission; without
 an independently admitted exact follow-up binding, collection is unavailable.
 No implementation or fixture PASS certifies real-host follow-up support.
 
+Version-two tracking preserves the initial dedicated-child assignment proof
+above, but does not require each subsequent response to be paired with an
+observed parent dispatch. It fixes the actual reviewer, complete current basis,
+and a turn boundary before selecting an answer. Initial assignment includes
+its admitted sole own turn. For a new continuation the parent first invokes
+`review_answer_collect` with `action="arm"`, before sending the returned
+continuation request. This observes that same dedicated reviewer's latest
+terminal own turn and saves it as an exclusive boundary. An in-progress
+baseline cannot arm a continuation. No timestamp or unknown send outcome is
+used to manufacture this boundary. A retained strict version-one assignment
+may establish dedication for a new version-two continuation; an arbitrary
+legacy session without that proof cannot.
+
+Arming is idempotent for the same issued slot and never moves its boundary.
+It sends no reviewer message. An unknown arm or send outcome is inspected
+rather than replayed; an after-send observation cannot establish the required
+pre-send boundary. Already issued version-one bases keep their original
+semantics and bytes. No runtime update silently upgrades an outstanding slot.
+
+While watching, one bounded public observation per slot examines the newest
+own turn and its unique final answer. A running, failed, interrupted, excluded,
+missing, clipped or invalid answer cannot be adopted. The reviewer chat is
+dedicated to this review; only one issued selection is active for that reviewer.
+No private transcript, pagination, unbounded history scan or extra timer is
+introduced. Format validation alone is not a PASS decision. The first admitted
+valid completed response is frozen under the collection lease with its actual
+turn/message identity before publication. All later calls use that frozen
+identity and saved original, not a fresh latest-answer selection. Existing
+publication/registration uncertainty rules prevent replacement and replay.
+
+Tracking must remain current through observation, adoption, publication and
+registration. Completion through another route, inactive Task/ownership,
+changed Contract/execution/target or reviewed material, a superseding
+preparation, and replacement of that reviewer's issued selection prevent late
+answers from affecting the current result. A proven reviewed-material mismatch
+during collection closes that slot even if material is later restored;
+read-only inspection rejects the mismatch without changing state. Transient transport failure is not
+a new result or permission to reset an old slot. Unselected required reviewers
+and qualified retained PASS results keep their existing continuation exception.
+Registration serializes the current preparation with source admission and
+rechecks native eligibility under the writer; a newer review cannot slip
+between admission and commit. Explicit reassessment creates a new watching
+slot with a new boundary; it never overwrites the frozen predecessor.
+
 The project-owned MCP `review_answer_collect` is a separate bounded collection
 entry, not an external host API. Its arguments have exactly one of two closed
-arms: `{event}` or `{task_id,reviewer_ids}`. Event has exactly
+arms: `{event}` or `{task_id,reviewer_ids}`; the parent arm additionally admits
+only optional `action="arm"` for a new version-two continuation's pre-send
+boundary. Omitting action performs ordinary collection, never implicit arming
+of an unbound continuation. Successful arming returns exactly
+`{ok:true,status:"armed",task_id,bound:true,reviewer_ids}` for those actual
+reviewers; this confirms only the saved observation boundary, not message
+delivery or a review result. Event has exactly
 `hook_event_name="SubagentStop"`, `session_id`, `agent_id`, `turn_id` and
 Boolean `stop_hook_active`; UUIDs are identity hints only. It can select only
 an already admitted parent/reviewer slot. Hook `turn_id` never substitutes for
@@ -511,26 +573,32 @@ the saved assigned turn, and no unbound answer body is retained.
 The genuine MCP executor thread must be the saved parent or saved reviewer.
 A hook may omit executor-turn metadata: this permits only recovery through an
 independently admitted saved assignment, never fresh dispatch binding. A supplied
-executor turn retains all shape, alias and conflict checks; for a reviewer
-executor it must equal the saved active attempt's turn. One current issued slot
-must bind that reviewer to the event's parent. For that reviewer-origin call,
-pin its complete basis, binding, active attempt ordinal and turn, and revalidate them before
-collection, each host read and publication. An attempt changed during the call
-is rejected rather than followed. Event identities alone grant no admission;
+executor turn retains all shape, alias and conflict checks; for a version-one
+reviewer executor it must equal the saved active attempt's turn. One current
+issued slot must bind that reviewer to the event's parent. For that reviewer-origin call,
+pin its complete basis, binding and active attempt; pin the exact turn for
+version one or an already frozen version-two answer. Revalidate these before
+collection, each host read and publication. A watching version-two slot may
+observe only its assigned reviewer beyond its admitted boundary; any supplied
+reviewer executor turn is validated but is not an answer selector. A changed
+issued selection or version-one active attempt is rejected rather than followed.
+Event identities alone grant no admission;
 missing, ambiguous, stale or conflicting bindings fail closed. The reviewer
-route can only read its own bound answer through the fixed two-turn public
+route can only read its own assigned answer through the fixed two-turn public
 observation. It cannot bind a new slot, reconcile publication, send a message,
 manage waiting, register results or complete a Task. Forward genuine executor
 metadata unchanged; never impersonate the parent. Parent controls retain their
 existing ownership checks.
 
-The synchronous hook may observe a complete final answer before its bound turn
+For version one, the synchronous hook may observe a complete final answer before its bound turn
 has ended. Its neutral success confirms only valid original publication and
 exact readback; it does not assert terminal completion. Pending terminal state
 remains pending. Parent/wait collection and every registration admission still
 require independently observed `completed`; failed or interrupted turns never
 qualify. This hook-only distinction changes no conflict, privacy, current-basis
 or unresolved-publication check and performs no extra terminal poll.
+Version-two tracking leaves such an in-progress response unadopted; a later
+existing parent/wait observation may freeze it only after completed is observed.
 
 The parent arm names the original Task and one through eight distinct actual
 reviewer UUIDs. Parent, wait and hook collection resolve each reviewer against
@@ -547,8 +615,9 @@ metadata independently establishes the current parent and turn. Immediately
 after dispatch, before ending that parent turn, this arm may persist exact new
 child bindings under the strict started/sole-own-turn rule above; a prior
 request, reused/interacted child, missing creation context or known conflict
-prevents fresh admission. Later calls may only reuse saved exact bindings and
-recover missing answers once. Normal wait already performs binding/collection;
+prevents fresh initial admission. Later calls reuse saved exact bindings or
+version-two tracking assignments and recover/observe missing answers once.
+Only explicit pre-send arm admits a new continuation boundary. Normal wait already performs binding/collection;
 the separate parent arm serves authorized workerless preparation or explicit
 missing-source recovery, not an additional parent poll. It also reconciles an
 interrupted publication only against its saved intent, exact prepared path and
@@ -862,7 +931,14 @@ same-generation fresh-review blocker, never its original row or an open Finding.
 
 Ready/recovery responses identify `continuation_id`, sequence, route,
 `retained_receipt_ids`, selected requests and one route-specific submit/finalize
-command. Repeated selection reconciles the admitted operation; it never grants
+command. A version-two collected continuation also supplies
+`answer_collection_arm`, exactly `{tool,arguments,instruction}`: tool is
+`review_answer_collect`, arguments are exactly `{action:"arm",task_id,
+reviewer_ids}` with the original Task and ordered selected actual reviewers,
+and instruction explains the required pre-send observation boundary and
+unknown-send limitation. This guidance authorizes neither a send nor a replay;
+the caller follows the existing review authorization. It is absent for legacy
+and issued version-one continuations. Repeated selection reconciles the admitted operation; it never grants
 permission to rewrite files or resend a reviewer request.
 An existing `fenced` or `settled` transition with no Packet digest proves that executable requests have
 not yet been published. After its known cleanup settles, the first ready

@@ -13,7 +13,7 @@ from typing import Callable
 from .review_answer import AnswerError
 from .review_answer_host import _uuid
 from .review_answer_hook import collect_event
-from .review_answer_values import basis_digest, validate_binding
+from .review_answer_values import basis_digest, validate_binding, validate_source
 
 
 def _fail(reason="identity"):
@@ -46,7 +46,7 @@ def bind_initial(service, host, reviewer_ids, *, creation_context=False,
         _fail()
     missing = []
     for slot, (record, child, key, assignment) in enumerate(zip(records, children, keys, assignments), 1):
-        service.admit_basis(record["basis"], slot)
+        service.check_basis(record["basis"], slot)
         binding = record["binding"]
         if binding is None:
             missing.append(slot)
@@ -65,9 +65,21 @@ def bind_initial(service, host, reviewer_ids, *, creation_context=False,
         if (type(fact) is not dict or set(fact) != {"dispatch_id", "parent_session_id", "reviewer_session_id", "initial_turn_id", "source"}
                 or fact["reviewer_session_id"] != child):
             _fail()
-        binding = validate_binding(dict(basis_digest=basis_digest(record["basis"]), slot=slot,
-            reviewer_key=key, dispatch_id=fact["dispatch_id"], parent_session_id=fact["parent_session_id"],
-            reviewer_session_id=child, initial_turn_id=fact["initial_turn_id"], binding_source=fact["source"], assignment=assignment), record["basis"])
+        common = dict(basis_digest=basis_digest(record["basis"]), slot=slot,
+            reviewer_key=key, parent_session_id=fact["parent_session_id"], reviewer_session_id=child,
+            assignment=assignment)
+        if record["basis"]["version"] == 2:
+            from .review_answer_collection import source
+            validate_source(fact["source"], "dispatch_binding")
+            if fact["source"]["version"] != 1:
+                _fail()
+            common.update(tracking=dict(kind="initial", boundary_turn_id=fact["initial_turn_id"],
+                boundary="inclusive", dispatch_id=fact["dispatch_id"]),
+                binding_source={**source("reviewer_tracking"), "version": 2})
+        else:
+            common.update(dispatch_id=fact["dispatch_id"], initial_turn_id=fact["initial_turn_id"],
+                          binding_source=fact["source"])
+        binding = validate_binding(common, record["basis"])
         if record["binding"] is not None and record["binding"] != binding:
             _fail("conflict")
         candidates.append(binding)
@@ -119,13 +131,13 @@ def collect_hook_event(event, *, service, host):
 
 @dataclass(frozen=True)
 class ReviewerHookAdmission:
-    turn_id: str
+    turn_id: str | None
     check: Callable[[], None]
 
 
 @contextmanager
 def reviewer_hook_admission(service, parent_id, reviewer_id, turn_id, *, admit_current):
-    """Limit one genuine reviewer executor to its already assigned active turn.
+    """Limit one genuine reviewer executor to its saved reviewer assignment.
 
     The event only locates a candidate. Existing current-basis admission and
     validated saved records provide the independent parent/slot/source binding.
@@ -164,11 +176,12 @@ def reviewer_hook_admission(service, parent_id, reviewer_id, turn_id, *, admit_c
             _fail()
         return ordinal, _uuid(row["attempts"][ordinal]["turn_id"])
 
-    # A missing hook executor turn does not make the active attempt movable.
-    # Pin the independently saved source for this entire call, including checks
-    # after helper initialization and under the original-publication lease.
-    saved_source = active_source(initial)
-    if caller_turn is not None and caller_turn != saved_source[1]:
+    # Pin the saved assignment for this call and the exact attempt for v1.
+    # Tracking v2 observes the latest answer without attributing it to the
+    # caller's hook turn. Recheck after helper initialization and under lease.
+    tracking = initial["basis"]["version"] == 2
+    saved_source = None if tracking else active_source(initial)
+    if not tracking and caller_turn is not None and caller_turn != saved_source[1]:
         raise HostAdapterError("caller_mismatch")
 
     validation_reuse = DatabaseValidationReuse()
@@ -182,7 +195,7 @@ def reviewer_hook_admission(service, parent_id, reviewer_id, turn_id, *, admit_c
             current_slot, row = selected()
             if current_slot != slot or row["basis"] != saved_basis or row["binding"] != saved_binding:
                 _fail()
-            if active_source(row) != saved_source:
+            if not tracking and active_source(row) != saved_source:
                 raise HostAdapterError("caller_mismatch")
         except BaseException:
             validation_reuse.clear()
@@ -195,9 +208,10 @@ def reviewer_hook_admission(service, parent_id, reviewer_id, turn_id, *, admit_c
         check()
 
     try:
-        check()
         service.admit_basis = admitted
-        yield ReviewerHookAdmission(turn_id=saved_source[1], check=check)
+        service.check_basis(saved_basis, slot)
+        yield ReviewerHookAdmission(turn_id=None if tracking else saved_source[1],
+                                    check=lambda: service.check_basis(saved_basis, slot))
     finally:
         validation_reuse.clear()
         service.admit_basis = current_admission
@@ -329,7 +343,7 @@ def sources_for_reviewers(repo, skill, binding, reviewer_ids):
                 _fail()
         else:
             _fail()
-        service.admit_basis(records[slot - 1]["basis"], slot)
+        service.check_basis(records[slot - 1]["basis"], slot)
         order.append((1 if initial and relevant else 0, slot))
         grouped.setdefault(initial, []).append((child, slot, position))
     if None in grouped:
@@ -354,8 +368,104 @@ def bind_sources(group, host, *, creation_context=False):
     for child, slot, row in zip(group.reviewer_ids, group.source_slots, selected):
         if row["binding"]["reviewer_session_id"] != child:
             _fail()
-        group.service.admit_basis(row["basis"], slot)
+        group.service.check_basis(row["basis"], slot)
     return selected
+
+
+def arm_sources(group, host, *, repo, skill, binding):
+    """Arm only a newly issued tracking continuation before its follow-up send.
+
+    Its reviewer must already have an admitted dedicated initial assignment.
+    Repeating arm reuses the immutable baseline without another host read.
+    """
+    context = _source_context(repo, skill, binding)
+    if context is None:
+        _fail()
+    initial = _source_service(repo, skill, context, initial=True)
+    if initial is None:
+        _fail()
+    root = context[1]
+    originals = initial.repository.read()
+    records = group.service.repository.read()
+    candidates = []
+    for child, slot in zip(group.reviewer_ids, group.source_slots):
+        row = records[slot - 1]
+        group.service.check_basis(row["basis"], slot)
+        if row["basis"]["version"] != 2 or row["basis"]["continuation"] is None:
+            _fail()
+        if row["binding"] is not None:
+            if row["binding"]["reviewer_session_id"] != child:
+                _fail()
+            candidates.append((slot, row["binding"]))
+            continue
+        prior = [(original_slot, item) for original_slot, item in enumerate(originals, 1)
+                 if item["binding"] is not None and item["binding"]["reviewer_session_id"] == child]
+        if len(prior) != 1:
+            _fail()
+        original_slot, original = prior[0]
+        # An initial source can remain proof of dedication after its reviewer
+        # is selected again, without being eligible for fresh collection. Pin
+        # that historical assignment to issuance, never to its own journal.
+        if (original_slot > len(root.collection_bases)
+                or original["basis"] != root.collection_bases[original_slot - 1]):
+            _fail()
+        previous = original["binding"]
+        if (original["basis"]["execution_basis"] != row["basis"]["execution_basis"]
+                or previous["parent_session_id"] != binding.parent_thread_id
+                or original["basis"]["continuation"] is not None):
+            _fail()
+        if original["basis"]["version"] == 2 and previous["tracking"]["kind"] != "initial":
+            _fail()
+        observed = host.observe_tracking_baseline(child)
+        if (type(observed) is not dict or set(observed) != {"turn_id", "terminal", "binding_source"}
+                or observed["terminal"] not in ("completed", "failed", "interrupted")):
+            _fail()
+        _uuid(observed["turn_id"])
+        validate_source(observed["binding_source"], "reviewer_tracking")
+        if observed["binding_source"]["version"] != 2:
+            _fail()
+        candidate = dict(basis_digest=basis_digest(row["basis"]), slot=slot,
+            reviewer_key=previous["reviewer_key"], parent_session_id=binding.parent_thread_id,
+            reviewer_session_id=child, assignment=deepcopy(previous["assignment"]),
+            tracking=dict(kind="continuation", boundary_turn_id=observed["turn_id"],
+                boundary="exclusive", dispatch_id=None), binding_source=observed["binding_source"])
+        candidates.append((slot, validate_binding(candidate, row["basis"])))
+    for slot, candidate in candidates:
+        group.service.bind(slot, candidate)
+    return tuple(group.service.repository.read()[slot - 1] for slot in group.source_slots)
+
+
+def bound_turn(record):
+    """Occurrence identity; a tracking boundary is not an accepted answer turn."""
+    if record["basis"]["version"] == 2:
+        return record["binding"]["tracking"]["boundary_turn_id"]
+    return record["attempts"][-1]["turn_id"]
+
+
+def tracking_for_reviewers(repo, skill, binding, reviewer_ids):
+    groups = sources_for_reviewers(repo, skill, binding, reviewer_ids)
+    result = {}
+    for group in groups or ():
+        records = group.service.repository.read()
+        for child, slot in zip(group.reviewer_ids, group.source_slots):
+            row = records[slot - 1]
+            if row["basis"]["version"] != 2:
+                continue
+            group.service.check_basis(row["basis"], slot)
+            if row["tracking_state"] == "invalidated":
+                _fail()
+            if row["binding"] is None:
+                if row["basis"]["continuation"] is not None:
+                    _fail()
+                # Optional initial collection can be unavailable while the
+                # ordinary exact-turn wait still has an admitted reviewer.
+                continue
+            attempt = row["attempts"][0]
+            result[child] = dict(boundary_turn_id=bound_turn(row),
+                frozen=row["tracking_state"] == "frozen",
+                source_identity=deepcopy(attempt["source_identity"]),
+                terminal=attempt["terminal"])
+    return result
 
 
 def collect_sources(group, host, *, explicit_recovery=False):

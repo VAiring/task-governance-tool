@@ -280,9 +280,9 @@ class DirectProbe:
                     child = self._read_reviewer(host, controller, expected)
                     if self._halt_wait(record, monotonic_deadline):
                         return
-                    if child.child_id != expected.reviewer_id or child.turn_id != expected.turn_id:
+                    if not self._reviewer_matches(controller, expected, child):
                         raise DirectError("reviewer_turn_changed")
-                    all_ended = _terminal(child) and all_ended
+                    all_ended = self._reviewer_ended(controller, expected, child) and all_ended
                 if self._halt_wait(record, monotonic_deadline):
                     return
                 parent = host.read_parent()
@@ -327,6 +327,12 @@ class DirectProbe:
         """Legacy waits have no integrated result journal."""
         return None
 
+    def _reviewer_matches(self, controller, expected, child):
+        return child.child_id == expected.reviewer_id and child.turn_id == expected.turn_id
+
+    def _reviewer_ended(self, controller, expected, child):
+        return self._reviewer_matches(controller, expected, child) and _terminal(child)
+
     def _parent_ready(self, parent, controller, record, *, require_idle=True):
         """The explicit legacy experiment remains fixed to its starting turn."""
         if (parent.child_id != controller.binding.parent_thread_id
@@ -364,8 +370,7 @@ class DirectProbe:
                 return False
             child = self._read_reviewer(host, controller, expected, terminal=True,
                                        reviewer_observer=reviewer_observer)
-            exact_terminal = (child.child_id == expected.reviewer_id and child.turn_id == expected.turn_id
-                              and _terminal(child))
+            exact_terminal = self._reviewer_ended(controller, expected, child)
             if not exact_terminal:
                 raise DirectError("reviewer_turn_changed")
         if self._halt_wait(record, monotonic_deadline):

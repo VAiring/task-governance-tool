@@ -234,7 +234,7 @@ class InstalledAnswerTrackingTests(fixtures.PreparationFixture):
 
     def bind_pending(self):
         observed = self.collect_public([arrival(1, status="inProgress"), arrival(2, status="inProgress")])
-        self.assertTrue(observed["response"]["bound"], observed)
+        self.assertTrue(observed["response"].get("bound"), observed)
         self.assertEqual(observed["response"]["collected"], [])
         self.assertTrue(all(not (self.root / path).exists() for path in self.initial_paths))
 

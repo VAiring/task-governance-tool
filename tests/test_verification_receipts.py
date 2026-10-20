@@ -25,6 +25,7 @@ from tests.verification_receipt_test_support import (
 
 from task_governance_tool import cli as cli_module
 from task_governance_tool import review_packet as packet_module
+from task_governance_tool import review_verification as verification_context
 from task_governance_tool import verification_receipts as receipt_service
 from task_governance_tool.storage import verification_expectation_digest
 from task_governance_tool.verification_receipts import (
@@ -545,7 +546,10 @@ class ReceiptPacketConnectionTests(unittest.TestCase):
             repo, db = initialize(Path(temp))
             task_id = add_task(db, repo)["task_id"]
             generation = set_target(db, repo, task_id)
-            with mock.patch.object(cli_module, "add_verification_receipt",
+            recorded_at = "2026-10-21T00:00:00Z"
+            prepared_at = "2026-10-21T00:00:01Z"
+            with mock.patch.object(verification_context, "utc_now", return_value=recorded_at), \
+                 mock.patch.object(cli_module, "add_verification_receipt",
                                    wraps=cli_module.add_verification_receipt) as write, \
                  mock.patch.object(cli_module, "prepare_review_packet",
                                    wraps=cli_module.prepare_review_packet) as prepare:
@@ -563,8 +567,17 @@ class ReceiptPacketConnectionTests(unittest.TestCase):
             self.assertEqual(packet["review_target"]["base_revision"] or None,
                              data["receipt"]["source_revision"]["base_revision"])
             before = db.read_bytes()
-            separate = self.prepare(db, repo, task_id)
-            self.assertEqual(payload(separate)["data"], packet)
+            with mock.patch.object(verification_context, "utc_now", return_value=prepared_at):
+                separate = self.prepare(db, repo, task_id)
+            self.assertEqual(packet["verification_evidence"]["observed_at"], recorded_at)
+            # Each Packet owns its observation time; all other fields must
+            # still match exactly across these independent read operations.
+            self.assertEqual(payload(separate)["data"], {
+                **packet,
+                "verification_evidence": {
+                    **packet["verification_evidence"], "observed_at": prepared_at,
+                },
+            })
             self.assertEqual(db.read_bytes(), before)
             # A representative segment: both service operations remain, but the
             # caller receives one CLI response instead of two. Byte counts are

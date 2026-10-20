@@ -20,7 +20,7 @@ from .task_values import validate_task_id
 PROTOCOL = "review-answer-v1"
 ATTESTATION = "assigned-independent-review-v1"
 INSTRUCTIONS = (
-    "Review the complete exact target under the current governing authority. Use the supplied material and verification guidance; recover only missing fixed-target content.",
+    "Review the complete exact target under the current governing authority. Inspect every changed entry and its complete diff, then the affected context, dependencies and governing sections needed for judgment. Complete before/after file bodies are not a blanket prerequisite; follow project mandatory reading rules and expand to full files when needed. Use the supplied material and verification guidance; recover only missing required fixed-target content.",
     "Return one final JSON object with exactly verdict, summary, findings, checks, limitations. Do not save a result file, submit a Receipt or include Taskgov bookkeeping.",
     "verdict is pass, changes_requested or unable_to_review. summary is a nonempty sanitized explanation of at most 1000 characters. findings is an array of at most 64 objects, each with severity (high, medium or low) and a nonempty summary of at most 1000 characters. Preserve every finding.",
     "checks and limitations are arrays of at most 32 nonempty sanitized strings each, at most 1000 characters per string. Describe checks actually performed and actual limitations; an empty array explicitly states no entries. Do not include commands, logs, secrets, prompts or transcripts.",

@@ -2553,11 +2553,18 @@ permitted, and independent quality judgment remains required.
 `changes_command`, `inventory_command` and conditional `recovery_command`.
 Use collection for the first needed AGENTS, authority, source and test reads.
 Replace only its JSON-array placeholder with dependency paths still needed
-(`[]` for none). Known paths need no inventory. Before/after bodies and diffs
-are automatic; follow the returned governing routes and discovered dependencies.
+(`[]` for none). Known paths need no inventory. Collection supplies changed
+mappings, bounded bodies and diffs. Inspect the complete change list and every
+complete diff, including additions, deletions, renames and mode changes, then
+follow affected code, dependencies and governing sections. Whole-file add/delete
+diffs require their referenced body. Obtain needed before/after context; complete
+before/after file bodies are not a blanket prerequisite. Follow project mandatory
+reading rules and expand to full files when needed.
 Reuse only complete bodies whose immutable object ID or exact revision/path
 matches this target. A filename, summary or unknown/truncated delivery is not
-that match. Preserve required sides/diffs and project reread obligations.
+that match. Preserve complete diff coverage, required context and project reread
+obligations. Missing unrelated full bodies alone do not block judgment; missing
+required context or diffs requires recovery or an insufficiency report before PASS.
 
 Bodies share an aggregate 5000-token allowance; diffs have a separate 5000.
 The helper conservatively charges UTF-8 bytes, not exact model tokens. It also
@@ -2589,8 +2596,10 @@ unchanged paths use the base commit. Commit paths use that exact commit.
 
 `list` means selectors only; `partial` means limited delivery or later pages;
 `incomplete` means unavailable material with successful siblings retained.
-`complete`/exit zero is delivery, never coverage or PASS. Missing, binary,
-gitlink, mismatched or tool-truncated material needs recovery or an insufficiency
+`complete`/exit zero is delivery, never coverage or PASS. A collection may remain
+explicitly partial because unrelated full bodies were not retrieved; never claim
+full delivery from a sufficient review read set. Missing required context or diffs,
+binary, gitlink, mismatched or tool-truncated material needs recovery or an insufficiency
 report before PASS. Use `recovery_command` only for additional individual
 commands, quoting rules or optional workspace guidance. Do not recollect
 successful siblings. Fixed Git disables fetch, replacements, locks, prompts,

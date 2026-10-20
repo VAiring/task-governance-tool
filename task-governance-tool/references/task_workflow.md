@@ -1036,8 +1036,13 @@ role is different or uncertain, ask the caller to use the applicable
 [full-Packet route](#direct-review-transport); do not infer independence.
 That conditional route is not an additional ordinary read.
 
-Read the applicable project authority and actual whole target according to the
-view's or supplied Packet's target-kind instruction, including necessary source and tests. Do not
+Read the applicable project authority and inspect the complete change list and
+every complete diff according to the view's or supplied Packet's target-kind
+instruction, including additions, deletions, renames and mode changes. Follow
+affected source, tests, dependencies and governing sections as needed for judgment.
+Read needed before/after context; complete before/after file bodies are not a
+blanket prerequisite. Follow project mandatory reading rules and expand to full
+files when needed. Do not
 substitute ambient HEAD/worktree content or a prior review. A supplied
 fingerprint/external revision needs demonstrably bound material before PASS.
 Use the provided verification evidence; do not invent unobserved checks.
@@ -1054,8 +1059,9 @@ complete text and individual outcome visible; no parent's or other reviewer's
 interpretation substitutes for your reading or judgment. For example, an
 already-required review rule and an already-identified API contract can be
 separate results in one invocation. Read newly discovered dependencies later,
-not as guessed inputs. Recover failed, missing or tool-truncated material in
-full; successful siblings need not be repeated. Use individual reads when
+not as guessed inputs. Recover failed, missing or tool-truncated required material
+before PASS; successful siblings need not be repeated. Unread unrelated full
+bodies are different from information still needed for judgment. Use individual reads when
 batching cannot deliver complete material. Project AGENTS/authority reread
 rules remain; no fixed file/line cap, summary substitute, reading ledger or
 extra prerequisite is added.
@@ -1116,7 +1122,10 @@ selecting only needed dependencies as JSON paths; known paths need no listing.
 Read governing text before judgment and follow discovered dependencies.
 Complete matching immutable bodies may be reused across authority reading and
 review. A filename, summary or incomplete delivery cannot establish that match.
-Before/after sides and diffs remain required; project reread obligations apply.
+Confirm every changed entry and complete diff, then retrieve the before/after
+context needed for the affected behavior and its dependencies. Whole-file
+addition/deletion diffs require their referenced body. Complete before/after file
+bodies are not a blanket prerequisite; project reread obligations still apply.
 
 Small reads/collections remain complete in one response. Overflow is explicit:
 fetch the returned context/material/verification section commands and all their
@@ -1137,7 +1146,9 @@ exact measured model tokens. Actual host truncation still requires recovery.
 `list` supplies selectors; `partial` supplies only a page/range; `incomplete`
 reports unavailable material. The last range alone does not constitute the full
 document. Reuse only matching fully received text and fetch missing ranges or
-new dependencies instead of repeating successful siblings. Unavailable content,
+new dependencies instead of repeating successful siblings. Do not relabel a partial
+collection as complete because only needed context was read: remaining unrelated
+full bodies alone do not prevent judgment, but missing required context or diffs,
 binary files or submodules need resolution/reporting before PASS.
 Delivery status and exit zero never prove review coverage or PASS.
 This is not a replacement Packet or future freshness guarantee.

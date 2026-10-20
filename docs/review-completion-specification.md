@@ -1201,14 +1201,29 @@ without normalizing smart quotes. No caller environment is changed.
 Packet bytes are rechecked before collection/list output, and submission retains
 its existing live validation. This trusted-local observation is not a lock.
 
-Use collection for the first required governing/source/test reads. Reuse a
-previous complete body only when its immutable object identity or exact
-revision/path matches the current mapping. Filename, summary, previous review
-or unknown/truncated delivery is insufficient. Preserve required before/after
-sides and diffs, follow newly discovered dependencies, and recover only missing
-ranges or material. Project reread obligations remain. Listing, partial delivery,
-exit zero and complete transport never establish review coverage or PASS;
-unrecoverable material requires a precise insufficiency report and next action.
+Review the complete changed-entry list and every complete diff, including
+additions, deletions, renames and mode changes. Use the existing collection,
+listing and individual range commands; follow affected source, tests,
+dependencies and governing sections needed for independent judgment. Obtain
+the corresponding before/after context, and expand to whole files when needed
+or required by the target project's mandatory reading rules. Complete
+before/after file bodies are not a blanket prerequisite. A whole-file
+addition/deletion diff refers to its body, so that body must be read completely.
+
+Use collection for the first required governing/source/test reads. It may also
+provide bounded before/after bodies without requiring recovery of every full
+body. Reuse a previous complete body only when its immutable object identity or
+exact revision/path matches the current mapping. Filename, summary, previous
+review or unknown/truncated delivery is insufficient. Follow newly discovered
+dependencies and recover only missing required ranges or material. Project
+reread obligations remain. A collection may remain explicitly partial because
+unrelated full bodies have not been retrieved; do not relabel that as complete
+delivery. Missing unrelated full bodies alone do not block review, while missing
+required context or diffs must be recovered or reported before PASS. Listing,
+partial delivery, exit zero and complete transport never establish review
+coverage or PASS; unrecoverable required material needs a precise insufficiency
+report and next action. Mechanical full-stream validation and hashing remain
+unchanged even when the reviewer needs only a bounded text range.
 No body, patch, dependency list or reading ledger is saved in the Packet, DB or
 cache. Save/registration, review judgment, completion, permissions and usage
 attribution are unchanged.
@@ -1241,8 +1256,8 @@ with no Git-derived delta. The caller must provide complete material and evidenc
 binding it to the exact value; display success is not that evidence. The generated
 request and read output are self-contained together. The request assigns the
 independent role under current project authority, supplies fixed read/save, and
-requires recovery of missing fixed-target content after incomplete delivery,
-and reporting the insufficiency before judgment if identity or complete recovery
+requires recovery of missing required fixed-target content after incomplete delivery,
+and reporting the insufficiency before judgment if identity or required recovery
 cannot be established. The existing read's `result_instructions`
 owns whole-target judgment, routes to material and verification guidance, and
 supplies format/provenance/Finding declarations plus fixed-save, acknowledgement,

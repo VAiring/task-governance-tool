@@ -364,7 +364,7 @@ def read_for_reviewer(repo, packet_path, *, material_details=False, records_only
             "$OutputEncoding = [Console]::InputEncoding = [System.Text.UTF8Encoding]::new($false)\n@'\n"
             + placeholder + "\n'@ | " + command if os.name == "nt" else
             command + " <<'TASKGOV_MATERIAL_PATHS'\n" + placeholder + "\nTASKGOV_MATERIAL_PATHS")
-        reuse_guidance = "Reuse a body already received completely only when its immutable object identity or exact revision/path matches this target's mapping. An ambient filename, summary, prior review or incomplete/unknown delivery is not proof. Omit already-held matching dependencies from collection; use the same text for authority reading and review. A changed file's before/after sides and diff remain necessary. Project reread obligations still apply."
+        reuse_guidance = "Reuse a body already received completely only when its immutable object identity or exact revision/path matches this target's mapping. An ambient filename, summary, prior review or incomplete/unknown delivery is not proof. Omit already-held matching dependencies from collection; use the same text for authority reading and review. Inspect every changed entry and complete diff, then needed before/after context, dependencies and governing sections. Complete before/after file bodies are not a blanket prerequisite; expand to full files when needed. Project reread obligations still apply."
         if not material_details:
             # Keep exact target data and normal collection together.
             # The optional read retains the same full validation; it is not a
@@ -382,7 +382,7 @@ def read_for_reviewer(repo, packet_path, *, material_details=False, records_only
             "--packet-sha256=" + sha256(raw).hexdigest(), records_only=records_only)
         quoting = material["instructions"][-1] if material_details else None
         material["instructions"] = [
-            "collect_command accepts the JSON array of needed dependency paths ([] for none) and includes changed before/after bodies and diffs. Read governing text before judgment and follow its routes. Known paths need no inventory. Use fixed IDs/revisions, never ambient HEAD/index/worktree content. Deleted/renamed old paths are absent; unchanged snapshot dependencies use the base commit. Mode 120000 is link text, 160000 needs supplied material.",
+            "collect_command accepts the JSON array of needed dependency paths ([] for none) and supplies changed mappings, bounded bodies and diffs. Confirm the complete change list and every complete diff, including add/delete/rename and mode changes. Whole-file add/delete diffs require their referenced body. Read applicable governing text and follow affected code and dependencies before judgment. Missing unrelated full bodies alone do not block review; missing required context or diffs must be recovered or reported before PASS. Known paths need no inventory. Use fixed IDs/revisions, never ambient HEAD/index/worktree content. Deleted/renamed old paths are absent; unchanged snapshot dependencies use the base commit. Mode 120000 is link text, 160000 needs supplied material.",
             reuse_guidance,
             "changes_command pages every changed entry if the first read or collection is split. Only explicit inventory_command lists unchanged files: at most 20 entries and 4096 compact UTF-8 JSON-array bytes, with remaining/next. Individual recovery instructions never imply inventory retrieval. Use listed commands for missing ranges; batch supplies bounded bodies with per-ID status, directory supplies exact fixed-revision text ranges. Recovery does not repeat successful siblings.",
             DELIVERY_GUIDANCE,
@@ -466,7 +466,7 @@ def _requests(repo, args, packet_path, *, collected=False):
             "You are assigned an independent review of the complete exact target under current project authority. "
             "Reserve at least 24000 output tokens in both execution and outer return; one response per call without batching or echoing. "
             "Run the fixed read below and follow its result_instructions with the supplied material and verification guidance. "
-            "Follow explicit section/page/range commands until required context and material are complete. Recover only missing fixed-target content; if identity or complete recovery cannot be established, report the insufficiency to the caller before judgment."
+            "Inspect every changed entry and its complete diff, then the affected context, dependencies and governing sections needed for judgment. Complete before/after file bodies are not a blanket prerequisite; follow project mandatory reading rules and expand to full files when needed. Follow explicit section/page/range commands for required content. Recover only missing required fixed-target content; if identity or required recovery cannot be established, report the insufficiency to the caller before judgment."
             + "\n\nRead command:\n" + read + "\n\nSave command:\n" + invocation
         )})
     from task_governance_tool.setup_feature_config import read_choices

@@ -77,6 +77,21 @@ class PreparationFixture(unittest.TestCase):
 
 
 class ReviewRequestLayoutTests(unittest.TestCase):
+    def test_both_answer_protocols_request_all_diffs_and_only_needed_context(self):
+        for collected in (False, True):
+            args = SimpleNamespace(directory="reviews/reading", reviewers=1,
+                                   records_only=False, task_id="tg_task_0123456789abcdef")
+            with self.subTest(collected=collected), \
+                 mock.patch("task_governance_tool.setup_feature_config.read_choices", return_value=(None, {})):
+                request = preparation._requests(Path.cwd(), args, "reviews/reading/packet.json",
+                                                collected=collected)["review_requests"][0]["request"]
+                for requirement in ("every changed entry", "complete diff", "affected context",
+                                    "dependencies", "governing sections", "not a blanket prerequisite",
+                                    "project mandatory reading rules", "full files when needed"):
+                    self.assertIn(requirement, request)
+                self.assertIn("Read command:", request)
+                self.assertEqual("Save command:" in request, not collected)
+
     def test_collected_requests_prepare_connection_once_in_the_child_context(self):
         from task_governance_tool.review_answer_preparation import INSTRUCTIONS
         task_id = "tg_task_0123456789abcdef"
@@ -170,7 +185,7 @@ class ReviewRequestLayoutTests(unittest.TestCase):
         for rule in ("complete exact target under current project authority",
                      "Run the fixed read below",
                      "24000 output tokens in both execution and outer return",
-                     "section/page/range", "Recover only missing fixed-target content",
+                     "section/page/range", "Recover only missing required fixed-target content",
                      "report the insufficiency to the caller before judgment"):
             self.assertIn(rule, prefixes[0])
 
@@ -888,6 +903,68 @@ class ReviewerMaterialTests(PreparationFixture):
         self.assertEqual((self.root / packet).read_bytes(), original_packet)
         self.assertEqual((self.root / output).read_bytes(), raw)
 
+    def test_complete_small_diff_and_needed_context_do_not_require_large_unchanged_bodies(self):
+        self.committed_fixture()
+        prefix = b"# unchanged context\n" * 600
+        suffix = b"# unrelated tail\n" * 600
+        before_body = prefix + b"value = 1\n" + suffix
+        after_body = prefix + b"value = 2\n" + suffix
+        (self.root / "source.py").write_bytes(before_body)
+        self.git("-c", "core.autocrlf=false", "add", "--", "source.py")
+        self.git("commit", "--quiet", "-m", "Large unchanged context")
+        (self.root / "source.py").write_bytes(after_body)
+        self.git("-c", "core.autocrlf=false", "add", "--", "source.py")
+        _, prepared = self.prepare(self.task(), options=["--kind", "git_snapshot"])
+        packet = prepared["handoff"]["packet_path"]
+        original_packet = (self.root / packet).read_bytes()
+        view = json.loads(self.displayed(packet).stdout)
+        material = view["review_material"]
+        # Ambient contents cannot replace either fixed side or its needed range.
+        (self.root / "source.py").write_bytes(b"ambient replacement\n")
+        before_reads = file_snapshot(self.root)
+        listed = self.material_read(material["changes_command"])
+        self.assertEqual(listed.returncode, 0, listed.stdout)
+        entries = json.loads(listed.stdout)["entries"]
+        self.assertEqual(len(entries), 1)
+        result = self.material_read(material["collect_command"].replace(
+            "<selected dependency paths as JSON array>", '["AGENTS.md", "SPEC.md"]'))
+        self.assertEqual(result.returncode, 0, result.stdout)
+        collected = json.loads(result.stdout)
+        self.assertEqual(collected["status"], "partial")
+        self.assertEqual((collected["changes_total"], collected["remaining"], collected["next_start"]), (1, 0, None))
+        change, = collected["changes"]
+        for side in ("before", "after"):
+            self.assertEqual(change[side]["object_id"], entries[0][side + "_object_id"])
+            self.assertEqual(collected["bodies"][change[side]["body_id"]], {"status": "range_required"})
+        self.assertEqual(change["diff"]["status"], "provided")
+        patch = collected["patches"][change["diff"]["patch_id"]]["text"].encode()
+        self.assertEqual(patch, self.git("diff", "--no-ext-diff", "--no-textconv",
+            change["before"]["object_id"], change["after"]["object_id"], "--"))
+        for dependency, expected in zip(collected["dependencies"], (b"Read SPEC.md.\n", b"The value must be 2.\n")):
+            self.assertEqual(collected["bodies"][dependency["body_id"]]["text"].encode(), expected)
+        # Only the required after-side window is obtained; unrelated suffix
+        # pages remain explicitly unread, not a claimed complete file.
+        start = len(prefix) - 80
+        body_command = collected["blob_command"].replace("<object_id>", change["after"]["object_id"])
+        result = self.material_read(body_command + " --start=" + str(start), decode_text=False)
+        self.assertEqual(result.returncode, 0, result.stdout)
+        context = json.loads(result.stdout)
+        self.assertEqual(context["status"], "partial")
+        self.assertEqual(context["content_sha256"], hashlib.sha256(after_body).hexdigest())
+        self.assertEqual((context["start"], context["total_bytes"]), (start, len(after_body)))
+        self.assertEqual(context["text"].encode(), after_body[start:context["end"]])
+        self.assertIn("value = 2\n", context["text"])
+        self.assertLess(context["end"], context["total_bytes"])
+        stale = self.material_read(body_command + " --start=" + str(start)
+                                   + " --content-sha256=" + "0" * 64, decode_text=False)
+        self.assertNotEqual(stale.returncode, 0)
+        self.assertEqual(json.loads(stale.stdout)["code"], "review_material_range_mismatch")
+        self.assertNotIn(b"value = 2", stale.stdout)
+        self.assertIn("Missing unrelated full bodies alone do not block review", collected["instructions"])
+        self.assertIn("missing required context or diffs", collected["instructions"])
+        self.assertEqual((self.root / packet).read_bytes(), original_packet)
+        self.assertEqual(file_snapshot(self.root), before_reads)
+
     def test_conditional_material_details_recover_only_needed_content_and_revalidate(self):
         old = self.committed_fixture()
         old_spec = self.git("show", old + ":SPEC.md")
@@ -925,7 +1002,7 @@ class ReviewerMaterialTests(PreparationFixture):
             self.assertIn(name, details)
         self.assertLess(len(normal_result.stdout), len(detailed_result.stdout))
         for condition in ("immutable object identity", "incomplete/unknown", "truncat",
-                          "Project reread obligations", "before/after sides", "Known paths need no inventory",
+                          "Project reread obligations", "before/after context", "Known paths need no inventory",
                           "Only explicit inventory_command"):
             self.assertIn(condition, " ".join(material["instructions"]))
         # Wrong-version, unknown, missing or truncated prior text cannot replace

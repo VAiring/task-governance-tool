@@ -422,8 +422,16 @@ together, its selectors remain and text is marked range-required. Successful
 siblings remain usable; partial text is never labeled as a complete body.
 
 Immutable mapping supports reuse across governing-rule reading and review only
-for fully delivered matching content. Missing ranges, discovered dependencies
-and actual reread boundaries remain obligations. Generated guidance covers both
+for fully delivered matching content. Generated guidance starts from every
+changed entry and complete diff, then needed before/after context, affected
+dependencies and governing sections under the project's mandatory reading rules.
+It does not require complete before/after file bodies uniformly; whole-file
+add/delete diffs still require their referenced body, and missing required
+information still prevents PASS. This changes guidance only: collection keeps
+its existing bounded bodies, independent patch allowance and explicit partial
+status, while full-stream validation/hashing and individual recovery remain.
+Missing required ranges, discovered dependencies and actual reread boundaries
+remain obligations. Generated guidance covers both
 execution and outer-return budgets, one response per call and recovery. There
 is no content persistence, raw-output cache, reading ledger, relevance inference
 or new public Task query. Save/wait/submit/completion are unchanged.

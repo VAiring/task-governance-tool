@@ -196,7 +196,7 @@ def collect_material(repo, packet_path, packet_sha256, stream, *, start=0, selec
                 "patches": {key: bodies.patches[key] for key in sorted(patch_ids)},
                 "blob_command": command("blob", "<object_id>"),
                 "diff_command": command("diff", "<before_object_id>", "<after_object_id>"),
-                "instructions": "Repeat exactly the same selected-path JSON stdin for next_command. Every change precedes selected dependencies in stable order. Recover missing bodies by object_id and two-sided diffs by before/after IDs. Whole-file add/delete diffs reference that body. Mode 120000 is link text; 160000 requires supplied material. No successful sibling needs repetition. " + GUIDANCE}
+                "instructions": "Repeat exactly the same selected-path JSON stdin for next_command. Inspect every changed entry and complete diff; every change precedes selected dependencies in stable order. Recover missing required before/after context and dependencies by object_id, and every two-sided diff by before/after IDs. Whole-file add/delete diffs require their referenced body. Missing unrelated full bodies alone do not block review; missing required context or diffs must be recovered or reported before PASS. Mode 120000 is link text; 160000 requires supplied material. No successful sibling needs repetition. " + GUIDANCE}
 
     output = result()
     while not fits(output) and len(changes) + len(dependencies) > 1:

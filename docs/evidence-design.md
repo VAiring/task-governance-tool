@@ -311,7 +311,14 @@ validated Bundle plan instead of selecting it again. Structural validators and
 the independent test Reader retain their existing admission responsibilities.
 
 Under the zero-wait Evidence lock publication validates or atomically writes
-all required Bundle files through flushed same-directory temporaries, flushes
+all required Bundle files through flushed same-directory temporaries. Before
+capture, `_capture` reads maintenance and generation through structural
+admission. Routine disabled/current observations skip full-source validation
+and Bundle construction, including after lock acquisition or a bounded
+follow-up. A due capture, force repair or physical-status inspection validates
+the complete database in that same read snapshot before constructing a basis.
+The index-generation guard retains its global admission. Publication writes
+Bundles first, flushes
 and atomically replaces the index last, conditionally records the captured
 generation/digest in a short transaction, then rechecks once and permits at
 most one follow-up capture. The index is the commit point. Missing, ahead,

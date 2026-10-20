@@ -1550,7 +1550,7 @@ def run_routine_backup(
         observed_at or utc_now(),
         field="routine backup observation time",
     )
-    repository = read_managed_backup_repository(target)
+    repository = read_managed_backup_repository(target, operation_local=True)
     if not repository.maintenance.enabled:
         return RoutineBackupResult(code="not_opted_in", attempted=False)
     due = managed_backup_due(

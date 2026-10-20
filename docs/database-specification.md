@@ -102,7 +102,11 @@ required review history, as defined by
 This includes integrated Core reads and typed finalization completion at every
 fresh snapshot and locked writer. Scope follows the admitted native Task and
 prepared basis, never a public bypass or the Task command's display label.
-Maintenance retains global semantic validation until its own approved unit.
+Maintenance eligibility reads use the structural boundary and validated policy,
+generation and managed-backup metadata. Disabled, current and not-due paths do
+not audit Task histories. Such observations never certify an artifact: actual
+whole-project capture/publication, backup and reconciliation retain global
+validation at their existing locked effect boundaries.
 Setup, doctor, migration/reentry, recovery and actual whole-project publication
 retain complete applicable validation. The approved remaining work is owned
 by [operation admission correction](operation-admission-plan.md).

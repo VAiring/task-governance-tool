@@ -54,6 +54,7 @@ from task_governance_tool.storage import (
     DatabaseTarget,
     EvidenceProjectionBasis,
     connect_initialized_readonly,
+    validate_current_database,
     utc_now,
     validate_utc_timestamp,
 )
@@ -91,9 +92,10 @@ def _capture(
     target: DatabaseTarget,
     *,
     include_basis: bool,
+    only_when_due: bool = False,
 ) -> _ProjectionCapture:
     project_id = target.project.project_id
-    with closing(connect_initialized_readonly(target)) as connection:
+    with closing(connect_initialized_readonly(target, operation_local=True)) as connection:
         maintenance = read_project_maintenance(connection, project_id)
         state = read_evidence_projection_state(
             connection,
@@ -101,14 +103,17 @@ def _capture(
         )
         if maintenance is None:
             raise _inconsistent()
-        basis = (
-            capture_evidence_projection_basis(
+        basis = None
+        if include_basis and (
+            not only_when_due or (maintenance.enabled and state.due)
+        ):
+            # Eligibility is not a publication proof. Audit the complete
+            # source in this same snapshot before capturing any artifact.
+            validate_current_database(connection, target)
+            basis = capture_evidence_projection_basis(
                 connection,
                 project_id=project_id,
             )
-            if include_basis
-            else None
-        )
         if basis is not None and (
             basis.project_id != project_id
             or basis.source_generation != state.source_generation
@@ -467,7 +472,7 @@ def _publish_evidence_projection(
         _prepare_output_directories(target)
         _, _, _, _, lock_path = _fixed_output_paths(target)
         with zero_wait_artifact_lock(lock_path):
-            capture = _capture(target, include_basis=True)
+            capture = _capture(target, include_basis=True, only_when_due=not force)
             for attempt in range(MAX_PUBLICATIONS_PER_ATTEMPT):
                 captured_generation = capture.state.source_generation
                 if not capture.maintenance.enabled:
@@ -478,9 +483,10 @@ def _publish_evidence_projection(
                 if (
                     not force
                     and not capture.state.due
-                    and publications == 0
                 ):
-                    return EvidenceProjectionRefreshResult("current", 0)
+                    return EvidenceProjectionRefreshResult(
+                        "succeeded" if publications else "current", publications,
+                    )
                 if capture.basis is None:
                     raise _inconsistent()
                 rendered = _render_projection(capture.basis)
@@ -503,7 +509,7 @@ def _publish_evidence_projection(
                         raise RuntimeError(
                             "Evidence source changed during publication"
                         )
-                    capture = _capture(target, include_basis=True)
+                    capture = _capture(target, include_basis=True, only_when_due=not force)
                     continue
                 except _EvidenceOptedOut:
                     return EvidenceProjectionRefreshResult(
@@ -528,7 +534,7 @@ def _publish_evidence_projection(
                     raise RuntimeError(
                         "Evidence source changed during publication"
                     )
-                capture = _capture(target, include_basis=True)
+                capture = _capture(target, include_basis=True, only_when_due=not force)
     except ArtifactLockError as exc:
         code = "deferred" if exc.contended else "failed"
         _record_failure(

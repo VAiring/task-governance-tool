@@ -62,6 +62,10 @@ text-only DOM APIs.
 Schema v13+ increments source generation on Viewer-relevant Task, checkpoint,
 or review events, not handoff-only/read/failure/replay/no-op/config/
 maintenance. The Viewer stage skips before opt-in, takes zero-wait lock,
+and repeats its metadata eligibility check before complete source validation.
+Disabled/current decisions use structural and maintenance metadata admission
+without auditing all Task histories. An eligible capture still validates the
+complete source in that same snapshot. The stage
 renders only when due, records rendered generation shortly, rechecks once, and
 never publishes an older capture over newer. Doctor reports stored facts only;
 browser reload never observes SQLite directly.

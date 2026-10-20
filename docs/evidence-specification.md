@@ -418,6 +418,10 @@ Runner owner, and standalone file consistency never establishes current
 execution or completion authority.
 
 Publication captures one coherent DB generation, validates all selected rows,
+and preserves complete source admission. Routine eligibility reads only
+structurally admitted maintenance/generation metadata; disabled or current
+state causes no Task-history audit. Eligibility is repeated under the artifact
+lock before full capture, and is not an artifact-validity proof. Publication
 writes and flushes immutable Bundle files first, and atomically replaces the
 index last. The index is the filesystem commit point. Consumers ignore
 unreferenced files and reject wrong identity/version/project/digest. Taskgov

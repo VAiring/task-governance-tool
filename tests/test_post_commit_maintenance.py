@@ -5,7 +5,7 @@ import json
 import sqlite3
 import tempfile
 import unittest
-from contextlib import closing, redirect_stderr, redirect_stdout
+from contextlib import ExitStack, closing, contextmanager, redirect_stderr, redirect_stdout
 from pathlib import Path
 from unittest import mock
 from tests.registration_output_support import registration_body, registration_task
@@ -85,6 +85,186 @@ def add_contract_task(target, title: str = "Maintenance source") -> dict:
     if code != 0:
         raise AssertionError(stderr or stdout)
     return registration_task(json.loads(stdout))
+
+
+class MaintenanceAdmissionTests(unittest.TestCase):
+    """Eligibility is local; a whole-project artifact still needs a global audit."""
+
+    def make_fixture(self, *, enabled=True, current=False):
+        from tests.test_viewer_maintenance import make_target, add_viewer_event
+        from task_governance_tool import backup, evidence_publication as evidence
+
+        directory = self.enterContext(tempfile.TemporaryDirectory())
+        target = make_target(Path(directory), enabled=enabled)
+        add_viewer_event(target, "Unrelated retained history")
+        if current:
+            self.assertEqual(evidence.publish_setup_evidence_projection(target).code, "succeeded")
+            self.assertEqual(viewer_maintenance_service.publish_setup_viewer(target).code, "succeeded")
+            self.assertEqual(backup.run_routine_backup(target, observed_at="2026-07-27T00:00:00Z").code, "succeeded")
+        return target
+
+    def corrupt_note(self, target):
+        # Change only a disposable fixture; restore its exact trigger definition.
+        with closing(sqlite3.connect(target.db_path)) as connection:
+            ddl = connection.execute("SELECT sql FROM sqlite_master WHERE name='trg_task_events_note_body_immutable'").fetchone()[0]
+            connection.execute("DROP TRIGGER trg_task_events_note_body_immutable")
+            connection.execute("UPDATE task_events SET note_body='Invalid retained note' WHERE event_type='task_added'")
+            connection.execute(ddl)
+            connection.commit()
+            self.assertEqual(connection.execute("PRAGMA foreign_key_check").fetchall(), [])
+            self.assertEqual(connection.execute("PRAGMA quick_check").fetchone()[0], "ok")
+
+    def assert_global_rejects(self, target):
+        from task_governance_tool.storage import StorageError
+        with self.assertRaises(StorageError):
+            with closing(connect_initialized_readonly(target)):
+                pass
+
+    def test_disabled_and_current_paths_do_not_audit_any_task_history(self):
+        from task_governance_tool import storage, backup, evidence_publication as evidence
+
+        for enabled in (False, True):
+            with self.subTest(enabled=enabled):
+                target = self.make_fixture(enabled=enabled, current=enabled)
+                self.corrupt_note(target)
+                self.assert_global_rejects(target)
+                before = target.db_path.read_bytes()
+                with ExitStack() as stack:
+                    for owner, name in (
+                        (storage, "validate_current_schema21_admitted_rows"),
+                        (evidence, "zero_wait_artifact_lock"),
+                        (viewer_maintenance_service, "zero_wait_artifact_lock"),
+                        (backup, "managed_backup_lock"),
+                    ):
+                        stack.enter_context(mock.patch.object(owner, name,
+                            side_effect=AssertionError("No global audit or lock for ineligible work")))
+                    expected = "current" if enabled else "not_opted_in"
+                    self.assertEqual(evidence.run_routine_evidence_projection(target).code, expected)
+                    self.assertEqual(viewer_maintenance_service.run_routine_viewer_refresh(target).code, expected)
+                    self.assertEqual(backup.run_routine_backup(target,
+                        observed_at="2026-07-27T00:01:00Z").code, expected)
+                self.assertEqual(target.db_path.read_bytes(), before)
+
+    def test_due_or_forced_publication_still_rejects_global_history_fault(self):
+        from task_governance_tool import backup, evidence_publication as evidence
+
+        target = self.make_fixture(current=True)
+        index = target.resolved_evidence_index.read_bytes()
+        viewer = target.resolved_viewer_path.read_bytes()
+        backups = sorted(path.name for path in target.resolved_backups_path.iterdir())
+        self.corrupt_note(target)
+        self.assertEqual(evidence.publish_setup_evidence_projection(target).code, "failed")
+        self.assertEqual(viewer_maintenance_service.publish_setup_viewer(target).code, "failed")
+        self.assertEqual(backup.run_routine_backup(target,
+            observed_at="2026-07-27T00:31:00Z").code, "failed")
+        self.assertEqual(target.resolved_evidence_index.read_bytes(), index)
+        self.assertEqual(target.resolved_viewer_path.read_bytes(), viewer)
+        self.assertEqual(sorted(path.name for path in target.resolved_backups_path.iterdir()), backups)
+        self.assert_global_rejects(target)
+
+    def test_evidence_and_viewer_recheck_current_or_disabled_state_under_lock(self):
+        from dataclasses import replace
+        from task_governance_tool import evidence_publication as evidence
+
+        for service, state_table, generation_field in (
+            (evidence, "evidence_projection_state", "published_generation"),
+            (viewer_maintenance_service, "viewer_maintenance_state", "rendered_generation"),
+        ):
+            for disabled in (False, True):
+                with self.subTest(service=service.__name__, disabled=disabled):
+                    target = self.make_fixture()
+                    real_lock = service.zero_wait_artifact_lock
+                    @contextmanager
+                    def change_before_capture(path):
+                        with real_lock(path):
+                            with closing(sqlite3.connect(target.db_path)) as connection:
+                                if not disabled:
+                                    if service is evidence:
+                                        connection.execute("UPDATE evidence_projection_state SET published_generation=source_generation, index_digest=?", ("sha256:" + "0" * 64,))
+                                    else:
+                                        connection.execute(f"UPDATE {state_table} SET {generation_field}=source_generation")
+                                connection.commit()
+                            self.corrupt_note(target)
+                            if disabled:
+                                # Opt-in is durable; inject the existing defensive
+                                # opt-out observation without violating its DDL.
+                                read = service.read_project_maintenance
+                                with mock.patch.object(service, "read_project_maintenance",
+                                    side_effect=lambda *args: replace(read(*args), enabled_at=None)):
+                                    yield
+                            else:
+                                yield
+                    with mock.patch.object(service, "zero_wait_artifact_lock", side_effect=change_before_capture), \
+                         mock.patch.object(service, "validate_current_database",
+                             side_effect=AssertionError("Ineligible locked capture must not audit")) as audit:
+                        result = (evidence.run_routine_evidence_projection(target)
+                            if service is evidence else service.run_routine_viewer_refresh(target))
+                    self.assertEqual(result.code, "not_opted_in" if disabled else "current")
+                    audit.assert_not_called()
+                    self.assert_global_rejects(target)
+
+    def test_full_capture_audits_the_same_snapshot_before_building(self):
+        from task_governance_tool import evidence_publication as evidence
+
+        target = self.make_fixture()
+        for service, builder, capture in (
+            (evidence, "capture_evidence_projection_basis",
+                lambda: evidence._capture(target, include_basis=True, only_when_due=True)),
+            (viewer_maintenance_service, "build_viewer_snapshot",
+                lambda: viewer_maintenance_service._capture(target, force=False,
+                    generated_at="2026-07-27T00:00:00Z")),
+        ):
+            observed = []
+            original_audit = service.validate_current_database
+            original_build = getattr(service, builder)
+            def audit(connection, current_target):
+                self.assertTrue(connection.in_transaction)
+                self.assertEqual(connection.execute("PRAGMA query_only").fetchone()[0], 1)
+                observed.append(connection)
+                return original_audit(connection, current_target)
+            def build(connection, *args, **kwargs):
+                self.assertEqual(observed, [connection])
+                return original_build(connection, *args, **kwargs)
+            with mock.patch.object(service, "validate_current_database", side_effect=audit), \
+                 mock.patch.object(service, builder, side_effect=build):
+                capture()
+            self.assertEqual(len(observed), 1)
+            with self.assertRaises(sqlite3.ProgrammingError):
+                observed[0].execute("SELECT 1")
+
+    def test_physical_status_inspection_still_audits_current_evidence(self):
+        from task_governance_tool import evidence_publication as evidence
+        from task_governance_tool.storage import StorageError
+
+        target = self.make_fixture(current=True)
+        self.corrupt_note(target)
+        with self.assertRaises(StorageError):
+            evidence.inspect_canonical_evidence_status(target)
+
+    def test_task_and_review_writes_keep_primary_success_with_disabled_maintenance(self):
+        from task_governance_tool import storage
+
+        target = self.make_fixture(enabled=False)
+        selected = add_contract_task(target, "Selected business operation")
+        # Fault is on a different Task; edit and target-set must retain their
+        # own validation and must not reintroduce a global audit in maintenance.
+        with closing(sqlite3.connect(target.db_path)) as connection:
+            ddl = connection.execute("SELECT sql FROM sqlite_master WHERE name='trg_task_events_note_body_immutable'").fetchone()[0]
+            connection.execute("DROP TRIGGER trg_task_events_note_body_immutable")
+            connection.execute("UPDATE task_events SET note_body='Invalid retained note' WHERE task_id<>? AND event_type='task_added'", (selected["task_id"],))
+            connection.execute(ddl)
+            connection.commit()
+        with mock.patch.object(storage, "validate_current_schema21_admitted_rows",
+                side_effect=AssertionError("No unrelated-history audit")):
+            for args in (
+                ("task", "edit", selected["task_id"], "--title", "Selected title updated"),
+                ("review", "target", "set", selected["task_id"], "--kind", "diff_fingerprint", "--revision", "sha256:" + "a" * 64),
+            ):
+                code, out, err = invoke(target, *args, "--json")
+                self.assertEqual(code, 0, out + err)
+                self.assertTrue(json.loads(out)["ok"])
+                self.assertEqual(json.loads(out)["warnings"], [])
+        self.assert_global_rejects(target)
 
 
 class PostCommitMaintenanceTests(unittest.TestCase):
@@ -403,8 +583,9 @@ class PostCommitMaintenanceTests(unittest.TestCase):
             opened_connections: list[sqlite3.Connection] = []
             real_connect = cli_service.connect_initialized
 
-            def tracked_connect(database_target):
-                connection = real_connect(database_target)
+            def tracked_connect(database_target, **options):
+                self.assertTrue(options["operation_local"])
+                connection = real_connect(database_target, **options)
                 opened_connections.append(connection)
                 return connection
 

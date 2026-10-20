@@ -786,9 +786,11 @@ class EvidenceProjectionPublicationTests(unittest.TestCase):
                 "capture_evidence_projection_basis",
                 return_value=basis,
             ),
+            mock.patch.object(projection, "validate_current_database") as validate,
         ):
             captured = projection._capture(target, include_basis=True)
 
+        validate.assert_called_once_with(connection, target)
         self.assertTrue(connection.closed)
         self.assertIs(captured.basis, basis)
 

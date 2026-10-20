@@ -997,6 +997,10 @@ generation. Viewer refresh runs second only for Viewer-relevant mutations, and
 due backup runs third. A changed handoff advances neither projection but may
 retry already-due Evidence before backup. Read-only, failed, replayed, no-op,
 setup configuration, and maintenance-internal operations trigger nothing.
+Eligibility checks validate structural state and the consumed maintenance
+metadata without traversing all Task histories when disabled, current or not
+due. Actual whole-project projection or backup retains complete source
+validation; metadata observed before a lock never authorizes publication.
 The Runner path retains exactly the one existing target-set maintenance opportunity
 only for a successful or fallback command. A post-T1 Runner error invokes no
 maintenance; T1 has already advanced the ordinary due state, so the next

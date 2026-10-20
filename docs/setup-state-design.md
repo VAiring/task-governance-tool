@@ -888,6 +888,17 @@ explicit 29 migration.
 
 ### Post-Commit Coordinator
 
+Eligibility snapshots use structural admission and validated policy/generation
+metadata, without whole-project Task-history validation. Evidence and Viewer
+repeat eligibility under their artifact locks and validate the complete source
+in that same snapshot before capturing a due artifact. Explicit force repair
+still captures and validates a current artifact. The backup's initial policy
+and generation inventory read alone is local; its cheap crash-residue comparison
+does not certify artifact contents. A due or reconciliation attempt retains
+the global locked resolver/repository checks and complete source, copied-file
+and pre-publication validation. Existing publication guards, outcome writers
+and Setup/doctor/recovery defaults remain global; there is no new proof cache.
+
 Business services retain internal `MutationOutcome(changed, viewer_relevant)`. After commit and connection close, every changed mutation may retry due Evidence projection; the coordinator runs:
 
 1. Evidence projection when due;

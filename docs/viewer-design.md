@@ -34,6 +34,14 @@ committed Viewer-relevant event
 Setup invokes the same canonical renderer directly. There is no public Viewer
 command, output choice, browser launch, server, or browser-to-SQLite path.
 
+`_capture` first opens a structurally admitted metadata snapshot. Disabled or
+current routine state returns without whole-project semantic validation.
+After the artifact lock, the fresh capture repeats eligibility; only a due
+capture or enabled force repair validates the complete database in that same
+snapshot before building snapshot v4. Publication guards and outcome writers
+retain global admission. Metadata eligibility never supplies a reusable source
+proof or relaxes the generation/opt-out checks at replacement.
+
 The repository selects complete rows for all project Tasks in list order and
 validates them as one source-schema-aware stored-Task/Contract batch before any
 Task, review, or history projection. Exact v18-v31 snapshot validation first

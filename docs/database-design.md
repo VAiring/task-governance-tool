@@ -108,7 +108,7 @@ or note validators. Existing selected repositories validate their consumed rows,
 slot/lane relationships and locked mutation basis. Detail projection additionally
 calls `validate_task_review_storage` in that same snapshot; completion supplies
 its Task ID for the same review validator. The default remains global for other
-consumers, including the shared Task edit/write helpers. Only Task and review
+consumers, including the shared Task edit/write helpers. Task and review
 adapters opt into local admission through every read and locked write; explicit
 Runner Plan actions retain global admission throughout, including combined
 verification or Contract changes. This internal boolean is not an authority token or public option;
@@ -122,6 +122,15 @@ and required pending-attempt inventory. Integrated Core delegates selected revie
 validation to the Task projection, and typed finalization completion uses the
 same local boundary as ordinary completion. Source leases, native basis and
 effect fences remain independently checked at their existing boundaries.
+
+Maintenance opens metadata-only eligibility snapshots with local admission.
+Evidence and Viewer captures read enabled/generation state first, then call
+`validate_current_database` in the same snapshot only when a complete artifact
+basis is needed. Their publication guards and metadata writers remain globally
+admitted. Routine backup opts into local admission only for its initial policy
+and generation inventory read; the repository default, locked reconciliation,
+copy validation and publication remain global. No eligibility snapshot or
+generation comparison is reused as a complete-source proof.
 
 Task reads acquire all that Task's continuation generations
 and use the retained-original composite primary key to fetch only those

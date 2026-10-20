@@ -23,6 +23,7 @@ from task_governance_tool.viewer_metadata_repository import (
 from task_governance_tool.storage import (
     DatabaseTarget,
     connect_initialized_readonly,
+    validate_current_database,
     utc_now,
     validate_utc_timestamp,
 )
@@ -70,7 +71,7 @@ def _capture(
     generated_at: str,
     include_snapshot: bool = True,
 ) -> _ViewerCapture:
-    with closing(connect_initialized_readonly(target)) as connection:
+    with closing(connect_initialized_readonly(target, operation_local=True)) as connection:
         maintenance = read_project_maintenance(
             connection,
             target.project.project_id,
@@ -81,17 +82,15 @@ def _capture(
         )
         if maintenance is None or viewer is None:
             raise RuntimeError("Viewer maintenance state is unavailable")
-        snapshot = (
-            build_viewer_snapshot(
+        snapshot = None
+        if include_snapshot and maintenance.enabled and (force or viewer.due):
+            # A metadata-only observation never certifies the full Viewer.
+            validate_current_database(connection, target)
+            snapshot = build_viewer_snapshot(
                 connection,
                 target,
                 generated_at=generated_at,
             )
-            if include_snapshot
-            and maintenance.enabled
-            and (force or viewer.due)
-            else None
-        )
         return _ViewerCapture(
             maintenance=maintenance,
             viewer=viewer,

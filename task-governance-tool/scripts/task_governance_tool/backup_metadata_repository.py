@@ -488,6 +488,7 @@ def _connect_managed_backup_repository(
     *,
     migration_source: bool,
     read_only: bool,
+    operation_local: bool = False,
 ) -> sqlite3.Connection:
     from task_governance_tool.storage import (
         connect_initialized,
@@ -498,6 +499,7 @@ def _connect_managed_backup_repository(
         connect_initialized_readonly(
             target,
             managed_backup_source=migration_source,
+            operation_local=operation_local,
         )
         if read_only
         else connect_initialized(
@@ -528,12 +530,14 @@ def read_managed_backup_repository(
     target: DatabaseTarget,
     *,
     migration_source: bool = False,
+    operation_local: bool = False,
 ) -> ManagedBackupRepositoryState:
     with closing(
         _connect_managed_backup_repository(
             target,
             migration_source=migration_source,
             read_only=True,
+            operation_local=operation_local,
         )
     ) as connection:
         maintenance = read_project_maintenance(

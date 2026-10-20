@@ -375,17 +375,31 @@ def bind_sources(group, host, *, creation_context=False):
 def arm_sources(group, host, *, repo, skill, binding):
     """Arm only a newly issued tracking continuation before its follow-up send.
 
-    Its reviewer must already have an admitted dedicated initial assignment.
+    Dedication is native initial proof or an explicit saved legacy declaration.
     Repeating arm reuses the immutable baseline without another host read.
     """
     context = _source_context(repo, skill, binding)
     if context is None:
         _fail()
-    initial = _source_service(repo, skill, context, initial=True)
-    if initial is None:
-        _fail()
-    root = context[1]
-    originals = initial.repository.read()
+    resolution, root, transition = context
+    migrated = None
+    if getattr(root, "version", 2) == 1:
+        from .review_answer_dedication import current, assignment
+        from .review_continuation_handoff_repository import read_state
+        from .review_wait_runtime.continuation_transition_repository import TransitionRepository
+        from .session_identity import CallerIdentity
+        history = TransitionRepository(resolution.paths.review_continuation_store(
+            binding.parent_thread_id, binding.task_id, binding.target_generation)).read()
+        state = read_state(resolution.target, binding.task_id, CallerIdentity(binding.parent_thread_id))
+        if transition is None or not history or history[-1] != transition or state.basis != root.basis:
+            _fail()
+        migrated = {row.session_id: row for row in current(root, history, state, transition)}
+        originals = ()
+    else:
+        initial = _source_service(repo, skill, context, initial=True)
+        if initial is None:
+            _fail()
+        originals = initial.repository.read()
     records = group.service.repository.read()
     candidates = []
     for child, slot in zip(group.reviewer_ids, group.source_slots):
@@ -393,29 +407,35 @@ def arm_sources(group, host, *, repo, skill, binding):
         group.service.check_basis(row["basis"], slot)
         if row["basis"]["version"] != 2 or row["basis"]["continuation"] is None:
             _fail()
+        if migrated is not None:
+            dedication = migrated.get(child)
+            if dedication is None:
+                _fail()
+            previous = dict(reviewer_key=dedication.reviewer_key, assignment=assignment())
+        else:
+            prior = [(original_slot, item) for original_slot, item in enumerate(originals, 1)
+                     if item["binding"] is not None and item["binding"]["reviewer_session_id"] == child]
+            if len(prior) != 1:
+                _fail()
+            original_slot, original = prior[0]
+            # Recheck independent issuance, even when this round is already bound.
+            if (original_slot > len(root.collection_bases)
+                    or original["basis"] != root.collection_bases[original_slot - 1]):
+                _fail()
+            previous = original["binding"]
+            if (original["basis"]["execution_basis"] != row["basis"]["execution_basis"]
+                    or previous["parent_session_id"] != binding.parent_thread_id
+                    or original["basis"]["continuation"] is not None):
+                _fail()
+            if original["basis"]["version"] == 2 and previous["tracking"]["kind"] != "initial":
+                _fail()
         if row["binding"] is not None:
-            if row["binding"]["reviewer_session_id"] != child:
+            if (row["binding"]["reviewer_session_id"] != child
+                or row["binding"]["reviewer_key"] != previous["reviewer_key"]
+                or row["binding"]["assignment"] != previous["assignment"]):
                 _fail()
             candidates.append((slot, row["binding"]))
             continue
-        prior = [(original_slot, item) for original_slot, item in enumerate(originals, 1)
-                 if item["binding"] is not None and item["binding"]["reviewer_session_id"] == child]
-        if len(prior) != 1:
-            _fail()
-        original_slot, original = prior[0]
-        # An initial source can remain proof of dedication after its reviewer
-        # is selected again, without being eligible for fresh collection. Pin
-        # that historical assignment to issuance, never to its own journal.
-        if (original_slot > len(root.collection_bases)
-                or original["basis"] != root.collection_bases[original_slot - 1]):
-            _fail()
-        previous = original["binding"]
-        if (original["basis"]["execution_basis"] != row["basis"]["execution_basis"]
-                or previous["parent_session_id"] != binding.parent_thread_id
-                or original["basis"]["continuation"] is not None):
-            _fail()
-        if original["basis"]["version"] == 2 and previous["tracking"]["kind"] != "initial":
-            _fail()
         observed = host.observe_tracking_baseline(child)
         if (type(observed) is not dict or set(observed) != {"turn_id", "terminal", "binding_source"}
                 or observed["terminal"] not in ("completed", "failed", "interrupted")):

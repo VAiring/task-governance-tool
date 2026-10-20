@@ -129,6 +129,8 @@ def add_parser(commands):
     parser.add_argument("--task-id", required=True)
     parser.add_argument("--target-generation", required=True, type=int)
     parser.add_argument("--directory", required=True, help="Unused ignored output directory; same request reconciles its saved location")
+    parser.add_argument("--migrate-legacy-reviewers", action="store_true",
+        help="Explicitly dedicate selected legacy reviewers to a new collected continuation")
 
 
 def _digest(basis):
@@ -286,7 +288,8 @@ def _request_round(request, transition, selected):
 
 
 def _ready(scope: ContinuationScope, leases: ContinuationLeases,
-           selected: tuple[values.SelectedReviewer, ...], transition: RequestRound) -> Continuation:
+           selected: tuple[values.SelectedReviewer, ...], transition: RequestRound, *,
+           require_dedication=True) -> Continuation:
     """One readiness predicate for first publication and every successful retry.
 
     Callers retain preparation/transition/request/dispatch/finalization leases.
@@ -299,6 +302,9 @@ def _ready(scope: ContinuationScope, leases: ContinuationLeases,
         files.fail("review_continuation_pending")
     raw = _read_packet(repo, root, record, transition)
     if transition.answer_protocol == "review-answer-v1":
+        from .review_answer_dedication import current
+        if require_dedication:
+            current(root, leases.transitions.read(), state, transition)
         from .review_answer_continuation_preparation import locate_from_preparation
         locate_from_preparation(repo,SimpleNamespace(target=target,paths=paths),root,transition.packet_path,raw,files.decode_packet(raw),current=True)
     _, occurrence = _request_round(leases.request, transition, selected)
@@ -358,7 +364,7 @@ def _retained_inventory(repo, root, history, state, selected, *, resolution=None
         for source in retained if getattr(source,"collected_metadata",None) is None and source.bound.continuation is not None)
     collected=tuple((len(selected)+index,source.collected_metadata) for index,source in enumerate(retained,1)
         if getattr(source,"collected_metadata",None) is not None)
-    return legacy,collected
+    return legacy,collected,tuple(sources)
 
 
 def _prior_admission(scope: ContinuationScope, leases: ContinuationLeases,
@@ -377,7 +383,7 @@ def _prior_admission(scope: ContinuationScope, leases: ContinuationLeases,
         # invent its operation identity or escape into a different directory.
         if prior is None or prior.phase not in ("prepared", "published") or old_core.state != "prepared":
             files.fail("review_continuation_effect_unknown")
-        _ready(scope, leases, old_core.selected, prior)
+        _ready(scope, leases, old_core.selected, prior, require_dedication=False)
         cleanup = _settle_previous(scope, leases, snapshot.previous, prior, historical)
         return values.RetirementProof(old_core.continuation_id, values.basis_digest(root.basis),
             request_identity_digest(old_request) if old_request else None, cleanup.worker_stop_identity)
@@ -386,7 +392,7 @@ def _prior_admission(scope: ContinuationScope, leases: ContinuationLeases,
             next((row.selected for row in state.records if row.continuation_id == previous.continuation_id), ()))
         if old_core is None or old_core.state != "registered":
             files.fail("review_continuation_effect_unknown")
-        _ready(scope, leases, old_core.selected, previous)
+        _ready(scope, leases, old_core.selected, previous, require_dedication=False)
         _settle_previous(scope, leases, snapshot.previous, previous, historical)
     return None
 
@@ -564,7 +570,8 @@ def _admission_scope(repo: Path, args, caller: CallerIdentity
 
 def _admit_operation(scope: ContinuationScope, leases: ContinuationLeases,
                      snapshot: AdmissionSnapshot, selected: tuple[values.SelectedReviewer, ...],
-                     directory: str, progress: FailureProgress) -> AdmittedContinuation:
+                     directory: str, progress: FailureProgress, *,
+                     migrate_legacy_reviewers=False) -> AdmittedContinuation:
     """Reconcile the exact fence, predecessor and core admission, in that order."""
     root, state, history = scope.root, snapshot.state, snapshot.history
     attempt, old_request = snapshot.previous.attempt, snapshot.previous.record
@@ -595,12 +602,12 @@ def _admit_operation(scope: ContinuationScope, leases: ContinuationLeases,
             if history and history[-1].phase in ("fenced", "settled"):
                 files.fail("review_continuation_effect_unknown")
             preparation._directory(scope.repo, directory)
-        captures,collected_sources = _retained_inventory(scope.repo, root, predecessor_history, state, selected,resolution=SimpleNamespace(paths=scope.paths,target=scope.target))
-        retirement = _prior_admission(scope, leases, replace(snapshot, history=predecessor_history), historical)
+        captures,collected_sources,sources = _retained_inventory(scope.repo, root, predecessor_history, state, selected,resolution=SimpleNamespace(paths=scope.paths,target=scope.target))
         if transition is None:
             from .review_answer_continuation_preparation import choose_protocol
             original_packet=files.decode_packet(files.read_bounded(files.checked_path(scope.repo,root.packet_path),files.PACKET_LIMIT))
-            answer_protocol=choose_protocol(scope,original_packet)
+            answer_protocol=choose_protocol(scope,original_packet,
+                migrate_legacy_reviewers=migrate_legacy_reviewers)
             if collected_sources and answer_protocol=="legacy":
                 files.fail("review_continuation_unavailable")
             group = [row for row in state.records if row.preparation_id == root.preparation_id]
@@ -608,13 +615,21 @@ def _admit_operation(scope: ContinuationScope, leases: ContinuationLeases,
             if sequence > values.CONTINUATION_LIMIT:
                 files.fail("review_continuation_capacity")
             import secrets
+            continuation_id = "tg_review_continuation_" + secrets.token_hex(8)
+            from .review_answer_dedication import issue
+            declaration = (issue(root, predecessor_history, state, selected, continuation_id,
+                explicit=migrate_legacy_reviewers, sources=sources)
+                if answer_protocol == "review-answer-v1" else None)
+        retirement = _prior_admission(scope, leases, replace(snapshot, history=predecessor_history), historical)
+        if transition is None:
             transition = leases.transitions.fence(leases.transition, RequestRound(root.preparation_id,
-                "tg_review_continuation_" + secrets.token_hex(8), sequence, values.basis_digest(root.basis),
+                continuation_id, sequence, values.basis_digest(root.basis),
                 _digest(root.basis), values.selection_digest(selected), attempt,
                 request_identity_digest(old_request) if old_request else None,
                 old_request.automation_id if old_request else None, old_request.phase if old_request else None,
                 packet_path=directory + "/packet.json",
-                result_paths=tuple(directory + f"/review-{index}.json" for index in range(1, len(selected) + 1)),answer_protocol=answer_protocol))
+                result_paths=tuple(directory + f"/review-{index}.json" for index in range(1, len(selected) + 1)),
+                answer_protocol=answer_protocol, legacy_migration=declaration))
             progress.transition = transition
         if collected_sources and transition.answer_protocol=="legacy":
             files.fail("review_continuation_unavailable")
@@ -672,7 +687,8 @@ def continue_reviews(repo, args, raw, *, caller=None):
     try:
         selected = values.decode_selection(raw)
         with _admission_scope(repo, args, caller) as (scope, leases, snapshot):
-            admitted = _admit_operation(scope, leases, snapshot, selected, args.directory, progress)
+            admitted = _admit_operation(scope, leases, snapshot, selected, args.directory, progress,
+                migrate_legacy_reviewers=getattr(args, "migrate_legacy_reviewers", False))
             progress.stage = "cleanup"
             settled = _settle_cleanup(scope, leases, admitted)
             progress.transition = settled.transition

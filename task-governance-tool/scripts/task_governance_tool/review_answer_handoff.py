@@ -421,6 +421,7 @@ def _admit_initial_inventory(resolution, root, submission):
 def registration_admission(repo, submission, caller):
     if type(submission) is not CollectedSubmission:
         raise _bad()
+    repo = Path(repo)
     grouped = {}
     try:
         for item in submission.items:

@@ -258,6 +258,18 @@ observed before the additional request, and null dispatch ID. It records an
 observation boundary, not a proven additional-request dispatch. The actual
 adopted turn and message belong to the frozen SourceIdentity below.
 
+The operational `RequestRound` may additionally hold `legacy_migration`, exactly
+`{version:1,assignments:[{session_id,reviewer_key,origin_continuation_id}]}`.
+Its one through eight assignments follow the current selected session order,
+with distinct sessions and keys using the bounds above. Origin uses the native
+continuation-ID grammar. A first explicit declaration points to its own fence;
+later declarations preserve that same origin and key in the same preparation.
+Every declaration is checked against its native selection and complete basis.
+Absent declarations are omitted, not encoded as null; explicit empty or
+noncanonical declarations reject. The existing 32,768-byte round limit and
+physical schema remain unchanged. This records future dedication only;
+terminal-turn observation remains in SlotBinding, and no legacy row is rewritten.
+
 An observation source is exactly `{adapter:"codex-app-tools-review-answer",
 version:1,operation}`. Operation is `dispatch_binding`, `answer_observation`,
 `terminal_observation` or `correction_binding` at its respective field. Only the

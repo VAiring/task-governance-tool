@@ -199,6 +199,7 @@ class ContinuedAnswerPublicationTests(unittest.TestCase):
         from task_governance_tool import setup_feature_config
         fixture=self.enterContext(handoff_fixture(schema_version=30, contract=None))
         fixture.ready()
+        fixture.args.migrate_legacy_reviewers = True
         self.assertEqual(p.PreparationRepository(fixture.root/"preparation.sqlite").read()[1].version,1)
         fixture.resolution.paths.review_answer_collection_store=lambda *_:fixture.root/"answers.sqlite"
         with patch.object(setup_feature_config,"answer_collection_allowed",return_value=True):

@@ -812,6 +812,15 @@ the exact current prior Receipt ID. The helper derives the remaining original
 inventory and preserves the preparation's manual/integrated route. No new
 commit permission, intent, reviewer dispatch or host effect is authorized.
 
+To explicitly move selected reviewers from a legacy save-based preparation to
+enabled answer collection, add `--migrate-legacy-reviewers` for their first new
+continuation. This saves their future dedication while preserving old results;
+it does not manufacture an initial dispatch binding. Later continuations reuse
+that saved dedication. Do not add the flag to reinterpret an already issued
+round, bypass registration of saved answers, or replace missing native proof in
+a collected initial preparation. The returned pre-send arm procedure below
+still applies, and each new continuation needs its own observation boundary.
+
 If known cleanup is required, use the existing authorized `review_wait_stop`
 once, then reconcile the same saved request/directory. Unknown effect or worker
 exit blocks replacement; do not replay or choose another output location.

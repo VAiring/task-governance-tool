@@ -35,6 +35,7 @@ class RequestRound:
     result_paths: tuple[str, ...] = ()
     answer_protocol: str = "legacy"
     collection_basis_digests: tuple[str, ...] = ()
+    legacy_migration: dict | None = None
 
     def __post_init__(self):
         try:
@@ -47,6 +48,11 @@ class RequestRound:
                 raise ValueError
             if type(self.answer_protocol) is not str or self.answer_protocol not in ("legacy", "review-answer-v1"):
                 raise ValueError
+            if self.legacy_migration is not None:
+                from task_governance_tool.review_answer_dedication import decode
+                if self.answer_protocol != "review-answer-v1":
+                    raise ValueError
+                decode(self.legacy_migration)
             if (self.expected_attempt == 0) != (self.expected_request_digest is None):
                 raise ValueError
             if (self.expected_attempt == 0) != (self.old_request_phase is None):
@@ -106,6 +112,8 @@ def encode(record):
         # Preserve legacy and already-issued unanchored collected round bytes.
         # Operational admission rejects an unanchored collected ready round.
         del value["collection_basis_digests"]
+    if record.legacy_migration is None:
+        del value["legacy_migration"]
     raw = json.dumps(value, ensure_ascii=True, sort_keys=True, separators=(",", ":"), allow_nan=False)
     if len(raw.encode()) > 32768:
         raise RepositoryError("invalid_snapshot")
@@ -115,8 +123,9 @@ def encode(record):
 def decode(raw):
     try:
         value = json.loads(raw)
-        fields = set(RequestRound.__dataclass_fields__)
-        if type(value) is not dict or set(value) not in (
+        fields = set(RequestRound.__dataclass_fields__) - {"legacy_migration"}
+        observed_fields = set(value) - {"legacy_migration"} if type(value) is dict else set()
+        if type(value) is not dict or observed_fields not in (
             fields, fields - {"collection_basis_digests"},
             fields - {"collection_basis_digests", "answer_protocol"}):
             raise ValueError

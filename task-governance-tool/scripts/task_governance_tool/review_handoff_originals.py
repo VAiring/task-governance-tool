@@ -25,6 +25,7 @@ class SavedOriginal:
     bound: transport.BoundResult
     verdict: str
     collected_metadata: dict | None = None
+    reviewer_key: str | None = None
 
 
 def read_original(repo, packet_path, result_path, *, approvals=(), preparation=None, current=True):
@@ -49,7 +50,8 @@ def read_original(repo, packet_path, result_path, *, approvals=(), preparation=N
         item = CollectedItem(slot, raw, metadata, decode_answer(raw))
         sealed = json.dumps(metadata, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
         return SavedOriginal(packet_path, result_path, raw, metadata, sealed,
-            transport.BoundResult(item.target, item.session_binding), item.answer.payload["verdict"], metadata)
+            transport.BoundResult(item.target, item.session_binding), item.answer.payload["verdict"], metadata,
+            metadata["binding"]["reviewer_key"])
     result_file = files.checked_path(repo, result_path)
     raw = files.read_bounded(result_file, REVIEW_RESULTS_INPUT_LIMIT)
     normalized = files.validate_results(raw, packet, approvals, original=True)
@@ -61,7 +63,8 @@ def read_original(repo, packet_path, result_path, *, approvals=(), preparation=N
         or files.read_bounded(result_file, REVIEW_RESULTS_INPUT_LIMIT) != raw
         or files.read_bounded(sidecar_file, files.PACKET_LIMIT) != sidecar_raw):
         files.fail("handoff_file_changed")
-    return SavedOriginal(packet_path, result_path, raw, metadata, sidecar_raw, bound, normalized["receipts"][0]["verdict"])
+    return SavedOriginal(packet_path, result_path, raw, metadata, sidecar_raw, bound,
+        normalized["receipts"][0]["verdict"], reviewer_key=normalized["receipts"][0]["reviewer"])
 
 
 def collection_location(repo, packet_path, packet_raw, packet, *, preparation=None, current=True):

@@ -542,6 +542,28 @@ without filling pins from the journal or falling back to legacy. An opted-out ne
 outstanding collected originals. No locator scans directories or invents a
 missing preparation.
 
+`review_answer_dedication.py` owns the closed legacy migration declaration and
+the shared eligibility used by continuation issuance, readiness and arming.
+`RequestRound.legacy_migration` is an optional versioned value frozen with the
+transition fence and copied unchanged into the request round. Absence is omitted
+from canonical encoding, preserving every old payload. A new explicit migration
+records the selected sessions and their future reviewer keys, with each origin
+pointing to that fence. Later rounds carry only their selected declarations and
+validate the same origin in the bounded same-preparation history. Existing
+registered predecessor keys must agree; selected saved-but-unregistered
+originals retain the prior registration requirement. Requested launch attributes
+are unknown, never inferred from old provenance.
+
+The declaration is separate from the collection binding's terminal-turn
+boundary. Legacy arming admits its saved declaration without opening an initial
+native store; native preparations retain their original issuance-proof path.
+Same-round rearm checks the existing binding before any host observation. A new
+round reuses dedication but observes a new pre-send terminal turn. Existing
+service admission still revalidates native basis and current selection before
+binding and collection. No core schema, physical operational schema, original
+metadata or Evidence format changes; no old record receives a declaration on
+replay or read.
+
 `review_answer_handoff.service_for` gives fresh collection call-local admission
 that reloads the current preparation and native/issued continuation at each
 existing effect boundary. This shared check covers parent, wait and hook

@@ -578,8 +578,31 @@ continuation request. This observes that same dedicated reviewer's latest
 terminal own turn and saves it as an exclusive boundary. An in-progress
 baseline cannot arm a continuation. No timestamp or unknown send outcome is
 used to manufacture this boundary. A retained strict version-one assignment
-may establish dedication for a new version-two continuation; an arbitrary
-legacy session without that proof cannot.
+may establish dedication for a new version-two continuation. A legacy save-based
+preparation instead requires the explicit migration declaration below; absence
+of native initial assignment is normal for that route, not missing dispatch
+evidence to reconstruct.
+
+For a new continuation under a legacy preparation, the parent may specify
+`continue --migrate-legacy-reviewers`. With collection enabled, this explicitly
+dedicates the selected actual sessions to this Task, preparation and unchanged
+review basis from this operation forward. The transition fence freezes a
+versioned declaration before exposing requests. It asserts no historical
+fresh-child dispatch, prior model execution or message delivery. Registered
+reassessment preserves the exact predecessor's session and reviewer key.
+An unanswered session receives its actual UUID as its new key only through this
+explicit declaration; existing keys and saved originals must not conflict.
+Saved but unregistered selected answers still require the existing complete
+batch registration first. The flag never discards or bypasses them.
+
+Later continuations reuse that same preparation's saved dedication, including
+across an intervening legacy round, while arming a new exclusive pre-send
+boundary for each new round. Re-arming the same issued slot verifies its saved
+declaration and binding and returns the unchanged boundary without a host read.
+Neither path requires a nonexistent initial collection store. A new previously
+undeclared legacy reviewer requires the explicit flag. Native collected
+preparations retain their strict initial-assignment checks; missing or corrupt
+native proof is not a legacy-migration fallback.
 
 Arming is idempotent for the same issued slot and never moves its boundary.
 It sends no reviewer message. An unknown arm or send outcome is inspected
@@ -808,11 +831,23 @@ no material-retrieval, parent-submit or finalization operation. Current runtime
 behavior is owned here and by the linked current database/Evidence owners;
 conditional plans retain implementation acceptance, not a runtime fallback.
 
+Legacy migration applies only to a newly fenced continuation. Its declaration,
+protocol and request bases remain fixed on replay, regardless of current flags
+or settings; an issued legacy or unanchored collected round is never upgraded
+in place. Explicit migration while collection is disabled is unavailable before
+the new fence. Without a saved dedication or explicit migration, a new collected
+continuation under a legacy root is likewise unavailable rather than returning
+an arm instruction that cannot succeed. Protocol selection, readiness and arm
+consume the same typed dedication eligibility.
+
 ### Conditional Review Continuation
 
 The helper exposes `continue --repo <project> --task-id <Task>
 --target-generation <generation> --directory <unused ignored directory>` with
-the closed selection on bounded UTF-8 stdin. The records-only route permits
+the closed selection on bounded UTF-8 stdin. The optional
+`--migrate-legacy-reviewers` explicitly establishes future dedication for a new
+collected round under a legacy preparation; it changes neither the selection
+shape nor old originals. The records-only route permits
 this exceptional operation only for an admitted manual preparation; an integrated
 locator is rejected before any continuation write and never acquires automatic
 finalization authority from records-only invocation.

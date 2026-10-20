@@ -403,6 +403,12 @@ immutable bounded canonical row in `review_receipt_provenance_v2`. Only a v2
 independent Receipt may use `unable_to_review`. No migration synthesizes v2
 answers or changes an old assertion, digest or model/Skill declaration.
 
+Explicit legacy reviewer migration changes no native schema or historical row.
+Its new operational continuation fence stores only the closed future-dedication
+declaration defined by the [value owner](database-design.md#collected-answer-value-schemas).
+Old round encodings, originals, sidecars, Receipts and sealed Evidence remain
+unchanged; reading or retrying an old round cannot add a declaration.
+
 `review_collection_sources` uniquely binds the exact preparation, source slot,
 attempt, reviewer session, turn and message to one Receipt, basis/original/
 payload digests and exact submission digest. A source item cannot register a

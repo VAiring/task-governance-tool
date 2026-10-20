@@ -52,7 +52,8 @@ TASK_COMMANDS = {
     ("verification", "receipt", "add"): (RECEIPT, 1),
 }
 HELPER_COMMANDS = {
-    ("continue",): ({"--task-id": 1, "--target-generation": 1, "--directory": 1}, 0),
+    ("continue",): ({"--task-id": 1, "--target-generation": 1, "--directory": 1,
+                    "--migrate-legacy-reviewers": 0}, 0),
     ("read",): ({"--packet": 1, "--material-details": 0, "--section": 1, "--start": 1, "--content-sha256": 1, "--packet-sha256": 1}, 0),
     ("save",): ({"--packet": 1, "--output": 1}, 0),
     ("submit",): ({"--packet": 1}, None),

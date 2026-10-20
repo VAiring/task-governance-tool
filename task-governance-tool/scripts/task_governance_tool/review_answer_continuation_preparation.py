@@ -17,13 +17,19 @@ from .review_wait_runtime.continuation_transition_repository import TransitionRe
 from .state_paths import path_lexically_exists
 
 
-def choose_protocol(scope,packet):
+def choose_protocol(scope,packet, *, migrate_legacy_reviewers=False):
     """Use the existing admitted resolution; never resolve another workspace."""
     from .setup_feature_config import answer_collection_allowed
     if not answer_collection_allowed(getattr(scope.paths,"skill_root",None)):
+        if migrate_legacy_reviewers:
+            files.fail("review_continuation_unavailable")
         return "legacy"
     if packet["task"]["review_tier"]==0 or packet.get("review_session_context",{}).get("execution_id") is None:
+        if migrate_legacy_reviewers:
+            files.fail("review_continuation_unavailable")
         return "legacy"
+    if migrate_legacy_reviewers and scope.root.version != 1:
+        files.fail("review_continuation_unavailable")
     from .storage import connect_initialized_readonly,current_schema_version
     with closing(connect_initialized_readonly(scope.target, operation_local=True)) as connection:
         if current_schema_version(connection)<30:

@@ -534,6 +534,13 @@ older provenance or changing Reference attribution. Actual model, Skill and meth
 values and free-text checks cannot fill these unknowns. Assurance remains an
 attestation; observation does not authenticate identity, review quality or truth.
 
+A legacy reviewer's new collected continuation may derive future dedication
+from an explicit saved migration declaration rather than native initial-child
+proof. Its tracking observation still makes no historical dispatch claim.
+New requested launch attributes stay unknown where no request fact was retained;
+old review provenance is not converted into new launch evidence. This adds no
+Evidence arm and rewrites no original, predecessor Receipt or sealed Bundle.
+
 The v2 provenance digest is SHA-256 over `taskgov-review-provenance-v2\0` plus
 canonical JSON of `{project_id,task_id,review_receipt_id,receipt_kind,target,
 provenance}`. Target contains the existing five fields; provenance excludes only

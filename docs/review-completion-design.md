@@ -77,6 +77,13 @@ Contract revision, target generation, proposed evidence kind, and fixed next
 action. Marker `0` retains those two check reads and the manual write path;
 only live marker `2` adds the Runner selection and selected-basis recapture.
 
+All completion connection phases pass the completing Task ID to the storage
+layer's [scoped review admission](database-design.md#conditional-review-continuation-storage),
+including the writer opened by compatibility edit-to-done. The locked edit
+transition repeats that same scope after `BEGIN IMMEDIATE`, before recapturing
+the completion basis. Sequential status predicates, own relevant history and
+cross-Task rejection remain; unrelated Tasks' reviews are not revalidated.
+
 <a id="review-target-and-git-snapshot"></a>
 
 ## Review Target And Git Snapshot

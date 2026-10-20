@@ -463,7 +463,9 @@ def _execute_task_edit(
     edit_input: dict[str, Any],
     caller: CallerIdentity,
 ) -> EditTaskResult:
-    with closing(connect_initialized(target)) as connection:
+    with closing(connect_initialized(
+        target, review_task_id=task_id if str(edit_input.get("status", "")).strip() == "done" else None,
+    )) as connection:
         with connection:
             return _edit_on_connection(
                 connection,
@@ -506,7 +508,9 @@ def _edit_without_action(
             task_mutation=_mutation(result),
         )
 
-    with closing(connect_initialized(target)) as connection:
+    with closing(connect_initialized(
+        target, review_task_id=task_id if str(edit_input.get("status", "")).strip() == "done" else None,
+    )) as connection:
         preflight, _public, authority, owner = _read_task_preflight_snapshot(
             connection,
             target,

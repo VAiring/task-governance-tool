@@ -69,6 +69,41 @@ version-two Bundle. The independent
 [Evidence format](evidence-specification.md#conditional-continuation-evidence)
 never alters the meaning of a preserved cycle.
 
+## Completion Review Admission
+
+Ordinary completion (`task complete`, its read-only check, and compatibility
+edit-to-done) validates review storage for the completing Task only. Its own
+Receipt/session/provenance relations, continuation and judgment history, retained
+originals, and applicable Findings remain subject to complete relevant-graph
+validation. A reference to another Task's review result is inconsistent; it
+never imports that Task's result or qualifies an independent PASS.
+
+The scope follows relations from own Receipts as well as declared owners:
+reverse provenance/source-arm consistency remains required for own version-zero
+and version-one Receipts, including cross-arm collisions on their provenance
+IDs. Dispatch inventories referenced by own Receipt sources
+or entries are included even if their declared Task differs; that owner mismatch
+is rejected without traversing the other Task's review history. Compatibility
+edit-to-done selects this scope using the existing normalized status value.
+
+Sequential eligibility still checks whether earlier Tasks in the lane are done
+or cancelled. That status check does not authorize revalidation of their review
+histories. Other Tasks' review rows and unrelated review orphans are outside
+completion's review admission, even when those Tasks precede the completing Task.
+This narrows review validation only: schema/object/history, project binding,
+other existing storage admission, ownership and completion-basis checks remain.
+Physical SQLite integrity and foreign-key checks remain database-wide; this
+exception concerns review semantics, not admission of physically invalid storage.
+The scoped review checks run again after acquiring the completion writer; no
+cross-operation validation cache is introduced.
+After native cycle insertion, selected-cycle Evidence and Bundle validation
+checks that cycle's persisted sources instead of replaying all Tasks' Bundles.
+
+Existing whole-store consumers, including Setup, recovery and doctor, retain
+global review admission and detection of unrelated history corruption/orphans.
+Completion does not certify the whole database, repair history, or add a new
+audit command, background auditor, schema migration or public scope option.
+
 ## Migration And Activation Boundary
 
 Schema v17 migration `verification_receipts` creates

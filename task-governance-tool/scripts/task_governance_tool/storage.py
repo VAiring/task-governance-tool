@@ -8150,7 +8150,13 @@ def _persist_completion_cycle_locked(
             connection,
             project_id=cycle.project_id,
         )
-        _validate_completion_evidence_bundle_rows(connection)
+        if cycle.origin == "native_done":
+            _validate_selected_completion_cycle_evidence(
+                connection, project_id=cycle.project_id, cycles=(persisted,),
+            )
+            _validate_selected_schema21_completion_bundle_history(connection, cycles=(persisted,))
+        else:
+            _validate_completion_evidence_bundle_rows(connection)
     return persisted
 
 
@@ -11850,8 +11856,10 @@ def _validate_current_schema_contract(
 
 def _validate_current_schema_structure(
     connection: sqlite3.Connection,
+    *,
+    review_task: tuple[str, str] | None = None,
 ) -> int:
-    """Validate the current schema contract and its global admitted rows."""
+    """Validate admitted rows, with completion's explicit review-only scope."""
 
     version = _validate_current_schema_contract(connection)
     if version == PRIVATE_SCHEMA20_VERSION:
@@ -11863,15 +11871,25 @@ def _validate_current_schema_structure(
         validate_storage_rows(connection)
     if version in {25, 26, 27, 28, 29, 30, 31}:
         from task_governance_tool.review_session_repository import read_bindings
-        read_bindings(connection)
+        if review_task is None:
+            read_bindings(connection)
+        else:
+            cursor = connection.execute(
+                "SELECT review_receipt_id, project_id FROM review_receipts WHERE task_id=?",
+                (review_task[1],),
+            )
+            while rows := cursor.fetchmany(COMPLETION_RECEIPT_VALIDATION_CHUNK_SIZE):
+                if any(type(row[0]) is not str or row[1] != review_task[0] for row in rows):
+                    raise evidence_ledger_inconsistent()
+                read_bindings(connection, receipt_ids={row[0] for row in rows})
     if version in {28, 29, 30, 31}:
         from task_governance_tool.schema_task_event_notes import validate_note_rows
         validate_note_rows(connection)
     if version in {30, 31}:
         from task_governance_tool.review_answer_repository import validate_storage_rows
         from task_governance_tool.review_continuation_repository import validate_judgment_storage
-        validate_storage_rows(connection)
-        validate_judgment_storage(connection)
+        validate_storage_rows(connection, review_task=review_task)
+        validate_judgment_storage(connection, review_task=review_task)
     return version
 
 
@@ -11903,9 +11921,13 @@ def _validate_current_project_rows(
 def validate_current_database_structure(
     connection: sqlite3.Connection,
     project_id: str,
+    *,
+    review_task_id: str | None = None,
 ) -> int:
     """Require complete current-schema rows without checking a caller basis."""
-    version = _validate_current_schema_structure(connection)
+    version = _validate_current_schema_structure(
+        connection, review_task=(project_id, review_task_id) if review_task_id is not None else None,
+    )
     _validate_current_project_rows(connection, project_id)
     return version
 
@@ -11922,9 +11944,14 @@ def validate_current_database_binding(
 def validate_current_database(
     connection: sqlite3.Connection,
     target: DatabaseTarget,
+    *,
+    review_task_id: str | None = None,
 ) -> int:
     """Require the supported schema and matching project without migrating."""
-    version = _validate_current_schema_structure(connection)
+    version = _validate_current_schema_structure(
+        connection,
+        review_task=(target.project.project_id, review_task_id) if review_task_id is not None else None,
+    )
     binding = read_project_binding_state(connection)
     _validate_target_binding(binding, target)
     _validate_current_project_rows(connection, binding.project_id)
@@ -11990,6 +12017,7 @@ def connect_initialized(
     target: DatabaseTarget,
     *,
     managed_backup_source: bool = False,
+    review_task_id: str | None = None,
 ) -> sqlite3.Connection:
     """Open a current, project-matching database without taking a write lock."""
     validate_operational_journal_state(target.db_path)
@@ -12011,11 +12039,12 @@ def connect_initialized(
             fallback_message="could not open database",
         ) from exc
     try:
-        (
-            validate_managed_backup_source_database
-            if managed_backup_source
-            else validate_current_database
-        )(connection, target)
+        if managed_backup_source:
+            validate_managed_backup_source_database(connection, target)
+        elif review_task_id is None:
+            validate_current_database(connection, target)
+        else:
+            validate_current_database(connection, target, review_task_id=review_task_id)
     except sqlite3.Error as exc:
         connection.close()
         raise operational_sqlite_error(
@@ -12033,6 +12062,7 @@ def begin_initialized_write(
     target: DatabaseTarget,
     *,
     managed_backup_source: bool = False,
+    review_task_id: str | None = None,
 ) -> None:
     """Acquire the short writer transaction and revalidate its database owner."""
     if connection.in_transaction:
@@ -12042,11 +12072,12 @@ def begin_initialized_write(
         )
     try:
         connection.execute("BEGIN IMMEDIATE")
-        (
-            validate_managed_backup_source_database
-            if managed_backup_source
-            else validate_current_database
-        )(connection, target)
+        if managed_backup_source:
+            validate_managed_backup_source_database(connection, target)
+        elif review_task_id is None:
+            validate_current_database(connection, target)
+        else:
+            validate_current_database(connection, target, review_task_id=review_task_id)
     except sqlite3.Error as exc:
         connection.rollback()
         raise operational_sqlite_error(
@@ -12109,15 +12140,19 @@ def connect_initialized_readonly(
     *,
     managed_backup_source: bool = False,
     deadline: float | None = None,
+    review_task_id: str | None = None,
 ) -> sqlite3.Connection:
-    """Open one globally validated current-schema read transaction."""
+    """Open a validated read, optionally limiting completion review admission."""
 
     return _connect_validated_readonly(
         target,
         validator=(
             validate_managed_backup_source_database
             if managed_backup_source
-            else validate_current_database
+            else validate_current_database if review_task_id is None
+            else lambda connection, target: validate_current_database(
+                connection, target, review_task_id=review_task_id,
+            )
         ),
         deadline=deadline,
     )

@@ -330,9 +330,18 @@ def handle_command(context: CommandContext) -> CommandResult:
                 message=PREFLIGHT_MESSAGES["unsupported_install_layout"],
                 project_id=None,
             )
+        completion_review_task = None
+        if context.command == "task.complete" or (
+            context.command == "task.edit" and str(getattr(context.args, "status", "")).strip() == "done"
+        ):
+            try:
+                completion_review_task = validate_task_id(getattr(context.args, "task_id", ""))
+            except TaskValidationError as exc:
+                return state_resolution_failure_result(context, code=exc.code, message=exc.message, project_id=None)
         resolution = resolve_project_state(
             skill_root=scope.skill_root,
             repo=scope.canonical_repo,
+            review_task_id=completion_review_task,
             retain_read_connection=(
                 context.command
                 in {
@@ -1825,7 +1834,11 @@ def handle_task_edit(context: CommandContext) -> CommandResult:
             )
         )
         if runner_plan_action is None and target.canonical_fixed is not True:
-            with closing(connect_initialized(target)) as connection:
+            with closing(connect_initialized(
+                target,
+                review_task_id=(getattr(context.args, "task_id", None)
+                                if str(edit_input.get("status", "")).strip() == "done" else None),
+            )) as connection:
                 with connection:
                     result = edit_task(
                         connection,

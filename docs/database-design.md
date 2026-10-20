@@ -90,7 +90,17 @@ the same actual session, key, Contract, authority/criteria and four-part target;
 one predecessor has at most one successor. One actual reviewer counts once.
 
 Core admission validates the full graph, even when display uses a bounded
-historical page. Task reads acquire all that Task's continuation generations
+historical page, within the operation's admitted scope. Completion supplies its
+Task ID through the internal `review_task_id` storage argument on each initialized
+read/open and locked writer revalidation. The storage layer keeps ordinary
+non-review admission and scopes session binding, collected-answer and judgment
+validation to that Task. Repository `review_task` is the resolver-derived
+project/Task pair, never a public caller-controlled bypass. Own judgment rows
+retain all generations and are acquired in existing validation chunks; linked
+predecessors and results must belong to the same Task/basis. Global callers omit
+the argument and retain whole-store review/orphan validation.
+
+Task reads acquire all that Task's continuation generations
 and use the retained-original composite primary key to fetch only those
 consumers' captures. The same fetched inventory supplies slot counts and all
 ancestor, metadata and consumption checks. Whole-store admission reads the

@@ -945,8 +945,8 @@ class TaskCompleteCliTests(unittest.TestCase):
             original_resolve = task_service.resolve_completion_request
             original_revalidate = task_service.revalidate_done_git_evidence
 
-            def tracked_connect(target):
-                tracked = TrackedConnection(original_connect(target))
+            def tracked_connect(target, **kwargs):
+                tracked = TrackedConnection(original_connect(target, **kwargs))
                 opened.append(tracked)
                 return tracked
 
@@ -1180,15 +1180,15 @@ class TaskCompleteCliTests(unittest.TestCase):
             )
             original_write = completion_workflow.connect_initialized
 
-            def recording_read(target):
+            def recording_read(target, **kwargs):
                 return RecordingConnection(
-                    original_read(target),
+                    original_read(target, **kwargs),
                     observations,
                 )
 
-            def recording_write(target):
+            def recording_write(target, **kwargs):
                 return RecordingConnection(
-                    original_write(target),
+                    original_write(target, **kwargs),
                     observations,
                 )
 

@@ -213,22 +213,55 @@ def insert_provenance_locked(connection, *, receipt, provenance, collected):
 VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""", (receipt["review_receipt_id"],*(host[k] for k in ("preparation_id","slot","attempt","reviewer_session_id","turn_id","message_id","basis_digest")),_canonical(metadata["basis"],32768),original["digest"],original["payload_digest"],collected.submission_digest))
 
 
-def validate_storage_rows(connection):
-    # Full inventories reject orphans even when public displays are bounded.
-    rows = connection.execute("SELECT receipt.* FROM review_receipts AS receipt WHERE review_provenance_basis_version=2 ORDER BY review_receipt_id").fetchall()
+def validate_storage_rows(connection, *, review_task=None):
+    # Completion admits its own review graph; global consumers also reject orphans.
+    selected = " AND task_id=?" if review_task is not None else ""
+    rows = connection.execute("SELECT receipt.* FROM review_receipts AS receipt WHERE review_provenance_basis_version=2" + selected + " ORDER BY review_receipt_id",
+                              (review_task[1],) if review_task is not None else ())
     for row in rows:
+        if review_task is not None and (row["project_id"], row["task_id"]) != review_task:
+            raise _bad()
         provenance=validate_provenance_relation(connection,row)
         validate_payload_findings(connection,row["review_receipt_id"],provenance)
         if connection.execute("SELECT 1 FROM review_receipt_sessions WHERE review_receipt_id=?",(row["review_receipt_id"],)).fetchone() is None:
             raise _bad()
-    if connection.execute("""SELECT 1 FROM review_receipt_provenance_v2 AS p LEFT JOIN review_receipts AS r ON r.review_receipt_id=p.review_receipt_id
-WHERE r.review_receipt_id IS NULL OR r.review_provenance_basis_version!=2 OR r.review_provenance_id!=p.review_provenance_id
-UNION ALL SELECT 1 FROM review_collection_sources AS s LEFT JOIN review_receipt_provenance_v2 AS p ON p.review_receipt_id=s.review_receipt_id WHERE p.review_receipt_id IS NULL LIMIT 1""").fetchone():
+    own_receipt = "r.task_id=?" if review_task is not None else "1"
+    own_parameters = (review_task[1], review_task[1]) if review_task is not None else ()
+    if connection.execute("""SELECT 1 FROM review_receipt_provenance_v2 AS p
+LEFT JOIN review_receipts AS r ON r.review_receipt_id=p.review_receipt_id
+WHERE (r.review_receipt_id IS NULL OR r.review_provenance_basis_version!=2
+       OR r.review_provenance_id!=p.review_provenance_id) AND """ + own_receipt + """
+UNION ALL SELECT 1 FROM review_collection_sources AS s
+LEFT JOIN review_receipt_provenance_v2 AS p ON p.review_receipt_id=s.review_receipt_id
+LEFT JOIN review_receipts AS r ON r.review_receipt_id=s.review_receipt_id
+WHERE p.review_receipt_id IS NULL AND """ + own_receipt + " LIMIT 1", own_parameters).fetchone():
         raise _bad()
-    if connection.execute("SELECT 1 FROM review_receipt_provenance_v2 AS p JOIN review_receipt_provenance AS old ON old.review_provenance_id=p.review_provenance_id LIMIT 1").fetchone():
+    if connection.execute("SELECT 1 FROM review_receipt_provenance_v2 AS p JOIN review_receipt_provenance AS old ON old.review_provenance_id=p.review_provenance_id" +
+                          (" WHERE EXISTS (SELECT 1 FROM review_receipts AS r WHERE r.task_id=? AND "
+                           "(r.review_receipt_id=p.review_receipt_id OR r.review_provenance_id=p.review_provenance_id))" if review_task is not None else "") + " LIMIT 1",
+                          (review_task[1],) if review_task is not None else ()).fetchone():
         raise _bad()
-    for dispatch in connection.execute("SELECT * FROM review_collection_dispatches ORDER BY preparation_id,submission_digest"):
-        if read_registration(connection,project_id=dispatch["project_id"],task_id=dispatch["task_id"],preparation_id=dispatch["preparation_id"],submission_digest=dispatch["submission_digest"])["status"] != "recorded":
+    # Include parents reached through own sources/entries even if their declared
+    # owner was changed. Inspect the relation, never the foreign Task's graph.
+    dispatch_scope = "" if review_task is None else """ WHERE dispatch.task_id=?
+OR (dispatch.preparation_id,dispatch.submission_digest) IN (
+  SELECT source.preparation_id,source.submission_digest
+  FROM review_collection_sources AS source JOIN review_receipts AS receipt
+    ON receipt.review_receipt_id=source.review_receipt_id WHERE receipt.task_id=?)
+OR (dispatch.preparation_id,dispatch.submission_digest) IN (
+  SELECT entry.preparation_id,entry.submission_digest
+  FROM review_collection_dispatch_entries AS entry JOIN review_receipts AS receipt
+    ON receipt.review_receipt_id=entry.review_receipt_id WHERE receipt.task_id=?)"""
+    for dispatch in connection.execute("SELECT dispatch.* FROM review_collection_dispatches AS dispatch" +
+            dispatch_scope + " ORDER BY preparation_id,submission_digest",
+            (review_task[1],) * 3 if review_task is not None else ()):
+        if review_task is not None and (dispatch["project_id"], dispatch["task_id"]) != review_task:
+            raise _bad()
+        registration = read_registration(connection,project_id=dispatch["project_id"],task_id=dispatch["task_id"],preparation_id=dispatch["preparation_id"],submission_digest=dispatch["submission_digest"])
+        if (registration["status"] != "recorded" or any(
+            (entry["project_id"], entry["task_id"]) != (dispatch["project_id"], dispatch["task_id"])
+            for entry in registration["entries"]
+        )):
             raise _bad()
 
 

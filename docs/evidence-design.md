@@ -97,7 +97,7 @@ the retired `derived_analysis` reservation from current schema v22.
 
 `storage.py` retains shared SQLite admission, recovery validation policy, native
 cycle coordination, and cycle persistence. It consumes the Evidence and Review
-repositories without changing global versus selected validation scope;
+repositories under the owning operation's global or selected validation scope;
 necessary shared value types remain there. The
 projection metadata repository owns only its state rows.
 `tasks.py` and `contracts.py`
@@ -106,6 +106,13 @@ derives subject-v1 bindings; it and `reviews.py` create typed References inside
 their source writes; target capture creates one manifest and subject-capable
 basis atomically; completion passes a fully prepared Bundle basis into its
 native-cycle savepoint. No feature module opens raw SQLite.
+
+Native completion validates its newly persisted cycle through the existing
+selected-cycle Evidence and selected Bundle-history validators, followed by
+its stored projection readback. It does not invoke whole-store Bundle replay
+after insertion. The cycle/source-generation advance remains atomic; global
+projection/Setup/recovery consumers and legacy cycle archival retain full-store
+validation. See [completion review admission](database-specification.md#completion-review-admission).
 
 `state_paths.py` and `state_resolver.py` alone own the fixed Evidence root,
 index, Bundle directory, and lock. `state_transition.py` recognizes those

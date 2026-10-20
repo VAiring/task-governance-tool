@@ -642,29 +642,39 @@ def resolution_link_exists(connection, finding_id, successor_id) -> bool:
                               (finding_id, successor_id)).fetchone() is not None
 
 
-def validate_judgment_storage(connection) -> None:
-    """Validate all immutable lineage, including off-page/historical nodes."""
+def validate_judgment_storage(connection, *, review_task=None) -> None:
+    """Validate immutable lineage in the admitted global or completing-Task scope."""
     # Whole-store admission acquires the continuation inventory once, then uses
     # the same per-Task validator as ordinary reads. No persistent cache or
     # cross-transaction validation result is introduced.
     histories = {}
-    for row in connection.execute("SELECT * FROM review_continuations ORDER BY preparation_id,sequence"):
+    selection = " WHERE task_id=?" if review_task is not None else ""
+    parameters = (review_task[1],) if review_task is not None else ()
+    for row in connection.execute("SELECT * FROM review_continuations" + selection + " ORDER BY preparation_id,sequence", parameters):
+        if review_task is not None and (row["project_id"], row["task_id"]) != review_task:
+            raise _inconsistent()
         histories.setdefault((row["project_id"], row["task_id"]), []).append(row)
     all_records = {}
-    for task in connection.execute("SELECT project_id,task_id FROM tasks ORDER BY task_id"):
+    for task in connection.execute("SELECT project_id,task_id FROM tasks" + selection + " ORDER BY task_id", parameters):
         all_records.update({record.continuation_id: record for record in _validate_continuations(
             connection, histories.pop((task["project_id"], task["task_id"]), ()),
             project_id=task["project_id"], task_id=task["task_id"])})
-    nodes = connection.execute("""SELECT receipt.review_receipt_id,receipt.judgment_revision,
+    cursor = connection.execute("""SELECT receipt.review_receipt_id,receipt.judgment_revision,
+receipt.project_id,receipt.task_id,
 judgment.judgment_revision AS metadata_revision,judgment.prior_receipt_id,judgment.continuation_id
 FROM review_receipts AS receipt LEFT JOIN review_receipt_judgments AS judgment
-ON judgment.review_receipt_id=receipt.review_receipt_id ORDER BY receipt.review_receipt_id""").fetchall()
+ON judgment.review_receipt_id=receipt.review_receipt_id""" +
+        (" WHERE receipt.task_id=?" if review_task is not None else "") + " ORDER BY receipt.review_receipt_id", parameters)
+    from .storage import COMPLETION_RECEIPT_VALIDATION_CHUNK_SIZE
+    nodes = [row for chunk in iter(lambda: cursor.fetchmany(COMPLETION_RECEIPT_VALIDATION_CHUNK_SIZE), []) for row in chunk]
     expected_results = {receipt: (record, session, digest) for record in all_records.values()
                         for session, receipt, digest in record.results}
     observed_results = set()
     successor_ids = set()
     by_id = {row["review_receipt_id"]: row for row in nodes}
     for row in nodes:
+        if review_task is not None and (row["project_id"], row["task_id"]) != review_task:
+            raise _inconsistent()
         if (row["metadata_revision"] != row["judgment_revision"] or type(row["judgment_revision"]) is not int
             or row["judgment_revision"] < 1):
             raise _inconsistent()

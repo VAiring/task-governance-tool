@@ -565,11 +565,13 @@ def create_task_event(
 def begin_task_write(
     connection: sqlite3.Connection,
     database_target: DatabaseTarget | None,
+    *,
+    review_task_id: str | None = None,
 ) -> None:
     if connection.in_transaction:
         return
     if database_target is not None:
-        begin_initialized_write(connection, database_target)
+        begin_initialized_write(connection, database_target, review_task_id=review_task_id)
     else:
         connection.execute("BEGIN IMMEDIATE")
 
@@ -2060,8 +2062,9 @@ def lock_and_reread_edit_owner(
     task_id: str,
     *,
     database_target: DatabaseTarget | None = None,
+    completing: bool = False,
 ) -> dict[str, Any]:
-    begin_task_write(connection, database_target)
+    begin_task_write(connection, database_target, review_task_id=task_id if completing else None)
     task = read_internal_task(connection, project.project_id, task_id)
     if task is None:
         raise TaskRepositoryError("not_found", "task was not found")
@@ -3327,6 +3330,7 @@ def edit_task(
         project,
         normalized_task_id,
         database_target=database_target,
+        completing=status_was_provided and updated["status"] == "done",
     )
     reject_concurrent_edit_base_change(
         existing,

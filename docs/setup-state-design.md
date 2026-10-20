@@ -72,6 +72,15 @@ projection mechanically; it is not a CLI or LLM choice. Every DB-backed leaf
 uses the same resolver observation. Feature code may not reconstruct a
 project ID or state path.
 
+For thin completion/check and compatibility edit-to-done only, CLI dispatch
+passes the validated completing Task ID to the resolver's internal review scope.
+Activated fixed-primary admission forwards that ID to storage's
+[completion review boundary](database-specification.md#completion-review-admission).
+Physical integrity/foreign-key checks, package/layout, identity/binding and
+non-review storage checks retain their existing scope. Setup, doctor, recovery
+and legacy/transition inspection always retain global review admission. Scoped
+completion cannot consume or publish a `DatabaseValidationReuse` global proof.
+
 Reviewer-origin answer hooks may supply a `DatabaseValidationReuse` object
 owned by one `reviewer_hook_admission` call. Only an activated fixed primary,
 ordinary retained read can use it; Setup, doctor, legacy and recovery inspection

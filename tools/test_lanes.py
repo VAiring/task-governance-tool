@@ -215,6 +215,7 @@ LANE_MODULES: dict[str, tuple[str, ...]] = {
     "integration": (
         "test_completion_cycle_activation",
         "test_completion_cycle_history",
+        "test_completion_review_scope",
         "test_criterion_link_collector_migration",
         "test_db_init",
         "test_doctor",

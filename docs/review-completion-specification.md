@@ -2890,6 +2890,12 @@ blocking finding/receipt. The manual arm uses the current Verification Receipt;
 the Runner-pass arm uses its qualifying observation with a null Receipt link.
 They use the same transition service.
 
+Review storage admission is limited to the completing Task and its relevant
+review history under [completion review admission](database-specification.md#completion-review-admission).
+It rejects foreign-Task review links while preserving prior-generation Finding
+and reassessment checks. Sequential predecessor eligibility reads predecessor
+status; it does not revalidate predecessor or other Tasks' review histories.
+
 The caller must own the active Task or its retained `review_pending` completion
 responsibility. Completing review-pending A releases its existing combined slot;
 ordinary current work cannot start B while A holds that slot. A retained legacy

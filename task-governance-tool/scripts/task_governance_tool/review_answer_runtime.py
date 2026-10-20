@@ -303,7 +303,7 @@ def sources_for_reviewers(repo, skill, binding, reviewer_ids):
     children = tuple(_uuid(value) for value in reviewer_ids)
     if len(set(children)) != len(children) or binding.parent_thread_id in children:
         _fail()
-    with closing(connect_initialized_readonly(resolution.target)) as connection:
+    with closing(connect_initialized_readonly(resolution.target, operation_local=True, review_task_id=binding.task_id)) as connection:
         if read_review_basis(connection, project_id=root.basis["project_id"], task_id=binding.task_id) != root.basis:
             _fail()
         history = read_continuations(connection, project_id=root.basis["project_id"], task_id=binding.task_id)
@@ -484,12 +484,15 @@ def service_for_event(repo, skill, parent_id, child_id):
     from .storage import connect_initialized_readonly
     from .tasks import list_current_tasks
     resolution = resolve(repo, writing=False)
-    with closing(connect_initialized_readonly(resolution.target)) as connection:
+    with closing(connect_initialized_readonly(resolution.target, operation_local=True)) as connection:
         current = list_current_tasks(connection, resolution.target.project, limit=2,
                                      caller=CallerIdentity(parent_id), for_context=True)
         active = [row for row in current.tasks if row["status"] in ("in_progress", "review_pending")]
         if len(active) != 1:
             _fail()
+        from .storage import current_schema_version, validate_task_review_storage
+        validate_task_review_storage(connection, project_id=resolution.target.project.project_id,
+            task_id=active[0]["task_id"], source_schema_version=current_schema_version(connection))
         observed = read_wait_basis(connection, project_id=resolution.target.project.project_id, task_id=active[0]["task_id"])
         binding = WaitBinding(wait_id="answer-hook", **{key: value for key, value in observed.items()
             if key not in ("version", "task_status")})

@@ -24,7 +24,8 @@ def wait_basis(repo, *, task_id):
         if inspection.first_issue(allowed_codes=STRUCTURAL_CODES) or inspection.scope is None:
             raise WaitBasisError()
         resolution = resolve_project_state(skill_root=inspection.scope.skill_root,
-            repo=inspection.scope.canonical_repo, retain_read_connection=True)
+            repo=inspection.scope.canonical_repo, retain_read_connection=True,
+            operation_local=True, review_task_id=task_id)
         if (resolution.error_code or resolution.binding != "matching"
                 or resolution.target is None or resolution.read_connection is None):
             raise WaitBasisError()

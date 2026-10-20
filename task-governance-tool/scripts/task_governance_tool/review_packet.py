@@ -35,6 +35,7 @@ from task_governance_tool.storage import (
     connect_initialized_readonly,
     current_schema_version,
     stored_task_verification_limit,
+    validate_task_review_storage,
 )
 from task_governance_tool.tasks import (
     TaskRepositoryError,
@@ -168,7 +169,7 @@ def _read_basis(
         manager = (
             nullcontext(connection)
             if connection is not None
-            else closing(connect_initialized_readonly(target))
+            else closing(connect_initialized_readonly(target, operation_local=True))
         )
         with manager as active_connection:
             stored = read_internal_task(
@@ -184,6 +185,8 @@ def _read_basis(
                     )
                 raise TaskRepositoryError("not_found", "task was not found")
 
+            validate_task_review_storage(active_connection, project_id=target.project.project_id,
+                task_id=task_id, source_schema_version=current_schema_version(active_connection))
             target_kind = str(stored["review_target_kind"])
             if not target_kind:
                 if revalidation:

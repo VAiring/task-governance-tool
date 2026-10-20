@@ -131,7 +131,7 @@ class _CollectionAdmission:
         self._issued(value, slot)
         if self.current:
             self._preparation(self.resolution.paths)
-            with closing(connect_initialized_readonly(self.resolution.target)) as connection:
+            with closing(connect_initialized_readonly(self.resolution.target, operation_local=True, review_task_id=self.root.basis["task_id"])) as connection:
                 if read_review_basis(connection, project_id=self.root.basis["project_id"],
                         task_id=self.root.basis["task_id"]) != self.root.basis:
                     raise _bad()
@@ -147,8 +147,7 @@ class _CollectionAdmission:
     def check_hook(self, value, slot, *, parent_id, validation_reuse=None):
         """One fresh native observation per hook boundary, never an effect token.
 
-        The resolver admits a fresh query-only snapshot, optionally reusing a
-        call-local proof for byte-identical database content. Target rows stay
+        The resolver admits a fresh query-only structural snapshot. Target rows stay
         fresh, and the snapshot closes before any operational or Packet read.
         No connection or observed native values survive this invocation.
         """
@@ -166,6 +165,9 @@ class _CollectionAdmission:
             active = [row for row in current.tasks if row["status"] in ("in_progress", "review_pending")]
             if len(active) != 1 or active[0]["task_id"] != self.root.basis["task_id"]:
                 raise _bad()
+            from .storage import current_schema_version, validate_task_review_storage
+            validate_task_review_storage(connection, project_id=resolution.target.project.project_id,
+                task_id=active[0]["task_id"], source_schema_version=current_schema_version(connection))
             if read_review_basis(connection, project_id=resolution.target.project.project_id,
                     task_id=active[0]["task_id"]) != self.root.basis:
                 raise _bad()
@@ -347,9 +349,10 @@ class RegistrationAdmission:
 def _admit_retained_items(resolution, submission, items):
     """Require the exact native capture, not merely a caller's old context."""
     from .review_answer_repository import read_native_collected_captures
-    if submission.continuation is None:
+    if submission.continuation is None or not items:
         raise _bad()
-    with closing(connect_initialized_readonly(resolution.target)) as connection:
+    task_id = items[0].metadata["basis"]["execution_basis"]["task_id"]
+    with closing(connect_initialized_readonly(resolution.target, operation_local=True, review_task_id=task_id)) as connection:
         captured = read_native_collected_captures(connection, submission.continuation["continuation_id"])
     for item in items:
         matches = [(capture, metadata) for capture, metadata in captured

@@ -96,12 +96,13 @@ persisted/cross-operation proof or automatic history repair.
 
 Explicit Runner Plan actions retain global admission in preflight and under
 their writer lock, including combined verification or Contract changes.
-Other consumers keep their existing admission until explicitly switched:
-review services and maintenance currently retain global semantic validation.
-The integrated Review Core's delegated Task reads retain that existing
-admission. Its typed finalization completion retains global non-review
-validation at each fresh snapshot and writer, with its prior own-Task review
-scope; the public Task command label does not switch those consumers early.
+Review services use the same structural boundary and their original Task's
+required review history, as defined by
+[review admission](review-completion-specification.md#operation-scoped-review-admission).
+This includes integrated Core reads and typed finalization completion at every
+fresh snapshot and locked writer. Scope follows the admitted native Task and
+prepared basis, never a public bypass or the Task command's display label.
+Maintenance retains global semantic validation until its own approved unit.
 Setup, doctor, migration/reentry, recovery and actual whole-project publication
 retain complete applicable validation. The approved remaining work is owned
 by [operation admission correction](operation-admission-plan.md).

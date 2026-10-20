@@ -10,12 +10,12 @@ from .review_finalization_repository import FinalizationRepository
 from .review_preparation_repository import PreparationRecord, PreparationRepository
 from .review_wait_basis_repository import read_preparation_basis, read_review_basis
 from .state_paths import create_physical_directory_exclusive, inspect_physical_directory, path_lexically_exists
-from .storage import connect_initialized_readonly, current_schema_version, utc_now
+from .storage import connect_initialized_readonly, current_schema_version, utc_now, validate_task_review_storage
 from .verification_declaration import verification_requirement
 
 
 def _basis(target, task_id, caller):
-    with closing(connect_initialized_readonly(target)) as connection:
+    with closing(connect_initialized_readonly(target, operation_local=True, review_task_id=task_id)) as connection:
         return read_preparation_basis(connection, project_id=target.project.project_id, task_id=task_id, caller=caller)
 
 
@@ -63,7 +63,7 @@ def publish_ready(repo, packet_path, result_paths, caller, *, route, collection_
     claims readiness or retries a possibly created finalization intent.
     """
     resolution = resolve(repo, writing=True)
-    with closing(connect_initialized_readonly(resolution.target)) as connection:
+    with closing(connect_initialized_readonly(resolution.target, operation_local=True)) as connection:
         if current_schema_version(connection) < 28:
             return None
         raw = files.read_bounded(files.checked_path(repo, packet_path), files.PACKET_LIMIT)
@@ -71,6 +71,8 @@ def publish_ready(repo, packet_path, result_paths, caller, *, route, collection_
         if (packet.get("review_session_context", {}).get("execution_id") is None
             or caller.session_id is None):
             return None  # Legacy absence remains absence, never inferred binding.
+        validate_task_review_storage(connection, project_id=resolution.target.project.project_id,
+            task_id=packet["task"]["task_id"], source_schema_version=current_schema_version(connection))
         basis = read_preparation_basis(connection, project_id=resolution.target.project.project_id,
             task_id=packet["task"]["task_id"], caller=caller)
     context = packet.get("review_session_context", {})
@@ -152,7 +154,7 @@ def save_admission(repo, packet_path, raw, packet, output, caller):
         yield
         return
     resolution = resolve(repo, writing=False)
-    with closing(connect_initialized_readonly(resolution.target)) as connection:
+    with closing(connect_initialized_readonly(resolution.target, operation_local=True, review_task_id=packet["task"]["task_id"])) as connection:
         if current_schema_version(connection) < 28:
             yield
             return
@@ -169,7 +171,7 @@ def save_admission(repo, packet_path, raw, packet, output, caller):
         _, current = journal.read()
         if context["version"] == 1 and current.version == 2:
             files.fail("review_answer_save_not_allowed")
-        with closing(connect_initialized_readonly(resolution.target)) as connection:
+        with closing(connect_initialized_readonly(resolution.target, operation_local=True, review_task_id=packet["task"]["task_id"])) as connection:
             fresh = read_review_basis(connection, project_id=basis["project_id"], task_id=basis["task_id"])
             if fresh != basis or current.basis != basis:
                 files.fail("review_continuation_basis_changed")

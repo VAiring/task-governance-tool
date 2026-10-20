@@ -27,6 +27,7 @@ def resolve(repo, *, writing, retain_read_connection=False, validation_reuse=Non
     if inspection.first_issue(allowed_codes=codes) or inspection.scope is None:
         raise ReviewHandoffScopeError()
     resolution = resolve_project_state(skill_root=inspection.scope.skill_root, repo=inspection.scope.canonical_repo,
+        operation_local=True,
         **({"retain_read_connection": True} if retain_read_connection else {}),
         **({"validation_reuse": validation_reuse} if validation_reuse is not None else {}))
     if (resolution.error_code or resolution.binding != "matching" or resolution.target is None

@@ -25,7 +25,7 @@ def choose_protocol(scope,packet):
     if packet["task"]["review_tier"]==0 or packet.get("review_session_context",{}).get("execution_id") is None:
         return "legacy"
     from .storage import connect_initialized_readonly,current_schema_version
-    with closing(connect_initialized_readonly(scope.target)) as connection:
+    with closing(connect_initialized_readonly(scope.target, operation_local=True)) as connection:
         if current_schema_version(connection)<30:
             files.fail("setup_required")
     return "review-answer-v1"
@@ -140,7 +140,7 @@ def locate_continuation(repo, packet_path, packet_raw, packet, *, admitted=None,
     # use the live basis reader, never infer it from the invoker's session.
     from .review_wait_basis_repository import read_review_basis
     from .storage import connect_initialized_readonly
-    with closing(connect_initialized_readonly(resolution.target)) as connection:
+    with closing(connect_initialized_readonly(resolution.target, operation_local=True, review_task_id=packet["task"]["task_id"])) as connection:
         basis=read_review_basis(connection,project_id=resolution.target.project.project_id,task_id=packet["task"]["task_id"])
     records,current_root=PreparationRepository(resolution.paths.review_preparation_store(basis["parent_session_id"],basis["task_id"],basis["target_generation"])).read()
     roots=[row for row in records if row.preparation_id==context["preparation_id"]]

@@ -40,6 +40,10 @@ C = "00000000-0000-4000-8000-000000000004"
 class RuntimeSelectionTests(unittest.TestCase):
     def ready(self, *, version=1, protocol=None, count=2):
         from task_governance_tool import review_answer_continuation_preparation as continued
+        # Its module-level resolver must bind before the fixture replaces the
+        # shared resolver. A lazy import inside the patch otherwise retains a
+        # disposed fixture target in subsequent installed-finalization tests.
+        from task_governance_tool import review_answer_preparation
         issue = continued.expected_bases
         def legacy_bases(*args, **kwargs):
             # Compatibility fixture at issuance, never rewrite a saved basis or
@@ -58,7 +62,7 @@ class RuntimeSelectionTests(unittest.TestCase):
         def resolved(*_args, retain_read_connection=False, **_kwargs):
             if not retain_read_connection:
                 return fixture.resolution
-            connection = storage.connect_initialized_readonly(fixture.target)
+            connection = storage.connect_initialized_readonly(fixture.target, operation_local=True)
             self.admission_connections.append(connection)
             return SimpleNamespace(**vars(fixture.resolution), read_connection=connection)
         self.enterContext(patch.object(review_answer_handoff, "resolve", side_effect=resolved))
@@ -95,6 +99,26 @@ class RuntimeSelectionTests(unittest.TestCase):
 
     def service(self, binding=None):
         return runtime.service_for_wait(self.fixture.repo, None, binding or self.binding)
+
+    def test_repeated_source_and_hook_admission_never_falls_back_to_global_history(self):
+        from task_governance_tool import task_ownership, schema_task_event_notes, state_resolver
+        self.ready(version=2)
+        def forbidden(*args, **kwargs):
+            raise AssertionError("Unrelated global history traversal")
+        with patch.object(storage, "validate_current_schema21_admitted_rows", side_effect=forbidden), \
+             patch.object(task_ownership, "validate_storage_rows", side_effect=forbidden), \
+             patch.object(schema_task_event_notes, "validate_note_rows", side_effect=forbidden):
+            service = self.service()
+            basis = self.root.collection_bases[0]
+            for _ in range(2):
+                service.check_basis(basis, 1)
+                service.admit_basis.check_hook(basis, 1,
+                    parent_id=self.root.basis["parent_session_id"],
+                    validation_reuse=state_resolver.DatabaseValidationReuse())
+        self.assertTrue(self.admission_connections)
+        for connection in self.admission_connections:
+            with self.assertRaises(sqlite3.ProgrammingError):
+                connection.execute("SELECT 1")
 
     def snapshot(self):
         return {path.relative_to(self.fixture.repo).as_posix(): path.read_bytes()
@@ -420,7 +444,7 @@ class RuntimeSelectionTests(unittest.TestCase):
         self.assertEqual(self.admission_connections, [])
         packet_read.assert_not_called()
 
-    def test_hook_check_retains_global_validation_of_unselected_event_rows(self):
+    def test_hook_check_does_not_audit_unselected_event_rows(self):
         from tests.verification_receipt_test_support import add_task
         self.ready(version=2)
         service = self.bound_service()
@@ -434,12 +458,13 @@ class RuntimeSelectionTests(unittest.TestCase):
                 (unrelated["task_id"],))
             connection.execute(trigger)
         before = self.snapshot()
-        with patch.object(PreparationRepository, "read") as preparation_read, \
-                patch.object(files, "read_bounded") as packet_read, self.assertRaises(storage.StorageError):
-            service.admit_basis.check_hook(self.root.collection_bases[0], 1,
-                parent_id=self.binding.parent_thread_id)
-        preparation_read.assert_not_called()
-        packet_read.assert_not_called()
+        service.admit_basis.check_hook(self.root.collection_bases[0], 1,
+            parent_id=self.binding.parent_thread_id)
+        self.assert_native_reads_closed()
+        # A selected admission is not a whole-project certificate: the
+        # unchanged global audit still rejects that unrelated corruption.
+        with self.assertRaises(storage.StorageError):
+            storage.connect_initialized_readonly(self.fixture.target)
         self.assertEqual(self.snapshot(), before)
 
     def test_reviewer_hook_rechecks_native_selection_after_host_observation(self):

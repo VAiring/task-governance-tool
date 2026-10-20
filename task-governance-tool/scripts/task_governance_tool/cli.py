@@ -241,13 +241,21 @@ def is_ordinary_task_operation(context: CommandContext) -> bool:
     )
 
 
+def uses_operation_local_admission(context: CommandContext) -> bool:
+    return (
+        is_ordinary_task_operation(context)
+        or context.command.startswith("review.")
+        or context.command == "verification.receipt.add"
+    )
+
+
 def context_read_connection(
     context: CommandContext,
     target: DatabaseTarget,
 ) -> Any:
     if context.read_connection_override is not None:
         return nullcontext(context.read_connection_override)
-    return closing(connect_initialized_readonly(target, operation_local=is_ordinary_task_operation(context)))
+    return closing(connect_initialized_readonly(target, operation_local=uses_operation_local_admission(context)))
 
 
 def state_resolution_failure_result(
@@ -349,7 +357,7 @@ def handle_command(context: CommandContext) -> CommandResult:
             skill_root=scope.skill_root,
             repo=scope.canonical_repo,
             review_task_id=completion_review_task,
-            operation_local=is_ordinary_task_operation(context),
+            operation_local=uses_operation_local_admission(context),
             retain_read_connection=(
                 context.command
                 in {
@@ -2464,7 +2472,10 @@ def handle_review_command(context: CommandContext, *, submission=None, finalizat
             data, collection_warnings = register(context, target, payload, finalization_basis=finalization_basis,
                 registration_recovery=registration_recovery)
         else:
-            with closing(connect_initialized(target)) as connection:
+            selected_task_id = payload["task_id"] if finding_batch else getattr(context.args, "task_id", None)
+            if selected_task_id is not None:
+                selected_task_id = validate_task_id(selected_task_id)
+            with closing(connect_initialized(target, operation_local=True, review_task_id=selected_task_id)) as connection:
                 with connection:
                     if context.command == "review.result.add":
                         if finalization_basis is not None:
@@ -2733,7 +2744,8 @@ def handle_verification_receipt_add(context: CommandContext) -> CommandResult:
                     "expected_target_generation",
                 )
             }
-        with closing(connect_initialized(target)) as connection:
+        selected_task_id = validate_task_id(getattr(context.args, "task_id", ""))
+        with closing(connect_initialized(target, operation_local=True, review_task_id=selected_task_id)) as connection:
             with connection:
                 result = add_verification_receipt(
                     connection,

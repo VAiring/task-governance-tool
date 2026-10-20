@@ -302,7 +302,7 @@ class FinalizationRepository(ReviewWaitRepository):
 
 def registered_originals(target, record, receipt_ids):
     """Match actual immutable core bindings after a lost registration response."""
-    with closing(connect_initialized_readonly(target)) as connection:
+    with closing(connect_initialized_readonly(target, operation_local=True, review_task_id=record.basis["task_id"])) as connection:
         bindings = review_session_repository.read_bindings(connection, receipt_ids=set(receipt_ids))
         expected_continuations = None
         judgments = {}
@@ -346,7 +346,7 @@ def reported_review_evidence(target, record, registered_receipt_ids):
         roles.setdefault(key, set()).add("retained")
     if not roles:
         return [], []
-    with closing(connect_initialized_readonly(target)) as connection:
+    with closing(connect_initialized_readonly(target, operation_local=True, review_task_id=record.basis["task_id"])) as connection:
         successors = {}
         if record.continuation_id is not None:
             from .review_continuation import quality_identity

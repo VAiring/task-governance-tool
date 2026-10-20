@@ -16,6 +16,31 @@ their separate owners. Shared [CLI/output](specification.md#public-cli-and-outpu
 and [maintenance](setup-state-specification.md#same-process-maintenance) remain with the
 owners routed by the [authority index](authority.md).
 
+## Operation-Scoped Review Admission
+
+Review target preparation, Verification/Review/Finding writers, Packet reads,
+answer collection and registration, continuation, waiting and integrated
+finalization use [operation-local storage admission](database-specification.md#operation-local-admission).
+Each operation validates its original native Task, required own review storage
+and consumed authority, criteria, target, ownership, preparation and source
+relations. Own history keeps all required generations; foreign evidence is
+rejected rather than importing another Task's review history.
+
+Fresh observations and existing locked writers repeat the applicable validation.
+Locating canonical state or reading schema/policy metadata alone is structural,
+not proof of Task eligibility. A retained resolver snapshot validates its selected
+Task before consuming that Task's review graph. Runner control/audit reads keep
+their selected Runner-row checks and required cross-Task pending-attempt/lock
+inventory; this does not authorize unrelated historical review traversal.
+
+Current basis, actual reviewer, first adopted original, obsolete-selection
+retirement, leases, ownership generations and unknown-effect recovery retain
+their existing rules. No observation authorizes replay of successful registration,
+Git, completion or notification. There is no public scope selector, cache,
+schema, Hook, host behavior or permission change. Explicit Runner Plan authoring,
+Setup, doctor, recovery and whole-project publication keep their separate
+admission contracts.
+
 <a id="review-target-receipt-and-finding-ledger"></a>
 
 ## Review Target, Receipt, And Finding Ledger

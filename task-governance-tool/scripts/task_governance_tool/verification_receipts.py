@@ -1279,7 +1279,7 @@ def add_verification_receipt(
             raise
 
     if database_target is not None:
-        begin_initialized_write(connection, database_target)
+        begin_initialized_write(connection, database_target, operation_local=True, review_task_id=normalized_task_id)
     else:
         connection.execute("BEGIN IMMEDIATE")
     locked = read_internal_task(connection, project.project_id, normalized_task_id)

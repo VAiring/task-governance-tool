@@ -242,7 +242,7 @@ def _persist_ordinary_target(
         verification, str(authority.task.get("verification_not_required_reason", "")),
     )
     verification_route = {"required": "receipt_required", "not_required": "not_required", "unspecified": "blocked"}[requirement]
-    with closing(connect_initialized(target)) as connection:
+    with closing(connect_initialized(target, operation_local=True, review_task_id=str(authority.task["task_id"]))) as connection:
         with connection:
             review = persist_prepared_review_target_capture(
                 connection,
@@ -458,7 +458,7 @@ def _persist_launch_intent(
     caller: CallerIdentity = CallerIdentity(None),
 ) -> _LaunchIntent:
     created_at = utc_now()
-    with closing(connect_initialized(target)) as connection:
+    with closing(connect_initialized(target, operation_local=True, review_task_id=str(prepared.authority.task["task_id"]))) as connection:
         with connection:
             review = persist_prepared_review_target_capture(
                 connection,
@@ -680,9 +680,9 @@ def _persist_terminal(
         acceptance_criterion_id=intent.acceptance_criterion_id,
     )
     try:
-        with closing(connect_initialized(target)) as connection:
+        with closing(connect_initialized(target, operation_local=True)) as connection:
             with connection:
-                begin_initialized_write(connection, target)
+                begin_initialized_write(connection, target, operation_local=True)
                 persist_verification_runner_terminal_locked(
                     connection,
                     observation=observation,
@@ -709,9 +709,9 @@ def _persist_cleanup_only(
         created_at=utc_now(),
         terminal_observation_id=None,
     )
-    with closing(connect_initialized(target)) as connection:
+    with closing(connect_initialized(target, operation_local=True)) as connection:
         with connection:
-            begin_initialized_write(connection, target)
+            begin_initialized_write(connection, target, operation_local=True)
             persist_verification_runner_restart_cleanup_locked(
                 connection,
                 cleanup_event=event,
@@ -774,7 +774,7 @@ def _current_basis_matches(
     prepared: _PreparedRunner,
     resolution: VerificationRunnerResolution,
 ) -> bool:
-    with closing(connect_initialized_readonly(target)) as connection:
+    with closing(connect_initialized_readonly(target, operation_local=True)) as connection:
         current = read_current_verification_runner_target_basis(
             connection,
             project_id=resolution.project_id,
@@ -973,7 +973,7 @@ def _deny_unresolved_attempt(
     inventory: Any,
 ) -> None:
     try:
-        with closing(connect_initialized_readonly(target)) as connection:
+        with closing(connect_initialized_readonly(target, operation_local=True)) as connection:
             pending = read_pending_verification_runner_cleanup(
                 connection,
                 project_id=target.project.project_id,
@@ -1188,7 +1188,7 @@ def set_review_target_with_optional_runner(
     normalized_task_id = validate_task_id(task_id)
     if not callable(_cancel_requested):
         raise _state_invalid()
-    with closing(connect_initialized_readonly(target)) as connection:
+    with closing(connect_initialized_readonly(target, operation_local=True, review_task_id=normalized_task_id)) as connection:
         authority = read_review_target_authority_basis(
             connection,
             target.project,
@@ -1242,9 +1242,9 @@ def set_review_target_with_optional_runner(
     # T1 revalidates the same observed generation; terminal/cleanup after an
     # admitted T1 deliberately has no new owner check.
     if authority.ownership is not None:
-        with closing(connect_initialized(target)) as connection:
+        with closing(connect_initialized(target, operation_local=True, review_task_id=normalized_task_id)) as connection:
             with connection:
-                begin_initialized_write(connection, target)
+                begin_initialized_write(connection, target, operation_local=True, review_task_id=normalized_task_id)
                 task_ownership.require_mutation(connection, authority.ownership, caller)
     paths = _runner_paths(target)
     try:

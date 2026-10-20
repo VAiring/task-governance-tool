@@ -52,7 +52,7 @@ def selected(repo, packet):
     if (packet["task"]["review_tier"] == 0
         or packet.get("review_session_context", {}).get("execution_id") is None):
         return False
-    with closing(connect_initialized_readonly(resolution.target)) as connection:
+    with closing(connect_initialized_readonly(resolution.target, operation_local=True)) as connection:
         if current_schema_version(connection) < 30:
             files.fail("setup_required")
     return True
@@ -63,7 +63,7 @@ def locate(repo, packet_path, packet_raw, packet):
     if packet.get("review_session_context", {}).get("execution_id") is None:
         return None
     resolution = resolve(repo, writing=False)
-    with closing(connect_initialized_readonly(resolution.target)) as connection:
+    with closing(connect_initialized_readonly(resolution.target, operation_local=True, review_task_id=packet["task"]["task_id"])) as connection:
         if current_schema_version(connection) < 30:
             return None
         locator = read_wait_basis(connection, project_id=resolution.target.project.project_id,
@@ -79,7 +79,7 @@ def locate(repo, packet_path, packet_raw, packet):
         files.fail("review_continuation_conflict")
     if not matches or matches[0].version == 1:
         return None
-    with closing(connect_initialized_readonly(resolution.target)) as connection:
+    with closing(connect_initialized_readonly(resolution.target, operation_local=True, review_task_id=packet["task"]["task_id"])) as connection:
         basis = read_review_basis(connection, project_id=resolution.target.project.project_id,
             task_id=packet["task"]["task_id"])
     record = matches[0]

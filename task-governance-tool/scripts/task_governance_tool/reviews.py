@@ -208,7 +208,7 @@ def lock_and_reread_target_owner(
 ) -> dict[str, Any]:
     if not connection.in_transaction:
         if database_target is not None:
-            begin_initialized_write(connection, database_target)
+            begin_initialized_write(connection, database_target, operation_local=True, review_task_id=task_id)
         else:
             connection.execute("BEGIN IMMEDIATE")
     task = read_internal_task(connection, project.project_id, task_id)

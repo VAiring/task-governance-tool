@@ -785,7 +785,7 @@ covering schema, project identity/binding, and all rows/counts in a response.
 `immutable=1` is prohibited. Reads return one committed-consistent result or a
 structured concurrency error.
 
-Ordinary Task commands use
+Ordinary Task and review/verification operations use
 [operation-local admission](database-specification.md#operation-local-admission);
 schema and binding admission does not imply a whole-project semantic audit.
 Each operation still validates its selected rows and necessary relationships.

@@ -149,7 +149,7 @@ def check_completion_request(
     manager = (
         nullcontext(initial_connection)
         if initial_connection is not None
-        else closing(connect_initialized_readonly(target, review_task_id=request.task_id, operation_local=finalization_basis is None))
+        else closing(connect_initialized_readonly(target, review_task_id=request.task_id, operation_local=True))
     )
     with manager as connection:
         first_preselector_basis, preflight_error = (
@@ -186,7 +186,7 @@ def check_completion_request(
         except (TaskValidationError, TaskRepositoryError) as exc:
             preflight_error = exc
 
-    with closing(connect_initialized_readonly(target, review_task_id=request.task_id, operation_local=finalization_basis is None)) as connection:
+    with closing(connect_initialized_readonly(target, review_task_id=request.task_id, operation_local=True)) as connection:
         second_preselector_basis, second_preflight_error = (
             _capture_preselector_basis(
                 connection,
@@ -235,7 +235,7 @@ def check_completion_request(
             if runner_selector is not None
             else None
         )
-        with closing(connect_initialized_readonly(target, review_task_id=request.task_id, operation_local=finalization_basis is None)) as connection:
+        with closing(connect_initialized_readonly(target, review_task_id=request.task_id, operation_local=True)) as connection:
             final_preselector_basis, final_preflight_error = (
                 _capture_preselector_basis(
                     connection,
@@ -302,7 +302,7 @@ def execute_completion_request(
     finalization_basis=None,
 ) -> EditTaskResult:
     """Observe outside the lock, then delegate one locked existing transition."""
-    with closing(connect_initialized_readonly(target, review_task_id=request.task_id, operation_local=finalization_basis is None)) as connection:
+    with closing(connect_initialized_readonly(target, review_task_id=request.task_id, operation_local=True)) as connection:
         preselector_basis, preflight_error = (
             _capture_preselector_basis(
                 connection,
@@ -331,7 +331,7 @@ def execute_completion_request(
         ),
     )
     if preselector_basis.task.get("review_target_runner_basis_version", 0) == 2:
-        with closing(connect_initialized_readonly(target, review_task_id=request.task_id, operation_local=finalization_basis is None)) as connection:
+        with closing(connect_initialized_readonly(target, review_task_id=request.task_id, operation_local=True)) as connection:
             current_preselector_basis, current_preflight_error = (
                 _capture_preselector_basis(
                     connection,
@@ -362,7 +362,7 @@ def execute_completion_request(
             if runner_selector is not None
             else None
         )
-        with closing(connect_initialized_readonly(target, review_task_id=request.task_id, operation_local=finalization_basis is None)) as connection:
+        with closing(connect_initialized_readonly(target, review_task_id=request.task_id, operation_local=True)) as connection:
             final_preselector_basis, final_preflight_error = (
                 _capture_preselector_basis(
                     connection,
@@ -397,7 +397,7 @@ def execute_completion_request(
     if finalization_basis is not None:
         plan = replace(plan, finalization_basis=finalization_basis)
         validate_completion_plan_basis(plan, plan.basis)
-    with closing(connect_initialized(target, review_task_id=request.task_id, operation_local=finalization_basis is None)) as connection:
+    with closing(connect_initialized(target, review_task_id=request.task_id, operation_local=True)) as connection:
         with connection:
             return complete_task(
                 connection,

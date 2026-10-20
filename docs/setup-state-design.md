@@ -72,45 +72,33 @@ projection mechanically; it is not a CLI or LLM choice. Every DB-backed leaf
 uses the same resolver observation. Feature code may not reconstruct a
 project ID or state path.
 
-For ordinary Task commands, CLI dispatch selects storage's internal
+Task and review/verification adapters select storage's internal
 [operation-local boundary](database-specification.md#operation-local-admission).
-Thin completion/check and compatibility edit-to-done also forward the validated
-completing Task ID for own review admission. Only activated fixed-primary
-inspection forwards these choices. Physical integrity/foreign-key checks,
-package/layout, identity/binding and structural admission retain their scope.
-Setup, doctor, recovery and legacy/transition inspection remain global.
-Operation-local admission cannot consume or publish a
-`DatabaseValidationReuse` global proof. Other consumers retain their existing
-default until their owning approved execution unit switches them.
+Completion/check and review snapshots supply their admitted Task ID for own
+review storage; Packet and retained hook/event snapshots validate that Task
+inside the existing read once selected. Only activated fixed-primary inspection
+forwards these choices. Physical integrity/foreign-key checks, package/layout,
+identity/binding and structural admission retain their scope. Setup, doctor,
+recovery and legacy/transition inspection remain global.
 
-Reviewer-origin answer hooks may supply a `DatabaseValidationReuse` object
-owned by one `reviewer_hook_admission` call. Only an activated fixed primary,
-ordinary retained read can use it; Setup, doctor, legacy and recovery inspection
-keep full admission. Each boundary opens a fresh query-only connection and
-acquires its read snapshot. On Windows only, it compares the exact primary bytes' SHA-256
-and canonical root/layout/physical file identity with the preceding successful
-full validation. Only an exact match reuses that global proof, avoiding repeated
-integrity, foreign-key and full-graph traversal. Changed content requires full
-validation before replacing the proof; uncertainty or failure clears it.
+A reviewer hook may still carry its one call-local `DatabaseValidationReuse`
+object through existing admission signatures. Operation-local reads retain
+only its physical device/inode continuity pin, reject a known replacement,
+and discard any global-validation proof. They neither hash the database nor
+skip physical, schema, binding or selected-data validation. No rows, connection
+or permission are cached, and the object is cleared on failure and hook exit.
 
-On POSIX and other platforms the resolver repeats full validation at every
-boundary and does not open a separate descriptor to hash the database. Closing
-such a descriptor can cancel SQLite's process-wide POSIX advisory locks while
-its connection remains open; see [SQLite's locking caveat](https://sqlite.org/howtocorrupt.html#posix_advisory_locks_canceled_by_a_separate_thread_doing_close_).
-Successful admission retains only physical device/inode continuity on this
-fallback, never a reusable content proof. A known physical replacement is
-rejected on every platform. No child process, retained file handle or new
-SQLite capability is required for the optimization.
-
-Every boundary still performs physical placement and journal preflight,
-schema/binding and target-specific reads in its fresh native snapshot. No row,
-connection, transaction or permission is cached. The hook closes that snapshot
-before operational-store, Packet or host I/O and rechecks those separate stores
-normally. The proof expires on hook exit and is never persisted, shared with
-another operation or inferred from size, mtime or `data_version` alone. This
-reduces repeated validation work; it does not eliminate the full-file read or
-establish a real-host latency or timeout guarantee. The work reduction applies
-only to the Windows path; other platforms retain their existing validation cost.
+The internal optional proof remains applicable only to globally admitted
+retained reads of an activated fixed primary. On Windows it compares complete
+primary bytes and physical/layout identity before reusing successful global
+validation; changed bytes require full validation. Other platforms validate
+globally each time without opening a separate descriptor, whose close could
+cancel SQLite's process-wide POSIX advisory locks; see
+[SQLite's locking caveat](https://sqlite.org/howtocorrupt.html#posix_advisory_locks_canceled_by_a_separate_thread_doing_close_).
+Local admission never consumes or publishes this certificate. Neither mode
+infers validity from size, mtime or `data_version`, shares a proof across
+operations, or changes the physical/native and operational-store checks at
+existing effect boundaries. There is no real-host latency or timeout guarantee.
 
 `CanonicalStatePaths.usage_database` owns the numerical sibling path. It is not
 part of core admission or core recovery inventory. Only the explicit outer

@@ -296,7 +296,7 @@ class ProjectReviewWaitSession:
         if issue or inspection.scope is None:
             raise DiagnosticError(issue.code if issue and issue.code in PROJECT_REASONS else "project_unavailable")
         resolution = resolve_project_state(skill_root=inspection.scope.skill_root,
-                                           repo=inspection.scope.canonical_repo)
+                                           repo=inspection.scope.canonical_repo, operation_local=True)
         if (resolution.error_code or resolution.binding != "matching"
                 or resolution.layout != "fixed_current_v1" or resolution.target is None):
             reason = resolution.error_code

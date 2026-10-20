@@ -3645,7 +3645,7 @@ def complete_task(
         effort_profile=effort_profile,
         database_target=database_target,
         completion_plan=plan,
-        operation_local=plan.finalization_basis is None,
+        operation_local=True,
         caller=caller,
         **edit_input,
     )

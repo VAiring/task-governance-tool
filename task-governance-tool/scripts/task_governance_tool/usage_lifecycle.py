@@ -96,14 +96,14 @@ def _collect_incremental(repository, sources, known_sources, thread, hint, deadl
     return len(successful), gaps
 
 
-def _target(skill_root, repo, *, repo_explicit=False):
+def _target(skill_root, repo, *, repo_explicit=False, operation_local=False):
     inspection = inspect_project_scope(repo=repo, repo_explicit=repo_explicit,
         script_path=skill_root / "scripts/usage_hook.py", include_runtime=False,
         include_package=False, include_ignore=False)
     if inspection.first_issue(allowed_codes=STRUCTURAL_CODES) or inspection.scope is None:
         raise UsageError()
     resolution = resolve_project_state(skill_root=inspection.scope.skill_root,
-                                       repo=inspection.scope.canonical_repo)
+                                       repo=inspection.scope.canonical_repo, operation_local=operation_local)
     if resolution.error_code or resolution.target is None or resolution.binding != "matching":
         raise UsageError()
     return resolution.target
@@ -112,7 +112,7 @@ def _target(skill_root, repo, *, repo_explicit=False):
 def _register_caller(repo, caller):
     """Remember only an actual caller; never read logs or migrate numerical state."""
     try:
-        target = _target(Path(__file__).absolute().parents[2], repo, repo_explicit=True)
+        target = _target(Path(__file__).absolute().parents[2], repo, repo_explicit=True, operation_local=True)
         repository_for(target).register_session(caller)
     except Exception:
         pass

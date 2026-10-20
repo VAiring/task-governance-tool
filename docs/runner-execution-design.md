@@ -604,6 +604,14 @@ service delegates to the same seam, so target normalization, Git observation,
 manifest construction, authority capture, event bytes, output, and maintenance
 classification have one owner.
 
+These review-service core snapshots use
+[operation-local admission](database-specification.md#operation-local-admission).
+Target capture validates its own review storage. Terminal/cleanup and current-basis
+observations validate the Runner rows they consume; pending-attempt reconciliation
+retains its required project-wide pending inventory and shared Runner lock.
+No unrelated Task's review history is an entry gate. This changes neither T1/T2
+ownership nor mandatory cleanup after an admitted launch.
+
 `verification_runner_selection.py` owns the non-execution current-basis and
 snapshot selectors, stored physical-basis checks, and shared terminal
 classification in the same service layer. CLI selection consumers call it

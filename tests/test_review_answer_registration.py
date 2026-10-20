@@ -715,9 +715,11 @@ class SettledRecoveryTests(TestCase):
             def close(self):
                 owner.assertTrue(owner.active)
                 return super().close()
-        def connect(target):
+        def connect(target, **options):
             self.assertTrue(self.active)
-            return ObservedConnection(actual_connect(target), "observe")
+            self.assertTrue(options["operation_local"])
+            self.assertEqual(options["review_task_id"], self.fixture.basis["task_id"])
+            return ObservedConnection(actual_connect(target, **options), "observe")
         with mock.patch.object(review_answer_registration, "connect_initialized", side_effect=connect):
             result, warnings = self.register()
         self.assertEqual(warnings, [])

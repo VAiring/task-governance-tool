@@ -125,6 +125,23 @@ class DatabaseValidationReuseTests(unittest.TestCase):
         self.assertIsNone(result.read_connection)
         self.assertEqual(tree_snapshot(self.fixture.root), before)
 
+    def test_operation_local_keeps_physical_continuity_without_a_global_proof(self):
+        with mock.patch.object(resolver, "hash_physical_file") as hashing:
+            self.admitted(operation_local=True)
+            self.admitted(operation_local=True)
+            self.assertIsNone(self.reuse._validated)
+            replacement = self.target.db_path.with_suffix(".replacement")
+            replacement.write_bytes(self.target.db_path.read_bytes())
+            original_identity = self.target.db_path.stat().st_ino
+            os.replace(replacement, self.target.db_path)
+            self.assertNotEqual(self.target.db_path.stat().st_ino, original_identity)
+            result = self.resolve(operation_local=True)
+        hashing.assert_not_called()
+        self.assertEqual(self.validated.call_count, 2)
+        self.assertEqual(result.error_code, "project_state_unreadable")
+        self.assertIsNone(result.read_connection)
+        self.assertIsNone(self.reuse._identity)
+
     def test_nonretained_and_doctor_reads_clear_reuse_and_validate_normally(self):
         for options in (dict(retain_read_connection=False), dict(include_doctor_state=True)):
             with self.subTest(options=options):

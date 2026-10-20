@@ -100,7 +100,7 @@ retain all generations and are acquired in existing validation chunks; linked
 predecessors and results must belong to the same Task/basis. Global callers omit
 the argument and retain whole-store review/orphan validation.
 
-Ordinary Task adapters mechanically select internal `operation_local=True`
+Ordinary Task and review-service adapters mechanically select internal `operation_local=True`
 under [operation-local admission](database-specification.md#operation-local-admission).
 The resolver and each initialized connection/writer still validate the exact
 schema and project binding, but do not invoke whole-project Runner, ownership
@@ -108,15 +108,20 @@ or note validators. Existing selected repositories validate their consumed rows,
 slot/lane relationships and locked mutation basis. Detail projection additionally
 calls `validate_task_review_storage` in that same snapshot; completion supplies
 its Task ID for the same review validator. The default remains global for other
-consumers, including the shared Task edit/write helpers. Only ordinary Task
+consumers, including the shared Task edit/write helpers. Only Task and review
 adapters opt into local admission through every read and locked write; explicit
 Runner Plan actions retain global admission throughout, including combined
 verification or Contract changes. This internal boolean is not an authority token or public option;
 neither local admission nor its snapshots may supply a global validation proof.
-Integrated Review Core reads supply an explicitly admitted connection to the
-Task projection. A retained typed finalization basis keeps completion's existing
-non-review admission at every fresh read and locked write until the review-service
-unit switches it; ordinary public completion remains operation-local.
+Review adapters supply their admitted Task ID through `review_task_id` when
+opening a snapshot or revalidating a writer. Packet projection, retained hook
+reads and event lookup validate the selected review storage inside their
+existing snapshot once that Task is known. Schema/policy/location-only reads
+remain structural; Runner audit consumers validate their consumed Runner rows
+and required pending-attempt inventory. Integrated Core delegates selected review
+validation to the Task projection, and typed finalization completion uses the
+same local boundary as ordinary completion. Source leases, native basis and
+effect fences remain independently checked at their existing boundaries.
 
 Task reads acquire all that Task's continuation generations
 and use the retained-original composite primary key to fetch only those
@@ -126,12 +131,10 @@ continuation inventory once, groups it by project/Task, and applies the same
 complete validator to every Task; it does not repeat a whole-table acquisition
 per Task. These values live only within the caller's existing snapshot, with
 no cached validation across operations or change to schema or read permissions.
-The [resolver's call-local hook proof](setup-state-design.md#fixed-state-resolver)
-may reuse successful global validation on its supported Windows path across
-fresh snapshots of exactly the same primary bytes within one reviewer hook.
-Other platforms keep full validation without a separate database-file read.
-It retains no graph rows; current
-binding and Task-specific reads still belong to each new snapshot.
+Operation-local review reads do not use or publish the
+[resolver's optional global proof](setup-state-design.md#fixed-state-resolver).
+Current binding and Task-specific reads belong to each fresh snapshot on every
+platform; no graph rows or admission token survive between operations.
 Selection validates the original Reference and provenance,
 then derives heads from links, never time order. A matching pending continuation
 blocks completion and suspends selected reassessments; unselected PASS is

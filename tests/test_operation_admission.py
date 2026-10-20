@@ -54,18 +54,73 @@ class OperationAdmissionTests(unittest.TestCase):
                 self.success(*args)
                 self.assertEqual(database_counts(self.fixture.db), before)
 
-    def test_review_core_reads_retain_global_admission(self):
+    def test_review_core_reads_validate_only_selected_history(self):
         from types import SimpleNamespace
-        from task_governance_tool.review_finalization import Core
+        from task_governance_tool.review_finalization import Core, FinalizationError
         from task_governance_tool.session_identity import capture_caller_identity
         self.fixture.corrupt_other_binding()
         core = Core(self.fixture.repo, self.fixture.target, capture_caller_identity())
-        with self.assertRaises(storage.StorageError):
-            core.read(self.task_id)
-        submission = SimpleNamespace(preparation_id="unused", submission_digest="unused")
-        with self.assertRaises(storage.StorageError):
-            core.collection_registration(self.task_id, submission)
+        self.assertEqual(core.read(self.task_id)["task"]["task_id"], self.task_id)
+        submission = SimpleNamespace(preparation_id="tg_review_preparation_0123456789abcdef",
+            submission_digest="sha256:" + "0" * 64)
+        self.assertEqual(core.collection_registration(self.task_id, submission)["status"], "absent")
         self.success("task", "show", self.task_id)
+        self.fixture.extra_v2_provenance(self.task_id)
+        with self.assertRaises(FinalizationError) as rejected:
+            core.read(self.task_id)
+        self.assertEqual(rejected.exception.code, "evidence_ledger_inconsistent")
+
+    def test_review_target_packet_result_and_finding_writes_ignore_unrelated_history(self):
+        from tests.test_review_results import BinaryInput, encode, receipt
+        self.fixture.corrupt_other_binding()
+        self.success("review", "target", "set", self.task_id,
+            "--kind", "diff_fingerprint", "--revision", "sha256:" + "d" * 64)
+        packet = self.success("review", "prepare", self.task_id)["data"]
+        document = packet["result_template"]
+        document["receipts"] = [receipt("local-a", findings=(
+            {"severity": "low", "summary": "Scoped follow-up"},)), receipt("local-b")]
+        with mock.patch.object(cli.sys, "stdin", BinaryInput(encode(document))):
+            result = self.success("review", "result", "add", self.task_id)["data"]
+        self.assertTrue(result["review_gate"]["satisfied"])
+        finding = result["receipts"][0]["findings"][0]["finding"]["review_finding_id"]
+        resolved = self.success("review", "finding", "resolve", finding,
+            "--resolution", "Confirmed isolated correction")
+        self.assertEqual(resolved["data"]["finding"]["status"], "resolved")
+        with self.assertRaises(storage.StorageError):
+            with closing(storage.connect_initialized(self.fixture.target)):
+                pass
+
+    def test_verification_receipt_and_packet_ignore_unrelated_history(self):
+        self.fixture.corrupt_other_binding()
+        self.success("task", "edit", self.task_id, "--verification", "Focused isolated checks")
+        target = self.success("review", "target", "set", self.task_id,
+            "--kind", "diff_fingerprint", "--revision", "sha256:" + "e" * 64)["data"]["task"]
+        recorded = self.success("verification", "receipt", "add", self.task_id,
+            "--result", "pass", "--duration-ms", "1", "--scope-coverage", "full",
+            "--expected-target-generation", str(target["review_target_generation"]))
+        self.assertTrue(recorded["ok"])
+        packet = self.success("review", "prepare", self.task_id)["data"]
+        self.assertTrue(packet["verification_evidence"]["gate"]["satisfied"])
+
+    def test_review_writer_rechecks_own_history_after_preflight(self):
+        from tests.test_review_results import BinaryInput, encode, receipt
+        from task_governance_tool import reviews
+        packet = self.success("review", "prepare", self.task_id)["data"]
+        document = packet["result_template"]
+        document["receipts"] = [receipt("late-scoped-review")]
+        with closing(sqlite3.connect(self.fixture.db)) as connection:
+            before = connection.execute("SELECT COUNT(*) FROM review_receipts").fetchone()[0]
+        original = reviews.begin_initialized_write
+        def race(connection, target, **options):
+            self.fixture.extra_v2_provenance(self.task_id)
+            return original(connection, target, **options)
+        with mock.patch.object(cli.sys, "stdin", BinaryInput(encode(document))), \
+             mock.patch.object(reviews, "begin_initialized_write", side_effect=race):
+            result = self.run_task("review", "result", "add", self.task_id)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("evidence_ledger_inconsistent", result.stdout)
+        with closing(sqlite3.connect(self.fixture.db)) as connection:
+            self.assertEqual(connection.execute("SELECT COUNT(*) FROM review_receipts").fetchone()[0], before)
 
     def test_own_detail_corruption_still_rejects(self):
         self.fixture.extra_v2_provenance(self.task_id)

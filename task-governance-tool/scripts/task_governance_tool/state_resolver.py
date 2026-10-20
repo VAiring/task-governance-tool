@@ -321,7 +321,7 @@ class _FileStamp:
 
 
 class DatabaseValidationReuse:
-    """One caller-owned operation's exact-content global-validation proof.
+    """One caller-owned operation's physical continuity and optional global proof.
 
     This stores no connection or native row observations. Each resolver call
     still opens its own read snapshot and admits current physical/layout and
@@ -469,7 +469,11 @@ def resolve_project_state(
     review_task_id = None if include_doctor_state else review_task_id
     operation_local = False if include_doctor_state else operation_local
     reusable = (validation_reuse if retain_read_connection and not include_doctor_state
-                and review_task_id is None and not operation_local else None)
+                and (review_task_id is None or operation_local) else None)
+    if reusable is not None and operation_local:
+        # Local admission keeps only the existing physical identity pin. It
+        # never consumes or publishes a certificate of global validation.
+        reusable._validated = None
     if validation_reuse is not None and reusable is None:
         validation_reuse.clear()
     try:
@@ -1350,7 +1354,7 @@ def _inspect_database(
                     or connection.execute("PRAGMA query_only").fetchone()[0] != 1):
                 raise _ResolverFailure("project_state_unreadable")
             validation_reuse._check_identity(before)
-            if _PHYSICAL_HASH_REUSE_SUPPORTED:
+            if _PHYSICAL_HASH_REUSE_SUPPORTED and not operation_local:
                 fingerprint = hash_physical_file(path, root=path.parent)
                 reuse_validated = validation_reuse._matches(fingerprint)
         if not reuse_validated:

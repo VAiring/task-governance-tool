@@ -239,8 +239,9 @@ resolution to unchanged `resolve_review_finding`, retaining stored-ledger checks
 done/replay rejection, original content, timestamps, events, and revalidation.
 An outer batch savepoint rolls back a successful prefix on any failure, even
 when a repository caller catches it. No per-item commit or partial-success
-result is emitted. Existing single resolution callers and global admission
-remain unchanged. The service deliberately does not use current-capture or
+result is emitted. Existing single resolution callers retain the
+[operation-scoped admission](review-completion-specification.md#operation-scoped-review-admission)
+boundary. The service deliberately does not use current-capture or
 Receipt-creation freshness checks: historical Finding resolution remains valid.
 No schema, new durable batch record, alternative gate, or new normal-loop step
 is introduced.
@@ -297,7 +298,7 @@ The CLI owns the one outer transaction: insert or gate-read exceptions escape
 it before conversion to sanitized failure output. There are no per-entry commits or
 successful-prefix returns. Commit and connection close precede formatting and
 one changed/Viewer-relevant maintenance result. Legacy single-item callers and
-global state admission retain their existing contracts. Replay detection uses
+operation-scoped state admission retain their existing contracts. Replay detection uses
 the existing Task/generation/reviewer uniqueness, without a new durable ID.
 For this command only, a post-commit text rendering exception retains success
 data with a fixed display warning. Successful emission includes stdout flush
@@ -567,16 +568,14 @@ checks the active Task, complete execution basis and native continuation history
 then closes that connection before operational-store or Packet reads. It also
 rechecks the canonical collection path, complete captured preparation, current
 issued source, opt-in and exact Packet bytes. `reviewer_hook_admission` pins the
-basis, binding and active attempt and owns one call-local
-[resolver validation proof](setup-state-design.md#fixed-state-resolver).
-Only the resolver's supported Windows path may reuse global validation for
-exact byte-identical core content under a fresh acquired read snapshot. Other
-platforms repeat full validation without independently opening the database
-file; mutable target and operational checks always run on every platform.
-Any admission failure clears the proof, as does normal or exceptional hook exit.
-It retains no native rows or open connection across boundaries and removes no
-effect check. Source lookup, ordinary parent/wait and retained-source admissions
-remain unchanged; each later or restarted hook starts with full validation.
+basis, binding and active attempt. Each fresh
+[resolver snapshot](setup-state-design.md#fixed-state-resolver) uses structural
+operation-local admission, then validates that active Task's complete required
+review storage before basis/history reads. No global validation proof or
+database-content hash is used for this path. Source lookup, ordinary parent/wait,
+retained-source admission and finalization use the same original-Task boundary.
+Mutable target and operational checks still run at every effect boundary;
+no native rows, open connection or permission survives between observations.
 
 New initial and continuation issuance uses `CollectionBasis.version=2` to
 select dedicated-reviewer tracking. The answer format remains `review-answer-v1`;
@@ -2634,7 +2633,7 @@ validates the closed shape and all typed strings' privacy, and reuses existing
 Task-ID and Receipt-field normalizers. A document Task mismatch is stale evidence.
 No writer is opened until decoding succeeds; the returned four values enter
 the unchanged `add_verification_receipt` service. This keeps generation/Contract
-invalidation, global admission, physical Runner selection outside the writer,
+invalidation, operation-scoped admission, physical Runner selection outside the writer,
 locked revalidation, persistence, rollback and post-commit policy identical.
 No producer adapter, result ledger or coverage inference is introduced.
 A failed or timeout row records
@@ -2742,7 +2741,7 @@ The original mutation outcome and one outer maintenance pass are preserved.
 `verification_receipts.py` owns exact-current Receipt-ID binding using its
 existing snapshot validator. `review_packet.py` applies it in both existing
 reads, including readonly `--verification-receipt-id` retries. No generic
-workflow engine, new ledger, global admission change, or completion selector
+workflow engine, new ledger, or completion selector
 is introduced. Packet-only retries cannot write or change the recorded basis.
 `task show` obtains Receipt totals, exact-current
 counts, gate, and newest 10 rows in the same query-only transaction as the

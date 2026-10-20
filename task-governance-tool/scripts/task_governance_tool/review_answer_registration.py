@@ -33,7 +33,7 @@ def register(context, target, submission, *, finalization_basis=None, registrati
                 # This fresh admission, not an earlier audit or caller's request,
                 # excludes every cooperating writer through commit/close/confirm.
                 admitted.require_settled_recovery(registration_recovery, finalization_basis)
-            with closing(connect_initialized(target)) as connection:
+            with closing(connect_initialized(target, operation_local=True, review_task_id=context.args.task_id)) as connection:
                 with connection:
                     data = add_collected_review_results(connection, target.project,
                         context.args.task_id, submission, caller=context.caller,

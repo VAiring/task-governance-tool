@@ -254,7 +254,7 @@ class InstalledFinalizationTests(fixtures.PreparationFixture):
         self.assertEqual(self.git("rev-parse", "HEAD"), commit)
         self.assertEqual(self.cli("task", "show", task)["review_evidence"]["counts"]["receipts_current_generation"], 2)
 
-    def test_delegated_completion_retains_nonreview_admission_through_writer(self):
+    def test_delegated_completion_keeps_selected_admission_through_writer(self):
         from task_governance_tool import storage
         task, service = self.ready()
         observed = []
@@ -268,9 +268,9 @@ class InstalledFinalizationTests(fixtures.PreparationFixture):
             report = service.execute()
         self.assertEqual(report["status"], "completed", report)
         self.assertTrue(observed)
-        self.assertTrue(all(not local for _readonly, _transaction, local in observed), observed)
-        self.assertIn((1, True, False), observed)
-        self.assertIn((0, True, False), observed)
+        self.assertTrue(all(local for _readonly, _transaction, local in observed), observed)
+        self.assertIn((1, True, True), observed)
+        self.assertIn((0, True, True), observed)
 
     def test_missing_original_keeps_complete_batch_atomic(self):
         task, context = self.prepared()

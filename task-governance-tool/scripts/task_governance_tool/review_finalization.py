@@ -47,10 +47,10 @@ class Core:
                                   argparse.Namespace(**arguments), self.caller, self.target)
 
     def _show(self, task_id, **arguments):
-        # Review-service consumers retain their existing admission until their
-        # own execution unit; the public Task label does not select their scope.
+        # The Task projection validates its selected review storage inside this
+        # structurally admitted snapshot.
         from .storage import connect_initialized_readonly
-        with closing(connect_initialized_readonly(self.target)) as connection:
+        with closing(connect_initialized_readonly(self.target, operation_local=True)) as connection:
             context = replace(self.context("task.show", task_id=task_id, **arguments),
                 read_connection_override=connection)
             return _result(cli.handle_task_show(context))
@@ -231,7 +231,7 @@ class Finalizer:
         # second Git/completion/send decision.
         from .storage import connect_initialized_readonly, current_schema_version
         from .review_continuation_repository import read_continuations
-        with closing(connect_initialized_readonly(self.resolution.target)) as connection:
+        with closing(connect_initialized_readonly(self.resolution.target, operation_local=True, review_task_id=self.task_id)) as connection:
             if current_schema_version(connection) >= 29:
                 rounds = read_continuations(connection, project_id=basis["project_id"], task_id=self.task_id)
                 applicable = [row for row in rounds if row.basis["target_generation"] == basis["target_generation"]]
@@ -348,7 +348,7 @@ class Finalizer:
             basis = record.basis
             observation = WaitObservation(**{key: basis[key] for key in WaitBasis.__dataclass_fields__},
                                           thread_id=self.caller.require(), turn_id=turn)
-            with closing(connect_initialized_readonly(self.resolution.target)) as core:
+            with closing(connect_initialized_readonly(self.resolution.target, operation_local=True, review_task_id=self.task_id)) as core:
                 if wait_anchor(core, observation) is None:
                     return
             repository_for(self.resolution.target).record_host_receipt(observation)

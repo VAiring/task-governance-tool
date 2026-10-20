@@ -123,7 +123,7 @@ def validate_historical_wait(target, current, binding, request, rounds):
             and all(old[key] == current[key] for key in (
                 "project_id", "project_path_hash", "project_binding_generation", "task_id", "parent_session_id")))
 
-    with closing(connect_initialized_readonly(target)) as connection:
+    with closing(connect_initialized_readonly(target, operation_local=True, review_task_id=current["task_id"])) as connection:
         if read_review_basis(connection, project_id=current["project_id"], task_id=current["task_id"]) != current:
             reject()
         if request is None:

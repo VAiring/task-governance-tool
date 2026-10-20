@@ -57,6 +57,25 @@ class WaitBasisHandoffTests(PreparationFixture):
         self.assertEqual(observed.artifact_manifest_id, value["basis"]["artifact_manifest_id"])
         self.assertEqual(observed.ownership_generation, value["basis"]["ownership_generation"])
 
+    def test_wait_basis_does_not_audit_another_tasks_retained_notes(self):
+        with mock.patch.dict(os.environ, {"CODEX_THREAD_ID": "22222222-2222-4222-8222-222222222222"}):
+            other = self.task()
+        with closing(sqlite3.connect(self.install.db_path)) as connection:
+            trigger = connection.execute(
+                "SELECT sql FROM sqlite_master WHERE name='trg_task_events_note_body_immutable'"
+            ).fetchone()[0]
+            connection.execute("DROP TRIGGER trg_task_events_note_body_immutable")
+            connection.execute(
+                "UPDATE task_events SET note_body='Invalid retained note' "
+                "WHERE task_id=? AND event_type='task_added'", (other,))
+            connection.execute(trigger)
+            connection.commit()
+        before = file_snapshot(self.root)
+        result, value = self.read()
+        self.assertEqual(result.returncode, 0, value)
+        self.assertEqual(value["basis"]["task_id"], self.task_id)
+        self.assertEqual(file_snapshot(self.root), before)
+
     def test_reads_original_task_even_after_another_task_added_and_new_generation(self):
         _, old = self.read()
         with mock.patch.dict(os.environ, {"CODEX_THREAD_ID": "22222222-2222-4222-8222-222222222222"}):

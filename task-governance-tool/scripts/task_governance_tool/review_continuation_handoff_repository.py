@@ -10,7 +10,7 @@ from dataclasses import dataclass, field
 from . import review_continuation as values, review_continuation_repository as records
 from .review_wait_basis_repository import read_preparation_basis
 from .review_session_repository import read_bindings
-from .storage import connect_initialized, connect_initialized_readonly, current_schema_version
+from .storage import begin_initialized_write, connect_initialized, connect_initialized_readonly, current_schema_version
 from .task_values import validation_error
 
 
@@ -25,7 +25,7 @@ class HandoffState:
 
 
 def read_state(target, task_id, caller):
-    with closing(connect_initialized_readonly(target)) as connection:
+    with closing(connect_initialized_readonly(target, operation_local=True, review_task_id=task_id)) as connection:
         if current_schema_version(connection) < 29:
             raise validation_error("review_continuation_unavailable", "review continuation requires the current schema")
         basis = read_preparation_basis(connection, project_id=target.project.project_id, task_id=task_id, caller=caller)
@@ -44,14 +44,14 @@ def read_state(target, task_id, caller):
 
 
 def admit(target, basis, preparation_id, route, selected, caller, *, retirement=None, retained_originals=(), retained_collected=(), continuation_id=None):
-    with closing(connect_initialized(target)) as connection, connection:
-        connection.execute("BEGIN IMMEDIATE")
+    with closing(connect_initialized(target, operation_local=True, review_task_id=basis["task_id"])) as connection, connection:
+        begin_initialized_write(connection, target, operation_local=True, review_task_id=basis["task_id"])
         return records.admit_locked(connection, basis=basis, preparation_id=preparation_id,
             route=route, selected=selected, caller=caller, retirement=retirement, retained_originals=retained_originals,
             retained_collected=retained_collected, continuation_id=continuation_id)
 
 
 def prepared(target, record, caller):
-    with closing(connect_initialized(target)) as connection, connection:
-        connection.execute("BEGIN IMMEDIATE")
+    with closing(connect_initialized(target, operation_local=True, review_task_id=record.basis["task_id"])) as connection, connection:
+        begin_initialized_write(connection, target, operation_local=True, review_task_id=record.basis["task_id"])
         return records.advance_prepared_locked(connection, record, caller)

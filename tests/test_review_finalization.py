@@ -19,6 +19,39 @@ from task_governance_tool import review_finalization as finalization, review_wai
 from task_governance_tool.session_identity import capture_caller_identity
 
 
+def _wait_for_stage(condition, stage, *, timeout=30):
+    deadline = time.monotonic() + timeout
+    while not condition():
+        if time.monotonic() >= deadline:
+            raise AssertionError(f"Timed out waiting for {stage}")
+        time.sleep(0.02)
+
+
+class FinalizationStageWaitTests(unittest.TestCase):
+    def test_later_stage_gets_its_own_budget_after_slow_completion(self):
+        now = [0]
+        def advance(_seconds):
+            now[0] += 1
+        with mock.patch.object(time, "monotonic", side_effect=lambda: now[0]), \
+             mock.patch.object(time, "sleep", side_effect=advance):
+            _wait_for_stage(lambda: now[0] >= 29, "completion report")
+            self.assertEqual(now[0], 29)
+            _wait_for_stage(lambda: now[0] >= 58, "notification acceptance after reopen")
+        self.assertEqual(now[0], 58)
+
+    def test_each_unreached_stage_has_a_finite_named_failure(self):
+        for stage in ("completion report", "notification acceptance after reopen"):
+            with self.subTest(stage=stage):
+                now = [0]
+                def advance(_seconds):
+                    now[0] += 1
+                with mock.patch.object(time, "monotonic", side_effect=lambda: now[0]), \
+                     mock.patch.object(time, "sleep", side_effect=advance), \
+                     self.assertRaisesRegex(AssertionError, "Timed out waiting for " + stage):
+                    _wait_for_stage(lambda: False, stage)
+                self.assertEqual(now[0], 30)
+
+
 class FinalizationReportProjectionTests(unittest.TestCase):
     def fixture(self):
         originals = [{"path": "reviews/" + name, "status": "available", "review": receipt(name)}
@@ -931,16 +964,14 @@ class InstalledFinalizationTests(fixtures.PreparationFixture):
         with mock.patch.object(service, "execute", wraps=service.execute) as execute:
             self.assertTrue(direct.handle("direct_delete_start", {}, {"threadId": parent, "turnId": ORIGINAL})["ok"])
             host.parent = ChildTurn(parent, ORIGINAL, "completed", "idle")
-            deadline = time.monotonic() + 30
-            while not reports and time.monotonic() < deadline:
-                time.sleep(0.02)
+            _wait_for_stage(lambda: bool(reports), "completion report")
             self.assertEqual(reports[0]["status"], "completed")
             completed = reports[0]["commit_id"]
             self.assertEqual(host.sends, [])
             self.cli("task", "edit", task, "--status", "in_progress", "--reopen-reason", "New authorized work")
             host.parent = ChildTurn(parent, NEW_TURN, "completed", "idle")
-            while direct.repository.read().status != "accepted" and time.monotonic() < deadline:
-                time.sleep(0.02)
+            _wait_for_stage(lambda: direct.repository.read().status == "accepted",
+                            "notification acceptance after reopen")
             self.assertEqual(direct.repository.read().status, "accepted")
             self.assertEqual(len(host.sends), 1)
             self.assertEqual(len(reports), 2)

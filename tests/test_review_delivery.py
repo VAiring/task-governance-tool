@@ -21,6 +21,24 @@ class DeliveryBudgetTests(unittest.TestCase):
     def command(self, start, digest):
         return f"fixed-read --start={start} --content-sha256={digest}"
 
+    def test_range_guidance_keeps_consumer_bounds_and_recovery_without_internal_arithmetic(self):
+        raw = b"x" * (delivery.TEXT_BUDGET + 1)
+        first = delivery.range_result(raw, {"object_id": "fixed"}, self.command)
+        guidance = first["instructions"]
+        for rule in ("identity/hash", "Last range alone", "both the execution tool and outer return",
+                     "do not batch", "separate 5000", "24000", "UTF-8 bytes",
+                     "not exact model tokens", "recover only missing ranges", "not full material",
+                     "omitted entries remain in scope", "never review coverage or PASS"):
+            self.assertIn(rule, guidance)
+        self.assertNotIn("1024", guidance)
+        self.assertNotIn("two JSON string wrappers", guidance)
+        final = delivery.range_result(raw, first["identity"], self.command,
+                                      start=first["next_start"], expected=first["content_sha256"])
+        self.assertEqual(first["text"] + final["text"], raw.decode())
+        self.assertEqual(final["content_sha256"], first["content_sha256"])
+        self.assertEqual(final["status"], "partial")
+        self.assertIsNone(final["next_command"])
+
     def test_records_only_admits_fixed_pagination_without_extra_permissions(self):
         from task_governance_tool.task_record_policy import validate_record_arguments, RecordPolicyError
         for words in (

@@ -1228,7 +1228,7 @@ Editable arguments are:
 
 ```text
 --title --description --kind --lane --order --priority --status
---blocked-reason --pause-reason --review-tier --verification --tags
+--blocked-reason --pause-reason --review-tier --verification --verification-not-required --tags
 --add-note --reopen-reason --review-tier-change-reason
 --completion-evidence-kind --completion-revision
 --completion-evidence-reason --external-revision-approved
@@ -1791,13 +1791,25 @@ Missing, changed, unsafe-path, and oversized cases return no partial packet:
 
 Use only for explicit output integration or schema inspection. Operation,
 binding and retry conditions remain in [review prepare](#review-prepare).
-Success data keys are exactly:
+The common success data keys are:
 
 ```text
 task, contract, review_target, verification_evidence, changed_paths_available, changed_paths,
 changed_paths_total, changed_paths_truncated, review_focus, required_output,
 result_template, result_instructions, receipt_command
 ```
+
+From schema 25, `review_session_context` is also present: version 1 contains
+`version`, `project_id` and nullable `execution_id`. A null execution permits
+inspection, not bound answer saving/collection. An admitted continuation from
+schema 29 uses version 2, adding `preparation_id`, `continuation_id`,
+`continuation_sequence` and `selected_reviewers` (each row has `session_id`,
+`action`, `prior_receipt_id`). These values are tool-owned; retain the returned
+context unchanged rather than entering IDs or querying them separately.
+Older saved Packets may omit it and retain their existing unbound transport;
+absence never authorizes reconstructing a binding. Use the existing
+[same-basis continuation](task_workflow.md#same-basis-review-continuation) only
+under its conditions.
 
 `verification_evidence` supplies `observed_at`, `source_kind`, and the normal
 current-only `current_verification_subject`, `gate`, `counts`, `current_receipt`.
@@ -2567,8 +2579,8 @@ obligations. Missing unrelated full bodies alone do not block judgment; missing
 required context or diffs requires recovery or an insufficiency report before PASS.
 
 Bodies share an aggregate 5000-token allowance; diffs have a separate 5000.
-The helper conservatively charges UTF-8 bytes, not exact model tokens. It also
-bounds compact JSON, two wrapper layers and overhead to 24000 bytes. Execute
+The helper conservatively charges UTF-8 bytes, not exact model tokens, and
+separately bounds the complete response to 24000 bytes. Execute
 one response per call with at least 24000 output tokens at both the execution
 tool and outer return. Do not batch/echo outputs. Smaller host caps or extra
 wrappers can still truncate and require recovery.
@@ -2783,7 +2795,7 @@ independence, or review truth. Only current evidence can satisfy current gates.
 Read this section for a continuity warning or an explicit setup/Viewer
 diagnosis, not as a normal-loop action. Successful `setup` enables bounded
 same-process maintenance; there is no disable, export, custom-output, or repair
-command. Taskgov starts no background worker, scheduler, browser, or network
+command. This same-process maintenance starts no background worker, scheduler, browser, or network
 operation. SQLite stays canonical; generated Evidence JSON and Viewer files
 are projections, never inputs or current completion evidence.
 

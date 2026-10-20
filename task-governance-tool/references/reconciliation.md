@@ -43,10 +43,14 @@ automatic stop.
    proposal on the same evidence or move scope without explicit authority.
 7. **Review remediation.** A current-generation `changes_requested` receipt or
    unresolved high or medium finding blocks completion immediately. A
-   remediation cycle requires a meaningful fix, applicable finding
+   repair changing material, Contract or conditions requires applicable finding
    resolution, a fresh review target, and a fresh current-generation review
-   result. A result that remains blocking counts as one unsuccessful cycle;
-   completion still requires fresh qualifying PASS receipts. Historical
+   result. Unchanged-basis supplementation or correction of an actual judgment
+   instead uses [same-basis continuation](task_workflow.md#same-basis-review-continuation),
+   retaining its admission, original-reviewer and explicitly linked Finding
+   resolution requirements. PASS alone resolves no Finding. A result that remains
+   blocking counts as one unsuccessful cycle; completion still requires
+   qualifying current-basis PASS receipts and no unresolved blockers. Historical
    receipts, PASS receipts, and low findings do not independently add a stop.
    Without new evidence, after two materially equivalent unsuccessful
    remediation cycles, do not execute a third equivalent cycle; use the

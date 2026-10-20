@@ -41,10 +41,10 @@ def require_fit(value):
 
 GUIDANCE = (
     "One response per tool call: reserve at least 24000 output tokens in both the execution tool "
-    "and outer return; do not batch outputs or duplicate them. Budgets count UTF-8 bytes as a "
-    "conservative token upper bound, not exact model tokens. Body total and diff total each allow "
-    "5000; serialized output including two JSON string wrappers and 1024 bytes of overhead allows "
-    "24000. Lower host limits or extra wrappers can still truncate: recover only missing ranges. "
+    "and outer return; do not batch outputs or duplicate them. Body and diff totals each have a "
+    "separate 5000 allowance, conservatively charged in UTF-8 bytes, not exact model tokens; "
+    "the full response is bounded to 24000 bytes. Lower host limits or extra wrappers can still "
+    "truncate: recover only missing ranges. "
     "List/partial delivery is not full material, omitted entries remain in scope, and delivery is "
     "never review coverage or PASS. Reuse only complete matching immutable objects."
 )

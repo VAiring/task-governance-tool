@@ -133,20 +133,28 @@ SessionEnd is best effort, not finalization. Stop, elapsed time and a quiet file
 do not prove final coverage; current snapshots remain pending/incomplete or
 conflicting where appropriate.
 
-Normal collection reads appended records using saved safe context. Prefix
-integrity is checked later in bounded resumable slices, with explicit
-`prefix_verification_deferred` coverage; unchanged mtime/size is not proof.
-Later events share work with old participants/segments and deferred audits.
-Changed shared components are recomputed. Snapshot/counter and published-byte
-checks continue across events in a rotating audit, with explicit
-`evidence_verification_deferred` status; a visited item may change before the
-next sweep detects it. A cursor or unchanged mtime/size is no proof of integrity.
-Budget or publication failure preserves prior
+`prefix_verification_deferred` and `evidence_verification_deferred` mean
+integrity checks remain deferred, not verified. A past check, cursor or unchanged
+mtime/size is no proof of present integrity; changes may be detected only by a
+later event. Budget or publication failure preserves prior
 progress/output and never asks to repeat Task completion. This is not a measured
 guarantee that every host invocation avoids its timeout.
 
 To establish support not already observed for the relevant host/source, use
 [host-delivery evidence](#host-delivery-evidence).
+Only when investigating audit behavior, use [integrity audit details](#integrity-audit-details).
+
+## Integrity Audit Details
+
+This conditional implementation explanation adds no collection command or
+recovery step. Use [coverage and recovery](#coverage-and-recovery) for operations.
+Normal collection reads appended records using saved safe context. Prefix
+integrity is checked later in bounded resumable slices. Later events share work
+with old participants/segments and deferred audits. Changed shared components
+are recomputed. Snapshot/counter and published-byte checks continue across
+events in a rotating audit; a visited item may change before the next sweep
+detects it. Deferred statuses and unknown coverage retain the meaning above;
+neither a cursor nor unchanged mtime/size establishes integrity.
 
 ## Host Delivery Evidence
 

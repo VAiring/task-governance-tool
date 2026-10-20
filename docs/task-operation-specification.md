@@ -875,8 +875,13 @@ out-of-scope work is handed off; a blocker is recorded only after safe
 authorized work is exhausted; paused is reserved for temporary interruption;
 unrelated safe ready lanes continue and remaining decisions are batched.
 
-Review repair still requires a fresh target and fresh current-generation
-review. A result that remains blocking counts as one unsuccessful remediation
+Review repair changing material, Contract or conditions requires a fresh target
+and fresh current-generation review. Unchanged-basis supplementation or actual
+judgment reassessment instead follows the existing
+[conditional review continuation](review-completion-specification.md#conditional-review-continuation),
+including its admission, original-reviewer and explicitly linked Finding
+resolution requirements. PASS alone never resolves a Finding; unresolved
+blockers still prevent completion. A result that remains blocking counts as one unsuccessful remediation
 cycle. Without new evidence, two materially equivalent unsuccessful review
 cycles prohibit a third equivalent cycle. Completion still requires qualifying
 fresh PASS receipts; unrelated safe lanes continue.

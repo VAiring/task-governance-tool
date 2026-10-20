@@ -766,12 +766,13 @@ class SkillSelfContainmentTests(unittest.TestCase):
         )
         self.assertLessEqual(len(reconciliation.splitlines()), 100)
         self.assertNotIn("taskgov.py", reconciliation)
-        # Reassessment is conditional guidance, not a new reconciliation call.
+        # Both boundary and review reassessment are conditional existing routes.
         links = _scan("references/reconciliation.md", reconciliation, []).links
         self.assertEqual(
             [_resolve(SKILL_ROOT, "references/reconciliation.md", link.target)
              for link in links],
-            [("references/task_workflow.md", "reassess-task-boundaries")],
+            [("references/task_workflow.md", "reassess-task-boundaries"),
+             ("references/task_workflow.md", "same-basis-review-continuation")],
         )
 
         for marker in (
@@ -799,9 +800,10 @@ class SkillSelfContainmentTests(unittest.TestCase):
             "hand off the out-of-scope discovery immediately",
             "Reserve `paused` for an explicit temporary interruption",
             "current-generation `changes_requested` receipt",
+            "repair changing material, Contract or conditions",
             "a fresh review target, and a fresh current-generation review result",
             "A result that remains blocking counts as one unsuccessful cycle",
-            "completion still requires fresh qualifying PASS receipts",
+            "qualifying current-basis PASS receipts and no unresolved blockers",
             "after two materially equivalent unsuccessful remediation cycles",
             "Continue unrelated safe ready lanes",
             "one bounded batch",
@@ -1653,6 +1655,60 @@ class SkillSelfContainmentTests(unittest.TestCase):
 
 
 class ReferenceRetrievalTests(unittest.TestCase):
+    def test_repair_routes_distinguish_changed_basis_from_existing_reassessment(self):
+        source = "references/task_workflow.md"
+        repair = self.reader().read_reference(source + "#repair-findings", SKILL_ROOT)
+        reconciliation = self.reader().read_reference(
+            "references/reconciliation.md#reconciliation-and-test-repair", SKILL_ROOT)
+        for origin, body in ((source, repair), ("references/reconciliation.md", reconciliation)):
+            normalized = " ".join(body.split())
+            self.assertIn("changing material, Contract or conditions", normalized)
+            self.assertIn("fresh", normalized)
+            self.assertIn("PASS alone", normalized)
+            self.assertIn("unresolved blockers", normalized)
+            _, continuation = self.linked_output(origin, body, "same-basis-review-continuation")
+            for condition in ("admitted shared-file preparation", "Changed material, Contract or",
+                              "actual original reviewer", "explicitly linked Finding",
+                              "Unknown effect or worker", "do not replay"):
+                self.assertIn(condition, continuation)
+
+    def test_usage_recovery_keeps_operational_limits_outside_audit_algorithm(self):
+        source = "references/usage_hooks.md"
+        recovery = self.reader().read_reference(source + "#coverage-and-recovery", SKILL_ROOT)
+        _, details = self.linked_output(source, recovery, "integrity-audit-details")
+        for condition in ("prefix_verification_deferred", "evidence_verification_deferred",
+                          "not verified", "does not do so", "Do not redo Task completion",
+                          "preserves prior", "no proof of present integrity"):
+            self.assertIn(condition, recovery)
+        for internal in ("Changed shared components", "bounded resumable slices", "rotating audit"):
+            self.assertNotIn(internal, recovery)
+            self.assertIn(internal, details)
+        self.assertNotIn("## Integrity Audit Details", recovery)
+        self.linked_output(source, details, "coverage-and-recovery")
+
+    def test_task_edit_inventory_and_packet_context_match_current_interfaces(self):
+        source = "references/cli_contracts.md"
+        edit = self.reader().read_reference(source + "#task-edit", SKILL_ROOT)
+        help_result = subprocess.run(
+            [sys.executable, "-B", str(SCRIPTS_ROOT / "taskgov.py"), "task", "edit", "--help"],
+            capture_output=True, encoding="utf-8", check=False)
+        self.assertEqual(help_result.returncode, 0, help_result.stderr)
+        for option in ("--verification", "--verification-not-required"):
+            self.assertIn(option, edit.split("```text", 1)[1].split("```", 1)[0])
+            self.assertIn(option, help_result.stdout)
+        _, declaration = self.linked_output(source, edit, "verification-declaration-edits")
+        self.assertIn("clears target and old completion evidence and advances generation", declaration)
+        schema = self.reader().read_reference(source + "#packet-format-for-integration", SKILL_ROOT)
+        for field in ("review_session_context", "project_id", "execution_id", "preparation_id",
+                      "continuation_id", "continuation_sequence", "selected_reviewers",
+                      "session_id", "action", "prior_receipt_id"):
+            self.assertIn("`" + field + "`", schema)
+        for condition in ("schema 25", "schema 29", "nullable", "inspection, not bound",
+                          "tool-owned", "unchanged", "Older saved Packets may omit",
+                          "absence never authorizes"):
+            self.assertIn(condition, schema)
+        self.linked_output(source, schema, "same-basis-review-continuation")
+
     def grouped_reads(self, package, targets):
         # Test-only stand-in for a host's multiple-read invocation. It is not
         # shipped, and makes no routing, completeness, or review decision.
@@ -2529,7 +2585,7 @@ print(json.dumps(results, ensure_ascii=False))
                                  "immutable object ID or exact revision/path", "unknown/truncated delivery",
                                  "project reread obligations", "result_instructions",
                                  "No blob, patch, dependency list or reading ledger is saved"):
-                        self.assertIn(rule, body)
+                        self.assertIn(rule, " ".join(body.split()))
                 self.assertIn("### Caller-Owned Review Handoff", body)
                 _, common = self.linked_output(source, body, "handoff-path-and-validation")
                 for boundary in ("`.json`", "32,768", "--user-approved-reviewer", ".taskgov"):
@@ -2551,7 +2607,8 @@ print(json.dumps(results, ensure_ascii=False))
         body = self.reader().read_reference("references/task_workflow.md#independent-reviewer", SKILL_ROOT)
         for rule in ("fixed material mappings", "recovery_command", "--material-details",
                      "Complete matching immutable bodies", "incomplete delivery",
-                     "Before/after sides and diffs remain required", "newly discovered", "project reread obligations",
+                     "complete diff", "before/after", "not a blanket prerequisite",
+                     "newly discovered", "project reread obligations",
                      "result_template", "result_instructions", "ok=true,status=saved"):
             self.assertIn(rule, body)
 

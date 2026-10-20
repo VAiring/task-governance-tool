@@ -1004,7 +1004,7 @@ normal maintenance opportunity or explicit setup repair catches up. Internal
 Runner intent, cleanup, observation, Reference, and link writes do not add
 another coordinator call or advance Evidence or Viewer generation.
 
-Taskgov starts no detached process, child process, thread, timer, watcher,
+This same-process maintenance starts no detached process, child process, thread, timer, watcher,
 service, queue, daemon, scheduler, or network operation. Each artifact uses a
 canonical regular one-byte OS advisory lock with zero wait; process termination
 releases ownership, so leftover regular lock files are harmless and never

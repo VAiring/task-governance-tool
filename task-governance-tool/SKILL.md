@@ -172,8 +172,8 @@ or authorize target/external mutation. The [integrated review finish](references
 can commit only the fixed reviewed snapshot when project rules and existing
 instructions permit it; no approval argument or repeat approval is needed.
 Leave canonical offline
-projections and backup to explicit setup and bounded same-process maintenance;
-they add no LLM command choice or background process. No network use, hidden
+projections and backup to explicit setup and bounded same-process maintenance.
+That maintenance adds no LLM command choice or background process. No network use, hidden
 acceptance conditions, or project-specific test strategy is added by this Skill.
 
 ## License

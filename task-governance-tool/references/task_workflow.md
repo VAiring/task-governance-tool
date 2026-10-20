@@ -331,20 +331,15 @@ If an operation's result is unknown, inspect the existing Task through public
 `task show <task-id>` before deciding which operation remains; never infer
 success or blindly retry. This conditional recovery adds no normal-path read.
 
-Do not use a document produced by the current task to authorize that task's own
-expansion. Hand off proposed hardening outside the current Contract. A
-canonically unchanged Contract is a write-free replay. A semantic revision
-invalidates current completion/review eligibility so fresh gates apply without
+Hand off proposed hardening outside the current Contract. A semantic revision
+invalidates current completion/review eligibility; fresh gates apply without
 another scope question.
 
 Any explicitly supplied constraints use strict normal privacy validation.
 Omitting later constraints preserves the already-validated prior bytes,
-including [bounded legacy counter forms](cli_contracts.md#legacy-stored-counter-compatibility); that carry-forward is not acceptance
-of caller-supplied legacy vocabulary and grants no authority. For future
-external-operation intent or evidence, use
-`operation_sequence=<positive canonical integer>` only as correlation or
-idempotency metadata. Current explicit authority for the operation remains
-separate.
+including [read-only legacy compatibility](cli_contracts.md#legacy-stored-counter-compatibility).
+This carry-forward grants no authority or exception for new input; use the
+[stored-input rules](cli_contracts.md#stored-input-privacy) for new content.
 
 ## Concise Contracts With Current Owners
 
@@ -430,10 +425,10 @@ completion. It does not change task status, selection, gates, or
 `tasks.updated_at`. Default `task current`, `task show`, and the selected
 detail from `task context` expose only the
 latest checkpoint; compact selection intentionally omits its content.
-New checkpoint content uses strict normal privacy validation. The bounded
-legacy reader exists only to return an already-stored checkpoint summary with
-[bounded legacy counter forms](cli_contracts.md#legacy-stored-counter-compatibility)
-unchanged; it creates no Task or external-operation authority.
+New checkpoint content uses strict normal privacy validation. Already-stored
+summaries retain their original text through
+[read-only legacy compatibility](cli_contracts.md#legacy-stored-counter-compatibility);
+this creates no Task or external-operation authority.
 
 ## Pause, Resume, And Block
 
@@ -1193,12 +1188,17 @@ Preserve successful resolutions after a lost response and resubmit only IDs
 proven still open. Unselected Findings and original content remain unchanged.
 
 A current-generation `changes_requested` Receipt or unresolved high/medium
-Finding blocks completion. After a meaningful fix, set a newer target and obtain
-fresh qualifying reviews. A result that remains blocking counts as an
-unsuccessful remediation cycle. If test or review failure recurs after an
+Finding blocks completion. A fix changing material, Contract or conditions
+requires a newer target and fresh qualifying reviews. If that basis is unchanged
+and an actual judgment needs correction or missing material needs supplementation,
+use [same-basis continuation](#same-basis-review-continuation) under its admission,
+original-reviewer and explicit Finding-resolution conditions. A PASS alone never
+resolves a Finding. A result that remains blocking counts as an unsuccessful
+remediation cycle. If test or review failure recurs after an
 attempted repair, read [reconciliation.md](reconciliation.md#reconciliation-and-test-repair) before another
 materially equivalent repair.
-Resume the [normal loop](#bounded-operating-loop) with the fresh target basis.
+Resume the [normal loop](#bounded-operating-loop) only with qualifying evidence
+for the applicable current basis; unresolved blockers still stop completion.
 
 ## Reopen
 

@@ -634,8 +634,13 @@ explicit temporary interruption, and unrelated ready lanes continue.
 Remaining user decisions are batched.
 
 Review remediation starts from the current blocking receipt/finding. A
-meaningful fix sets a fresh target and obtains a fresh current-generation
-result. A result that remains blocking counts as one unsuccessful cycle;
+fix changing material, Contract or conditions sets a fresh target and obtains
+a fresh current-generation result. Unchanged-basis supplementation or actual
+judgment reassessment uses the existing
+[conditional continuation composition](review-completion-design.md#conditional-continuation-composition)
+with its original-session binding and explicit Finding-resolution links; PASS
+alone cannot resolve a Finding or bypass unresolved blockers.
+A result that remains blocking counts as one unsuccessful cycle;
 completion still requires fresh qualifying PASS receipts. After two
 materially equivalent unsuccessful cycles without new evidence, no third
 equivalent cycle runs; the same bounded blocker/decision path applies.

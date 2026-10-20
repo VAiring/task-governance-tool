@@ -1105,6 +1105,8 @@ class HandoffMigrationTests(unittest.TestCase):
                         27,
                         28,
                         29,
+                        30,
+                        31,
                     ],
                 )
                 remove_v10_maintenance_for_test(connection)

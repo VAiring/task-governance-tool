@@ -231,12 +231,12 @@ class RelocationTokenCodecTests(unittest.TestCase):
         self.assertEqual(decode_relocation_token(token, now=issued_at).context, context)
 
     def test_fixed_source_supported_range_and_legacy_limit_are_distinct(self):
-        for version in (1, 14, 15, 28, 29):
+        for version in (1, 14, 15, 28, 29, 30, 31):
             with self.subTest(version=version):
                 context = legacy_context(source_layout="fixed_current_v1", source_schema_version=version)
                 token = encode_relocation_token(context, issued_at=ISSUED_AT)
                 self.assertEqual(decode_relocation_token(token, now=ISSUED_AT).context, context)
-        for version in (15, 29):
+        for version in (15, 29, 30, 31):
             self.assert_invalid(decode_relocation_token,
                                 raw_token(canonical_payload(source_schema_version=version)), now=ISSUED_AT)
         self.assert_invalid(decode_relocation_token,

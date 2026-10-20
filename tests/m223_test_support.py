@@ -147,7 +147,8 @@ def logical_database_digest(connection: sqlite3.Connection) -> str:
 def _remove_continuation_shape_for_test(connection: sqlite3.Connection) -> None:
     """Rebuild predecessor shapes inside the enclosing fixture transaction.
 
-    The caller first validates schema 29 and rejects continuation/history loss.
+    The caller first validates its source schema and, for v30/v31, restores v29
+    table shapes in the same transaction. It rejects continuation/history loss.
     Initial judgment rows are redundant with the retained revision-one Receipts.
     This is not a production reverse migration.
     """
@@ -191,18 +192,23 @@ def remove_v24_ownership_for_test(connection: sqlite3.Connection) -> None:
     from task_governance_tool import schema_session_slot_reacquisition as reacquisition
     from task_governance_tool import schema_task_event_notes as notes
     from task_governance_tool import schema_review_continuation as continuation
+    from task_governance_tool import schema_review_answers as answers
+    from task_governance_tool import schema_criterion_link_collector as collector
     version = storage.current_schema_version(connection)
-    if version not in (24, 25, 26, 27, 28, 29):
+    if version not in (24, 25, 26, 27, 28, 29, 30, 31):
         return
     connection.commit()
-    (continuation if version == 29 else notes if version == 28 else reacquisition if version == 27 else slot if version == 26 else reviewer if version == 25 else ownership).validate_storage(connection)
+    (collector if version == 31 else answers if version == 30 else continuation if version == 29 else notes if version == 28 else reacquisition if version == 27 else slot if version == 26 else reviewer if version == 25 else ownership).validate_storage(connection)
     if (any(connection.execute(f"SELECT 1 FROM {table} LIMIT 1").fetchone()
             for table in ("task_executions", "task_owner_transitions", "task_execution_cycles"))
         or connection.execute("SELECT 1 FROM task_ownership WHERE generation != 0 LIMIT 1").fetchone()
         or connection.execute("SELECT 1 FROM completion_evidence_bundles WHERE source_schema_version>=24").fetchone()
         or (version >= 25 and connection.execute("SELECT 1 FROM review_receipt_sessions LIMIT 1").fetchone())
         or (version >= 28 and connection.execute("SELECT 1 FROM task_events WHERE note_body IS NOT NULL LIMIT 1").fetchone())
-        or (version == 29 and (
+        or (version >= 30 and any(connection.execute(f"SELECT 1 FROM {table} LIMIT 1").fetchone()
+            for sql in answers.relation_statements()
+            for kind, table, _ in [storage._schema20_statement_identity(sql)] if kind == "table"))
+        or (version >= 29 and (
             any(connection.execute(f"SELECT 1 FROM {table} LIMIT 1").fetchone() for table in (
                 "review_continuations", "review_continuation_reviewers", "review_reassessment_resolutions",
                 "review_continuation_retained_originals"))
@@ -216,7 +222,9 @@ def remove_v24_ownership_for_test(connection: sqlite3.Connection) -> None:
     connection.execute("PRAGMA legacy_alter_table=ON")
     try:
         connection.execute("BEGIN IMMEDIATE")
-        if version == 29:
+        if version >= 30:
+            _remove_collected_answer_shape_for_test(connection)
+        if version >= 29:
             _remove_continuation_shape_for_test(connection)
         if version >= 28:
             for name in ("owner_insert", "immutable", "no_delete"):
@@ -238,7 +246,7 @@ def remove_v24_ownership_for_test(connection: sqlite3.Connection) -> None:
         for sql in statements:
             if storage._schema20_statement_identity(sql)[0] != "table":
                 connection.execute(sql)
-        connection.execute("DELETE FROM schema_migrations WHERE version IN (24, 25, 26, 27, 28, 29)")
+        connection.execute("DELETE FROM schema_migrations WHERE version IN (24, 25, 26, 27, 28, 29, 30, 31)")
         declaration.validate_storage(connection)
         connection.commit()
     except Exception:
@@ -247,6 +255,52 @@ def remove_v24_ownership_for_test(connection: sqlite3.Connection) -> None:
     finally:
         connection.execute(f"PRAGMA legacy_alter_table={legacy_alter}")
         connection.execute(f"PRAGMA foreign_keys={foreign_keys}")
+
+
+def _remove_collected_answer_shape_for_test(connection: sqlite3.Connection) -> None:
+    """Restore v29 DDL inside the enclosing fixture transaction, never product state.
+
+    The caller admits exact v30/v31 and refuses collected or sealed history before
+    entering this writer. Retained legacy Receipts and unrelated objects keep
+    their original rows; the enclosing reducer validates the final v23 shape.
+    """
+    from task_governance_tool import storage
+    from task_governance_tool import schema_review_answers as answers
+    from task_governance_tool import schema_review_continuation as continuation
+
+    assert connection.in_transaction
+    replacements = {"review_receipts": continuation.receipt_statement(),
+                    "completion_evidence_bundles": continuation.bundle_statement()}
+    for sql in storage._schema22_replacement_statements():
+        kind, name, _ = storage._schema20_statement_identity(sql)
+        if kind == "table" and name in ("evidence_references", "criterion_evidence_links"):
+            replacements[name] = sql
+    for sql in reversed(answers.relation_statements()):
+        kind, name, _ = storage._schema20_statement_identity(sql)
+        if kind == "table":
+            connection.execute(f'DROP TABLE "{name}"')
+    # These guards were widened to accept collected captures in v30.
+    for sql in continuation.relation_statements():
+        kind, name, _ = storage._schema20_statement_identity(sql)
+        if kind == "trigger" and name in ("trg_review_continuation_reviewers_publication",
+                "trg_review_receipt_judgments_binding", "trg_review_continuations_monotone"):
+            connection.execute(f'DROP TRIGGER "{name}"')
+            connection.execute(sql)
+    for table, sql in replacements.items():
+        attachments = tuple(connection.execute(
+            "SELECT name,sql FROM sqlite_master WHERE tbl_name=? AND type IN ('index','trigger') "
+            "AND sql IS NOT NULL ORDER BY type,name", (table,)))
+        columns = ",".join(f'"{row[1]}"' for row in connection.execute(f'PRAGMA table_info("{table}")'))
+        old = table + "_collected_test"
+        connection.execute(f'ALTER TABLE "{table}" RENAME TO "{old}"')
+        connection.execute(sql)
+        connection.execute(f'INSERT INTO "{table}" (rowid,{columns}) SELECT rowid,{columns} FROM "{old}"')
+        connection.execute(f'DROP TABLE "{old}"')
+        for name, attached in attachments:
+            if name == "trg_review_receipts_provenance_basis_insert":
+                attached = attached.replace("NEW.review_provenance_basis_version IN (1,2)",
+                                            "NEW.review_provenance_basis_version = 1")
+            connection.execute(attached)
 
 
 def remove_v23_declaration_for_test(connection: sqlite3.Connection) -> None:

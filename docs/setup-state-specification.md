@@ -516,7 +516,7 @@ JSON has exactly sorted keys `binding_generation`, `expires_at`,
 `project_id`, `source_layout`, `source_schema_version`, and `v`. Version is 1;
 source layout is `fixed_current_v1` or `legacy_projects_v1`; hashes are 64
 lowercase hex; generation positive. Fixed-current sources support schemas
-v1-v29; legacy-project sources remain capped at v14. Newer source schemas are
+v1-v31; legacy-project sources remain capped at v14. Newer source schemas are
 rejected. Serialization uses
 sorted keys, `(",", ":")`, unpadded base64url. Expiry is exactly 900 seconds
 after issue, acceptance is `issued_at <= now < expires_at`, total token at most

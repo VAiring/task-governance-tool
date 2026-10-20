@@ -1122,7 +1122,7 @@ class TaskCompleteCliTests(unittest.TestCase):
                 connection.commit()
                 apply_evidence_ledger_capture_migration(connection)
                 apply_completion_evidence_bundle_migration(connection)
-                self.assertEqual(apply_migrations(connection), ([20, 21, 22, 23, 24, 25, 26, 27, 28, 29], []))
+                self.assertEqual(apply_migrations(connection), ([20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31], []))
                 legacy_provenance = connection.execute(
                     """
                     SELECT COUNT(*)

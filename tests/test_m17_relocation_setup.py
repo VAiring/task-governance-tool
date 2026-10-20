@@ -292,8 +292,8 @@ class M17RelocationSetupTests(unittest.TestCase):
         self.assertEqual(result.data["planned_writes"], [])
         self.assertEqual(result.data["completed_writes"], [])
         self.assertIsNone(result.data["status"])
-        self.assertEqual(result.data["schema_from"], 29)
-        self.assertEqual(result.data["schema_to"], 29)
+        self.assertEqual(result.data["schema_from"], 31)
+        self.assertEqual(result.data["schema_to"], 31)
         self.assertTrue(result.data["maintenance_enabled"])
         self.assertEqual(result.data["backup_interval_minutes"], 30)
         self.assertEqual(result.data["backup_generations"], 3)
@@ -421,10 +421,12 @@ class M17RelocationSetupTests(unittest.TestCase):
                                    "selection_source": "none", "effective": "off",
                                    "status": "observed", "error": None}
                             for name in ("usage_collection", "verification_runner",
-                                         "effort_advisory", "viewer_reload", "review_wait")
+                                         "effort_advisory", "viewer_reload", "review_wait",
+                                         "review_answer_collection", "review_answer_correction")
                         },
                         "offer": ["usage_collection", "verification_runner",
-                                  "effort_advisory", "viewer_reload", "review_wait"],
+                                  "effort_advisory", "viewer_reload", "review_wait",
+                                  "review_answer_collection", "review_answer_correction"],
                         "viewer_default_interval_seconds": 30,
                     },
                     "planned_writes": FIXED_WRITES,
@@ -1204,7 +1206,8 @@ class M17RelocationSetupTests(unittest.TestCase):
                                "selection_source": "none", "effective": "unknown",
                                "status": "not_attempted", "error": None}
                         for name in ("usage_collection", "verification_runner",
-                                     "effort_advisory", "viewer_reload", "review_wait")
+                                     "effort_advisory", "viewer_reload", "review_wait",
+                                     "review_answer_collection", "review_answer_correction")
                     },
                     "offer": [], "viewer_default_interval_seconds": 30,
                 },

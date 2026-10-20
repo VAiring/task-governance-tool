@@ -53,6 +53,12 @@ class SetupFeaturesTests(unittest.TestCase):
             self.assertEqual(row["effective"], "off")
 
     def test_batch_on_off_preserves_values_and_explicit_off_across_repeated_setup(self):
+        # Answer collection requires an existing server definition. This inert
+        # fixture is configuration only; no host process or trust is created.
+        host_config = self.root / ".codex" / "config.toml"
+        host_config.parent.mkdir(exist_ok=True)
+        host_config.write_text('[mcp_servers.taskgov_review_wait]\ncommand="fixture-only-not-executed"\n',
+                               encoding="utf-8")
         result = self.run_setup(**{name: True for name in config.FEATURES})
         self.assertTrue(all(row["effective"] == "on" for row in self.rows(result).values()))
         self.assertEqual(result.data["usage_hooks"]["trust"], "unknown")

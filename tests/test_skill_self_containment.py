@@ -312,7 +312,7 @@ class SkillSelfContainmentTests(unittest.TestCase):
         self.assertRegex(ci, r"(?m)^  test:\n")
 
         trust_documents = (
-            (readme, False),
+            (readme, "current_readme"),
             (release_guide, False),
             (release_body, False),
             (workflow_guide, True),
@@ -326,7 +326,12 @@ class SkillSelfContainmentTests(unittest.TestCase):
                 "taskgov evaluates qualifying pass and `changes_requested` receipts only for that current basis",
                 "`changes_requested` blocks completion",
                 "unresolved high/medium findings from any recorded generation also block",
-            ) if current_workflow else (
+            ) if current_workflow is True else (
+                "deterministically evaluates",
+                "qualifying pass receipts, changes-requested receipts and effective unable judgments",
+                "for the current review target and generation",
+                "unresolved high or medium finding from any recorded generation",
+            ) if current_workflow == "current_readme" else (
                 "deterministically evaluates",
                 "qualifying pass receipts",
                 "changes-requested receipts only for the current review "

@@ -365,6 +365,7 @@ class ReviewEvidenceTests(unittest.TestCase):
                                     "receipts_total": 0,
                                     "receipts_current_generation": 0,
                                     "changes_requested_current_generation": 0,
+                                    "unable_current_generation": 0,
                                     "open_high": 0,
                                     "open_medium": 0,
                                     "open_low": 0,

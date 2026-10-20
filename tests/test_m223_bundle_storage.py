@@ -74,12 +74,15 @@ class CompletionEvidenceBundleStorageTests(unittest.TestCase):
                 self.assertEqual(connection.execute("PRAGMA legacy_alter_table").fetchone()[0], 0)
 
     def test_current_empty_history_reduces_with_rows_and_connection_settings_preserved(self):
-        for tuple_rows in (False, True):
-            with self.subTest(tuple_rows=tuple_rows), tempfile.TemporaryDirectory() as directory:
-                repo, db_path = initialize_completion_fixture(Path(directory))
-                task = add_completion_task(db_path, repo, title="Retained fixture task", status="ready")
+        from tests.test_review_session_migration import candidate_runtime
+        for version, tuple_rows in ((version, rows) for version in (29, 30, SCHEMA_VERSION)
+                                    for rows in (False, True)):
+            with self.subTest(version=version, tuple_rows=tuple_rows), tempfile.TemporaryDirectory() as directory:
+                with candidate_runtime(version):
+                    repo, db_path = initialize_completion_fixture(Path(directory))
+                    task = add_completion_task(db_path, repo, title="Retained fixture task", status="ready")
                 with closing(connect(db_path)) as connection:
-                    self.assertEqual(current_schema_version(connection), 29)
+                    self.assertEqual(current_schema_version(connection), version)
                     connection.execute("CREATE TABLE unrelated_fixture(value TEXT)")
                     connection.execute("INSERT INTO unrelated_fixture VALUES ('retained')")
                     connection.commit()
@@ -112,7 +115,7 @@ class CompletionEvidenceBundleStorageTests(unittest.TestCase):
                     with self.assertRaisesRegex(RuntimeError, "test-only fixture interruption"):
                         remove_v24_ownership_for_test(connection)
                 self.assertEqual(logical_database_digest(connection), before)
-                self.assertEqual(current_schema_version(connection), 29)
+                self.assertEqual(current_schema_version(connection), 31)
                 self.assertEqual(connection.execute("PRAGMA foreign_keys").fetchone()[0], 1)
                 self.assertEqual(connection.execute("PRAGMA legacy_alter_table").fetchone()[0], 0)
 
@@ -128,7 +131,7 @@ class CompletionEvidenceBundleStorageTests(unittest.TestCase):
                 before = tuple(tuple(row) for row in connection.execute("SELECT rowid,* FROM review_receipts"))
                 self.assertTrue(before)
                 apply_migrations(connection)
-                self.assertEqual(current_schema_version(connection), 29)
+                self.assertEqual(current_schema_version(connection), 31)
                 self.assertEqual(connection.execute("SELECT COUNT(*) FROM review_receipt_judgments").fetchone()[0], len(before))
                 remove_v24_ownership_for_test(connection)
                 self.assertEqual(current_schema_version(connection), 23)

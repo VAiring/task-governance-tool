@@ -429,6 +429,14 @@ Registered consumers require every capture consumed; superseded unused captures
 retain null links as history. Native reentry compares the frozen projection
 against its original metadata rather than treating an opaque seal as proof.
 
+An explicitly typed late initial source in a version-two submission is not a
+preparation capture. The registration writer requires its null source context,
+unchanged basis, no prior judgment and never-selected reviewer, then commits
+its initial Receipt/source and complete dispatch inventory together with the
+current consumer's registration. Existing captures and their physical metadata,
+projection, rank and one-time Receipt links remain unchanged. This transport
+extension adds no physical schema migration or native capture-repair operation.
+
 Source-30 and source-31 completions seal Bundle 4 and project index 3 under the
 [versioned Evidence contract](evidence-specification.md#collected-answer-evidence).
 They retain the mandatory exact execution/cycle link: global admission

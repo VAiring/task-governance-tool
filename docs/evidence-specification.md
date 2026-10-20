@@ -565,6 +565,14 @@ by its existing ID; an initial null source context is not evidence of whether
 registration previously occurred. Native registration/capture admission owns
 that distinction. Recomputed hashes never excuse inconsistent declared graphs.
 
+Late, never-selected initial originals admitted by the version-two submission
+retain null source-continuation judgments and their original provenance. They
+are not added to the frozen preparation-capture subset. Existing capture slots
+still identify their actual dispatch positions; late initial entries follow
+that subset. Their Receipt/source/dispatch registration is atomic with the
+consumer registration. Sealed graph and Bundle versions, old projection bytes
+and all existing graph validators retain their meaning.
+
 Native sealing, reentry and projection compare the complete ordered capture
 inventory for every consumer continuation in the frozen graph, including
 historical and registered consumers. A missing capture or an empty replacement

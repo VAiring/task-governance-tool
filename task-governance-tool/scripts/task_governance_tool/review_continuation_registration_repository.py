@@ -142,6 +142,8 @@ def begin_collected_locked(connection, *, project_id, task_id, submission, calle
         record = next((r for r in records if r.continuation_id == identity["continuation_id"]),None)
         if record is None or record.preparation_id != submission.preparation_id or record.sequence != identity["sequence"] or record.state not in ("prepared","registered"):
             raise _conflict()
+        if identity["selection_digest"] != values.selection_digest(record.selected):
+            raise _conflict()
         repository.require_current_basis(connection,record.basis,caller)
         selected = {s.session_id:s for s in record.selected}
         captures = {r["capture_identity"]["session_id"]:r for r in read_collected_captures(connection,record.continuation_id)}
@@ -165,6 +167,16 @@ def begin_collected_locked(connection, *, project_id, task_id, submission, calle
     seen = set()
     existing = []
     legacy_bindings = []
+    initial_sessions = {use.session_id for use in submission.source_uses if use.kind == "initial"}
+    if initial_sessions:
+        same_preparation = tuple(row for row in records if row.preparation_id == record.preparation_id)
+        if (not same_preparation or same_preparation[-1].continuation_id != record.continuation_id
+            or initial_sessions & {choice.session_id for row in records
+                if row.basis["target_generation"] == record.basis["target_generation"] for choice in row.selected}):
+            raise _conflict()
+        nodes = repository.read_judgments(connection, basis=record.basis)
+        if record.state == "prepared" and initial_sessions & {node.session_id for node in nodes}:
+            raise _conflict()
     for item in submission.items:
         session = item.session_binding.session_id
         if session in seen:
@@ -187,6 +199,9 @@ def begin_collected_locked(connection, *, project_id, task_id, submission, calle
                 if (supplied["metadata_digest"] != metadata_digest(metadata)
                     or {k:v for k,v in supplied.items() if k != "metadata_digest"} != capture["capture_identity"]
                     or source_metadata_projection(metadata) != capture["source_metadata"]):
+                    raise _conflict()
+            elif session in initial_sessions:
+                if source_context is not None or execution != record.basis or basis["route"] != record.route:
                     raise _conflict()
             elif record is not None:
                 if session not in selected or source_context != dict(continuation_id=record.continuation_id,sequence=record.sequence,selection_digest=values.selection_digest(record.selected)):
@@ -228,6 +243,10 @@ def begin_collected_locked(connection, *, project_id, task_id, submission, calle
         if legacy_expected != legacy_supplied:
             raise _conflict()
         for item in legacy_bindings:
+            if item.binding.session_id in initial_sessions:
+                if item.continuation is not None:
+                    raise _conflict()
+                continue
             capture = next((r for r in legacy_captures if r["session_id"] == item.binding.session_id),None)
             if capture is None or item.continuation is None or item.continuation.identity.continuation_id != capture["prior_continuation_id"] or item.binding.original_result_digest != capture["original_result_digest"] or bound_metadata_digest(item) != capture["metadata_digest"]:
                 raise _conflict()

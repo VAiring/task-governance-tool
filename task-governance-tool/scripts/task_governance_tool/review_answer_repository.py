@@ -469,6 +469,29 @@ def read_collected_captures(connection, continuation_id=None):
     return tuple(result)
 
 
+def read_continuation_dispatch(connection, record):
+    """Recover the exact committed batch through its selected judgments."""
+    if record.state != "registered" or not record.results:
+        return None
+    receipt_ids = tuple(row[1] for row in record.results)
+    rows = connection.execute(
+        """SELECT DISTINCT preparation_id,submission_digest
+FROM review_collection_dispatch_entries
+WHERE preparation_id=? AND review_receipt_id IN (SELECT value FROM json_each(?))""",
+        (record.preparation_id, json.dumps(receipt_ids))).fetchall()
+    if not rows:
+        return None  # A legacy-only registration has no collected dispatch.
+    if len(rows) != 1 or rows[0]["preparation_id"] != record.preparation_id:
+        raise _bad()
+    found = read_registration(connection, project_id=record.basis["project_id"],
+        task_id=record.basis["task_id"], preparation_id=record.preparation_id,
+        submission_digest=rows[0]["submission_digest"])
+    if (found["status"] != "recorded"
+        or not set(receipt_ids) <= {entry["receipt_id"] for entry in found["entries"]}):
+        raise _bad()
+    return found
+
+
 def read_native_collected_captures(connection, continuation_id):
     """Private preparation input: unchanged source metadata and native seal."""
     public=read_collected_captures(connection,continuation_id)

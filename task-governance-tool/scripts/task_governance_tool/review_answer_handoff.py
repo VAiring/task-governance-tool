@@ -361,6 +361,62 @@ def _admit_retained_items(resolution, submission, items):
             raise _bad()
 
 
+def _admit_initial_legacy(repo, resolution, root, item):
+    """Confirm an initial legacy sidecar at its original issued destination."""
+    from .review_handoff_originals import read_original
+    if item.bound.continuation is not None or item.source_packet_digest != "sha256:" + root.packet_digest:
+        raise _bad()
+    matches = []
+    for path in root.result_paths:
+        physical = files.relative_path(repo, path)
+        if path_lexically_exists(physical):
+            source = read_original(repo, root.packet_path, path, preparation=(resolution, root))
+            if source.bound.binding.session_id == item.session_binding.session_id:
+                matches.append(source)
+    if (len(matches) != 1 or matches[0].collected_metadata is not None
+        or matches[0].raw != item.raw or matches[0].metadata != item.metadata):
+        raise _bad()
+
+
+def _admit_initial_inventory(resolution, root, submission):
+    """Complete batch coverage and initial-source roles, before dispatch."""
+    from .review_continuation_repository import read_continuations, read_judgments
+    from .review_continuation import select_effective, quality_identity, selection_digest
+    with closing(connect_initialized_readonly(resolution.target, operation_local=True,
+            review_task_id=root.basis["task_id"])) as connection:
+        history = read_continuations(connection, project_id=root.basis["project_id"],
+                                     task_id=root.basis["task_id"])
+        current = tuple(row for row in history if row.preparation_id == root.preparation_id)
+        identity = submission.continuation
+        if (identity is None or not current or current[-1].state not in ("prepared", "registered")
+            or current[-1].basis != root.basis
+            or identity != dict(continuation_id=current[-1].continuation_id,
+                sequence=current[-1].sequence, selection_digest=selection_digest(current[-1].selected))):
+            raise _bad()
+        nodes = read_judgments(connection, basis=root.basis, _validated_continuations=history)
+        heads = select_effective(nodes, quality_basis=quality_identity(root.basis)).heads
+        known = {node.receipt_id: node.session_id for node in heads}
+        retained = tuple(known.get(identifier) for identifier in submission.retained_receipt_ids)
+        actors = tuple(item.session_binding.session_id for item in submission.items) + retained
+        if (None in retained or len(actors) != len(root.result_paths)
+            or len(set(actors)) != len(actors)):
+            raise _bad()
+        ever_selected = {choice.session_id for record in history
+            if record.basis["target_generation"] == root.basis["target_generation"] for choice in record.selected}
+        registered = {node.session_id for node in nodes}
+        if any(use.session_id in ever_selected for use in submission.source_uses if use.kind == "initial"):
+            raise _bad()
+        if current[-1].state == "registered":
+            from .review_answer_repository import read_continuation_dispatch
+            committed = read_continuation_dispatch(connection, current[-1])
+            if (committed is None or committed["submission_digest"] != submission.submission_digest
+                or tuple(entry["reviewer_session_id"] for entry in committed["entries"]) !=
+                   tuple(item.session_binding.session_id for item in submission.items)):
+                raise _bad()
+        elif any(use.session_id in registered for use in submission.source_uses if use.kind == "initial"):
+            raise _bad()
+
+
 @contextmanager
 def registration_admission(repo, submission, caller):
     if type(submission) is not CollectedSubmission:
@@ -378,21 +434,37 @@ def registration_admission(repo, submission, caller):
             grouped.setdefault(key, []).append(item)
         with ExitStack() as stack:
             admitted = []
+            root_context = None
             for key in sorted(grouped):
                 items = sorted(grouped[key], key=lambda item: item.metadata["binding"]["slot"])
                 resolution, root = root_for(repo, items[0].metadata["basis"])
+                root_context = resolution, root
                 if submission.continuation is None and (
                     root.version != 2 or tuple(item.slot for item in items) != tuple(range(1, len(root.result_paths)+1))):
                     raise _bad()
                 retained = items[0].metadata["basis"]["continuation"] != submission.continuation
                 if retained:
-                    _admit_retained_items(resolution, submission, items)
+                    captured = [item for item in items if submission.use_for(item.slot).kind == "captured"]
+                    if captured:
+                        _admit_retained_items(resolution, submission, captured)
                 service = service_for(repo, resolution, root, items[0].metadata["basis"], retained=retained)
                 slots = tuple(item.metadata["binding"]["slot"] for item in items)
                 lease, sources = stack.enter_context(service.admission(slots))
                 if any(item.raw != raw or item.metadata != metadata for item, (raw, metadata) in zip(items, sources)):
                     raise _bad()
+                for item in items:
+                    if submission.use_for(item.slot).kind == "initial":
+                        fresh = service_for(repo, resolution, root, item.metadata["basis"])
+                        fresh.admit_basis(item.metadata["basis"], item.metadata["binding"]["slot"])
                 admitted.append((service, lease, items))
+            if any(use.kind == "initial" for use in submission.source_uses):
+                if root_context is None:
+                    raise _bad()
+                resolution, root = root_context
+                for item in submission.items:
+                    if type(item) is LegacyItem and submission.use_for(item.slot).kind == "initial":
+                        _admit_initial_legacy(repo, resolution, root, item)
+                _admit_initial_inventory(resolution, root, submission)
             yield RegistrationAdmission(submission, admitted)
     except AnswerError as exc:
         raise answer_input_error(exc) from None

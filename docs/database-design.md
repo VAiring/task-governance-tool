@@ -329,6 +329,10 @@ dispatch slot: selected reviewers occupy the leading slots, followed by the
 combined legacy and collected retained originals in session-ID order, without
 collisions or gaps. Source slot and every source identity remain the original values.
 An existing legacy capture retains its old four keys and old hash domain.
+The [late-initial submission arm](review-completion-specification.md#collected-review-answers)
+appends uncaptured initial sources after this frozen captured subset. Those
+source-use references are transport values, not native captures; they add no
+table, capture rank or stored-metadata variant.
 
 Public `capture_identity` removes only `metadata_digest` from that collected
 capture. Public `source_metadata` removes only `original.path` from complete

@@ -10,7 +10,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "task-governance-to
 from task_governance_tool.review_answer import decode_answer
 from task_governance_tool.review_answer_values import basis_digest
 from task_governance_tool.review_answer_transport import (
-    CollectedItem, CollectedSubmission, decode_collected_submission, frame_collected_submission)
+    CollectedItem, CollectedSubmission, InitialOriginal, decode_collected_submission, frame_collected_submission)
 from task_governance_tool.review_session_transport import decode_submission
 from task_governance_tool.reviews import ReviewEvidenceError
 from tests.test_review_answer_pure_values import metadata_fixture
@@ -38,6 +38,58 @@ def frame(*items):
 
 
 class CollectedTransportTests(unittest.TestCase):
+    def continued(self):
+        first = item()
+        context = dict(continuation_id="tg_review_continuation_" + "3" * 16,
+                       sequence=1, selection_digest="4" * 64)
+        first.metadata["basis"]["continuation"] = context
+        first.metadata["binding"]["basis_digest"] = basis_digest(first.metadata["basis"])
+        return first, context
+
+    def test_late_initial_is_explicit_v2_and_cannot_enter_legacy_envelope(self):
+        from task_governance_tool.review_answer_values import metadata_digest
+        first, context = self.continued()
+        late = item(2)
+        reference = InitialOriginal(late.session_binding.session_id,
+            late.metadata["original"]["digest"], metadata_digest(late.metadata))
+        raw = frame_collected_submission(first.metadata["basis"]["preparation_id"],
+            (first, late), continuation=context, retained_originals=(reference,))
+        decoded = decode_submission(raw)
+        self.assertEqual([use.kind for use in decoded.source_uses], ["selected", "initial"])
+        self.assertEqual(decoded.items[1].metadata, late.metadata)
+        value = json.loads(raw)
+        self.assertEqual(value["format"], "taskgov-collected-review-results-v2")
+        value["format"] = "taskgov-collected-review-results-v1"
+        with self.assertRaises(ReviewEvidenceError):
+            decode_submission(json.dumps(value).encode())
+
+    def test_frozen_capture_rank_precedes_initial_arrivals_on_both_sides(self):
+        from dataclasses import replace
+        from task_governance_tool.review_answer_values import metadata_digest
+        first, context = self.continued()
+        before, captured, after = item(2), item(3), item(4)
+        meta = captured.metadata
+        capture = dict(kind="collected", consumer_continuation_id=context["continuation_id"],
+            consumer_slot=2, source_preparation_id=meta["basis"]["preparation_id"],
+            source_continuation_id=None, source_slot=3,
+            session_id=captured.session_binding.session_id, source_basis_digest=meta["binding"]["basis_digest"],
+            original_digest=meta["original"]["digest"], metadata_digest=metadata_digest(meta))
+        references = tuple(sorted((capture, *(InitialOriginal(source.session_binding.session_id,
+            source.metadata["original"]["digest"], metadata_digest(source.metadata))
+            for source in (before, after))), key=lambda row: row["session_id"] if type(row) is dict else row.session_id))
+        raw = frame_collected_submission(first.metadata["basis"]["preparation_id"],
+            (first, replace(captured, slot=2), replace(before, slot=3), after),
+            continuation=context, retained_originals=references)
+        decoded = decode_submission(raw)
+        self.assertEqual([use.kind for use in decoded.source_uses],
+                         ["selected", "captured", "initial", "initial"])
+        value = json.loads(raw)
+        value["items"][1], value["items"][2] = value["items"][2], value["items"][1]
+        for slot, entry in enumerate(value["items"], 1):
+            entry["slot"] = slot
+        with self.assertRaises(ReviewEvidenceError):
+            decode_submission(json.dumps(value).encode())
+
     def test_fenced_original_survives_exactly_and_has_own_typed_arm(self):
         source = item(fenced=True)
         raw = frame(source)

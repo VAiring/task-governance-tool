@@ -672,13 +672,27 @@ blocks regardless of other PASS results.
 
 `review_answer_originals.py` and `review_answer_handoff.py` read complete
 collected originals alongside retained legacy sidecars. New selected slots come
-first; retained originals follow in actual session order. Every retained
-collected original has an exact typed capture. Native capture admission receives
+first, followed by the frozen captured subset in actual session order. A v2
+submission appends uncaptured, never-selected initial originals in session
+order. The shared transport decodes their explicit source-use references once;
+manual submission, finalization and locked registration consume those typed
+roles. Existing capture ranks remain actual dispatch slots, and old envelopes
+retain their exact semantics. Captured collected originals have an exact typed
+capture; late initial sources instead retain initial judgment identity and are
+adopted by the existing atomic source/Receipt/dispatch/consumer registration.
+Native capture admission receives
 unchanged source metadata under held collection leases, checks settled source
 effects/old cleanup and records both the physical metadata seal and deterministic
 path-free projection atomically. Further pending supersession transfers source
 metadata unchanged, keeps historical captures and preserves required slots.
 Source-context judgment identity is never rewritten as the consumer context.
+One source store can contain both captured and late initial originals.
+Registration acquires its lease once, validates exact readback for every item,
+then checks each role independently: native capture equality for captured
+sources, and unchanged initial issuance plus never-selected history for late
+initials. The native writer repeats the current selection/history and absence
+checks before registering that complete batch. No composition, inspect or
+collection call gains a native capture/registration write.
 The public Evidence Reader recomputes its own projection digest and graph
 relations; it never reads private transport files or claims to validate their
 physical seal. Historical finalizer reporting uses an already admitted saved

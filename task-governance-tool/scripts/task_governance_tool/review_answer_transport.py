@@ -16,6 +16,7 @@ from .review_session_repository import ReviewSessionBinding, ReviewSessionTarget
 
 
 FORMAT = "taskgov-collected-review-results-v1"
+INITIAL_FORMAT = "taskgov-collected-review-results-v2"
 LIMIT = 262144
 
 
@@ -94,6 +95,33 @@ class LegacyItem:
 
 
 @dataclass(frozen=True)
+class InitialOriginal:
+    """Uncaptured initial source proposed for the current atomic batch."""
+    session_id: str
+    original_digest: str
+    metadata_digest: str
+
+    def __post_init__(self):
+        from .review_answer_values import session, digest
+        session(self.session_id)
+        digest(self.original_digest)
+        digest(self.metadata_digest)
+
+    def as_dict(self):
+        return dict(kind="initial", session_id=self.session_id,
+                    original_digest=self.original_digest, metadata_digest=self.metadata_digest)
+
+
+@dataclass(frozen=True)
+class SourceUse:
+    """One decoded role, shared by physical admission and native publication."""
+    slot: int
+    session_id: str
+    kind: str
+    reference: object = None
+
+
+@dataclass(frozen=True)
 class CollectedSubmission:
     preparation_id: str
     continuation: dict | None
@@ -102,6 +130,13 @@ class CollectedSubmission:
     retained_originals: tuple
     submission_digest: str
     raw: bytes
+    source_uses: tuple[SourceUse, ...] = ()
+
+    def use_for(self, slot):
+        matches = tuple(row for row in self.source_uses if row.slot == slot)
+        if len(matches) != 1:
+            raise _binding()
+        return matches[0]
 
     @property
     def bindings(self):
@@ -145,12 +180,16 @@ def _bytes(value):
     return original
 
 
-def _capture(value):
+def _capture(value, *, initial=False):
     from .review_answer_values import validate_collected_capture
     if type(value) is not dict:
         raise _invalid()
     if value.get("kind") == "collected":
         return validate_collected_capture(value)
+    if initial and value.get("kind") == "initial":
+        if set(value) != {"kind", "session_id", "original_digest", "metadata_digest"}:
+            raise _invalid()
+        return InitialOriginal(value["session_id"], value["original_digest"], value["metadata_digest"])
     if set(value) != set(RetainedOriginal.__dataclass_fields__):
         raise _invalid()
     return RetainedOriginal(**value)
@@ -174,7 +213,7 @@ def decode_collected_submission(raw):
             parse_float=_number, parse_constant=_number)
         scan_strings(value)
         keys = {"format", "preparation_id", "continuation", "items", "retained_receipt_ids", "retained_originals"}
-        if (type(value) is not dict or set(value) != keys or value["format"] != FORMAT
+        if (type(value) is not dict or set(value) != keys or value["format"] not in (FORMAT, INITIAL_FORMAT)
             or not identifier(value["preparation_id"], "tg_review_preparation_")
             or type(value["items"]) is not list
             or type(value["retained_receipt_ids"]) is not list
@@ -198,14 +237,17 @@ def decode_collected_submission(raw):
             raise _invalid()
         if len(retained) + len(value["items"]) > 8:
             raise _capacity()
-        captures = tuple(_capture(row) for row in value["retained_originals"])
+        extended = value["format"] == INITIAL_FORMAT
+        captures = tuple(_capture(row, initial=extended) for row in value["retained_originals"])
+        if extended and (continuation is None or not any(type(row) is InitialOriginal for row in captures)):
+            raise _invalid()
         capture_sessions = tuple(_capture_session(row) for row in captures)
         if (len(set(capture_sessions)) != len(capture_sessions)
             or capture_sessions != tuple(sorted(capture_sessions, key=lambda row: row.encode("utf-8")))
             or continuation is None and (retained or captures)):
             raise _invalid()
         by_session = dict(zip(capture_sessions, captures))
-        consumed, sessions, slots, items = set(), set(), [], []
+        consumed, sessions, slots, items, uses = set(), set(), [], [], []
         common_basis, common_route, findings = None, None, 0
         for entry in value["items"]:
             if (type(entry) is not dict or type(entry.get("slot")) is not int
@@ -233,7 +275,12 @@ def decode_collected_submission(raw):
                 session = metadata["source_identity"]["reviewer_session_id"]
                 capture = by_session.get(session)
                 if basis["continuation"] != continuation:
-                    if (continuation is None or type(capture) is not dict or capture["consumer_continuation_id"] != continuation["continuation_id"]
+                    if type(capture) is InitialOriginal:
+                        if (basis["continuation"] is not None
+                            or capture.original_digest != metadata["original"]["digest"]
+                            or capture.metadata_digest != metadata_digest(metadata)):
+                            raise _binding()
+                    elif (continuation is None or type(capture) is not dict or capture["consumer_continuation_id"] != continuation["continuation_id"]
                         or capture["consumer_slot"] != slot or capture["source_slot"] != binding["slot"]
                         or capture["source_preparation_id"] != basis["preparation_id"]
                         or capture["source_continuation_id"] != (basis["continuation"]["continuation_id"] if basis["continuation"] else None)
@@ -256,14 +303,19 @@ def decode_collected_submission(raw):
                 session = bound.binding.session_id
                 capture = by_session.get(session)
                 from .review_continuation import _digest as bare_digest
-                if (type(capture) is not RetainedOriginal or type(entry["source_packet_digest"]) is not str
+                if (type(capture) not in (RetainedOriginal, InitialOriginal) or type(entry["source_packet_digest"]) is not str
                     or not entry["source_packet_digest"].startswith("sha256:")
                     or not bare_digest(entry["source_packet_digest"][7:])
-                    or bound.binding.original_result_digest != capture.original_result_digest):
+                    or bound.binding.original_result_digest != (
+                        capture.original_digest.removeprefix("sha256:") if type(capture) is InitialOriginal
+                        else capture.original_result_digest)):
                     raise _binding()
                 from .review_session_transport import metadata_digest as legacy_seal
-                if (legacy_seal(entry["binding"]) != capture.metadata_digest or bound.continuation is None
-                    or bound.continuation.identity.continuation_id != capture.prior_continuation_id):
+                if type(capture) is InitialOriginal:
+                    if bound.continuation is not None or "sha256:" + legacy_seal(entry["binding"]) != capture.metadata_digest:
+                        raise _binding()
+                elif (legacy_seal(entry["binding"]) != capture.metadata_digest or bound.continuation is None
+                      or bound.continuation.identity.continuation_id != capture.prior_continuation_id):
                     raise _binding()
                 consumed.add(session)
                 items.append(LegacyItem(slot, original, entry["source_packet_digest"], entry["binding"], bound))
@@ -274,17 +326,28 @@ def decode_collected_submission(raw):
                 raise _binding()
             sessions.add(session)
             slots.append(slot)
+            uses.append(SourceUse(slot, session,
+                "initial" if type(capture) is InitialOriginal else "captured" if capture is not None else "selected",
+                capture))
         if findings > 64:
             raise _capacity("findings")
         if common_basis is None or slots != sorted(set(slots)):
             raise _invalid()
         if consumed != set(capture_sessions):
             raise _binding()
+        if extended:
+            ranks = {"selected": 0, "captured": 1, "initial": 2}
+            if (slots != list(range(1, len(items) + 1))
+                or [ranks[row.kind] for row in uses] != sorted(ranks[row.kind] for row in uses)
+                or any([row.session_id for row in uses if row.kind == kind] !=
+                       sorted(row.session_id for row in uses if row.kind == kind)
+                       for kind in ("captured", "initial"))):
+                raise _binding()
         target = items[0].target
         if any(item.target != target for item in items):
             raise _binding()
         return CollectedSubmission(value["preparation_id"], continuation, tuple(items),
-            retained, captures, _digest(raw), raw)
+            retained, captures, _digest(raw), raw, tuple(uses))
     except AnswerError as error:
         raise answer_input_error(error) from None
     except (ValueError, TypeError, KeyError, UnicodeError, RecursionError, binascii.Error):
@@ -303,9 +366,10 @@ def frame_collected_submission(preparation_id, items, *, continuation=None,
                 original_base64=base64.b64encode(item.raw).decode("ascii"), binding=item.metadata))
         else:
             raise _invalid()
-    value = dict(format=FORMAT, preparation_id=preparation_id, continuation=continuation, items=rows,
+    value = dict(format=INITIAL_FORMAT if any(type(row) is InitialOriginal for row in retained_originals) else FORMAT,
+        preparation_id=preparation_id, continuation=continuation, items=rows,
         retained_receipt_ids=list(retained_receipt_ids),
-        retained_originals=[row.as_dict() if type(row) is RetainedOriginal else row for row in retained_originals])
+        retained_originals=[row.as_dict() if type(row) in (RetainedOriginal, InitialOriginal) else row for row in retained_originals])
     raw = json.dumps(value, ensure_ascii=True, separators=(",", ":"), allow_nan=False).encode("utf-8")
     decode_collected_submission(raw)
     return raw

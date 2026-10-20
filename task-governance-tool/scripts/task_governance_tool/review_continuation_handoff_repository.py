@@ -22,6 +22,7 @@ class HandoffState:
     bindings: dict
     captures: dict
     collected_captures: dict = field(default_factory=dict)
+    registered_batches: dict = field(default_factory=dict)
 
 
 def read_state(target, task_id, caller):
@@ -40,7 +41,14 @@ def read_state(target, task_id, caller):
             from .review_answer_repository import read_native_collected_captures
             collected = {record.continuation_id: read_native_collected_captures(connection, record.continuation_id)
                 for record in history if record.basis["target_generation"] == basis["target_generation"]}
-        return HandoffState(basis, history, effective.heads, bindings, captures, collected)
+        registered_batches = {}
+        current = tuple(row for row in history if row.basis == basis)
+        if current_schema_version(connection) >= 30 and current:
+            from .review_answer_repository import read_continuation_dispatch
+            found = read_continuation_dispatch(connection, current[-1])
+            if found is not None:
+                registered_batches[current[-1].continuation_id] = found
+        return HandoffState(basis, history, effective.heads, bindings, captures, collected, registered_batches)
 
 
 def admit(target, basis, preparation_id, route, selected, caller, *, retirement=None, retained_originals=(), retained_collected=(), continuation_id=None):

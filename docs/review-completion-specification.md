@@ -412,6 +412,37 @@ Receipt IDs and the closed retained-original union are derived from the exact
 continuation inventory, with one-to-one capture consumption and no aliases.
 Both retained arrays are empty without a continuation.
 
+A continuation with an uncaptured, never-selected initial original uses
+`format="taskgov-collected-review-results-v2"`. It retains the same envelope
+members and item shapes. Its retained-original union additionally admits exactly
+`{kind:"initial",session_id,original_digest,metadata_digest}`. Both digests have
+the `sha256:` prefix; the metadata digest seals the unchanged collected Metadata
+or legacy sidecar under its own existing digest domain. This reference declares
+a proposed source use, not a stored capture or registration permission. Version
+one rejects this arm and retains its exact ordering and capture checks.
+
+Version two orders new selected originals first, the existing captured subset
+next in its original session order, and uncaptured initial originals last in
+session order. Existing capture `consumer_slot` values still equal actual
+dispatch slots. A later arrival never inserts ahead of or rewrites that frozen
+subset. Every initial reference matches exactly one source with null source
+continuation, no existing judgment, and no selection anywhere in the current
+Task/target generation's admitted continuation history. Source issuance, complete required
+reviewer coverage, exact bytes and settled effects are checked under the existing
+source leases; current basis, history, unregistered source and complete native
+selection are rechecked in the one public registration writer. Registration
+records the original initial judgment, source, dispatch membership and consumer
+registration atomically. It creates no synthetic capture or historical
+continuation. Existing read/inspect/composition and hook collection stay free of
+registration effects. A saved negative or unable judgment retains its ordinary
+gate; unknown publication or registration effects still forbid replay.
+After a known native registration with a lost outer acknowledgement, recovery
+uses the consumer's exact committed dispatch membership and submission digest,
+including its initial originals. It does not rebuild a smaller batch from the
+remaining unregistered heads or convert an earlier reserved envelope to version
+two. This exact registered-batch confirmation is the only exception to the
+unregistered-source requirement; it grants no new registration.
+
 One through eight original slots, at most 64 combined Findings and the complete
 262,144-byte serialized stdin cap include base64, metadata and framing. Do not
 split a failed batch, drop Findings or register successful siblings separately.
@@ -763,9 +794,12 @@ Preparation fixes the protocol and request digest before dispatch. Existing
 issued save-based requests finish as legacy; restart never substitutes the
 installed default. A new continuation has its own immutable protocol tag and
 request bases before readiness; tagged collection with a missing store fails
-closed, without a legacy fallback. Unregistered collected originals transfer
+closed, without a legacy fallback. Superseded selected originals transfer
 through explicit supersession with unchanged source metadata and both seals;
-they require the new batch's exact native captures. Disablement cannot turn an
+they require the new batch's exact native captures. A never-selected initial
+original instead retains its initial issuance and uses the explicit
+[late-initial submission](#collected-review-answers) when it was not captured
+during preparation. Disablement cannot turn an
 outstanding collected original into a newly selected legacy result.
 The existing `save` entry remains solely for outstanding legacy requests until
 their supported inventory is proven settled. Unknown drainage is not permission

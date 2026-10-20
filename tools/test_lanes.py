@@ -257,6 +257,7 @@ LANE_MODULES: dict[str, tuple[str, ...]] = {
         "test_m243c_runner_gate",
         "test_m244a_runner_acceptance",
         "test_m244b_legacy_fresh_acceptance",
+        "test_operation_admission",
         "test_os_artifact_operations",
         "test_os_runner_gate",
         "test_os_runner_preparation",

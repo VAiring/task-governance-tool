@@ -89,16 +89,34 @@ hide an already registered result. A successor increments exactly one and has
 the same actual session, key, Contract, authority/criteria and four-part target;
 one predecessor has at most one successor. One actual reviewer counts once.
 
-Core admission validates the full graph, even when display uses a bounded
+Global admission validates the full graph, even when display uses a bounded
 historical page, within the operation's admitted scope. Completion supplies its
 Task ID through the internal `review_task_id` storage argument on each initialized
 read/open and locked writer revalidation. The storage layer keeps ordinary
-non-review admission and scopes session binding, collected-answer and judgment
+structural admission and scopes session binding, collected-answer and judgment
 validation to that Task. Repository `review_task` is the resolver-derived
 project/Task pair, never a public caller-controlled bypass. Own judgment rows
 retain all generations and are acquired in existing validation chunks; linked
 predecessors and results must belong to the same Task/basis. Global callers omit
 the argument and retain whole-store review/orphan validation.
+
+Ordinary Task adapters mechanically select internal `operation_local=True`
+under [operation-local admission](database-specification.md#operation-local-admission).
+The resolver and each initialized connection/writer still validate the exact
+schema and project binding, but do not invoke whole-project Runner, ownership
+or note validators. Existing selected repositories validate their consumed rows,
+slot/lane relationships and locked mutation basis. Detail projection additionally
+calls `validate_task_review_storage` in that same snapshot; completion supplies
+its Task ID for the same review validator. The default remains global for other
+consumers, including the shared Task edit/write helpers. Only ordinary Task
+adapters opt into local admission through every read and locked write; explicit
+Runner Plan actions retain global admission throughout, including combined
+verification or Contract changes. This internal boolean is not an authority token or public option;
+neither local admission nor its snapshots may supply a global validation proof.
+Integrated Review Core reads supply an explicitly admitted connection to the
+Task projection. A retained typed finalization basis keeps completion's existing
+non-review admission at every fresh read and locked write until the review-service
+unit switches it; ordinary public completion remains operation-local.
 
 Task reads acquire all that Task's continuation generations
 and use the retained-original composite primary key to fetch only those
@@ -1508,8 +1526,9 @@ A reason is not part of the authority-snapshot or Bundle digest. Task editing
 invalidates the target explicitly even when the authority snapshot is reused;
 the Packet exposes the reason and each new cycle stores its immutable copy.
 Done/reopen validation compares a non-NULL cycle reason with its Task; a legacy
-NULL is never inferred to mean approval. Recovery, normal resolver/writer and
-doctor retain global admission. Viewer ignores the new reason fields and keeps
+NULL is never inferred to mean approval. Recovery and doctor retain global
+admission; ordinary Task resolver/writer scope follows operation-local admission.
+Viewer ignores the new reason fields and keeps
 its existing v4 shape. Schema-23 capture/index writes source 23, but immutable
 source-19 through source-22 Bundles keep their exact bytes and digests.
 

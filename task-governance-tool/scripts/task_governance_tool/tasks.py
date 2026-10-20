@@ -567,11 +567,12 @@ def begin_task_write(
     database_target: DatabaseTarget | None,
     *,
     review_task_id: str | None = None,
+    operation_local: bool = False,
 ) -> None:
     if connection.in_transaction:
         return
     if database_target is not None:
-        begin_initialized_write(connection, database_target, review_task_id=review_task_id)
+        begin_initialized_write(connection, database_target, review_task_id=review_task_id, operation_local=operation_local)
     else:
         connection.execute("BEGIN IMMEDIATE")
 
@@ -667,7 +668,7 @@ def add_tasks(
         _prepare_task_add(connection, project, effort_profile=effort_profile, **values)
         for values in task_inputs
     ]
-    begin_task_write(connection, database_target)
+    begin_task_write(connection, database_target, operation_local=True)
     savepoint = f"taskgov_batch_{secrets.token_hex(4)}"
     connection.execute(f"SAVEPOINT {savepoint}")
     try:
@@ -700,7 +701,7 @@ def _add_prepared_task(
     normalized = prepared.normalized
     contract_input = prepared.contract_input
     effort_preflight = prepared.effort_preflight
-    begin_task_write(connection, database_target)
+    begin_task_write(connection, database_target, operation_local=True)
 
     lane = normalized["lane"]
     lane_order = normalized["lane_order"]
@@ -2063,8 +2064,10 @@ def lock_and_reread_edit_owner(
     *,
     database_target: DatabaseTarget | None = None,
     completing: bool = False,
+    operation_local: bool = False,
 ) -> dict[str, Any]:
-    begin_task_write(connection, database_target, review_task_id=task_id if completing else None)
+    begin_task_write(connection, database_target, review_task_id=task_id if completing else None,
+        operation_local=operation_local)
     task = read_internal_task(connection, project.project_id, task_id)
     if task is None:
         raise TaskRepositoryError("not_found", "task was not found")
@@ -2322,6 +2325,7 @@ def reopen_done_task(
     effort_profile: Any | None = None,
     effort_preflight: Any | None = None,
     database_target: DatabaseTarget | None = None,
+    operation_local: bool = False,
     caller: CallerIdentity = CallerIdentity(None),
     ownership_basis: task_ownership.OwnershipBasis | None = None,
 ) -> EditTaskResult:
@@ -2330,6 +2334,7 @@ def reopen_done_task(
         project,
         str(existing["task_id"]),
         database_target=database_target,
+        operation_local=operation_local,
     )
     if locked_existing["status"] != "done":
         raise TaskRepositoryError(
@@ -2883,6 +2888,7 @@ def edit_task(
     *,
     effort_profile: Any | None = None,
     database_target: DatabaseTarget | None = None,
+    operation_local: bool = False,
     completion_plan: CompletionPlan | None = None,
     runner_selector: RunnerSelectionProvider | None = None,
     basis_precommit_validator: TaskEditBasisPrecommitValidator | None = None,
@@ -2932,6 +2938,7 @@ def edit_task(
                 effort_profile=effort_profile,
                 effort_preflight=effort_preflight,
                 database_target=database_target,
+                operation_local=operation_local,
                 caller=caller,
                 ownership_basis=ownership_basis,
             )
@@ -2988,6 +2995,7 @@ def edit_task(
             project,
             normalized_task_id,
             database_target=database_target,
+            operation_local=operation_local,
         )
         result = edit_contract(
             connection,
@@ -3331,6 +3339,7 @@ def edit_task(
         normalized_task_id,
         database_target=database_target,
         completing=status_was_provided and updated["status"] == "done",
+        operation_local=operation_local,
     )
     reject_concurrent_edit_base_change(
         existing,
@@ -3636,6 +3645,7 @@ def complete_task(
         effort_profile=effort_profile,
         database_target=database_target,
         completion_plan=plan,
+        operation_local=plan.finalization_basis is None,
         caller=caller,
         **edit_input,
     )

@@ -542,6 +542,86 @@ class RunnerPlanEditTests(unittest.TestCase):
                 else:
                     self.assert_plan_matches_basis(fixture, fixture.basis())
 
+    def test_combined_plan_action_revalidates_global_state_after_capture(self):
+        cases = (
+            {"verification": FUTURE_VERIFICATION},
+            {
+                "contract_scope": "Revised combined Task scope",
+                "contract_acceptance": "Preserve combined admission",
+                "contract_change_reason": "Exercise locked Contract admission",
+            },
+        )
+        for changes in cases:
+            with self.subTest(changes=changes), runner_plan_edit_fixture() as fixture:
+                if "contract_scope" in changes:
+                    changes = {**changes, "contract_authority_ref": f"user_instruction:{fixture.task_id}:2"}
+                plan_before = fixture.write_exact_plan()
+                task_before = fixture.task_row()
+                events_before = fixture.event_count()
+                real_capture = edit_module._capture_decoded_plan
+                snapshots = []
+
+                def capture(*args, **kwargs):
+                    captured = real_capture(*args, **kwargs)
+                    with closing(sqlite3.connect(fixture.target.db_path)) as connection:
+                        trigger = connection.execute(
+                            "SELECT sql FROM sqlite_master "
+                            "WHERE name='trg_task_events_note_body_immutable'"
+                        ).fetchone()[0]
+                        connection.execute("DROP TRIGGER trg_task_events_note_body_immutable")
+                        connection.execute(
+                            "UPDATE task_events SET note_body='Invalid retained note' "
+                            "WHERE task_id=? AND event_type='task_added'",
+                            (fixture.task_id,),
+                        )
+                        connection.execute(trigger)
+                        connection.commit()
+                    snapshots.append(fixture.database_dump())
+                    return captured
+
+                with mock.patch.object(edit_module, "_capture_decoded_plan", side_effect=capture), \
+                     mock.patch.object(edit_module, "publish_verification_runner_plan") as publish:
+                    self.assert_error_code(
+                        "project_state_unreadable",
+                        lambda: edit_module.edit_task_with_runner_plan(
+                            fixture.target, fixture.task_id,
+                            runner_plan_action="rebind", caller=capture_caller_identity(),
+                            **changes,
+                        ),
+                    )
+                self.assertEqual(len(snapshots), 1)
+                self.assertEqual(fixture.database_dump(), snapshots[0])
+                self.assertEqual(fixture.task_row(), task_before)
+                self.assertEqual(fixture.event_count(), events_before)
+                self.assertEqual(fixture.plan_path.read_bytes(), plan_before)
+                publish.assert_not_called()
+
+    def test_basis_edits_without_plan_action_remain_operation_local(self):
+        from task_governance_tool import storage
+
+        for changes in (
+            {"verification": FUTURE_VERIFICATION},
+            {
+                "contract_scope": "Revised ordinary Task scope",
+                "contract_acceptance": "Preserve ordinary local admission",
+                "contract_change_reason": "Exercise ordinary Contract admission",
+            },
+        ):
+            with self.subTest(changes=changes), runner_plan_edit_fixture() as fixture:
+                if "contract_scope" in changes:
+                    changes = {**changes, "contract_authority_ref": f"user_instruction:{fixture.task_id}:2"}
+                with mock.patch.object(
+                    storage, "validate_current_schema21_admitted_rows",
+                    side_effect=AssertionError("Ordinary basis edits must remain local"),
+                ):
+                    result = edit_module.edit_task_with_runner_plan(
+                        fixture.target, fixture.task_id, caller=capture_caller_identity(),
+                        **changes,
+                    )
+                self.assertEqual(result.task_mutation, "committed")
+                self.assertIsNone(result.runner_plan_update)
+                self.assertFalse(fixture.plan_path.exists())
+
     def test_contract_revision_uses_future_basis_and_replay_is_plan_only(self):
         with runner_plan_edit_fixture() as fixture:
             fixture.write_exact_plan()

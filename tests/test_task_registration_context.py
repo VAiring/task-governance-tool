@@ -335,7 +335,7 @@ class RegistrationRunnerContextTests(unittest.TestCase):
                 self.assertEqual(preparation["context"], embedded_context(json.loads(expected.stdout)["data"]))
                 physical.assert_called_once()
 
-    def test_unrelated_runner_corruption_after_commit_is_still_globally_rejected(self):
+    def test_post_commit_context_still_rejects_selected_runner_corruption(self):
         from tests.test_m242_runner_service import RunnerServiceFixture
         from tests.test_m243c_runner_gate import _launch, _persist_terminal, _corrupt_runner_observation_digest
 
@@ -345,19 +345,42 @@ class RegistrationRunnerContextTests(unittest.TestCase):
             _persist_terminal(fixture, intent, branch="pass")
             original = cli.connect_initialized_readonly
 
-            def corrupt_then_read(target):
+            def corrupt_then_read(target, **options):
                 _corrupt_runner_observation_digest(fixture.db, task_id=fixture.task_id)
-                return original(target)
+                return original(target, **options)
 
-            with mock.patch.object(cli, "connect_initialized_readonly", side_effect=corrupt_then_read), mock.patch.object(cli, "handle_task_context") as composition:
+            with mock.patch.object(cli, "connect_initialized_readonly", side_effect=corrupt_then_read), mock.patch.object(cli, "handle_task_context", wraps=cli.handle_task_context) as composition:
                 added = run(fixture.db, fixture.repo, "task", "add", "--title", "New higher priority work", "--priority", "urgent")
             self.assertEqual(added.returncode, 0, added.stdout)
             payload = json.loads(added.stdout)
             self.assertTrue(payload["ok"])
             self.assertEqual(payload["data"]["context_preparation"]["status"], "failed")
-            composition.assert_not_called()
+            composition.assert_called_once()
             with closing(sqlite3.connect(fixture.db)) as reader:
                 self.assertEqual(reader.execute("SELECT count(*) FROM tasks WHERE task_id = ?", (payload["data"]["task"]["task_id"],)).fetchone()[0], 1)
+
+    def test_post_commit_context_ignores_unrelated_runner_corruption(self):
+        from tests.test_m242_runner_service import RunnerServiceFixture
+        from tests.test_m243c_runner_gate import _launch, _persist_terminal, _corrupt_runner_observation_digest
+
+        with tempfile.TemporaryDirectory() as temporary:
+            fixture = RunnerServiceFixture(Path(temporary))
+            _prepared, intent = _launch(fixture)
+            _persist_terminal(fixture, intent, branch="pass")
+            released = run(fixture.db, fixture.repo, "task", "edit", fixture.task_id, "--status", "ready")
+            self.assertEqual(released.returncode, 0, released.stdout)
+            original = cli.connect_initialized_readonly
+            def corrupt_then_read(target, **options):
+                _corrupt_runner_observation_digest(fixture.db, task_id=fixture.task_id)
+                return original(target, **options)
+            with mock.patch.object(cli, "connect_initialized_readonly", side_effect=corrupt_then_read):
+                added = run(fixture.db, fixture.repo, "task", "add", "--title", "New selected work", "--priority", "urgent")
+            self.assertEqual(added.returncode, 0, added.stdout)
+            data = json.loads(added.stdout)["data"]
+            self.assertEqual(data["context_preparation"]["status"], "ready", data)
+            selected = data["context_preparation"]["context"]["selected"]["task"]
+            self.assertEqual(selected["task_id"], data["task"]["task_id"])
+            self.assertNotEqual(selected["task_id"], fixture.task_id)
 
 
 if __name__ == "__main__":

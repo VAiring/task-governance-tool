@@ -96,6 +96,35 @@ class DatabaseValidationReuseTests(unittest.TestCase):
         self.assertEqual(self.validated.call_count, 2)
         hashing.assert_not_called()
 
+    def test_operation_local_admission_never_uses_or_publishes_global_proof(self):
+        self.admitted()
+        statements = []
+        original_open = resolver.connect_readonly
+        def tracked(path):
+            connection = original_open(path)
+            connection.set_trace_callback(statements.append)
+            return connection
+        with mock.patch.object(resolver, "hash_physical_file") as hashing, \
+                mock.patch.object(resolver, "connect_readonly", side_effect=tracked):
+            self.admitted(operation_local=True)
+        hashing.assert_not_called()
+        self.assertEqual(statements.count("PRAGMA quick_check"), 1)
+        self.assertEqual(statements.count("PRAGMA foreign_key_check"), 1)
+        self.assertTrue(self.validated.call_args.kwargs["operation_local"])
+        # Returning to global admission must validate again, even unchanged bytes.
+        self.admitted()
+        self.assertEqual(self.validated.call_count, 3)
+
+    def test_operation_local_admission_still_rejects_owned_schema_damage(self):
+        with closing(sqlite3.connect(self.target.db_path)) as connection:
+            connection.execute("DROP TABLE review_receipt_sessions")
+            connection.commit()
+        before = tree_snapshot(self.fixture.root)
+        result = self.resolve(operation_local=True)
+        self.assertEqual(result.error_code, "project_state_unreadable")
+        self.assertIsNone(result.read_connection)
+        self.assertEqual(tree_snapshot(self.fixture.root), before)
+
     def test_nonretained_and_doctor_reads_clear_reuse_and_validate_normally(self):
         for options in (dict(retain_read_connection=False), dict(include_doctor_state=True)):
             with self.subTest(options=options):

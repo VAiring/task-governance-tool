@@ -785,6 +785,11 @@ covering schema, project identity/binding, and all rows/counts in a response.
 `immutable=1` is prohibited. Reads return one committed-consistent result or a
 structured concurrency error.
 
+Ordinary Task commands use
+[operation-local admission](database-specification.md#operation-local-admission);
+schema and binding admission does not imply a whole-project semantic audit.
+Each operation still validates its selected rows and necessary relationships.
+
 `task next` has the documented two-read advisory boundary. Enabled
 `task effort` reads Task/Contract/handoff/basis once, closes before Git, then
 uses a second validated generation read only when a stored basis exists. The

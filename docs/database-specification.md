@@ -69,6 +69,43 @@ version-two Bundle. The independent
 [Evidence format](evidence-specification.md#conditional-continuation-evidence)
 never alters the meaning of a preserved cycle.
 
+## Operation-Local Admission
+
+Ordinary Task registration, start/state/metadata/checkpoint operations and
+normal list/current/next/context/show/effort reads validate the current schema,
+owned objects, migration history, project identity/binding and maintenance
+metadata before their operation-specific reads. They do not audit every
+Task's review, ownership-transition, retained-note or Runner history merely
+to enter an operation. The same boundary applies to completion and repeats
+under the existing writer lock. The public command surface is unchanged.
+
+Every consumed Task row and Contract pointer, current ownership/execution
+relationship, note body, checkpoint and evidence relationship retains its
+existing repository validation. Start and metadata writes need no review
+history audit, including unrelated history on their own Task. Detail reads
+validate their own complete review storage; completion retains the own-history
+checks below. This is an operation's data boundary, not a certificate that
+all historical data for that Task or the whole project is valid.
+
+Required cross-Task predicates remain: same-lane predecessor status and
+ordering, combined session execution/completion slots, and foreign-link
+rejection for data actually consumed. Physical integrity/foreign-key checks
+remain database-wide at resolver admission. Schema, journal, binding and
+structural faults still fail closed. There is no caller-controlled scope,
+persisted/cross-operation proof or automatic history repair.
+
+Explicit Runner Plan actions retain global admission in preflight and under
+their writer lock, including combined verification or Contract changes.
+Other consumers keep their existing admission until explicitly switched:
+review services and maintenance currently retain global semantic validation.
+The integrated Review Core's delegated Task reads retain that existing
+admission. Its typed finalization completion retains global non-review
+validation at each fresh snapshot and writer, with its prior own-Task review
+scope; the public Task command label does not switch those consumers early.
+Setup, doctor, migration/reentry, recovery and actual whole-project publication
+retain complete applicable validation. The approved remaining work is owned
+by [operation admission correction](operation-admission-plan.md).
+
 ## Completion Review Admission
 
 Ordinary completion (`task complete`, its read-only check, and compatibility
@@ -90,8 +127,9 @@ Sequential eligibility still checks whether earlier Tasks in the lane are done
 or cancelled. That status check does not authorize revalidation of their review
 histories. Other Tasks' review rows and unrelated review orphans are outside
 completion's review admission, even when those Tasks precede the completing Task.
-This narrows review validation only: schema/object/history, project binding,
-other existing storage admission, ownership and completion-basis checks remain.
+The operation-local boundary above also excludes unrelated non-review history;
+schema/object/migration history, project binding, selected ownership and
+completion-basis checks remain.
 Physical SQLite integrity and foreign-key checks remain database-wide; this
 exception concerns review semantics, not admission of physically invalid storage.
 The scoped review checks run again after acquiring the completion writer; no
@@ -388,7 +426,7 @@ against its original metadata rather than treating an opaque seal as proof.
 
 Source-30 and source-31 completions seal Bundle 4 and project index 3 under the
 [versioned Evidence contract](evidence-specification.md#collected-answer-evidence).
-They retain the mandatory exact execution/cycle link: ordinary global admission
+They retain the mandatory exact execution/cycle link: global admission
 and recovery reject a missing link without repairing it. This does not require
 links for preserved completion history from before schema 24.
 The existing gate basis remains version one without continuation or version two

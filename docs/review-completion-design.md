@@ -2754,8 +2754,10 @@ target, retaining the subject, gate, current counts, and concise current result.
 use the same validation and public allow-lists; no separate Receipt command,
 pagination, storage mutation, or gate branch is added.
 
-Canonical state resolution retains its existing global admitted-row validation.
-After that boundary, the `task show` handler reads only the selected Task for
+Ordinary Task state resolution uses structural operation-local admission;
+other consumers retain their separately declared admission scope. After that
+boundary, the `task show` handler validates the selected Task's review storage
+in its own snapshot, reads only that Task for
 Runner routing and builds the complete show projection once. Marker `0` and
 done history use that same Task-local connection; only live marker `2` releases
 SQLite for physical selection and opens the final projection connection. No

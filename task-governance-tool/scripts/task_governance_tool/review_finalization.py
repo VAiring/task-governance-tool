@@ -46,13 +46,22 @@ class Core:
         return cli.CommandContext(command, str(self.repo), True, True, False,
                                   argparse.Namespace(**arguments), self.caller, self.target)
 
+    def _show(self, task_id, **arguments):
+        # Review-service consumers retain their existing admission until their
+        # own execution unit; the public Task label does not select their scope.
+        from .storage import connect_initialized_readonly
+        with closing(connect_initialized_readonly(self.target)) as connection:
+            context = replace(self.context("task.show", task_id=task_id, **arguments),
+                read_connection_override=connection)
+            return _result(cli.handle_task_show(context))
+
     def read(self, task_id):
-        return _result(cli.handle_task_show(self.context("task.show", task_id=task_id)))
+        return self._show(task_id)
 
     def collection_registration(self, task_id, submission):
-        return _result(cli.handle_task_show(self.context("task.show", task_id=task_id, audit=True,
+        return self._show(task_id, audit=True,
             collection_preparation=submission.preparation_id,
-            collection_submission=submission.submission_digest)))["collection_registration"]
+            collection_submission=submission.submission_digest)["collection_registration"]
 
     def register(self, task_id, submission, *, basis, registration_recovery=None):
         context = self.context("review.result.add", task_id=task_id, user_approved_reviewers=[])

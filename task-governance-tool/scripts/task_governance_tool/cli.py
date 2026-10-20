@@ -234,13 +234,20 @@ def resolve_context_target(context: CommandContext) -> DatabaseTarget:
     )
 
 
+def is_ordinary_task_operation(context: CommandContext) -> bool:
+    return (
+        context.command.startswith("task.")
+        and getattr(context.args, "runner_plan_action", None) is None
+    )
+
+
 def context_read_connection(
     context: CommandContext,
     target: DatabaseTarget,
 ) -> Any:
     if context.read_connection_override is not None:
         return nullcontext(context.read_connection_override)
-    return closing(connect_initialized_readonly(target))
+    return closing(connect_initialized_readonly(target, operation_local=is_ordinary_task_operation(context)))
 
 
 def state_resolution_failure_result(
@@ -342,6 +349,7 @@ def handle_command(context: CommandContext) -> CommandResult:
             skill_root=scope.skill_root,
             repo=scope.canonical_repo,
             review_task_id=completion_review_task,
+            operation_local=is_ordinary_task_operation(context),
             retain_read_connection=(
                 context.command
                 in {
@@ -616,7 +624,7 @@ def handle_task_add(context: CommandContext) -> CommandResult:
             task_inputs = decode_task_registration(raw)
         else:
             task_input = task_add_input(context.args)
-        with closing(connect_initialized(target)) as connection:
+        with closing(connect_initialized(target, operation_local=True)) as connection:
             with connection:
                 if batch:
                     results = add_tasks(connection, target.project, task_inputs=task_inputs,
@@ -718,9 +726,9 @@ def prepare_registered_task_context(
     context: CommandContext, target: DatabaseTarget,
 ) -> CommandResult:
     try:
-        # Preserve ordinary global admission before reusing the fixed context
+        # Preserve ordinary structural admission before reusing the fixed context
         # composition, including its existing live Runner read-release path.
-        with closing(connect_initialized_readonly(target)) as connection:
+        with closing(connect_initialized_readonly(target, operation_local=True)) as connection:
             return handle_task_context(replace(
                 context, command="task.context", args=argparse.Namespace(),
                 read_only=True, read_connection_override=connection,
@@ -1617,7 +1625,7 @@ def handle_task_checkpoint(context: CommandContext) -> CommandResult:
         )
 
     try:
-        with closing(connect_initialized(target)) as connection:
+        with closing(connect_initialized(target, operation_local=True)) as connection:
             with connection:
                 result = record_checkpoint(
                     connection,
@@ -1836,6 +1844,7 @@ def handle_task_edit(context: CommandContext) -> CommandResult:
         if runner_plan_action is None and target.canonical_fixed is not True:
             with closing(connect_initialized(
                 target,
+                operation_local=True,
                 review_task_id=(getattr(context.args, "task_id", None)
                                 if str(edit_input.get("status", "")).strip() == "done" else None),
             )) as connection:
@@ -1847,6 +1856,7 @@ def handle_task_edit(context: CommandContext) -> CommandResult:
                         effort_profile=effort_profile,
                         database_target=target,
                         runner_selector=runner_selector,
+                        operation_local=True,
                         caller=context.caller,
                         **edit_input,
                     )

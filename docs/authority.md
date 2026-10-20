@@ -164,6 +164,14 @@ completion gates retain their existing owners. This route does not activate
 the proposed answer format, hook, schema, host setting or command retirement;
 those require the corresponding reviewed implementation and host gates.
 
+## Conditional Operation Admission Correction
+
+[Operation-scoped admission correction](operation-admission-plan.md) owns the
+three approved sequential units for ordinary Task operations, review services,
+and maintenance eligibility. It does not activate an unimplemented boundary;
+the current database, Task, Review/completion and Setup/state owners remain
+controlling until each unit synchronizes its implementation and contracts.
+
 ## Delegated Repository Operating Guides
 
 - [Artifact authoring](artifact-authoring.md)
@@ -222,11 +230,11 @@ enforced meaning.
 
 ```json
 {
-  "schema": "taskgov-document-authority-v24",
+  "schema": "taskgov-document-authority-v25",
   "mandatory_start": ["AGENTS.md", "docs/authority.md", "live_task_contract"],
   "current": ["docs/specification.md", "docs/design.md", "plan.md", "docs/viewer-specification.md", "docs/viewer-design.md", "docs/runner-plan-authoring-specification.md", "docs/runner-plan-authoring-design.md", "docs/task-operation-specification.md", "docs/task-operation-design.md", "docs/runner-execution-specification.md", "docs/runner-execution-design.md", "docs/evidence-specification.md", "docs/evidence-design.md", "docs/review-completion-specification.md", "docs/review-completion-design.md", "docs/setup-state-specification.md", "docs/setup-state-design.md", "docs/database-specification.md", "docs/database-design.md"],
   "mixed_execution": [],
-  "conditional": ["docs/state-layout-separation-plan.md", "docs/verification-declaration-plan.md", "docs/session-usage-plan.md", "docs/review-finalization-plan.md", "docs/usage-response-attribution-design.md", "docs/review-continuation-plan.md", "docs/review-answer-collection-design.md"],
+  "conditional": ["docs/state-layout-separation-plan.md", "docs/verification-declaration-plan.md", "docs/session-usage-plan.md", "docs/review-finalization-plan.md", "docs/usage-response-attribution-design.md", "docs/review-continuation-plan.md", "docs/review-answer-collection-design.md", "docs/operation-admission-plan.md"],
   "history_index": "docs/history/README.md"
 }
 ```

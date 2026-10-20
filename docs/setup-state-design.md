@@ -72,14 +72,16 @@ projection mechanically; it is not a CLI or LLM choice. Every DB-backed leaf
 uses the same resolver observation. Feature code may not reconstruct a
 project ID or state path.
 
-For thin completion/check and compatibility edit-to-done only, CLI dispatch
-passes the validated completing Task ID to the resolver's internal review scope.
-Activated fixed-primary admission forwards that ID to storage's
-[completion review boundary](database-specification.md#completion-review-admission).
-Physical integrity/foreign-key checks, package/layout, identity/binding and
-non-review storage checks retain their existing scope. Setup, doctor, recovery
-and legacy/transition inspection always retain global review admission. Scoped
-completion cannot consume or publish a `DatabaseValidationReuse` global proof.
+For ordinary Task commands, CLI dispatch selects storage's internal
+[operation-local boundary](database-specification.md#operation-local-admission).
+Thin completion/check and compatibility edit-to-done also forward the validated
+completing Task ID for own review admission. Only activated fixed-primary
+inspection forwards these choices. Physical integrity/foreign-key checks,
+package/layout, identity/binding and structural admission retain their scope.
+Setup, doctor, recovery and legacy/transition inspection remain global.
+Operation-local admission cannot consume or publish a
+`DatabaseValidationReuse` global proof. Other consumers retain their existing
+default until their owning approved execution unit switches them.
 
 Reviewer-origin answer hooks may supply a `DatabaseValidationReuse` object
 owned by one `reviewer_hook_admission` call. Only an activated fixed primary,

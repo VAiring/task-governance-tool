@@ -22,6 +22,7 @@ from task_governance_tool.storage import (
     ProjectIdentity,
     StorageError,
     current_schema_version,
+    validate_task_review_storage,
 )
 from task_governance_tool.stored_task_validation import (
     fetch_validated_current_task_row,
@@ -164,6 +165,8 @@ def show_task(
     )
     if task_row is None:
         raise TaskRepositoryError("not_found", "task was not found")
+    validate_task_review_storage(connection, project_id=project.project_id,
+        task_id=normalized_task_id, source_schema_version=source_schema_version)
     task = project_tasks(connection, [row_to_show_task(task_row)], caller)[0]
     internal_task = row_to_internal_task(task_row)
     note_selection = " OR note_body IS NOT NULL" if source_schema_version >= 28 else ""

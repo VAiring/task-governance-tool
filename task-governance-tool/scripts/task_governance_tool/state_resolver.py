@@ -462,12 +462,14 @@ def resolve_project_state(
     retain_read_connection: bool = False,
     validation_reuse: DatabaseValidationReuse | None = None,
     review_task_id: str | None = None,
+    operation_local: bool = False,
 ) -> ProjectStateResolution:
     """Admit activated state or report setup work without exposing old targets."""
 
     review_task_id = None if include_doctor_state else review_task_id
+    operation_local = False if include_doctor_state else operation_local
     reusable = (validation_reuse if retain_read_connection and not include_doctor_state
-                and review_task_id is None else None)
+                and review_task_id is None and not operation_local else None)
     if validation_reuse is not None and reusable is None:
         validation_reuse.clear()
     try:
@@ -479,6 +481,7 @@ def resolve_project_state(
             retain_read_connection=retain_read_connection,
             validation_reuse=reusable,
             review_task_id=review_task_id,
+            operation_local=operation_local,
         )
     except BaseException:
         if validation_reuse is not None:
@@ -534,6 +537,7 @@ def _resolve_separated_state(
     retain_read_connection: bool,
     validation_reuse: DatabaseValidationReuse | None = None,
     review_task_id: str | None = None,
+    operation_local: bool = False,
 ) -> ProjectStateResolution:
     paths = canonical_state_paths(skill_root, repo=repo)
     old_paths = package_state_paths(skill_root)
@@ -566,6 +570,7 @@ def _resolve_separated_state(
             ),
             validation_reuse=reusable,
             review_task_id=(review_task_id if transition.state == "activated" and not setup_mode else None),
+            operation_local=(operation_local if transition.state == "activated" and not setup_mode else False),
         )
         if resolution.error_code is not None:
             return resolution
@@ -730,6 +735,7 @@ def _resolve_with_paths(
     retain_read_connection: bool,
     validation_reuse: DatabaseValidationReuse | None = None,
     review_task_id: str | None = None,
+    operation_local: bool = False,
 ) -> ProjectStateResolution:
     try:
         _validate_optional_directory(paths.state_root)
@@ -743,6 +749,7 @@ def _resolve_with_paths(
             retain_read_connection=retain_read_connection,
             validation_reuse=validation_reuse,
             review_task_id=review_task_id,
+            operation_local=operation_local,
         )
         if fixed is not None:
             return fixed
@@ -871,6 +878,7 @@ def _resolve_fixed(
     retain_read_connection: bool,
     validation_reuse: DatabaseValidationReuse | None = None,
     review_task_id: str | None = None,
+    operation_local: bool = False,
 ) -> ProjectStateResolution | None:
     fixed_exists = _validate_optional_directory(paths.fixed_root)
     if not fixed_exists:
@@ -891,6 +899,7 @@ def _resolve_fixed(
             ),
             validation_reuse=validation_reuse,
             review_task_id=review_task_id,
+            operation_local=operation_local,
         )
         if not validate_artifacts:
             return _fixed_resolution(
@@ -1310,6 +1319,7 @@ def _inspect_database(
     classify_recovery_content: bool = False,
     validation_reuse: DatabaseValidationReuse | None = None,
     review_task_id: str | None = None,
+    operation_local: bool = False,
 ) -> _DatabaseObservation:
     before = _stamp(path)
     connection: sqlite3.Connection | None = None
@@ -1360,6 +1370,7 @@ def _inspect_database(
                     connection,
                     stored.project_id,
                     review_task_id=review_task_id,
+                    operation_local=operation_local,
                 )
             elif version != SCHEMA_VERSION and read_viewer_maintenance(
                 connection,

@@ -251,7 +251,7 @@ def record_checkpoint(
         unresolved_risks=unresolved_risks,
     )
 
-    begin_task_write(connection, database_target)
+    begin_task_write(connection, database_target, operation_local=True)
     task = read_internal_task(
         connection,
         project.project_id,

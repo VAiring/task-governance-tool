@@ -254,6 +254,24 @@ class InstalledFinalizationTests(fixtures.PreparationFixture):
         self.assertEqual(self.git("rev-parse", "HEAD"), commit)
         self.assertEqual(self.cli("task", "show", task)["review_evidence"]["counts"]["receipts_current_generation"], 2)
 
+    def test_delegated_completion_retains_nonreview_admission_through_writer(self):
+        from task_governance_tool import storage
+        task, service = self.ready()
+        observed = []
+        original = storage.validate_current_database
+        def capture(connection, target, **options):
+            if options.get("review_task_id") == task:
+                observed.append((connection.execute("PRAGMA query_only").fetchone()[0],
+                    connection.in_transaction, options.get("operation_local", False)))
+            return original(connection, target, **options)
+        with mock.patch.object(storage, "validate_current_database", side_effect=capture):
+            report = service.execute()
+        self.assertEqual(report["status"], "completed", report)
+        self.assertTrue(observed)
+        self.assertTrue(all(not local for _readonly, _transaction, local in observed), observed)
+        self.assertIn((1, True, False), observed)
+        self.assertIn((0, True, False), observed)
+
     def test_missing_original_keeps_complete_batch_atomic(self):
         task, context = self.prepared()
         self.save(context, 0)

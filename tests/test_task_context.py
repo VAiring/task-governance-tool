@@ -627,8 +627,9 @@ class TaskContextRunnerTests(unittest.TestCase):
                     self.assertEqual(selected["suggested_next_action"], suggested_next_action(selected["task"]))
                 self.assertEqual(file_snapshot(Path(temporary)), before)
 
-    def test_context_preserves_global_admission_before_task_local_runner_detail(self):
+    def test_context_does_not_audit_unrelated_runner_history(self):
         from tests.test_m242_runner_service import RunnerServiceFixture
+        from task_governance_tool import verification_runner_selection as selection
         from tests.test_m243c_runner_gate import (
             _add_runner_task, _corrupt_runner_observation_digest, _launch, _persist_terminal,
         )
@@ -648,14 +649,16 @@ class TaskContextRunnerTests(unittest.TestCase):
             fixture.task_id = selected_id
             _corrupt_runner_observation_digest(fixture.db, task_id=unrelated_id)
             before = file_snapshot(Path(temporary))
-            with mock.patch.object(cli_service, "handle_task_show", side_effect=AssertionError("global admission must fail first")):
-                current = run(fixture.db, fixture.repo, "task", "current", "--compact")
+            current = run(fixture.db, fixture.repo, "task", "current", "--compact")
+            # This injected graph fixture has no installed physical package.
+            # Use the same physical-selection seam as the adjacent Runner test.
+            with mock.patch.object(selection, "_stored_runner_physical_basis_matches", return_value=True):
                 context = run(fixture.db, fixture.repo, "task", "context")
-            self.assertEqual(current.returncode, 2)
-            self.assertEqual(context.returncode, current.returncode)
+            self.assertEqual(current.returncode, 0, current.stdout)
+            self.assertEqual(context.returncode, 0, context.stdout)
             payload = json.loads(context.stdout)
-            self.assertEqual(payload["errors"], json.loads(current.stdout)["errors"])
-            self.assertEqual(payload["data"], EMPTY_CONTEXT)
+            self.assertEqual(payload["errors"], [])
+            self.assertEqual(payload["data"]["selected"]["task"]["task_id"], selected_id)
             self.assertEqual(payload["warnings"], [])
             self.assertEqual(file_snapshot(Path(temporary)), before)
 

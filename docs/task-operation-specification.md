@@ -492,7 +492,7 @@ subset from this invocation survives a rollback; previously registered Tasks
 are never removed. Post-commit maintenance runs once for the whole mutation.
 
 After either single or batch registration commits and closes its writer, one
-read-only context preparation uses the ordinary global state admission and the
+read-only context preparation uses ordinary operation-local state admission and the
 existing fixed `task context` composition. Success adds exactly one
 `data.context_preparation={status:"ready",context:<task.context data>,errors:[]}`,
 not one copy per batch item. Component warnings appear once in the outer warnings.
@@ -1300,6 +1300,12 @@ validates each complete loaded Task row through one shared row/batch validator
 before public allow-listing, compact-field omission, filtering, derived-state
 use, or use as a write basis. The validator does not normalize, coerce,
 truncate, repair, or rewrite stored values.
+
+Ordinary Task adapters enter through
+[operation-local admission](database-specification.md#operation-local-admission).
+Their selected repositories retain the complete consumed-row and relationship
+checks below. Starting or editing a Task is not a whole-project history audit;
+required lane, predecessor and session-slot predicates remain unchanged.
 
 For supported schemas through v22, exact text and nullable-text storage classes, exact SQLite
 integers, stable IDs/project ownership, canonical lane/order, closed

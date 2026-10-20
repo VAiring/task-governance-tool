@@ -71,8 +71,10 @@ event fetch boundary sanitizes SQLite/text decode errors. Detail queries include
 body-bearing events even if an invalid project/type binding would otherwise
 hide them. Normal/audit detail use the full-body converter with expected
 Task/project IDs; null describes unretained legacy bodies. Other consumers keep
-the six-field `PUBLIC_EVENT_FIELDS` converter. Initialized storage, Viewer and
+the six-field `PUBLIC_EVENT_FIELDS` converter. Global storage, Viewer and
 backup/recovery validate all retained bodies and their parent relationships.
+Ordinary Task reads validate consumed bodies; unrelated note history is
+outside operation-local admission.
 
 The converter's explicit `deduplicate_note_summary` option is used only by
 normal detail and CLI JSON body-bearing write acknowledgements. It validates the original
@@ -103,10 +105,15 @@ remains. An intervening blocked state cannot resurrect the ended execution.
 
 The public converters remain pure. Selected ownership/Task/execution relationships
 are validated by bounded ID batches; `project_tasks` attaches caller-specific
-display on the same read/writer transaction. Normal global admission additionally
+display on the same read/writer transaction. Global admission additionally
 validates the complete immutable ownership history and cycle relations. The
 selected-Task connection stays selected-only; global consumers retain all prior
 Runner/Task/Evidence validation. Shared Viewer/Evidence omit per-caller projection.
+Ordinary Task adapters use the
+[operation-local storage boundary](database-design.md#conditional-review-continuation-storage);
+they retain selected current ownership and locked generation checks, rather
+than replaying all immutable transition history. Slot acquisition still checks
+the combined session/project holdings and SQL guards remain unchanged.
 Packet content binding excludes ownership display, while all writes still compare
 its independently captured generation.
 
@@ -514,6 +521,8 @@ uncertain endpoints, incomplete line coverage, or activity evidence of
 overlap. Untracked/binary content makes line coverage unknown instead of
 guessed. With a basis, pre/post DB observations are separately coherent around
 Git; the post-read refresh detects overlap without keeping a transaction open.
+That refresh uses operation-local structural admission and reads only project
+and selected-Task activity generations; it never audits unrelated histories.
 Strict-off databases do no advisory bookkeeping.
 
 The advisory never writes acknowledgement, asks a question, chooses a
@@ -780,11 +789,11 @@ input-order index-to-Task mapping and one mutation outcome for maintenance.
 
 After the writer commits and closes, `cli.py` prepares one context for the
 whole successful registration through `connect_initialized_readonly`, retaining
-ordinary global admission, then calls the existing `handle_task_context` with
+ordinary operation-local admission, then calls the existing `handle_task_context` with
 fixed read-only arguments and that read connection. Its existing marker-2 show
 path releases the read before physical selection and compares the Task on the
-final bounded read. No resolver/storage admission rule or selection algorithm
-is replaced. One closed `context_preparation` result separates successful
+final bounded read. Selection semantics and physical-observation rules are unchanged;
+storage admission follows the operation-local boundary. One closed `context_preparation` result separates successful
 registration from a failed post-commit read; unexpected exceptions are sanitized.
 It returns no partial context and triggers no retry or writer. Existing common
 post-commit maintenance remains once, after command preparation; the embedded

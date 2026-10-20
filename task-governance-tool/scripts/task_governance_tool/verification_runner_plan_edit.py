@@ -438,6 +438,7 @@ def _edit_on_connection(
     edit_input: dict[str, Any],
     caller: CallerIdentity,
     observed_ownership: task_ownership.OwnershipBasis | None = None,
+    operation_local: bool = False,
 ) -> EditTaskResult:
     return edit_task(
         connection,
@@ -449,6 +450,7 @@ def _edit_on_connection(
         basis_precommit_validator=basis_precommit_validator,
         caller=caller,
         observed_ownership=observed_ownership,
+        operation_local=operation_local,
         **edit_input,
     )
 
@@ -465,6 +467,7 @@ def _execute_task_edit(
 ) -> EditTaskResult:
     with closing(connect_initialized(
         target, review_task_id=task_id if str(edit_input.get("status", "")).strip() == "done" else None,
+        operation_local=True,
     )) as connection:
         with connection:
             return _edit_on_connection(
@@ -474,6 +477,7 @@ def _execute_task_edit(
                 effort_profile=effort_profile,
                 runner_selector=runner_selector,
                 basis_precommit_validator=basis_precommit_validator,
+                operation_local=True,
                 edit_input=edit_input,
                 caller=caller,
             )
@@ -510,6 +514,7 @@ def _edit_without_action(
 
     with closing(connect_initialized(
         target, review_task_id=task_id if str(edit_input.get("status", "")).strip() == "done" else None,
+        operation_local=True,
     )) as connection:
         preflight, _public, authority, owner = _read_task_preflight_snapshot(
             connection,
@@ -556,6 +561,7 @@ def _edit_without_action(
                 effort_profile=effort_profile,
                 runner_selector=runner_selector,
                 basis_precommit_validator=validator,
+                operation_local=True,
                 edit_input=edit_input,
                 caller=caller,
                 observed_ownership=owner,

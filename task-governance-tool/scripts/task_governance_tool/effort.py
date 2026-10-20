@@ -759,7 +759,7 @@ def _fresh_activity_generations(
 ) -> tuple[int, int] | None:
     """Read activity counters after Git observation from a validated snapshot."""
     try:
-        with closing(connect_initialized_readonly(target)) as connection:
+        with closing(connect_initialized_readonly(target, operation_local=True)) as connection:
             project_row = connection.execute(
                 """
                 SELECT effort_activity_generation

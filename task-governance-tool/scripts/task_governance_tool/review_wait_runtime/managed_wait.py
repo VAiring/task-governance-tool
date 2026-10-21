@@ -420,7 +420,16 @@ class ManagedWait:
             digest = basis_digest(binding)
             current_turn = executor_turn_id(metadata)
             if previous is not None:
-                if previous.basis_digest != digest or previous.reviewers != pairs:
+                if previous.basis_digest != digest:
+                    from .continuation_cleanup_repository import observe_generation_cleanup
+                    session = self.owner.sessions.get(previous.automation_id)
+                    with diagnostic.reading_retained():
+                        proof = observe_generation_cleanup(paths, metadata["threadId"], task_id,
+                            sequence, previous, binding, owner=None if session is None else session.direct)
+                    if proof.state != "settled":
+                        diagnostic.invalidate_record()
+                        raise DiagnosticError(proof.reason)
+                elif previous.reviewers != pairs:
                     if previous.phase != "closed":
                         return self._failure("review_wait_binding_changed")
                 elif previous.parent_turn == current_turn and (continued is None or previous.continuation_id == continued.continuation_id):
@@ -428,10 +437,17 @@ class ManagedWait:
                 if not self._cleanup(repository, lease, previous, task_id, metadata, paths, diagnostic):
                     diagnostic.reason = "cleanup_unresolved"
                     return self._failure()
+                if previous.basis_digest != digest:
+                    diagnostic.stage = "basis_after"
+                    if reader() != binding:
+                        return self._failure("review_wait_binding_changed")
+                    self.owner._wait_round_current(binding, continued)
             if historical is not None and (previous is None or previous.basis_digest != digest):
                 from .continuation_cleanup_repository import observe_latest_cleanup
                 _, cleaned = repository.read()
-                proof = observe_latest_cleanup(paths, metadata["threadId"], task_id, sequence, cleaned)
+                session = None if cleaned is None else self.owner.sessions.get(cleaned.automation_id)
+                proof = observe_latest_cleanup(paths, metadata["threadId"], task_id, sequence, cleaned,
+                    owner=None if session is None else session.direct)
                 if proof.state != "settled":
                     raise DiagnosticError(proof.reason)
                 if historical.phase == "prepared":

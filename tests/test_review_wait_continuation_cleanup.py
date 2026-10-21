@@ -19,7 +19,7 @@ from task_governance_tool.review_wait_runtime.review_wait_direct_repository impo
 from task_governance_tool.review_wait_runtime.review_wait_direct import binding_digest
 from task_governance_tool.review_wait_runtime.request_repository import RequestRepository, RequestRecord, HistoricalRequestProof, request_identity_digest
 from task_governance_tool.review_wait_runtime.managed_wait import basis_digest
-from task_governance_tool.review_wait_runtime.continuation_cleanup_repository import observe_cleanup, observe_latest_cleanup
+from task_governance_tool.review_wait_runtime.continuation_cleanup_repository import observe_cleanup, observe_latest_cleanup, observe_generation_cleanup
 
 
 class ContinuationCleanupTests(unittest.TestCase):
@@ -163,6 +163,22 @@ class ContinuationCleanupTests(unittest.TestCase):
         record = self.old_request()
         self.direct(joined=True, binding=replace(BINDING, target_generation=BINDING.target_generation + 1))
         self.assertEqual(self.observe(record).reason, "review_continuation_conflict")
+
+    def test_generation_switch_checks_actual_request_task_parent_and_sequence(self):
+        self.old_request("started")
+        self.direct(joined=True)
+        sequence, request = self.request.read()
+        current = replace(BINDING, target_generation=BINDING.target_generation + 1)
+        before = {path.name: path.read_bytes() for path in self.root.iterdir() if path.is_file()}
+        for parent, task, attempt, original in (
+                (str(uuid4()), BINDING.task_id, sequence, request),
+                (PARENT, "tg_task_2222222222222222", sequence, request),
+                (PARENT, BINDING.task_id, sequence + 1, request),
+                (PARENT, BINDING.task_id, sequence, replace(request, reviewers=((CHILD, str(uuid4())),)))):
+            with self.subTest(parent=parent, task=task, attempt=attempt):
+                proof = observe_generation_cleanup(self.paths, parent, task, attempt, original, current)
+                self.assertEqual(proof.state, "unknown")
+        self.assertEqual(before, {path.name: path.read_bytes() for path in self.root.iterdir() if path.is_file()})
 
 
 if __name__ == "__main__":

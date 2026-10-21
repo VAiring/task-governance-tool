@@ -215,8 +215,12 @@ Discover the applicable exact name in the same connected namespace when needed;
 an already available complete definition needs no repeat lookup.
 Inspection is read-only. Stop cannot recall a dispatched message or retry an
 unknown effect. Restart is inspection-only; no active flag alone proves a live
-worker. Changed Task basis or actual reviewer turns require recovery of the old
-wait before a new association.
+worker. On a fresh target generation, normal waiting internally closes an exact
+older same-project/binding/parent/Task wait only when worker exit and timer/send
+settlement are proven. A missing receipt alone does not block it or permit a
+resend. No extra inspect/stop is needed for that settled case. Other changed
+bases or reviewer turns, missing exit proof and unknown effects retain recovery
+of the old wait before a new association.
 Inspect/stop and return notifications share a timestamped observation of the
 original Task/attempt/probe/worker. Keep request phase, worker
 `running|stopped|unknown`, timer/send/receipt, runtime and known work separate.

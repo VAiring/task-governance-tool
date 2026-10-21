@@ -1,6 +1,7 @@
 """Read settled old effects and actual joined-worker proof; never perform cleanup."""
 
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from types import SimpleNamespace
 
 from task_governance_tool.state_paths import path_lexically_exists
@@ -16,7 +17,7 @@ class CleanupObservation:
     worker_stop_identity: str | None = None
 
 
-def read_bound_effects(paths, parent_id, task_id, request):
+def _read_bound_state(paths, parent_id, task_id, request):
     """Validate a direct marker against its actual immutable request identity."""
     from .managed_wait import basis_digest
     from .review_wait_direct import binding_digest
@@ -28,13 +29,57 @@ def read_bound_effects(paths, parent_id, task_id, request):
         or tuple(sorted((row.reviewer_id, row.turn_id) for row in controller.reviewers)) != request.reviewers
         or binding_digest(controller) != direct.binding_digest
         or controller.binding.parent_thread_id != parent_id or controller.binding.task_id != task_id
-        or controller.reservation.timer_id != request.automation_id):
+        or controller.reservation.timer_id != request.automation_id
+        or controller.reservation.parent_thread_id != parent_id
+        or request.parent_turn != direct.original_parent_turn):
         raise RepositoryError("review_continuation_conflict")
+    return controller, direct
+
+
+def read_bound_effects(paths, parent_id, task_id, request):
+    controller, direct = _read_bound_state(paths, parent_id, task_id, request)
     return controller.binding, direct
 
 
 def _effect_unknown(direct):
     return direct.status in ("dispatching", "unknown") or direct.timer_phase in ("arming", "deleting", "pausing", "unknown")
+
+
+def _settled_effects(controller, direct, *, owner=None):
+    """Shared effect and actual-exit proof; receipt absence is not uncertainty."""
+    from .worker_observation import observe_worker
+    from .review_wait_direct_repository import instant
+    if _effect_unknown(direct):
+        return CleanupObservation("unknown", "review_continuation_effect_unknown")
+    observed = observe_worker(direct, controller, owner, instant(datetime.now(timezone.utc)))
+    if direct.version != 2 or direct.worker_id is None or observed["status"] != "stopped":
+        return CleanupObservation("unknown", "review_continuation_worker_exit_unknown")
+    if direct.timer_phase not in ("paused", "deleted"):
+        return CleanupObservation("unknown", "review_continuation_effect_unknown")
+    return CleanupObservation("settled", None, direct.worker_stop_identity)
+
+
+def observe_generation_cleanup(paths, parent_id, task_id, sequence, request, binding, *, owner=None):
+    """Admit only the exact settled older generation under the request lease.
+
+    The caller retains that lease through ordinary cleanup and new admission.
+    This read creates no session, stops no worker, and never settles unknown effects.
+    """
+    try:
+        if RequestRepository(paths.review_wait_request_store(parent_id, task_id)).read() != (sequence, request):
+            return CleanupObservation("unknown", "review_continuation_conflict")
+        if request.phase not in ("prepared", "started", "failed", "closed") or request.automation_id is None:
+            return CleanupObservation("unknown", "review_continuation_effect_unknown")
+        controller, direct = _read_bound_state(paths, parent_id, task_id, request)
+        previous = controller.binding
+        identity = ("project_id", "project_path_hash", "project_binding_generation", "parent_thread_id", "task_id")
+        if (previous.target_generation >= binding.target_generation
+                or any(getattr(previous, field) != getattr(binding, field) for field in identity)):
+            return CleanupObservation("unknown", "review_continuation_conflict")
+        return _settled_effects(controller, direct, owner=owner)
+    except Exception as exc:
+        return CleanupObservation("unknown", "review_continuation_conflict" if getattr(exc, "code", None) == "review_continuation_conflict"
+            else "review_continuation_effect_unknown")
 
 
 def observe_current_occurrence(paths, parent_id, task_id, request):
@@ -59,11 +104,11 @@ def observe_current_occurrence(paths, parent_id, task_id, request):
             else "review_continuation_effect_unknown")
 
 
-def observe_cleanup(paths, parent_id, task_id, record, *, historical=None):
+def observe_cleanup(paths, parent_id, task_id, record, *, historical=None, owner=None):
     """Called under the transition/request admission, outside any core writer.
 
-    A closed request records known timer cleanup. A marker's bound thread_join
-    is independently required when a worker could have started. Neither an
+    A closed request records known timer cleanup. Bound actual thread_join
+    is independently required, from an exact owner or saved marker. Neither an
     absent in-memory reference nor a deleted timer establishes thread exit.
     """
     try:
@@ -94,22 +139,19 @@ def observe_cleanup(paths, parent_id, task_id, record, *, historical=None):
             if record.old_request_phase == "created":
                 return CleanupObservation("settled", None)
             return CleanupObservation("unknown", "review_continuation_worker_exit_unknown")
-        _, direct = read_bound_effects(paths, parent_id, task_id, previous)
-        if _effect_unknown(direct):
-            return CleanupObservation("unknown", "review_continuation_effect_unknown")
-        if direct.version != 2 or direct.worker_id is None or direct.worker_stopped_at is None:
-            return CleanupObservation("unknown", "review_continuation_worker_exit_unknown")
-        if direct.timer_phase not in ("paused", "deleted"):
-            return CleanupObservation("unknown", "review_continuation_effect_unknown")
+        controller, direct = _read_bound_state(paths, parent_id, task_id, previous)
+        settled = _settled_effects(controller, direct, owner=owner)
+        if settled.state != "settled":
+            return settled
         if historical is not None and direct.worker_stop_identity != historical.worker_stop_identity:
             return CleanupObservation("unknown", "review_continuation_conflict")
-        return CleanupObservation("settled", None, direct.worker_stop_identity)
+        return settled
     except Exception as exc:
         return CleanupObservation("unknown", "review_continuation_conflict" if getattr(exc, "code", None) == "review_continuation_conflict"
             else "review_continuation_effect_unknown")
 
 
-def observe_latest_cleanup(paths, parent_id, task_id, sequence, request):
+def observe_latest_cleanup(paths, parent_id, task_id, sequence, request, *, owner=None):
     """Prove exact latest effects before retiring an obsolete prepared round.
 
     This read token is not persisted and grants no host operation. A closed
@@ -120,4 +162,4 @@ def observe_latest_cleanup(paths, parent_id, task_id, sequence, request):
         old_automation_id=request.automation_id if request else None,
         wait_basis_digest=request.basis_digest if request else None,
         old_request_phase=request.phase if request else None)
-    return observe_cleanup(paths, parent_id, task_id, token)
+    return observe_cleanup(paths, parent_id, task_id, token, owner=owner)

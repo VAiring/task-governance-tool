@@ -1047,9 +1047,14 @@ current binding. Historical admission validates the old native record against
 its own digest/selection/preparation and a strictly newer current generation,
 keeping project/path/binding/parent identity fixed. `ManagedWait` rechecks that
 record and exact journal row under request admission. It uses the shared cleanup
-reader on the latest closed request, including bound timer/send and saved join
-proof, before monotonically consuming an obsolete prepared round. This is not
-reviewer completion or judgment reuse. Subsequent ordinary attempts retain the
+reader on the latest closed request, including bound timer/send and actual join
+proof, before monotonically consuming an obsolete prepared round. In this
+managed generation transition it passes the exact available direct owner to
+`observe_latest_cleanup`; the reader rechecks controller/request/probe/worker
+identity and exit, accepting direct confirmation even when saving failed.
+Without an owner it still requires valid saved join proof. Explicit continuation
+preparation and same-basis renewal retain their existing durable-proof gates.
+This is not reviewer completion or judgment reuse. Subsequent ordinary attempts retain the
 published history but carry no old continuation ID. Read-only inspection does
 not consume a round; unknown effects or identity disagreement still fail closed.
 Explicit continuation preparation also admits a latest closed request from a
@@ -1587,6 +1592,25 @@ A healthy unfinished set then gets one new internal attempt; an ended set return
 `reviews_ended`. Unknown prior effects reject both replacement and competing
 cleanup. Optional inspect reads existing state only; explicit stop shares the
 same cleanup path and works after OFF. Restart never resumes a worker.
+
+For a changed wait basis, `observe_generation_cleanup` in
+`continuation_cleanup_repository` validates the exact latest sequence/request
+under the already-held request lease, then the controller/direct/request identity,
+including original parent turn and reservation parent. The saved target must be
+strictly older, with unchanged project/path binding/generation, parent and Task.
+It shares settled timer/send and worker-exit checks with continuation cleanup;
+`worker_observation.observe_worker` admits an exact joined local thread or the
+matching saved join proof, and rejects conflicting live evidence. The reader
+creates no session or effects. Only this positive proof permits `ManagedWait`
+to invoke its existing `_cleanup` for the older generation and continue under
+the same lease. The new basis is checked again before appending. A known paused
+timer is deleted through existing cleanup; already-deleted timers and settled
+sends are not repeated. A missing receipt is not a new gate. An unknown result,
+unfinished closing or missing exit proof preserves the old request for recovery.
+Short request transactions retain the old attempt while closing it and creating
+the next; a crash after closed but before append is recoverable from the same
+proof, whereas an uncertain create intent remains non-replayable. No schema,
+extra caller operation, periodic cleanup or new worker lifecycle is introduced.
 
 The existing handle resolver pages only the admitted parent's structured
 dispatch/interact records, within sixteen pages and one host deadline. Matching

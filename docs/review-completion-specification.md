@@ -1912,8 +1912,27 @@ readiness-only duplicates; a round published without an occurrence cannot use
 renewal to start new reviewer activity.
 No reviewer redispatch, separate registration, phase choice or manual reservation
 management is required. The repeated request is not an automatic retry of an
-unknown effect. Changed basis/reviewer identity requires explicit recovery of
-the old association before another wait.
+unknown effect. Changed reviewer identity or an unsettled changed basis requires
+explicit recovery of the old association before another wait.
+
+A fresh ordinary target may instead retire the latest strictly older target's
+settled wait within that same normal call. Under request writer admission,
+validate its exact attempt, request, controller, direct binding, original parent
+turn and reviewer pairs; project identity/path binding/generation, parent and
+Task must match the new basis. Its actual worker must be confirmed joined and
+stopped by the exact owned thread or matching durable exit evidence. Missing
+in-memory ownership alone is never exit proof. Send outcome and timer state
+must be settled; a known PAUSED timer uses existing cleanup and a deleted timer
+is not deleted again. Receipt absence alone does not block this transition and
+never permits resend. Unknown creation, sending or timer effects, incomplete
+closing, missing/mismatched exit proof and same-generation drift remain closed.
+Only after this proof may the existing cleanup advance the old request to
+closed. Revalidate the new basis before creating one new attempt under the same
+lease. Retain prior identities and history; never reuse an old judgment or
+worker. Interruption after closure can resume from that exact settled record;
+an uncertain intent cannot be replayed. Already-ended reviewers keep the existing
+`reviews_ended` result without another attempt, timer or worker. The existing
+different-parent-turn, same-basis duplicate/renewal and explicit-stop rules remain.
 The per-parent/Task request history may retain an older target's continuation
 round. A fresh ordinary target selects only an applicable current-basis round;
 it never rebinds the old one. Validate the historical native record, unchanged
@@ -1921,8 +1940,11 @@ project/binding/parent identity and strictly older generation. Before retiring
 an unused prepared round or replacing older effects, prove the exact latest
 request's settled timer/send and actual worker exit. Only then may its monotone
 phase become published while its identity, Packet and earlier records remain
-history. Same-generation drift, unknown cleanup and missing exit proof block
-the fresh wait. A later ordinary attempt uses its own new basis, with no old
+history. This later check also accepts the exact joined local worker after
+revalidating its identity; failed persistence cannot discard directly confirmed
+exit while that owner remains available. Without that owner, valid saved exit
+evidence is still required. Same-generation drift, unknown cleanup and missing
+exit proof block the fresh wait. A later ordinary attempt uses its own new basis, with no old
 continuation identifier and no reused judgments.
 
 Pending/unknown create, arm, delete, pause or send results forbid replay,

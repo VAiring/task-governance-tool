@@ -1032,6 +1032,20 @@ immutable generation ID, publication time, and 1-20
 `publication_retention`, then prunes recognized older generations to the
 applied value. Unknown/linked/foreign artifacts are never imported or deleted.
 
+Failed/deferred outcome recording validates structural state and consumed
+maintenance metadata, without auditing Task or review histories. Its short
+writer compares the observed success generation, success time, applied
+retention, prior outcome and complete managed-generation inventory before
+updating. Prune-only recovery and equal-count generation or metadata changes
+invalidate an earlier observation even when the latest success is unchanged;
+timestamps alone never authorize
+a stale result to overwrite a newer success or recovery. A failure after this
+attempt's own publication or reconciliation remains due. Failure to record the
+outcome preserves the original operation result and last-good artifact.
+The observation also pins the database file instance: restoring an identical
+success tuple into a replacement database cannot revive an old failed/deferred
+write. This continuity comparison is not a content-validation shortcut.
+
 Every v11+ backup attempt first reconciles bounded crash residue under the same
 lock: import one valid file missing a row; remove a row whose file is invalid/
 missing without deleting an untrusted path; update latest/applied retention;

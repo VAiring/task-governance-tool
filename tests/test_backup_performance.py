@@ -110,16 +110,19 @@ def seed_fixture(
     *,
     task_specs: list[dict[str, object]],
     tool_event_specs: list[dict[str, object]],
+    target=None,
 ) -> tuple[Path, Path, str, int]:
-    repo = root / "project"
-    repo.mkdir(parents=True)
-    db_path = root / "seed" / "taskgov.sqlite"
-    target = resolve_database_target(
-        repo=repo,
-        db=db_path,
-        script_path=SCRIPT_PATH,
-    )
-    initialize_database(target)
+    if target is None:
+        repo = root / "project"
+        repo.mkdir(parents=True)
+        db_path = root / "seed" / "taskgov.sqlite"
+        target = resolve_database_target(
+            repo=repo, db=db_path, script_path=SCRIPT_PATH,
+        )
+        initialize_database(target)
+    else:
+        # The canonical-layout qualification owns an already initialized target.
+        repo, db_path = target.project.canonical_repo, target.db_path
     configure_project_maintenance(
         target,
         requested_interval_minutes=30,

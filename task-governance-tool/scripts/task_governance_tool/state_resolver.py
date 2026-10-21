@@ -1374,7 +1374,9 @@ def _inspect_database(
                     connection,
                     stored.project_id,
                     review_task_id=review_task_id,
-                    operation_local=operation_local,
+                    # Recovery's exact-schema audit below runs on this very
+                    # connection/snapshot. Do not duplicate its row traversal.
+                    operation_local=operation_local or classify_recovery_content,
                 )
             elif version != SCHEMA_VERSION and read_viewer_maintenance(
                 connection,

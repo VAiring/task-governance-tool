@@ -382,7 +382,10 @@ def _validate_publication_source(
 ) -> int:
     version = _validate_database(connection, target, expected_version)
     if version == SCHEMA_VERSION:
-        validate_current_database(connection, target)
+        # The exact-schema validator below owns the full history audit in this
+        # same snapshot. Keep common structure, binding and project metadata
+        # here without running that audit twice.
+        validate_current_database(connection, target, operation_local=True)
     if version == 31:
         from task_governance_tool.schema_criterion_link_collector import validate_storage
         validate_storage(connection, _privacy_success_cache=privacy_success_cache)
@@ -1441,6 +1444,7 @@ def _copy(
                 configure_connection(sqlite3.connect(temporary))
             ) as destination:
                 source.backup(destination)
+                destination.execute("BEGIN")
                 _validate_publication_source(
                     destination,
                     target,
@@ -1490,12 +1494,14 @@ def _record_attempt_outcome(
     *,
     code: str,
     occurred_at: str,
+    observed: ManagedBackupRepositoryState,
 ) -> None:
     with suppress(Exception):
         record_backup_attempt_outcome(
             target,
             code=code,
             occurred_at=occurred_at,
+            observed=observed,
         )
 
 
@@ -1562,58 +1568,26 @@ def run_routine_backup(
 
     try:
         with managed_backup_lock(target):
-            _validate_canonical_artifact_set(target)
-            if not _reconcile_v11(target, observed_at=timestamp):
-                _record_attempt_outcome(
-                    target,
-                    code="failed",
-                    occurred_at=timestamp,
-                )
-                return RoutineBackupResult(code="failed", attempted=True)
-            repository = read_managed_backup_repository(target)
-            if not managed_backup_due(
-                repository.maintenance,
-                observed_at=timestamp,
-            ):
-                return RoutineBackupResult(code="current", attempted=True)
-            retention = repository.maintenance.backup_generations
-            if retention is None:
-                raise _failure()
-            metadata = _new_metadata(
-                retention,
-                published_at=timestamp,
-                after=(
-                    repository.generations[-1]
-                    if repository.generations
-                    else None
-                ),
-            )
-            privacy_success_cache: set[tuple[str, str, str]] = set()
-            privacy_success_seed: frozenset[tuple[str, str, str]] | None = None
             try:
-                _copy(
-                    target,
-                    metadata,
-                    _privacy_success_cache=privacy_success_cache,
-                )
-                record_managed_backup(target, metadata)
-                privacy_success_seed = frozenset(privacy_success_cache)
-                if not _reconcile_v11(
-                    target,
-                    observed_at=timestamp,
-                    _privacy_success_seed=privacy_success_seed,
-                ):
-                    raise _failure()
-                return RoutineBackupResult(code="succeeded", attempted=True)
-            finally:
-                privacy_success_cache.clear()
-                privacy_success_seed = None
+                return _run_locked_routine_backup(target, timestamp)
+            except Exception:
+                # Still own the artifact lock: any intervening publication or
+                # recovery is this attempt's. Preserve its later prune failure.
+                # Failure even to read/record the outcome cannot mask the result.
+                with suppress(Exception):
+                    observed = read_managed_backup_repository(
+                        target, operation_local=True,
+                    )
+                    _record_attempt_outcome(target, code="failed",
+                                            occurred_at=timestamp, observed=observed)
+                return RoutineBackupResult(code="failed", attempted=True)
     except StorageError as exc:
         code = "deferred" if exc.code == "backup_lock_contended" else "failed"
         _record_attempt_outcome(
             target,
             code=code,
             occurred_at=timestamp,
+            observed=repository,
         )
         return RoutineBackupResult(code=code, attempted=True)
     except Exception:
@@ -1621,8 +1595,38 @@ def run_routine_backup(
             target,
             code="failed",
             occurred_at=timestamp,
+            observed=repository,
         )
         return RoutineBackupResult(code="failed", attempted=True)
+
+
+def _run_locked_routine_backup(target: DatabaseTarget, timestamp: str) -> RoutineBackupResult:
+    """Publish/reconcile while the caller owns the artifact lock, never a writer."""
+    _validate_canonical_artifact_set(target)
+    if not _reconcile_v11(target, observed_at=timestamp):
+        raise _failure()
+    repository = read_managed_backup_repository(target)
+    if not managed_backup_due(repository.maintenance, observed_at=timestamp):
+        return RoutineBackupResult(code="current", attempted=True)
+    retention = repository.maintenance.backup_generations
+    if retention is None:
+        raise _failure()
+    metadata = _new_metadata(
+        retention, published_at=timestamp,
+        after=repository.generations[-1] if repository.generations else None,
+    )
+    privacy_success_cache: set[tuple[str, str, str]] = set()
+    try:
+        _copy(target, metadata, _privacy_success_cache=privacy_success_cache)
+        record_managed_backup(target, metadata)
+        if not _reconcile_v11(
+            target, observed_at=timestamp,
+            _privacy_success_seed=frozenset(privacy_success_cache),
+        ):
+            raise _failure()
+        return RoutineBackupResult(code="succeeded", attempted=True)
+    finally:
+        privacy_success_cache.clear()
 
 
 def publish_setup_backup(

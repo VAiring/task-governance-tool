@@ -565,6 +565,7 @@ class RoutineBackupTests(unittest.TestCase):
                 target,
                 code="deferred",
                 occurred_at=timestamp(0),
+                observed=repository(target),
             )
             requested = metadata(0, 1, 1)
 

@@ -855,6 +855,16 @@ cleared on success or failure. Pre-publication reconciliation, recovery,
 Viewer, setup and its reconciliation, ordinary discovery, and later backup
 attempts never receive that seed.
 
+Each publication phase performs common structural/binding/maintenance admission
+and its exact-schema full row audit once in the same SQLite read transaction;
+the common admission does not repeat the exact-schema history traversal. The
+private copy starts its own read transaction after copying. Recovery-content
+classification uses the same composition within its own snapshot, including
+when canonical artifact inspection invokes it. Initial structural/set
+inspection, reconciliation, source, copy and fresh pre-publication observations
+remain independent; no file validity is inferred from size, mtime, a successful
+earlier phase, or another closed snapshot.
+
 Managed names are exactly:
 
 ```text
@@ -896,8 +906,22 @@ still captures and validates a current artifact. The backup's initial policy
 and generation inventory read alone is local; its cheap crash-residue comparison
 does not certify artifact contents. A due or reconciliation attempt retains
 the global locked resolver/repository checks and complete source, copied-file
-and pre-publication validation. Existing publication guards, outcome writers
-and Setup/doctor/recovery defaults remain global; there is no new proof cache.
+and pre-publication validation. Publication guards and success/generation
+writers remain global. Failed/deferred outcome-only writers use structural
+admission before and under their short writer, then conditionally update against
+the observed backup success tuple, outcome tuple and ordered generation metadata.
+The inventory is re-read and compared under that same writer, so prune-only
+recovery, equal-count replacement and metadata-only repairs invalidate stale
+outcomes without artifact I/O or a Task-history audit. Viewer-only changes do not
+invalidate that basis. A lock-entry failure uses the pre-lock observation;
+an in-lock failure observes its own post-publication/reconciliation state before
+releasing the artifact lock, so a later prune failure is preserved. An unreadable
+basis or failed outcome write is bounded and cannot replace the primary result.
+The repository observation pins regular-file device/inode identity across its
+read; the outcome writer checks it before opening and again under its writer.
+Replacement makes that outcome stale even when restored metadata has identical
+values. Size/mtime are not compared and no content-validation proof is cached.
+Setup/doctor/recovery defaults remain global; there is no new proof cache.
 
 Business services retain internal `MutationOutcome(changed, viewer_relevant)`. After commit and connection close, every changed mutation may retry due Evidence projection; the coordinator runs:
 

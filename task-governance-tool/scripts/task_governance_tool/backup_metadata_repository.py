@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import re
 import sqlite3
+import stat
 from contextlib import closing
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
@@ -43,6 +44,7 @@ class MigrationBackupMetadata:
 class ManagedBackupRepositoryState:
     maintenance: ProjectMaintenanceState
     generations: tuple[MigrationBackupMetadata, ...]
+    database_identity: tuple[int, int]
 
 
 @dataclass(frozen=True)
@@ -532,6 +534,7 @@ def read_managed_backup_repository(
     migration_source: bool = False,
     operation_local: bool = False,
 ) -> ManagedBackupRepositoryState:
+    identity = _backup_database_identity(target)
     with closing(
         _connect_managed_backup_repository(
             target,
@@ -553,10 +556,26 @@ def read_managed_backup_repository(
             connection,
             target.project.project_id,
         )
+        if _backup_database_identity(target) != identity:
+            raise StorageError("project_state_unreadable", "backup database changed during observation")
     return ManagedBackupRepositoryState(
         maintenance=maintenance,
         generations=generations,
+        database_identity=identity,
     )
+
+
+def _backup_database_identity(target: DatabaseTarget) -> tuple[int, int]:
+    """Instance continuity only; never a content-validation certificate."""
+    try:
+        details = target.db_path.lstat()
+        if (not stat.S_ISREG(details.st_mode)
+                or getattr(details, "st_file_attributes", 0)
+                & getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0)):
+            raise OSError
+        return details.st_dev, details.st_ino
+    except OSError as exc:
+        raise StorageError("project_state_unreadable", "backup database identity is unavailable") from exc
 
 
 def _latest_managed_backup_row(
@@ -790,30 +809,62 @@ def record_backup_attempt_outcome(
     *,
     code: str,
     occurred_at: str,
+    observed: ManagedBackupRepositoryState,
 ) -> None:
+    """Record only against the observed backup state, under the short writer.
+
+    A delayed failed/deferred attempt cannot dirty a newer success or recovery.
+    Viewer changes are independent, and timestamps alone do not identify a
+    publication. Callers inside the artifact lock may observe their own
+    post-publication state to retain a subsequent reconciliation failure.
+    """
     from task_governance_tool.storage import (
         begin_initialized_write,
         connect_initialized,
         validate_utc_timestamp,
     )
 
-    if code not in {"deferred", "failed"}:
+    if (code not in {"deferred", "failed"}
+            or not isinstance(observed, ManagedBackupRepositoryState)
+            or observed.maintenance.project_id != target.project.project_id):
         raise StorageError("internal_error", "backup outcome is invalid")
     timestamp = validate_utc_timestamp(
         occurred_at,
         field="backup outcome time",
     )
-    with closing(connect_initialized(target)) as connection:
+    if _backup_database_identity(target) != observed.database_identity:
+        return
+    basis = observed.maintenance
+    with closing(connect_initialized(target, operation_local=True)) as connection:
         try:
-            begin_initialized_write(connection, target)
+            begin_initialized_write(connection, target, operation_local=True)
+            if _backup_database_identity(target) != observed.database_identity:
+                connection.rollback()
+                return
+            # Prune-only recovery can change the retained set without changing
+            # the latest success/outcome tuple. Compare complete metadata under
+            # the same writer, including equal-count replacements or repairs.
+            if list_managed_backup_generations(connection, target.project.project_id) != observed.generations:
+                connection.rollback()
+                return
             connection.execute(
                 """
                 UPDATE project_maintenance
                    SET backup_last_outcome_code = ?,
                        backup_last_outcome_at = ?
                  WHERE project_id = ?
+                   AND latest_backup_generation_id IS ?
+                   AND backup_last_success_at IS ?
+                   AND applied_backup_generations IS ?
+                   AND backup_last_outcome_code IS ?
+                   AND backup_last_outcome_at IS ?
                 """,
-                (code, timestamp, target.project.project_id),
+                (code, timestamp, target.project.project_id,
+                 basis.latest_backup_generation_id,
+                 basis.backup_last_success_at,
+                 basis.applied_backup_generations,
+                 basis.backup_last_outcome_code,
+                 basis.backup_last_outcome_at),
             )
             connection.commit()
         except Exception:

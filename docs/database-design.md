@@ -127,10 +127,15 @@ Maintenance opens metadata-only eligibility snapshots with local admission.
 Evidence and Viewer captures read enabled/generation state first, then call
 `validate_current_database` in the same snapshot only when a complete artifact
 basis is needed. Their publication guards and metadata writers remain globally
-admitted. Routine backup opts into local admission only for its initial policy
-and generation inventory read; the repository default, locked reconciliation,
+admitted. Routine backup opts into local admission for its initial policy
+and generation inventory read and failed/deferred outcome-only writes; the repository default, locked reconciliation,
 copy validation and publication remain global. No eligibility snapshot or
 generation comparison is reused as a complete-source proof.
+The outcome writer rechecks its observed success/outcome tuple and complete
+ordered generation metadata inventory in its own transaction. Publication and
+recovery classification compose structural
+admission with the exact-schema complete audit within the same read snapshot,
+instead of repeating that audit through both admission entry points.
 
 Task reads acquire all that Task's continuation generations
 and use the retained-original composite primary key to fetch only those

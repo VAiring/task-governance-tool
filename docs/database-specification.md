@@ -107,6 +107,11 @@ generation and managed-backup metadata. Disabled, current and not-due paths do
 not audit Task histories. Such observations never certify an artifact: actual
 whole-project capture/publication, backup and reconciliation retain global
 validation at their existing locked effect boundaries.
+Failed/deferred backup outcome-only writes also use structural admission and
+the consumed maintenance metadata, repeated under the writer. They compare the
+observed success generation, outcome basis and complete generation metadata
+inventory before updating, as specified by
+[same-process maintenance](setup-state-specification.md#same-process-maintenance).
 Setup, doctor, migration/reentry, recovery and actual whole-project publication
 retain complete applicable validation. The approved remaining work is owned
 by [operation admission correction](operation-admission-plan.md).

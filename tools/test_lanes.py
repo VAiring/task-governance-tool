@@ -276,6 +276,7 @@ LANE_MODULES: dict[str, tuple[str, ...]] = {
         "test_review_answer_failures",
         "test_review_answer_fixture",
         "test_review_answer_hook_caller",
+        "test_review_answer_hook_pending",
         "test_review_answer_host",
         "test_review_answer_installed",
         "test_review_answer_installed_finalization",

@@ -818,6 +818,29 @@ two observation operations; it does not infer a request ID, dispatch identity
 or chronological first answer from time. The source boundary and first-admitted
 answer rule replace the unavailable strict follow-up binding guarantee.
 
+The host distinguishes a validated `inProgress` turn with null error using
+the internal `AnswerTurnInProgress` signal, carrying only the actual reviewer
+and turn IDs. It is not an answer observation. Existing page/turn validation
+and explicit final-item omission checks precede the signal. Generic incomplete
+failures retain their type; the signal is not inferred from a failure string.
+The collection service accepts this signal as pending only for the existing
+Hook-only `require_terminal=False` call on a watching version-two record.
+It rechecks current basis and the unchanged saved assignment under the existing
+source lease after host I/O. Invalidated or changed selections still reject.
+Concurrent publication requires exact saved readback or retains save-unknown.
+An unchanged pending record is not written; previous failure facts remain.
+Ordinary parent/worker recovery retains its existing incomplete result until
+the valid completed answer can be frozen.
+
+The Hook adapter returns a closed pending status/reason to the runtime and
+`project_server` for both genuine parent and reviewer callers.
+`review_wait_server._call` maps only that exact successful Hook summary to
+the fixed supported `systemMessage` JSON described by the
+[host boundary](review-completion-specification.md#collected-answer-host-boundary).
+Other Hook successes retain neutral JSON, and failures retain their diagnostics.
+No answer body, event identity or unknown provider text is rendered. This
+presentation path adds no host read or lifecycle action.
+
 `review_answer_runtime.py` and the dedicated bounded answer-hook bridge feed the
 same collector from admitted hook/wait or explicit parent recovery. The hook
 neither registers nor commits/completes, and numerical usage collection remains

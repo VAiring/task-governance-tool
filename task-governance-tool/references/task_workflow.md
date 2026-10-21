@@ -705,6 +705,11 @@ current. Do not reuse the child for unrelated work or start competing review
 requests. A changed Task/target or superseding preparation makes its old
 tracking ineligible; do not revive it by presenting an old final answer.
 Previously issued version-one bases retain their fixed-turn recovery rules.
+A Hook may report `collection_pending` with a non-error message when its admitted
+version-two turn is still running. This is not answer capture, completeness,
+PASS or Task completion. Leave confirmation to the existing worker or the
+explicit parent recovery below; add no poll, timer or retry. Other collection
+errors retain their existing failure handling.
 
 When the parent later handles ended reviews without a working wait, use the same
 tool once for missing bound answers or `save_unknown`, then continue with the

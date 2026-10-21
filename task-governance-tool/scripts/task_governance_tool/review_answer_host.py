@@ -11,7 +11,7 @@ import re
 from uuid import UUID
 
 from .review_answer import AnswerError
-from .review_answer_collection import source
+from .review_answer_collection import AnswerTurnInProgress, source
 from .review_wait_runtime.review_wait_mcp_relay import MAX_READ_RESPONSE_BYTES
 
 
@@ -65,6 +65,7 @@ def _page(value, expected_thread, limit):
             or page["nextCursor"] is not None and (type(page["nextCursor"]) is not str or not page["nextCursor"])
             or type(turns) is not list or not 1 <= len(turns) <= limit):
         _fail("shape")
+    _content_complete(page)
     if page["hasMore"] != (page["nextCursor"] is not None):
         _fail("shape")
     seen = set()
@@ -251,6 +252,13 @@ class PublicAnswerHost:
         _content_complete(turn)
         if boundary == "exclusive" and turn["id"] == excluded:
             _fail("missing")
+        if turn["status"] == "inProgress" and turn["error"] is None:
+            # Explicitly clipped final items are not healthy running observations.
+            # This does not decode or certify a body that is still being produced.
+            for item in turn["items"]:
+                if type(item) is dict and item.get("type") == "agentMessage" and item.get("phase") == "final_answer":
+                    _content_complete(item)
+            raise AnswerTurnInProgress(child, turn["id"])
         if turn["status"] != "completed" or turn["error"] is not None:
             _fail("incomplete")
         finals = [item for item in turn["items"] if type(item) is dict

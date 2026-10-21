@@ -86,6 +86,10 @@ class RuntimeSelectionTests(unittest.TestCase):
         self.round = None
         if protocol is not None:
             self.allowed.return_value = protocol == "review-answer-v1"
+            if version == 1 and protocol == "review-answer-v1":
+                # The legacy root needs explicit future reviewer dedication
+                # before issuing a new collected round under the current contract.
+                fixture.args.migrate_legacy_reviewers = True
             prepared = fixture.call()
             self.assertTrue(prepared["ok"], prepared)
             self.allowed.return_value = True

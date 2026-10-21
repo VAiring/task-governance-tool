@@ -128,7 +128,11 @@ def _call(params: object, service) -> dict:
     result = service.handle(operation, params["arguments"], params["_meta"])
     # Only this internal service's closed summary is serialized, never raw host
     # results, caller metadata, repository snapshots or exception details.
-    output = {} if operation == "answer_collect" and "event" in params["arguments"] and result.get("ok") is True else result
+    output = result
+    if operation == "answer_collect" and "event" in params["arguments"] and result.get("ok") is True:
+        from task_governance_tool.review_answer_hook import PENDING_RESULT, PENDING_MESSAGE
+        output = ({"systemMessage": PENDING_MESSAGE}
+                  if result == {"ok": True, **PENDING_RESULT} else {})
     return {"content": [{"type": "text", "text": protocol._encode(output).decode().rstrip("\n")}],
             "isError": result.get("ok") is not True}
 

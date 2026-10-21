@@ -8,6 +8,15 @@ import json
 
 from .review_answer import AnswerError
 from .review_answer_host import _uuid
+from .review_answer_collection import AnswerTurnInProgress
+
+
+PENDING_RESULT = {"status": "collection_pending", "reason": "turn_in_progress"}
+PENDING_MESSAGE = (
+    "taskgov: review answer collection is pending because the reviewer turn is still in progress. "
+    "No answer was adopted or saved; completeness, review PASS and Task completion are not established. "
+    "The existing worker or explicit parent collection must confirm the completed answer."
+)
 
 
 def decode_event(raw):
@@ -53,7 +62,9 @@ def collect_event(raw, *, service, host):
     # replace the saved source; recovery uses the admitted active attempt.
     # SubagentStop may run before the bound turn ends. Confirm publication
     # without demanding or inventing completion; registration remains separate.
-    service.recover(slot, host, require_terminal=False)
+    result = service.recover(slot, host, require_terminal=False)
+    if type(result) is AnswerTurnInProgress:
+        return dict(PENDING_RESULT)
     # Hooks require a valid neutral hook JSON result. Nothing here claims a
     # review verdict, registration, reviewer termination or Task completion.
     return {}

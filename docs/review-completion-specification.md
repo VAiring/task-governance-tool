@@ -676,8 +676,37 @@ remains pending. Parent/wait collection and every registration admission still
 require independently observed `completed`; failed or interrupted turns never
 qualify. This hook-only distinction changes no conflict, privacy, current-basis
 or unresolved-publication check and performs no extra terminal poll.
-Version-two tracking leaves such an in-progress response unadopted; a later
-existing parent/wait observation may freeze it only after completed is observed.
+Version-two tracking leaves an in-progress response unadopted. After the Hook's
+existing caller/assignment/current-basis checks and one bounded public read,
+a watching slot with an admitted latest turn in `inProgress` and no turn error
+returns a non-error pending result. Envelope, thread, page and turn shape and
+explicit completeness checks still precede this distinction; an explicitly
+clipped final item also fails closed. The result establishes only running
+turn state, not final-item presence, answer/JSON completeness, validity, original
+publication, review PASS or Task completion. A later existing parent/wait
+observation may freeze that same turn only after completed is observed.
+
+The internal Hook summary is exactly
+`{ok:true,status:"collection_pending",reason:"turn_in_progress"}`.
+Its MCP wire result has `isError=false` and one JSON text object containing
+only a fixed `systemMessage`: collection is pending, no answer was adopted or
+saved, and the existing worker or explicit parent collection must confirm it.
+Use the supported [Hook common output field](https://learn.chatgpt.com/docs/hooks#common-output-fields),
+which may appear as a UI/event-stream warning, not an MCP tool error.
+No block/continue decision is returned. Collected/disabled Hook successes retain
+the neutral `{}` wire output. No event field or answer body enters the message.
+
+Pending is call-local and writes no answer identity, digest, terminal state,
+publication, receipt or failure replacement. Recheck the saved selection and
+current basis after the read before returning it. Concurrent saved publication
+uses exact readback; an unsettled publication remains `save_unknown`.
+Generic `incomplete`, failed/interrupted turns, turn errors, explicit omissions,
+completed-answer missing/ambiguous/invalid content, binding/basis changes,
+invalidated/old selections and unknown effects never become pending.
+Previous rejected-answer facts are not erased by a later running observation.
+Parent/wait recovery and registration still require a valid completed source.
+There is no Hook completion loop, extra host call, retry, worker, poll or timer;
+the existing deadline/parent resumption remains the recovery boundary.
 
 The parent arm names the original Task and one through eight distinct actual
 reviewer UUIDs. Parent, wait and hook collection resolve each reviewer against

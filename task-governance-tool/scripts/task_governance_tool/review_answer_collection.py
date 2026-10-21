@@ -39,6 +39,14 @@ def _attempt(record, ordinal):
     return record["attempts"][ordinal]
 
 
+class AnswerTurnInProgress(AnswerError):
+    """Validated running host turn; never a complete answer observation."""
+    def __init__(self, reviewer_session_id, turn_id):
+        super().__init__("collection_unavailable", reason="incomplete")
+        self.reviewer_session_id = reviewer_session_id
+        self.turn_id = turn_id
+
+
 class CollectionInvalidated(AnswerError):
     """Positive observation that the accepted tracking material is obsolete."""
 
@@ -395,7 +403,8 @@ class CollectionService:
         record = self._record(slot)
         self.check_basis(record["basis"], slot)
         if record["version"] == 2:
-            return self._recover_tracking(slot, record, host, explicit_recovery=explicit_recovery)
+            return self._recover_tracking(slot, record, host, explicit_recovery=explicit_recovery,
+                                          allow_pending=require_terminal is False)
         if record["binding"] is None:
             _fail("binding_mismatch", "identity")
         ordinal = _ordinal(record)
@@ -442,7 +451,33 @@ class CollectionService:
         self.observe(slot, observed)
         return self.readback(slot, require_terminal=require_terminal)
 
-    def _recover_tracking(self, slot, record, host, *, explicit_recovery=False):
+    def _confirm_tracking_pending(self, slot, record, pending):
+        # The host read ran outside the lease. A pending response must not hide
+        # a changed selection, an invalidation or a concurrent publication.
+        with self.repository.serial() as lease:
+            current = self._record(slot)
+            self.check_basis(record["basis"], slot, lease=lease)
+            if current["basis"] != record["basis"] or current["binding"] != record["binding"]:
+                _fail("binding_mismatch", "conflict")
+            publication = current["attempts"][0]["publication"]
+            if publication is not None:
+                if publication["state"] != "saved":
+                    _fail("save_unknown", "effect_unknown")
+                return self.readback(slot)
+            if current != record:
+                _fail("binding_mismatch", "conflict")
+            if (current["tracking_state"] != "watching"
+                    or current["registration"]["state"] != "not_started"
+                    or pending.reviewer_session_id != current["binding"]["reviewer_session_id"]):
+                _fail("binding_mismatch", "identity")
+            values.session(pending.turn_id)
+            tracking = current["binding"]["tracking"]
+            if tracking["boundary"] == "exclusive" and pending.turn_id == tracking["boundary_turn_id"]:
+                _fail("binding_mismatch", "identity")
+            # No answer bytes/digest, failure overwrite, terminal claim or write.
+            return pending
+
+    def _recover_tracking(self, slot, record, host, *, explicit_recovery=False, allow_pending=False):
         if record["binding"] is None or record["tracking_state"] == "invalidated":
             _fail("binding_mismatch", "identity")
         attempt = record["attempts"][0]
@@ -458,6 +493,8 @@ class CollectionService:
                 slot=slot, reviewer_session_id=record["binding"]["reviewer_session_id"],
                 boundary_turn_id=tracking["boundary_turn_id"], boundary=tracking["boundary"])
         except Exception as error:
+            if allow_pending and type(error) is AnswerTurnInProgress:
+                return self._confirm_tracking_pending(slot, record, error)
             failure = error.failure if isinstance(error, AnswerError) else _failure(reason="transport_unavailable")
             with self.repository.serial() as lease:
                 current = self._record(slot)

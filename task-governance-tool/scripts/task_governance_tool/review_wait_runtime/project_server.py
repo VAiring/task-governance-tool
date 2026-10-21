@@ -170,7 +170,7 @@ class ProjectReviewWaitSession:
 
     def _collect_hook(self, event, metadata, diagnostic):
         from task_governance_tool.review_answer import AnswerError
-        from task_governance_tool.review_answer_hook import decode_event
+        from task_governance_tool.review_answer_hook import decode_event, PENDING_RESULT
         from task_governance_tool.review_answer_host import PublicAnswerHost
         from task_governance_tool.review_answer_read_host import hook_executor_turn_id
         from task_governance_tool.review_answer_runtime import (
@@ -211,20 +211,20 @@ class ProjectReviewWaitSession:
                         timezone_source="host_node_intl")
                     adapter = PublicAnswerHost(host, binding.parent_thread_id)
                     with diagnostic.collecting(service.repository):
-                        collect_hook_event(event, service=service, host=adapter)
+                        outcome = collect_hook_event(event, service=service, host=adapter)
             except HostAdapterError as error:
                 if error.code != "caller_mismatch":
                     raise
                 diagnostic.hook_caller_relation = "event_reviewer"
                 return {"ok": False, "error": "caller_mismatch"}
-            return {"ok": True, "status": "collected"}
+            return {"ok": True, **PENDING_RESULT} if outcome == PENDING_RESULT else {"ok": True, "status": "collected"}
         host = self.managed_host_factory(metadata=metadata, task_id=binding.task_id,
             server_path=self.config.server_path, automation_id="answer-hook", codex_home=self.config.codex_home,
             confirmed_timezone=self.config.timezone, timezone_source="host_node_intl", reviewer_ids=(hint["reviewer_session_id"],))
         adapter = PublicAnswerHost(host, binding.parent_thread_id, caller_turn)
         with diagnostic.collecting(service.repository):
-            collect_hook_event(event, service=service, host=adapter)
-        return {"ok": True, "status": "collected"}
+            outcome = collect_hook_event(event, service=service, host=adapter)
+        return {"ok": True, **PENDING_RESULT} if outcome == PENDING_RESULT else {"ok": True, "status": "collected"}
 
     def _collect_parent(self, arguments, metadata, diagnostic):
         from task_governance_tool.review_answer import AnswerError

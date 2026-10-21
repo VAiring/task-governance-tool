@@ -463,6 +463,7 @@ def resolve_project_state(
     validation_reuse: DatabaseValidationReuse | None = None,
     review_task_id: str | None = None,
     operation_local: bool = False,
+    deadline: float | None = None,
 ) -> ProjectStateResolution:
     """Admit activated state or report setup work without exposing old targets."""
 
@@ -486,6 +487,7 @@ def resolve_project_state(
             validation_reuse=reusable,
             review_task_id=review_task_id,
             operation_local=operation_local,
+            deadline=deadline,
         )
     except BaseException:
         if validation_reuse is not None:
@@ -542,6 +544,7 @@ def _resolve_separated_state(
     validation_reuse: DatabaseValidationReuse | None = None,
     review_task_id: str | None = None,
     operation_local: bool = False,
+    deadline: float | None = None,
 ) -> ProjectStateResolution:
     paths = canonical_state_paths(skill_root, repo=repo)
     old_paths = package_state_paths(skill_root)
@@ -575,6 +578,7 @@ def _resolve_separated_state(
             validation_reuse=reusable,
             review_task_id=(review_task_id if transition.state == "activated" and not setup_mode else None),
             operation_local=(operation_local if transition.state == "activated" and not setup_mode else False),
+            deadline=deadline,
         )
         if resolution.error_code is not None:
             return resolution
@@ -740,6 +744,7 @@ def _resolve_with_paths(
     validation_reuse: DatabaseValidationReuse | None = None,
     review_task_id: str | None = None,
     operation_local: bool = False,
+    deadline: float | None = None,
 ) -> ProjectStateResolution:
     try:
         _validate_optional_directory(paths.state_root)
@@ -754,6 +759,7 @@ def _resolve_with_paths(
             validation_reuse=validation_reuse,
             review_task_id=review_task_id,
             operation_local=operation_local,
+            deadline=deadline,
         )
         if fixed is not None:
             return fixed
@@ -883,6 +889,7 @@ def _resolve_fixed(
     validation_reuse: DatabaseValidationReuse | None = None,
     review_task_id: str | None = None,
     operation_local: bool = False,
+    deadline: float | None = None,
 ) -> ProjectStateResolution | None:
     fixed_exists = _validate_optional_directory(paths.fixed_root)
     if not fixed_exists:
@@ -904,6 +911,7 @@ def _resolve_fixed(
             validation_reuse=validation_reuse,
             review_task_id=review_task_id,
             operation_local=operation_local,
+            deadline=deadline,
         )
         if not validate_artifacts:
             return _fixed_resolution(
@@ -1324,13 +1332,21 @@ def _inspect_database(
     validation_reuse: DatabaseValidationReuse | None = None,
     review_task_id: str | None = None,
     operation_local: bool = False,
+    deadline: float | None = None,
 ) -> _DatabaseObservation:
     before = _stamp(path)
     connection: sqlite3.Connection | None = None
     recovery_content_valid = True
     fingerprint: ValidatedFile | None = None
     try:
-        connection = connect_readonly(path)
+        if deadline is None:
+            connection = connect_readonly(path)
+        else:
+            from time import monotonic
+            if monotonic() >= deadline:
+                raise _ResolverFailure("project_state_unreadable")
+            connection = connect_readonly(path, timeout=0.05)
+            connection.set_progress_handler(lambda: int(monotonic() >= deadline), 1000)
         # This schema read acquires the snapshot's SQLite read lock; deferred
         # BEGIN alone would not protect the exact physical bytes below from an
         # ordinary rollback-journal writer committing during the observation.

@@ -4,7 +4,7 @@ No public command, ownership permission, hook install or implicit setup. The
 internal worker consumes a resolver-admitted target, never caller-supplied IDs.
 """
 
-from contextlib import closing, suppress
+from contextlib import closing, contextmanager, suppress
 from uuid import uuid4
 
 from task_governance_tool.artifact_lock import zero_wait_artifact_lock
@@ -15,6 +15,7 @@ from task_governance_tool.state_paths import (
     read_physical_file_bounded, create_exclusive_durable_file, unlink_validated_file,
 )
 from task_governance_tool.storage import connect_initialized_readonly
+from task_governance_tool.task_ownership import validate_storage_rows as validate_usage_ownership
 from task_governance_tool.usage_evidence import encode, MAX_DOCUMENT_BYTES
 from task_governance_tool.usage_publication_repository import UsagePublicationRepository
 from task_governance_tool.usage_values import UsageError
@@ -27,6 +28,9 @@ def repository_for(target):
 
 def read_task_usage(target, core, task_id, *, audit=False):
     try:
+        # Task reads already admit core structure. The shared capture basis
+        # consumes ownership/cycle identities across the project, not all reviews.
+        validate_usage_ownership(core)
         return repository_for(target).read(core, task_id=task_id, audit=audit)
     except Exception:
         # Unknown is not measured zero; numerical corruption is not core failure.
@@ -84,12 +88,18 @@ def refresh_usage(target, *, deadline=None):
         repository = repository_for(target)
         if deadline is not None:
             repository.deadline = deadline
-        core_reader = lambda: closing(connect_initialized_readonly(target) if deadline is None
-                                     else connect_initialized_readonly(target, deadline=deadline))
+        @contextmanager
+        def core_reader():
+            # Every capture and final guard has a fresh admitted snapshot.
+            # Validate consumed ownership/cycle history here; the repository
+            # owns actual Receipt/session/collected-answer relationships.
+            with closing(connect_initialized_readonly(target, deadline=deadline, operation_local=True)) as core:
+                validate_usage_ownership(core)
+                yield core
         # Admit both stores before creating projection directories. No migration.
         with repository.connection():
             pass
-        with core_reader():
+        with closing(connect_initialized_readonly(target, deadline=deadline, operation_local=True)):
             pass
         root = target.resolved_usage_root
         _directory(root, target.db_path.parent)

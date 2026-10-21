@@ -94,7 +94,7 @@ class UsagePublicationRepository(UsageResponseRepository):
                      "core_digest": captured["fingerprint"], "attribution": response_policy.ALGORITHM,
                      "integrity": dict(INTEGRITY),
                      **self._index_metadata(connection, captured["periods"]),
-                     "unattributed": {kind: self._totals(connection, projected[field]) for kind, field in
+                     "unattributed": {kind: self._totals(connection, projected[field], read=captured["read"]) for kind, field in
                          (("unknown", "unknown_response_keys"), ("unassigned", "unassigned_response_keys"))}}
             basis = digest(index)
             previous = self._publication_state(connection)

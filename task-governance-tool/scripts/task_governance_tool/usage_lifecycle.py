@@ -16,6 +16,7 @@ from task_governance_tool.session_identity import CallerIdentity, is_session_id
 from task_governance_tool.project_scope import inspect_project_scope, STRUCTURAL_CODES
 from task_governance_tool.state_resolver import resolve_project_state
 from task_governance_tool.storage import connect_initialized_readonly
+from task_governance_tool.task_ownership import validate_storage_rows as validate_usage_ownership
 from task_governance_tool.usage_adapter import Cursor, read_batch
 from task_governance_tool.usage_attribution_repository import registered_participants
 from task_governance_tool.usage_evidence_service import repository_for, refresh_usage
@@ -96,14 +97,15 @@ def _collect_incremental(repository, sources, known_sources, thread, hint, deadl
     return len(successful), gaps
 
 
-def _target(skill_root, repo, *, repo_explicit=False, operation_local=False):
+def _target(skill_root, repo, *, repo_explicit=False, operation_local=False, deadline=None):
     inspection = inspect_project_scope(repo=repo, repo_explicit=repo_explicit,
         script_path=skill_root / "scripts/usage_hook.py", include_runtime=False,
         include_package=False, include_ignore=False)
     if inspection.first_issue(allowed_codes=STRUCTURAL_CODES) or inspection.scope is None:
         raise UsageError()
     resolution = resolve_project_state(skill_root=inspection.scope.skill_root,
-                                       repo=inspection.scope.canonical_repo, operation_local=operation_local)
+                                       repo=inspection.scope.canonical_repo, operation_local=operation_local,
+                                       deadline=deadline)
     if resolution.error_code or resolution.target is None or resolution.binding != "matching":
         raise UsageError()
     return resolution.target
@@ -130,6 +132,7 @@ def register_wait_supervisor(repo, caller):
 
 def collect_event(payload, *, skill_root, repo, environment, repo_explicit=False):
     """Internal report is for tests/diagnosis; never sent as model hook context."""
+    started = monotonic()
     unavailable = {"status": "unknown", "collected_sources": 0, "diagnostics": ["usage_unavailable"]}
     try:
         if not collection_allowed(skill_root):
@@ -143,14 +146,20 @@ def collect_event(payload, *, skill_root, repo, environment, repo_explicit=False
         thread = payload.get("agent_id") if child else payload["session_id"]
         if not is_session_id(thread):
             return unavailable
-        target = _target(skill_root, repo, repo_explicit=repo_explicit)
+        deadline = started + (END_SECONDS if payload["hook_event_name"] == "SessionEnd" else EVENT_SECONDS)
+        if monotonic() >= deadline:
+            return unavailable
+        target = _target(skill_root, repo, repo_explicit=repo_explicit, operation_local=True, deadline=deadline)
+        if monotonic() >= deadline:
+            return unavailable
         repository = repository_for(target)
         incremental = hasattr(repository, "collect_source")
-        deadline = monotonic() + (END_SECONDS if payload["hook_event_name"] == "SessionEnd" else EVENT_SECONDS)
         if incremental:
             repository.deadline = deadline
         sessions, known_sources = repository.registered_sources()
-        with closing(connect_initialized_readonly(target, deadline=deadline if incremental else None)) as core:
+        with closing(connect_initialized_readonly(target, deadline=deadline if incremental else None,
+                                                 operation_local=True)) as core:
+            validate_usage_ownership(core)
             sessions = sessions | registered_participants(core, target.project.project_id)
         # SessionStart explicitly registers only its invoking session, not children.
         if payload["hook_event_name"] == "SessionStart":

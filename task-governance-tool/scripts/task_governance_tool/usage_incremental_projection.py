@@ -12,7 +12,7 @@ from task_governance_tool.usage_evidence import digest, encode
 from task_governance_tool.usage_repository import _response
 
 
-def project_changed(repository, core, connection, previous):
+def project_changed(repository, core, connection, previous, *, read=None):
     geometry = repository.attribution(core, numerical_connection=connection, geometry_only=True)
     dirty = {tuple(row) for row in connection.execute("SELECT thread_id,turn_id FROM usage_dirty_turns")}
     cached = {row["component_id"]: dict(row) for row in connection.execute("SELECT * FROM usage_component_basis")}
@@ -29,7 +29,8 @@ def project_changed(repository, core, connection, previous):
         turns = {tuple(turn) for turn in shape["turns"]}
         if (stored and stored["basis"] == basis and snapshot
                 and snapshot["executions"] == shape["executions"] and not dirty.intersection(turns)):
-            components.append({**shape, "response_keys": repository.members(connection, snapshot["snapshot_id"]),
+            components.append({**shape, "response_keys": (repository.members(connection, snapshot["snapshot_id"])
+                                                          if read is None else read.members[snapshot["snapshot_id"]]),
                                "models": snapshot["models"], "diagnostics": snapshot["gaps"]})
             continue
         computed += 1

@@ -130,24 +130,46 @@ class UsageEvidenceRepository(UsageAttributionRepository):
         """Test seam before committing a numerical-only migration."""
 
     def _snapshots(self, connection, *, current=False):
-        clause = " WHERE snapshot_id NOT IN (SELECT predecessor_id FROM usage_supersessions)" if current else ""
-        return [self._snapshot(connection, row) for row in connection.execute(
-            "SELECT snapshot_id,document FROM usage_snapshots" + clause + " ORDER BY rowid")]
+        return self._snapshot_read(connection, current=current).documents
 
-    def _snapshot(self, connection, row):
-        """Validate one immutable body and its original numerical relationships."""
+    def _snapshot_read(self, connection, *, current=False, executions=None):
+        from task_governance_tool.usage_snapshot_read import SnapshotRead
+
+        clause = " WHERE snapshot_id NOT IN (SELECT predecessor_id FROM usage_supersessions)" if current else ""
+        rows = connection.execute("SELECT snapshot_id,document FROM usage_snapshots" + clause + " ORDER BY rowid",
+                                  ()).fetchall()
+        selected, documents = [], {}
+        for row in rows:
+            check = getattr(self, "check_budget", None)
+            if check is not None:
+                check()
+            # Selection cannot trust a damaged execution list. Shape/digest
+            # metadata remains a whole pass; unrelated original counters do not.
+            document = self._snapshot_document(row)
+            if executions is None or executions.intersection(document["executions"]):
+                selected.append(row)
+                documents[row["snapshot_id"]] = document
+        return SnapshotRead(self, connection, selected, documents)
+
+    def _snapshot_document(self, row):
         if row is None or not isinstance(row["document"], str) or len(row["document"].encode("utf-8")) > MAX_DOCUMENT_BYTES:
             raise UsageError()
         document = validate(json.loads(row["document"]), self.basis[0])
         if document["snapshot_id"] != row["snapshot_id"]:
             raise UsageError()
-        keys = self.members(connection, row["snapshot_id"])
+        return document
+
+    def _snapshot(self, connection, row, *, read=None):
+        """Validate one immutable body and its original numerical relationships."""
+        document = self._snapshot_document(row) if read is None else read.bodies[row["snapshot_id"]]
+        keys = self.members(connection, row["snapshot_id"]) if read is None else read.members[row["snapshot_id"]]
         if len(keys) != document["response_count"] or digest(keys) != document["response_set_digest"]:
             raise UsageError()
-        if _models(self._responses(connection, keys)) != document["models"]:
+        if _models(self._responses(connection, keys) if read is None else read.responses(keys)) != document["models"]:
             raise UsageError()
-        predecessors = sorted(r[0] for r in connection.execute(
+        predecessors = (sorted(r[0] for r in connection.execute(
             "SELECT predecessor_id FROM usage_supersessions WHERE successor_id=?", (row["snapshot_id"],)))
+            if read is None else read.predecessors[row["snapshot_id"]])
         if predecessors != document["predecessors"]:
             raise UsageError()
         return document
@@ -180,12 +202,12 @@ class UsageEvidenceRepository(UsageAttributionRepository):
 
     def _refresh(self, core, connection):
         """One admitted writer/read basis; callers own both transactions."""
-        fingerprint, periods, previous, projected = self._capture_projection(core, connection)
+        fingerprint, periods, previous, projected, read = self._capture_projection(core, connection)
         adopted = []
         for component in projected["components"]:
             if projected["unresolved_operations"]:
                 component = {**component, "diagnostics": sorted(set(component["diagnostics"]) | {"operation_unbound"})}
-            overlaps = self._overlapping_snapshots(connection, previous, component)
+            overlaps = self._overlapping_snapshots(connection, previous, component, read=read)
             candidate = snapshot(self.basis[0], component)
             comparable = lambda value: {k: v for k, v in value.items() if k not in {"snapshot_id", "predecessors"}}
             if len(overlaps) == 1 and comparable(candidate) == comparable(overlaps[0]):
@@ -207,20 +229,21 @@ class UsageEvidenceRepository(UsageAttributionRepository):
                            (fingerprint,))
         self._adopt_projection(connection, projected, adopted)
         self._before_snapshot_commit(connection)
-        return {"current": adopted, "fingerprint": fingerprint, "periods": periods, "projected": projected}
+        return {"current": adopted, "fingerprint": fingerprint, "periods": periods, "projected": projected, "read": read}
 
     def _capture_projection(self, core, connection):
         """Prepare inputs locally while the caller's admitted reads are open."""
         fingerprint, periods = self._core_basis(core, connection)
-        previous = self._snapshots(connection, current=True)
-        projected = self._project_for_refresh(core, connection, previous)
-        return fingerprint, periods, previous, projected
+        read = self._snapshot_read(connection, current=True)
+        previous = read.documents
+        projected = self._project_for_refresh(core, connection, previous, read=read)
+        return fingerprint, periods, previous, projected, read
 
-    def _project_for_refresh(self, core, connection, previous):
+    def _project_for_refresh(self, core, connection, previous, *, read=None):
         return self.attribution(core, numerical_connection=connection)
 
-    def _overlapping_snapshots(self, connection, previous, component):
-        return [item for item in previous if set(item["executions"]).intersection(component["executions"])]
+    def _overlapping_snapshots(self, connection, previous, component, *, read):
+        return read.ordered(read.execution_ids(component["executions"]))
 
     def _adopt_projection(self, connection, projected, adopted):
         """Optional numerical cache adoption in the same immutable-evidence transaction."""
@@ -239,7 +262,12 @@ class UsageEvidenceRepository(UsageAttributionRepository):
         capture = connection.execute("SELECT core_digest FROM usage_capture WHERE singleton=1").fetchone()
         if capture is None or capture[0] != fingerprint:
             raise UsageError("usage_pending")
-        documents = self._snapshots(connection, current=not audit)
+        # All Task periods contribute to the response total. Select before
+        # loading originals; shared components retain their complete membership.
+        executions = (set().union(*(period["executions"] for period in periods if period["task_id"] == task_id))
+                      if task_id is not None else None)
+        read = self._snapshot_read(connection, current=not audit, executions=executions)
+        documents = read.documents
         superseded = {row[0] for row in connection.execute("SELECT predecessor_id FROM usage_supersessions")}
         known_executions = set().union(*(period["executions"] for period in periods))
         current = [item for item in documents if item["snapshot_id"] not in superseded
@@ -256,7 +284,7 @@ class UsageEvidenceRepository(UsageAttributionRepository):
         if task_id is None:
             return ({"format": "taskgov-usage-index-v1", "project_id": self.basis[0], "core_digest": fingerprint,
                      "snapshots": documents, "current_snapshot_ids": [item["snapshot_id"] for item in current], "cycle_links": links},
-                    current, periods)
+                    current, periods, read)
         selected = [period for period in periods if period["task_id"] == task_id]
         if not selected:
             raise UsageError("usage_pending")
@@ -267,12 +295,12 @@ class UsageEvidenceRepository(UsageAttributionRepository):
         summaries = []
         for period in selected:
             active = [item for item in current if period["executions"].intersection(item["executions"])]
-            keys = {key for item in active for key in self.members(connection, item["snapshot_id"])}
+            keys = {key for item in active for key in read.members[item["snapshot_id"]]}
             summaries.append({"completion_cycle_id": period["completion_cycle_id"],
                               "snapshot_ids": [item["snapshot_id"] for item in active],
                               "own_executions": sorted(period["executions"]),
                               "shared_executions": sorted({execution for item in active for execution in item["executions"]}),
-                              "models": _models(self._responses(connection, keys)),
+                              "models": _models(read.responses(keys)),
                               "response_count": len(keys),
                               "quality": "conflicting" if any(item["quality"] == "conflicting" for item in active)
                               else "incomplete" if any(item["quality"] == "incomplete" for item in active) else "pending",
@@ -280,4 +308,4 @@ class UsageEvidenceRepository(UsageAttributionRepository):
         chosen = {identity for period in summaries for identity in period["snapshot_ids"]}
         return ({"status": "pending", "coverage": "registered_only", "periods": summaries,
                  "cycle_links": [link for link in links if link["task_id"] == task_id and link["snapshot_id"] in chosen]},
-                current, periods)
+                current, periods, read)

@@ -192,6 +192,13 @@ Numbers describe the last captured registered shared work, not Task-exclusive
 cost or a complete session total. Existing context inherits the same field;
 selection, gate checks, text output and read failure projections stay unchanged.
 
+Within that read, numerical originals are validated only for this Task's current
+components, including shared components and successors; unrelated numerical
+originals retain the existing rotating-audit policy. Snapshot selection metadata
+and common capture-basis identities remain validated. These bounds and
+transaction-local reuse follow the same usage evidence contract; detail never
+replays collection or publishes an index.
+
 `task context` is the fixed read-only start/resume operation; it accepts only
 the common CLI options. It uses the existing validated current batch (limit
 20), filtered to the caller's owned/completion-owned work before the SQL limit,

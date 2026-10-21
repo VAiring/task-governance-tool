@@ -36,6 +36,9 @@ class UsageLifecycleTests(unittest.TestCase):
             ("repository_for", mock.Mock(return_value=self.repo)),
             ("connect_initialized_readonly", mock.Mock(return_value=mock.Mock())),
             ("registered_participants", mock.Mock(return_value=frozenset())),
+            # This parser/discovery fixture deliberately has no core schema.
+            # Real ownership admission is covered by physical-install tests.
+            ("validate_usage_ownership", mock.Mock()),
             ("refresh_usage", mock.Mock(return_value={"diagnostics": []})),
         ):
             patch = mock.patch.object(lifecycle, name, value)

@@ -48,6 +48,9 @@ class UsagePublicationTests(unittest.TestCase):
             connection.execute("BEGIN")
             return connection
         self.patches.enter_context(mock.patch.object(service, "connect_initialized_readonly", side_effect=core_reader))
+        # This suite isolates numerical cursor/publication behavior with a
+        # minimal core. Physical-install tests retain real core admission.
+        self.patches.enter_context(mock.patch.object(service, "validate_usage_ownership"))
 
     def history(self, count=12):
         self.write_turn(self.operation("start", self.acknowledgement(A, 1, "in_progress"), "r0"))
@@ -102,12 +105,12 @@ class UsagePublicationTests(unittest.TestCase):
     def test_one_capture_classification_and_one_current_validation_and_read_reuses_basis(self):
         self.history(5)
         with mock.patch.object(self.repository, "attribution", wraps=self.repository.attribution) as classify, \
-                mock.patch.object(self.repository, "_snapshots", wraps=self.repository._snapshots) as snapshots:
+                mock.patch.object(self.repository, "_snapshot_read", wraps=self.repository._snapshot_read) as snapshots:
             self.assertEqual(self.refresh()["publication"], "current")
             self.assertEqual(classify.call_count, 1)
             self.assertEqual(snapshots.call_count, 1)
         before = self.repository.path.read_bytes()
-        with mock.patch.object(self.repository, "_snapshots", wraps=self.repository._snapshots) as snapshots, \
+        with mock.patch.object(self.repository, "_snapshot_read", wraps=self.repository._snapshot_read) as snapshots, \
                 mock.patch.object(self.repository, "_core_basis", wraps=self.repository._core_basis) as basis:
             self.read(A)
             self.assertEqual((snapshots.call_count, basis.call_count), (1, 1))

@@ -146,6 +146,12 @@ class UsageResponseRepository(UsageIncrementalRepository):
         return read_collected_review_endpoints(core, receipt_ids=receipts)
 
     def _core_basis(self, core, connection, *, _review_inputs=None):
+        if _review_inputs is None:
+            from task_governance_tool.review_answer_repository import _read_usage_review_inputs
+
+            # A fresh standalone/guard read consumes legacy bindings too.
+            # Collected endpoints alone do not validate those relationships.
+            _review_inputs = _read_usage_review_inputs(core, project_id=self.basis[0])
         basis, periods = super()._core_basis(core, connection)
         positions, boundaries = self._relations(connection, history=True)
         relations = [[source, incarnation, asdict(item)] for source, incarnation, item in positions + boundaries]
@@ -156,8 +162,7 @@ class UsageResponseRepository(UsageIncrementalRepository):
             value = ResponseTracker(thread, "validation", value).state
             contexts.append((row["source_id"], value))
         sources = list(map(tuple, connection.execute("SELECT source_id,thread_id,incarnation,offset,pending FROM usage_sources ORDER BY source_id")))
-        endpoints = [asdict(item) for item in (self._collected_review_endpoints(core)
-                     if _review_inputs is None else _review_inputs.collected_endpoints)]
+        endpoints = [asdict(item) for item in _review_inputs.collected_endpoints]
         return digest([basis, ALGORITHM, sorted(relations, key=lambda item: encode(item)), contexts, sources,
                        [_COLLECTED_ENDPOINT_BASIS, endpoints]]), periods
 
@@ -282,11 +287,12 @@ class UsageResponseRepository(UsageIncrementalRepository):
         # The final publication guard opens and validates its own fresh read.
         reviews = _read_usage_review_inputs(core, project_id=self.basis[0])
         fingerprint, periods = self._core_basis(core, connection, _review_inputs=reviews)
-        previous = self._snapshots(connection, current=True)
-        projected = self._project_for_refresh(core, connection, previous, _review_inputs=reviews)
-        return fingerprint, periods, previous, projected
+        read = self._snapshot_read(connection, current=True)
+        previous = read.documents
+        projected = self._project_for_refresh(core, connection, previous, _review_inputs=reviews, read=read)
+        return fingerprint, periods, previous, projected, read
 
-    def _project_for_refresh(self, core, connection, previous, *, _review_inputs=None):
+    def _project_for_refresh(self, core, connection, previous, *, _review_inputs=None, read=None):
         geometry = self.attribution(core, numerical_connection=connection, geometry_only=True, _review_inputs=_review_inputs)
         dirty = {tuple(row) for row in connection.execute("SELECT * FROM usage_dirty_turns")}
         cached = {row["component_id"]: dict(row) for row in connection.execute("SELECT * FROM usage_component_basis")}
@@ -302,11 +308,12 @@ class UsageResponseRepository(UsageIncrementalRepository):
                 components.append({**component, "models": snapshot["models"]})
             else:
                 computed += 1
-                components.append({**component, "models": _models(self._responses(connection, component["response_keys"]))})
+                components.append({**component, "models": _models(self._responses(connection, component["response_keys"])
+                    if read is None else read.responses(component["response_keys"]))})
         self.last_projection_work = {"components_aggregated": computed, "components_selected": len(components)}
         selected_keys = {tuple(key) for item in components for key in item["response_keys"]}
-        self._retired_snapshot_ids = {item["snapshot_id"] for item in previous if item["response_count"]
-                                     and not selected_keys.intersection(self.members(connection, item["snapshot_id"]))}
+        if read is not None:
+            read.prepare_partitions(component_identity, selected_keys)
         return {**geometry, "components": components, "bases": bases}
 
     def _adopt_projection(self, connection, projected, adopted):
@@ -317,50 +324,43 @@ class UsageResponseRepository(UsageIncrementalRepository):
             [(component_identity(item), projected["bases"][component_identity(item)], item["snapshot_id"]) for item in adopted])
         connection.execute("DELETE FROM usage_dirty_turns")
 
-    def _overlapping_snapshots(self, connection, previous, component):
-        keys, identity = set(map(tuple, component["response_keys"])), component_identity(component)
-        return [item for item in previous if
-                (item["format"] != RESPONSE_FORMAT and set(item["executions"]).intersection(component["executions"]))
-                or (item["format"] == RESPONSE_FORMAT and (component_identity(item) == identity
-                    or keys.intersection(self.members(connection, item["snapshot_id"]))
-                    or (item["snapshot_id"] in getattr(self, "_retired_snapshot_ids", set())
-                        and set(item["executions"]).intersection(component["executions"]))
-                    or ((not item["response_count"] or not component["response_keys"])
-                        and set(item["executions"]).intersection(component["executions"]))))]
+    def _overlapping_snapshots(self, connection, previous, component, *, read):
+        return read.partition_overlaps(component, component_identity)
 
     def read(self, core, *, task_id=None, audit=False, numerical_connection=None):
         with (self.connection() if numerical_connection is None else nullcontext(numerical_connection)) as connection:
-            result, current, periods = self._read(core, connection, task_id=task_id, audit=audit)
+            result, current, periods, read = self._read(core, connection, task_id=task_id, audit=audit)
             current = [item for item in current if item["format"] == RESPONSE_FORMAT]
             if task_id is None:
                 classification = self.attribution(core, numerical_connection=connection, geometry_only=True)
                 result["format"] = "taskgov-usage-index-v2"
                 result["attribution"] = ALGORITHM
-                result["unattributed"] = {kind: self._totals(connection, classification[field]) for kind, field in
+                result["unattributed"] = {kind: self._totals(connection, classification[field], read=read) for kind, field in
                     (("unknown", "unknown_response_keys"), ("unassigned", "unassigned_response_keys"))}
                 return result
             units = {execution for period in periods if period["task_id"] == task_id for execution in period["executions"]}
             all_keys = {key for item in current if units.intersection(item["executions"])
-                        for key in self.members(connection, item["snapshot_id"])}
+                        for key in read.members[item["snapshot_id"]]}
             result["attribution"] = ALGORITHM
-            result["total"] = self._totals(connection, all_keys)
+            result["total"] = self._totals(connection, all_keys, read=read)
             for period in result["periods"]:
                 period["work_units"] = []
                 for execution in period["own_executions"]:
                     parts = [item for item in current if execution in item["executions"]]
                     unit = {"execution_id": execution, "exclusive": self._totals(connection, {
                         key for part in parts if part["assignment"] == "exclusive"
-                        for key in self.members(connection, part["snapshot_id"])}), "shared": [], "partial": []}
+                        for key in read.members[part["snapshot_id"]]}, read=read), "shared": [], "partial": []}
                     for part in parts:
                         if part["assignment"] in {"shared", "partial"}:
                             unit[part["assignment"]].append({"executions": part["executions"], "snapshot_id": part["snapshot_id"],
                                 "members": [dict(row) for row in core.execute("SELECT execution_id,task_id FROM task_executions "
                                     "WHERE project_id=? AND execution_id IN (SELECT value FROM json_each(?)) ORDER BY execution_id",
                                     (self.basis[0], encode(part["executions"]).decode()))],
-                                **self._totals(connection, self.members(connection, part["snapshot_id"]))})
+                                **self._totals(connection, read.members[part["snapshot_id"]], read=read)})
                     period["work_units"].append(unit)
             return result
 
-    def _totals(self, connection, keys):
+    def _totals(self, connection, keys, *, read=None):
         keys = set(map(tuple, keys))
-        return {"response_count": len(keys), "models": _models(self._responses(connection, keys))}
+        return {"response_count": len(keys), "models": _models(self._responses(connection, keys)
+                if read is None else read.responses(keys))}

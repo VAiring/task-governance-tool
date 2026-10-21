@@ -96,6 +96,31 @@ class DatabaseValidationReuseTests(unittest.TestCase):
         self.assertEqual(self.validated.call_count, 2)
         hashing.assert_not_called()
 
+    def test_expired_usage_deadline_opens_no_database_and_later_read_is_fresh(self):
+        with mock.patch("time.monotonic", return_value=100.0), \
+                mock.patch.object(resolver, "connect_readonly", wraps=resolver.connect_readonly) as opened:
+            result = self.resolve(operation_local=True, deadline=99.0)
+        self.assertEqual(result.error_code, "project_state_unreadable")
+        self.assertIsNone(result.read_connection)
+        opened.assert_not_called()
+        self.admitted(operation_local=True)
+
+    def test_usage_deadline_reaches_real_admission_and_retained_sql_progress(self):
+        before = tree_snapshot(self.fixture.root)
+        clock = [100.0]
+        with mock.patch("time.monotonic", side_effect=lambda: clock[0]), \
+                mock.patch.object(resolver, "connect_readonly", wraps=resolver.connect_readonly) as opened:
+            result = self.resolve(operation_local=True, deadline=101.0)
+            self.assertIsNone(result.error_code)
+            self.assertEqual(opened.call_args.kwargs["timeout"], 0.05)
+            self.assertTrue(self.validated.call_args.kwargs["operation_local"])
+            clock[0] = 102.0
+            with self.assertRaises(sqlite3.OperationalError):
+                result.read_connection.execute("WITH RECURSIVE work(n) AS "
+                    "(VALUES(1) UNION ALL SELECT n+1 FROM work WHERE n<100000) SELECT sum(n) FROM work").fetchone()
+            result.read_connection.close()
+        self.assertEqual(tree_snapshot(self.fixture.root), before)
+
     def test_operation_local_admission_never_uses_or_publishes_global_proof(self):
         self.admitted()
         statements = []

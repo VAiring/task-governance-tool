@@ -146,9 +146,9 @@ class UsageIncrementalRepository(UsageWaitRepository):
         """Use the exact predecessor admitted under this migration's writer."""
         self._before_incremental_marker(connection)
 
-    def _project_for_refresh(self, core, connection, previous):
+    def _project_for_refresh(self, core, connection, previous, *, read=None):
         from task_governance_tool.usage_incremental_projection import project_changed
-        return project_changed(self, core, connection, previous)
+        return project_changed(self, core, connection, previous, read=read)
 
     def _adopt_projection(self, connection, projected, adopted):
         from task_governance_tool.usage_incremental_projection import adopt

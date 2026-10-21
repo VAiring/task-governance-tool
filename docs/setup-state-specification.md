@@ -977,7 +977,13 @@ validation and file comparison follow the explicitly deferred
 [rotating audit](database-specification.md#immutable-usage-evidence).
 Completed audit steps resume on later events against the same index basis;
 `evidence_verification_deferred` never claims current integrity. Internal budgets do
-not assert every environment finishes within the host timeout.
+not assert every environment finishes within the host timeout. The cooperative
+budget begins at collection entry and includes state admission; a later stage
+does not reset it. Operation-local core admission retains physical/schema/binding
+checks and validates the ownership, cycle and actual-reviewer relations consumed
+by usage, without auditing unrelated review history. Final index replacement
+still requires fresh admitted reads and never relies on a previous event's
+validated-result cache.
 
 Stop, quiet files and elapsed time never establish final coverage. Disabled or
 untrusted hooks perform no collection. With no later event, late usage stays

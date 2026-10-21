@@ -77,6 +77,23 @@ class IncrementalLifecycleTests(unittest.TestCase):
         self.assertEqual(before, self.repo.path.read_bytes())
         self.assertEqual(self.collect()["collected_sources"], 1)
 
+    def test_admission_consumes_entry_budget_without_reset_or_numerical_write(self):
+        before = self.repo.path.read_bytes()
+        clock = [100.0]
+        def slow_admission(*args, **kwargs):
+            self.assertEqual(kwargs["deadline"], 120.0)
+            self.assertTrue(kwargs["operation_local"])
+            clock[0] = 120.0
+            return self.target
+        with mock.patch.object(lifecycle, "monotonic", side_effect=lambda: clock[0]), \
+                mock.patch.object(lifecycle, "_target", side_effect=slow_admission), \
+                mock.patch.object(lifecycle, "repository_for") as repository:
+            result = self.collect()
+        self.assertEqual(result["diagnostics"], ["usage_unavailable"])
+        repository.assert_not_called()
+        self.assertEqual(self.repo.path.read_bytes(), before)
+        self.assertEqual(self.collect()["collected_sources"], 1)
+
     def test_partial_event_budgets_advance_later_inventory_pages_and_audits(self):
         from contextlib import ExitStack
         from task_governance_tool import usage_incremental_repository, usage_incremental_adapter, usage_sources

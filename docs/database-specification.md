@@ -116,6 +116,13 @@ Setup, doctor, migration/reentry, recovery and actual whole-project publication
 retain complete applicable validation. The approved remaining work is owned
 by [operation admission correction](operation-admission-plan.md).
 
+Numerical lifecycle and Task usage projections apply the structural boundary
+plus the ownership/cycle and actual-reviewer identities consumed by their shared
+capture basis, without unrelated review-history audits. Their original-response
+validation, transaction-local reuse and separate final publication guard follow
+[immutable usage evidence](#immutable-usage-evidence); this does not narrow core
+Evidence, Viewer, backup or recovery admission.
+
 ## Completion Review Admission
 
 Ordinary completion (`task complete`, its read-only check, and compatibility
@@ -707,6 +714,11 @@ projection for the same admitted input/basis. Global diagnostic changes may
 require broad recomputation. Structural selection remains a full metadata pass;
 no claim that every path is proportional only to appended bytes is made.
 
+Current capture shares member/original lookups and overlap indexes within its
+one admitted read state. This is transaction-local reuse, not a persisted
+validation result; selected Task reads and the independent final-publication
+guard retain the boundaries in [immutable usage evidence](#immutable-usage-evidence).
+
 Stored snapshot shape/digest, exact membership, original counters, supersession
 and published immutable bytes are checked by the rotating publication audit
 below. This explicitly defers historical integrity detection between events;
@@ -833,6 +845,10 @@ their identity checks or the captured input. The shared value contains only
 typed metadata, not answer bodies. It is local to that update: a later update,
 standalone read or publication guard obtains and validates fresh input. No
 persistent verification cache or cross-transaction reuse is permitted.
+Fresh input includes every consumed actual reviewer binding, including direct
+registration and legacy handoff Receipts, not only collected-answer endpoints.
+Their Receipt, Evidence Reference, execution and session relationships must be
+validated before treating a capture basis as current or adopting an index.
 
 ### Response-Boundary Attribution
 
@@ -1209,8 +1225,24 @@ instead of restarting the same history prefix. Metadata classification and
 current-component validation remain whole passes, and each snapshot/file is
 still bounded to 16 MiB; this is not a universal latency guarantee.
 
-Ordinary Task reads retain full validation of selected snapshot rows and never
-advance this cursor or publish files. Explicit Setup alone initializes/migrates
+Within one admitted numerical transaction, capture and display may share bulk
+member/original reads and validated snapshot facts. Reuse never survives that
+transaction, a new connection or event, and never replaces the fresh final
+publication guard. Internal batch requests are bounded separately: combining
+individually admissible snapshots must not apply one document's byte limit to
+their original-key union. The existing per-snapshot/file limits remain unchanged.
+Capture still validates all current components. Task detail
+validates all current snapshot metadata before selecting by execution identity;
+it then validates exact members, original counters and predecessor edges only
+for components containing this Task's executions, including shared components
+and current successors. Its total includes all its periods even when the normal
+display shows only the latest period. Unrelated original counters remain subject
+to the existing rotating audit. Common capture-basis ownership, cycle and actual
+reviewer identities are still checked; this is not an audit of unrelated review
+history. Missing or changed selected originals, tampered selection metadata and
+stale restore/binding inputs remain unavailable, never verified by a cache.
+Ordinary Task reads never advance this cursor, replay or publish files.
+Explicit Setup alone initializes/migrates
 schema 7, preserving all old numerical observations, snapshot bytes, membership,
 cycle links and schema-6 collection continuations. It creates no trusted result
 for earlier history; the first publication starts an audit from the beginning.

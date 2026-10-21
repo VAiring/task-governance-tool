@@ -710,6 +710,12 @@ snapshot validation still reads membership/counters. Historical Evidence and
 file integrity use the resumable publication sweep below. Test work counters
 distinguish aggregation from these integrity operations.
 
+Capture uses the transaction-local `SnapshotRead` described below to load
+current membership and unique originals in bulk. Execution, response and
+partition indexes select immutable predecessors without scanning every current
+snapshot for each component. Legacy-format, empty and retired partitions keep
+their existing overlap rules; this changes lookup work, not attribution.
+
 `usage_collection.py` composes those boundaries and returns unknown on numerical
 failure without discarding readable prior observations. Its explicit-setup
 adapter runs after core setup, reports a separate outcome and never changes
@@ -820,6 +826,10 @@ checks. The value is not stored on a repository or connection and has no durable
 cache. Standalone reads and the later publication guard still retrieve fresh
 input, so later registration, changed provenance and invalid Evidence are
 reconsidered rather than hidden by an earlier successful validation.
+The basis reader uses the same complete review-input reader when no capture-local
+value is supplied. It validates direct and legacy handoff bindings as well as
+native collected endpoints; endpoint-only validation cannot stand in for the
+Receipt-to-Reference and execution/session checks required by the basis.
 
 ### Response Relation And Partition Structure
 
@@ -1175,7 +1185,20 @@ classification to the publisher in the same numerical writer/core read.
 It builds only index metadata for history, without repeating historical
 membership/counter validation or classification. Ordinary response reads reuse
 the base reader's validated documents and periods in that same connection;
-there is no cross-connection verified cache. The publication basis also includes
+there is no cross-connection verified cache. `usage_snapshot_read.py` owns an
+explicit read value with validated documents, member/predecessor maps, original
+responses and execution/response/partition indexes. It belongs to the active
+numerical transaction, checks its lifetime and cooperative budget, and is passed
+through capture, overlap selection and totals rather than saved on a repository.
+Snapshot identities and missing original keys are fetched in bounded batches,
+with a budget/lifetime check before each batch. The cache deduplicates across
+batches only within that read; original validation and per-document byte limits
+are unchanged. A large union of valid documents is not itself one document.
+Display validates all current metadata before selecting the Task's components,
+so corrupt execution metadata cannot silently hide a selected original. Only
+those components' members, counters and predecessor edges are read in full;
+shared components and all this Task's periods contribute to its union total.
+The publication basis also includes
 closed turn, operation, reviewer, conflict and source-diagnostic inputs, plus
 actual operation resolutions, so changed source/capture/restore state cannot
 silently reuse an earlier index. Structural metadata remains a whole pass.

@@ -168,6 +168,15 @@ belong to [wait attribution](database-design.md#review-wait-decision-structure).
 Read-only review display/material remain unchanged. Registration retains no
 source path and attaches no database to the core transaction.
 
+The lifecycle's resolver and core readers use operation-local physical/schema/
+binding admission rather than whole-project review-history validation.
+Participant discovery and each fresh publication core read validate the ownership
+and completion-cycle history they consume; the usage repository separately
+validates actual Receipt/session/collected-answer relationships for its shared
+capture basis. Task detail keeps that common basis check as well. These checks
+are not reusable across connections, and the final publication guard still opens
+fresh admitted core and numerical reads.
+
 `usage_sources.py` locates only registered session IDs in the legacy
 `rollout-<prefix>-<session-uuid>.jsonl` and segmented
 `rollout-<prefix>-<session-uuid>_<segment-uuid>.jsonl` filenames in the standard
@@ -219,8 +228,12 @@ its ingest slices, so extra catch-up does not repeatedly audit the same prefix
 or starve deferred verification. The reported collected-source count is the
 number of distinct successfully visited sources, not the number of slices.
 Cooperative event budgets are 20 seconds
-(1.5 seconds for SessionEnd), with 50 ms SQLite lock waits and query progress
-interrupts for these numerical workers and their admitted core readers. They
+(1.5 seconds for SessionEnd), measured from collection entry, including payload,
+package and state admission. The same absolute deadline reaches the resolver,
+participant discovery, collection and publication, with 50 ms SQLite lock waits
+and query progress interrupts for these numerical workers, resolver database
+inspection and admitted core readers. Expired admission cannot start collection
+with a fresh budget. They
 do not alter ordinary Task connection budgets or admission checks. Filesystem
 operations, one bounded record, current-component validation and metadata passes can still dominate
 wall time; there is no universal host-timeout guarantee. The same

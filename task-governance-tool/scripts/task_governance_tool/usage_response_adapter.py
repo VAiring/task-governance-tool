@@ -6,27 +6,26 @@ acknowledgement and must still be checked against committed core identities.
 The continuation contains IDs and ordering metadata, never text or arguments.
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 import json
 import re
 
 from task_governance_tool.session_identity import is_session_id
-from task_governance_tool.usage_turn_adapter import OperationObservation, project_record
+from task_governance_tool.usage_turn_adapter import CHECKS, OperationObservation, project_body
 from task_governance_tool.usage_values import RESPONSE_ID, UsageError, label
 from task_governance_tool.task_values import validate_task_id, TaskValidationError
-from task_governance_tool.usage_adapter import AMBIGUOUS_JSON, contains_ambiguous_json
+from task_governance_tool.usage_adapter import AMBIGUOUS_JSON, contains_ambiguous_json, source_object, response_payload
 from task_governance_tool.usage_batch_adapter import (
     AmbiguousBatch, parse_batch_input, parse_batch_output, is_single_execution, strip_exec_pragma, is_text_block,
 )
 
 
-VERSION = "codex-response-relations-v14"
+VERSION = "codex-response-relations-v15"
 BRACKET_VERSIONS = frozenset({"0.162.0-alpha.17.2", "0.163.0-alpha.10.2"})
 MAX_CONTEXT = 128
 MAX_TEXT = 2_097_152
 TOOLS = frozenset({"functions.exec", "functions.wait", "functions.exec_command",
                    "functions.write_stdin", "exec_command", "write_stdin", "exec", "wait"})
-CHECKS = frozenset({"task.context", "task.current", "task.next", "task.show", "task.list"})
 _ID = re.compile(r"[A-Za-z0-9_.:-]{1,200}\Z")
 _WARNING = re.compile(r"Failed to find real location of (?:[A-Za-z]:[\\/]|/)[^\r\n]+[\\/]python(?:[0-9.]*)?(?:\.exe)?\r?\n")
 _HEADER_LINE = re.compile(r"(?:Chunk ID: [A-Za-z0-9_-]{1,128}|Wall time:? [0-9.]+(?: seconds)?|"
@@ -149,7 +148,7 @@ def _text_json(value, *, unique_keys=False, allow_header=True, allow_process_hea
                 raise AmbiguousBatch("duplicate object key")
             result[key] = item
         return result
-    decoder = json.JSONDecoder(object_pairs_hook=unique_object) if unique_keys else json.JSONDecoder()
+    decoder = json.JSONDecoder(object_pairs_hook=unique_object if unique_keys else source_object)
     result = []
     while text.strip():
         value, end = decoder.raw_decode(text.lstrip())
@@ -193,14 +192,16 @@ def objects(value, depth=0, *, unique_keys=False, lifetime=False):
     if depth > 8:
         raise UsageError("response_binding_unknown")
     if value is AMBIGUOUS_JSON:
-        raise AmbiguousBatch("duplicate source object key")
+        if unique_keys:
+            raise AmbiguousBatch("duplicate source object key")
+        return [{"_transport_unreadable": True}]
     # Handle extraction must not descend into a finished process's stdout.
     # Apply this at each container, so a separate live sibling still survives.
     if lifetime and _lifetime_evidence(value, depth=depth) == "terminal":
         return []
     if isinstance(value, str):
         result = []
-        for parsed in _text_json(value, unique_keys=unique_keys or lifetime):
+        for parsed in _text_json(value, unique_keys=unique_keys):
             result.extend(objects(parsed, depth + 1, unique_keys=unique_keys, lifetime=lifetime))
         return result
     if isinstance(value, list):
@@ -231,7 +232,7 @@ def objects(value, depth=0, *, unique_keys=False, lifetime=False):
                 return [{"_transport_indexed": True}, *objects(
                     settled["value"], depth + 1, unique_keys=unique_keys, lifetime=lifetime)]
             return [{"_transport_unreadable": True}]
-        body = ("command" in value or value.get("status") in {"review_wait_ended", "saved"}
+        body = ("command" in value or value.get("status") in ("review_wait_ended", "saved")
                 or value.get("context_check") == "matched_at_read")
         if body and lifetime:
             return []
@@ -308,7 +309,7 @@ def _lifetime_evidence(value, *, depth=0):
             # Every header layer must pass this visitor, never the success
             # parser's independent header stripping (including after warnings).
             return combine(visit(child, level + 1) for child in
-                           _text_json(text, unique_keys=True, allow_header=False))
+                           _text_json(text, allow_header=False))
         if isinstance(item, list):
             children = []
             for block in item:
@@ -323,7 +324,7 @@ def _lifetime_evidence(value, *, depth=0):
             return 1, 0
         if process is not None:
             raise ValueError
-        if ("command" in item or item.get("status") in {"review_wait_ended", "saved"}
+        if ("command" in item or item.get("status") in ("review_wait_ended", "saved")
                 or item.get("context_check") == "matched_at_read"):
             # Mixed acknowledgement/transport objects still own child
             # transport. A usable acknowledgement cannot conceal that fence.
@@ -358,8 +359,10 @@ def _handle_input(name, arguments):
             return "session", match[1]
         return None
     try:
-        value = json.loads(arguments) if isinstance(arguments, str) else arguments
-        if not isinstance(value, dict):
+        if isinstance(arguments, str) and len(arguments.encode("utf-8")) > MAX_TEXT:
+            return None
+        value = json.loads(arguments, object_pairs_hook=source_object) if isinstance(arguments, str) else arguments
+        if not isinstance(value, dict) or contains_ambiguous_json(value):
             return None
         if name in {"functions.write_stdin", "write_stdin"}:
             handle = value.get("session_id")
@@ -425,7 +428,7 @@ def _check_shape(command, data, project):
         selected = data.get("selected")
         selected_task = selected.get("task") if isinstance(selected, dict) else None
         return (set(data) >= {"selection", "current", "next", "selected"}
-                and selection in {"none", "current", "next"}
+                and isinstance(selection, str) and selection in {"none", "current", "next"}
                 and ((selection == "none" and selected is None) or
                      (selection != "none" and isinstance(selected, dict) and task(selected.get("task"))))
                 and all(value is None or listing(value, compact=True, selected=selected_task)
@@ -603,6 +606,23 @@ class ResponseTracker:
         """A missing/foreign record breaks pending proofs, not numerical data."""
         for frame in self.pending_frames():
             frame["ambiguous"] = True
+            frame["bracket_closed"] = True
+
+    def _invalidate_duplicate_call(self, call):
+        """A retained origin survives draining its original call/slot entry."""
+        frames = list(self.pending_frames())
+        matched = [frame for frame in frames if frame["call"] == call]
+        if call in self.state["calls"]:
+            matched.append(self.state["calls"][call])
+        matched.extend(frame for frame in self.state["batches"].get(call, ()) if frame is not None)
+        if not matched:
+            return False
+        origins = {self._origin(frame) for frame in matched}
+        for frame in frames:
+            if self._origin(frame) in origins:
+                frame["ambiguous"] = True
+                frame["bracket_closed"] = True
+        return True
 
     @staticmethod
     def _frame(frame, *, version=4):
@@ -658,28 +678,41 @@ class ResponseTracker:
                     frame["ambiguous"] = True
                 else:
                     frame["response"], frame["method"] = response.response_id, "single_bracket"
-        payload = record.get("payload")
-        if record.get("type") != "response_item" or not isinstance(payload, dict):
+            return tuple(result)
+        try:
+            payload = response_payload(record)
+        except UsageError:
+            self.interrupt_relation()
+            return tuple(result)
+        if payload is None:
             return tuple(result)
         metadata = payload.get("internal_chat_message_metadata_passthrough")
         turn = metadata.get("turn_id") if isinstance(metadata, dict) else None
         call = payload.get("call_id")
         kind = payload.get("type")
+        if (kind in {"function_call", "custom_tool_call", "function_call_output", "custom_tool_call_output"}
+                and (not isinstance(call, str) or _ID.fullmatch(call) is None)):
+            # The result can still supply an independently validated historical
+            # operation, but its missing identity cannot leave pending origins open.
+            self.interrupt_relation()
         if kind in {"function_call_output", "custom_tool_call_output"} and isinstance(call, str) and _ID.fullmatch(call):
             # Closure precedes all body parsing and turn admission. Missing or
             # malformed metadata cannot leave a bracket open for a later reply.
             self._close_brackets(call, invalid_turn=not is_session_id(turn))
         if not is_session_id(turn):
+            if kind in {"function_call", "custom_tool_call"}:
+                self.interrupt_relation()
             return tuple(result)
-        if kind in {"function_call", "custom_tool_call"} and payload.get("name") in TOOLS:
+        if kind in {"function_call", "custom_tool_call"}:
+            name = payload.get("name")
+            if not isinstance(name, str) or not name:
+                self.interrupt_relation()
+                return tuple(result)
             if not isinstance(call, str) or not _ID.fullmatch(call):
                 return tuple(result)
-            if call in self.state["calls"] or call in self.state["batches"]:
-                if call in self.state["calls"]:
-                    self.state["calls"][call]["ambiguous"] = True
-                for frame in self.state["batches"].get(call, ()):
-                    if frame is not None:
-                        frame["ambiguous"] = True
+            if self._invalidate_duplicate_call(call):
+                return tuple(result)
+            if name not in TOOLS:
                 return tuple(result)
             direct = metadata.get("response_id")
             explicit = isinstance(direct, str) and RESPONSE_ID.fullmatch(direct)
@@ -763,12 +796,12 @@ class ResponseTracker:
             # Closed historical results can prove a turn and independent
             # reviewer/receipt relation, but cannot invent a call response.
             for item in parsed:
-                actual = {"type": "response_item", "payload": {"type": "function_call_output", "output": item,
-                          "internal_chat_message_metadata_passthrough": {"turn_id": turn}}}
-                result.extend(project_record(actual, self.thread, project_id=project))
+                result.extend(project_body(item, self.thread, turn, project).observations)
             return tuple(result)
         self.state["calls"].pop(call)
-        unproven = parse_batch_output(output, MAX_CONTEXT, text_parser=_text_json)
+        # Detect unproven indexed correspondence without applying a batch's
+        # whole-output duplicate rejection to independent ordinary bodies.
+        unproven = parse_batch_output(output, MAX_CONTEXT, text_parser=_text_json, unique_keys=False)
         if unproven is None or unproven.indexed or any(item.get("_transport_indexed") for item in parsed):
             # An indexed result cannot prove which inner call ran from this
             # ordinary frame. This also closes unsupported JS spellings without
@@ -819,22 +852,31 @@ class ResponseTracker:
                     and (frame["method"] != "single_bracket" or self.allow_bracket)) else "unavailable"
         response_id = frame["response"] if method != "unavailable" else None
         validated_success = False
+        unreadable_body = False
+        body_terminal = False
         for item in parsed:
-            actual = {"type": "response_item", "payload": {"type": "function_call_output", "output": item,
-                      "internal_chat_message_metadata_passthrough": {"turn_id": turn}}}
-            result.extend(observation for observation in project_record(actual, self.thread, project_id=project)
+            projected = project_body(item, self.thread, turn, project)
+            unreadable_body |= projected.unreadable
+            body_terminal |= projected.terminal
+            observations = projected.observations
+            result.extend(observation for observation in observations
                           if not isinstance(observation, OperationObservation))
             if item.get("ok") is not True or item.get("project_id") != project:
                 continue
             command, data = item.get("command"), item.get("data")
-            if command in CHECKS and _check_shape(command, data, project):
-                validated_success = True
-                result.append(ResponseBoundary(self.thread, frame["turn"], project, command, frame["call"],
-                                               self.provider, response_id, frame["order"], method=method))
-            single = {"type": "response_item", "payload": {"type": "function_call_output", "output": item,
-                      "internal_chat_message_metadata_passthrough": {"turn_id": frame["turn"]}}}
-            for observation in project_record(single, self.thread, project_id=project):
+            if not isinstance(command, str):
+                unreadable_body = True
+                continue
+            if command in CHECKS:
+                if _check_shape(command, data, project):
+                    validated_success = True
+                    result.append(ResponseBoundary(self.thread, frame["turn"], project, command, frame["call"],
+                                                   self.provider, response_id, frame["order"], method=method))
+                else:
+                    unreadable_body = True
+            for observation in observations:
                 if isinstance(observation, OperationObservation):
+                    observation = replace(observation, turn_id=frame["turn"])
                     validated_success = True
                     result.append(observation)
                     result.append(ResponseBoundary(self.thread, frame["turn"], project, command, frame["call"],
@@ -844,14 +886,9 @@ class ResponseTracker:
         # success parsing. Opaque stdout is not an unfinished process; an opaque
         # wrapper or an unproven inner lifetime remains unresolved.
         lifetime = _lifetime_evidence(output, depth=depth)
-        body_terminal = (bool(parsed) and not any(item.get("_transport_unreadable") for item in parsed) and any(
-            (item.get("project_id") == project and item.get("ok") is False
-                and isinstance(item.get("data"), dict)
-                and item.get("command") in CHECKS | {"task.add", "task.edit", "task.complete"})
-            or item.get("status") in {"review_wait_ended", "saved"}
-            or item.get("context_check") == "matched_at_read" for item in parsed))
-        body_terminal = body_terminal or (validated_success and not any(item.get("_transport_unreadable") for item in parsed))
-        terminal = lifetime == "terminal" or (lifetime == "body" and body_terminal)
+        body_terminal = ((body_terminal or validated_success)
+                         and not any(item.get("_transport_unreadable") for item in parsed))
+        terminal = lifetime == "terminal" or (lifetime == "body" and body_terminal and not unreadable_body)
         known = self.state["handles"].get(frame["handle"])
         if (frame["handle"] is not None and frame["handle"] not in live_handles and not handles and terminal
                 and known is not None and not known["ambiguous"] and not frame["ambiguous"]):

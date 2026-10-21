@@ -116,8 +116,10 @@ class UsageTurnAdapterTests(unittest.TestCase):
 
     def test_known_exec_header_and_multiple_acknowledgements(self):
         record = tool_record(acknowledgement())
-        record["payload"]["output"] = "Chunk ID: fixture\nWall time: 1\nOutput:\n" + json.dumps(acknowledgement()) + json.dumps(acknowledgement())
+        record["payload"]["output"] = "Chunk ID: fixture\nWall time: 1\nProcess exited with code 0\nOutput:\n" + json.dumps(acknowledgement()) + json.dumps(acknowledgement())
         self.assertEqual(len(project_record(record, THREAD)), 2)
+        record["payload"]["output"] = record["payload"]["output"].replace("Process exited with code 0\n", "")
+        self.assertEqual(project_record(record, THREAD), ())
 
     def test_failed_check_read_and_metadata_edit_are_not_state_boundaries(self):
         for change in ({"ok": False}, {"command": "task.show"}):

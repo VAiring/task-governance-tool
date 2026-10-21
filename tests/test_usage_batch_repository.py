@@ -825,7 +825,7 @@ class BatchResponseRepositoryTests(unittest.TestCase):
     def assert_codec_upgrade_replays_without_projection_change(self, old_version):
         import task_governance_tool.usage_response_adapter as adapter
 
-        self.assertEqual(adapter.VERSION, "codex-response-relations-v14")
+        self.assertEqual(adapter.VERSION, "codex-response-relations-v15")
         rows = self.operation("start", self.acknowledgement(A, 1, "in_progress"), "r0", direct=True)
         rows += self.operation("done", self.acknowledgement(A, 1, "done", cycle="A"), "r1", direct=True)
         self.write_turn(rows)

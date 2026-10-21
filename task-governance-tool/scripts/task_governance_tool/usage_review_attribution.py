@@ -8,6 +8,7 @@ from task_governance_tool.task_values import validate_task_id, TaskValidationErr
 from task_governance_tool.reviews import validate_stored_review_target, ReviewEvidenceError
 from task_governance_tool.usage_values import UsageError
 from task_governance_tool.usage_attribution import Interval, safe_turn_starts
+from task_governance_tool.usage_turn_adapter import BodyProjection, is_foreign_identity
 
 
 @dataclass(frozen=True)
@@ -60,40 +61,56 @@ class ReviewReceiptTurn:
 def project_review(item, thread, turn, project_id):
     """Known helper read/save and public registration responses, no arguments."""
     metadata, phase = None, None
-    if item.get("context_check") == "matched_at_read" and isinstance(item.get("review_session_context"), dict):
-        context, task, contract, target = (item["review_session_context"], item.get("task"),
+    if item.get("context_check") == "matched_at_read":
+        context, task, contract, target = (item.get("review_session_context"), item.get("task"),
                                           item.get("contract"), item.get("review_target"))
-        if isinstance(task, dict) and isinstance(contract, dict) and isinstance(target, dict):
-            metadata = {**context, "task_id": task.get("task_id"), "contract_revision": contract.get("revision"),
-                        "review_target": target, "original_result_digest": ""}
-            phase = "read"
-    elif item.get("ok") is True and item.get("status") == "saved":
+        if is_foreign_identity(context, project_id):
+            return BodyProjection()
+        if not all(isinstance(value, dict) for value in (context, task, contract, target)):
+            raise UsageError("boundary_unknown")
+        metadata = {**context, "task_id": task.get("task_id"), "contract_revision": contract.get("revision"),
+                    "review_target": target, "original_result_digest": ""}
+        phase = "read"
+    elif item.get("status") == "saved":
         candidate = item.get("review_session")
-        if isinstance(candidate, dict) and candidate.get("session_id") == thread:
-            metadata, phase = candidate, "save"
+        if is_foreign_identity(candidate, project_id, thread=thread):
+            return BodyProjection()
+        if (item.get("ok") is not True or not isinstance(candidate, dict)
+                or not is_session_id(candidate.get("session_id"))):
+            raise UsageError("boundary_unknown")
+        metadata, phase = candidate, "save"
     if metadata is not None:
-        if (metadata.get("version") != 1 or (project_id is not None and metadata.get("project_id") != project_id)
-                or metadata.get("execution_id") is None):
-            return ()
+        project = metadata.get("project_id")
+        if not isinstance(project, str) or not 0 < len(project) <= 200:
+            raise UsageError("boundary_unknown")
+        if type(metadata.get("version")) is not int or metadata["version"] != 1:
+            raise UsageError("boundary_unknown")
         target = metadata.get("review_target")
         if not isinstance(target, dict):
-            return ()
-        return (ReviewBoundary(thread, turn, metadata.get("project_id"), metadata.get("task_id"),
+            raise UsageError("boundary_unknown")
+        return BodyProjection((ReviewBoundary(thread, turn, metadata.get("project_id"), metadata.get("task_id"),
             metadata.get("execution_id"), metadata.get("contract_revision"), target.get("kind"),
             target.get("value"), target.get("base_revision"), target.get("generation"),
-            phase, metadata.get("original_result_digest")),)
+            phase, metadata.get("original_result_digest")),), terminal=True)
     if (item.get("ok") is not True or item.get("command") not in ("review.receipt.add", "review.result.add")
             or (project_id is not None and item.get("project_id") != project_id)):
-        return ()
+        return BodyProjection()
     data = item.get("data")
     if not isinstance(data, dict):
-        return ()
+        return BodyProjection(unreadable=True)
     entries = data.get("receipts", [data])
-    if not isinstance(entries, list):
-        return ()
-    return tuple(ReviewReceiptTurn(thread, turn, entry["receipt"]["review_receipt_id"])
-                 for entry in entries if isinstance(entry, dict) and isinstance(entry.get("receipt"), dict)
-                 and "review_receipt_id" in entry["receipt"])
+    if not isinstance(entries, list) or not entries:
+        return BodyProjection(unreadable=True)
+    result, unreadable = [], False
+    for entry in entries:
+        receipt = entry.get("receipt") if isinstance(entry, dict) else None
+        try:
+            if not isinstance(receipt, dict):
+                raise UsageError("boundary_unknown")
+            result.append(ReviewReceiptTurn(thread, turn, receipt.get("review_receipt_id")))
+        except (UsageError, ValueError, TypeError):
+            unreadable = True
+    return BodyProjection(tuple(result), unreadable)
 
 
 def reviewer_intervals(owners, turns, boundaries, receipt_turns, reviews, *, collected_endpoints=(),

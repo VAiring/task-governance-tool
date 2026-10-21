@@ -80,8 +80,8 @@ class UsageReviewAttributionTests(unittest.TestCase):
                     "execution_id": EXECUTION, "contract_revision": 1, "original_result_digest": DIGEST,
                     "review_target": {"kind": "diff_fingerprint", "value": FINGERPRINT, "base_revision": "", "generation": 1}}
         saved = {"ok": True, "status": "saved", "review_session": metadata, "private": "not retained"}
-        self.assertEqual(project_review(saved, THREAD, turn(4), "fixture-project"), (self.save,))
-        self.assertEqual(project_review(saved, OTHER, turn(4), "fixture-project"), ())
+        self.assertEqual(project_review(saved, THREAD, turn(4), "fixture-project").observations, (self.save,))
+        self.assertEqual(project_review(saved, OTHER, turn(4), "fixture-project").observations, ())
 
     def test_duplicate_read_save_is_idempotent(self):
         self.assertEqual(self.intervals(), self.intervals(boundaries=(self.read, self.read, self.save, self.save)))

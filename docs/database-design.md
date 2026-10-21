@@ -737,6 +737,17 @@ is resolved, after ready preparation and matching identity checks. Batch entries
 resolve against their one original response context before the same operation
 projection. Unknown paths, malformed indices and mismatches yield no boundary;
 no arbitrary pointer traversal, additional read or context-body retention occurs.
+The shared `project_body` returns a transient `BodyProjection` containing
+validated observations, a separate unreadable-evidence flag, and terminal
+qualification from validated helper metadata or an admitted failed command.
+Each registration
+entry validates independently against the original acknowledgement context.
+The retained turn-only caller consumes valid observations without using them
+as lifetime proof. It invokes the response adapter's complete `objects` parser
+at the record boundary, without a second decoder or child traversal; the local
+import keeps the tracker/semantic-projector dependency out of module loading.
+Its sanitized adapter prefix is `codex-task-turn-v3`, so
+older projections are rechecked through existing bounded source replay.
 `usage_adapter.py` includes this projection only in attribution mode. The
 sanitized prefix version distinguishes the two adapters, so switching mode
 replays old numerical observations idempotently rather than losing boundaries.
@@ -979,31 +990,69 @@ First-output bracket closure still applies. Handle extraction uses
 the known transport containers separately from success-body parsing. It does
 not descend into a completed process's stdout, a running or incomplete process's stdout, or
 a Taskgov body to discover session handles; separate live result blocks remain
-eligible. Lifetime handle decoding always rejects duplicate JSON keys. Ordinary
-non-batch parsing leaves that container unresolved while preserving independent
-blocks; strict batch parsing retains its whole-output ambiguity rejection.
+eligible. Lifetime and handle decoding share the source object-pairs policy:
+duplicate-key objects are opaque in both object and JSON-string inputs.
+Ordinary non-batch parsing leaves damaged containers unresolved while preserving
+independent blocks and their established origins. Unused semantic-body children
+do not become transport evidence or invalidate their containing acknowledgement.
+Strict batch parsing retains its whole-output ambiguity rejection; ordinary
+index detection uses the same router without that batch-only rejection.
 The shared source JSON decoder replaces each duplicate-key object with an opaque
 in-memory marker, discarding its contents before transport interpretation. This
 also covers object-valued JSONL output, where later string decoding cannot see
 the ambiguity. Batch preflight rejects such markers before any slot mutation;
 ordinary parsing retains independently valid siblings. No marker or raw data is
-persisted. A shared closed text-block predicate admits only type/string-text
+persisted. `source_object` shares this object-pairs rule with ordinary transport
+string and literal-poll decoding; batch strict mode still rejects the whole
+ambiguous correspondence. `response_payload` validates the source discriminators
+and response-item payload before full/incremental projection and direct tracking.
+Lost outer identity interrupts pending proof; it is not an irrelevant-record
+result. Missing call identity fences pending frames while independently valid
+historical operations can still be observed. Interruption closes bracket
+candidates without deleting frames, prior evidence or later healthy calls.
+Lost call-turn or malformed tool-name structure is checked before returning;
+duplicate tracked call IDs are checked before filtering unrelated tool names.
+This uses the bounded pending-frame traversal, including live handles and the
+overflow frame, plus current call/batch keys. Invalidate every retained frame
+with a matched origin, including already-issued poll aliases, without altering
+independent origins or prior emitted observations. No new history set is stored.
+The common semantic-leaf projection returns valid observations independently
+of unreadable evidence, including invalid siblings in one registration array.
+The review projector returns this same typed partial result after validating
+each receipt entry; an invalid or absent receipt identity cannot erase the
+other entries or be hidden by a separate successful acknowledgement.
+Missing project identity is invalid before project filtering; only a positively
+identified foreign project is irrelevant. For state observations, required
+Task/event identities and their agreement precede operation eligibility. The response tracker
+consumes this typed result once at the actual turn, then relocates validated
+operation metadata to the already-proved originating turn. It never discards
+valid observations because the same leaf also contains unreadable evidence;
+that flag prevents acknowledgement-based termination without overriding an
+independent process exit. Neither the flag nor the source body is persisted.
+Review/read/save/wait projectors distinguish missing required metadata from
+positively foreign identities. Their shared identity-exclusion predicate validates
+each applicable project/sender independently before other required fields;
+missing unrelated fields cannot veto an already-proved exclusion. The terminal gate consumes the typed projection's
+qualification, never its unvalidated marker labels. Their unsupported or
+malformed evidence cannot be erased by another valid success leaf.
+A shared closed text-block predicate admits only type/string-text
 pairs for routing, semantic parsing, lifetime proof and cell/session extraction.
 A terminal poll cannot retire an ambiguous live handle or erase its
 unresolved fence, including collisions observed after the poll was issued and
 retained across restart. This applies to process and Taskgov terminal results.
 No stdout, exit code or additional lifetime flag is persisted.
 
-The response adapter's sanitized prefix is `codex-response-relations-v14` for
+The response adapter's sanitized prefix is `codex-response-relations-v15` for
 positive call admission, indexed batches, persisted first-output closure and
 separate process-lifetime evidence, complete header validation and retained
 ambiguous lifetimes with a transport-qualified acknowledgement fallback and
 shared process-metadata admission across both lifetime paths and batch routing,
-retained unproven indices and source-level ambiguity preservation.
+retained unproven indices, source-identity loss and representation-independent
+ambiguity preservation.
 Bounded audit/replay replaces an older prefix's
 discarded check results and continuation without changing numerical schema or
 deleting original counters/history; normal reads never perform that replay.
-Version-8 pending contexts and version-9 through version-13 lifetime decisions are replaced only
+Version-8 pending contexts and version-9 through version-14 relation decisions are replaced only
 when that registered-source replay
 actually rebuilds them. It can recover terminal frames retained by the old
 stdout parser and origins lost after those frames exhausted capacity. Merely

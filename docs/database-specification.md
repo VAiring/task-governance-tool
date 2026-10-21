@@ -875,6 +875,18 @@ unresolved fresh slot in that outer call closes together. Later numerical
 records cannot replace the retained candidate or fill a missing one; terminal
 resolution and handle/poll continuation preserve that closed origin across
 restart. Missing or invalid output-turn metadata also invalidates its proof.
+Missing or malformed source-record/response-item discriminators and an opaque
+response-item payload are invalid-record gaps, not ignorable unrelated records.
+Lost call identity interrupts pending correspondence without discarding a
+separately validated historical operation. Missing or invalid call-turn metadata
+or tool-name structure has the same effect before an early return. A repeated
+tracked call ID conflicts even if the later tool name identifies an unrelated
+tool. This includes an origin retained only in live handles and already-issued
+poll aliases after its original call/slot drains. Independent origins and
+historical observations remain usable. Interrupted brackets stay closed; later numerical responses cannot repair
+them. This affects pending proof only:
+already confirmed observations and later healthy calls remain available.
+Known unrelated record kinds and non-tool response items remain ignorable.
 
 Call origin requires positive admission as a new execution or a poll of a
 verified original execution. A direct `exec_command` argument object with a
@@ -968,7 +980,34 @@ cannot supply running handles, including for ordinary non-batch calls. A usable 
 acknowledgement is not recovered from an object with duplicate keys in the
 source JSONL either: the shared source decoder keeps that object opaque rather
 than accepting its last value. Independently valid sibling objects and original
-numerical records remain usable. Text/input_text blocks must contain exactly
+numerical records remain usable. The same object-level ambiguity rule applies
+to decoded JSON strings and poll arguments; source object/string representation
+does not grant different proof, including lifetime and handle decisions.
+An opaque unused child of an otherwise validated acknowledgement is not a
+damaged transport container. In ordinary output, a damaged independent block
+does not invalidate a separately valid sibling's established origin; its
+unresolved lifetime remains. Whole-correspondence duplicate rejection belongs
+to an admitted batch or its retained slot, not ordinary index detection.
+Malformed acknowledgement identities cannot
+discard a separately complete valid sibling or certify body-only termination.
+This includes a missing, malformed or inconsistent identity on either side of
+the Task/event relation and absent project identity; a positively identified
+foreign project is a different, irrelevant case. Registration entries within
+one acknowledgement are independent validation units, for Task and review
+registrations alike, including same-response
+references. Keep each valid entry while retaining incomplete-evidence status
+from invalid entries, regardless of their order. A valid sibling cannot erase
+that status. Independent supported process termination remains separate proof.
+The retained turn-only reader uses the same complete container admission,
+including duplicate keys, incomplete trailing JSON and closed text-block shapes.
+Recognizable review/read/save/wait leaves with missing required metadata remain
+incomplete evidence too. Only their validated observation, not a status or
+context-check label, can supply acknowledgement-based terminal proof. A
+positively identified foreign project or sender remains irrelevant even if
+other helper metadata is missing or invalid. Validate the excluding identity
+itself before requiring those other fields; an absent or malformed identity
+does not prove exclusion.
+Text/input_text blocks must contain exactly
 their type and string text fields; extra process metadata or unknown fields
 cannot be bypassed by routing, semantic decoding, or handle extraction. A usable Taskgov
 acknowledgement inside incomplete or conflicting process transport remains an

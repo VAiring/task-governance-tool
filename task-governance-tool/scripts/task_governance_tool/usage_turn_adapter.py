@@ -8,7 +8,6 @@ acknowledgement against the committed event and ownership transition.
 from __future__ import annotations
 
 from dataclasses import dataclass
-import json
 
 from task_governance_tool.session_identity import is_session_id
 from task_governance_tool.task_ownership import _identifier
@@ -16,8 +15,10 @@ from task_governance_tool.task_values import validate_task_id, TaskValidationErr
 from task_governance_tool.usage_values import UsageError
 
 
-ADAPTER_VERSION = "codex-task-turn-v2"
+ADAPTER_VERSION = "codex-task-turn-v3"
 STATUSES = frozenset({"ready", "in_progress", "review_pending", "paused", "blocked", "done", "cancelled"})
+CHECKS = frozenset({"task.context", "task.current", "task.next", "task.show", "task.list"})
+_WRITES = frozenset({"task.add", "task.edit", "task.complete"})
 
 
 @dataclass(frozen=True)
@@ -51,38 +52,8 @@ class OperationObservation:
                 or not isinstance(self.project_id, str) or not 0 < len(self.project_id) <= 200
                 or not _identifier(self.event_id, "tg_event_")
                 or type(self.generation) is not int or not 0 < self.generation < 2**63
-                or self.status not in STATUSES):
+                or not isinstance(self.status, str) or self.status not in STATUSES):
             raise UsageError("boundary_unknown")
-
-
-def _objects(value, depth=0):
-    """Unwrap only known text/exec containers, never arbitrary dictionary fields.
-
-The shell command/arguments are not read. A textual exec header is transport,
-not Task prose. Unknown wrappers yield no binding instead of heuristic parsing.
-"""
-    if depth > 8:
-        return
-    if isinstance(value, list):
-        for block in value:
-            if isinstance(block, dict) and block.get("type") in ("input_text", "text"):
-                yield from _objects(block.get("text"), depth + 1)
-    elif isinstance(value, str):
-        if value.startswith("Chunk ID:") and "\nOutput:\n" in value:
-            value = value.split("\nOutput:\n", 1)[1]
-        value = value.strip()
-        try:
-            while value:
-                parsed, end = json.JSONDecoder().raw_decode(value)
-                yield from _objects(parsed, depth + 1)
-                value = value[end:].lstrip()
-        except (ValueError, RecursionError):
-            return
-    elif isinstance(value, dict):
-        yield value
-        for key in ("output", "content"):
-            if key in value:
-                yield from _objects(value[key], depth + 1)
 
 
 def _registration_body(data, entry, field):
@@ -123,6 +94,109 @@ def _registration_body(data, entry, field):
     return destination
 
 
+@dataclass(frozen=True)
+class BodyProjection:
+    """Validated metadata and incomplete evidence are independent outcomes."""
+
+    observations: tuple = ()
+    unreadable: bool = False
+    terminal: bool = False
+
+
+def is_foreign_identity(metadata, project_id, *, thread=None):
+    """One independently valid exclusion precedes unrelated field validation."""
+    if not isinstance(metadata, dict):
+        return False
+    project, sender = metadata.get("project_id"), metadata.get("session_id")
+    return ((project_id is not None and isinstance(project, str)
+             and 0 < len(project) <= 200 and project != project_id)
+            or (thread is not None and is_session_id(sender) and sender != thread))
+
+
+def _operation(entry, data, command, project, thread, turn):
+    """Validate one Task entry, including closed same-ack references."""
+    if not isinstance(entry, dict):
+        raise UsageError("boundary_unknown")
+    task, event = entry.get("task"), entry.get("event")
+    if command == "task.add":
+        task, event = (_registration_body(data, entry, field) for field in ("task", "event"))
+    if not isinstance(task, dict) or not isinstance(event, dict):
+        raise UsageError("boundary_unknown")
+    task_id = validate_task_id(task.get("task_id"))
+    status = task.get("status")
+    if (task_id != task.get("task_id") or event.get("task_id") != task_id
+            or event.get("project_id") != project or task.get("project_id") != project
+            or not _identifier(event.get("task_event_id"), "tg_event_")
+            or not isinstance(status, str) or status not in STATUSES):
+        raise UsageError("boundary_unknown")
+    # A valid ready registration is not an execution boundary. Missing or
+    # contradictory identities above are not this legitimate irrelevant case.
+    if command == "task.add" and status != "in_progress":
+        return None
+    ownership = task.get("ownership")
+    if not isinstance(ownership, dict):
+        raise UsageError("boundary_unknown")
+    return OperationObservation(thread, turn, project, task_id, event["task_event_id"],
+                                ownership.get("generation"), status)
+
+
+def project_body(item, thread, turn, project_id=None):
+    """Project one admitted semantic leaf without losing valid sibling entries.
+
+    No transport decoding or source body leaves this boundary. Callers use the
+    unreadable bit for lifetime proof, independently of retained observations.
+    """
+    from task_governance_tool.usage_review_attribution import ReviewBoundary, project_review
+    from task_governance_tool.usage_wait_attribution import WaitObservation, project_wait
+    result, unreadable = [], False
+    try:
+        reviewed = project_review(item, thread, turn, project_id)
+        result.extend(reviewed.observations)
+        unreadable |= reviewed.unreadable
+    except (UsageError, ValueError, TypeError):
+        unreadable = True
+    try:
+        result.extend(project_wait(item, thread, turn, project_id))
+    except (UsageError, ValueError, TypeError):
+        unreadable = True
+    terminal = any(isinstance(value, (ReviewBoundary, WaitObservation)) for value in result)
+    command = item.get("command")
+    if "command" not in item:
+        return BodyProjection(tuple(result), unreadable, terminal)
+    if is_foreign_identity(item, project_id):
+        return BodyProjection(tuple(result), unreadable, terminal)
+    if not isinstance(command, str) or not command:
+        return BodyProjection(tuple(result), True, terminal)
+    project = item.get("project_id")
+    if not isinstance(project, str) or not 0 < len(project) <= 200:
+        return BodyProjection(tuple(result), True)
+    data = item.get("data")
+    if type(item.get("ok")) is not bool or not isinstance(data, dict):
+        return BodyProjection(tuple(result), True)
+    if command not in _WRITES | CHECKS:
+        return BodyProjection(tuple(result), unreadable, terminal)
+    if not item["ok"] or command in CHECKS:
+        return BodyProjection(tuple(result), unreadable, terminal or not item["ok"])
+    if command != "task.add":
+        changed = data.get("changed_fields")
+        if not isinstance(changed, list) or not all(isinstance(field, str) for field in changed):
+            return BodyProjection(tuple(result), True)
+        if "status" not in changed:
+            return BodyProjection(tuple(result), unreadable)
+    entries = data.get("tasks", [data]) if command == "task.add" else [data]
+    if not isinstance(entries, list) or not entries:
+        return BodyProjection(tuple(result), True)
+    for entry in entries:
+        try:
+            observation = _operation(entry, data, command, project, thread, turn)
+        except (UsageError, TaskValidationError, ValueError, TypeError):
+            unreadable = True
+        else:
+            if observation is not None:
+                result.append(observation)
+    return BodyProjection(tuple(result), unreadable)
+
+
 def project_record(record: dict, thread_id: str, *, project_id: str | None = None):
     """Return numerical metadata only from one already admitted source record."""
     payload = record.get("payload")
@@ -137,44 +211,15 @@ def project_record(record: dict, thread_id: str, *, project_id: str | None = Non
     turn = metadata.get("turn_id") if isinstance(metadata, dict) else None
     if not is_session_id(turn):
         return ()
+    # Import at the call boundary: the response tracker uses the semantic
+    # projector above, while both source modes share its complete transport
+    # admission. No second decoder or renewed child budget is permitted here.
+    from task_governance_tool.usage_response_adapter import objects
+    try:
+        leaves = objects(payload.get("output"))
+    except (UsageError, ValueError, TypeError, RecursionError, UnicodeError):
+        return ()
     result = []
-    for item in _objects(payload.get("output")):
-        from task_governance_tool.usage_review_attribution import project_review
-        from task_governance_tool.usage_wait_attribution import project_wait
-        result.extend(project_review(item, thread_id, turn, project_id))
-        result.extend(project_wait(item, thread_id, turn, project_id))
-        if project_id is not None and item.get("project_id") != project_id:
-            continue
-        command = item.get("command")
-        if command not in ("task.add", "task.edit", "task.complete") or item.get("ok") is not True:
-            continue
-        data = item.get("data")
-        if not isinstance(data, dict):
-            continue
-        if command == "task.add" and isinstance(data.get("tasks"), list):
-            for entry in data["tasks"]:
-                if isinstance(entry, dict) and "task" in entry:
-                    single = {field: _registration_body(data, entry, field) for field in ("task", "event")}
-                    nested = {"type": "response_item", "payload": {**payload, "output": {**item, "data": single}}}
-                    result.extend(project_record(nested, thread_id, project_id=project_id))
-            continue
-        task, event = data.get("task"), data.get("event")
-        if command == "task.add":
-            task, event = (_registration_body(data, data, field) for field in ("task", "event"))
-        if not isinstance(task, dict) or not isinstance(event, dict):
-            continue
-        if command != "task.add":
-            changed = data.get("changed_fields")
-            if not isinstance(changed, list) or "status" not in changed:
-                continue
-        ownership = task.get("ownership")
-        if not isinstance(ownership, dict) or (command == "task.add" and task.get("status") != "in_progress"):
-            continue
-        if (event.get("task_id") != task.get("task_id")
-                or event.get("project_id") != item.get("project_id")
-                or task.get("project_id") != item.get("project_id")):
-            continue
-        result.append(OperationObservation(thread_id, turn, item["project_id"], task["task_id"],
-                                           event.get("task_event_id"), ownership.get("generation"),
-                                           task.get("status")))
+    for item in leaves:
+        result.extend(project_body(item, thread_id, turn, project_id).observations)
     return tuple(result)

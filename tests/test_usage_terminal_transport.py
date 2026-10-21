@@ -27,6 +27,14 @@ def check():
                 data={"task": {"task_id": "tg_task_" + "a" * 16}, "events": []})
 
 
+def saved_review():
+    from tests.test_usage_wait_attribution import marker
+    metadata = marker()["review_wait"]
+    metadata.pop("artifact_manifest_id")
+    metadata["original_result_digest"] = "a" * 64
+    return {"ok": True, "status": "saved", "review_session": metadata}
+
+
 class TerminalTransportTests(unittest.TestCase):
     def fresh(self):
         self.tracker = ResponseTracker(THREAD, "fixture")
@@ -313,7 +321,7 @@ class TerminalTransportTests(unittest.TestCase):
         self.assertEqual(set(self.tracker.state["handles"]), {"session:7"})
 
     def test_body_terminal_controls_and_unresolved_siblings(self):
-        for ack in (check(), check() | {"ok": False}, {"status": "saved"}):
+        for ack in (check(), check() | {"ok": False}, saved_review()):
             for wrapper in (lambda x: x, wrapped, lambda x: {"output": json.dumps(x)}):
                 self.fresh()
                 self.feed(call("one", response_id="origin"))
@@ -325,6 +333,14 @@ class TerminalTransportTests(unittest.TestCase):
                 self.feed(call("one", response_id="origin"))
                 self.feed(output("one", wrapped(ack) + wrapped(sibling)))
                 self.restart()
+                self.assertTrue(list(self.tracker.pending_frames()))
+
+        for incomplete in ({"status": "saved"}, {"status": "review_wait_ended"},
+                           {"context_check": "matched_at_read"}):
+            for wrapper in (lambda x: x, wrapped, lambda x: {"output": json.dumps(x)}):
+                self.fresh()
+                self.feed(call("one", response_id="origin"))
+                self.feed(output("one", wrapper(incomplete)))
                 self.assertTrue(list(self.tracker.pending_frames()))
 
     def test_all_process_metadata_fences_stdout_and_validates_running_handles(self):

@@ -11,6 +11,7 @@ from task_governance_tool.task_ownership import _identifier
 from task_governance_tool.task_values import validate_task_id, TaskValidationError
 from task_governance_tool.reviews import validate_stored_review_target, ReviewEvidenceError
 from task_governance_tool.usage_values import UsageError
+from task_governance_tool.usage_turn_adapter import is_foreign_identity
 
 
 @dataclass(frozen=True)
@@ -74,12 +75,16 @@ def observation_from_metadata(value, turn):
 
 def project_wait(item, thread, turn, project_id):
     """Only the originating helper success in its sender's host turn qualifies."""
-    if item.get("ok") is not True or item.get("status") != "review_wait_ended":
+    if item.get("status") != "review_wait_ended":
         return ()
     value = item.get("review_wait")
-    if (not isinstance(value, dict) or value.get("session_id") != thread
-            or (project_id is not None and value.get("project_id") != project_id)):
+    if is_foreign_identity(value, project_id, thread=thread):
         return ()
+    if (item.get("ok") is not True or not isinstance(value, dict)
+            or not is_session_id(value.get("session_id"))
+            or not isinstance(value.get("project_id"), str)
+            or not 0 < len(value["project_id"]) <= 200):
+        raise UsageError("boundary_unknown")
     if set(item) != {"ok", "status", "review_wait"}:
         raise UsageError("boundary_unknown")
     return (observation_from_metadata(value, turn),)

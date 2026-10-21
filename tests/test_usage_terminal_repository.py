@@ -313,6 +313,7 @@ class TerminalRepositoryTests(unittest.TestCase):
                             # its batch router also admitted process stdout.
                             return current_text(value, unique_keys=False, allow_header=kwargs.get("allow_header", True))
                         with mock.patch.object(adapter, "VERSION", "codex-response-relations-v12"), \
+                                mock.patch.object(adapter, "source_object", side_effect=dict), \
                                 mock.patch.object(adapter, "_text_json", side_effect=prior_text), \
                                 mock.patch.object(batch_adapter, "_CONTAINER_FIELDS",
                                                   batch_adapter._CONTAINER_FIELDS | adapter._PROCESS_MARKERS):

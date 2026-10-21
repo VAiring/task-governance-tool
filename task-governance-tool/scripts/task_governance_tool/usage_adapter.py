@@ -27,6 +27,30 @@ MAX_BATCH_RECORDS = 4096
 AMBIGUOUS_JSON = object()
 
 
+def source_object(pairs):
+    """Preserve object-level ambiguity through every source JSON decoding path."""
+    value = dict(pairs)
+    return value if len(value) == len(pairs) else AMBIGUOUS_JSON
+
+
+def response_payload(record):
+    """Separate irrelevant records from lost response-item identity.
+
+    Only the outer identity is required here. An opaque body must still reach
+    first-output closure and cannot invalidate independently readable siblings.
+    """
+    kind = record.get("type")
+    if not isinstance(kind, str) or not kind:
+        raise UsageError("invalid_record")
+    if kind != "response_item":
+        return None
+    payload = record.get("payload")
+    if (not isinstance(payload, dict) or not isinstance(payload.get("type"), str)
+            or not payload["type"]):
+        raise UsageError("invalid_record")
+    return payload
+
+
 def contains_ambiguous_json(value):
     pending = [value]
     while pending:
@@ -74,11 +98,8 @@ class CollectionBatch:
 
 
 def _json(raw: bytes) -> dict:
-    def object_pairs(pairs):
-        value = dict(pairs)
-        return value if len(value) == len(pairs) else AMBIGUOUS_JSON
     try:
-        result = json.loads(raw.decode("utf-8-sig"), object_pairs_hook=object_pairs)
+        result = json.loads(raw.decode("utf-8-sig"), object_pairs_hook=source_object)
         if not isinstance(result, dict):
             raise ValueError
         return result
@@ -107,6 +128,7 @@ def _header(record: dict, source: SourceInput) -> str:
 
 def _projection(record: dict, thread: str, provider: str, models: dict):
     """Return only a closed marker or validated numerical metadata."""
+    response_payload(record)
     kind, payload = record.get("type"), record.get("payload")
     if not isinstance(payload, dict):
         if kind in {"token_usage_record", "session_meta", "turn_context"}:

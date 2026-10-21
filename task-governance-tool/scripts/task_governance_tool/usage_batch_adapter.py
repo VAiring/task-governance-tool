@@ -26,7 +26,8 @@ _CONTAINER_FIELDS = {"output", "content", "isError", "structuredContent", "_meta
 
 def is_text_block(value):
     return (isinstance(value, dict) and set(value) == {"type", "text"}
-            and value["type"] in {"text", "input_text"} and isinstance(value["text"], str))
+            and isinstance(value["type"], str) and value["type"] in {"text", "input_text"}
+            and isinstance(value["text"], str))
 
 
 @dataclass(frozen=True)
@@ -278,7 +279,8 @@ def is_single_execution(name, arguments):
                 return False
         else:
             return False
-        return isinstance(args, dict) and set(args) <= _EXEC_FIELDS and isinstance(args.get("cmd"), str)
+        return (isinstance(args, dict) and not contains_ambiguous_json(args)
+                and set(args) <= _EXEC_FIELDS and isinstance(args.get("cmd"), str))
     except (ValueError, TypeError, RecursionError, UnicodeError):
         return False
 
@@ -346,13 +348,14 @@ def parse_batch_input(name, arguments):
         return None
 
 
-def parse_batch_output(value, count, *, text_parser):
+def parse_batch_output(value, count, *, text_parser, unique_keys=True):
     """Keep indices until correspondence is checked; never inspect opaque bodies.
 
     Separate complete blocks may be used independently. Conflicting or invalid
     indices reject the complete correspondence, before any result is emitted.
     """
-    if type(count) is not int or not 1 <= count <= MAX_SLOTS or contains_ambiguous_json(value):
+    if (type(count) is not int or not 1 <= count <= MAX_SLOTS
+            or (unique_keys and contains_ambiguous_json(value))):
         return None
     seen, result = set(), BatchOutput()
 
@@ -361,7 +364,7 @@ def parse_batch_output(value, count, *, text_parser):
             return
         if isinstance(item, str):
             try:
-                parsed = text_parser(item, unique_keys=True, allow_process_header=False)
+                parsed = text_parser(item, unique_keys=unique_keys, allow_process_header=False)
             except AmbiguousBatch:
                 raise
             except (UsageError, ValueError, TypeError, RecursionError, UnicodeError):

@@ -1692,6 +1692,14 @@ are excluded. Missing or inconsistent related evidence returns null report
 collections and a named unavailable field, never an empty successful history.
 Registration reconciliation, `observed_registered_receipt_ids` and original
 summary matching continue to use only the exact newly registered original set.
+Registration, post-registration comparison and recovery interpret an original's
+immutable source identically. A retained legacy or collected answer belongs to
+its source continuation, or to the initial preparation when that source is null;
+the current consuming continuation never replaces that identity. The same-body
+Receipt from another judgment is ineligible. Reconciliation retains exact
+project, Task, target, execution, reviewer and original binding checks and never
+starts a writer. Source interpretation alone grants no registration or completion
+permission; current-basis, selection and publication checks remain required.
 Only after the existing immutable session/original-digest/execution bindings
 confirm the complete original batch's registered Receipt IDs may an exact
 matching original summary be replaced by `originals[].review.summary_ref`.

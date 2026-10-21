@@ -303,14 +303,19 @@ class FinalizationRepository(ReviewWaitRepository):
 def registered_originals(target, record, receipt_ids):
     """Match actual immutable core bindings after a lost registration response."""
     with closing(connect_initialized_readonly(target, operation_local=True, review_task_id=record.basis["task_id"])) as connection:
-        bindings = review_session_repository.read_bindings(connection, receipt_ids=set(receipt_ids))
+        receipts = connection.execute("""SELECT * FROM review_receipts
+            WHERE project_id=? AND task_id=? AND review_receipt_id IN (SELECT value FROM json_each(?))""",
+            (record.basis["project_id"], record.basis["task_id"], json.dumps(sorted(receipt_ids)))).fetchall()
+        matching_ids = {row["review_receipt_id"] for row in receipts if all(
+            row["target_" + key] == record.basis["target_" + key]
+            for key in ("generation", "kind", "value", "base_revision"))}
+        bindings = review_session_repository.read_bindings(connection, receipt_ids=matching_ids)
         expected_continuations = None
         judgments = {}
         if record.continuation_id is not None:
-            from .review_continuation_repository import read_retained_originals
-            expected_continuations = {actor: record.continuation_id for actor in record.active_sessions}
-            expected_continuations.update({row["session_id"]: row["prior_continuation_id"]
-                for row in read_retained_originals(connection, record.continuation_id)})
+            from .review_continuation_repository import read_original_sources
+            expected_continuations = read_original_sources(connection, record.continuation_id,
+                                                          record.active_sessions).continuations
             judgments = {row["review_receipt_id"]: row["continuation_id"] for row in connection.execute(
                 "SELECT review_receipt_id,continuation_id FROM review_receipt_judgments WHERE review_receipt_id IN (SELECT value FROM json_each(?))",
                 (json.dumps(sorted(receipt_ids)),))}

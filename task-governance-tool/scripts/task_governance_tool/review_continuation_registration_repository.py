@@ -39,7 +39,8 @@ def begin_locked(connection, *, project_id, task_id, identity, bindings,
         or database_target.binding_generation != record.basis["project_binding_generation"]):
         raise validation_error("review_continuation_basis_changed", "review continuation project binding changed")
     selected = {row.session_id: row for row in record.selected}
-    captures = repository.read_retained_originals(connection, record.continuation_id)
+    sources = repository.read_original_sources(connection, record.continuation_id, selected)
+    captures = sources.legacy_captures
     expected_captures = {values.RetainedOriginal(**{key: row[key] for key in values.RetainedOriginal.__dataclass_fields__}) for row in captures}
     if type(retained_originals) is not tuple or any(type(row) is not values.RetainedOriginal for row in retained_originals) or set(retained_originals) != expected_captures or len(retained_originals) != len(expected_captures):
         raise _conflict()
@@ -57,7 +58,7 @@ def begin_locked(connection, *, project_id, task_id, identity, bindings,
                 raise _conflict()
         elif actor in captured:
             capture = captured[actor]
-            if (item.continuation is None or item.continuation.identity.continuation_id != capture["prior_continuation_id"]
+            if (item.continuation is None or item.continuation.identity.continuation_id != sources.continuations[actor]
                 or item.binding.original_result_digest != capture["original_result_digest"]
                 or bound_metadata_digest(item) != capture["metadata_digest"]):
                 raise _conflict()
@@ -129,7 +130,6 @@ def begin_collected_locked(connection, *, project_id, task_id, submission, calle
     """
     from .review_answer_transport import CollectedItem, LegacyItem, CollectedSubmission
     from .review_answer_values import validate_metadata
-    from .review_answer_repository import read_collected_captures
     if type(submission) is not CollectedSubmission:
         raise _conflict()
     identity = submission.continuation
@@ -146,14 +146,15 @@ def begin_collected_locked(connection, *, project_id, task_id, submission, calle
             raise _conflict()
         repository.require_current_basis(connection,record.basis,caller)
         selected = {s.session_id:s for s in record.selected}
-        captures = {r["capture_identity"]["session_id"]:r for r in read_collected_captures(connection,record.continuation_id)}
+        sources = repository.read_original_sources(connection, record.continuation_id, selected)
+        captures = {r["capture_identity"]["session_id"]:r for r in sources.collected_captures}
         if record.state == "prepared":
             publications = repository.prepare_publications_locked(connection,record,caller)
             nodes = repository.read_judgments(connection,basis=record.basis)
             by_id = {n.receipt_id:n for n in nodes}
             by_record = {r.continuation_id:r for r in records}
             for actor,capture in captures.items():
-                source_id = capture["capture_identity"]["source_continuation_id"]
+                source_id = sources.continuations[actor]
                 source_record = by_record[source_id] if source_id is not None else record
                 choice = next((s for s in source_record.selected if s.session_id == actor),None) if source_id else values.SelectedReviewer(actor,"supplement",None,"Retained initial collected original")
                 if choice is None:
@@ -226,7 +227,7 @@ def begin_collected_locked(connection, *, project_id, task_id, submission, calle
         else:
             raise _conflict()
     expected = set(selected)|set(captures)
-    legacy_captures = repository.read_retained_originals(connection,record.continuation_id) if record else ()
+    legacy_captures = sources.legacy_captures if record else ()
     if record is not None and not expected|{r["session_id"] for r in legacy_captures} <= seen:
         raise _conflict()
     if record is None and (submission.retained_receipt_ids or submission.retained_originals or legacy_bindings):

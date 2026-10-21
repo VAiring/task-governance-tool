@@ -54,6 +54,37 @@ class CollectedJudgmentPublication:
     judgment_continuation_id: str | None
 
 
+@dataclass(frozen=True)
+class OriginalSources:
+    """Immutable origins within one consumer; never registration authority."""
+
+    continuations: dict[str, str | None]
+    legacy_captures: tuple[dict, ...]
+    collected_captures: tuple[dict, ...]
+
+
+def read_original_sources(connection, continuation_id, active_sessions) -> OriginalSources:
+    """Share source interpretation without invoking publication/writer admission.
+
+    Admission owns the validated continuation graph. Uncaptured initial answers
+    have no continuation; retained answers keep their source, not the consumer.
+    """
+    from .storage import current_schema_version
+    from .review_answer_repository import read_collected_captures
+    legacy = read_retained_originals(connection, continuation_id)
+    collected = (read_collected_captures(connection, continuation_id)
+                 if current_schema_version(connection) >= 30 else ())
+    origins = {actor: continuation_id for actor in active_sessions}
+    retained = [(row["session_id"], row["prior_continuation_id"]) for row in legacy]
+    retained.extend((row["capture_identity"]["session_id"],
+                     row["capture_identity"]["source_continuation_id"]) for row in collected)
+    for actor, source_id in retained:
+        if actor in origins:
+            raise _inconsistent()
+        origins[actor] = source_id
+    return OriginalSources(origins, legacy, collected)
+
+
 def packet_context(connection, *, task, preparing_id=None):
     """Prepared pending context for the existing read-only Packet procedure."""
     from .storage import current_schema_version
@@ -89,8 +120,10 @@ def prepare_publications_locked(connection: sqlite3.Connection, record: Continua
     nodes = read_judgments(connection, basis=record.basis)
     by_record = {row.continuation_id: row for row in read_continuations(connection, project_id=record.basis["project_id"], task_id=record.basis["task_id"])}
     captured = []
-    for row in read_retained_originals(connection, record.continuation_id):
-        old = by_record[row["prior_continuation_id"]]
+    sources = read_original_sources(connection, record.continuation_id,
+                                    (choice.session_id for choice in record.selected))
+    for row in sources.legacy_captures:
+        old = by_record[sources.continuations[row["session_id"]]]
         choice = next(value for value in old.selected if value.session_id == row["session_id"])
         captured.append((old, choice, values.RetainedOriginal(**{key: row[key] for key in values.RetainedOriginal.__dataclass_fields__})))
     effective = values.select_effective(nodes, quality_basis=values.quality_identity(record.basis), pending=(*record.selected, *(row[1] for row in captured)))

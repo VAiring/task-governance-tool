@@ -1327,7 +1327,17 @@ Finding check. These constraints are internal parameters, not public arguments,
 and ordinary manual registration/completion keeps its existing conditions.
 `review_finalization_repository.py` owns the operational journal and read-only
 reconciliation against immutable core review/session bindings and all registered
-Findings. The canonical resolver's `review_finalization_store` names one
+Findings. `review_continuation_repository.read_original_sources` shares the
+query-only source interpretation used by publication preparation, registration
+and this reconciliation. It returns current selections plus validated legacy
+and collected captures with their immutable source continuation IDs, including
+null initial sources. It does not call writer admission or authorize effects.
+`registered_originals` restricts candidate Receipts to the retained project,
+Task and complete target, then compares session/original/execution bindings and
+source judgment IDs. Recovery uses that same comparison after registration;
+same-body predecessor judgments cannot substitute for the expected source.
+Existing locked basis, selection, capture and expected-head checks stay in the
+registration writer. The canonical resolver's `review_finalization_store` names one
 `finalize-<sha256(parent UUID:Task ID)>-<target generation>.sqlite`. Its exact schema
 one contains `schema_history` and one canonical bounded JSON `intent`; it is not
 part of core backup or schema migration. A physical writer lease spans effects,

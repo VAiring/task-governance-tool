@@ -125,9 +125,10 @@ class UsageResponseRepository(UsageIncrementalRepository):
                                       " AND source.incarnation=boundary.incarnation")):
             try:
                 body = json.loads(row["document"])
-                if not isinstance(body, dict) or set(body) != set(ResponseBoundary.__dataclass_fields__):
+                fields = set(ResponseBoundary.__dataclass_fields__)
+                if not isinstance(body, dict) or set(body) not in (fields, fields - {"origin_version"}):
                     raise UsageError("usage_schema_invalid")
-                item = ResponseBoundary(**body)
+                item = ResponseBoundary(**({"origin_version": 1, **body}))
                 if digest(body) != row["observation_id"] or item.thread_id != row["source_thread"]:
                     raise UsageError("usage_schema_invalid")
             except (ValueError, TypeError, KeyError):
@@ -167,7 +168,7 @@ class UsageResponseRepository(UsageIncrementalRepository):
             _, historic = self._relations(connection, history=True)
             origins, call_origins = {}, {}
             for _, _, item in historic:
-                if item.response_id is not None:
+                if item.origin_version == 2 and item.response_id is not None:
                     origin = (item.thread_id, item.turn_id, item.provider, item.response_id)
                     if item.event_id is not None:
                         origins.setdefault(item.event_id, set()).add(origin)
@@ -184,7 +185,7 @@ class UsageResponseRepository(UsageIncrementalRepository):
                 position = first_positions.get((source, incarnation, item.provider, item.response_id))
                 same_numerical = numerical.get((item.provider, item.response_id), (item.thread_id, item.turn_id)) == (
                     item.thread_id, item.turn_id)
-                qualified = (item.response_id is not None and same_numerical
+                qualified = (item.origin_version == 2 and item.response_id is not None and same_numerical
                     and len(origins.get(item.event_id, ())) <= 1
                     and len(call_origins.get((item.thread_id, item.call_id), ())) <= 1 and (
                     (position is None and item.method == "explicit") or (position is not None

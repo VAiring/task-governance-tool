@@ -77,7 +77,7 @@ class BatchResponseRepositoryTests(unittest.TestCase):
 
     def running(self, identity, handle, response_id, *, number=1):
         rows = self.operation(identity, {"session_id": handle}, response_id, number=number, direct=True)
-        rows[0]["payload"]["input"] = PRIVATE
+        rows[0]["payload"]["input"] = 'text(await ' + fresh() + ');'
         return rows
 
     def batch(self, identity, calls, response_id, results, *, number=1):
@@ -99,7 +99,7 @@ class BatchResponseRepositoryTests(unittest.TestCase):
                     if frame is None:
                         return None
                     return {key: value for key, value in frame.items()
-                            if key != "bracket_closed" and not (version == 1 and key == "slot")}
+                            if not (version < 3 and key == "bracket_closed") and not (version == 1 and key == "slot")}
                 old = {**current, "version": version,
                        "calls": {key: old_frame(frame) for key, frame in current["calls"].items()},
                        "handles": {key: old_frame(frame) for key, frame in current["handles"].items()},
@@ -336,7 +336,7 @@ class BatchResponseRepositoryTests(unittest.TestCase):
                     with self.subTest(batch=batch_origin, original=original, sliced=sliced):
                         self.setUp()
                         start = self.acknowledgement(A, 1, "in_progress")
-                        source = batch_input(fresh()) if batch_origin else fresh()
+                        source = batch_input(fresh()) if batch_origin else 'text(await ' + fresh() + ');'
                         wrap = (lambda value: [settled(0, value)]) if batch_origin else (lambda value: value)
                         rows = [call("origin", source, None)]
                         if original:
@@ -563,10 +563,10 @@ class BatchResponseRepositoryTests(unittest.TestCase):
                     projections.append(projection)
             self.assertEqual(projections[0], projections[1])
 
-    def test_previous_context_prefixes_replay_on_v7_without_projection_change(self):
+    def test_previous_context_prefixes_replay_on_v8_without_projection_change(self):
         for old_version in ("codex-response-relations-v2", "codex-response-relations-v3",
                             "codex-response-relations-v4", "codex-response-relations-v5",
-                            "codex-response-relations-v6"):
+                            "codex-response-relations-v6", "codex-response-relations-v7"):
             with self.subTest(old_version=old_version):
                 self.setUp()
                 self.assert_codec_upgrade_replays_without_projection_change(old_version)
@@ -581,15 +581,15 @@ class BatchResponseRepositoryTests(unittest.TestCase):
         rows += [call("unsupported", source, "later"), usage("later", turn=turn(1)),
                  output("unsupported", start)]
         self.write_observed_turn(rows)
-        current_guard = adapter.is_batch_input
+        current_admission = adapter._call_input
 
-        def old_guard(name, arguments):
+        def old_admission(name, arguments):
             # Reproduce only the observed v6 false negative. All other parser,
             # continuation and repository behavior stays on the real path.
-            return False if arguments == source else current_guard(name, arguments)
+            return adapter.CallInput("execution") if arguments == source else current_admission(name, arguments)
 
         with mock.patch.object(adapter, "VERSION", "codex-response-relations-v6"), \
-                mock.patch.object(adapter, "is_batch_input", side_effect=old_guard):
+                mock.patch.object(adapter, "_call_input", side_effect=old_admission):
             self.ingest(sliced=True)
         previous = self.projection(include_b=False)
         self.assertEqual(previous[0]["periods"][0]["work_units"][0]["exclusive"]["response_count"], 1)
@@ -603,7 +603,7 @@ class BatchResponseRepositoryTests(unittest.TestCase):
                              [("unsupported", "later")])
             context = json.loads(connection.execute(
                 "SELECT document FROM usage_response_context WHERE lane='ingest'").fetchone()[0])
-            self.assertEqual(context["version"], 3)
+            self.assertEqual(context["version"], 4)
         self.restart()
         for _ in range(len(self.source.path.read_bytes().splitlines()) * 3):
             result = self.repository.collect_source(self.source, lane="audit", max_records=1)
@@ -637,7 +637,7 @@ class BatchResponseRepositoryTests(unittest.TestCase):
                 with self.subTest(version=version, batch=batch_origin, original=original):
                     self.setUp()
                     start = self.acknowledgement(A, 1, "in_progress")
-                    source = batch_input(fresh()) if batch_origin else fresh()
+                    source = batch_input(fresh()) if batch_origin else 'text(await ' + fresh() + ');'
                     wrap = (lambda value: [settled(0, value)]) if batch_origin else (lambda value: value)
                     rows = [call("origin", source, None)]
                     if original:
@@ -825,7 +825,7 @@ class BatchResponseRepositoryTests(unittest.TestCase):
     def assert_codec_upgrade_replays_without_projection_change(self, old_version):
         import task_governance_tool.usage_response_adapter as adapter
 
-        self.assertEqual(adapter.VERSION, "codex-response-relations-v7")
+        self.assertEqual(adapter.VERSION, "codex-response-relations-v8")
         rows = self.operation("start", self.acknowledgement(A, 1, "in_progress"), "r0", direct=True)
         rows += self.operation("done", self.acknowledgement(A, 1, "done", cycle="A"), "r1", direct=True)
         self.write_turn(rows)
@@ -834,9 +834,8 @@ class BatchResponseRepositoryTests(unittest.TestCase):
         with mock.patch.object(adapter, "VERSION", old_version):
             self.ingest(sliced=True)
         old_shape = (1 if old_version == "codex-response-relations-v2" else
-                     3 if old_version == "codex-response-relations-v6" else 2)
-        if old_shape < 3:
-            self.old_contexts(old_shape)
+                     3 if old_version in {"codex-response-relations-v6", "codex-response-relations-v7"} else 2)
+        self.old_contexts(old_shape)
         self.repository.refresh(self.reader)
         previous = self.read(audit=True)
         old_documents = {item["snapshot_id"]: item for item in previous["snapshots"]}
@@ -870,7 +869,7 @@ class BatchResponseRepositoryTests(unittest.TestCase):
             self.assertEqual(({item for _, _, item in positions}, {item for _, _, item in boundaries}), old_relations)
             context = json.loads(connection.execute(
                 "SELECT document FROM usage_response_context WHERE lane='ingest'").fetchone()[0])
-            self.assertEqual(context, {**old_context, "version": 3, "batches": {}})
+            self.assertEqual(context, {**old_context, "version": 4, "batches": {}})
         self.repository.refresh(self.reader)
         current = self.read(audit=True)
         self.assertEqual(self.repository.summary()["models"], old_models)

@@ -71,7 +71,8 @@ class ResponseRepositoryTests(unittest.TestCase):
         metadata = {"turn_id": turn(number)}
         if direct:
             metadata["response_id"] = response_id
-        return [event("response_item", type="custom_tool_call", name="exec", call_id=identity, input="",
+        return [event("response_item", type="custom_tool_call", name="exec", call_id=identity,
+                      input='text(await tools.exec_command({cmd:"fixture"}));',
                       internal_chat_message_metadata_passthrough=metadata),
                 usage(response_id, turn=turn(number)),
                 event("response_item", type="custom_tool_call_output", call_id=identity,
@@ -289,7 +290,7 @@ class ResponseRepositoryTests(unittest.TestCase):
         self.ingest()
         self.repository.refresh(self.reader)
         pending = event("response_item", type="function_call", name="functions.exec", call_id="unknown",
-                        arguments="", internal_chat_message_metadata_passthrough={"turn_id": turn(1), "response_id": "r1"})
+                        arguments='text(await tools.exec_command({cmd:"fixture"}));', internal_chat_message_metadata_passthrough={"turn_id": turn(1), "response_id": "r1"})
         self.append(pending)
         self.ingest()
         with self.assertRaises(UsageError) as raised:
@@ -352,7 +353,7 @@ class ResponseRepositoryTests(unittest.TestCase):
                     self.append(event("event_msg", type="task_started", turn_id=turn(2), started_at=2000),
                                 event("turn_context", turn_id=turn(2), model="fixture-model"))
                 self.append(event("response_item", type="function_call", name="functions.exec", call_id="pending",
-                            arguments="", internal_chat_message_metadata_passthrough={"turn_id": turn(number)}))
+                            arguments='text(await tools.exec_command({cmd:"fixture"}));', internal_chat_message_metadata_passthrough={"turn_id": turn(number)}))
                 self.ingest(max_records=1)
                 self.repository.refresh(self.reader)
                 unit = self.read(A)["periods"][0]["work_units"][0]
@@ -476,7 +477,7 @@ class ResponseRepositoryTests(unittest.TestCase):
                 rows = self.operation("start", self.acknowledgement(A, 1, "in_progress"), "r0", direct=True)
                 for number in range(MAX_CONTEXT + 1):
                     rows.append(event("response_item", type="function_call", name="exec", call_id="pending-" + str(number),
-                        arguments="", internal_chat_message_metadata_passthrough={"turn_id": turn(1), "response_id": "r1"}))
+                        arguments='text(await tools.exec_command({cmd:"fixture"}));', internal_chat_message_metadata_passthrough={"turn_id": turn(1), "response_id": "r1"}))
                 rows += [usage("r1", turn=turn(1))]
                 for number in range(MAX_CONTEXT):
                     rows.append(event("response_item", type="function_call_output", call_id="pending-" + str(number),
@@ -723,12 +724,12 @@ class ResponseRepositoryTests(unittest.TestCase):
         current = self.read(audit=True)
         documents = {item["snapshot_id"]: item for item in current["snapshots"]}
         self.assertEqual(documents[original["snapshot_id"]], original)
-        self.assertTrue(all(documents[key]["algorithm"] == "response-partitions-v4" for key in current["current_snapshot_ids"]))
+        self.assertTrue(all(documents[key]["algorithm"] == "response-partitions-v5" for key in current["current_snapshot_ids"]))
         self.assertTrue(any(original["snapshot_id"] in documents[key]["predecessors"] for key in current["current_snapshot_ids"]))
         self.assertTrue(set(tuple(sorted(row.items())) for row in old["cycle_links"]) <=
                         set(tuple(sorted(row.items())) for row in current["cycle_links"]))
         self.assertEqual(self.read(A)["total"]["response_count"], 2)
-        for invalid in ([], {}, "response-partitions-v5"):
+        for invalid in ([], {}, "response-partitions-v6"):
             changed = {**original, "algorithm": invalid}
             changed["snapshot_id"] = digest({key: value for key, value in changed.items() if key != "snapshot_id"})
             with self.assertRaises(UsageError):
@@ -741,9 +742,9 @@ class ResponseRepositoryTests(unittest.TestCase):
         self.write_turn(self.operation("start", self.acknowledgement(A, 1, "in_progress"), "r0", direct=True)
                         + self.operation("done", self.acknowledgement(A, 1, "done", cycle="A"), "r1", direct=True))
         self.ingest()
-        # This start/completion control has identical meaning under v3/v4.
-        with mock.patch.object(policy, "ALGORITHM", "response-partitions-v3"), \
-                mock.patch.object(repository_module, "ALGORITHM", "response-partitions-v3"):
+        # Positively admitted start/completion has the same meaning under v4/v5.
+        with mock.patch.object(policy, "ALGORITHM", "response-partitions-v4"), \
+                mock.patch.object(repository_module, "ALGORITHM", "response-partitions-v4"):
             self.repository.refresh(self.reader)
             old = self.read(audit=True)
         original = old["snapshots"][0]
@@ -757,7 +758,7 @@ class ResponseRepositoryTests(unittest.TestCase):
         current = self.read(audit=True)
         documents = {item["snapshot_id"]: item for item in current["snapshots"]}
         self.assertEqual(documents[original["snapshot_id"]], original)
-        self.assertTrue(all(documents[key]["algorithm"] == "response-partitions-v4"
+        self.assertTrue(all(documents[key]["algorithm"] == "response-partitions-v5"
                             for key in current["current_snapshot_ids"]))
         self.assertTrue(any(original["snapshot_id"] in documents[key]["predecessors"]
                             for key in current["current_snapshot_ids"]))

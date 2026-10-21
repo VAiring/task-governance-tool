@@ -405,7 +405,7 @@ class BatchDepthAndCandidateTrackerTests(unittest.TestCase):
                 self.assertEqual(len(found), 1)
                 self.assertEqual(found[0].response_id, "origin" if accepted else None)
 
-    def test_sole_literal_poll_keyword_data_and_ordinary_comments_preserve_origins(self):
+    def test_sole_literal_poll_keyword_data_preserves_origin_but_extra_input_is_unknown(self):
         for chars in ("allSettled", "Promise.allSettled([])"):
             with self.subTest(chars=chars):
                 tracker = ResponseTracker(THREAD, "fixture")
@@ -422,7 +422,7 @@ class BatchDepthAndCandidateTrackerTests(unittest.TestCase):
                 tracker = ResponseTracker(THREAD, "fixture")
                 self.feed(tracker, call("ordinary", arguments=prefix + ordinary, response_id="origin"), 10)
                 found = self.feed(tracker, output("ordinary", acknowledgement()), 20)
-                self.assertEqual([item.response_id for item in found], ["origin"])
+                self.assertEqual([item.response_id for item in found], [None])
 
     def test_unsupported_promise_forms_never_promote_flattened_poll_results(self):
         for number, source in enumerate(unsupported_promise_sources()):

@@ -855,6 +855,21 @@ records cannot replace the retained candidate or fill a missing one; terminal
 resolution and handle/poll continuation preserve that closed origin across
 restart. Missing or invalid output-turn metadata also invalidates its proof.
 
+Call origin requires positive admission as a new execution or a poll of a
+verified original execution. A direct `exec_command` argument object with a
+literal command, or the sole `text(await tools.exec_command({...}));` wrapper
+using the existing closed argument fields and JSON literals, admits a new
+execution. The bounded exec pragma is optional and must fit one JavaScript
+line comment ending in LF or CRLF. Its body cannot cross LF, CR, U+2028 or
+U+2029; trailing executable code is never removed with it. The same boundary
+applies to sole executions, sole polls and indexed batches. Unsupported input, including
+empty input, extra statements, aliases and computed/alternate member spellings,
+remains unknown; failure to recognize a poll never proves a new execution.
+Even an explicit response ID only identifies the receiving wrapper's response,
+not the origin of an unrecognized call. Unknown origin preserves independently
+validated operation success and observed numbers; it does not mean failure,
+unassigned work or measured zero.
+
 Known direct JSON session/cell waits and a sole literal `tools.write_stdin`
 exec wrapper can trace a verified handle lifetime to its originating call.
 The observed indexed batch also admits exactly `const results = await
@@ -1090,12 +1105,18 @@ Optional lifecycle invocation follows the separate Setup/state contract and
 cannot alter these quality or completion boundaries.
 
 Current response partitions emit `taskgov-usage-snapshot-v2` with algorithm
-`response-partitions-v4`. Retained `response-partitions-v1`,
-`response-partitions-v2` and `response-partitions-v3` snapshots retain their original policy meaning and
+`response-partitions-v5`. Retained `response-partitions-v1`,
+`response-partitions-v2`, `response-partitions-v3` and `response-partitions-v4` snapshots retain their original policy meaning and
 remain validated immutable history.
 Changing the response algorithm invalidates
 the capture basis and publishes successors without a schema migration or
-reinterpreting old snapshot bytes. All response algorithms keep the v1 fields and add `assignment`:
+reinterpreting old snapshot bytes. Version 5 requires positive origin admission;
+legacy stored boundaries lack that proof and remain unbound until existing
+bounded source audit/replay reevaluates them. Read-only access never performs
+replay, and a permitted refresh cannot promote old boundary proof into the new
+policy. Numerical observations, successful operation facts and immutable history
+remain; correction requires no Task recompletion or review registration.
+All response algorithms keep the v1 fields and add `assignment`:
 `exclusive` has exactly one execution, `shared` at least two, and `partial`
 retains only known owners with explicit incomplete-boundary gaps. The canonical
 digest includes this field and format. Old v1 bytes, membership and cycle links

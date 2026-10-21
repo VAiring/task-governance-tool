@@ -847,7 +847,19 @@ be validated. Historical qualified event/call origins are compared across
 incarnations; a replacement cannot silently relabel an old success. Candidate
 read acknowledgements require the essential public selection/list/show shape,
 not merely a known command name with an arbitrary data object.
-`usage_batch_adapter.py` parses only the observed whole indexed batch grammar,
+`usage_response_adapter.py` classifies ordinary input as confirmed execution,
+confirmed literal poll, or unknown. `_call_input` never treats a missing poll
+match as execution proof. `usage_batch_adapter.py` shares its bounded literal
+reader and exec-field allowlist with positive sole-execution admission; direct
+JSON objects and the sole observed `text(await tools.exec_command({...}));`
+wrapper qualify. A shared `strip_exec_pragma` removes only the bounded LF/CRLF
+pragma. Its body excludes every JavaScript line terminator (LF, CR, U+2028,
+U+2029), so it cannot swallow executable statements after a comment ends.
+Sole-execution, sole-poll and batch admission all use this same function.
+Unknown frames keep success observations and mark response
+correspondence ambiguous, including explicit response metadata and inherited
+handles. No additional member spellings or general JavaScript parser is added.
+`usage_batch_adapter.py` also parses only the observed whole indexed batch grammar,
 without evaluating JavaScript. It returns ordered tool kinds and canonical
 literal poll handles; command text, argument values and store keys are discarded.
 It retains output indices before the ordinary transport parser unwraps results,
@@ -881,7 +893,7 @@ Strict parsing returns leaf bodies with transport output/content removed after
 checking those children at the inherited depth, including mixed acknowledgement
 and transport objects. The legacy turn projector receives only these validated
 leaves and cannot re-decode discarded children under weaker or renewed bounds.
-Continuation version 3 retains positional batch frames, each frame's original
+Continuation version 4 retains positional batch frames, each frame's original
 slot index and a required Boolean `bracket_closed`. Close matching ordinary
 frames and all unresolved batch slots before parsing the first host output,
 including invalid turn metadata; the latter also invalidates their proof.
@@ -894,19 +906,25 @@ all retained aliases. Pending projection, interruption and capacity accounting
 include ordinary calls and batch slots through one shared frame traversal.
 Resolved slots retain their position until their batch drains, so their positions
 continue to consume capacity; partial batches cannot multiply retained metadata.
-Exact version-1 and version-2 contexts are validated before normalization;
-version 1 adds empty batches and null slot identities. Both old codecs lack
-proof of first-output closure, so normalization closes every frame, preserves
-explicit origins and clears all nonexplicit response candidates, including
-handles and pending polls. Identities, ambiguity, retired handles and capacity
+Exact version-1 through version-3 contexts are validated before normalization;
+version 1 adds empty batches and null slot identities. These codecs lack
+positive fresh-call admission, so normalization closes and ambiguates every
+frame and clears even explicit response candidates, including handles and
+pending polls. Identities, retired handles and capacity
 state remain. Malformed or unknown contexts still fail closed. Normalization
 does not reset cursors or claim an old prefix used the new parser.
 Capture fingerprints use this normalized context too; a pre-upgrade capture
 with old bracket candidates must be refreshed before current read acceptance.
 The refresh preserves immutable snapshots and original numerical observations.
-The response adapter's sanitized prefix is `codex-response-relations-v7` for
-indexed batch admission, persisted first-output closure and conservative
-lexical rejection. Bounded audit/replay replaces an older prefix's
+Stored `ResponseBoundary` documents now include closed integer `origin_version=2`.
+The exact legacy shape without it decodes as version 1, after validating its
+original digest; an explicit version 1 is also historical evidence. Neither
+supplies current response proof or historical origin conflicts under the new
+policy. Its operation identity still undergoes core success validation. This
+prevents refresh before replay from relabelling old proof as current evidence.
+The response adapter's sanitized prefix is `codex-response-relations-v8` for
+positive call admission, indexed batches and persisted first-output closure.
+Bounded audit/replay replaces an older prefix's
 discarded check results and continuation without changing numerical schema or
 deleting original counters/history; normal reads never perform that replay.
 Live session/cell handles retain the same unresolved origin between polls;
@@ -938,7 +956,8 @@ models and diagnostics for one admitted input/core basis. Core restore does
 not rebind missing executions, cycles or immutable wait/reviewer anchors.
 
 Snapshot v2 validation is closed and separate from retained v1 validation.
-The current `response-partitions-v4` policy applies confirmed pause/block exits
+The current `response-partitions-v5` policy requires positive call-origin proof
+and applies confirmed pause/block exits
 and resume origins. Whole-response owner allocation is separate from applying
 the same response's committed state order, so a same-execution stop/resume
 leaves the correct final active state. Stopped gaps and previous-turn checks
@@ -973,14 +992,14 @@ operation set that re-establishes all carried/origin-response owners. Unrelated
 organization releases are excluded. Empty carried state does not permit an
 organization update to certify an unassigned interval. Terminal-result replay
 uses the unchanged call identity and original response, never its arrival time.
-No new continuation field, SQL structure, core write or result-body retention
-is introduced.
-Retained `response-partitions-v1`, `response-partitions-v2` and `response-partitions-v3` snapshot bodies remain
+No SQL structure, core write or result-body retention is introduced.
+Retained `response-partitions-v1`, `response-partitions-v2`, `response-partitions-v3`
+and `response-partitions-v4` snapshot bodies remain
 valid unchanged; algorithm identity is part of the capture and geometry basis,
 forcing new successors instead of reusing old-policy totals. A read before
 permitted refresh returns the existing pending/unavailable outcome without
 writing. Existing numerical collection/publication invokes that refresh and
-publishes v4 successors; it preserves prior snapshot bytes, membership and
+publishes v5 successors; it preserves prior snapshot bytes, membership and
 cycle links and needs no Setup, new hook/LLM action or core write. No DDL changes.
 Task totals and work-unit parts union original keys; shared parts name actual
 Task/execution identities instead of displaying another period's shared total

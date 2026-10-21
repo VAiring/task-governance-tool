@@ -11,7 +11,7 @@ from task_governance_tool.usage_values import ResponseUsage, UsageError
 from tests.test_usage_turn_adapter import acknowledgement, THREAD, turn
 
 
-def call(identity, *, name="functions.exec", arguments="", number=2, response_id=None):
+def call(identity, *, name="functions.exec", arguments='text(await tools.exec_command({cmd:"fixture"}));', number=2, response_id=None):
     metadata = {"turn_id": turn(number)}
     if response_id is not None:
         metadata["response_id"] = response_id
@@ -190,7 +190,7 @@ class ResponseTransportTests(unittest.TestCase):
         from task_governance_tool.usage_response_adapter import _handle_input
         for handle in ("07", str(2**63), "9" * 100, str(2**53 + 1), str(2**63 - 1)):
             self.assertEqual(_handle_input("exec", "text(await tools.write_stdin({session_id:" + handle + "}));"),
-                             ("unresolved", ""))
+                             None)
         for handle in (2**53, 2**54):
             self.assertEqual(_handle_input("exec", "text(await tools.write_stdin({session_id:" + str(handle) + "}));"),
                              ("session", str(handle)))
@@ -386,7 +386,7 @@ class ResponseTransportTests(unittest.TestCase):
         del legacy["calls"]["pending"]["slot"]
         del legacy["calls"]["pending"]["bracket_closed"]
         restored = ResponseTracker(THREAD, "fixture", legacy)
-        self.assertEqual(restored.state["version"], 3)
+        self.assertEqual(restored.state["version"], 4)
         self.assertIsNone(restored.state["calls"]["pending"]["slot"])
         self.assertTrue(restored.state["calls"]["pending"]["bracket_closed"])
         self.assertNotIn("slot", legacy["calls"]["pending"])
@@ -451,7 +451,7 @@ class ResponseTransportTests(unittest.TestCase):
         for use_batch in (False, True):
             with self.subTest(batch=use_batch):
                 self.setUp()
-                args = batch_input('tools.exec_command({cmd:"one"})') if use_batch else ""
+                args = batch_input('tools.exec_command({cmd:"one"})') if use_batch else 'text(await tools.exec_command({cmd:"one"}));'
                 self.feed(call("explicit", arguments=args, response_id="explicit-origin"), 10)
                 self.feed(call("unrelated"), 11)
                 first = [settled(0, {"private": "opaque"})] if use_batch else {"private": "opaque"}
@@ -469,7 +469,7 @@ class ResponseTransportTests(unittest.TestCase):
             for metadata in (None, {}, {"turn_id": "invalid"}):
                 with self.subTest(batch=use_batch, metadata=metadata):
                     self.setUp()
-                    args = batch_input('tools.exec_command({cmd:"one"})') if use_batch else ""
+                    args = batch_input('tools.exec_command({cmd:"one"})') if use_batch else 'text(await tools.exec_command({cmd:"one"}));'
                     self.feed(call("pending", arguments=args), 10)
                     self.feed({}, 15, response("origin"))
                     first = output("pending", acknowledgement())
@@ -487,7 +487,7 @@ class ResponseTransportTests(unittest.TestCase):
             for initial in (None, "origin"):
                 with self.subTest(batch=use_batch, initial=initial):
                     self.setUp()
-                    args = batch_input('tools.exec_command({cmd:"one"})') if use_batch else ""
+                    args = batch_input('tools.exec_command({cmd:"one"})') if use_batch else 'text(await tools.exec_command({cmd:"one"}));'
                     self.feed(call("original", arguments=args), 10)
                     if initial:
                         self.feed({}, 15, response(initial))
@@ -535,16 +535,16 @@ class ResponseTransportTests(unittest.TestCase):
                 original = json.loads(json.dumps(legacy))
                 self.tracker = ResponseTracker(THREAD, "fixture", legacy)
                 self.assertEqual(legacy, original)
-                self.assertEqual(self.tracker.state["version"], 3)
+                self.assertEqual(self.tracker.state["version"], 4)
                 for frame in self.tracker.pending_frames():
                     self.assertTrue(frame["bracket_closed"])
-                    self.assertEqual(frame["response"], "old-origin" if frame["method"] == "explicit" else None)
+                    self.assertIsNone(frame["response"])
                     self.assertNotEqual(frame["method"], "single_bracket")
                 self.feed({}, 20, response("late"))
                 for identity in ("pending", "unknown", "poll"):
                     found = self.feed(output(identity, acknowledgement()), 30)
                     self.assertIsNone(found[0].response_id)
-                self.assertEqual(self.tracker.state["handles"]["session:8"]["response"], "old-origin")
+                self.assertIsNone(self.tracker.state["handles"]["session:8"]["response"])
 
     def test_continuation_bracket_marker_is_closed_and_validated_in_every_frame_group(self):
         self.feed(call("origin", response_id="explicit"), 10)
@@ -607,16 +607,16 @@ class ResponseTransportTests(unittest.TestCase):
         found = self.feed(output("poll", acknowledgement(), number=3), 40)
         self.assertEqual((found[0].call_id, found[0].response_id), ("original", "origin"))
 
-    def test_literal_comment_and_regex_batch_words_do_not_make_fresh_exec_ambiguous(self):
-        for arguments in ('text(await tools.exec_command({cmd:"Promise.allSettled([])"}));',
-                          'store("Promise.allSettled([])",0);text(await tools.exec_command({cmd:"command"}));',
-                          '// Promise.allSettled([])\ntext(await tools.exec_command({cmd:"command"}));',
-                          'const pattern=/Promise.allSettled\\(/;text(await tools.exec_command({cmd:"command"}));'):
+    def test_literal_batch_words_preserve_fresh_exec_but_extra_statements_are_unknown(self):
+        for arguments, expected in (('text(await tools.exec_command({cmd:"Promise.allSettled([])"}));', "origin"),
+                          ('store("Promise.allSettled([])",0);text(await tools.exec_command({cmd:"command"}));', None),
+                          ('// Promise.allSettled([])\ntext(await tools.exec_command({cmd:"command"}));', None),
+                          ('const pattern=/Promise.allSettled\\(/;text(await tools.exec_command({cmd:"command"}));', None)):
             with self.subTest(arguments=arguments):
                 self.setUp()
                 self.feed(call("original", arguments=arguments, response_id="origin"), 10)
                 found = self.feed(output("original", acknowledgement()), 20)
-                self.assertEqual(found[0].response_id, "origin")
+                self.assertEqual(found[0].response_id, expected)
 
     def test_overdepth_or_unreadable_cell_headers_do_not_create_handles(self):
         from task_governance_tool.usage_response_adapter import _output_handles, MAX_TEXT

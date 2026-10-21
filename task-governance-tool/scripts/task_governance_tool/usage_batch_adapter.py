@@ -15,7 +15,7 @@ MAX_TEXT = 2_097_152
 MAX_SLOTS = 128
 _KEY = re.compile(r"[A-Za-z_$][A-Za-z0-9_$]*")
 _NUMBER = re.compile(r"-?(?:0|[1-9][0-9]*)(?:\.[0-9]+)?(?:[eE][+-]?[0-9]+)?")
-_PRAGMA = re.compile(r"\A\s*// @exec: \{[^\r\n]{0,200}\}\r?\n")
+_PRAGMA = re.compile(r"\A\s*// @exec: \{[^\r\n\u2028\u2029]{0,200}\}\r?\n")
 _EXEC_FIELDS = {"cmd", "workdir", "shell", "login", "tty", "yield_time_ms",
                 "max_output_tokens", "sandbox_permissions", "justification", "prefix_rule"}
 _CONTAINER_FIELDS = {"output", "content", "chunk_id", "wall_time_seconds", "session_id",
@@ -234,6 +234,48 @@ def is_batch_input(name, arguments):
         return True
 
 
+def _unique_object(pairs):
+    value = {}
+    for key, item in pairs:
+        if key in value:
+            raise ValueError
+        value[key] = item
+    return value
+
+
+def strip_exec_pragma(arguments):
+    """Remove only the bounded LF/CRLF pragma, never across a JS comment end."""
+    return _PRAGMA.sub("", arguments, count=1)
+
+
+def is_single_execution(name, arguments):
+    """Positive admission of direct exec JSON or the sole observed wrapper.
+
+    The literal reader is shared with batch admission; no commands are run or
+    retained, and additional statements/computed members remain unknown.
+    """
+    try:
+        if isinstance(arguments, str) and len(arguments.encode("utf-8")) > MAX_TEXT:
+            return False
+        if name in {"exec_command", "functions.exec_command"}:
+            args = json.loads(arguments, object_pairs_hook=_unique_object) if isinstance(arguments, str) else arguments
+        elif name in {"exec", "functions.exec"} and isinstance(arguments, str):
+            match = re.fullmatch(r"\s*text\(await tools\.exec_command\((.*)\)\);?\s*",
+                                 strip_exec_pragma(arguments), re.DOTALL)
+            if match is None:
+                return False
+            reader = _LiteralReader(match[1])
+            args = reader.value()
+            reader.space()
+            if reader.offset != len(reader.text):
+                return False
+        else:
+            return False
+        return isinstance(args, dict) and set(args) <= _EXEC_FIELDS and isinstance(args.get("cmd"), str)
+    except (ValueError, TypeError, RecursionError, UnicodeError):
+        return False
+
+
 def parse_batch_input(name, arguments):
     """Return only exact observed slot metadata, otherwise no correspondence."""
     if not is_batch_input(name, arguments):
@@ -241,7 +283,7 @@ def parse_batch_input(name, arguments):
     try:
         if len(arguments.encode("utf-8")) > MAX_TEXT:
             return None
-        reader = _LiteralReader(_PRAGMA.sub("", arguments, count=1))
+        reader = _LiteralReader(strip_exec_pragma(arguments))
         # Whitespace is permitted only between these fixed grammar tokens.
         for token in ("const", "results", "=", "await", "Promise.allSettled", "(", "["):
             reader.take(token)

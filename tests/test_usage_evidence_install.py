@@ -150,7 +150,7 @@ class UsageEvidenceInstallTests(unittest.TestCase):
                                 {tuple(sorted(row.items())) for row in index["cycle_links"]})
                 documents = {identity: json.loads((self.target.resolved_usage_snapshots / (identity + ".json")).read_bytes())
                              for identity in index["snapshots"]}
-                self.assertTrue(all(documents[identity]["algorithm"] == "response-partitions-v4"
+                self.assertTrue(all(documents[identity]["algorithm"] == "response-partitions-v5"
                                     for identity in index["current_snapshot_ids"]))
                 self.assertTrue(any(item["predecessors"] for identity, item in documents.items()
                                     if identity in index["current_snapshot_ids"]))
@@ -253,11 +253,11 @@ class UsageEvidenceInstallTests(unittest.TestCase):
         return rows + [event("event_msg", type="task_started", turn_id=turn(number), started_at=number * 1000),
                        event("turn_context", turn_id=turn(number), model="fixture-model")]
 
-    def response_rows(self, identity, number, acknowledgement=None, *, name="exec", arguments=None, thread=THREAD):
+    def response_rows(self, identity, number, acknowledgement=None, *, name="exec_command", arguments=None, thread=THREAD):
         rows = []
         if acknowledgement is not None:
             rows.append(event("response_item", type="function_call", name=name, call_id=identity,
-                              arguments=json.dumps(arguments or {}),
+                              arguments=json.dumps({"cmd": "fixture"} if arguments is None else arguments),
                               internal_chat_message_metadata_passthrough={"turn_id": turn(number), "response_id": identity}))
         rows.append(usage(identity, turn=turn(number), thread=thread))
         if acknowledgement is not None:
@@ -301,7 +301,8 @@ class UsageEvidenceInstallTests(unittest.TestCase):
         for number in range(18):
             identity = "stop-response-" + str(number)
             if number in acknowledgements:
-                rows.append(event("response_item", type="function_call", name="exec", call_id=identity, input="",
+                rows.append(event("response_item", type="function_call", name="exec", call_id=identity,
+                    input='text(await tools.exec_command({cmd:"fixture"}));',
                     internal_chat_message_metadata_passthrough={"turn_id": turn(1), "response_id": identity}))
             rows.append(usage(identity, turn=turn(1)))
             if number in acknowledgements:
@@ -347,7 +348,8 @@ class UsageEvidenceInstallTests(unittest.TestCase):
                 event("turn_context", turn_id=turn(1), model="fixture-model")]
         for index, ack in enumerate((a, a_done, b, b_done, reopened, done_again)):
             identity = "native-" + str(index)
-            rows += [event("response_item", type="function_call", name="functions.exec", call_id=identity, arguments="",
+            rows += [event("response_item", type="function_call", name="functions.exec", call_id=identity,
+                        arguments='text(await tools.exec_command({cmd:"fixture"}));',
                         internal_chat_message_metadata_passthrough={"turn_id": turn(1), "response_id": identity}),
                      usage(identity, turn=turn(1)),
                      event("response_item", type="function_call_output", call_id=identity, output=json.dumps(ack),

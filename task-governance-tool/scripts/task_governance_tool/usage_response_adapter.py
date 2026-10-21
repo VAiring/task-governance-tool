@@ -1,7 +1,7 @@
 """Bounded response/call relations from admitted Codex records.
 
-This is a transport projection, not a command interpreter. Only literal wait
-handles are read from arguments. Task meaning comes from a whole structured
+This is a transport projection, not a command interpreter. Only tool kind and
+literal wait handles leave input admission. Task meaning comes from a whole structured
 acknowledgement and must still be checked against committed core identities.
 The continuation contains IDs and ordering metadata, never text or arguments.
 """
@@ -14,10 +14,12 @@ from task_governance_tool.session_identity import is_session_id
 from task_governance_tool.usage_turn_adapter import OperationObservation, project_record
 from task_governance_tool.usage_values import RESPONSE_ID, UsageError, label
 from task_governance_tool.task_values import validate_task_id, TaskValidationError
-from task_governance_tool.usage_batch_adapter import AmbiguousBatch, parse_batch_input, parse_batch_output, is_batch_input
+from task_governance_tool.usage_batch_adapter import (
+    AmbiguousBatch, parse_batch_input, parse_batch_output, is_single_execution, strip_exec_pragma,
+)
 
 
-VERSION = "codex-response-relations-v7"
+VERSION = "codex-response-relations-v8"
 BRACKET_VERSIONS = frozenset({"0.162.0-alpha.17.2", "0.163.0-alpha.10.2"})
 MAX_CONTEXT = 128
 MAX_TEXT = 2_097_152
@@ -62,6 +64,7 @@ class ResponseBoundary:
     generation: int | None = None
     status: str | None = None
     method: str = "unavailable"
+    origin_version: int = 2
 
     def __post_init__(self):
         if (not is_session_id(self.thread_id) or not is_session_id(self.turn_id)
@@ -71,6 +74,7 @@ class ResponseBoundary:
                 or label(self.provider) != self.provider or not self.provider
                 or type(self.record_order) is not int or not 0 <= self.record_order < 2**63
                 or self.method not in {"explicit", "single_bracket", "unavailable"}
+                or type(self.origin_version) is not int or self.origin_version not in {1, 2}
                 or (self.response_id is not None and (not isinstance(self.response_id, str)
                     or not RESPONSE_ID.fullmatch(self.response_id)))
                 or (self.response_id is None) != (self.method == "unavailable")):
@@ -174,16 +178,14 @@ def _handle_input(name, arguments):
     """Admit direct JSON, or a sole literal exec wrapper; never evaluate JS."""
     name = {"exec": "functions.exec", "wait": "functions.wait"}.get(name, name)
     if name == "functions.exec" and isinstance(arguments, str):
-        arguments = re.sub(r"\A\s*// @exec: \{[^\r\n]{0,200}\}\r?\n", "", arguments, count=1)
+        arguments = strip_exec_pragma(arguments)
         match = re.fullmatch(r"\s*text\(await tools\.write_stdin\(\{\s*session_id\s*:\s*([0-9]+)"
                              r"(?:\s*,\s*(?:chars|yield_time_ms|max_output_tokens)\s*:\s*"
                              r"(?:\"(?:[^\"\\]|\\[\"\\nrt])*\"|[0-9]+))*\s*\}\)\);?\s*", arguments)
         if (match and len(match[1]) <= 19 and int(match[1]) < 2**63 and str(int(match[1])) == match[1]
                 and int(float(int(match[1]))) == int(match[1])):
             return "session", match[1]
-        # An unsupported composition might contain a poll. Its result cannot
-        # be relabelled as an operation originating in the wrapper response.
-        return ("unresolved", "") if "tools.write_stdin" in arguments else None
+        return None
     try:
         value = json.loads(arguments) if isinstance(arguments, str) else arguments
         if not isinstance(value, dict):
@@ -199,6 +201,22 @@ def _handle_input(name, arguments):
     except (ValueError, RecursionError):
         pass
     return None
+
+
+@dataclass(frozen=True)
+class CallInput:
+    kind: str
+    handle: tuple[str, str] | None = None
+
+
+def _call_input(name, arguments):
+    """Separate positive start/poll proof from unsupported input."""
+    handle = _handle_input(name, arguments)
+    if handle is not None:
+        return CallInput("poll", handle)
+    if is_single_execution(name, arguments):
+        return CallInput("execution")
+    return CallInput("unknown")
 
 
 def _check_shape(command, data, project):
@@ -306,7 +324,7 @@ class ResponseTracker:
 
     @staticmethod
     def empty_state():
-        return {"version": 3, "calls": {}, "batches": {}, "handles": {}, "retired": [], "limited": False, "overflow": None}
+        return {"version": 4, "calls": {}, "batches": {}, "handles": {}, "retired": [], "limited": False, "overflow": None}
 
     def _validate(self):
         value = self.state
@@ -315,7 +333,7 @@ class ResponseTracker:
         if version != 1:
             expected.add("batches")
         if (not isinstance(value, dict) or set(value) != expected
-                or type(version) is not int or version not in {1, 2, 3}
+                or type(version) is not int or version not in {1, 2, 3, 4}
                 or type(value["limited"]) is not bool
                 or not isinstance(value["calls"], dict) or not isinstance(value["handles"], dict)
                 or not isinstance(value["retired"], list)
@@ -331,7 +349,7 @@ class ResponseTracker:
             if not _valid_handle(handle):
                 raise UsageError("usage_schema_invalid")
             self._frame(frame, version=version)
-            if version == 3 and not frame["bracket_closed"]:
+            if version >= 3 and not frame["bracket_closed"]:
                 raise UsageError("usage_schema_invalid")
         if any(not _valid_handle(key) for key in value["retired"]):
             raise UsageError("usage_schema_invalid")
@@ -339,7 +357,7 @@ class ResponseTracker:
             self._frame(value["overflow"], version=version)
             if not value["limited"] or value["overflow"]["handle"] is not None:
                 raise UsageError("usage_schema_invalid")
-            if version == 3 and not value["overflow"]["bracket_closed"]:
+            if version >= 3 and not value["overflow"]["bracket_closed"]:
                 raise UsageError("usage_schema_invalid")
         batches = {} if version == 1 else value["batches"]
         if not isinstance(batches, dict) or len(batches) > MAX_CONTEXT:
@@ -354,18 +372,16 @@ class ResponseTracker:
                     self._frame(frame, version=version)
         if len(value["calls"]) + sum(len(slots) for slots in batches.values()) > MAX_CONTEXT:
             raise UsageError("usage_schema_invalid")
-        if version < 3:
-            # Old codecs do not prove when their first result arrived. Even a
-            # live handle may inherit an already late bracket candidate. Keep
-            # identities and explicit origins, but recover bracket evidence
-            # only through the ordinary bounded prefix replay.
+        if version < 4:
+            # Older codecs did not positively admit fresh calls. Even explicit
+            # response metadata can belong to an unrecognized poll. Retain
+            # pending identities; recover origin proof only by bounded replay.
             def normalize(frame):
                 if frame is None:
                     return None
                 return {**frame, "slot": frame.get("slot"), "bracket_closed": True,
-                        "response": frame["response"] if frame["method"] == "explicit" else None,
-                        "method": "explicit" if frame["method"] == "explicit" else "unavailable"}
-            self.state = {**value, "version": 3,
+                        "response": None, "method": "unavailable", "ambiguous": True}
+            self.state = {**value, "version": 4,
                           "batches": {key: [normalize(frame) for frame in slots] for key, slots in batches.items()},
                           "calls": {key: normalize(frame) for key, frame in value["calls"].items()},
                           "handles": {key: normalize(frame) for key, frame in value["handles"].items()},
@@ -411,7 +427,7 @@ class ResponseTracker:
             frame["ambiguous"] = True
 
     @staticmethod
-    def _frame(frame, *, version=3):
+    def _frame(frame, *, version=4):
         expected = {"call", "turn", "order", "response", "method", "ambiguous", "handle"}
         if version >= 2:
             expected.add("slot")
@@ -503,12 +519,10 @@ class ResponseTracker:
                 else:
                     self.state["batches"][call] = slots
                 return tuple(result)
-            handle = _handle_input(payload["name"], arguments)
-            if handle:
-                frame = self._poll_frame(frame, handle)
-            elif payload["name"] in {"functions.wait", "functions.write_stdin", "write_stdin", "wait"}:
-                frame["ambiguous"] = True
-            if not handle and is_batch_input(payload["name"], arguments):
+            admission = _call_input(payload["name"], arguments)
+            if admission.kind == "poll":
+                frame = self._poll_frame(frame, admission.handle)
+            elif admission.kind == "unknown":
                 frame["ambiguous"] = True
             if self._pending_count() >= MAX_CONTEXT:
                 self._lost_origin(frame)

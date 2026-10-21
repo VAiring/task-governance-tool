@@ -12,8 +12,9 @@ from task_governance_tool.usage_values import GAP_CODES, METRICS, UsageError, la
 FORMAT = "taskgov-usage-snapshot-v1"
 ALGORITHM = "inclusive-turn-components-v1"
 RESPONSE_FORMAT = "taskgov-usage-snapshot-v2"
-RESPONSE_ALGORITHM = "response-partitions-v4"
-RESPONSE_ALGORITHMS = frozenset({"response-partitions-v1", "response-partitions-v2", "response-partitions-v3", RESPONSE_ALGORITHM})
+RESPONSE_ALGORITHM = "response-partitions-v5"
+RESPONSE_ALGORITHMS = frozenset({"response-partitions-v1", "response-partitions-v2", "response-partitions-v3",
+                                 "response-partitions-v4", RESPONSE_ALGORITHM})
 MAX_DOCUMENT_BYTES = 16_777_216
 GAPS = GAP_CODES | {"boundary_unknown", "review_boundary_unknown", "interval_open",
                     "collection_pending", "usage_pending", "operation_unbound"}

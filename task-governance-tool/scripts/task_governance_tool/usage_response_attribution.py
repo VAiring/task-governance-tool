@@ -10,7 +10,7 @@ from collections import defaultdict
 from task_governance_tool.usage_attribution import _models, _coverage
 
 
-ALGORITHM = "response-partitions-v4"
+ALGORITHM = "response-partitions-v5"
 
 
 def response_order(positions, turns, conflicting_turns=frozenset()):

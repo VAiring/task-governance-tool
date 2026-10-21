@@ -22,6 +22,23 @@ ADAPTER_VERSION = "codex-response-usage-v1"
 MAX_LINE = 8 * 1024 * 1024
 MAX_BATCH_RECORDS = 4096
 
+# A damaged object is opaque, not null or a last-key-wins dictionary. Keep
+# siblings readable without retaining any of the ambiguous object's contents.
+AMBIGUOUS_JSON = object()
+
+
+def contains_ambiguous_json(value):
+    pending = [value]
+    while pending:
+        item = pending.pop()
+        if item is AMBIGUOUS_JSON:
+            return True
+        if isinstance(item, dict):
+            pending.extend(item.values())
+        elif isinstance(item, list):
+            pending.extend(item)
+    return False
+
 
 @dataclass(frozen=True)
 class SourceInput:
@@ -57,8 +74,11 @@ class CollectionBatch:
 
 
 def _json(raw: bytes) -> dict:
+    def object_pairs(pairs):
+        value = dict(pairs)
+        return value if len(value) == len(pairs) else AMBIGUOUS_JSON
     try:
-        result = json.loads(raw.decode("utf-8-sig"))
+        result = json.loads(raw.decode("utf-8-sig"), object_pairs_hook=object_pairs)
         if not isinstance(result, dict):
             raise ValueError
         return result

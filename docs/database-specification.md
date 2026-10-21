@@ -893,7 +893,15 @@ JavaScript compositions.
 JavaScript poll literals must represent the same integer as their runtime Number;
 rounded large integers are unbound in both batch and sole-literal exec wrappers.
 The fixed input position, not arrival order, matches each whole indexed result.
+Only outer script containers may expose those positions. Process-result
+objects and process-exit headers keep their stdout opaque to slot discovery,
+even when that stdout prints a valid indexed result. An enclosing process
+cannot certify correspondence or termination of an inner batch slot.
 An indexed result without an admitted matching batch input remains unbound.
+Semantic decoding retains that unproven index even inside process stdout or
+mixed acknowledgement containers. It may preserve an independently valid
+operation, but cannot supply an origin or a new handle lifetime. An additional
+indexed layer inside an already matched slot is likewise unproven.
 Detected batch candidates outside the admitted grammar remain unbound even
 when their output is flattened and has no index.
 Poll slots retain their verified original response; fresh exec slots use the
@@ -918,7 +926,39 @@ remain unbound, including retained origins and pending polls of a live
 colliding handle. Opaque results and bounded continuation exhaustion retain
 unknown coverage rather than establishing resolution or exclusive assignment.
 Only supported terminal evidence resolves a tracked operation; lost-lifetime
-coverage survives until safe source replay. Headers, whole JSON bodies, text/input_text blocks, existing
+coverage survives until safe source replay. Execution termination and Taskgov
+success are separate judgments. A matching call, indexed fulfilled slot, or
+known poll may resolve its lifetime from one complete supported process-result
+envelope: an integer `exit_code` with optional string `output` and closed host
+metadata, or the known `Process exited with code` header. Both zero and nonzero
+codes terminate execution; neither establishes Taskgov success or an origin.
+Ordinary, empty, JSON or incomplete-JSON stdout does not keep that positively
+terminated process pending and never fabricates a successful operation.
+An incomplete envelope, unknown container/header, conflicting live handle,
+truncation marker, or multiple unindexed terminal results does not supply this
+proof. An outer `Script completed` header alone does not prove an inner process
+or batch slot ended; nested headers are validated at every layer. Repeated
+metadata fields or invalid numeric header values are not unambiguous evidence.
+Process stdout and Taskgov bodies cannot introduce running-handle lifetimes.
+This also applies when an exit-code field is absent, null or invalid: any
+process metadata identifies a process container before stdout traversal, and
+only a fully validated running envelope supplies its top-level handle. Duplicate process JSON keys
+cannot supply running handles, including for ordinary non-batch calls. A usable Taskgov
+acknowledgement is not recovered from an object with duplicate keys in the
+source JSONL either: the shared source decoder keeps that object opaque rather
+than accepting its last value. Independently valid sibling objects and original
+numerical records remain usable. Text/input_text blocks must contain exactly
+their type and string text fields; extra process metadata or unknown fields
+cannot be bypassed by routing, semantic decoding, or handle extraction. A usable Taskgov
+acknowledgement inside incomplete or conflicting process transport remains an
+independent observation, never a substitute for the missing lifetime proof.
+Only a body-only admitted transport may use the existing acknowledgement-based
+terminal gate; unresolved transport siblings and output/content children of
+mixed acknowledgement objects prevent that fallback.
+An ambiguous live handle remains unresolved after a terminal poll; that result
+cannot identify which colliding execution ended. Unresolved siblings and sparse batch positions retain
+their existing capacity and unknown-coverage rules; bounds are not increased.
+Headers, whole JSON bodies, text/input_text blocks, existing
 exec output/content containers and the closed `{i,result:{status:"fulfilled",
 value:...}}` result wrapper are recognized within eight levels and 2 MiB per
 text. The depth limit spans outer containers, the indexed wrapper and its

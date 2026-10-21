@@ -563,7 +563,7 @@ class BatchResponseRepositoryTests(unittest.TestCase):
                     projections.append(projection)
             self.assertEqual(projections[0], projections[1])
 
-    def test_previous_context_prefixes_replay_on_v8_without_projection_change(self):
+    def test_previous_context_prefixes_replay_on_current_codec_without_projection_change(self):
         for old_version in ("codex-response-relations-v2", "codex-response-relations-v3",
                             "codex-response-relations-v4", "codex-response-relations-v5",
                             "codex-response-relations-v6", "codex-response-relations-v7"):
@@ -825,7 +825,7 @@ class BatchResponseRepositoryTests(unittest.TestCase):
     def assert_codec_upgrade_replays_without_projection_change(self, old_version):
         import task_governance_tool.usage_response_adapter as adapter
 
-        self.assertEqual(adapter.VERSION, "codex-response-relations-v8")
+        self.assertEqual(adapter.VERSION, "codex-response-relations-v14")
         rows = self.operation("start", self.acknowledgement(A, 1, "in_progress"), "r0", direct=True)
         rows += self.operation("done", self.acknowledgement(A, 1, "done", cycle="A"), "r1", direct=True)
         self.write_turn(rows)

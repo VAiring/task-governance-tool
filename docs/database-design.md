@@ -840,8 +840,9 @@ continuation and projects its possible range as unknown after tracked calls
 drain, including after restart. It does not create an origin response, cover
 earlier independently confirmed work, or erase observed counters. The frame
 is retained until source replay can rebuild the trace; it is not cleared by a
-result for a call whose lifetime was lost. Opaque/unreadable results retain
-their unresolved frame until a supported terminal result is observed.
+result for a call whose lifetime was lost. Opaque/unreadable transport retains
+its unresolved frame until a supported terminal result is observed; opaque
+stdout inside a positively terminated process envelope is not such transport.
 Pending calls retain explicit unknown response coverage until their result can
 be validated. Historical qualified event/call origins are compared across
 incarnations; a replacement cannot silently relabel an old success. Candidate
@@ -863,7 +864,16 @@ handles. No additional member spellings or general JavaScript parser is added.
 without evaluating JavaScript. It returns ordered tool kinds and canonical
 literal poll handles; command text, argument values and store keys are discarded.
 It retains output indices before the ordinary transport parser unwraps results,
-using the same closed text/header parser and eight-level/2 MiB bounds. Each result
+using the same closed text/header parser and eight-level/2 MiB bounds. Routing
+admits only outer script wrappers: process metadata objects are
+not routing containers, and routing disables process-header stdout decoding.
+This boundary precedes removal of the enclosing transport context. Each result
+retains an unproven-index marker during semantic unwrapping if a further indexed
+wrapper occurs below the admitted routing boundary. Before handle registration,
+that marker makes the corresponding frame ambiguous; independent operation
+observations survive, but stdout cannot create a response origin or handle.
+The same rule applies to ordinary calls and polls without an admitted index.
+Each routed result
 carries its consumed transport depth transiently into value parsing and handle
 extraction; it is not persisted and the indexed boundary does not reset it.
 The rejection guard treats every executable `Promise` identifier reference,
@@ -889,7 +899,7 @@ handles. First-output bracket closure is independent and still persists.
 A sole poll inheriting a non-null original slot uses the same preflight before
 removing its pending call or changing the handle. Ordinary non-batch origins
 and opaque rejected reasons retain their prior rules.
-Strict parsing returns leaf bodies with transport output/content removed after
+All response parsing returns leaf bodies with transport output/content removed after
 checking those children at the inherited depth, including mixed acknowledgement
 and transport objects. The legacy turn projector receives only these validated
 leaves and cannot re-decode discarded children under weaker or renewed bounds.
@@ -922,11 +932,69 @@ original digest; an explicit version 1 is also historical evidence. Neither
 supplies current response proof or historical origin conflicts under the new
 policy. Its operation identity still undergoes core success validation. This
 prevents refresh before replay from relabelling old proof as current evidence.
-The response adapter's sanitized prefix is `codex-response-relations-v8` for
-positive call admission, indexed batches and persisted first-output closure.
+`_lifetime_evidence` reads transient lifetime proof independently of success
+parsing, at the matched call/slot/poll's inherited transport depth. It admits
+exactly one process-result object with integer `exit_code`, optional string
+`output`, and optional `chunk_id`, `wall_time_seconds`, `original_token_count`;
+no other fields are admitted there. Metadata types and bounds are checked.
+The shared `_process_kind` validator recognizes any process metadata before
+either lifetime classification or handle extraction. Missing exit codes stay
+unresolved unless the complete envelope proves a running top-level session;
+malformed metadata cannot admit that session or expose stdout handles.
+It also admits one known process-exit header. Every nested header passes the
+same lifetime-aware validation; the JSON decoder cannot silently strip another
+header. Header metadata fields are unique and their numeric values are bounded;
+conflicting status lines cannot yield terminal proof through success parsing
+either. Multiple running cell declarations remain ambiguous live aliases.
+An outer completed-script header is neutral and still requires its inner result.
+String stdout is opaque for
+lifetime proof, including non-JSON or incomplete JSON, but retains existing
+size/truncation rejection. Structured stdout, unknown wrappers, duplicate
+transport keys, conflicting/unknown headers and multiple terminal envelopes cannot
+resolve a lifetime through this path. Known outer text/content/output wrappers
+retain the existing depth and size bounds. No flattened body `exit_code`
+alone is used as proof. Its closed outcome distinguishes process termination,
+body-only transport eligible for acknowledgement-based termination, and an
+unresolved transport. Invalid process metadata, a nullable or malformed exit
+code, a conflicting handle, or unresolved siblings cannot be overridden by
+stdout acknowledgements. Mixed acknowledgement objects also validate their
+output/content children before allowing body-only termination. Their
+independently valid observations are retained.
+First-output bracket closure still applies. Handle extraction uses
+the known transport containers separately from success-body parsing. It does
+not descend into a completed process's stdout, a running or incomplete process's stdout, or
+a Taskgov body to discover session handles; separate live result blocks remain
+eligible. Lifetime handle decoding always rejects duplicate JSON keys. Ordinary
+non-batch parsing leaves that container unresolved while preserving independent
+blocks; strict batch parsing retains its whole-output ambiguity rejection.
+The shared source JSON decoder replaces each duplicate-key object with an opaque
+in-memory marker, discarding its contents before transport interpretation. This
+also covers object-valued JSONL output, where later string decoding cannot see
+the ambiguity. Batch preflight rejects such markers before any slot mutation;
+ordinary parsing retains independently valid siblings. No marker or raw data is
+persisted. A shared closed text-block predicate admits only type/string-text
+pairs for routing, semantic parsing, lifetime proof and cell/session extraction.
+A terminal poll cannot retire an ambiguous live handle or erase its
+unresolved fence, including collisions observed after the poll was issued and
+retained across restart. This applies to process and Taskgov terminal results.
+No stdout, exit code or additional lifetime flag is persisted.
+
+The response adapter's sanitized prefix is `codex-response-relations-v14` for
+positive call admission, indexed batches, persisted first-output closure and
+separate process-lifetime evidence, complete header validation and retained
+ambiguous lifetimes with a transport-qualified acknowledgement fallback and
+shared process-metadata admission across both lifetime paths and batch routing,
+retained unproven indices and source-level ambiguity preservation.
 Bounded audit/replay replaces an older prefix's
 discarded check results and continuation without changing numerical schema or
 deleting original counters/history; normal reads never perform that replay.
+Version-8 pending contexts and version-9 through version-13 lifetime decisions are replaced only
+when that registered-source replay
+actually rebuilds them. It can recover terminal frames retained by the old
+stdout parser and origins lost after those frames exhausted capacity. Merely
+loading the new adapter does not purge pending frames or claim those origins
+recovered; missing source evidence remains unknown. Immutable snapshots remain
+historical evidence and numerical observations are not duplicated by replay.
 Live session/cell handles retain the same unresolved origin between polls;
 call/handle aliases are deduplicated. A live handle collision invalidates the
 retained origin and already-issued poll aliases before future results can bind.

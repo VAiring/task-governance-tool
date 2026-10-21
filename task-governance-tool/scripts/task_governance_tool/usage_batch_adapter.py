@@ -9,6 +9,7 @@ import json
 import re
 
 from task_governance_tool.usage_values import UsageError
+from task_governance_tool.usage_adapter import contains_ambiguous_json
 
 
 MAX_TEXT = 2_097_152
@@ -18,8 +19,14 @@ _NUMBER = re.compile(r"-?(?:0|[1-9][0-9]*)(?:\.[0-9]+)?(?:[eE][+-]?[0-9]+)?")
 _PRAGMA = re.compile(r"\A\s*// @exec: \{[^\r\n\u2028\u2029]{0,200}\}\r?\n")
 _EXEC_FIELDS = {"cmd", "workdir", "shell", "login", "tty", "yield_time_ms",
                 "max_output_tokens", "sandbox_permissions", "justification", "prefix_rule"}
-_CONTAINER_FIELDS = {"output", "content", "chunk_id", "wall_time_seconds", "session_id",
-                     "exit_code", "original_token_count", "isError", "structuredContent", "_meta"}
+# Only outer script containers can disclose positional results. A process
+# envelope's stdout is not an outer batch container, even if it prints indices.
+_CONTAINER_FIELDS = {"output", "content", "isError", "structuredContent", "_meta"}
+
+
+def is_text_block(value):
+    return (isinstance(value, dict) and set(value) == {"type", "text"}
+            and value["type"] in {"text", "input_text"} and isinstance(value["text"], str))
 
 
 @dataclass(frozen=True)
@@ -345,7 +352,7 @@ def parse_batch_output(value, count, *, text_parser):
     Separate complete blocks may be used independently. Conflicting or invalid
     indices reject the complete correspondence, before any result is emitted.
     """
-    if type(count) is not int or not 1 <= count <= MAX_SLOTS:
+    if type(count) is not int or not 1 <= count <= MAX_SLOTS or contains_ambiguous_json(value):
         return None
     seen, result = set(), BatchOutput()
 
@@ -354,7 +361,7 @@ def parse_batch_output(value, count, *, text_parser):
             return
         if isinstance(item, str):
             try:
-                parsed = text_parser(item, unique_keys=True)
+                parsed = text_parser(item, unique_keys=True, allow_process_header=False)
             except AmbiguousBatch:
                 raise
             except (UsageError, ValueError, TypeError, RecursionError, UnicodeError):
@@ -363,8 +370,7 @@ def parse_batch_output(value, count, *, text_parser):
                 visit(child, depth + 1)
         elif isinstance(item, list):
             for block in item:
-                if (isinstance(block, dict) and block.get("type") in {"text", "input_text"}
-                        and isinstance(block.get("text"), str)):
+                if is_text_block(block):
                     visit(block["text"], depth + 1)
         elif isinstance(item, dict):
             if set(item) == {"i", "result"}:

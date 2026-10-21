@@ -321,12 +321,26 @@ class BatchOutputTests(unittest.TestCase):
     def test_known_header_warning_and_output_content_containers_are_parsed(self):
         wrapped = settled(0, {"session_id": 7})
         body = json.dumps(wrapped)
-        header = "Chunk ID: fixture\nWall time: 0.1 seconds\nProcess exited with code 0\nOutput:\n"
+        header = "Script completed\nWall time: 0.1 seconds\nOutput:\n"
         warning = "Failed to find real location of C:\\fixture\\python.exe\n"
         for value in (header + body, warning + body, {"output": body},
                       {"content": [block(wrapped)], "_meta": {"private": "not inspected"}}):
             with self.subTest(value_type=type(value).__name__):
                 self.assertEqual(routed(value), {0: {"session_id": 7}})
+
+    def test_process_stdout_never_supplies_outer_batch_positions(self):
+        body = json.dumps(settled(0, {"session_id": 7}))
+        values = [{"exit_code": 0, "output": body}, {"exit_code": None, "output": body},
+                  {"chunk_id": "fixture", "output": body}, {"session_id": 9, "output": body},
+                  {"wall_time_seconds": 0.1, "output": body}, {"original_token_count": 1, "output": body},
+                  "Chunk ID: fixture\nProcess exited with code 0\nOutput:\n" + body]
+        for value in values:
+            for outer in (value, {"output": value}, [block(value)]):
+                with self.subTest(value=value, outer=outer):
+                    self.assertEqual(routed(outer), {})
+                    # Ignoring process stdout preserves a separately proven index.
+                    self.assertEqual(routed([block(outer), block(settled(1, {"session_id": 9}))]),
+                                     {1: {"session_id": 9}})
 
     def test_unknown_containers_and_unmarked_results_are_not_searched(self):
         wrapped = settled(0, {"session_id": 7})

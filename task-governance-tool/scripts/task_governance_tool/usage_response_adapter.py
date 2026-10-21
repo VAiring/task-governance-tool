@@ -14,12 +14,13 @@ from task_governance_tool.session_identity import is_session_id
 from task_governance_tool.usage_turn_adapter import OperationObservation, project_record
 from task_governance_tool.usage_values import RESPONSE_ID, UsageError, label
 from task_governance_tool.task_values import validate_task_id, TaskValidationError
+from task_governance_tool.usage_adapter import AMBIGUOUS_JSON, contains_ambiguous_json
 from task_governance_tool.usage_batch_adapter import (
-    AmbiguousBatch, parse_batch_input, parse_batch_output, is_single_execution, strip_exec_pragma,
+    AmbiguousBatch, parse_batch_input, parse_batch_output, is_single_execution, strip_exec_pragma, is_text_block,
 )
 
 
-VERSION = "codex-response-relations-v8"
+VERSION = "codex-response-relations-v14"
 BRACKET_VERSIONS = frozenset({"0.162.0-alpha.17.2", "0.163.0-alpha.10.2"})
 MAX_CONTEXT = 128
 MAX_TEXT = 2_097_152
@@ -31,6 +32,9 @@ _WARNING = re.compile(r"Failed to find real location of (?:[A-Za-z]:[\\/]|/)[^\r
 _HEADER_LINE = re.compile(r"(?:Chunk ID: [A-Za-z0-9_-]{1,128}|Wall time:? [0-9.]+(?: seconds)?|"
                           r"Process exited with code -?[0-9]+|Original token count: [0-9]+|"
                           r"Script completed|Script running with cell ID [A-Za-z0-9_-]{1,120})\Z")
+_PROCESS_FIELDS = frozenset({"chunk_id", "wall_time_seconds", "exit_code", "session_id",
+                             "output", "original_token_count"})
+_PROCESS_MARKERS = _PROCESS_FIELDS - {"output"}
 
 
 @dataclass(frozen=True)
@@ -87,16 +91,51 @@ class ResponseBoundary:
                                  self.event_id, self.generation, self.status)
 
 
-def _text_json(value, *, unique_keys=False):
+def _header_fields(head):
+    """Validate one whole host header; competing running cells stay explicit."""
+    lines = head.splitlines()
+    if not lines or any(not _HEADER_LINE.fullmatch(line) for line in lines):
+        raise ValueError
+    metadata = set()
+    for line in lines:
+        field = ("chunk" if line.startswith("Chunk ID:") else
+                 "wall" if line.startswith("Wall time") else
+                 "tokens" if line.startswith("Original token count:") else None)
+        if field is None:
+            continue
+        if field in metadata:
+            raise ValueError
+        metadata.add(field)
+        if field == "wall":
+            match = re.fullmatch(r"Wall time:? ([0-9]+(?:\.[0-9]+)?)(?: seconds)?", line)
+            if match is None or not 0 <= float(match[1]) < 2**63:
+                raise ValueError
+        elif field == "tokens" and not 0 <= int(line.split(": ")[1]) < 2**63:
+            raise ValueError
+    exits = [line for line in lines if line.startswith("Process exited with code ")]
+    scripts = [line for line in lines if line.startswith("Script ")]
+    if exits:
+        if len(exits) != 1 or scripts:
+            raise ValueError
+    elif scripts != ["Script completed"] and not (
+            scripts and all(line.startswith("Script running with cell ID ") for line in scripts)):
+        raise ValueError
+    return exits, scripts
+
+
+def _text_json(value, *, unique_keys=False, allow_header=True, allow_process_header=True):
     if len(value.encode("utf-8")) > MAX_TEXT:
         raise UsageError("response_binding_unknown")
     text = value.replace("\r\n", "\n").strip()
-    if text.startswith(("Chunk ID:", "Script completed", "Script running with cell ID ")):
+    if allow_header and text.startswith(("Chunk ID:", "Script completed", "Script running with cell ID ")):
         original = text
         head, separator, text = text.partition("\nOutput:\n")
         if not separator and original.endswith("\nOutput:"):
             head, text, separator = original[:-len("\nOutput:")], "", True
-        if not separator or any(not _HEADER_LINE.fullmatch(line) for line in head.splitlines()):
+        if not separator:
+            raise UsageError("response_binding_unknown")
+        exits, _ = _header_fields(head)
+        if exits and not allow_process_header:
             raise UsageError("response_binding_unknown")
     for _ in range(4):
         warning = _WARNING.match(text)
@@ -119,25 +158,63 @@ def _text_json(value, *, unique_keys=False):
     return result
 
 
-def objects(value, depth=0, *, unique_keys=False):
+def _process_kind(item):
+    """Recognize process metadata before interpreting any enclosed stdout.
+
+    None denotes a non-process container. Every process-shaped object goes
+    through this shared closed validator for both handles and termination.
+    """
+    if not _PROCESS_MARKERS.intersection(item):
+        return None
+    if not set(item) <= _PROCESS_FIELDS or not isinstance(item.get("output", ""), str):
+        return "unresolved"
+    body = item.get("output", "")
+    if len(body.encode("utf-8")) > MAX_TEXT or body.startswith("Warning: truncated output"):
+        return "unresolved"
+    if "chunk_id" in item and (not isinstance(item["chunk_id"], str)
+            or re.fullmatch(r"[A-Za-z0-9_-]{1,128}", item["chunk_id"]) is None):
+        return "unresolved"
+    if "wall_time_seconds" in item and (type(item["wall_time_seconds"]) not in {int, float}
+            or not 0 <= item["wall_time_seconds"] < 2**63):
+        return "unresolved"
+    if "original_token_count" in item and (type(item["original_token_count"]) is not int
+            or not 0 <= item["original_token_count"] < 2**63):
+        return "unresolved"
+    if type(item.get("exit_code")) is int and "session_id" not in item:
+        return "terminal"
+    if (item.get("exit_code") is None and type(item.get("session_id")) is int
+            and 0 <= item["session_id"] < 2**63):
+        return "running"
+    return "unresolved"
+
+
+def objects(value, depth=0, *, unique_keys=False, lifetime=False):
     """Parse the complete known container before yielding any success body."""
     if depth > 8:
         raise UsageError("response_binding_unknown")
+    if value is AMBIGUOUS_JSON:
+        raise AmbiguousBatch("duplicate source object key")
+    # Handle extraction must not descend into a finished process's stdout.
+    # Apply this at each container, so a separate live sibling still survives.
+    if lifetime and _lifetime_evidence(value, depth=depth) == "terminal":
+        return []
     if isinstance(value, str):
         result = []
-        for parsed in _text_json(value, unique_keys=unique_keys):
-            result.extend(objects(parsed, depth + 1, unique_keys=unique_keys))
+        for parsed in _text_json(value, unique_keys=unique_keys or lifetime):
+            result.extend(objects(parsed, depth + 1, unique_keys=unique_keys, lifetime=lifetime))
         return result
     if isinstance(value, list):
         result = []
         for item in value:
-            if not isinstance(item, dict) or item.get("type") not in {"input_text", "text"}:
+            if not is_text_block(item):
                 result.append({"_transport_unreadable": True})
                 continue
             try:
-                result.extend(objects(item.get("text"), depth + 1, unique_keys=unique_keys))
+                result.extend(objects(item.get("text"), depth + 1, unique_keys=unique_keys, lifetime=lifetime))
             except AmbiguousBatch:
-                raise
+                if unique_keys:
+                    raise
+                result.append({"_transport_unreadable": True})
             except (UsageError, ValueError, TypeError, RecursionError, UnicodeError):
                 # A separate text block is a separate closed container, not
                 # a reason to discard another independently complete body.
@@ -145,33 +222,127 @@ def objects(value, depth=0, *, unique_keys=False):
         return result
     if isinstance(value, dict):
         if set(value) == {"i", "result"} and type(value["i"]) is int and 0 <= value["i"] < MAX_CONTEXT:
+            if lifetime:
+                # The admitted batch router already removed its own index.
+                # Any index still present cannot introduce another lifetime.
+                return []
             settled = value["result"]
             if isinstance(settled, dict) and set(settled) == {"status", "value"} and settled["status"] == "fulfilled":
-                return objects(settled["value"], depth + 1, unique_keys=unique_keys)
+                return [{"_transport_indexed": True}, *objects(
+                    settled["value"], depth + 1, unique_keys=unique_keys, lifetime=lifetime)]
             return [{"_transport_unreadable": True}]
         body = ("command" in value or value.get("status") in {"review_wait_ended", "saved"}
                 or value.get("context_check") == "matched_at_read")
-        if body and not unique_keys:
-            return [value]
+        if body and lifetime:
+            return []
         allowed = {"output", "content", "chunk_id", "wall_time_seconds", "session_id", "exit_code",
                    "original_token_count", "isError", "structuredContent", "_meta"}
         if not body and not set(value) <= allowed:
             return [{"_transport_unreadable": True}]
-        # The turn projector also knows legacy transport traversal. Strict
+        if lifetime:
+            process = _process_kind(value)
+            if process is not None:
+                # Invalid and incomplete process containers stay opaque too.
+                return [{"session_id": value["session_id"]}] if process == "running" else []
+        # The turn projector also knows legacy transport traversal. All
         # results must contain only leaves already checked here, so it cannot
         # re-decode child text with a fresh depth or weaker ambiguity rules.
-        result = [{key: item for key, item in value.items() if key not in {"output", "content"}}
-                  if unique_keys else value]
+        result = [{key: item for key, item in value.items() if key not in {"output", "content"}}]
         for field in ("output", "content"):
             if field in value and value[field] not in (None, "", []):
                 try:
-                    result.extend(objects(value[field], depth + 1, unique_keys=unique_keys))
+                    result.extend(objects(value[field], depth + 1, unique_keys=unique_keys, lifetime=lifetime))
                 except AmbiguousBatch:
-                    raise
+                    if unique_keys:
+                        raise
+                    result.append({"_transport_unreadable": True})
                 except (UsageError, ValueError, TypeError, RecursionError, UnicodeError):
                     result.append({"_transport_unreadable": True})
         return result
     raise UsageError("response_binding_unknown")
+
+
+def _lifetime_evidence(value, *, depth=0):
+    """Classify the whole transport before allowing any terminal decision.
+
+    Stdout is opaque at a confirmed process envelope. Otherwise only the
+    existing closed transport is traversed, with its inherited depth bound.
+    Script completion alone cannot discharge an inner process or batch slot.
+    A body-only transport may use the existing validated acknowledgement gate.
+    An invalid process envelope cannot fall back to that gate through stdout.
+    These transient categories never create Taskgov success or origin evidence.
+    """
+    containers = {"output", "content", "isError", "structuredContent", "_meta"}
+
+    def combine(children):
+        processes, bodies = 0, 0
+        for child in children:
+            process_count, body_count = child
+            processes += process_count
+            bodies += body_count
+        return processes, bodies
+
+    def visit(item, level):
+        if level > 8:
+            raise ValueError
+        if isinstance(item, str):
+            if len(item.encode("utf-8")) > MAX_TEXT:
+                raise ValueError
+            text = item.replace("\r\n", "\n").strip()
+            if text.startswith(("Chunk ID:", "Script completed", "Script running with cell ID ")):
+                head, separator, body = text.partition("\nOutput:\n")
+                if not separator and text.endswith("\nOutput:"):
+                    head, body, separator = text[:-len("\nOutput:")], "", True
+                if not separator:
+                    raise ValueError
+                exits, scripts = _header_fields(head)
+                if exits:
+                    if len(exits) != 1 or scripts or body.startswith("Warning: truncated output"):
+                        raise ValueError
+                    return 1, 0
+                if scripts != ["Script completed"]:
+                    raise ValueError
+                # A separate completed header is neutral; its following result
+                # block still has to prove the inner execution's termination.
+                return visit(body, level + 1)
+            # Every header layer must pass this visitor, never the success
+            # parser's independent header stripping (including after warnings).
+            return combine(visit(child, level + 1) for child in
+                           _text_json(text, unique_keys=True, allow_header=False))
+        if isinstance(item, list):
+            children = []
+            for block in item:
+                if not is_text_block(block):
+                    raise ValueError
+                children.append(visit(block["text"], level + 1))
+            return combine(children)
+        if not isinstance(item, dict):
+            raise ValueError
+        process = _process_kind(item)
+        if process == "terminal":
+            return 1, 0
+        if process is not None:
+            raise ValueError
+        if ("command" in item or item.get("status") in {"review_wait_ended", "saved"}
+                or item.get("context_check") == "matched_at_read"):
+            # Mixed acknowledgement/transport objects still own child
+            # transport. A usable acknowledgement cannot conceal that fence.
+            return combine([(0, 1), *(visit(item[field], level + 1)
+                for field in ("output", "content") if field in item and item[field] not in (None, "", []))])
+        if (not set(item) <= containers or item.get("isError", False) is not False
+                or not any(field in item for field in ("output", "content"))):
+            raise ValueError
+        return combine(visit(item[field], level + 1) for field in ("output", "content") if field in item)
+
+    try:
+        processes, bodies = visit(value, depth)
+        if processes == 1 and bodies == 0:
+            return "terminal"
+        if processes == 0 and bodies:
+            return "body"
+    except (UsageError, ValueError, TypeError, RecursionError, UnicodeError):
+        pass
+    return "unresolved"
 
 
 def _handle_input(name, arguments):
@@ -265,14 +436,21 @@ def _check_shape(command, data, project):
 def _output_handles(value, parsed, *, depth=0, unique_keys=False):
     if depth > 8:
         return set()
+    try:
+        parsed = objects(value, depth=depth, unique_keys=unique_keys, lifetime=True)
+    except AmbiguousBatch:
+        if unique_keys:
+            raise
+        parsed = []
+    except (UsageError, ValueError, TypeError, RecursionError, UnicodeError):
+        parsed = []
     result = set()
     for item in parsed:
         handle = item.get("session_id")
         if type(handle) is int and 0 <= handle < 2**63:
             result.add(("session", str(handle)))
     texts = [value] if isinstance(value, str) else [item["text"] for item in value
-                if isinstance(item, dict) and item.get("type") in {"text", "input_text"}
-                and isinstance(item.get("text"), str)] if isinstance(value, list) else []
+                if is_text_block(item)] if isinstance(value, list) else []
     text_depth = depth + int(isinstance(value, list))
     if text_depth > 8:
         return result
@@ -553,7 +731,9 @@ class ResponseTracker:
                 return tuple(result)
             # Validate every lifetime before emitting any result from this output.
             # Two fresh slots have the same host call, but different origins.
-            for _, frame, _, _, handles in selected:
+            for _, frame, _, parsed, handles in selected:
+                if any(item.get("_transport_indexed") for item in parsed):
+                    frame["ambiguous"] = True
                 self._register_handles(frame, handles)
             live_handles = {":".join(handle) for _, _, _, _, handles in selected for handle in handles}
             for _, frame, _, _, handles in selected:
@@ -562,7 +742,8 @@ class ResponseTracker:
                     # Retain the live lifetime and make its competing proof unknown.
                     self._invalidate_handle(frame["handle"])
             for index, frame, value, parsed, handles in selected:
-                found, pending = self._result(frame, value, parsed, handles, turn, project, live_handles=live_handles)
+                found, pending = self._result(frame, value, parsed, handles, turn, project,
+                                              live_handles=live_handles, depth=values[index].depth)
                 result.extend(found)
                 if not pending:
                     slots[index] = None
@@ -587,9 +768,8 @@ class ResponseTracker:
                 result.extend(project_record(actual, self.thread, project_id=project))
             return tuple(result)
         self.state["calls"].pop(call)
-        unproven = parse_batch_output(output, MAX_CONTEXT,
-                                     text_parser=lambda value, **_: _text_json(value))
-        if unproven is None or unproven.indexed:
+        unproven = parse_batch_output(output, MAX_CONTEXT, text_parser=_text_json)
+        if unproven is None or unproven.indexed or any(item.get("_transport_indexed") for item in parsed):
             # An indexed result cannot prove which inner call ran from this
             # ordinary frame. This also closes unsupported JS spellings without
             # interpreting their syntax or relabelling a poll as a fresh exec.
@@ -604,6 +784,8 @@ class ResponseTracker:
     @staticmethod
     def _parsed(output, *, depth=0, unique_keys=False):
         try:
+            if unique_keys and contains_ambiguous_json(output):
+                raise AmbiguousBatch("duplicate source object key")
             return objects(output, depth=depth, unique_keys=unique_keys)
         except AmbiguousBatch:
             raise
@@ -631,7 +813,7 @@ class ResponseTracker:
             else:
                 self.state["handles"][key] = {**frame, "handle": None}
 
-    def _result(self, frame, output, parsed, handles, turn, project, *, live_handles=frozenset()):
+    def _result(self, frame, output, parsed, handles, turn, project, *, live_handles=frozenset(), depth=0):
         result = []
         method = frame["method"] if (frame["response"] is not None and not frame["ambiguous"]
                     and (frame["method"] != "single_bracket" or self.allow_bracket)) else "unavailable"
@@ -658,17 +840,21 @@ class ResponseTracker:
                     result.append(ResponseBoundary(self.thread, frame["turn"], project, command, frame["call"],
                         self.provider, response_id, frame["order"], observation.event_id, observation.task_id,
                         observation.generation, observation.status, method))
-        # Arrival is not terminal proof. An opaque block can hide a running
-        # nested operation even when another independently valid block is read.
-        terminal = bool(parsed) and not any(item.get("_transport_unreadable") for item in parsed) and any(
-            (type(item.get("exit_code")) is int and "session_id" not in item)
-            or (item.get("project_id") == project and item.get("ok") is False
+        # Lifetime evidence belongs to its transport envelope, separately from
+        # success parsing. Opaque stdout is not an unfinished process; an opaque
+        # wrapper or an unproven inner lifetime remains unresolved.
+        lifetime = _lifetime_evidence(output, depth=depth)
+        body_terminal = (bool(parsed) and not any(item.get("_transport_unreadable") for item in parsed) and any(
+            (item.get("project_id") == project and item.get("ok") is False
                 and isinstance(item.get("data"), dict)
                 and item.get("command") in CHECKS | {"task.add", "task.edit", "task.complete"})
             or item.get("status") in {"review_wait_ended", "saved"}
-            or item.get("context_check") == "matched_at_read" for item in parsed)
-        terminal = terminal or (validated_success and not any(item.get("_transport_unreadable") for item in parsed))
-        if frame["handle"] is not None and frame["handle"] not in live_handles and not handles and terminal:
+            or item.get("context_check") == "matched_at_read" for item in parsed))
+        body_terminal = body_terminal or (validated_success and not any(item.get("_transport_unreadable") for item in parsed))
+        terminal = lifetime == "terminal" or (lifetime == "body" and body_terminal)
+        known = self.state["handles"].get(frame["handle"])
+        if (frame["handle"] is not None and frame["handle"] not in live_handles and not handles and terminal
+                and known is not None and not known["ambiguous"] and not frame["ambiguous"]):
             key = frame["handle"]
             self.state["handles"].pop(key, None)
             if key in self.state["retired"]:

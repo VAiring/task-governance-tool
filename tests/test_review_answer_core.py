@@ -36,6 +36,67 @@ class CollectedCoreTests(unittest.TestCase):
     register_collected_source = ReviewFixture.register_collected_source
     collected_source_artifact = ReviewFixture.collected_source_artifact
 
+    def test_selected_report_provenance_reuses_validation_and_rejects_missing_or_changed_evidence(self):
+        from task_governance_tool import evidence_validation_repository as evidence
+        from task_governance_tool import review_repository
+        with closing(storage.connect_initialized(self.target)) as original:
+            receipt, _ = self.add(original)
+            unrelated, _ = self.add(original, 2)
+            original.commit()
+            key = receipt["review_receipt_id"]
+
+            def read(connection):
+                return evidence.validate_selected_task_receipt_evidence(connection,
+                    project_id=self.basis["project_id"], task_id=self.task_id,
+                    review_receipt_ids={key}, review_finding_ids=set(), verification_receipt_ids=set())
+
+            validate = review_repository._iter_validated_review_receipts_with_provenance
+            with mock.patch.object(review_repository, "_iter_validated_review_receipts_with_provenance",
+                                   wraps=validate) as selected:
+                projected = read(original)
+            self.assertEqual(projected, {key: receipt["review_provenance"]})
+            self.assertNotIn(unrelated["review_receipt_id"], projected)
+            self.assertEqual(selected.call_count, 1)
+            self.assertEqual(selected.call_args.args[1], {key})
+            payload = projected[key]["answer_attestation"]["payload"]
+            self.assertEqual(payload["checks"], ["source inspection"])
+            self.assertEqual(payload["limitations"], [])
+            original.commit()
+
+            for corruption in ("absent", "missing_field", "changed_value", "reference_target"):
+                with self.subTest(corruption=corruption), closing(sqlite3.connect(":memory:")) as connection:
+                    connection.row_factory = sqlite3.Row
+                    original.backup(connection)
+                    # Corruption is confined to this disposable copy. Restore
+                    # the exact triggers before exercising the read boundary.
+                    triggers = connection.execute("SELECT name,sql FROM sqlite_master WHERE type='trigger' "
+                        "AND tbl_name IN ('review_receipt_provenance_v2','evidence_references')").fetchall()
+                    for trigger in triggers:
+                        connection.execute('DROP TRIGGER "' + trigger["name"].replace('"', '""') + '"')
+                    if corruption == "absent":
+                        connection.execute("DELETE FROM review_receipt_provenance_v2 WHERE review_receipt_id=?", (key,))
+                    elif corruption == "reference_target":
+                        connection.execute("UPDATE evidence_references SET target_generation=target_generation+1 "
+                            "WHERE source_kind='review_receipt' AND source_id=?", (key,))
+                    else:
+                        row = connection.execute("SELECT provenance_json FROM review_receipt_provenance_v2 "
+                                                 "WHERE review_receipt_id=?", (key,)).fetchone()
+                        value = json.loads(row[0])
+                        if corruption == "missing_field":
+                            del value["answer_attestation"]["payload"]["checks"]
+                        else:
+                            value["answer_attestation"]["payload"]["limitations"] = ["Invented limitation"]
+                        connection.execute("UPDATE review_receipt_provenance_v2 SET provenance_json=? "
+                            "WHERE review_receipt_id=?", (json.dumps(value), key))
+                    for trigger in triggers:
+                        connection.execute(trigger["sql"])
+                    connection.commit()
+                    before = _logical_snapshot(connection)
+                    connection.execute("PRAGMA query_only=ON")
+                    with self.assertRaises(storage.StorageError):
+                        read(connection)
+                    self.assertEqual(_logical_snapshot(connection), before)
+
     def test_capture_admission_binds_source_sequence_and_selection_with_recomputed_seals(self):
         from task_governance_tool import review_continuation_repository as cr
         source,metadata,_=self.collected_source_continuation()

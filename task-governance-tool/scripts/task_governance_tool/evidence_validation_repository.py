@@ -372,7 +372,7 @@ def _validate_evidence_reference_storage(
     completion_cycle_ids: set[str] | None = None,
     selected_project_id: str | None = None,
     privacy_success_cache: set[tuple[str, str, str]] | None = None,
-) -> None:
+) -> dict[tuple[str, str], _storage._ExpectedEvidenceReference]:
     """Rebuild every native source and require its one exact Reference."""
 
     from task_governance_tool.evidence_repository import (
@@ -855,6 +855,7 @@ def _validate_evidence_reference_storage(
 
         if seen != set(expected):
             raise evidence_ledger_inconsistent()
+        return expected
     except (EvidenceLedgerError, StorageError) as exc:
         raise evidence_ledger_boundary_error(exc) from exc
 
@@ -2419,8 +2420,13 @@ def validate_selected_task_receipt_evidence(
     review_receipt_ids: set[str],
     review_finding_ids: set[str],
     verification_receipt_ids: set[str],
-) -> None:
-    """Validate one bounded Receipt/Finding source set and its bindings."""
+) -> dict[str, dict[str, Any] | None]:
+    """Validate a bounded source set and return its exact review provenance.
+
+    Projection borrows the already validated sources in this read transaction;
+    it adds no lookup, retained cache or alternative admission path. Legacy
+    absence remains None. Callers that need only validation ignore the result.
+    """
 
     from task_governance_tool.evidence_repository import (
         _artifact_manifest_target_key,
@@ -2584,7 +2590,7 @@ def validate_selected_task_receipt_evidence(
             criteria=authority.criteria,
             links=authority.links,
         )
-        _validate_evidence_reference_storage(
+        references = _validate_evidence_reference_storage(
             connection,
             manifests=manifests,
             manifests_by_target=manifests_by_target,
@@ -2596,6 +2602,11 @@ def validate_selected_task_receipt_evidence(
             selected_project_id=project_id,
             privacy_success_cache=review_privacy_successes,
         )
+        return {
+            key: references[("review_receipt", key)].source.source_projection["review_provenance"]
+            if ("review_receipt", key) in references else None
+            for key in review_receipt_ids
+        }
     except sqlite3.Error as exc:
         raise evidence_ledger_sqlite_error(exc) from exc
 

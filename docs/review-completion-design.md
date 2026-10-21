@@ -1432,6 +1432,13 @@ parent union also remains bounded. IDs are deduplicated and relationships are
 returned as `reported_receipts`. Other Task/target evidence is rejected. A failed history
 read returns null collections and `reported_reviews_and_findings` unavailable,
 without discarding independently observed original registration or replaying it.
+The bounded Receipt validator returns the exact provenance from its already
+validated native Reference sources. Reporting projects only each selected
+Receipt's saved checks and limitations, preserving empty arrays; legacy
+versions explicitly report unrecorded null arrays. This borrows facts from the
+same read transaction, without another provenance lookup/validation, a global
+history read, persistent cache or any Evidence/Bundle format change. Finding
+batches retain their validation and discard this optional return value.
 The original-summary projection never consumes this expanded reporting set.
 `recorded_work.recent_notes` filters already validated normal Task events by
 `note_added` or non-null `note_body`; it does not parse summaries, widen history,

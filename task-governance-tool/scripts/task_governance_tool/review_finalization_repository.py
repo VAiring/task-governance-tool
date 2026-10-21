@@ -398,10 +398,11 @@ def reported_review_evidence(target, record, registered_receipt_ids):
               (SELECT value FROM json_each(?)) ORDER BY finding.created_at, finding.review_finding_id""",
             (record.basis["project_id"], record.basis["task_id"], json.dumps(receipt_ids))).fetchall()
         size = COMPLETION_RECEIPT_VALIDATION_CHUNK_SIZE
+        provenance = {}
         for offset in range(0, len(receipt_ids), size):
-            validate_selected_task_receipt_evidence(connection, project_id=record.basis["project_id"],
+            provenance.update(validate_selected_task_receipt_evidence(connection, project_id=record.basis["project_id"],
                 task_id=record.basis["task_id"], review_receipt_ids=set(receipt_ids[offset:offset + size]),
-                review_finding_ids=set(), verification_receipt_ids=set())
+                review_finding_ids=set(), verification_receipt_ids=set()))
         # Finding validation includes its parents. Do not add an unrelated
         # Receipt batch to that union or it could exceed the same bounded API.
         for offset in range(0, len(rows), size):
@@ -411,6 +412,17 @@ def reported_review_evidence(target, record, registered_receipt_ids):
                 verification_receipt_ids=set())
         for row in rows:
             validate_stored_review_finding_projection(row)
+        versions = {row["review_receipt_id"]: row["review_provenance_basis_version"] for row in receipts}
         return ([dict(review_receipt_id=key, roles=sorted(roles[key]),
-                      successor_receipt_ids=sorted(successors.get(key, ()))) for key in receipt_ids],
+                      successor_receipt_ids=sorted(successors.get(key, ())),
+                      review_details=_review_details(versions[key], provenance[key])) for key in receipt_ids],
                 [dict(row) for row in rows])
+
+
+def _review_details(version, provenance):
+    """Project exact claims, without inferring them from legacy summaries."""
+    if version != 2:
+        return dict(status="not_recorded", provenance_version=version, checks=None, limitations=None)
+    payload = provenance["answer_attestation"]["payload"]
+    return dict(status="available", provenance_version=2,
+                checks=list(payload["checks"]), limitations=list(payload["limitations"]))

@@ -122,6 +122,14 @@ class LegacyMigrationInstalledTests(LegacyMigrationFixture):
                     registration="succeeded", commit="not_started", completion="not_started"))
         self.assertEqual({path: (self.root / path).read_bytes() for path in originals}, originals)
         self.assertEqual(len(self.current_receipts()), 2)
+        details = [row["review_details"] for row in report["reported_receipts"]]
+        self.assertEqual(len(details), 4)
+        self.assertEqual(details.count(dict(status="not_recorded", provenance_version=1,
+                                           checks=None, limitations=None)), 2)
+        self.assertEqual(details.count(dict(status="available", provenance_version=2,
+            checks=["Complete assigned material inspected"], limitations=["Offline public host fixture"])), 2)
+        _, checked = self.finalize(self.task_id, check=True)
+        self.assertEqual(checked["reported_receipts"], report["reported_receipts"])
 
     def test_migrated_selected_answer_keeps_late_unselected_legacy_original(self):
         self.supplement(migrate=True, reviewers=(1,))

@@ -370,6 +370,8 @@ class FinalizationContinuationTests(unittest.TestCase):
         self.assertEqual(set(sources), {*chain, retained})
         self.assertEqual(sources[retained]["roles"], ["retained"])
         self.assertEqual(sources[chain[-1]]["roles"], ["registered"])
+        self.assertTrue(all(row["review_details"] == dict(status="not_recorded", provenance_version=1,
+            checks=None, limitations=None) for row in sources.values()))
         for predecessor, successor in zip(chain, chain[1:]):
             self.assertEqual(sources[predecessor]["roles"], ["reassessment_source"])
             self.assertEqual(sources[predecessor]["successor_receipt_ids"], [successor])

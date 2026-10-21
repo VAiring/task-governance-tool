@@ -345,6 +345,20 @@ class ManagedHostTests(unittest.TestCase):
         self.assertIn("--check", payload["delivery"]["recovery"])
         self.assertEqual(payload["stages"], report["stages"])
 
+    def test_reported_review_details_keep_explicit_overflow_notification(self):
+        host = self.host()
+        report = self.report("")
+        report["reported_receipts"] = [dict(review_receipt_id=f"tg_review_receipt_{index:016x}",
+            roles=["retained"], successor_receipt_ids=[], review_details=dict(status="available",
+            provenance_version=2, checks=["日" * 1000] * 32, limitations=["別" * 1000] * 32))
+            for index in range(2)]
+        host.set_finalization_result(OTHER, report)
+        payload = json.loads(host._direct_prompt(OTHER).splitlines()[2])
+        self.assertEqual(payload["delivery"]["source_body"], "incomplete")
+        self.assertEqual(payload["delivery"]["limitation"], "local_relay_frame_limit")
+        self.assertIn("reported_receipts", payload["delivery"]["omitted_fields"])
+        self.assertNotIn("reported_receipts", payload)
+
     def test_exact_utf16_event_boundary_and_split_surrogate(self):
         report = self.report("")
         # A trailing field avoids changing the number of repeated summary fields.

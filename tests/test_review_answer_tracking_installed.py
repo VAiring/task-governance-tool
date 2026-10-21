@@ -208,6 +208,65 @@ class InstalledAnswerTrackingTests(fixtures.PreparationFixture):
     def test_public_ng_reassessment_completes_and_retains_other_pass(self):
         self.assert_reassessment_completes("changes_requested")
 
+    def test_retained_checks_and_limits_survive_multiple_rounds_completion_and_notification(self):
+        def observed(slot, revision, verdict, checks, limitations):
+            return arrival(slot, verdict, revision, text=json.dumps(dict(
+                verdict=verdict, summary=f"Review {slot} revision {revision}", findings=[],
+                checks=checks, limitations=limitations), ensure_ascii=False))
+
+        first = observed(1, 1, "unable_to_review", ["Initial inspection 日本語"], ["Missing explanation"])
+        sibling = observed(2, 1, "pass", ["Sibling source", "Sibling tests"], ["Offline only"])
+        self.assert_collected(self.collect_public([first, sibling]), [1, 2])
+        _, report = self.finalize(self.task_id)
+        self.assertEqual(report["stages"]["registration"], "succeeded", report)
+        prior = next(row["review_receipt_id"] for row in report["reviews"]["current_receipts"]
+                     if row["verdict"] == "unable_to_review")
+        retained = next(row["review_receipt_id"] for row in report["reviews"]["current_receipts"]
+                        if row["verdict"] == "pass")
+        expected = {prior: json.loads(first["answer"]), retained: json.loads(sibling["answer"])}
+        chain = [prior]
+        original_bytes = self.originals()
+        previous = first
+        for revision in (2, 3):
+            self.continue_reviewer(chain[-1], directory=f"reviews/details-{revision}")
+            _, pending = self.finalize(self.task_id, check=True)
+            self.assertNotIn("registered", [role for row in pending["reported_receipts"] for role in row["roles"]])
+            self.assertTrue(self.collect_public([previous], action="arm")["response"]["ok"])
+            # Explicit empty arrays in a saved answer are not missing evidence.
+            latest = observed(1, revision, "unable_to_review" if revision == 2 else "pass",
+                              [] if revision == 2 else ["Final tests", "Final inspection"],
+                              [] if revision == 2 else ["No live Hook"])
+            self.assert_collected(self.collect_public([latest]), [1])
+            _, report = self.finalize(self.task_id)
+            successor = report["observed_registered_receipt_ids"][0]
+            chain.append(successor)
+            expected[successor] = json.loads(latest["answer"])
+            previous = latest
+
+        self.assertEqual(report["status"], "completed", report)
+        self.assertEqual(self.originals(), original_bytes)
+        rows = {row["review_receipt_id"]: row for row in report["reported_receipts"]}
+        self.assertEqual(len(rows), len(report["reported_receipts"]))
+        self.assertEqual(set(rows), set(expected))
+        self.assertEqual(rows[retained]["roles"], ["retained"])
+        self.assertEqual(rows[chain[-1]]["roles"], ["registered"])
+        for predecessor, successor in zip(chain, chain[1:]):
+            self.assertEqual(rows[predecessor]["roles"], ["reassessment_source"])
+            self.assertEqual(rows[predecessor]["successor_receipt_ids"], [successor])
+        for key, payload in expected.items():
+            self.assertEqual(rows[key]["review_details"], dict(status="available", provenance_version=2,
+                checks=payload["checks"], limitations=payload["limitations"]))
+        _, checked = self.finalize(self.task_id, check=True)
+        self.assertEqual(checked["reported_receipts"], report["reported_receipts"])
+
+        from tests.test_review_wait_managed import ManagedHostTests, OTHER
+        host = ManagedHostTests().host()
+        host.task_id = self.task_id
+        host.set_finalization_result(OTHER, checked)
+        delivered = json.loads(host._direct_prompt(OTHER).splitlines()[2])
+        self.assertEqual(delivered["reported_receipts"], checked["reported_receipts"])
+        self.assertEqual(delivered["delivery"]["source_body"], "complete")
+
     def test_malformed_initial_answer_can_be_followed_by_first_valid_answer(self):
         invalid = self.collect_public([arrival(1, text="not a structured review"), arrival(2)])
         self.assertFalse(invalid["response"]["ok"], invalid)

@@ -1716,6 +1716,15 @@ state, including low/resolved Findings omitted by ordinary current gate detail.
 (`registered`, `retained`, `reassessment_source`) and `successor_receipt_ids`.
 Roles may overlap; successor IDs describe direct registered reassessment edges.
 These are reporting relationships, not current qualifying PASS judgments.
+Each row also has `review_details={status,provenance_version,checks,limitations}`.
+Validated version-two provenance supplies `status=available` and the exact saved
+`answer_attestation.payload` checks and limitations, preserving strings, order
+and explicit empty arrays. Version-zero/one evidence did not record these fields:
+it has `status=not_recorded`, its actual provenance version, and null arrays.
+Missing or inconsistent required provenance is unavailable evidence, not a
+legacy absence or an empty result. Summaries and requested methods never fill
+these fields. The same projection covers retained PASS and registered
+reassessment ancestors without presenting ancestors as effective judgments.
 Unrelated Tasks, target generations and unregistered reassessment selections
 are excluded. Missing or inconsistent related evidence returns null report
 collections and a named unavailable field, never an empty successful history.

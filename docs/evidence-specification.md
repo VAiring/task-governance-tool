@@ -487,6 +487,13 @@ Every graph item binds the Bundle's same project/Task, Contract/criteria and
 four-part target. Extra current or historical relations are not silently
 added to a sealed graph. A re-opened Task's later links cannot alter old bytes.
 
+In both graph versions, continuation `target_generation` and judgment
+`judgment_revision` are strict positive integers within the existing signed
+64-bit range. Boolean values are not integers for this contract, even when
+they compare equal to the corresponding validated basis or Receipt value.
+Type-invalid graph values fail with `evidence_ledger_inconsistent`; this does
+not regenerate or reinterpret previously sealed Evidence.
+
 <a id="collected-answer-evidence"></a>
 
 ## Collected Answer Evidence

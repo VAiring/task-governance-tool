@@ -535,6 +535,68 @@ class ContinuationEvidenceValidationTests(unittest.TestCase):
                     with self.assertRaises(EvidenceLedgerError):
                         validate(changed)
 
+    def test_graph_integer_types_match_independent_reader_without_mutating_evidence(self):
+        from tests import evidence_reader_oracle as reader
+        from tests import review_continuation_evidence_oracle as graph_reader
+
+        artifact, _ = self.native_continuation_artifact()
+        for version in (1, 2):
+            bundle = copy.deepcopy(artifact.payload)
+            graph = bundle["review_continuation_basis"]
+            if version == 2:
+                # A current Bundle may retain legacy Receipt assertions.
+                bundle.update(bundle_version=4, source_schema_version=31)
+                graph.update(version=2, collected_captures=[])
+            before = canonical_json_bytes(bundle)
+            digest = hashlib.sha256(before).digest()
+            self.assertIs(frozen.validate_graph(graph, bundle=bundle), graph)
+            self.assertEqual(frozen.decode_graph_json(canonical_json_bytes(graph).decode()), graph)
+            self.assertEqual(graph_reader.validate_graph(bundle, reader), graph)
+            self.assertEqual(canonical_json_bytes(bundle), before)
+            self.assertEqual(hashlib.sha256(canonical_json_bytes(bundle)).digest(), digest)
+
+            # Select revision one explicitly: True == 1 is the original bug.
+            judgment = next(i for i, row in enumerate(graph["judgments"])
+                            if row["judgment_revision"] == 1)
+            receipt = next(i for i, row in enumerate(graph["receipts"])
+                           if row["judgment_revision"] == 1)
+            fields = (("continuations", 0, "target_generation"),
+                      ("judgments", judgment, "judgment_revision"),
+                      ("receipts", receipt, "judgment_revision"),
+                      ("continuations", 0, "sequence"),
+                      ("references", 0, "target_generation"),
+                      ("references", 0, "producer_version"))
+            for collection, index, field in fields:
+                self.assertEqual(graph[collection][index][field], 1)
+                for invalid in (True, False, None, "1", 1.0, [], {}, 0, -1, 1 << 63):
+                    with self.subTest(version=version, collection=collection,
+                                      field=field, invalid=invalid):
+                        changed = copy.deepcopy(bundle)
+                        changed_graph = changed["review_continuation_basis"]
+                        changed_graph[collection][index][field] = invalid
+                        snapshot = json.dumps(changed, sort_keys=True)
+                        with self.assertRaises(EvidenceLedgerError) as caught:
+                            frozen.validate_graph(changed_graph, bundle=changed)
+                        self.assertEqual(caught.exception.code, "evidence_ledger_inconsistent")
+                        with self.assertRaises(reader.EvidenceConsumerError):
+                            graph_reader.validate_graph(changed, reader)
+                        with self.assertRaises(EvidenceLedgerError):
+                            frozen.decode_graph_json(json.dumps(changed_graph,
+                                ensure_ascii=False, sort_keys=True, separators=(",", ":")))
+                        self.assertEqual(json.dumps(changed, sort_keys=True), snapshot)
+
+            # A valid integer with a wrong relation still fails; checking type
+            # must not replace equality to the sealed basis/Receipt.
+            for collection, index, field in fields[:2]:
+                for mismatch in (2, (1 << 63) - 1):
+                    changed = copy.deepcopy(bundle)
+                    changed["review_continuation_basis"][collection][index][field] = mismatch
+                    with self.subTest(version=version, field=field, mismatch=mismatch):
+                        with self.assertRaises(EvidenceLedgerError):
+                            frozen.validate_graph(changed["review_continuation_basis"], bundle=changed)
+                        with self.assertRaises(reader.EvidenceConsumerError):
+                            graph_reader.validate_graph(changed, reader)
+
 
 if __name__ == "__main__":
     unittest.main()

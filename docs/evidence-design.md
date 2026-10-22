@@ -372,6 +372,12 @@ selection and the existing canonical size bound. Error normalization remains at
 this shared entry. Each helper consumes only call-local row indexes or validated
 history and judgment values; it does not mutate, cache or persist the graph.
 
+History validation checks the continuation row's integer target generation
+before comparing it with the validated basis. Receipt validation likewise
+checks the judgment metadata's integer revision before comparing it with the
+Receipt revision. Both use the existing strict positive signed-64-bit predicate;
+value equality alone cannot establish either field's type.
+
 The same entry serves sealing, projection and historical reentry. The repository
 still acquires source rows and compares frozen assertions with native evidence
 in its caller's transaction, as described by

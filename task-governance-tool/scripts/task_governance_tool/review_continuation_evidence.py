@@ -147,7 +147,8 @@ def _validate_history(rows: _GraphRows) -> _History:
     predecessor_ids = set()
     for key, row in continuations.items():
         basis = values.validate_basis(json.loads(row["basis_json"]))
-        if (canonical_json_bytes(basis).decode() != row["basis_json"]
+        if (not values._integer(row["target_generation"], 1)
+            or canonical_json_bytes(basis).decode() != row["basis_json"]
             or values.basis_digest(basis) != row["basis_digest"]
             or (row["project_id"], row["task_id"], row["target_generation"])
                 != (basis["project_id"], basis["task_id"], basis["target_generation"])
@@ -363,7 +364,8 @@ def _validate_receipts(rows: _GraphRows, history: _History,
             raise _bad()
         _reference(reference, source, history.basis)
         metadata = rows.judgments[key]
-        if row["judgment_revision"] != metadata["judgment_revision"]:
+        if (not values._integer(metadata["judgment_revision"], 1)
+            or row["judgment_revision"] != metadata["judgment_revision"]):
             raise _bad()
         session = rows.sessions.get(key)
         if session is not None:

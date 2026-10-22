@@ -83,7 +83,7 @@
     "scripts/task_governance_tool/review_answer_values.py": "sha256:8c6a2a4efe9ac1b9fed8d06d630f38abf5337dc88ffeaac314acbd8e42fef914",
     "scripts/task_governance_tool/review_collected_results.py": "sha256:088c277015d40fff70ae0de7a0278b20ce9f0f6017d0f645b7da45316133d8c8",
     "scripts/task_governance_tool/review_continuation.py": "sha256:5300d6fc85cd1ddc611814f876eff2e4bedbef70c63d8bfbccc9c7d36dca837c",
-    "scripts/task_governance_tool/review_continuation_evidence.py": "sha256:f68fdd58317cae6d585fe25c5b96a6ac36be3d939f56432a9057a49965b655c2",
+    "scripts/task_governance_tool/review_continuation_evidence.py": "sha256:cd33ad8cf45441355eda423396896967bbee83e05afe0fdc9e0643b06e1387af",
     "scripts/task_governance_tool/review_continuation_evidence_repository.py": "sha256:ea20c1fe6638108145761a8ca8913c0a457c2285ea16c1016ae7e358c17d1ed6",
     "scripts/task_governance_tool/review_continuation_handoff_repository.py": "sha256:bb0759a246e9995da55ade200ce419167ec71bdbab8ea4f332cdfbb341df0564",
     "scripts/task_governance_tool/review_continuation_registration_repository.py": "sha256:bbac1572e582bb6c5b7e37e5c07a0a0db3c356881ee7b1cf08c37e94bb0da888",

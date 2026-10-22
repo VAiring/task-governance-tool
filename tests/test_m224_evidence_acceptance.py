@@ -688,14 +688,21 @@ class M224ReportVersionTests(unittest.TestCase):
 
     def test_native_continuation_and_collected_provenance_keep_distinct_meaning(self):
         from tests.review_answer_fixture_support import review_fixture
+        from tests import evidence_reader_oracle as reader
+        from tests import review_continuation_evidence_oracle as graph_reader
 
-        for schema, expected_format, provenance_state in ((29, 3, "v1"), (30, 4, "v2")):
+        for schema, expected_format, provenance_state in ((29, 3, "v1"), (29, 4, "v1"), (30, 4, "v2")):
             with self.subTest(schema=schema), review_fixture(schema_version=schema) as fixture:
                 if schema == 29:
                     artifact, _ = fixture.native_continuation_artifact()
                 else:
                     artifact = fixture.collected_source_artifact()
-                bundle = artifact.envelope
+                bundle = deepcopy(artifact.envelope)
+                if schema == 29 and expected_format == 4:
+                    # Current Bundles also retain legacy reassessment Findings.
+                    bundle["format_version"] = 4
+                    bundle["payload"].update(bundle_version=4, source_schema_version=31)
+                    bundle["payload"]["review_continuation_basis"].update(version=2, collected_captures=[])
                 payload = bundle["payload"]
                 self.assertEqual(bundle["format_version"], expected_format)
                 with tempfile.TemporaryDirectory() as temporary:
@@ -705,10 +712,10 @@ class M224ReportVersionTests(unittest.TestCase):
                     bundle_file = f"bundles/{payload['bundle_id']}.json"
                     evidence.joinpath(*bundle_file.split("/")).write_bytes(artifact.document)
                     index = {
-                        "format_version": 2 if schema == 29 else 3,
+                        "format_version": 2 if expected_format == 3 else 3,
                         "payload": {
                             # Preserve source-30 collected bytes under the current index.
-                            "source_schema_version": 29 if schema == 29 else 31,
+                            "source_schema_version": 29 if expected_format == 3 else 31,
                             "project_id": payload["project_id"],
                             "projection_generation": 1,
                             "bundle_count": 1,
@@ -727,7 +734,7 @@ class M224ReportVersionTests(unittest.TestCase):
                             }],
                         },
                     }
-                    reseal_evidence_tree(evidence, index)
+                    reseal_evidence_tree(evidence, index, bundle)
                     before = tree_snapshot(evidence)
                     with patch(
                         "task_governance_tool.review_continuation_evidence.validate_graph",
@@ -736,6 +743,10 @@ class M224ReportVersionTests(unittest.TestCase):
                         "task_governance_tool.review_answer_provenance.validate_provenance_v2",
                         side_effect=AssertionError("producer provenance validator called"),
                     ):
+                        graph = payload["review_continuation_basis"]
+                        self.assertEqual(graph_reader.validate_graph(payload, reader), graph)
+                        validated = read_evidence_index(evidence)
+                        validate_evidence_source(validated, validated.entries[0])
                         report = read_evidence_report(evidence)
                     self.assertEqual(tree_snapshot(evidence), before)
                     projected = report["entries"][0]["review_receipts"]
@@ -750,20 +761,27 @@ class M224ReportVersionTests(unittest.TestCase):
                             "review_profiles": {}, "review_lenses": {}, "method_codes": {},
                         })
 
-                    # The newly admitted graph formats must preserve the
-                    # report's fixed rejection even when their independent
-                    # graph oracle encounters an invalid lookup/regex value.
-                    paths = (
-                        ("continuations", 0, "preparation_id"),
-                        ("judgments", 0, "continuation_id"),
-                        ("references", 0, "source_id"),
-                    ) if schema == 29 else (
-                        ("continuations", 0, "predecessor_id"),
-                        ("reviewers", 0, "result_receipt_id"),
-                    )
-                    mutations = [(path, value) for path in paths for value in ([], {})]
-                    if schema == 29:
-                        mutations.append((("findings",), []))
+                    # Exercise every graph-row ID before lookup/hash/regex,
+                    # including nullable relations, through both Reader entries.
+                    paths = [
+                        (collection, position, field)
+                        for collection, rows in graph.items() if type(rows) is list
+                        for position, row in enumerate(rows) if type(row) is dict
+                        for field in row if field.endswith("_id")
+                    ]
+                    mutations = [(path, value) for path in paths
+                                 for value in ([], {}, True, 1)]
+                    mutations.extend([
+                        (("continuations", 0, "preparation_id"), None),
+                        (("references", 0, "source_id"), None),
+                        (("references", 0, "source_id"), "tg_review_receipt_" + "f" * 16),
+                        (("continuations",), []),
+                        (("receipts",), []),
+                        (("judgments",), []),
+                    ])
+                    if graph["findings"]:
+                        mutations.extend([(("findings",), []),
+                                          (("findings", 0, "review_receipt_id"), None)])
                     for path, invalid in mutations:
                         with self.subTest(schema=schema, graph_path=path, invalid=invalid):
                             mutated = deepcopy(bundle)
@@ -771,10 +789,21 @@ class M224ReportVersionTests(unittest.TestCase):
                             for component in path[:-1]:
                                 selected = selected[component]
                             selected[path[-1]] = invalid
+                            snapshot = canonical_json_bytes(mutated["payload"])
+                            with self.assertRaises(EvidenceConsumerError) as rejected:
+                                graph_reader.validate_graph(mutated["payload"], reader)
+                            self.assertEqual(rejected.exception.code, "source_invalid")
+                            self.assertEqual(canonical_json_bytes(mutated["payload"]), snapshot)
                             # Only outer seals change: the malformed graph
                             # field must fail before its assertion is trusted.
                             reseal_evidence_tree(evidence, index, mutated)
+                            sealed = tree_snapshot(evidence)
+                            validated = read_evidence_index(evidence)
+                            with self.assertRaises(EvidenceConsumerError) as rejected:
+                                validate_evidence_source(validated, validated.entries[0])
+                            self.assertEqual(rejected.exception.code, "source_invalid")
                             self.assert_invalid_readonly(evidence, payload["project_id"])
+                            self.assertEqual(tree_snapshot(evidence), sealed)
 
     def test_current_and_retained_ordinary_formats_keep_report_and_bytes(self):
         for source in range(19, 32):

@@ -237,6 +237,45 @@ def validate_graph(payload, api):
     sessions = rows("session_bindings", ("review_receipt_id", "session_id", "execution_id", "binding_source", "original_result_digest"), ("review_receipt_id",))
     references = rows("references", api._REFERENCE_KEYS, ("evidence_reference_id",))
     findings = rows("findings", ("review_finding_id", "review_receipt_id", "severity", "summary", "status", "resolution_summary", "created_at", "resolved_at"), ("review_finding_id",))
+    # Validate relation keys before regex, hashing or dereferencing. Null is
+    # admitted only for the historical/initial relations named here; the
+    # semantic checks below still decide whether it is legal in that row.
+    continuation_id = re.compile(r"tg_review_continuation_[0-9a-f]{16}\Z")
+    preparation_id = re.compile(r"tg_review_preparation_[0-9a-f]{16}\Z")
+    relation_groups = (
+        (continuations, (("preparation_id", preparation_id, False, None),
+                         ("predecessor_id", continuation_id, True, continuations))),
+        (reviewers, (("continuation_id", continuation_id, False, continuations),
+                     ("prior_receipt_id", api._REVIEW_ID, True, receipts),
+                     ("result_receipt_id", api._REVIEW_ID, True, receipts))),
+        (retained, (("continuation_id", continuation_id, False, continuations),
+                    ("prior_continuation_id", continuation_id, False, continuations),
+                    ("result_receipt_id", api._REVIEW_ID, True, receipts))),
+        (judgments, (("prior_receipt_id", api._REVIEW_ID, True, receipts),
+                     ("continuation_id", continuation_id, True, continuations))),
+        (resolutions, (("review_finding_id", api._FINDING_ID, False, findings),
+                       ("successor_receipt_id", api._REVIEW_ID, False, judgments),
+                       ("continuation_id", continuation_id, False, continuations))),
+        (findings, (("review_receipt_id", api._REVIEW_ID, False, receipts),)),
+    )
+    for collection, relations in relation_groups:
+        for row in collection.values():
+            for field, pattern, nullable, destination in relations:
+                value = row[field]
+                if value is None and nullable:
+                    continue
+                api._identifier(value, pattern)
+                if destination is not None and (value,) not in destination:
+                    bad()
+    for ref in references.values():
+        kind = ref["source_kind"]
+        if kind not in ("review_receipt", "review_finding"):
+            bad()
+        destination, pattern = ((receipts, api._REVIEW_ID) if kind == "review_receipt"
+                                else (findings, api._FINDING_ID))
+        api._identifier(ref["source_id"], pattern)
+        if (ref["source_id"],) not in destination:
+            bad()
     basis_fields = {"version", "project_id", "task_id", "contract_revision", "authority_snapshot_id", "acceptance_criterion_id",
         "verification_criterion_id", "artifact_manifest_id", "review_tier", "verification_requirement", "verification_not_required_reason",
         "completion_commit_required", "target_kind", "target_value", "target_base_revision", "target_generation", "project_path_hash",
@@ -304,7 +343,7 @@ def validate_graph(payload, api):
                 bad()
         else:
             old = continuations.get((prior,))
-            if old is None or prior in predecessors or old["sequence"] + 1 != sequence or any(old[key] != row[key] for key in ("preparation_id", "basis_json", "route")):
+            if old is None or prior in predecessors or integer(old["sequence"], minimum=1) + 1 != sequence or any(old[key] != row[key] for key in ("preparation_id", "basis_json", "route")):
                 bad()
             predecessors.add(prior)
         choices = [choice for (root, sid), choice in reviewers.items() if root == cid]
@@ -501,7 +540,7 @@ def validate_graph(payload, api):
                 bad()
         else:
             old = receipts.get((prior,))
-            if (old is None or prior in successors or old["judgment_revision"] + 1 != revision or old["reviewer_key"] != row["reviewer_key"]
+            if (old is None or prior in successors or integer(old["judgment_revision"], minimum=1) + 1 != revision or old["reviewer_key"] != row["reviewer_key"]
                 or cid is None or session is None or (prior,) not in sessions or sessions[(prior,)]["session_id"] != session["session_id"]):
                 bad()
             successors[prior] = rid

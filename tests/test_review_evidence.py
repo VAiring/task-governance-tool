@@ -1775,13 +1775,17 @@ class ReviewEvidenceTests(unittest.TestCase):
                 ),
             )
             for command in commands:
-                result = run_taskgov(*command)
-                self.assertNotEqual(result.returncode, 0, result.stdout)
-                self.assertEqual(
-                    payload(result)["errors"][0]["code"],
-                    "project_state_unreadable",
-                )
-                self.assertEqual(db.read_bytes(), before)
+                with self.subTest(operation=command[1], check="--check" in command):
+                    # Detail rejects the stored Task relation first; completion
+                    # rejects the same foreign Receipt at scoped admission.
+                    expected_code = (
+                        "project_state_unreadable" if command[1] == "show"
+                        else "evidence_ledger_inconsistent"
+                    )
+                    result = run_taskgov(*command)
+                    self.assertNotEqual(result.returncode, 0, result.stdout)
+                    self.assertEqual(payload(result)["errors"][0]["code"], expected_code)
+                    self.assertEqual(db.read_bytes(), before)
 
     def test_finding_add_rejects_corrupt_parent_evidence_before_writes(self):
         cases = (
@@ -2219,13 +2223,17 @@ class ReviewEvidenceTests(unittest.TestCase):
                 ),
             )
             for command in commands:
-                result = run_taskgov(*command)
-                self.assertNotEqual(result.returncode, 0, result.stdout)
-                self.assertEqual(
-                    payload(result)["errors"][0]["code"],
-                    "project_state_unreadable",
-                )
-                self.assertEqual(db.read_bytes(), before)
+                with self.subTest(operation=command[1], check="--check" in command):
+                    # Historical parents retain the same operation-specific
+                    # ownership checks as current Receipts.
+                    expected_code = (
+                        "project_state_unreadable" if command[1] == "show"
+                        else "evidence_ledger_inconsistent"
+                    )
+                    result = run_taskgov(*command)
+                    self.assertNotEqual(result.returncode, 0, result.stdout)
+                    self.assertEqual(payload(result)["errors"][0]["code"], expected_code)
+                    self.assertEqual(db.read_bytes(), before)
 
     def test_historical_finding_severity_tamper_cannot_hide_gate(self):
         with tempfile.TemporaryDirectory() as temp:

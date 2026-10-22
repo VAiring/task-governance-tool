@@ -251,8 +251,11 @@ class WriteContentionTests(unittest.TestCase):
             before = database_rows(db)
             wrappers = []
 
-            def busy_connection(target):
-                wrapper = BeginFailingConnection(connect_initialized(target))
+            def busy_connection(target, *, operation_local):
+                self.assertTrue(operation_local)
+                wrapper = BeginFailingConnection(
+                    connect_initialized(target, operation_local=operation_local)
+                )
                 wrappers.append(wrapper)
                 return wrapper
 
@@ -288,8 +291,12 @@ class WriteContentionTests(unittest.TestCase):
             before = database_rows(db)
             wrappers = []
 
-            def locked_commit_connection(target):
-                wrapper = CommitFailingConnection(connect_initialized(target))
+            def locked_commit_connection(target, *, operation_local, review_task_id):
+                self.assertTrue(operation_local)
+                self.assertIsNone(review_task_id)
+                wrapper = CommitFailingConnection(connect_initialized(
+                    target, operation_local=operation_local, review_task_id=review_task_id,
+                ))
                 wrappers.append(wrapper)
                 return wrapper
 
@@ -459,8 +466,11 @@ class WriteContentionTests(unittest.TestCase):
         before = database_rows(db)
         wrappers = []
 
-        def busy_connection(target):
-            wrapper = BeginFailingConnection(connect_initialized(target))
+        def busy_connection(target, *, operation_local, review_task_id):
+            self.assertTrue(operation_local)
+            wrapper = BeginFailingConnection(connect_initialized(
+                target, operation_local=operation_local, review_task_id=review_task_id,
+            ))
             wrappers.append(wrapper)
             return wrapper
 
@@ -492,8 +502,11 @@ class WriteContentionTests(unittest.TestCase):
         before = database_rows(db)
         wrappers = []
 
-        def locked_commit_connection(target):
-            wrapper = CommitFailingConnection(connect_initialized(target))
+        def locked_commit_connection(target, *, operation_local, review_task_id):
+            self.assertTrue(operation_local)
+            wrapper = CommitFailingConnection(connect_initialized(
+                target, operation_local=operation_local, review_task_id=review_task_id,
+            ))
             wrappers.append(wrapper)
             return wrapper
 

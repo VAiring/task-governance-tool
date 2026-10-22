@@ -882,15 +882,16 @@ class ReviewPacketTests(unittest.TestCase):
             real_connect = packet_module.connect_initialized_readonly
             connect_count = 0
 
-            def identity_changed(target):
+            def identity_changed(target, *, operation_local):
                 nonlocal connect_count
+                self.assertTrue(operation_local)
                 connect_count += 1
                 if connect_count == 2:
                     raise StorageError(
                         "project_mismatch",
                         "database belongs to a different project",
                     )
-                return real_connect(target)
+                return real_connect(target, operation_local=operation_local)
 
             with mock.patch.object(
                 packet_module,

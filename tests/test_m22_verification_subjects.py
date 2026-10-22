@@ -734,14 +734,21 @@ class M22VerificationSubjectTests(unittest.TestCase):
             target = target_for(db, repo)
             actual_begin = storage_service.begin_initialized_write
 
-            def drift_then_lock(connection, database_target):
+            def drift_then_lock(
+                connection, database_target, *, operation_local, review_task_id
+            ):
+                self.assertTrue(operation_local)
+                self.assertEqual(review_task_id, task_id)
                 set_target(
                     db,
                     repo,
                     task_id,
                     fingerprint=FINGERPRINT_B,
                 )
-                return actual_begin(connection, database_target)
+                return actual_begin(
+                    connection, database_target,
+                    operation_local=operation_local, review_task_id=review_task_id,
+                )
 
             with closing(connect_initialized(target)) as connection:
                 with mock.patch(

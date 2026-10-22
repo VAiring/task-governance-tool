@@ -390,8 +390,11 @@ class HandoffCommandTests(unittest.TestCase):
                 "--json",
             )
 
-            def open_validated(target):
-                connection = connect_initialized_readonly(target)
+            def open_validated(target, *, operation_local):
+                self.assertFalse(operation_local)
+                connection = connect_initialized_readonly(
+                    target, operation_local=operation_local
+                )
                 self.assertTrue(connection.in_transaction)
                 self.assertEqual(
                     connection.execute("PRAGMA query_only").fetchone()[0],

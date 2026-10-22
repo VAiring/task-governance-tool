@@ -381,14 +381,21 @@ class VerificationResultCliTests(unittest.TestCase):
                 self.generation = current["review_target_generation"]
                 concurrent_snapshots = []
 
-                def change_then_lock(connection, target):
+                def change_then_lock(
+                    connection, target, *, operation_local, review_task_id
+                ):
+                    self.assertTrue(operation_local)
+                    self.assertEqual(review_task_id, self.task_id)
                     self.assertFalse(connection.in_transaction)
                     if change == "target":
                         set_target(self.db, self.repo, self.task_id, fingerprint=FINGERPRINT_B)
                     else:
                         self.success("task", "edit", self.task_id, "--status", "paused", "--pause-reason", "Concurrent continuation boundary")
                     concurrent_snapshots.append(file_snapshot(self.root))
-                    return actual_begin(connection, target)
+                    return actual_begin(
+                        connection, target,
+                        operation_local=operation_local, review_task_id=review_task_id,
+                    )
 
                 with mock.patch.object(receipt_service, "begin_initialized_write", side_effect=change_then_lock), mock.patch.object(cli_service, "run_post_commit_maintenance") as maintenance:
                     self.assert_failure(self.invoke(maintenance_enabled=True), expected)

@@ -131,6 +131,8 @@ def add_parser(commands):
     parser.add_argument("--directory", required=True, help="Unused ignored output directory; same request reconciles its saved location")
     parser.add_argument("--migrate-legacy-reviewers", action="store_true",
         help="Explicitly dedicate selected legacy reviewers to a new collected continuation")
+    parser.add_argument("--replace-rejected-answers", action="store_true",
+        help="Replace only saved privacy-rejected version-two answers after fresh locked absence proof")
 
 
 def _digest(basis):
@@ -289,7 +291,7 @@ def _request_round(request, transition, selected):
 
 def _ready(scope: ContinuationScope, leases: ContinuationLeases,
            selected: tuple[values.SelectedReviewer, ...], transition: RequestRound, *,
-           require_dedication=True) -> Continuation:
+           require_dedication=True, retiring_rejection=False) -> Continuation:
     """One readiness predicate for first publication and every successful retry.
 
     Callers retain preparation/transition/request/dispatch/finalization leases.
@@ -312,7 +314,7 @@ def _ready(scope: ContinuationScope, leases: ContinuationLeases,
         observed = observe_current_occurrence(paths, caller.require(), root.basis["task_id"], occurrence)
         if observed.state != "known":
             files.fail(observed.reason)
-    if leases.integrated is not None:
+    if leases.integrated is not None and not retiring_rejection:
         from . import review_finalization
         journal = leases.integrated.journal
         expected = review_finalization.continuation_candidate(root, record, transition, raw, caller, journal)
@@ -369,7 +371,7 @@ def _retained_inventory(repo, root, history, state, selected, *, resolution=None
 
 def _prior_admission(scope: ContinuationScope, leases: ContinuationLeases,
                      snapshot: AdmissionSnapshot,
-                     historical: HistoricalRequestProof | None) -> values.RetirementProof | None:
+                     historical: HistoricalRequestProof | None, *, retiring_rejection=False) -> values.RetirementProof | None:
     """Validate distinct pending-retirement / registered-round conditions."""
     root, state, history = scope.root, snapshot.state, snapshot.history
     old_request = snapshot.previous.record
@@ -383,7 +385,7 @@ def _prior_admission(scope: ContinuationScope, leases: ContinuationLeases,
         # invent its operation identity or escape into a different directory.
         if prior is None or prior.phase not in ("prepared", "published") or old_core.state != "prepared":
             files.fail("review_continuation_effect_unknown")
-        _ready(scope, leases, old_core.selected, prior, require_dedication=False)
+        _ready(scope, leases, old_core.selected, prior, require_dedication=False, retiring_rejection=retiring_rejection)
         cleanup = _settle_previous(scope, leases, snapshot.previous, prior, historical)
         return values.RetirementProof(old_core.continuation_id, values.basis_digest(root.basis),
             request_identity_digest(old_request) if old_request else None, cleanup.worker_stop_identity)
@@ -559,7 +561,8 @@ def _admission_scope(repo: Path, args, caller: CallerIdentity
             journal_lease = admissions.enter_context(journal.serial())
             review_finalization.require_preparation_intent(root, journal.read_rounds()[0], root.basis, caller)
             current = journal.read()
-            if (any(value == "dispatching" for value in (current.registration, current.commit, current.completion))
+            if (any(value == "dispatching" for value in (current.commit, current.completion))
+                or current.registration == "dispatching" and not getattr(args, "replace_rejected_answers", False)
                 or current.completion != "not_started"):
                 files.fail("review_continuation_effect_unknown")
             integrated = IntegratedAdmission(journal, journal_lease)
@@ -571,7 +574,7 @@ def _admission_scope(repo: Path, args, caller: CallerIdentity
 def _admit_operation(scope: ContinuationScope, leases: ContinuationLeases,
                      snapshot: AdmissionSnapshot, selected: tuple[values.SelectedReviewer, ...],
                      directory: str, progress: FailureProgress, *,
-                     migrate_legacy_reviewers=False) -> AdmittedContinuation:
+                     migrate_legacy_reviewers=False, rejected_inventory=None) -> AdmittedContinuation:
     """Reconcile the exact fence, predecessor and core admission, in that order."""
     root, state, history = scope.root, snapshot.state, snapshot.history
     attempt, old_request = snapshot.previous.attempt, snapshot.previous.record
@@ -602,7 +605,11 @@ def _admit_operation(scope: ContinuationScope, leases: ContinuationLeases,
             if history and history[-1].phase in ("fenced", "settled"):
                 files.fail("review_continuation_effect_unknown")
             preparation._directory(scope.repo, directory)
-        captures,collected_sources,sources = _retained_inventory(scope.repo, root, predecessor_history, state, selected,resolution=SimpleNamespace(paths=scope.paths,target=scope.target))
+        if rejected_inventory is None:
+            captures,collected_sources,sources = _retained_inventory(scope.repo, root, predecessor_history, state, selected,resolution=SimpleNamespace(paths=scope.paths,target=scope.target))
+        else:
+            captures, sources = (), rejected_inventory.healthy
+            collected_sources = tuple((len(selected) + i, source.collected_metadata) for i, source in enumerate(sources, 1))
         if transition is None:
             from .review_answer_continuation_preparation import choose_protocol
             original_packet=files.decode_packet(files.read_bounded(files.checked_path(scope.repo,root.packet_path),files.PACKET_LIMIT))
@@ -620,7 +627,8 @@ def _admit_operation(scope: ContinuationScope, leases: ContinuationLeases,
             declaration = (issue(root, predecessor_history, state, selected, continuation_id,
                 explicit=migrate_legacy_reviewers, sources=sources)
                 if answer_protocol == "review-answer-v1" else None)
-        retirement = _prior_admission(scope, leases, replace(snapshot, history=predecessor_history), historical)
+        retirement = _prior_admission(scope, leases, replace(snapshot, history=predecessor_history), historical,
+            retiring_rejection=rejected_inventory is not None)
         if transition is None:
             transition = leases.transitions.fence(leases.transition, RequestRound(root.preparation_id,
                 continuation_id, sequence, values.basis_digest(root.basis),
@@ -629,14 +637,20 @@ def _admit_operation(scope: ContinuationScope, leases: ContinuationLeases,
                 old_request.automation_id if old_request else None, old_request.phase if old_request else None,
                 packet_path=directory + "/packet.json",
                 result_paths=tuple(directory + f"/review-{index}.json" for index in range(1, len(selected) + 1)),
-                answer_protocol=answer_protocol, legacy_migration=declaration))
+                answer_protocol=answer_protocol, legacy_migration=declaration,
+                rejected_answer_replacement=rejected_inventory.audit if rejected_inventory is not None else None))
             progress.transition = transition
         if collected_sources and transition.answer_protocol=="legacy":
             files.fail("review_continuation_unavailable")
         from .review_answer_continuation_preparation import retained_admission
-        with retained_admission(scope,transition.continuation_id,collected_sources) as collected:
+        if rejected_inventory is not None:
             record = core.admit(scope.target, root.basis, root.preparation_id, root.route, selected, scope.caller,
-                retirement=retirement, retained_originals=captures, retained_collected=collected,continuation_id=transition.continuation_id)
+                retirement=retirement, retained_collected=rejected_inventory.captures(transition.continuation_id, selected),
+                continuation_id=transition.continuation_id, rejection_audit=rejected_inventory.audit)
+        else:
+            with retained_admission(scope,transition.continuation_id,collected_sources) as collected:
+                record = core.admit(scope.target, root.basis, root.preparation_id, root.route, selected, scope.caller,
+                    retirement=retirement, retained_originals=captures, retained_collected=collected,continuation_id=transition.continuation_id)
         progress.record = record
         if record.sequence != transition.continuation_sequence:
             files.fail("review_continuation_conflict")
@@ -687,8 +701,10 @@ def continue_reviews(repo, args, raw, *, caller=None):
     try:
         selected = values.decode_selection(raw)
         with _admission_scope(repo, args, caller) as (scope, leases, snapshot):
-            admitted = _admit_operation(scope, leases, snapshot, selected, args.directory, progress,
-                migrate_legacy_reviewers=getattr(args, "migrate_legacy_reviewers", False))
+            from .review_answer_rejection import continuation_admission
+            with continuation_admission(scope, leases, snapshot, selected, args) as rejected:
+                admitted = _admit_operation(scope, leases, snapshot, selected, args.directory, progress,
+                    migrate_legacy_reviewers=getattr(args, "migrate_legacy_reviewers", False), rejected_inventory=rejected)
             progress.stage = "cleanup"
             settled = _settle_cleanup(scope, leases, admitted)
             progress.transition = settled.transition

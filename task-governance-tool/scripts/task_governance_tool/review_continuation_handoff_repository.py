@@ -51,12 +51,12 @@ def read_state(target, task_id, caller):
         return HandoffState(basis, history, effective.heads, bindings, captures, collected, registered_batches)
 
 
-def admit(target, basis, preparation_id, route, selected, caller, *, retirement=None, retained_originals=(), retained_collected=(), continuation_id=None):
+def admit(target, basis, preparation_id, route, selected, caller, *, retirement=None, retained_originals=(), retained_collected=(), continuation_id=None, rejection_audit=None):
     with closing(connect_initialized(target, operation_local=True, review_task_id=basis["task_id"])) as connection, connection:
         begin_initialized_write(connection, target, operation_local=True, review_task_id=basis["task_id"])
         return records.admit_locked(connection, basis=basis, preparation_id=preparation_id,
             route=route, selected=selected, caller=caller, retirement=retirement, retained_originals=retained_originals,
-            retained_collected=retained_collected, continuation_id=continuation_id)
+            retained_collected=retained_collected, continuation_id=continuation_id, rejection_audit=rejection_audit)
 
 
 def prepared(target, record, caller):

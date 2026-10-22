@@ -290,6 +290,7 @@ LANE_MODULES: dict[str, tuple[str, ...]] = {
         "test_review_answer_late_arrival_core",
         "test_review_answer_legacy_migration",
         "test_review_answer_registration",
+        "test_review_answer_rejection",
         "test_review_answer_retained_origin",
         "test_review_answer_runtime_selection",
         "test_review_answer_runtime_setup",

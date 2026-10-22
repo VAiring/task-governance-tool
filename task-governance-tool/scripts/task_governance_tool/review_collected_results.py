@@ -22,12 +22,13 @@ def _normalize(item, tier):
     if type(item) is LegacyItem:
         return normalize_review_results(decode_review_results(item.raw), review_tier=tier)["receipts"][0]
     payload = item.answer.payload
-    summary = validate_text("review_receipt_summary", payload["summary"], required=True, limit=1000)
+    from .review_answer import storage_summaries
+    summary, finding_summaries = storage_summaries(payload)
     value = normalize_receipt(review_tier=tier, reviewer=item.metadata["binding"]["reviewer_key"],
         kind="independent", verdict=payload["verdict"], summary=summary,
         user_approved=False, collected=True)
-    value["findings"] = [dict(severity=finding["severity"], summary=validate_text(
-        "review_finding_summary", finding["summary"], required=True, limit=1000)) for finding in payload["findings"]]
+    value["findings"] = [dict(severity=finding["severity"], summary=summary)
+        for finding, summary in zip(payload["findings"], finding_summaries)]
     return value
 
 

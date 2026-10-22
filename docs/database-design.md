@@ -336,6 +336,36 @@ Watching may become frozen or invalidated, and frozen may become invalidated.
 An invalidated record cannot change again. The physical operational schema
 remains version one, and old record versions are never rewritten by reading.
 
+After explicit rejected-answer replacement, a healthy version-two source may
+add `retired_registrations`, a nonempty list of at most 64 exact
+`{continuation_id,registration}` entries. The continuation identifies the
+admitted successor; the registration is the unchanged previous dispatched or
+unknown tuple with null Receipt. Entries only append, continuation IDs and
+submission digests are distinct, and the new current tuple is reserved directly
+as dispatched with a different digest. No old attempt returns to not_started.
+Absent lists remain omitted, preserving old canonical bytes.
+
+The operational `RequestRound` may carry `rejected_answer_replacement` with
+exactly `{version:1,source_continuation_id,sources}`. The nullable context is the
+retired consumer round. Sources are 1..8 distinct session-ordered objects with
+exactly `source_continuation_id`, `slot`, `reviewer_session_id`, `turn_id`,
+`message_id`, `registration`, and `rejection`. The source context is nullable;
+identity uses the existing slot/session/message grammar. Registration is its
+unchanged not_started/dispatched/unknown tuple without a Receipt. Rejection is
+null for a healthy retained source or exactly `{field,verdict,severities}`:
+field is `summary|findings[].summary`, verdict retains the three answer choices,
+and severities retain at most 64 `high|medium|low` values. At least one source
+is rejected. No original digest or body is added. This value is immutable from
+the fence, is incompatible with legacy migration, and is omitted when absent.
+The existing record bound and physical schema remain unchanged.
+
+An integrated successor round may add `replaced_registration_round`, the
+immediately prior zero-based sequence. That old round remains verbatim with
+dispatching registration and untouched commit/completion. The field is omitted
+when absent and permits no general unknown-effect reset. The replacement's
+admission and fresh absence requirements belong to the
+[review contract](review-completion-specification.md#rejected-unregistered-answer-replacement).
+
 A collected envelope capture is exactly `{kind:"collected",
 consumer_continuation_id,consumer_slot,source_preparation_id,
 source_continuation_id,source_slot,session_id,source_basis_digest,

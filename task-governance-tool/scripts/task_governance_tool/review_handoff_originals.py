@@ -97,11 +97,22 @@ def read_sources(repo, root, transitions, *, resolution=None):
     No lease, repository query, state change or review judgment is performed.
     """
     sources = []
+    retired = set()
+    if any(row.rejected_answer_replacement is not None for row in transitions):
+        if resolution is None:
+            files.fail("review_continuation_unavailable")
+        from .review_answer_rejection import retired_locations
+        from .review_continuation_handoff_repository import read_state
+        from .session_identity import CallerIdentity
+        state = read_state(resolution.target, root.basis["task_id"], CallerIdentity(root.basis["parent_session_id"]))
+        retired = retired_locations(root, transitions, state, repo=repo, resolution=resolution)
     locations = [(root.packet_path, path) for path in root.result_paths]
     for row in transitions:
         if row.preparation_id == root.preparation_id and row.phase in ("prepared", "published"):
             locations.extend((row.packet_path, path) for path in row.result_paths)
     for packet, result in locations:
+        if (packet, result) in retired:
+            continue
         path = files.relative_path(repo, result)
         if path_lexically_exists(path):
             sources.append(read_original(repo, packet, result,

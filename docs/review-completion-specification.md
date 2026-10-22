@@ -501,6 +501,56 @@ it never infers a protocol from a clipped prefix. Typed collected framing and
 admitted collected input preserve the distinct classes above, including the
 whole framed-byte and combined-Finding limits.
 
+#### Rejected Unregistered Answer Replacement
+
+Answer admission applies the storage fields' privacy rules to the receipt
+summary and every Finding summary before freezing or publishing an answer.
+The generic answer/privacy scan still covers all other strings. Registration
+uses the same field validation and never relaxes its rejection policy.
+The reviewer binding likewise applies the storage `reviewer_key` privacy rule
+before it can identify a frozen answer. Its diagnostics contain no rejected key.
+
+Explicit `continue --replace-rejected-answers` is limited to a complete
+version-two collected batch containing a saved answer admitted by the older
+policy but rejected by the current storage-field privacy rules. Selected
+reviewers must be exactly those rejected sources, using `supplement` with null
+prior Receipt. A valid negative or unable answer is not a rejection and cannot
+be replaced through this option. Legacy/mixed batches, unresolved publication,
+changed material/basis, incomplete inventory and unproven effects reject.
+
+Before admitting a replacement, hold the existing preparation, transition,
+request, dispatch and optional finalization leases, then all source leases.
+Recheck every original's saved identity and bytes, complete execution basis,
+current source selection and known old-worker/timer/send cleanup. Under the
+existing core writer, repeat current identity/ownership/Contract/target checks
+and prove complete absence of the old dispatch, entries, source identities and
+partial consumer/capture results. Snapshot absence is not permission. Any
+registered or conflicting source rejects replacement; complete registration
+continues through the existing confirmation/reassessment route.
+
+The saved continuation fence records only bounded structural source identities,
+the previous registration tuples and closed rejection fields. It fences old
+writers before native admission. Native admission binds the successor and its
+healthy retained originals atomically. Interrupted admission reconciles only
+that fence and destination, repeating fresh absence proof when native admission
+has not committed. A different replacement cannot overtake an unfinished fence.
+
+Old originals and registration attempts remain immutable history. Rejected
+sources are logically retired, never edited, deleted, moved, re-published or
+registered. A narrow retirement reader validates their old structural/byte
+binding and returns only a closed rejection field; it is not an alternate
+normal decoder. No rejected text, summary or newly retained body hash enters
+the replacement audit. Healthy siblings keep their exact original metadata and
+judgment, including NG/unable facts, in the successor's complete atomic batch.
+Their later registration is a new explicit attempt: retain the old tuple and
+reserve the new dispatch directly, never reset an old attempt to `not_started`.
+
+The integrated finalizer appends a new registration round only for that admitted
+replacement. The prior round's dispatch remains historical; candidate, commit
+and completion effects never reset. Same-original settled registration recovery
+remains distinct. Neither path retries unknown effects or permits a second
+registration, commit or completion after known success.
+
 <a id="collected-answer-host-boundary"></a>
 
 #### Collected Answer Host Boundary
@@ -876,7 +926,10 @@ The helper exposes `continue --repo <project> --task-id <Task>
 the closed selection on bounded UTF-8 stdin. The optional
 `--migrate-legacy-reviewers` explicitly establishes future dedication for a new
 collected round under a legacy preparation; it changes neither the selection
-shape nor old originals. The records-only route permits
+shape nor old originals. The separate optional `--replace-rejected-answers`
+applies only under the
+[unregistered rejection boundary](#rejected-unregistered-answer-replacement).
+The records-only route permits
 this exceptional operation only for an admitted manual preparation; an integrated
 locator is rejected before any continuation write and never acquires automatic
 finalization authority from records-only invocation.
@@ -924,7 +977,7 @@ Historical success alone never returns current submit/finalize readiness.
 Ready preparation publishes an operational locator of its exact Packet/result
 references and manual/integrated route. A continuation keeps validated registered
 results and exact unregistered originals, creates only selected reviewer requests,
-and never rewrites old bytes. A saved NG must first be registered under the
+and never rewrites old bytes. A valid saved NG must first be registered under the
 existing complete-batch rule. Ambiguous, unavailable or changed original binding
 is reported rather than selecting a route or hiding the judgment. Initial legacy
 transport remains valid under its existing rules without an inferred locator.

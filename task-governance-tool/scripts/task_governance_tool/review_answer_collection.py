@@ -597,7 +597,7 @@ class CollectionService:
         with self.repository.serial() as lease:
             return self.mark_registration_locked(lease, slots, submission_digest)
 
-    def mark_registration_locked(self, lease, slots, submission_digest):
+    def mark_registration_locked(self, lease, slots, submission_digest, *, replacements=None):
         """Save admitted source-slot intent before core I/O.
 
         Continuations may capture a subset of an older source store. The
@@ -612,12 +612,17 @@ class CollectionService:
             record = records[slot - 1]
             self.check_basis(record["basis"], slot, lease=lease)
             self._readback(record, slot, _ordinal(record))
-            if record["registration"]["state"] != "not_started":
+            if record["registration"]["state"] != "not_started" and (not replacements or slot not in replacements):
                 _fail("registration_unknown", "effect_unknown")
-        def dispatched(row):
-            row["registration"] = dict(state="dispatched", submission_digest=submission_digest, receipt_id=None)
-            return row
-        return self.repository.update_many(lease, {slot: dispatched for slot in slots})
+        def dispatched(slot):
+            def change(row):
+                if row["registration"]["state"] != "not_started":
+                    row.setdefault("retired_registrations", []).append(dict(
+                        continuation_id=replacements[slot], registration=dict(row["registration"])))
+                row["registration"] = dict(state="dispatched", submission_digest=submission_digest, receipt_id=None)
+                return row
+            return change
+        return self.repository.update_many(lease, {slot: dispatched(slot) for slot in slots})
 
     @contextmanager
     def admission(self, slots=None):

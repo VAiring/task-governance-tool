@@ -107,6 +107,13 @@ def _forward(old, new):
         if left["correction_turn_id"] is not None:
             require(left["correction_turn_id"] == right["correction_turn_id"] and left["binding_source"] == right["binding_source"])
     left, right = old["registration"], new["registration"]
+    before, after = old.get("retired_registrations", []), new.get("retired_registrations", [])
+    require(after[:len(before)] == before and len(before) <= len(after) <= len(before) + 1)
+    if len(after) > len(before):
+        require(tracking and left["state"] in ("dispatched", "unknown") and left["receipt_id"] is None
+            and after[-1]["registration"] == left and right["state"] == "dispatched"
+            and right["receipt_id"] is None and right["submission_digest"] != left["submission_digest"])
+        return  # A distinct explicit attempt; the retired tuple stays exact.
     allowed = {"not_started": {"not_started", "dispatched"}, "dispatched": {"dispatched", "unknown", "registered"},
                "unknown": {"unknown", "registered"}, "registered": {"registered"}}
     require(right["state"] in allowed[left["state"]])

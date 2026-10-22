@@ -84,6 +84,10 @@ def _parts(connection):
             or row[0] == 0 and record.continuation_id is not None
             or row[0] > 0 and (record.continuation_sequence != row[0] or record.preparation_id != history[1].preparation_id)):
             raise RepositoryError("state_unreadable")
+        if record.replaced_registration_round is not None:
+            prior = history[record.replaced_registration_round]
+            if prior.registration != "dispatching" or prior.commit != "not_started" or prior.completion != "not_started":
+                raise RepositoryError("state_unreadable")
     if (history[0].packet_path, history[0].packet_digest, history[0].result_paths) != (root.packet_path,root.packet_digest,root.result_paths):
         raise RepositoryError("state_unreadable")
     return root, history
@@ -106,7 +110,8 @@ def append(connection, record):
     if version == 1:
         before = FinalizationRepository._load(connection)
         # Unknown dispatch stages are never converted into a new round.
-        if any(value == "dispatching" for value in (before.registration,before.commit,before.completion)):
+        if (any(value == "dispatching" for value in (before.commit,before.completion))
+            or before.registration == "dispatching" and record.replaced_registration_round != 0):
             raise RepositoryError("review_continuation_effect_unknown")
         original = _encode(before)
         root = EffectRoot(**{name:getattr(before,name) for name in EffectRoot.__dataclass_fields__})
@@ -122,13 +127,15 @@ def append(connection, record):
     root, history = _parts(connection)
     existing = next((row for row in history if row.continuation_id == record.continuation_id),None)
     if existing is not None:
-        if (existing.basis,existing.packet_path,existing.packet_digest,existing.result_paths,existing.active_sessions) != (record.basis,record.packet_path,record.packet_digest,record.result_paths,record.active_sessions):
+        if (existing.basis,existing.packet_path,existing.packet_digest,existing.result_paths,existing.active_sessions,existing.replaced_registration_round) != (record.basis,record.packet_path,record.packet_digest,record.result_paths,record.active_sessions,record.replaced_registration_round):
             raise RepositoryError("binding_mismatch")
         return load(connection)
     if (len(history)>=65 or record.continuation_sequence!=len(history)
         or record.basis!=root.basis or record.branch!=root.branch
         or root.completion != "not_started" or root.commit == "dispatching"):
         raise RepositoryError("state_transition_invalid")
+    if history[-1].registration == "dispatching" and record.replaced_registration_round != len(history) - 1:
+        raise RepositoryError("review_continuation_effect_unknown")
     connection.execute("INSERT INTO rounds VALUES (?,?,?)", (record.continuation_sequence,record.continuation_id,_encode(record)))
     connection.execute("UPDATE current_round SET sequence=? WHERE singleton=1", (record.continuation_sequence,))
     return load(connection)

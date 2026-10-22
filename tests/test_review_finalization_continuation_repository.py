@@ -98,6 +98,28 @@ class FinalizationContinuationRepositoryTests(unittest.TestCase):
         with self.assertRaises(RepositoryError):
             self.append(round_record(2))
 
+    def test_rejected_registration_replacement_preserves_old_dispatch_and_fixed_link(self):
+        original = root_record(registration="dispatching", originals=((A,"a"*64),(B,"b"*64)))
+        self.initialize(original)
+        replacement = replace(round_record(), replaced_registration_round=0)
+        self.assertEqual(self.append(replacement), replacement)
+        self.assertEqual(self.repo.read_rounds()[0], original)
+        self.assertEqual(self.append(replacement), replacement)
+        with self.assertRaises(RepositoryError):
+            self.append(round_record())  # Reentry cannot drop the retirement link.
+        with self.repo.serial() as lease, self.assertRaises(RepositoryError):
+            self.repo.advance(lease, replaced_registration_round=None)
+        self.assertEqual(self.repo.read_rounds()[0], original)
+
+    def test_replacement_marker_cannot_bypass_unknown_git_effect(self):
+        original = root_record(registration="succeeded", originals=((A,"a"*64),(B,"b"*64)),
+            receipt_ids=(ident("tg_review_receipt_"),ident("tg_review_receipt_",2)),
+            candidate="c"*40, commit="dispatching")
+        self.initialize(original)
+        with self.assertRaises(RepositoryError):
+            self.append(replace(round_record(), replaced_registration_round=0))
+        self.assertEqual(self.repo.read(), original)
+
     def test_conversion_failure_rolls_back_to_exact_readable_v1(self):
         self.initialize()
         from task_governance_tool import review_finalization_continuation_repository as continued

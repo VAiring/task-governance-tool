@@ -256,15 +256,18 @@ def initial_submission(repo, root, resolution, originals):
 
 
 class RegistrationAdmission:
-    def __init__(self, submission, groups):
+    def __init__(self, submission, groups, replacements=None):
         self.submission, self.groups = submission, groups
+        self.replacements = replacements or {}
 
-    def _not_dispatched(self):
+    def _not_dispatched(self, *, allow_replacement=False):
         for service, lease, items in self.groups:
             records = service.repository.read()
             for item in items:
                 if records[item.metadata["binding"]["slot"]-1]["registration"] != dict(
                         state="not_started", submission_digest=None, receipt_id=None):
+                    if allow_replacement and item.slot in self.replacements:
+                        continue
                     return False
         return True
 
@@ -329,11 +332,13 @@ class RegistrationAdmission:
 
     def dispatch(self):
         # Check every source store before persisting any registration intent.
-        if not self._not_dispatched():
+        if not self._not_dispatched(allow_replacement=True):
             raise AnswerError("registration_unknown", reason="effect_unknown")
         for service, lease, items in self.groups:
             service.mark_registration_locked(lease,
-                tuple(item.metadata["binding"]["slot"] for item in items), self.submission.submission_digest)
+                tuple(item.metadata["binding"]["slot"] for item in items), self.submission.submission_digest,
+                **({"replacements": {item.metadata["binding"]["slot"]: self.replacements[item.slot]
+                    for item in items if item.slot in self.replacements}} if self.replacements else {}))
 
     def confirm(self, results):
         receipts = results["receipts"]
@@ -466,6 +471,27 @@ def registration_admission(repo, submission, caller):
                     if type(item) is LegacyItem and submission.use_for(item.slot).kind == "initial":
                         _admit_initial_legacy(repo, resolution, root, item)
                 _admit_initial_inventory(resolution, root, submission)
-            yield RegistrationAdmission(submission, admitted)
+            replacements = {}
+            if root_context is not None:
+                resolution, root = root_context
+                from .review_wait_runtime.continuation_transition_repository import TransitionRepository
+                path = resolution.paths.review_continuation_store(root.basis["parent_session_id"],
+                    root.basis["task_id"], root.basis["target_generation"])
+                if path_lexically_exists(path):
+                    from .review_answer_rejection import replacement_for
+                    history = TransitionRepository(path).read()
+                    state = None
+                    if any(row.rejected_answer_replacement is not None for row in history):
+                        from .review_continuation_handoff_repository import read_state
+                        state = read_state(resolution.target, root.basis["task_id"], caller)
+                    consumer = submission.continuation["continuation_id"] if submission.continuation else None
+                    for service, _lease, items in admitted:
+                        records = service.repository.read()
+                        for item in items:
+                            replacement = replacement_for(root, history, item.metadata, consumer,
+                                records[item.metadata["binding"]["slot"]-1]["registration"], state)
+                            if replacement is not None:
+                                replacements[item.slot] = replacement
+            yield RegistrationAdmission(submission, admitted, replacements)
     except AnswerError as exc:
         raise answer_input_error(exc) from None

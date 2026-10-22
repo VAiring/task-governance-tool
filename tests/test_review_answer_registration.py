@@ -130,7 +130,9 @@ class RetainedSourceAdmissionTests(TestCase):
 
     def test_registration_uses_fresh_selected_and_exact_native_retained_sources(self):
         from task_governance_tool import review_answer_handoff as handoff
-        resolution = SimpleNamespace(target=self.fixture.target)
+        resolution = SimpleNamespace(target=self.fixture.target, paths=SimpleNamespace(
+            review_continuation_store=lambda *_: self.fixture.repo / "absent-transition.sqlite"))
+        root = SimpleNamespace(basis=self.fixture.basis, preparation_id=self.submitted.preparation_id)
         admitted = []
         def service_for(_repo, _resolution, _root, basis, *, retained=False):
             items = tuple(item for item in self.submitted.items if item.metadata["basis"] == basis)
@@ -140,7 +142,7 @@ class RetainedSourceAdmissionTests(TestCase):
             context.__enter__.return_value = (mock.Mock(), tuple((item.raw, item.metadata) for item in items))
             service.admission.return_value = context
             return service
-        with mock.patch.object(handoff, "root_for", return_value=(resolution, mock.Mock())), \
+        with mock.patch.object(handoff, "root_for", return_value=(resolution, root)), \
              mock.patch.object(handoff, "service_for", side_effect=service_for):
             with handoff.registration_admission(self.fixture.repo, self.submitted, self.fixture.caller):
                 pass

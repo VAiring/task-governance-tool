@@ -913,6 +913,32 @@ corrupt nested source, ancestry, correction, Receipt and capture relations.
 Legacy codecs/sidecars, old request bytes and sealed Evidence remain exact;
 reviewer `save` retirement requires proven drainage of supported old requests.
 
+#### Rejected Answer Replacement Composition
+
+The exceptional continuation composer owns rejected-answer replacement under
+the existing ordered leases. A dedicated retirement reader yields bounded
+structural descriptors, not a decoded rejected payload. It compares the saved
+original reference and exact bytes, applies the former generic privacy and
+shape/bound checks, and requires a current storage-field privacy rejection.
+Normal collection, transport, provenance and registration continue using the
+strict decoder.
+
+The transition fence retains the complete retiring inventory and exact selected
+rejection fields. It grants no write permission by itself: the continuation
+repository repeats complete absence under its ordinary core writer and admits
+the successor with retained healthy captures in the same transaction. Source
+leases exclude concurrent registration until commit and connection close.
+Every later registration compares the consumer to the fence, preventing an old
+writer from using retained-source admission to revive a rejected batch.
+
+Healthy sources retain old registration tuples in a bounded append-only list
+when the successor reserves its distinct dispatch. Existing tuples are not
+rewritten or reset. The finalization repository preserves a dispatching old
+round verbatim while appending the exactly admitted replacement round; this
+exception never applies to unknown commit/completion effects. Resume derives
+all authority from current native state and the exact saved fence, not a prior
+read-only observation or a caller-supplied absence claim.
+
 ### Optional Reviewer Verification Workspace
 
 `review_workspace.py` owns optional caller-invoked restoration and cleanup,

@@ -464,10 +464,15 @@ def admit_locked(connection: sqlite3.Connection, *, basis: dict, preparation_id:
                  caller: CallerIdentity, retirement: values.RetirementProof | None = None,
                  retained_originals: tuple[values.RetainedOriginal, ...] = (),
                  retained_collected: tuple = (),
-                 continuation_id: str | None = None) -> Continuation:
+                 continuation_id: str | None = None, rejection_audit=None) -> Continuation:
     """Admit one explicit expected-head selection; replay reconciles, never republishes."""
     from .storage import utc_now, current_schema_version
     require_current_basis(connection, basis, caller)
+    rejected_actors = set()
+    if rejection_audit is not None:
+        from .review_answer_rejection_repository import require_absent_locked
+        require_absent_locked(connection, basis, preparation_id, selected, rejection_audit)
+        rejected_actors = {s["reviewer_session_id"] for s in rejection_audit["sources"] if s["rejection"] is not None}
     if type(retained_collected) is not tuple:
         raise values._invalid()
     collected = []
@@ -524,7 +529,8 @@ def admit_locked(connection: sqlite3.Connection, *, basis: dict, preparation_id:
         from .review_answer_repository import read_native_collected_captures
         prior_collected = read_native_collected_captures(connection, pending[0].continuation_id) if collected or current_schema_version(connection) >= 30 else ()
         transferred = {(capture["session_id"], capture["metadata_digest"]) for capture, _ in collected}
-        if any((capture["session_id"], capture["metadata_digest"]) not in transferred for capture, _ in prior_collected):
+        if any((capture["session_id"], capture["metadata_digest"]) not in transferred
+               and capture["session_id"] not in rejected_actors for capture, _ in prior_collected):
             raise validation_error("review_continuation_conflict", "review continuation would lose a collected original")
         actors = {row.session_id for row in selected} | {row.session_id for row in retained_originals} | collected_actors
         if (not prior_captures <= set(retained_originals)

@@ -9,7 +9,7 @@ from .evidence_ledger import canonical_json_bytes as canonical_bytes, domain_dig
 from .review_answer import AnswerError, scan_strings, privacy_scan, decode_answer
 from .review_provenance import REVIEW_PROFILES, REVIEW_LENSES, CONTEXT_RELATIONS
 from .session_identity import is_session_id
-from .task_values import TaskValidationError
+from .task_values import TaskValidationError, reject_private_or_raw_content
 
 def fail(reason="shape", classification="format_invalid"):
     raise AnswerError(classification, reason=reason)
@@ -52,6 +52,7 @@ REGISTRATION = dict(state=str, submission_digest=nullable(str), receipt_id=nulla
 RECORD = dict(version=int, basis=BASIS, binding=nullable(BINDING), attempts=[ATTEMPT],
               correction=nullable(CORRECTION), registration=REGISTRATION)
 TRACKING_RECORD = {**RECORD, "binding": nullable(TRACKING_BINDING), "tracking_state": str}
+RETIRED_REGISTRATION = dict(continuation_id=str, registration=REGISTRATION)
 CAPTURE = dict(kind=str, consumer_continuation_id=str, consumer_slot=int, source_preparation_id=str,
                source_continuation_id=nullable(str), source_slot=int, session_id=str, source_basis_digest=str,
                original_digest=str, metadata_digest=str)
@@ -157,6 +158,10 @@ def _assignment(value):
 def _binding(value, basis=None):
     digest(value["basis_digest"]); integer(value["slot"], 1, 8)
     key = value["reviewer_key"]
+    try:
+        reject_private_or_raw_content("reviewer_key", key)
+    except TaskValidationError:
+        raise AnswerError("privacy_rejected", reason="privacy") from None
     require(bool(key) and key == key.strip() and len(key) <= 500, "bound")
     session(value["parent_session_id"]); session(value["reviewer_session_id"])
     require(value["parent_session_id"] != value["reviewer_session_id"], "identity")
@@ -313,7 +318,10 @@ def _failure(value):
 
 def validate_record(value):
     tracked = type(value) is dict and value.get("version") == 2
-    result = prepare(value, TRACKING_RECORD if tracked else RECORD)
+    schema = TRACKING_RECORD if tracked else RECORD
+    if tracked and "retired_registrations" in value:
+        schema = {**schema, "retired_registrations": [RETIRED_REGISTRATION]}
+    result = prepare(value, schema)
     require(result["version"] in (1, 2))
     _basis(result["basis"])
     require(result["version"] == result["basis"]["version"], "identity")
@@ -421,6 +429,18 @@ def _tracking_record(result):
         digest(reg["submission_digest"])
     if reg["receipt_id"] is not None:
         identifier(reg["receipt_id"], "tg_review_receipt_")
+    if "retired_registrations" in result:
+        retired = result["retired_registrations"]
+        require(frozen and 1 <= len(retired) <= 64 and reg["state"] != "not_started", "identity")
+        continuations, digests = set(), {reg["submission_digest"]}
+        for entry in retired:
+            identifier(entry["continuation_id"], "tg_review_continuation_")
+            old = entry["registration"]
+            require(entry["continuation_id"] not in continuations and old["state"] in ("dispatched", "unknown")
+                and old["receipt_id"] is None and old["submission_digest"] not in digests, "identity")
+            digest(old["submission_digest"])
+            continuations.add(entry["continuation_id"])
+            digests.add(old["submission_digest"])
     return result
 
 def validate_collected_capture(value):

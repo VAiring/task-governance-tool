@@ -36,6 +36,7 @@ class RequestRound:
     answer_protocol: str = "legacy"
     collection_basis_digests: tuple[str, ...] = ()
     legacy_migration: dict | None = None
+    rejected_answer_replacement: dict | None = None
 
     def __post_init__(self):
         try:
@@ -53,6 +54,11 @@ class RequestRound:
                 if self.answer_protocol != "review-answer-v1":
                     raise ValueError
                 decode(self.legacy_migration)
+            if self.rejected_answer_replacement is not None:
+                from task_governance_tool.review_answer_rejection_values import validate
+                if self.answer_protocol != "review-answer-v1" or self.legacy_migration is not None:
+                    raise ValueError
+                validate(self.rejected_answer_replacement)
             if (self.expected_attempt == 0) != (self.expected_request_digest is None):
                 raise ValueError
             if (self.expected_attempt == 0) != (self.old_request_phase is None):
@@ -114,6 +120,8 @@ def encode(record):
         del value["collection_basis_digests"]
     if record.legacy_migration is None:
         del value["legacy_migration"]
+    if record.rejected_answer_replacement is None:
+        del value["rejected_answer_replacement"]
     raw = json.dumps(value, ensure_ascii=True, sort_keys=True, separators=(",", ":"), allow_nan=False)
     if len(raw.encode()) > 32768:
         raise RepositoryError("invalid_snapshot")
@@ -123,8 +131,9 @@ def encode(record):
 def decode(raw):
     try:
         value = json.loads(raw)
-        fields = set(RequestRound.__dataclass_fields__) - {"legacy_migration"}
-        observed_fields = set(value) - {"legacy_migration"} if type(value) is dict else set()
+        optional = {"legacy_migration", "rejected_answer_replacement"}
+        fields = set(RequestRound.__dataclass_fields__) - optional
+        observed_fields = set(value) - optional if type(value) is dict else set()
         if type(value) is not dict or observed_fields not in (
             fields, fields - {"collection_basis_digests"},
             fields - {"collection_basis_digests", "answer_protocol"}):

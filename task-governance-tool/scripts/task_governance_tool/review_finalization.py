@@ -137,19 +137,27 @@ def continuation_candidate(root, record, transition, packet_raw, caller, journal
     before = journal.read_rounds()[0]
     require_preparation_intent(root, before, record.basis, caller)
     current = journal.read()
-    if (any(value == "dispatching" for value in (current.registration, current.commit, current.completion))
+    replacement = transition.rejected_answer_replacement
+    replacing = (replacement is not None and current.registration == "dispatching"
+        and current.continuation_id == replacement["source_continuation_id"]
+        and current.commit == current.completion == "not_started" and not current.receipt_ids
+        and {s for s, _ in current.originals} == {s["reviewer_session_id"] for s in replacement["sources"]})
+    if (any(value == "dispatching" for value in (current.commit, current.completion))
+        or current.registration == "dispatching" and not replacing
         or current.completion != "not_started"):
         _fail("review_continuation_effect_unknown")
     return FinalizationRecord(before.basis, transition.packet_path, sha256(packet_raw).hexdigest(),
         transition.result_paths, before.branch, continuation_id=record.continuation_id, continuation_sequence=record.sequence,
-        preparation_id=record.preparation_id, active_sessions=tuple(row.session_id for row in record.selected))
+        preparation_id=record.preparation_id, active_sessions=tuple(row.session_id for row in record.selected),
+        replaced_registration_round=(current.continuation_sequence if replacing else
+            current.replaced_registration_round if current.continuation_id == record.continuation_id else None))
 
 
 def require_continuation_round(candidate, journal):
     """Current round identity, distinct from monotone registration/root effects."""
     current = journal.read()
     names = ("basis", "branch", "packet_path", "packet_digest", "result_paths", "continuation_id",
-        "continuation_sequence", "preparation_id", "active_sessions")
+        "continuation_sequence", "preparation_id", "active_sessions", "replaced_registration_round")
     if any(getattr(current, name) != getattr(candidate, name) for name in names):
         _fail("review_continuation_conflict")
     return current

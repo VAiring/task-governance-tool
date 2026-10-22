@@ -447,6 +447,13 @@ Registered consumers require every capture consumed; superseded unused captures
 retain null links as history. Native reentry compares the frozen projection
 against its original metadata rather than treating an opaque seal as proof.
 
+The narrow [rejected-answer replacement](review-completion-specification.md#rejected-unregistered-answer-replacement)
+may retire an unregistered rejected capture instead of transferring it. Fresh
+absence is repeated under the same native writer that admits the successor;
+healthy captures transfer unchanged, and the old unused capture stays historical.
+The operational fence retains the bounded rejection audit. No core schema,
+Receipt, sealed Evidence or old original is rewritten by this recovery.
+
 An explicitly typed late initial source in a version-two submission is not a
 preparation capture. The registration writer requires its null source context,
 unchanged basis, no prior judgment and never-selected reviewer, then commits

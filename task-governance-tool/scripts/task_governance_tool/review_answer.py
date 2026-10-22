@@ -6,7 +6,7 @@ import json
 import re
 from dataclasses import dataclass
 
-from .task_values import TaskValidationError, reject_private_or_raw_content
+from .task_values import TaskValidationError, reject_private_or_raw_content, validate_text
 
 INPUT_LIMIT = 262_144
 ANSWER_KEYS = frozenset(("verdict", "summary", "findings", "checks", "limitations"))
@@ -113,6 +113,39 @@ def validate_payload(value, *, observed_digest=None):
     payload_shape(value)
     scan_strings(value)
     privacy_scan(value)
+    try:
+        storage_summaries(value)
+    except AnswerError as error:
+        if error.privacy_admissible:
+            raise AnswerError(error.failure["class"], error.failure["field"], error.failure["reason"],
+                              privacy_admissible=True, observed_digest=observed_digest) from None
+        raise
+    return _semantic_payload(value, observed_digest=observed_digest)
+
+
+def storage_summaries(value):
+    """The same field validators at admission and the public storage writer."""
+    entries = [("summary", "review_receipt_summary", value["summary"])]
+    entries.extend(("findings[].summary", "review_finding_summary", finding["summary"])
+                   for finding in value["findings"])
+    # Check privacy across every field before semantic bounds/missing values.
+    for field, stored_field, text in entries:
+        try:
+            reject_private_or_raw_content(stored_field, text.strip())
+        except TaskValidationError:
+            raise AnswerError("privacy_rejected", field, "privacy") from None
+    normalized = []
+    for field, stored_field, text in entries:
+        try:
+            normalized.append(validate_text(stored_field, text, required=True, limit=1000))
+        except TaskValidationError:
+            raise AnswerError("capacity_exceeded" if len(text.strip()) > 1000 else "format_invalid",
+                              field, "bound" if len(text.strip()) > 1000 else "missing",
+                              privacy_admissible=True) from None
+    return normalized[0], normalized[1:]
+
+
+def _semantic_payload(value, *, observed_digest=None):
     def fail(field, reason="choice", classification="format_invalid"):
         raise AnswerError(classification, field, reason, privacy_admissible=True,
                           observed_digest=observed_digest)
@@ -142,7 +175,7 @@ def validate_payload(value, *, observed_digest=None):
     return json.loads(json.dumps(value, ensure_ascii=False))
 
 
-def decode_answer(raw: bytes) -> DecodedAnswer:
+def _parse_answer(raw):
     if type(raw) is not bytes:
         raise AnswerError(reason="type")
     if not raw or len(raw) > INPUT_LIMIT:
@@ -170,6 +203,37 @@ def decode_answer(raw: bytes) -> DecodedAnswer:
         raise AnswerError(reason="unicode") from None
     except (ValueError, RecursionError):
         raise AnswerError(reason="unicode" if raw.startswith(b"\xef\xbb\xbf") else "shape") from None
-    payload = validate_payload(value, observed_digest=byte_digest(raw))
     length = len(body.encode("utf-8"))
+    return value, start, length
+
+
+def decode_answer(raw: bytes) -> DecodedAnswer:
+    value, start, length = _parse_answer(raw)
+    payload = validate_payload(value, observed_digest=byte_digest(raw))
     return DecodedAnswer(raw, payload, start, length, byte_digest(raw), byte_digest(raw[start:start + length]))
+
+
+def inspect_retirement_rejection(raw, original):
+    """Old saved bytes only: return closed facts, never an admissible answer.
+
+    No caller-selectable relaxed decoder exists. The old generic admission must
+    pass and the new storage-field policy must reject. Existing hashes are
+    compared, never returned or added to the retirement record.
+    """
+    value, start, length = _parse_answer(raw)
+    payload_shape(value)
+    scan_strings(value)
+    privacy_scan(value)
+    _semantic_payload(value)
+    if (original["byte_length"] != len(raw) or original["payload_start"] != start
+            or original["payload_length"] != length or original["digest"] != byte_digest(raw)
+            or original["payload_digest"] != byte_digest(raw[start:start + length])):
+        raise AnswerError("binding_mismatch", reason="identity")
+    try:
+        storage_summaries(value)
+    except AnswerError as error:
+        if error.failure["class"] == "privacy_rejected":
+            return dict(field=error.failure["field"], verdict=value["verdict"],
+                        severities=[finding["severity"] for finding in value["findings"]])
+        raise
+    raise AnswerError("binding_mismatch", reason="identity")

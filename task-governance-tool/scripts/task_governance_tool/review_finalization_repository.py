@@ -50,6 +50,7 @@ class FinalizationRecord:
     active_sessions: tuple[str, ...] = ()
     retained_receipt_ids: tuple[str, ...] = ()
     original_locations: tuple[tuple[str, str], ...] = ()
+    replaced_registration_round: int | None = None
 
     def __post_init__(self):
         try:
@@ -80,6 +81,10 @@ class FinalizationRecord:
                     raise ValueError
             from .review_continuation import identifier
             continued = self.continuation_id is not None
+            if self.replaced_registration_round is not None and (
+                not continued or type(self.replaced_registration_round) is not int
+                or self.replaced_registration_round != self.continuation_sequence - 1):
+                raise ValueError
             if continued:
                 if (not identifier(self.continuation_id, "tg_review_continuation_")
                     or not identifier(self.preparation_id, "tg_review_preparation_")
@@ -145,6 +150,8 @@ def _encode(record):
     # Revalidate mutable nested mappings before every durable write.
     FinalizationRecord(**asdict(record))
     value = asdict(record)
+    if record.replaced_registration_round is None:
+        value.pop("replaced_registration_round")
     if record.continuation_id is None:
         for key in ("continuation_id", "continuation_sequence", "preparation_id", "active_sessions", "retained_receipt_ids", "original_locations"):
             value.pop(key)

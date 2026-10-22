@@ -826,6 +826,16 @@ round, bypass registration of saved answers, or replace missing native proof in
 a collected initial preparation. The returned pre-send arm procedure below
 still applies, and each new continuation needs its own observation boundary.
 
+For an old version-two saved answer that current storage-field privacy rejects,
+the same explicit command may add `--replace-rejected-answers`. Select exactly
+the rejected reviewers with `supplement` and null prior Receipt; do not copy,
+edit or summarize their rejected bodies. The helper must prove complete
+unregistered state under exclusion and retain healthy siblings before returning
+new requests. This is distinct from resuming registration of the same original.
+Registered, partial, unproven-effect, changed-basis or legacy/mixed cases cannot be
+forced through it. Preserve its exact fence/directory on interruption; use only
+returned readiness/arm instructions. Valid NG/unable results retain their gates.
+
 If known cleanup is required, use the existing authorized `review_wait_stop`
 once, then reconcile the same saved request/directory. Unknown effect or worker
 exit blocks replacement; do not replay or choose another output location.

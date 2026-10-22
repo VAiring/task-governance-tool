@@ -338,6 +338,15 @@ registration; consumers import identity, domain errors and privacy validation
 from their actual owners rather than through the CLI entry. The entry retains
 argument parsing, admitted save orchestration and the one public CLI dispatch.
 
+The save orchestrator normalizes only known operational `RepositoryError`
+failures, retaining a call-local distinction between admission not reached and
+the admitted save body entered. The boundary includes context-manager exit,
+which may fail after original and sidecar publication. Its private transport
+error carries the conservative save observation to `main`; the public helper
+emits fixed codes, never repository messages. Shared-helper repository failures
+also receive a fixed unavailable error while submit retains its dispatch state.
+Repository leases, retry policy and exclusive file ownership remain unchanged.
+
 `review_handoff_preparation.py` owns the same helper's explicit `prepare`
 operation: three fixed sibling CLI invocations, bounded binary response capture,
 exit/envelope and Packet consistency checks, creation of the named unused

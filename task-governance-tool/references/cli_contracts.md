@@ -2659,6 +2659,13 @@ acknowledgement, not registration, review PASS, independence or completion proof
 Return the saved path, verdict and Finding count once, without echoing the body.
 A failed/uncertain save needs [recovery](#recover-review-handoff), not overwrite.
 
+Known repository failures before save admission return `handoff_writer_busy`
+or `handoff_state_unavailable` with `save_status=not_started`. After the admitted
+save body begins, they return `handoff_outcome_unknown` with
+`save_status=unknown`, including a lease-exit failure after file writes.
+Preserve successful siblings and any residue; neither result authorizes a
+retry or overwrite. Other failure diagnostics retain their existing meaning.
+
 #### Submit Review Originals
 
 Only for parent-managed registration (`prepare`), after all dispatched reviewers

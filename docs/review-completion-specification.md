@@ -1532,6 +1532,20 @@ originals and inspect uncertain outcomes. Result validation still precedes
 file creation or registration, and readback failure may still leave residue.
 Other helper failures keep their existing general diagnostics.
 
+Known operational-repository failures during legacy Save admission return
+nonzero with fixed `handoff_writer_busy` for a lease conflict, otherwise
+`handoff_state_unavailable`, and `save_status=not_started`. No original or
+sidecar has been created by that attempt. Once the admitted save body starts,
+a repository failure instead returns `handoff_outcome_unknown` and
+`save_status=unknown`, including failure on lease exit after successful file
+writes. This conservative observation never authorizes retry or removal.
+Existing sibling originals and any partial output remain untouched. Other
+shared-helper repository failures use fixed `handoff_state_unavailable` and
+retain any existing submit dispatch observation. Repository diagnostic text
+is never forwarded; unrelated programming exceptions are not reclassified as
+safe retries or success. Issued legacy requests and collected-protocol rejection
+retain their existing boundaries.
+
 For a parsed `submit` invocation, a helper-local failure additionally returns
 `registration_status=not_started|unknown`. `not_started` means all failure
 handling remains before registration dispatch; recover the indicated transport

@@ -23,6 +23,17 @@ from .reviews import ReviewEvidenceError
 from .task_values import TaskValidationError
 from .session_identity import CallerIdentity
 from . import review_session_transport as session_transport
+from .review_wait_runtime.review_wait_repository import RepositoryError
+
+
+class _SaveRepositoryFailure(files.HandoffError):
+    """Known repository failure with a conservative, call-local save boundary."""
+
+    def __init__(self, error, *, admitted):
+        self.save_status = "unknown" if admitted else "not_started"
+        super().__init__("handoff_outcome_unknown" if admitted else
+                         "handoff_writer_busy" if error.code == "writer_busy" else
+                         "handoff_state_unavailable")
 
 
 def save(repo, packet_path, output, raw, approvals=()):
@@ -31,10 +42,17 @@ def save(repo, packet_path, output, raw, approvals=()):
     packet = files.decode_packet(packet_raw)
     from task_governance_tool.review_preparation import save_admission
     caller = session_identity.capture_caller_identity()
-    with save_admission(repo, packet_path, packet_raw, packet, output, caller):
-        if files.read_bounded(packet_file, files.PACKET_LIMIT) != packet_raw:
-            files.fail("handoff_file_changed")
-        return _save_admitted(repo, packet_path, output, raw, approvals, caller, packet_file, packet_raw, packet)
+    admitted = False
+    try:
+        with save_admission(repo, packet_path, packet_raw, packet, output, caller):
+            if files.read_bounded(packet_file, files.PACKET_LIMIT) != packet_raw:
+                files.fail("handoff_file_changed")
+            admitted = True
+            return _save_admitted(repo, packet_path, output, raw, approvals, caller, packet_file, packet_raw, packet)
+    except RepositoryError as exc:
+        # Admission exit can fail after both files were written. Never infer
+        # absence or safe replay from the repository diagnostic alone.
+        raise _SaveRepositoryFailure(exc, admitted=admitted) from None
 
 
 def _save_admitted(repo, packet_path, output, raw, approvals, caller, packet_file, packet_raw, packet):
@@ -195,6 +213,12 @@ def main(argv=None):
         code, field, reason = sanitized.code, sanitized.field, sanitized.message
     except ReviewResultInputError as exc:
         code, field, reason = exc.code, exc.field, exc.message
+    except _SaveRepositoryFailure as exc:
+        code, save_status = exc.code, exc.save_status
+    except RepositoryError:
+        # Shared read/submit admission can expose the same known repository
+        # type. Do not forward arbitrary diagnostic strings or infer effects.
+        code = "handoff_state_unavailable"
     except (files.HandoffError, ReviewEvidenceError, TaskValidationError) as exc:
         code = exc.code
     except FileNotFoundError:
@@ -218,5 +242,7 @@ def main(argv=None):
         failure.update(field=field, message=reason + "; " + suffix)
     if registration_status is not None:
         failure["registration_status"] = registration_status
+    if "save_status" in locals():
+        failure["save_status"] = save_status
     files.emit_json(failure)
     return 1

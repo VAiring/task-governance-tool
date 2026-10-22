@@ -201,6 +201,23 @@ class ReviewHandoffFilesTests(unittest.TestCase):
                                  for call in calls.call_args_list))
             self.assertEqual(file_snapshot(self.root), before)
 
+    def test_shared_repository_failure_is_sanitized_without_swallowing_programming_errors(self):
+        from task_governance_tool.review_wait_runtime.review_wait_repository import RepositoryError
+
+        before = file_snapshot(self.root)
+        output = io.StringIO()
+        with mock.patch.object(originals, "submission", side_effect=RepositoryError("private diagnostic")), \
+             redirect_stdout(output):
+            code = handoff.main(["submit", "--repo", str(self.root), "--packet", self.packet, self.output])
+        result = json.loads(output.getvalue())
+        self.assertEqual((code, result["code"], result["registration_status"]),
+                         (1, "handoff_state_unavailable", "not_started"))
+        self.assertNotIn("private diagnostic", output.getvalue())
+        self.assertEqual(file_snapshot(self.root), before)
+        with mock.patch.object(originals, "submission", side_effect=RuntimeError("programming defect")), \
+             self.assertRaises(RuntimeError):
+            handoff.main(["submit", "--repo", str(self.root), "--packet", self.packet, self.output])
+
     def test_ineligible_approval_identifies_option_without_save_or_submit(self):
         for tier, kind, verdict in ((2, "independent", "pass"), (0, "not_required", "not_required")):
             payload = document(receipts=[receipt(kind=kind, verdict=verdict)])

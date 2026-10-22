@@ -1,6 +1,6 @@
 """Immutable issued answer-basis pins in bounded continuation round journals."""
 
-from dataclasses import asdict, replace
+from dataclasses import replace
 import json
 from pathlib import Path
 import tempfile
@@ -30,10 +30,17 @@ def canonical(value):
 class AnswerRoundValueTests(unittest.TestCase):
     def test_legacy_and_old_tagged_bytes_remain_exact_without_inferred_pins(self):
         for record in (pending(), collected(phase="prepared"), collected(phase="published")):
-            old = asdict(record)
-            del old["collection_basis_digests"]
-            if record.answer_protocol == "legacy":
-                del old["answer_protocol"]
+            # Freeze the historical field set independently of additions to
+            # RequestRound; new optional fields must not enter old wire bytes.
+            old = {field: getattr(record, field) for field in (
+                "preparation_id", "continuation_id", "continuation_sequence",
+                "basis_digest", "wait_basis_digest", "selection_digest",
+                "expected_attempt", "expected_request_digest", "old_automation_id",
+                "old_request_phase", "phase", "worker_stop_identity",
+                "packet_path", "packet_digest", "result_paths",
+            )}
+            if record.answer_protocol != "legacy":
+                old["answer_protocol"] = "review-answer-v1"
             raw = canonical(old)
             with self.subTest(protocol=record.answer_protocol, phase=record.phase):
                 self.assertEqual(encode(record), raw)

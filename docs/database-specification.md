@@ -811,19 +811,22 @@ no participation. The submitting parent's turn never substitutes for the
 reviewer's answer turn, including retained and reassessed judgments.
 
 This native endpoint replaces the absent legacy save event for that collected
-Receipt; it does not fabricate a save acknowledgement or change legacy
-read/save and direct-registration handling. A matching observed review read
-starts the inclusive reviewer interval. Missing read history retains only the
+Receipt; it does not fabricate a save acknowledgement. Legacy read/save and
+direct-registration Receipts retain their own validated endpoint sources, but
+current response attribution applies the same conservative ordering checks to
+all three routes. Retained inclusive-turn readers keep their historical policy.
+A matching observed review read starts the inclusive reviewer interval.
+Missing read history retains only the
 known endpoint turn with explicit partial coverage; missing or conflicting turn
 order remains unknown. Both conflicting starts for one turn and equal starts
 for different turns in the same session invalidate those turns' ordering.
 Repeated identical observations and equal starts in different sessions do not.
-Apply this ordering check before selecting either native interval boundary.
+Apply this ordering check before selecting either current review interval boundary.
 The numerical store retains the first start and conflict identity for a turn,
 not every contradictory start. A same-ID start disagreement therefore makes
-native range ordering unknown throughout that reviewer session, even when its
+review range ordering unknown throughout that reviewer session, even when its
 retained value appears outside the range. It does not affect another session
-or change legacy handling. In that case, retain only an explicitly matching
+or rewrite saved history. In that case, retain only an explicitly matching
 read whose own identity is not conflicted. Exclude conflicted IDs before
 checking the remaining read candidates for equal-start collisions, then count
 the selected read by identity alone. A discarded peer timestamp cannot add
@@ -838,8 +841,18 @@ records can fill the established range, but a stored endpoint alone supplies
 neither token counts nor final coverage. Original response identities remain
 deduplicated across all bindings.
 
-The validated endpoint metadata and its projection version participate in the
-current capture basis. Old captures require ordinary numerical refresh before
+For current legacy read/save and direct-registration attribution, an unordered
+endpoint likewise retains only a safe matching read. A terminal boundary before
+every safe matching read retains the earliest such read without inferring a
+reversed range. A missing read with an otherwise safely ordered endpoint retains
+only that endpoint; a missing endpoint retains only a safe read. These incomplete
+legacy intervals count their definite keys as `partial`, never `exclusive`.
+No eligible key means no inferred membership. Normal ordered intervals, identical
+replays and independent sessions retain their existing meaning.
+
+The validated endpoint metadata, native endpoint projection version and current
+legacy interval policy version participate in the current capture basis.
+Old captures require ordinary numerical refresh before
 being presented as current. Refresh preserves prior immutable snapshots and
 cycle links and publishes successors through the existing mechanism. There is
 no core or numerical schema migration, extra reviewer action, host query, Task

@@ -45,6 +45,7 @@ _RESPONSE_DDL = (
 )
 
 _COLLECTED_ENDPOINT_BASIS = "collected-review-endpoints-v4"
+_LEGACY_REVIEW_BASIS = "conservative-legacy-review-intervals-v1"
 
 
 @dataclass(frozen=True)
@@ -163,7 +164,8 @@ class UsageResponseRepository(UsageIncrementalRepository):
             contexts.append((row["source_id"], value))
         sources = list(map(tuple, connection.execute("SELECT source_id,thread_id,incarnation,offset,pending FROM usage_sources ORDER BY source_id")))
         endpoints = [asdict(item) for item in _review_inputs.collected_endpoints]
-        return digest([basis, ALGORITHM, sorted(relations, key=lambda item: encode(item)), contexts, sources,
+        return digest([basis, ALGORITHM, _LEGACY_REVIEW_BASIS,
+                       sorted(relations, key=lambda item: encode(item)), contexts, sources,
                        [_COLLECTED_ENDPOINT_BASIS, endpoints]]), periods
 
     def attribution(self, core_connection, *, numerical_connection=None, geometry_only=False, _review_inputs=None):
@@ -257,7 +259,7 @@ class UsageResponseRepository(UsageIncrementalRepository):
             additional += reviewer_intervals(owners, turns, review_boundaries, receipt_turns, reviews,
                                              collected_endpoints=(self._collected_review_endpoints(core_connection)
                                                  if _review_inputs is None else _review_inputs.collected_endpoints),
-                                             conflicting_turns=turn_conflicts)
+                                             conflicting_turns=turn_conflicts, conservative_legacy=True)
             pending = {}
             for row in connection.execute("SELECT context.document,source.source_id,source.incarnation,source.thread_id,scan.document AS scan FROM usage_response_context context "
                     "JOIN usage_sources source USING(source_id) JOIN usage_scan_state scan "

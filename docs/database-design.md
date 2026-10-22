@@ -821,23 +821,24 @@ returns only typed identity and turn metadata; it never exposes an answer body
 to numerical storage. `usage_review_attribution.py` consumes these endpoints as
 a separate input, rather than synthesizing a legacy save observation. A native
 collected Receipt uses its own source endpoint, while legacy handoff/direct
-Receipts keep their existing rules. Unregistered captures and mismatched
-relations cannot supply a boundary.
+Receipts keep their validated save/registration sources. Unregistered captures
+and mismatched relations cannot supply a boundary.
 
-`UsageResponseRepository` includes the validated endpoint projection and its
-version in the capture basis before using the existing interval and partition
-calculation. Source admission and endpoint ordering remain distinct: a valid
+`UsageResponseRepository` includes the validated endpoint projection, its version
+and `conservative-legacy-review-intervals-v1` in the capture basis before using
+the interval and partition calculation. Source admission and endpoint ordering
+remain distinct: a valid
 native turn without its observed ordering metadata does not establish a full
 interval. Keep the source identity in the validated input and capture basis,
 but project a closed unknown end and retain a known read as the start, with an
 unknown-boundary diagnostic. Both coverage consumers then preserve only the
-definite read turn until safe endpoint ordering is available. Native boundary
-selection uses the inclusive projector's shared safe turn-order calculation,
+definite read turn until safe endpoint ordering is available. Current review
+boundary selection uses the inclusive projector's shared safe turn-order calculation,
 including same-session collisions between distinct turn IDs. Inspect the full
 observed turn set before excluding stored conflicts, so an excluded turn cannot
 hide its collision with another boundary. The store retains only a turn's first
 start plus its conflict identity. Union stored conflict keys with same-ID start
-disagreements in the input and disable native range inference for their entire
+disagreements in the input and disable review range inference for their entire
 reviewer session; do not judge an unknown alternate timestamp by the retained
 value's distance from the boundaries. For that fallback only, remove conflicted
 IDs before calculating safe read candidates. Keep an eligible matching read in
@@ -850,8 +851,15 @@ use this same identity-only path. The response consumer marks the covered keys
 partial, independent of whether discarded peer timestamps are present in its
 ordering input. Full, sliced and restarted collection and different arrival
 orders therefore preserve the same definite read and its partial assignment.
-Ordinary intervals,
-other sessions and legacy boundary handling keep their existing meaning.
+The response repository opts legacy handoff/direct Receipts into this ordering
+policy with `conservative_legacy=True`; retained turn-only callers leave it
+disabled. For incomplete legacy intervals, an identity-only key also preserves
+partial assignment for a missing endpoint, an endpoint ordered before every
+eligible read, or an otherwise safe endpoint with no read. Reversed endpoints
+retain the earliest safe read and discard the end; absent safe keys add nothing.
+Ordinary ordered intervals, other sessions and native collection keep their
+existing meaning. The capture-basis version prevents adopting an old capture as
+current until ordinary numerical refresh, without changing the response parser.
 Changed geometry uses existing component invalidation and immutable
 snapshot successors; old numerical readers and stored history retain their
 meaning. The integration adds no persisted table, host operation or core write.

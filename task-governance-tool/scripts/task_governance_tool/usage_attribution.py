@@ -87,7 +87,7 @@ def safe_turn_starts(turns, conflicting_turns=frozenset()):
 def _coverage(interval: Interval, starts: dict[tuple[str, str], int]):
     first = (interval.thread_id, interval.start_turn)
     if interval.identity_only:
-        # A validated native read is a definite identity, not a time range.
+        # A validated review boundary is a definite identity, not a time range.
         # Missing or conflicting ordering must never substitute equal-time
         # peers, its endpoint, or intervening turns for that explicit key.
         return ({first} if interval.start_turn is not None else set()), {"boundary_unknown"}

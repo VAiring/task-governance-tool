@@ -369,8 +369,8 @@ def project_responses(transitions, bindings, checks, positions, turns, responses
             if (row.thread_id, row.turn_id) in covered and (trimmed is None or key in trimmed):
                 owners[key].add(interval.execution_id)
                 if interval.identity_only:
-                    # Definite native read membership does not prove its place
-                    # in the conflicted session's ordering. Keep its partial
+                    # Definite review boundary membership does not prove a
+                    # complete ordered interval. Keep its partial
                     # classification independent of the stored first clock.
                     unknown.add(key)
     groups = defaultdict(set)

@@ -119,6 +119,7 @@
     "scripts/task_governance_tool/review_wait_runtime/__init__.py": "sha256:7c63f3f1a95cf23fcac3529b8a2299d4ed9580fedc09462133a0024871596288",
     "scripts/task_governance_tool/review_wait_runtime/continuation_cleanup_repository.py": "sha256:f210f42e64f1486168fc942eef8dc7b0924f770969dc33bfb067cadf5ad04432",
     "scripts/task_governance_tool/review_wait_runtime/continuation_transition_repository.py": "sha256:2bafbb86e950d53a4ded328c79b1d7529e14ffabb7cdf87675c02d30e1287d91",
+    "scripts/task_governance_tool/review_wait_runtime/development_trace.py": "sha256:8f032eb6db33549d26128d489dedf04da5d606585cf0c1f13c894bd60c5066df",
     "scripts/task_governance_tool/review_wait_runtime/failure_diagnostics.py": "sha256:d072485b04846f506f6199119d7bdc8ef56d27d1e9708edf002baf4eeb30743d",
     "scripts/task_governance_tool/review_wait_runtime/managed_direct.py": "sha256:bdeb6cc4289905f8ddc84219c6746a5668091272aa0e5aed07803911043e63f6",
     "scripts/task_governance_tool/review_wait_runtime/managed_host.py": "sha256:b0a067ec493050ba83477220925bcf0c35a3b1fb64a1e6d61f7ffbedd812502e",

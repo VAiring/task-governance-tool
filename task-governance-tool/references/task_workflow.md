@@ -1184,6 +1184,9 @@ output as success. This copy is not a security sandbox. Keep the cleanup command
 until all its processes end, including failed/timed-out checks, then use it.
 Lost preparation output is recovered through that retained cleanup handle;
 uncertain cleanup requires inspection, not blind preparation or deletion.
+The generated location stays fixed across temporary-environment changes. Keep
+both commands unchanged; do not substitute a destination or change permissions
+to force admission. An unknown cleanup state does not prove residue exists.
 Unsupported material retains the existing retrieval route. This option adds no
 parent choice, mandatory test or completion gate and is absent in records-only
 mode. It does not enable Runner, configure a Plan or grant execution trust.

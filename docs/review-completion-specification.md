@@ -1566,8 +1566,17 @@ Records-only invocation rejects both workspace operations.
 
 `workspace prepare|cleanup` requires explicit `--repo`, saved `--packet`, its
 `--packet-sha256`, a generated 32-lowercase-hex `--workspace-id` and generated
-`--temp-root-sha256` binding the selected OS temporary parent. A changed
-temporary environment fails rather than claiming the old workspace absent.
+`--workspace-location` retaining the admitted physical temporary parent and
+its identity, bound to that repository, Packet digest and workspace handle.
+Use the generated pair unchanged; it is not a custom destination option or
+an authorization token. Later processes use that saved location without
+selecting again from TMPDIR/TEMP/TMP. A changed environment therefore neither
+relocates the copy nor prevents cleanup of its original location.
+Older commands containing only `--temp-root-sha256` remain supported with their
+original strict comparison against the current selector. They cannot recover
+an old path from a digest, search for copies, or silently upgrade the binding.
+Both forms together are invalid. A legacy mismatch reports an unconfirmed
+location, not proof that residue exists or is absent.
 The ID is
 allocated with both commands in the detailed read response before any effect,
 so a lost prepare response
@@ -1592,9 +1601,11 @@ The destination is the physical OS temporary directory's exclusive
 without a Git administrative marker in its ancestor chain. The OS temp selector
 is resolved read-only to an existing physical path before admission; OS aliases
 do not require a user's environment change. All effects use that validated
-physical path, never the alias. A changed selector that resolves elsewhere
-fails the retained parent binding; links within the destination and source
-material retain their no-follow checks. It contains only
+physical path, never the alias. Prepare and cleanup revalidate the saved
+parent's physical identity and safe ancestor chain. Missing, replaced,
+inaccessible or linked original parents fail without alternate selection,
+environment/permission changes, or automatic discovery/movement. Links within
+the destination and source material retain their no-follow checks. It contains only
 the complete fixed target. The sibling bounded `owner.json` records the Packet
 digest, Task/Contract/target, repo-path digest, handle and physical root identity.
 No custom destination, configuration, source/Git write or database row is added.
@@ -1613,8 +1624,12 @@ same retained Packet/owner/root, inventories a bounded physical tree without
 following links, then removes only those individually revalidated files and
 directories. It accepts already-absent as success, and need not match live Task
 state that may have advanced since preparation. Foreign/replaced ownership,
-links, excessive inventory, timeout or IO uncertainty retains residue and
-returns failure with `cleanup_status=retained`; callers inspect rather than
+links, excessive inventory, timeout or IO uncertainty after observing an
+existing copy returns failure with `cleanup_status=retained`. Failure before
+its presence can be established returns `cleanup_status=unknown`. Preparation
+before creation remains `not_started`; confirmed cleanup or absence is `absent`.
+These distinguish attempted effects and observed presence, not speculative
+residue inferred from a failed command. Callers inspect rather than
 delete an uncertain tree or blindly prepare again. A failed preparation tries
 the same bounded cleanup only for its own newly created root. Process termination
 or lost acknowledgement may leave residue recoverable by the retained cleanup

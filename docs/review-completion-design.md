@@ -964,10 +964,25 @@ Temporary location selection is read-only: first configured TMPDIR/TEMP/TMP,
 otherwise LOCALAPPDATA/Temp on Windows or /tmp on POSIX. An absolute selector
 is resolved strictly once to its existing physical path, admitting normal OS
 aliases such as macOS /var without using them for writes. The entire resulting
-physical ancestor chain is checked and its path supplies the retained digest.
+physical ancestor chain is checked before retaining its path and identity.
 Missing/looping/relative selectors or unsafe physical destinations fail; no
 write probe or current-directory fallback occurs. This selection exception
 does not follow links in Packet/source paths, materialized entries or cleanup.
+New commands retain `--workspace-location`: at most 8192 ASCII characters of
+canonical unpadded URL-safe base64 encoding of sorted compact ASCII JSON.
+Its closed version-one object has `version`, `parent`, `parent_identity`
+(`device`, `inode` nonnegative integers), `repo_sha256`, `packet_sha256` and
+`workspace_id`. Version is integer one, not boolean. The parent is the exact
+absolute normalized physical path admitted at guidance time. Decoding rejects
+noncanonical encoding, extra/duplicate fields, mixed legacy arguments and
+binding mismatch before effects. This descriptor retains context; it does not
+authenticate a caller or grant arbitrary filesystem authority.
+The operation never resolves a new selector or follows aliases from the saved
+path. It revalidates the physical chain and parent identity, including after
+material preflight and throughout cleanup. A different current temporary
+environment is irrelevant. Missing/unreadable/replaced original parents fail
+without fallback. The legacy digest-only command keeps its existing selector
+comparison; no inferred path, stored locator, automatic upgrade or search is added.
 After exact materialization, POSIX 100755 entries receive mode 0700 through
 identity-checked no-follow descriptors in this new copy only. Git administrative
 path components are rejected before restoration.
@@ -982,10 +997,13 @@ revalidates identities at each removal and keeps the marker until target
 files/directories are gone. It never calls recursive deletion. Failure removes
 only a root created in that invocation when ownership remains provable;
 explicit cleanup compares the retained Packet and marker independently of
-later live Task transitions. Fixed diagnostic codes and absent/retained state
+later live Task transitions. Fixed diagnostic codes and absent/retained/unknown state
 do not quote filesystem exceptions or rejected identifiers (an invalid handle
 is null). Retained state starts immediately after mkdir succeeds, before the
 physical identity check; a root without proven identity is never auto-cleaned.
+Cleanup starts unknown until it can inspect the exact root; an early Packet,
+location or access failure does not assert existing residue. Prepare starts
+not_started. Confirmed root absence remains a successful absent result.
 Portable fixtures supply their own physical temp parent and separately exercise
 OS aliases, changed selections and unsafe destinations. Original save/submit and finalization are
 unchanged. Tests cover exact index/commit restoration, the representative six

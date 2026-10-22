@@ -2626,6 +2626,11 @@ prepare/cleanup command pair before preparation has any effect. Keep that pair
 for cleanup even if preparation output is lost. Availability is checked by the
 detailed read; normal read does not allocate a handle or inspect the temporary
 location. Records-only and opaque-target reads omit this capability in both views.
+New generated workspace commands retain their physical location across TEMP
+changes; use their location binding unchanged. Missing/inaccessible original
+locations fail without relocation. `cleanup_status=unknown` means presence
+could not be established, not confirmed residue. Older digest-only commands
+still require their original temporary selection and never search for copies.
 The display is compact UTF-8 JSON plus LF, independent of the shell code page.
 The generated request/output supplies the procedure without another guide read;
 the [reviewer procedure](task_workflow.md#independent-reviewer) remains fallback

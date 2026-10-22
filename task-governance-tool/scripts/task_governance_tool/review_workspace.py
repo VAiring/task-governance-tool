@@ -6,6 +6,8 @@ The OS temporary workspace is disposable material, not a security sandbox.
 
 from __future__ import annotations
 
+import base64
+import binascii
 import hashlib
 import json
 import os
@@ -30,6 +32,7 @@ MARKER_LIMIT = 4096
 CLEANUP_SECONDS = 30
 CLEANUP_ENTRIES = 60000
 CLEANUP_DEPTH = 66
+LOCATION_LIMIT = 8192
 
 
 def workspace_guidance(repo, packet_path, raw, *, details=False):
@@ -44,13 +47,14 @@ def workspace_guidance(repo, packet_path, raw, *, details=False):
     identity = uuid.uuid4().hex
     try:
         parent = _temporary_parent(repo)
+        location = _location_binding(repo, parent, hashlib.sha256(raw).hexdigest(), identity)
     except (files.HandoffError, StatePathError, OSError):
         return {"status": "unavailable", "code": "review_workspace_temp_unavailable",
                 "instructions": "Optional verification workspace unavailable; retain existing material retrieval and execution permissions."}
     entry = Path(__file__).parent.parent / "review_handoff.py"
     common = ["--repo=" + str(repo), "--packet=" + packet_path,
               "--packet-sha256=" + hashlib.sha256(raw).hexdigest(),
-              "--workspace-id=" + identity, "--temp-root-sha256=" + _path_digest(parent)]
+              "--workspace-id=" + identity, "--workspace-location=" + location]
     return {
         "status": "available",
         "prepare_command": _shell([sys.executable, "-B", str(entry), "workspace", "prepare", *common]),
@@ -62,8 +66,11 @@ def workspace_guidance(repo, packet_path, raw, *, details=False):
             "without executing it, installing dependencies or granting trust. Read project rules first. "
             "This is disposable material, not a security sandbox. Inspect your own actual result; ready, "
             "another reviewer's PASS, missing/incomplete output, failure or timeout is not your PASS. "
-            "Keep these commands until all processes using the workspace have ended, then cleanup, also "
-            "after failure/timeout. Lost prepare output: use the retained cleanup command, never replay "
+            "Keep these commands until all processes using the workspace have ended, then cleanup, including "
+            "after failure/timeout. Their saved physical location stays fixed across temporary-environment changes. Do not edit "
+            "the generated location or substitute a destination. A missing or inaccessible original parent "
+            "is a limitation, never permission to relocate. "
+            "Lost prepare output: use the retained cleanup command, never replay "
             "prepare blindly. Cleanup uncertainty requires inspection; do not delete an uncertain tree. "
             "No mandatory test, new review gate, or parent argument is introduced."
         ),
@@ -96,6 +103,11 @@ def _temporary_parent(repo):
         parent = Path(configured).resolve(strict=True)
     except (OSError, RuntimeError):
         files.fail("review_workspace_temp_unavailable")
+    _validate_parent(repo, parent)
+    return parent
+
+
+def _validate_parent(repo, parent):
     # The selected physical root and every ancestor must remain directories
     # outside Git; this does not relax source/Packet or restored-entry checks.
     for path in (parent, *parent.parents):
@@ -104,16 +116,69 @@ def _temporary_parent(repo):
             files.fail("review_workspace_temp_unavailable")
     if parent == repo or repo in parent.parents:
         files.fail("review_workspace_temp_unavailable")
-    return parent
+    return inspect_physical_directory(parent)
 
 
-def _location(repo, identity, digest):
+def _location_binding(repo, parent, packet_digest, identity):
+    """Retain a read-admitted physical location, not an arbitrary output option."""
+    selected = _validate_parent(repo, parent)
+    value = {"version": 1, "parent": str(parent),
+             "parent_identity": asdict(selected.identity),
+             "repo_sha256": _path_digest(repo), "packet_sha256": packet_digest,
+             "workspace_id": identity}
+    raw = json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=True).encode("ascii")
+    encoded = base64.urlsafe_b64encode(raw).decode("ascii").rstrip("=")
+    if len(encoded) > LOCATION_LIMIT:
+        files.fail("review_workspace_temp_unavailable")
+    return encoded
+
+
+def _saved_parent(repo, encoded, packet_digest, identity):
+    if (not isinstance(encoded, str) or not 0 < len(encoded) <= LOCATION_LIMIT
+            or re.fullmatch(r"[A-Za-z0-9_-]+", encoded) is None):
+        files.fail("review_workspace_invalid_binding")
+    try:
+        raw = base64.b64decode(encoded + "=" * (-len(encoded) % 4), altchars=b"-_", validate=True)
+        value = json.loads(raw)
+        canonical = json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=True).encode("ascii")
+    except (ValueError, TypeError, UnicodeError, binascii.Error, RecursionError):
+        files.fail("review_workspace_invalid_binding")
+    if (type(value) is not dict or set(value) != {
+            "version", "parent", "parent_identity", "repo_sha256", "packet_sha256", "workspace_id"}
+            or type(value["version"]) is not int or value["version"] != 1
+            or base64.urlsafe_b64encode(canonical).decode("ascii").rstrip("=") != encoded
+            or value["repo_sha256"] != _path_digest(repo)
+            or value["packet_sha256"] != packet_digest or value["workspace_id"] != identity):
+        files.fail("review_workspace_invalid_binding")
+    physical = value["parent_identity"]
+    if (type(physical) is not dict or set(physical) != {"device", "inode"}
+            or any(type(item) is not int or item < 0 for item in physical.values())
+            or type(value["parent"]) is not str or "\x00" in value["parent"]):
+        files.fail("review_workspace_invalid_binding")
+    parent = Path(value["parent"])
+    if not parent.is_absolute() or str(Path(os.path.abspath(parent))) != value["parent"]:
+        files.fail("review_workspace_invalid_binding")
+    selected = _validate_parent(repo, parent)
+    if asdict(selected.identity) != physical:
+        files.fail("review_workspace_temp_changed")
+    return selected
+
+
+def _location(repo, identity, digest, *, location=None, packet_digest=None):
     if re.fullmatch(r"[0-9a-f]{32}", identity) is None:
         files.fail("review_workspace_invalid_id")
-    parent = _temporary_parent(repo)
-    if digest != _path_digest(parent):
-        files.fail("review_workspace_temp_changed")
-    return parent, parent / ("taskgov-review-" + identity)
+    if location is not None:
+        if digest is not None:
+            files.fail("review_workspace_invalid_binding")
+        selected = _saved_parent(repo, location, packet_digest, identity)
+    else:
+        # Older generated commands retained only a path digest. Never guess
+        # their original location or weaken their environment comparison.
+        parent = _temporary_parent(repo)
+        if digest != _path_digest(parent):
+            files.fail("review_workspace_temp_changed")
+        selected = _validate_parent(repo, parent)
+    return selected, selected.path / ("taskgov-review-" + identity)
 
 
 def _packet(repo, path, digest):
@@ -140,7 +205,7 @@ def _check_root(directory, parent):
         files.fail("review_workspace_changed")
 
 
-def _remove(directory, parent, marker=None):
+def _remove(directory, parent, marker=None, *, selected_parent=None):
     """Inventory before deletion; never follow links or recursively delete paths."""
     deadline = time.monotonic() + CLEANUP_SECONDS
     pending = [(directory.path, 0)]
@@ -152,6 +217,8 @@ def _remove(directory, parent, marker=None):
         if time.monotonic() > deadline:
             files.fail("review_workspace_cleanup_timeout")
         files.check_parents(parents)
+        if selected_parent is not None and inspect_physical_directory(parent) != selected_parent:
+            files.fail("review_workspace_temp_changed")
         _check_root(directory, parent)
 
     while pending:
@@ -260,12 +327,16 @@ def operate(repo, args):
     from task_governance_tool.git_snapshot import GitSnapshotError
     created = None
     parent = root = None
-    cleanup_status = "retained" if args.workspace_operation == "cleanup" else "not_started"
+    cleanup_status = "unknown" if args.workspace_operation == "cleanup" else "not_started"
     try:
         path, raw, packet = _packet(repo, args.packet, args.packet_sha256)
-        parent, root = _location(repo, args.workspace_id, args.temp_root_sha256)
+        selected_parent, root = _location(repo, args.workspace_id, getattr(args, "temp_root_sha256", None),
+            location=getattr(args, "workspace_location", None), packet_digest=args.packet_sha256)
+        parent = selected_parent.path
         if args.workspace_operation == "cleanup":
             if not path_lexically_exists(root):
+                if _validate_parent(repo, parent) != selected_parent:
+                    files.fail("review_workspace_temp_changed")
                 return {"ok": True, "status": "absent", "workspace_id": args.workspace_id}
             cleanup_status = "retained"
             directory = inspect_physical_directory(root, root=parent)
@@ -273,7 +344,7 @@ def operate(repo, args):
             expected = _owner(repo, packet, args.packet_sha256, args.workspace_id, directory)
             if json.loads(marker) != expected:
                 files.fail("review_workspace_owner_mismatch")
-            _remove(directory, parent, marker)
+            _remove(directory, parent, marker, selected_parent=selected_parent)
             return {"ok": True, "status": "absent", "workspace_id": args.workspace_id}
         if path_lexically_exists(root):
             cleanup_status = "retained"
@@ -283,6 +354,8 @@ def operate(repo, args):
         material = preflight_runner_material(repo, observed)
         parents = files.observe_parents(root)
         files.check_parents(parents)
+        if inspect_physical_directory(parent) != selected_parent:
+            files.fail("review_workspace_temp_changed")
         # New private root only; never rewrite permissions of existing paths.
         root.mkdir() if os.name == "nt" else root.mkdir(mode=0o700)
         cleanup_status = "retained"
@@ -312,7 +385,7 @@ def operate(repo, args):
         code = exc.code if isinstance(exc, (files.HandoffError, VerificationRunnerGitError, GitSnapshotError)) else "review_workspace_unavailable"
         if created is not None:
             try:
-                _remove(created, parent)
+                _remove(created, parent, selected_parent=selected_parent)
                 cleanup_status = "absent"
             except (files.HandoffError, StatePathError, OSError, ValueError):
                 cleanup_status = "retained"

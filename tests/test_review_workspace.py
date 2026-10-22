@@ -1,7 +1,9 @@
 """Reviewer-selected checks use exact restored files, never rebuilt bodies."""
 
 import json
+import base64
 import os
+import re
 import subprocess
 import sys
 import unittest
@@ -89,9 +91,20 @@ class ReviewerWorkspaceTests(fixtures.PreparationFixture):
         import hashlib
         args = SimpleNamespace(workspace_operation="prepare", packet=packet,
             packet_sha256=hashlib.sha256(raw).hexdigest(), workspace_id=uuid.uuid4().hex,
-            temp_root_sha256=workspace._path_digest(workspace._temporary_parent(self.root)))
+            temp_root_sha256=None)
+        self.bind_location(args)
         # Each fixture owns this preallocated handle, even when output is lost.
         self.addCleanup(self.cleanup, args)
+        return args
+
+    def bind_location(self, args):
+        args.workspace_location = workspace._location_binding(
+            self.root, workspace._temporary_parent(self.root), args.packet_sha256, args.workspace_id
+        )
+
+    def legacy(self, args):
+        args.workspace_location = None
+        args.temp_root_sha256 = workspace._path_digest(workspace._temporary_parent(self.root))
         return args
 
     def cleanup(self, args):
@@ -128,6 +141,7 @@ class ReviewerWorkspaceTests(fixtures.PreparationFixture):
         self.git("commit", "--quiet", "-m", "Later target")
         first = workspace.operate(self.root, args)
         second_args = SimpleNamespace(**{**vars(args), "workspace_id": uuid.uuid4().hex})
+        self.bind_location(second_args)
         self.addCleanup(self.cleanup, second_args)
         second = workspace.operate(self.root, second_args)
         self.assertTrue(first["ok"], first)
@@ -178,6 +192,197 @@ class ReviewerWorkspaceTests(fixtures.PreparationFixture):
         self.assertEqual(set(notice), {"status", "instructions"})
         self.assertEqual(notice["status"], "optional")
 
+    def test_saved_location_generated_commands_survive_temp_changes(self):
+        args = self.prepared()
+        alternate = self.root.parent / "alternate temporary 日本語's"
+        alternate.mkdir()
+        (alternate / "sentinel.txt").write_text("keep", encoding="utf-8")
+        first = {**os.environ, "TMPDIR": str(self.workspace_temp),
+                 "TEMP": str(self.workspace_temp), "TMP": str(self.workspace_temp)}
+        other = {**first, "TMPDIR": str(alternate), "TEMP": str(alternate), "TMP": str(alternate)}
+        priority = {**other, "TMPDIR": str(self.workspace_temp)}
+        spelling = {**first, "TMPDIR": str(self.workspace_temp / ".." / self.workspace_temp.name)}
+        cases = (
+            ("same_parent", first, first, first, self.workspace_temp),
+            ("changed_before_prepare", first, other, other, self.workspace_temp),
+            ("changed_after_prepare", first, first, other, self.workspace_temp),
+            ("alternate_parent_valid", other, first, first, alternate),
+            ("tmpdir_priority", priority, other, other, self.workspace_temp),
+            ("same_physical_spelling", spelling, first, other, self.workspace_temp),
+        )
+        project_before = fixtures.file_snapshot(self.root)
+        first_before, other_before = fixtures.file_snapshot(self.workspace_temp), fixtures.file_snapshot(alternate)
+        for label, read_env, prepare_env, cleanup_env, expected_parent in cases:
+            with self.subTest(case=label):
+                read = subprocess.run([sys.executable, "-I", "-S", str(self.helper), "read",
+                    "--repo", str(self.root), "--packet", args.packet, "--material-details"],
+                    env=read_env, capture_output=True, timeout=30)
+                self.assertEqual(read.returncode, 0, read.stdout + read.stderr)
+                guidance = json.loads(read.stdout)["review_material"]["verification_workspace"]
+                self.assertEqual(guidance["status"], "available")
+                identity = re.search(r"--workspace-id=([0-9a-f]{32})", guidance["prepare_command"]).group(1)
+                root = expected_parent / ("taskgov-review-" + identity)
+                # Cleanup before creation proves absence at the saved location,
+                # even though the current selector names another valid parent.
+                absent = self.material_read(guidance["cleanup_command"], environment=cleanup_env)
+                self.assertEqual(json.loads(absent.stdout)["status"], "absent")
+                try:
+                    prepared = self.material_read(guidance["prepare_command"], environment=prepare_env)
+                    self.assertEqual(prepared.returncode, 0, prepared.stdout + prepared.stderr)
+                    result = json.loads(prepared.stdout)
+                    self.assertEqual(Path(result["working_directory"]), root / "target")
+                    self.assertEqual((root / "target/counter.py").read_text(encoding="utf-8"), COUNTER)
+                    foreign_parent = alternate if expected_parent == self.workspace_temp else self.workspace_temp
+                    self.assertFalse((foreign_parent / root.name).exists())
+                finally:
+                    cleaned = self.material_read(guidance["cleanup_command"], environment=cleanup_env)
+                self.assertEqual(cleaned.returncode, 0, cleaned.stdout + cleaned.stderr)
+                self.assertEqual(json.loads(cleaned.stdout)["status"], "absent")
+                self.assertFalse(root.exists())
+                self.assertEqual(fixtures.file_snapshot(self.root), project_before)
+                self.assertEqual(fixtures.file_snapshot(self.workspace_temp), first_before)
+                self.assertEqual(fixtures.file_snapshot(alternate), other_before)
+
+    def test_saved_parent_missing_replaced_or_unreadable_never_relocates(self):
+        args = self.prepared()
+        ready = workspace.operate(self.root, args)
+        self.assertTrue(ready["ok"], ready)
+        moved = self.workspace_temp.with_name("owned-parent-moved")
+        self.workspace_temp.rename(moved)
+        try:
+            missing = self.cleanup(args)
+            self.assertFalse(missing["ok"])
+            self.assertEqual(missing["cleanup_status"], "unknown")
+            self.workspace_temp.mkdir()
+            try:
+                replaced = self.cleanup(args)
+                self.assertEqual(replaced["code"], "review_workspace_temp_changed")
+                self.assertEqual(replaced["cleanup_status"], "unknown")
+                self.assertEqual(list(self.workspace_temp.iterdir()), [])
+            finally:
+                self.workspace_temp.rmdir()
+            self.assertTrue((moved / ("taskgov-review-" + args.workspace_id) / "target").is_dir())
+        finally:
+            moved.rename(self.workspace_temp)
+        inspect = workspace.inspect_physical_directory
+        def denied(path, **kwargs):
+            if path == self.workspace_temp:
+                raise PermissionError("private fixture diagnostic")
+            return inspect(path, **kwargs)
+        with mock.patch.object(workspace, "inspect_physical_directory", side_effect=denied):
+            rejected = self.cleanup(args)
+            self.assertEqual(rejected["cleanup_status"], "unknown")
+            self.assertNotIn("private fixture diagnostic", json.dumps(rejected))
+        self.assertEqual(self.cleanup(args)["status"], "absent")
+
+    def test_saved_parent_swap_during_preflight_is_rejected_before_creation(self):
+        args = self.prepared()
+        from task_governance_tool import verification_runner_git as material
+        original = material.preflight_runner_material
+        moved = self.workspace_temp.with_name("owned-parent-preflight")
+        def swap(*values):
+            result = original(*values)
+            self.workspace_temp.rename(moved)
+            self.workspace_temp.mkdir()
+            return result
+        try:
+            with mock.patch.object(material, "preflight_runner_material", side_effect=swap):
+                rejected = workspace.operate(self.root, args)
+            self.assertEqual(rejected["code"], "review_workspace_temp_changed")
+            self.assertEqual(rejected["cleanup_status"], "not_started")
+            self.assertEqual(list(self.workspace_temp.iterdir()), [])
+            self.assertEqual(list(moved.iterdir()), [])
+        finally:
+            if moved.exists():
+                self.workspace_temp.rmdir()
+                moved.rename(self.workspace_temp)
+
+    def test_location_binding_is_closed_and_bound_to_packet_repo_and_handle(self):
+        args = self.prepared()
+        original = json.loads(base64.urlsafe_b64decode(args.workspace_location + "=" * (-len(args.workspace_location) % 4)))
+        before = fixtures.file_snapshot(self.workspace_temp)
+        changes = ({"version": True}, {"version": 2}, {"extra": "invalid"},
+                   {"workspace_id": "f" * 32}, {"packet_sha256": "0" * 64},
+                   {"repo_sha256": "0" * 64}, {"parent": "../elsewhere"},
+                   {"parent_identity": {"device": False, "inode": 0}})
+        for change in changes:
+            with self.subTest(change=change):
+                raw = json.dumps({**original, **change}, sort_keys=True, separators=(",", ":")).encode("ascii")
+                encoded = base64.urlsafe_b64encode(raw).decode("ascii").rstrip("=")
+                bad = SimpleNamespace(**{**vars(args), "workspace_location": encoded})
+                rejected = workspace.operate(self.root, bad)
+                self.assertEqual(rejected["code"], "review_workspace_invalid_binding")
+                self.assertEqual(rejected["cleanup_status"], "not_started")
+        for encoded in ("", "invalid!", "A" * (workspace.LOCATION_LIMIT + 1)):
+            bad = SimpleNamespace(**{**vars(args), "workspace_location": encoded})
+            self.assertEqual(workspace.operate(self.root, bad)["code"], "review_workspace_invalid_binding")
+        self.assertEqual(fixtures.file_snapshot(self.workspace_temp), before)
+
+    def test_absence_is_not_reported_after_parent_replacement_during_cleanup(self):
+        args = self.prepared()
+        root = self.workspace_temp / ("taskgov-review-" + args.workspace_id)
+        moved = self.workspace_temp.with_name("owned-parent-absence")
+        exists = workspace.path_lexically_exists
+        def swap(path):
+            if path == root:
+                self.workspace_temp.rename(moved)
+                self.workspace_temp.mkdir()
+                return False
+            return exists(path)
+        try:
+            with mock.patch.object(workspace, "path_lexically_exists", side_effect=swap):
+                rejected = self.cleanup(args)
+            self.assertFalse(rejected["ok"])
+            self.assertEqual(rejected["code"], "review_workspace_temp_changed")
+            self.assertEqual(rejected["cleanup_status"], "unknown")
+        finally:
+            if moved.exists():
+                self.workspace_temp.rmdir()
+                moved.rename(self.workspace_temp)
+
+    def test_saved_destination_rejects_git_ancestors_and_mixed_public_binding(self):
+        args = self.prepared()
+        original = json.loads(base64.urlsafe_b64decode(args.workspace_location + "=" * (-len(args.workspace_location) % 4)))
+        raw = json.dumps({**original, "parent": str(self.root),
+            "parent_identity": workspace.asdict(workspace.inspect_physical_directory(self.root).identity)},
+            sort_keys=True, separators=(",", ":")).encode("ascii")
+        bad = SimpleNamespace(**{**vars(args),
+            "workspace_location": base64.urlsafe_b64encode(raw).decode("ascii").rstrip("=")})
+        before = fixtures.file_snapshot(self.root)
+        self.assertEqual(workspace.operate(self.root, bad)["code"], "review_workspace_temp_unavailable")
+        for action in ("prepare", "cleanup"):
+            mixed = self.invoke("workspace", action, "--repo", str(self.root), "--packet", args.packet,
+                "--packet-sha256", args.packet_sha256, "--workspace-id", args.workspace_id,
+                "--workspace-location", args.workspace_location,
+                "--temp-root-sha256", workspace._path_digest(self.workspace_temp))
+            self.assertNotEqual(mixed.returncode, 0)
+            self.assertEqual(json.loads(mixed.stdout)["code"], "handoff_invalid_arguments")
+            self.assertNotIn(args.workspace_location.encode(), mixed.stdout + mixed.stderr)
+        self.assertEqual(fixtures.file_snapshot(self.root), before)
+
+    def test_replaced_workspace_root_is_retained_even_with_copied_owner(self):
+        args = self.prepared()
+        ready = workspace.operate(self.root, args)
+        self.assertTrue(ready["ok"], ready)
+        root = Path(ready["working_directory"]).parent
+        moved = root.with_name(root.name + "-owned-test-move")
+        marker = (root / workspace.MARKER).read_bytes()
+        root.rename(moved)
+        root.mkdir()
+        replacement_marker = root / workspace.MARKER
+        replacement_marker.write_bytes(marker)
+        try:
+            rejected = self.cleanup(args)
+            self.assertEqual(rejected["code"], "review_workspace_owner_mismatch")
+            self.assertEqual(rejected["cleanup_status"], "retained")
+            self.assertEqual(replacement_marker.read_bytes(), marker)
+            self.assertTrue((moved / "target").is_dir())
+        finally:
+            replacement_marker.unlink()
+            root.rmdir()
+            moved.rename(root)
+        self.assertEqual(self.cleanup(args)["status"], "absent")
+
     def test_details_keep_cleanup_handle_after_unobserved_prepare_output(self):
         args = self.prepared()
         before = fixtures.file_snapshot(self.workspace_temp)
@@ -193,7 +398,7 @@ class ReviewerWorkspaceTests(fixtures.PreparationFixture):
             self.material_read(guidance["prepare_command"])
             self.assertEqual(len(list(self.workspace_temp.glob("taskgov-review-*/target"))), 1)
         finally:
-            cleaned = self.material_read(cleanup_command)
+            cleaned = self.material_read(cleanup_command, environment={**os.environ, "TMPDIR": str(self.root)})
         self.assertEqual(cleaned.returncode, 0, cleaned.stdout or cleaned.stderr)
         self.assertEqual(json.loads(cleaned.stdout)["status"], "absent")
         self.assertEqual(fixtures.file_snapshot(self.workspace_temp), before)
@@ -225,7 +430,7 @@ class ReviewerWorkspaceTests(fixtures.PreparationFixture):
         for action in ("prepare", "cleanup"):
             result = self.invoke("--records-only", "workspace", action, "--repo", str(self.root),
                 "--packet", args.packet, "--packet-sha256", args.packet_sha256, "--workspace-id", args.workspace_id,
-                "--temp-root-sha256", args.temp_root_sha256)
+                "--workspace-location", args.workspace_location)
             self.assertNotEqual(result.returncode, 0)
             self.assertEqual(json.loads(result.stdout)["code"], "record_operation_not_allowed")
         self.assertEqual(fixtures.file_snapshot(self.root), before)
@@ -248,7 +453,7 @@ class ReviewerWorkspaceTests(fixtures.PreparationFixture):
         self.assertEqual(fixtures.file_snapshot(self.root), before)
 
     def test_host_temp_alias_uses_physical_destination_and_retarget_is_rejected(self):
-        args = self.prepared()
+        args = self.legacy(self.prepared())
         alias = self.root.parent / "host-temp-alias"
         try:
             alias.symlink_to(self.root.parent, target_is_directory=True)
@@ -269,13 +474,13 @@ class ReviewerWorkspaceTests(fixtures.PreparationFixture):
             alias.symlink_to(changed_parent, target_is_directory=True)
             rejected = self.cleanup(args)
             self.assertEqual(rejected["code"], "review_workspace_temp_changed")
-            self.assertEqual(rejected["cleanup_status"], "retained")
+            self.assertEqual(rejected["cleanup_status"], "unknown")
             self.assertTrue(Path(result["working_directory"]).is_dir())
         self.assertEqual(self.cleanup(args)["status"], "absent")
         self.assertEqual(fixtures.file_snapshot(self.workspace_temp), before)
 
     def test_alias_resolution_does_not_admit_git_destination_or_change_bound_root(self):
-        args = self.prepared()
+        args = self.legacy(self.prepared())
         # On hosts without symlink-creation permission, exercise the selector
         # seam while keeping real physical admission and restoration checks.
         alias = self.root.parent / "os-alias"
@@ -290,7 +495,7 @@ class ReviewerWorkspaceTests(fixtures.PreparationFixture):
             destination = self.root
             rejected = self.cleanup(args)
             self.assertEqual(rejected["code"], "review_workspace_temp_unavailable")
-            self.assertEqual(rejected["cleanup_status"], "retained")
+            self.assertEqual(rejected["cleanup_status"], "unknown")
         self.assertEqual(self.cleanup(args)["status"], "absent")
 
     def test_changed_packet_and_index_do_not_create_workspace(self):
@@ -378,13 +583,13 @@ class ReviewerWorkspaceTests(fixtures.PreparationFixture):
         self.assertEqual(workspace.operate(self.root, args)["code"], "review_packet_stale")
 
     def test_temp_environment_drift_does_not_claim_old_workspace_absent(self):
-        args = self.prepared()
+        args = self.legacy(self.prepared())
         ready = workspace.operate(self.root, args)
         self.assertTrue(ready["ok"], ready)
         with mock.patch.dict(os.environ, {"TMPDIR": str(self.root.parent)}):
             rejected = self.cleanup(args)
             self.assertEqual(rejected["code"], "review_workspace_temp_changed")
-            self.assertEqual(rejected["cleanup_status"], "retained")
+            self.assertEqual(rejected["cleanup_status"], "unknown")
         self.assertTrue(Path(ready["working_directory"]).exists())
         self.assertEqual(self.cleanup(args)["status"], "absent")
 
@@ -405,7 +610,8 @@ class ReviewerWorkspaceTests(fixtures.PreparationFixture):
             self.assertIsNone(rejected["workspace_id"])
             self.assertNotIn(identity, json.dumps(rejected))
         with mock.patch.dict(os.environ, {"TMPDIR": str(self.root)}):
-            self.assertEqual(workspace.operate(self.root, args)["code"], "review_workspace_temp_unavailable")
+            self.assertEqual(workspace.workspace_guidance(
+                self.root, args.packet, raw, details=True)["code"], "review_workspace_temp_unavailable")
 
     def test_public_rejection_never_echoes_invalid_identity_even_before_location_check(self):
         args = self.prepared()
@@ -413,7 +619,7 @@ class ReviewerWorkspaceTests(fixtures.PreparationFixture):
         for packet in (args.packet, "reviews/missing.json"):
             result = self.invoke("workspace", "prepare", "--repo", str(self.root),
                 "--packet", packet, "--packet-sha256", args.packet_sha256,
-                "--workspace-id", invalid, "--temp-root-sha256", args.temp_root_sha256)
+                "--workspace-id", invalid, "--workspace-location", args.workspace_location)
             self.assertNotEqual(result.returncode, 0)
             self.assertIsNone(json.loads(result.stdout)["workspace_id"])
             self.assertNotIn(invalid.encode(), result.stdout + result.stderr)
@@ -430,6 +636,7 @@ class ReviewerWorkspaceTests(fixtures.PreparationFixture):
         args.packet = prepared["handoff"]["packet_path"]
         import hashlib
         args.packet_sha256 = hashlib.sha256((self.root / args.packet).read_bytes()).hexdigest()
+        self.bind_location(args)
         ready = workspace.operate(self.root, args)
         self.assertTrue(ready["ok"], ready)
         checked = subprocess.run(["./verify"], cwd=ready["working_directory"], capture_output=True, timeout=10)

@@ -113,6 +113,13 @@ adapters opt into local admission through every read and locked write; explicit
 Runner Plan actions retain global admission throughout, including combined
 verification or Contract changes. This internal boolean is not an authority token or public option;
 neither local admission nor its snapshots may supply a global validation proof.
+Reopen propagates that internal operation-local boundary to legacy-cycle
+insertion. The shared persistence helper retains cycle/Receipt validation,
+exact stored-row comparison and the Evidence source-generation update; its
+local legacy arm validates selected cycle evidence instead of whole-store
+Bundle history. Native insertion already uses selected validation. Legacy
+insertion defaults to global validation for migration/recovery callers; no
+public scope option or reusable global proof is introduced.
 Review adapters supply their admitted Task ID through `review_task_id` when
 opening a snapshot or revalidating a writer. Packet projection, retained hook
 reads and event lookup validate the selected review storage inside their

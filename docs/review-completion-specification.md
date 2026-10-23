@@ -3291,6 +3291,12 @@ atomically. The sole compatibility bridge may create an ordinal-1 partial
 verification-basis-v0/null/null cycle for an unknown-coverage done Task with
 no cycle. Other mismatch is `completion_history_inconsistent` and no write.
 
+Ordinary compatibility-bridge insertion validates the selected cycle and its
+consumed evidence relationships, not other Tasks' Bundle histories. Projection,
+ordinal, event, ownership and source-generation checks remain atomic. Migration,
+recovery and whole-project artifact consumers retain their global checks;
+unrelated semantic corruption is not certified or repaired by a local reopen.
+
 Normal `task show.completion_history` contains only `total` and
 `legacy_history_incomplete`. Saved-cycle details are audit context, not required
 for normal continuation. The same complete history validation still runs before

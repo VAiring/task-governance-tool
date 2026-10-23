@@ -17,6 +17,7 @@ def read_latest_completion_cycle(
 ) -> _storage.CompletionCycle | None:
     from task_governance_tool.evidence_validation_repository import (
         _validate_selected_completion_cycle_evidence,
+        _validate_selected_schema21_completion_bundle_history,
     )
     from task_governance_tool.storage import (
         _cycle_from_row,
@@ -42,6 +43,7 @@ def read_latest_completion_cycle(
         project_id=project_id,
         cycles=(cycle,),
     )
+    _validate_selected_schema21_completion_bundle_history(connection, cycles=(cycle,))
     return cycle
 
 

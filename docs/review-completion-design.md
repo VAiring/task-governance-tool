@@ -2604,6 +2604,23 @@ cycle already exists. It acquires a new execution and checks the session's activ
 slot in the same writer; failure rolls back the reopen as a whole. A later done
 uses fresh gates and the next ordinal.
 
+For the sole missing-cycle bridge, `reopen_done_task` passes its internal
+`operation_local` admission choice through `insert_completion_cycle_locked`
+to `_persist_completion_cycle_locked`. The local arm validates the persisted
+cycle's selected ledger relationships; the partial v0/null Bundle basis does
+not become a native gate claim. Cycle matrices, exact projection/row identity,
+next ordinal, generation update, later event and ownership checks remain in
+their existing transaction. Global legacy callers keep the default whole-store
+Bundle audit. The direct caller inventory is native insertion (already local),
+migration 15 backfill and migration 16 reconciliation (legacy insertion before
+the Bundle columns exist, followed by their global migration checks), and the
+ordinary reopen bridge. Recovery validates the complete candidate rather than
+creating a separate cycle-insertion bypass.
+The latest-cycle reader also validates that selected native cycle's Bundle
+history before reopen compares its projection. This closes the same consumed
+cycle boundary without inspecting another Task's Bundles; legacy v0 has no
+Bundle to validate. Existing single-Task history reads use the same validator.
+
 ### Public History Projection
 
 `completion_history_repository.py` owns latest-cycle, single-Task and batch

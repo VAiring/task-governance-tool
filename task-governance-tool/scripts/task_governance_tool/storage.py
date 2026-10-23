@@ -7935,6 +7935,8 @@ def _legacy_completion_cycle_from_task_projection(
 def _persist_completion_cycle_locked(
     connection: sqlite3.Connection,
     cycle: CompletionCycle,
+    *,
+    operation_local: bool = False,
 ) -> CompletionCycle:
     _require_completion_cycle_writer(connection)
     _validate_completion_cycle(cycle)
@@ -8155,7 +8157,7 @@ def _persist_completion_cycle_locked(
             connection,
             project_id=cycle.project_id,
         )
-        if cycle.origin == "native_done":
+        if cycle.origin == "native_done" or operation_local:
             _validate_selected_completion_cycle_evidence(
                 connection, project_id=cycle.project_id, cycles=(persisted,),
             )
@@ -8171,6 +8173,7 @@ def insert_completion_cycle_locked(
     project_id: str,
     task_id: str,
     recorded_at: str,
+    operation_local: bool = False,
 ) -> CompletionCycle:
     """Archive the locked current-done projection without caller-owned content."""
 
@@ -8193,7 +8196,9 @@ def insert_completion_cycle_locked(
         ),
         recorded_at=recorded_at,
     )
-    return _persist_completion_cycle_locked(connection, cycle)
+    return _persist_completion_cycle_locked(
+        connection, cycle, operation_local=operation_local,
+    )
 
 
 def _require_completion_capture_activation_locked(

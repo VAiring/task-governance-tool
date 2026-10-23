@@ -2468,6 +2468,7 @@ def reopen_done_task(
                 project_id=project.project_id,
                 task_id=str(existing["task_id"]),
                 recorded_at=now,
+                operation_local=operation_local,
             )
         if ownership_basis is not None:
             task_ownership.transition(connection, ownership_basis, caller, status="in_progress", now=now)

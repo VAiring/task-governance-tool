@@ -87,6 +87,14 @@ validate their own complete review storage; completion retains the own-history
 checks below. This is an operation's data boundary, not a certificate that
 all historical data for that Task or the whole project is valid.
 
+The ordinary reopen compatibility bridge follows this same boundary: saving a
+partial legacy cycle validates its consumed projection, cycle matrix, ordinal,
+selected evidence relationships and source-generation update in the writer,
+without auditing unrelated Bundles. The existing reopen transaction still
+validates the latest-cycle match, event links and new ownership/execution.
+Partial history never qualifies as current gate evidence. Migration, recovery
+and whole-project consumers retain their applicable global validation.
+
 Required cross-Task predicates remain: same-lane predecessor status and
 ordering, combined session execution/completion slots, and foreign-link
 rejection for data actually consumed. Physical integrity/foreign-key checks

@@ -768,7 +768,7 @@ updates `legacy_usage` only when needed; other diagnostics/history remain.
 triggers. Continuations contain only closed context, incarnation, revision and
 audit goal metadata. Directory inventory retains numeric date parts, entry
 ordinals and an attempt watermark for partial-page continuation, never filenames
-or log bodies. Explicit Setup migrates any exact
+or log bodies in that inventory state. Explicit Setup migrates any exact
 schema 1–4 in one transaction, preserving observations and immutable Evidence;
 ordinary access fails closed until then. First collection replays an old cursor
 whose continuation is absent. Scan CAS, context/coverage, response/conflict
@@ -778,6 +778,64 @@ audit cycle clears only the obsolete lane context. Adopted dirty marks and
 retired component bases can be deleted because their effect is already captured
 in immutable snapshots; no response, observation, incarnation, snapshot, member,
 cycle link or supersession history is deleted.
+
+`UsageLocatorRepository` in `usage_locator_repository.py` extends the publication
+repository with numerical schema 8 (`source_locators`). `usage_locators` holds
+registered-session location candidates separately from `usage_sources`; its
+session foreign key is participation, not proof that a header was accepted.
+`usage_pending_locators` instead retains the same closed location plus the
+validated pending-review binding. Both tables store source/thread IDs, root
+kind/fingerprint, relative path, revision and queue order. Pending metadata is
+validated by `usage_locator_admission.py`; no answer, log body or arbitrary
+assignment JSON enters this store. The retained candidate does not register a
+numerical source, and only the existing collector can do so after fresh source
+admission. `usage_sources.py` owns the shared `SourceLocator` shape, current-root
+restoration and physical checks; the repository performs no log-file I/O.
+
+Each table has an index on root kind, root fingerprint, queue order and source
+ID. A page reads at most 64 entries per current root and merges at most two
+such pages before applying the requested limit. Other roots and unrelated
+source history are not loaded for that selection. Selected-session and selected-
+source queries are also bounded; the existing best-effort unknown inventory
+may still read the registered-session set, without loading every source row.
+`usage_locator_sequence` supplies queue order in the same short writer that
+adds or rotates a candidate. New candidates join the end, so incoming hints do
+not continuously overtake old work. Equal hints preserve revision/order.
+`begin_locator_attempt` compares the entire selected entry and its revision
+before incrementing revision and queue order. A concurrent loser cannot collect
+the log body through that selection. This independent fence advances no numerical cursor and
+does not assert successful admission or recovery. Existing scan/cursor CAS
+still governs observations and continuation. Candidate capture commits first;
+later budget, source or collection failure cannot roll it back.
+
+Registered candidates have no small global capacity or elapsed-time expiry.
+Pending candidates alone are capped at 1024, with no eviction on exhaustion.
+Their closed binding is rechecked against the exact Receipt/source relation
+before promotion. Without that relation, confirmed native cancellation or basis
+change allows retirement; unavailable checks or changed same-basis operational
+slots keep them in the fair queue for possible retained-original registration.
+Promotion requires existing numerical session registration and atomically moves
+the exact candidate to the registered table. Discard deletes only a confirmed
+obsolete pending candidate. Both operations compare the retained revision and
+binding, and neither changes numerical history. Assignment validity determines
+retention; elapsed time alone cannot expire a delayed Receipt's location.
+
+The locator subclass exempts only current-root registered locators from the
+legacy inventory-loss SQL. The event passes root fingerprints explicitly into
+the inventory transaction; locators for an old environment root remain subject
+to loss diagnosis. Known sources rely on direct attempt diagnostics, while the
+missing-session fallback reports participants with no admitted source. No
+locator operation deletes previously recorded source gaps.
+
+Explicit Setup creates schema 8 through the existing temporary/no-replace path
+or migrates each exact schema 1-7 using the existing atomic migration engine.
+The new tables start empty; a source hash cannot reconstruct a location. The
+schema-7 predecessor keeps every existing table row and continuation unchanged.
+Schema 6 likewise retains its collection contexts; schemas 1-5 use the existing
+response-format replay rule. The exact predecessor admitted under the migration
+writer selects this behavior. Failure rolls back the delta, and normal reads
+or Hook events neither initialize nor migrate it. Factories select this subclass
+without replacing the publication repository's existing audit behavior.
 
 `usage_incremental_projection.py` reevaluates structural interval geometry and
 diagnostics using the admitted core and numerical snapshot. A component basis
@@ -840,9 +898,9 @@ Turn observations, response observations and source cursor commit atomically.
 `usage_review_boundaries` and `usage_review_receipt_turns`
 to numerical schema 1. Explicit initialization migrates the migration-marker
 table and adds the new relations in one short transaction, recording version 2
-last. No ordinary read or collector migrates. The setup factory selects schema 7
+last. No ordinary read or collector migrates. The setup factory selects schema 8
 for the current package. Preview returns `migration_required` and planned `usage_migrate` for
-an exact schema-1 through schema-6 store; explicit setup returns `migrated` and that completed
+an exact schema-1 through schema-7 store; explicit setup returns `migrated` and that completed
 write on success. Fresh-store creation keeps `usage_initialize`. Failure remains
 a separate numerical outcome, not rollback or rejection of core setup.
 
@@ -1227,7 +1285,7 @@ Task totals and work-unit parts union original keys; shared parts name actual
 Task/execution identities instead of displaying another period's shared total
 as an exclusive value. The v2 index exposes known-unassigned versus unknown
 observed values without a completion gate or new hook/LLM action. Current
-factories select the schema-7 publication subclass through `usage_collection.py` and
+factories select the schema-8 locator subclass through `usage_collection.py` and
 `usage_evidence_service.py`; lifecycle composition and source discovery stay
 with their existing owners.
 

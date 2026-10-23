@@ -165,8 +165,27 @@ after successful bound review save. Save preserves its original response even
 when registration fails. The conditional wait-decision helper uses the same
 best-effort actual-caller registration boundary; its schema-4 marker and relation
 belong to [wait attribution](database-design.md#review-wait-decision-structure).
-Read-only review display/material remain unchanged. Registration retains no
-source path and attaches no database to the core transaction.
+Read-only review display/material remain unchanged. Registration itself retains
+no source path and attaches no database to the core transaction. The separate
+schema-8 locator repository stores bounded location hints as described in
+[numerical persistence](database-design.md#numerical-collection-persistence).
+
+`usage_locator_collection.py` composes candidate capture, pending admission,
+direct collection and residual inventory. `usage_locator_admission.py` reads
+the one held Task selected by the parent ownership index, its current preparation
+and bounded collected-answer slots. It records an exact native/assignment basis,
+never Packet or answer bodies. Later admission checks the exact existing
+Receipt/source relation before considering current Task state, so an already
+registered completed Task remains eligible. Confirmed native cancellation or
+basis change revokes a candidate; missing stores or changed same-basis slots
+remain unknown for possible retained-original registration. It performs no core
+write or all-Task/preparation-history enumeration.
+
+For a hint whose session is absent from the numerical registry, the legacy
+participant-history query runs only in residual inventory, after known direct
+work and with the remaining event budget. If this snapshot admits the session,
+its hint is saved and attempted before directory discovery. No short preliminary
+history query or repeated query is added. Publication retains its fresh guards.
 
 The lifecycle's resolver and core readers use operation-local physical/schema/
 binding admission rather than whole-project review-history validation.
@@ -191,12 +210,35 @@ Explicit host hints can locate the invoking registered source within the same
 allowed roots. Missing known sources retain fixed gaps; unsupported layouts do
 not authorize wider discovery. Source bytes are read outside all writers.
 
-`locate_slice` resumes directory inventory using root/date/entry ordinals, at
-most 1,024 newly visited entries and 15 candidate sources per event, leaving a
-slot for the invoking participant's hint. An inventory cycle marks lost known
-sources only after its slices finish. Enumeration may reread preceding names;
+Before inventory, the lifecycle retains the admitted current hint and checks up
+to four pending candidates. Each metadata stage receives at most one second or
+one quarter of the remaining event allowance, whichever is less; these are
+sub-deadlines within the original budget. It then selects up to eight registered
+locators by indexed current-root queue order, plus a direct lookup of the current
+hint if absent. A revision CAS rotates the candidate before file work, preserving
+fairness across interruption. New hints enqueue at the tail and existing hints
+do not reset queue order. Candidate rotation is independent of the numerical
+cursor's successful ingest watermark. Direct work reserves up to four remaining
+ingest slots for inventory; the total allowance remains sixteen. These bounds
+do not guarantee progress after perpetual budget exhaustion or missing events.
+
+`usage_sources.py` reconstructs retained relative paths only for matching current
+root fingerprints and validates physical entries afresh. A recognized session
+basename also permits one exact flat-archive lookup. It opens no unrelated
+header. Coexisting or moved copies get distinct source cursors, with existing
+response-key deduplication. A failed optional archive lookup cannot prevent the
+original candidate attempt.
+
+`locate_slice` resumes residual directory inventory using root/date/entry
+ordinals, at most 1,024 newly visited entries and up to fifteen candidate sources
+within remaining ingest slots. Discovered eligible locations are saved before
+body ingestion. An inventory cycle marks lost known sources only after its
+slices finish, excluding only locators matching the current roots whose missing
+status is checked directly. Enumeration may reread preceding names;
 renames can defer discovery to a later cycle, but unrelated headers are never
-opened. Candidate attempts retain the oldest persisted attempt first. Within
+opened. `usage_ingest_work.py` shares the event-wide attempt and audit allowance
+across direct and inventory phases. Candidate attempts retain the oldest selected
+item first. Within
 the existing 16 ingest-attempt slots, the invoking participant then receives up
 to four priority slots, counting the first slot if it served that participant.
 Its exact admitted host hint is first within that allocation; otherwise use its
@@ -217,8 +259,8 @@ commit cannot erase the successful attempt. Other collector callers do not
 change attempt ordering. Each inventory page retains an attempt
 watermark; already attempted candidates remain covered across partial events.
 Once all page candidates have been attempted, continuation can advance even if
-no single event processed the whole page. A page completed earlier is advanced
-before spending the next event on the caller hint. No pending candidate is
+no single event processed the whole page. An already completed page can advance
+without rereading its bodies. No pending candidate is
 discarded merely because the event budget ended. Completed inventory cycles
 also report `source_unreadable` for registered participants with no admitted
 source, including those never located before.
@@ -239,7 +281,7 @@ operations, one bounded record, current-component validation and metadata passes
 wall time; there is no universal host-timeout guarantee. The same
 compare-and-commit cursor/continuation rule handles interruption, followed by
 `refresh_usage` for exact-cycle capture and snapshot-first publication. Its
-schema-7 cursor continues the rotating history audit across events; a completed
+schema-7 publication cursor, preserved by schema 8, continues the rotating history audit across events; a completed
 sweep retains explicit deferred-integrity status. It uses
 the existing canonical paths above; no daemon, timer, process, model call,
 post-commit Task callback or host-settings writer is added. A later same-project

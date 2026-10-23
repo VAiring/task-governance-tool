@@ -39,7 +39,7 @@ and resume. Task outputs include ownership IDs and per-caller flags; unknown ide
 cannot acquire or complete work. This adds no normal-loop command.
 Schema v25 adds automatic actual-reviewer binding through existing read/save and
 submission, including direct reviewers without acquiring Task ownership. Its
-separate numerical schema 7 supports resumable history validation/publication and response-boundary attribution, incremental collection and deferred prefix
+separate numerical schema 8 adds retained source locators and preserves resumable history validation/publication and response-boundary attribution, incremental collection and deferred prefix
 audits, inclusive-turn attribution, the supervisor's
 all-ended decision turn, and immutable cycle-linked snapshots. Task detail adds a non-gating `usage` summary and done
 acknowledgements report pending usage without opening the numerical store.
@@ -832,7 +832,7 @@ answer collection remains separately opted in; host trust, observed initial
 binding/completeness and unavailable correction/follow-up capabilities retain
 their activation boundaries. No candidate note certifies unverified host support.
 Explicit setup advances
-the independent numerical store to schema 7 for resumable history validation/publication, response-boundary attribution, incremental collection and
+the independent numerical store to schema 8 for retained source locators, resumable history validation/publication, response-boundary attribution, incremental collection and
 deferred prefix audits, inclusive-turn and review-wait
 decision attribution and immutable usage publication. Lifecycle hooks require separate local approval
 and host trust; no setup side effect enables them.

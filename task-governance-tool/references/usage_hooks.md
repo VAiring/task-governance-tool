@@ -105,7 +105,7 @@ remains read-only, and a saved review counts only after its core binding exists.
 Only a retained legacy supervisor uses the
 [wait-decision marker](cli_contracts.md#record-review-wait-decision); normal
 deterministic waiting creates no supervisor usage turn. Actual parent/reviewer
-usage and existing marker history remain intact. Numerical schema 7 requires
+usage and existing marker history remain intact. Numerical schema 8 requires
 explicit setup to initialize or migrate; ordinary helpers and hooks never
 upgrade old stores. Usage unavailability does not prevent review or Task
 completion, and a marker does not prove collection.
@@ -115,6 +115,14 @@ Standard Codex dated `sessions` and flat `archived_sessions` beneath `CODEX_HOME
 not identity; physical path and header validation remain necessary. Unknown
 layouts, lost files or access failures stay unavailable, with observed totals
 preserved. No unrelated chat headers or bodies are collected.
+
+Observed locations are retained internally as bounded relative paths under the
+current allowed root, separately from validated source cursors. Later events can
+retry them directly after restart or delayed file creation. A registered native
+review assignment can retain a pending reviewer's location before its Receipt;
+the transcript is read only after the exact participant binding is confirmed.
+Parenthood alone grants neither retention nor collection. No additional Hook,
+LLM command, trust change or model context is introduced.
 
 ## Coverage And Recovery
 
@@ -132,6 +140,13 @@ Do not redo Task completion or review registration to recover numerical data.
 SessionEnd is best effort, not finalization. Stop, elapsed time and a quiet file
 do not prove final coverage; current snapshots remain pending/incomplete or
 conflicting where appropriate.
+
+Direct retry covers retained locations and exact standard archive counterparts.
+Unobserved logs, missed segments and arbitrary renames still use best-effort
+discovery. A full pending-location pool refuses new candidates without removing
+existing ones; unknown admission remains pending rather than measured zero.
+Changing `CODEX_HOME` does not authorize reuse of old-root paths. Neither a later
+archive copy nor a successful retry elsewhere clears a missing old-source gap.
 
 `prefix_verification_deferred` and `evidence_verification_deferred` mean
 integrity checks remain deferred, not verified. A past check, cursor or unchanged

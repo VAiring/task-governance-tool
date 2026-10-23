@@ -696,9 +696,10 @@ or general migration framework is added.
 
 ## Numerical Usage Store
 
-Numerical collection uses independent schema 7 in the resolver-owned
+Numerical collection uses independent schema 8 in the resolver-owned
 `current/taskgov-usage.sqlite`, not the main schema sequence. Explicit setup
-initializes an absent store, migrates exact schema 1 through 6, and validates current state. Normal reads and
+initializes an absent store, migrates exact schema 1 through 7, and validates
+current state. Normal reads and
 collection never initialize, migrate or repair it. Incompatible structure,
 WAL, corruption, contention or project/binding mismatch produces unavailable
 usage, never a core admission failure or a weakened quality gate. Existing
@@ -711,9 +712,59 @@ explicit physical segment under its allowed local source root. Header thread,
 project location and provider must match; the project location also matches
 the admitted store binding. There is no public registration command or model
 call. The optional [lifecycle adapter](setup-state-specification.md#optional-lifecycle-usage-collection)
-locates only registered candidates; ordinary Task operations do not collect logs.
+reads only registered participants; retaining an authorized pending-review
+location below does not register that participant. Ordinary Task operations do
+not collect logs.
 Relocation cannot silently rebind numerical state: preserve it and report
 unavailable against a different core binding.
+
+Schema 8 separately retains source locations observed by the lifecycle adapter.
+A locator contains the source/thread identity, allowed-root kind, the lexical
+current-root fingerprint and a normalized relative path of at most 4096 UTF-8
+bytes. These internal fields are not added to Task output or immutable usage
+Evidence. Neither a saved location nor its root fingerprint proves the file's
+physical identity or permission to read it. Each use rechecks the current root,
+containment, physical path, header, project and thread through existing source
+admission. A changed root never authorizes reuse of the old path. Candidate
+capture may precede file/header creation and commits separately from numerical
+collection, so an interrupted or failed read does not discard the location.
+
+Locations for registered sessions have no fixed total-count eviction or time
+expiry. A separate pending set may retain only an exactly matched native
+collected-answer reviewer assignment, with its closed project/binding, Task,
+Contract, execution/ownership, target, parent/reviewer, preparation/continuation,
+slot and assignment/source-basis identities. It grants no log-body read,
+numerical source registration, attribution or review evidence. A fresh exact
+Receipt/source relation and existing participant registration are required before
+promotion. Confirmed cancellation or incompatible native basis retires its pending
+location unless its exact Receipt already exists. A changed operational slot on
+the same native basis or an unavailable check preserves an unknown candidate;
+a retained original can still receive its exact Receipt later.
+Its lifetime follows the assignment, not an arbitrary elapsed-time cutoff that
+would discard delayed Receipt registration. The pending set is capped at 1024
+locations. Exhaustion preserves existing entries and reports the fixed numerical
+unavailability reason `usage_locator_capacity`; it never silently evicts them.
+Legacy review registration and unrelated descendants gain no new permission.
+
+Selection uses finite indexed pages within the event's current allowed roots.
+New candidates join the queue's end; an exact-revision attempt moves its entry
+to the end before file I/O. Repeated equal hints do not reset its position.
+This queue CAS is independent of the numerical cursor CAS: it records a fair
+attempt, never evidence that bytes were read or a source recovered. Failed or
+interrupted attempts remain retryable, and subsequent events can reach every
+retained candidate for finite stable input when their work fits the available
+budget. No later event, missed initial locations, arbitrary renames and unknown
+historical segments retain the lifecycle adapter's existing coverage limits.
+Directory inventory omission alone cannot mark a location under the current
+roots missing; its direct attempt supplies that observation. Hash-only sources
+and locators for an old root retain inventory-loss diagnosis. Neither a saved
+locator nor an archive copy clears an existing source-loss gap.
+
+Explicit migration adds empty locator storage without inventing paths from old
+source hashes. Existing observations, conflicts, cursors, immutable snapshots,
+membership and cycle links remain. Schema-6/7 collection continuations and an
+existing schema-7 publication cursor are preserved; older schemas retain their
+existing contextual replay rule. An ordinary event never performs this setup.
 
 Per-response identity is `(provider, response_id)`, across segments and source
 incarnations. Identical replay is a no-op. A disagreement in owner, turn, model,
@@ -742,8 +793,9 @@ nullable subsets, never additional terms. Missing breakdown remains null in
 an aggregate containing it. Totals remain separated by provider/model; unknown
 model is null, not inferred from another turn. An empty observation set has no
 numeric model total, not measured zero. Metadata is limited to canonical UUIDs,
-bounded labels/response IDs, counters, source identities, cursor boundaries
-and fixed diagnostics; no conversation, reasoning, raw body or raw-line digest.
+bounded labels/response IDs, counters, source identities, cursor boundaries,
+the internal locators and pending-assignment identities above, and fixed
+diagnostics; no conversation, reasoning, raw body or raw-line digest.
 
 Complete JSONL records are parsed outside the writer. Normal collection resumes
 from the committed complete-record offset with allowlisted model, session/turn
@@ -1367,7 +1419,9 @@ reviewer identities are still checked; this is not an audit of unrelated review
 history. Missing or changed selected originals, tampered selection metadata and
 stale restore/binding inputs remain unavailable, never verified by a cache.
 Ordinary Task reads never advance this cursor, replay or publish files.
-Explicit Setup alone initializes/migrates
-schema 7, preserving all old numerical observations, snapshot bytes, membership,
-cycle links and schema-6 collection continuations. It creates no trusted result
-for earlier history; the first publication starts an audit from the beginning.
+Explicit Setup alone adds the schema-7 publication cursor while migrating to
+the current numerical schema, preserving old numerical observations, snapshot
+bytes, membership, cycle links and schema-6 collection continuations. A newly
+introduced publication cursor creates no trusted result for earlier history;
+its first publication starts an audit from the beginning. The schema-8 locator
+delta preserves an already existing publication cursor and its exact basis.

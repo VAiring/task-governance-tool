@@ -6,7 +6,6 @@ project event. Unknown coverage is never promoted to complete.
 """
 
 from contextlib import closing
-from collections import deque
 import json
 import os
 from pathlib import Path
@@ -22,6 +21,7 @@ from task_governance_tool.usage_attribution_repository import registered_partici
 from task_governance_tool.usage_evidence_service import repository_for, refresh_usage
 from task_governance_tool.usage_sources import source_hint, source_roots, locate_sources, locate_slice
 from task_governance_tool.usage_values import UsageError
+from task_governance_tool.usage_ingest_work import IngestWork
 from task_governance_tool.setup_feature_config import collection_allowed
 
 
@@ -41,60 +41,10 @@ def _collect_incremental(repository, sources, known_sources, thread, hint, deadl
     or a partial tail is not progress. Each known source is audited once.
     """
     identities = repository.work_order(sources, thread, hint_id=hint.source_id if hint else None)
-    attempted, successful, repeatable, audited = set(), set(), set(), set()
-    gaps, slots, current_slots = set(), 0, 0
-
-    def collect(identity):
-        nonlocal slots, current_slots
-        if slots >= MAX_SOURCES or monotonic() >= deadline:
-            gaps.add("usage_pending")
-            return False
-        slots += 1
-        source = sources[identity]
-        current_slots += int(source.thread_id == thread)
-        attempted.add(identity)
-        repeatable.discard(identity)
-        try:
-            replay = False
-            if identity in known_sources and identity not in audited:
-                audit = repository.collect_source(source, lane="audit")
-                audited.add(identity)
-                replay = audit.get("replay", False)
-            result = repository.collect_source(source, record_attempt=True)
-            successful.add(identity)
-            # A budget stop between audit and ingest must not finish this page
-            # candidate. Unchanged EOF and real failed candidates remain attempts.
-            if result.get("replay"):
-                repository.attempted(identity)
-            if not replay and not result.get("replay") and result["pending"] == "more_records" and result["progressed"]:
-                repeatable.add(identity)
-        except UsageError as error:
-            gaps.add(error.code)
-            if error.code != "usage_pending":
-                repository.attempted(identity)
-                if identity in known_sources:
-                    repository.record_gap(identity, source.thread_id, error.code)
-        return True
-
-    if identities:
-        collect(identities[0])
-    current = [key for key in identities if sources[key].thread_id == thread]
-    if hint is not None and hint.source_id in current:
-        current.remove(hint.source_id)
-        current.insert(0, hint.source_id)
-    queue = deque(current)
-    while queue and current_slots < CURRENT_SLICES:
-        identity = queue.popleft()
-        if identity in attempted and identity not in repeatable:
-            continue
-        if not collect(identity):
-            break
-        if identity in repeatable:
-            queue.append(identity)
-    for identity in identities:
-        if identity not in attempted and not collect(identity):
-            break
-    return len(successful), gaps
+    work = IngestWork(repository, known_sources, thread, deadline,
+                      limit=MAX_SOURCES, current_limit=CURRENT_SLICES, clock=monotonic)
+    work.run(sources, identities, hint)
+    return len(work.successful), work.gaps
 
 
 def _target(skill_root, repo, *, repo_explicit=False, operation_local=False, deadline=None):
@@ -156,6 +106,15 @@ def collect_event(payload, *, skill_root, repo, environment, repo_explicit=False
         incremental = hasattr(repository, "collect_source")
         if incremental:
             repository.deadline = deadline
+        from task_governance_tool.usage_locator_repository import UsageLocatorRepository
+        if isinstance(repository, UsageLocatorRepository):
+            from task_governance_tool.usage_locator_collection import collect_located
+            collected, gaps = collect_located(repository, target, payload, source_roots(environment),
+                Path(repo), thread, deadline, limit=MAX_SOURCES, current_limit=CURRENT_SLICES, clock=monotonic)
+            publication = refresh_usage(target, deadline=deadline)
+            gaps.update(publication["diagnostics"])
+            return {"status": "unknown" if gaps else "pending", "collected_sources": collected,
+                    "diagnostics": sorted(gaps)}
         sessions, known_sources = repository.registered_sources()
         with closing(connect_initialized_readonly(target, deadline=deadline if incremental else None,
                                                  operation_local=True)) as core:

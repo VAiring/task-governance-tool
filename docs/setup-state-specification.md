@@ -681,12 +681,12 @@ schema, selected recovery schema, or null. Policy values are effective
 requested/stored values, not persistence claims. `maintenance_enabled`,
 Evidence status, and Viewer status describe durable post-command state.
 
-`usage` independently contains `status`, `schema_to=7`, `planned_writes`,
+`usage` independently contains `status`, `schema_to=8`, `planned_writes`,
 `completed_writes` and `error`. Status is `not_attempted` after core failure,
 `pending_core_setup` when preview cannot yet admit the future core binding,
 `not_present` for an admitted missing-store preview, `initialized` after
-publication, `migration_required` for exact schema 1 through 6 in preview, `migrated`
-after the atomic schema-1-through-6-to-7 transaction, `current` after validation, or `unavailable`.
+publication, `migration_required` for exact schema 1 through 7 in preview, `migrated`
+after the atomic schema-1-through-7-to-8 transaction, `current` after validation, or `unavailable`.
 Write stages are `usage_initialize` and `usage_migrate`; completed writes are empty in preview. `error` is null
 except the fixed `usage_unavailable` for numerical failure. Core `ok`, errors,
 status and write lists remain about core setup: numerical failure does not
@@ -947,7 +947,29 @@ actual sender; its structurally validated single-turn marker is governed by
 [wait attribution](database-specification.md#review-wait-decision-attribution).
 Registration is not permission, Task ownership or review evidence.
 
-Each event catches up only these registered project sessions. Discovery uses
+Each event catches up only these registered project sessions. Within the separate
+numerical store, it retains observed locations as root kind, current root-path
+fingerprint and a bounded relative path, bound to the project and session. A
+location is a candidate, not a validated source or numerical attribution. It
+may be retained before the file or header exists. Later events, including a new
+process, try finite fair pages directly before best-effort directory discovery.
+Every use repeats physical/header/project/thread validation. Changed root
+bindings cannot reuse old paths; old observations and missing-source gaps remain.
+
+An unregistered collected-answer reviewer may leave a separate pending location
+only when the parent's exact current native assignment proves the reviewer and
+selected slot. Parent-child relationships alone grant nothing. This metadata-only
+capture does not read the transcript or register its participant. A later exact
+Receipt/source binding permits promotion; another reviewer's Receipt does not.
+Confirmed cancellation or incompatible native basis revokes the pending hint.
+An unavailable check or changed operational slot on the same native basis keeps
+it unknown, since a retained original can still be registered later. The bounded
+pending pool has no age-based expiry; a full pool refuses new candidates without
+evicting existing ones or claiming coverage. Its lifetime ends through confirmed
+revocation or promotion. Legacy review saves retain their existing registration
+path; no speculative pending admission is added for legacy reviewers.
+
+Discovery uses
 exact registered IDs to locate standard Codex log filename candidates in
 `CODEX_HOME/sessions` (year/month/day) and flat `archived_sessions`, or the
 default user `.codex` location. Both the legacy session-UUID suffix and the
@@ -964,11 +986,16 @@ Persisted complete records flow through the existing atomic cursor/observation
 writer and immutable usage publisher. Delayed endpoint records, completed Tasks
 and previous participants are retried at later events. Interrupted/concurrent
 work remains replayable; stale batches do not rerun a Task command. Missing or
-invalid sources preserve observed totals with gaps. Existing schema7 is required:
+invalid sources preserve observed totals with gaps. Existing schema8 is required:
 events never initialize, migrate, repair or rebind a database.
 
 Collection reserves bounded work for previous participants, old segments and
-prefix audits as well as the invoking participant. Directory inventory and
+prefix audits as well as the invoking participant. Newly observed candidates
+join the fair queue without resetting previously queued work. An exact standard
+session basename may also be checked in the current flat archive; this adds no
+directory search and preserves separate source cursors and response deduplication.
+Reading the archive never removes a missing-source gap on the old location.
+Directory inventory and
 source attempts resume across events; new traffic cannot continually select
 only the newest source. After the oldest candidate, the invoking participant
 may receive bounded additional ingest slices when the preceding committed slice
@@ -977,7 +1004,9 @@ position. Its exact host hint takes priority within that allocation; other
 discovered segments retain fair turns. Partial tails, replay, errors or no
 forward progress do not trigger immediate repetition. The allocation uses the
 existing event budget and does not discover extra paths or infer attribution.
-Later cycles catch moved directory entries. Work and
+Later cycles catch moved directory entries. Unobserved old logs, missed segments
+and arbitrary renames retain best-effort discovery; this is not a complete
+discovery guarantee and adds no mandatory manual recovery command. Work and
 database-lock budgets yield neutral pending/unavailable results, preserving
 committed progress and last-good publication. Prefix integrity is explicitly
 [deferred](database-specification.md#numerical-usage-store); immutable snapshot

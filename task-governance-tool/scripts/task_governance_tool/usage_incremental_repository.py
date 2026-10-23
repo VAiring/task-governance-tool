@@ -200,7 +200,7 @@ class UsageIncrementalRepository(UsageWaitRepository):
                 "USING(source_id) WHERE seen.cycle=?", (cycle,))}
         return bool(set(sessions) - located)
 
-    def commit_discovery(self, revision, position, seen, complete):
+    def commit_discovery(self, revision, position, seen, complete, *, locator_root_fingerprints=None):
         """CAS advance after this page's attempts, which may span many events."""
         with self.connection(write=True) as connection:
             row = connection.execute("SELECT revision FROM usage_discovery").fetchone()
@@ -209,14 +209,19 @@ class UsageIncrementalRepository(UsageWaitRepository):
             connection.executemany("INSERT INTO usage_discovered VALUES (?,?) ON CONFLICT(source_id) DO UPDATE SET cycle=excluded.cycle",
                                    [(source, position["cycle"]) for source in seen])
             if complete:
-                connection.execute("INSERT OR IGNORE INTO usage_diagnostics SELECT source_id,'source_unreadable' FROM usage_sources "
-                                   "WHERE source_id NOT IN (SELECT source_id FROM usage_discovered WHERE cycle=?)", (position["cycle"],))
+                self._record_discovery_loss(connection, position["cycle"],
+                                            locator_root_fingerprints=locator_root_fingerprints)
                 position = {"root": 0, "stack": [], "cycle": position["cycle"] + 1}
             position = {**position, "attempt_floor": connection.execute(
                 "SELECT coalesce(max(last_attempt),0) FROM usage_work_order").fetchone()[0]}
             connection.execute("INSERT INTO usage_discovery VALUES (1,?,?) ON CONFLICT(singleton) "
                                "DO UPDATE SET revision=excluded.revision,document=excluded.document",
                                (revision + 1, json.dumps(position)))
+
+    def _record_discovery_loss(self, connection, cycle, *, locator_root_fingerprints=None):
+        """Legacy hash-only source loss, after a complete directory inventory."""
+        connection.execute("INSERT OR IGNORE INTO usage_diagnostics SELECT source_id,'source_unreadable' FROM usage_sources "
+                           "WHERE source_id NOT IN (SELECT source_id FROM usage_discovered WHERE cycle=?)", (cycle,))
 
     def attempted(self, source):
         if not _hex(source):

@@ -23,7 +23,7 @@
     "scripts/task_governance_tool/_verification_runner_win32.py": "sha256:3971a9ca5264f0e7a892b769c2c1703c335543316f344e32b11a7a5a52426ff3",
     "scripts/task_governance_tool/artifact_lock.py": "sha256:a781018852d3248a601f1a8926a73d05e82d010e211a3c318bfd1460de1d227f",
     "scripts/task_governance_tool/artifact_manifest.py": "sha256:3d4261f35b9456211a957a6b291c97a360a5495a995988fc8fba035dc2565217",
-    "scripts/task_governance_tool/backup.py": "sha256:e5aaf286f881e36a93d550ace29fc1dd2611718924c6a7f60b658ec1702b4650",
+    "scripts/task_governance_tool/backup.py": "sha256:d0562062e3fa988cab6da493ea167055d9c5b773d458c54a03e616ee9f2594fa",
     "scripts/task_governance_tool/backup_metadata_repository.py": "sha256:c2cb36395cff9c7c9134003c47cf93e9284e50e5b4bf51d52903697621fd876d",
     "scripts/task_governance_tool/checkpoints.py": "sha256:045612c5429710355e73c8f6b2cc4b7921d2d55ea053380e768eca9ec15094e0",
     "scripts/task_governance_tool/cli.py": "sha256:a14d86b3dc9f51a36d72712450b8356ff6f42104d3f9ae2766b380b6fd5067bc",

@@ -848,9 +848,11 @@ publication.
 The sole backup primitive:
 
 1. opens a rollback-journal source through the operational boundary;
-2. copies with `sqlite3.Connection.backup` to a fresh contained temporary;
-3. validates schema support, identity/binding, quick check, and foreign keys;
-4. closes it;
+2. copies with `sqlite3.Connection.backup` to a fresh contained temporary and
+   immediately closes the initial source connection;
+3. validates schema support, identity/binding, quick check, and foreign keys
+   in the private copy's independent read transaction;
+4. closes the copy, flushes it, and validates a freshly opened source;
 5. atomically publishes a canonical generation with fixed
    publication-retention metadata; and
 6. returns only bounded generation/time metadata.
@@ -878,6 +880,18 @@ when canonical artifact inspection invokes it. Initial structural/set
 inspection, reconciliation, source, copy and fresh pre-publication observations
 remain independent; no file validity is inferred from size, mtime, a successful
 earlier phase, or another closed snapshot.
+
+`_copy` scopes its initial source with an `ExitStack`, closed immediately after
+the backup API returns and also on every earlier exception. Destination
+validation and file preparation retain no initial live-source reader. The fresh
+source remains open through atomic replacement under the existing artifact
+lock. Routine, Setup and pre-migration publication all use this same primitive.
+The two adjacent backup-API producers, private-stage snapshot copy and managed
+generation restore, release their initial source at the same copy boundary;
+their existing identity, recovery-observation, validation and no-clobber guards
+remain independent and unchanged. Evidence/Viewer capture already closes its
+source before rendering and uses its own fresh publication guard; it does not
+use this copy primitive or inherit a backup privacy cache.
 
 Managed names are exactly:
 

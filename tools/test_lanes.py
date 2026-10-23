@@ -222,6 +222,7 @@ LANE_MODULES: dict[str, tuple[str, ...]] = {
         "test_usage_wait_repository",
     ),
     "integration": (
+        "test_backup_copy_lifetime",
         "test_backup_outcome",
         "test_backup_validation",
         "test_completion_cycle_activation",

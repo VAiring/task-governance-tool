@@ -8,7 +8,7 @@ import secrets
 import sqlite3
 import stat
 import tempfile
-from contextlib import closing, contextmanager, suppress
+from contextlib import ExitStack, closing, contextmanager, suppress
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -935,7 +935,8 @@ def restore_managed_backup(
         os.close(descriptor)
         descriptor = None
 
-        with closing(connect_readonly(candidate.path)) as source:
+        with ExitStack() as source_scope:
+            source = source_scope.enter_context(closing(connect_readonly(candidate.path)))
             source_version = _validate_database(
                 source,
                 target,
@@ -947,6 +948,7 @@ def restore_managed_backup(
                 configure_connection(sqlite3.connect(temporary))
             ) as destination:
                 source.backup(destination)
+                source_scope.close()
                 _validate_database(
                     destination,
                     target,
@@ -1079,7 +1081,8 @@ def copy_database_snapshot(
                 expected_recovery_observation,
             ):
                 raise _failure()
-        with closing(connect_readonly(source_path)) as source:
+        with ExitStack() as source_scope:
+            source = source_scope.enter_context(closing(connect_readonly(source_path)))
             source_version = _validate_database(source, source_target)
             if require_recovery_content_valid and not _recovery_content_valid(
                 source,
@@ -1091,6 +1094,7 @@ def copy_database_snapshot(
                 configure_connection(sqlite3.connect(destination))
             ) as copied:
                 source.backup(copied)
+                source_scope.close()
                 _validate_database(
                     copied,
                     destination_target,
@@ -1427,7 +1431,8 @@ def _copy(
         privacy_success_cache: set[tuple[str, str, str]] = set()
     succeeded = False
     try:
-        with closing(connect_readonly(target.db_path)) as source:
+        with ExitStack() as source_scope:
+            source = source_scope.enter_context(closing(connect_readonly(target.db_path)))
             source_version = _validate_publication_source(
                 source,
                 target,
@@ -1450,6 +1455,9 @@ def _copy(
                 configure_connection(sqlite3.connect(temporary))
             ) as destination:
                 source.backup(destination)
+                # The copy now owns its snapshot; source validation is repeated
+                # on a fresh connection immediately before publication.
+                source_scope.close()
                 destination.execute("BEGIN")
                 _validate_publication_source(
                     destination,

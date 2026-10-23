@@ -755,6 +755,14 @@ zero-wait artifact lock through backup publication/reconciliation and the
 corresponding migration commit, but never a SQLite writer while copying.
 Preview creates neither lock nor artifact.
 
+The initial source connection is closed immediately after SQLite backup
+finishes, before independent validation of the private copy. Copy preparation
+does not retain that live reader. Initial-source, copied-database and fresh
+pre-publication-source validation remain separate and complete; the fresh
+source stays open through replacement under the artifact lock. Private-stage
+copy and generation restore use the same initial-source release boundary while
+preserving their existing identity/recovery observations and publication rules.
+
 ### Optional Feature Selection
 
 After core setup, the noninteractive CLI accepts any subset of

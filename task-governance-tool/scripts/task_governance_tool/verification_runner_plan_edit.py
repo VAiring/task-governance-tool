@@ -36,7 +36,8 @@ from task_governance_tool.tasks import (
     TaskRepositoryError,
     edit_task,
     read_internal_task,
-    read_task,
+    read_mutation_basis,
+    row_to_task,
     reject_concurrent_edit_base_change,
 )
 from task_governance_tool.task_values import (
@@ -195,24 +196,23 @@ def _read_task_preflight_from_connection(
     *,
     authority_required: bool,
     authority_nonterminal_required: bool = False,
+    public_required: bool = True,
 ) -> tuple[
     dict[str, Any],
-    dict[str, Any],
+    dict[str, Any] | None,
     ReviewTargetAuthorityBasis | None,
     task_ownership.OwnershipBasis | None,
 ]:
-    internal = read_internal_task(
+    internal, owner = read_mutation_basis(
         connection,
         target.project.project_id,
         task_id,
     )
-    public = read_task(
-        connection,
-        target.project.project_id,
-        task_id,
-    )
-    if internal is None or public is None:
+    if internal is None:
         raise TaskRepositoryError("not_found", "task was not found")
+    public = row_to_task(internal) if public_required else None
+    if public is not None and owner is not None:
+        public["ownership"] = owner.projection(CallerIdentity(None))
     # The authority reader preserves the established done-task error.  A
     # cancelled Task needs this additional authoring-only terminal guard.
     if (
@@ -229,9 +229,7 @@ def _read_task_preflight_from_connection(
         if authority_required
         else None
     )
-    return internal, public, authority, task_ownership.capture_basis(
-        connection, project_id=target.project.project_id, task_id=task_id,
-    )
+    return internal, public, authority, owner
 
 
 def _read_task_preflight(
@@ -262,9 +260,10 @@ def _read_task_preflight_snapshot(
     *,
     authority_required: bool,
     authority_nonterminal_required: bool = False,
+    public_required: bool = True,
 ) -> tuple[
     dict[str, Any],
-    dict[str, Any],
+    dict[str, Any] | None,
     ReviewTargetAuthorityBasis | None,
     task_ownership.OwnershipBasis | None,
 ]:
@@ -278,6 +277,7 @@ def _read_task_preflight_snapshot(
             task_id,
             authority_required=authority_required,
             authority_nonterminal_required=authority_nonterminal_required,
+            public_required=public_required,
         )
     finally:
         if owns_transaction and connection.in_transaction:
@@ -521,6 +521,7 @@ def _edit_without_action(
             target,
             task_id,
             authority_required=True,
+            public_required=False,
         )
         current_basis = (
             None
@@ -648,6 +649,7 @@ def _edit_combined(
             target,
             task_id,
             authority_required=False,
+            public_required=False,
         )
         source, plan = _capture_decoded_plan(repo, package_root)
 

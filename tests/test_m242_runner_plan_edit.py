@@ -270,6 +270,61 @@ class TrackingConnection:
 
 
 class RunnerPlanEditTests(unittest.TestCase):
+    def test_preflight_projects_only_consumed_public_task(self):
+        cases = (
+            ({"verification": FUTURE_VERIFICATION}, 1, 0),
+            ({"verification_not_required_reason": "No executable work"}, 1, 0),
+            ({"priority": "high"}, 0, 0),
+            ({"runner_plan_action": "detach"}, 1, 1),
+            ({"runner_plan_action": "rebind", "verification": FUTURE_VERIFICATION}, 1, 0),
+            ({"contract_scope": "Revise the execution scope", "contract_acceptance": "Keep valid evidence",
+              "contract_change_reason": "Exercise a new scope"}, 1, 0),
+        )
+        for changes, reads, projections in cases:
+            with self.subTest(changes=changes), runner_plan_edit_fixture() as fixture:
+                changes = dict(changes)
+                if changes.get("runner_plan_action") == "rebind":
+                    fixture.write_exact_plan()
+                if "contract_scope" in changes:
+                    changes["contract_authority_ref"] = f"user_instruction:{fixture.task_id}:2"
+                with mock.patch.object(edit_module, "read_mutation_basis", wraps=edit_module.read_mutation_basis) as read, \
+                        mock.patch.object(edit_module, "row_to_task", wraps=edit_module.row_to_task) as project:
+                    result = edit_module.edit_task_with_runner_plan(fixture.target, fixture.task_id,
+                        caller=capture_caller_identity(), **changes)
+                self.assertEqual(read.call_count, reads)
+                self.assertEqual(project.call_count, projections)
+                self.assertEqual(result.edit_result.task["task_id"], fixture.task_id)
+                if "contract_scope" in changes:
+                    with mock.patch.object(edit_module, "read_mutation_basis", wraps=edit_module.read_mutation_basis) as read, \
+                            mock.patch.object(edit_module, "row_to_task", wraps=edit_module.row_to_task) as project:
+                        replay = edit_module.edit_task_with_runner_plan(fixture.target, fixture.task_id,
+                            caller=capture_caller_identity(), **changes)
+                    self.assertEqual(replay.task_mutation, "none")
+                    self.assertEqual(read.call_count, 1)
+                    project.assert_not_called()
+
+    def test_preflight_task_and_owner_changes_are_rejected_in_fresh_writer(self):
+        for mode in ("ordinary", "combined", "plan_only"):
+            for change, code in (({"priority": "high"}, "invalid_argument"),
+                                 ({"status": "ready"}, "task_ownership_changed")):
+                with self.subTest(mode=mode, change=change), runner_plan_edit_fixture() as fixture:
+                    plan = fixture.write_exact_plan()
+                    capture = edit_module._capture_decoded_plan
+                    def changed(*args, **kwargs):
+                        result = capture(*args, **kwargs)
+                        with closing(connect_initialized(fixture.target)) as core, core:
+                            edit_module.edit_task(core, fixture.target.project, fixture.task_id,
+                                database_target=fixture.target, caller=capture_caller_identity(), **change)
+                        return result
+                    requested = {} if mode == "plan_only" else {"verification": FUTURE_VERIFICATION}
+                    if mode != "ordinary":
+                        requested["runner_plan_action"] = "rebind"
+                    with mock.patch.object(edit_module, "_capture_decoded_plan", side_effect=changed):
+                        self.assert_error_code(code, lambda: edit_module.edit_task_with_runner_plan(
+                            fixture.target, fixture.task_id, caller=capture_caller_identity(), **requested))
+                    self.assertEqual(fixture.plan_path.read_bytes(), plan)
+                    self.assertEqual(fixture.task_row()["verification"], CURRENT_VERIFICATION)
+
     def assert_error_code(self, code, callback):
         with self.assertRaises(Exception) as raised:
             callback()

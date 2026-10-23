@@ -173,6 +173,12 @@ and exact-basis comparison remain the authoritative final freshness checks.
 6. return the typed Plan result together with the existing Task result and one
    mutation classification for CLI maintenance.
 
+Preflight obtains the validated internal Task and ownership together through
+`read_mutation_basis` in the same read snapshot. Only Plan-only actions build
+the public Task from that value; ordinary and combined edits leave that unused
+projection absent. Locked writer rereads and generation checks remain fresh,
+and no preflight value is reused across a different snapshot as validation proof.
+
 The locked Task reread must still match the preflight basis. Candidate creation
 inside the Task transaction performs only pure computation; no temporary or
 canonical filesystem write occurs while SQLite owns a writer. If Task

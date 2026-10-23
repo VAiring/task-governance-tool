@@ -1422,7 +1422,10 @@ def _inspect_database(
         )
         if classify_recovery_content:
             try:
-                if version == 31:
+                if version == 32:
+                    from task_governance_tool.schema_session_slot_index import validate_storage
+                    validate_storage(connection, recovery=True)
+                elif version == 31:
                     from task_governance_tool.schema_criterion_link_collector import validate_storage
                     validate_storage(connection, recovery=True)
                 elif version == 30:

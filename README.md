@@ -5,8 +5,8 @@ keeping long-running work resumable, reviewable, and bounded. It stores local
 task state without replacing the target project's `AGENTS.md`, specifications,
 design documents, tests, or current user decisions.
 
-Release `0.13.0` uses SQLite schema v31 and Viewer snapshot v4 with
-source schemas 5 through 31 as the current unpublished local candidate contract. No
+Release `0.13.0` uses SQLite schema v32 and Viewer snapshot v4 with
+source schemas 5 through 32 as the current unpublished local candidate contract. No
 exact final candidate commit, tag, archive, checksum, or GitHub Release identity
 is fixed. An ordinary push to `main` is CI input, not release publication. The
 immutable published release remains v0.10.0 at its recorded commit, tag, and

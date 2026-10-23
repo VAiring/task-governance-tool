@@ -169,7 +169,7 @@ the object inventory, schema fingerprints and all compatible read consumers.
 
 `completion_evidence_bundles.continuation_basis_json` is nullable TEXT with
 valid JSON and a 16,777,216 UTF-8 byte bound. It is null for formats one/two and
-non-null for source-schema-29 format three or source-schema-30/31 format four
+non-null for source-schema-29 format three or source-schema-30/31/32 format four
 when a continuation graph exists. Format four without a continuation keeps it
 null. The existing immutable Bundle
 guards protect this column. It stores the closed sanitized continuation graph
@@ -189,7 +189,7 @@ validation across reads, and do not change the caller's transaction ownership.
 ## Collected Answer Value Schemas
 
 These are the current closed schemas introduced by schema 30 and retained by
-schema 31, the public writer
+schema 32, the public writer
 and Evidence; the [review owner](review-completion-specification.md#collected-review-answers)
 owns answer and operation behavior. Every listed key is mandatory, including
 nullable keys; objects admit no extras. JSON integers are exact signed-64-bit
@@ -398,7 +398,7 @@ atomically; readers cannot supply independent public metadata as proof.
 ## Migration Sequence
 
 `schema_preservation.py` owns the read-only predecessor snapshot and comparison
-used by migrations 29, 30 and 31. Each caller fixes its exact allowed object
+used by migrations 29, 30, 31 and 32. Each caller fixes its exact allowed object
 changes before the delta. The helper captures all predecessor tables, typed
 column/row-identity projections, unaffected objects and the complete
 `(rowid,version,name,applied_at)` migration history. It performs no DDL, marker
@@ -459,7 +459,7 @@ Receipt version two uses its separate relation; the former v1-only Receipt FK
 is replaced by exact union admission, without creating a v1 row for v2. Legacy
 v1 code rows and bytes remain unchanged. Read admission rejects orphan/multiple
 arms, invalid kind/version/source/target/digest matrices, missing Findings or
-normalization mismatches. Bundle 4 uses source 30 or 31 and the existing nullable
+normalization mismatches. Bundle 4 uses source 30, 31 or 32 and the existing nullable
 `continuation_basis_json` for graph 2; the coupled native-cycle guard requires
 null graph with ordinary gate basis one and a graph with continuation basis two.
 
@@ -470,7 +470,7 @@ the unchanged schema-30 fingerprint and rows before rebuilding only
 CHECK adds `taskgov_answer_collector`; its Reference-equality guard is retained.
 The Bundle discriminator and `trg_task_completion_cycles_evidence_basis_insert`
 admit native source 31/format four with the same gate-basis/nullable-graph matrix.
-No columns, tables, indexes or triggers are added: the current inventory stays
+No columns, tables, indexes or triggers are added: schema 31's inventory stays
 50 tables, 47 explicit indexes and 101 triggers.
 
 This forward migration uses the admitted idle connection and existing
@@ -526,6 +526,7 @@ Current sequential migrations are:
 | 29 | `review_continuations`: successor judgments, explicit reassessment resolution and frozen continuation evidence |
 | 30 | `collected_review_answers`: v2 provenance/source, immutable dispatch inventory and typed collected captures |
 | 31 | `criterion_link_collector`: collected producer on criterion links and native source-31 Bundle/cycle discriminators |
+| 32 | `session_slot_lookup_index`: non-unique combined actor/project lookup and native source-32 Bundle/cycle discriminators |
 
 Every migration is ordered, idempotent on reentry, transactional, and
 rollback-tested. Reentry validates rather than synthesizing missing data.
@@ -538,10 +539,10 @@ checkpoint, maintenance, identity, and completion traces. The sole current
 exception is migration 20's Bundle-rebuild retirement of the
 unsupported attached residue defined below; it changes no other migration.
 
-The fixed-state setup migrator accepts complete source schemas v1-v30 and
-treats v31 as current. Legacy `state/projects` discovery is intentionally
+The fixed-state setup migrator accepts complete source schemas v1-v31 and
+treats v32 as current. Legacy `state/projects` discovery is intentionally
 narrower: v1-v13 plus the explicit schema-v14 legacy-layout transition.
-Viewer compatibility is independent and accepts source schemas v5-v31.
+Viewer compatibility is independent and accepts source schemas v5-v32.
 Incomplete history, a missing required object/row, a later marker, too-new
 state, unsupported layout, foreign identity, or corrupt integrity fails closed.
 
@@ -568,7 +569,7 @@ actor UUID, optional sanitized recovery reason and timestamp. `task_execution_cy
 links one exact native cycle to its unique execution; its insert guard checks the
 cycle's project/Task and immutable triggers prevent rewriting the relation.
 The shared ownership row validator also rejects missing links for native Bundle
-sources 24 through 31 in ordinary global and recovery admission. Earlier retained
+sources 24 through 32 in ordinary global and recovery admission. Earlier retained
 completion history remains valid without an invented execution/cycle link.
 No prompt, response body, environment, cost, session liveness or caller-specific
 flags are retained. This schema does not create the later numerical usage store
@@ -631,6 +632,26 @@ the final migration marker. DDL/copy/marker failures roll back to exact schema 2
 reentry validates exact schema 27 without repair. Both supported source definitions
 remain independently validated. Numerical schema and policy-zero/one meanings do
 not change, and retained overlaps still require explicit release/completion.
+
+#### Combined Slot Index Migration
+
+`schema_session_slot_index.py` owns Setup-only 31→32 migration and its exact
+owned fingerprint. It creates non-unique `idx_task_ownership_held_actor` on
+`(project_id, coalesce(owner_session_id, completion_session_id))` with the
+same held-state partial predicate as `_free_slot` and both retained acquisition
+triggers. The service and INSERT/UPDATE/reacquisition EXISTS searches therefore
+use one actor/project range. Release makes no new slot query. The old active
+unique index and all ownership trigger SQL stay byte-exact; legacy overlap is
+neither removed nor admitted as a new acquisition.
+
+The migration rebuilds only the Bundle source discriminator and native-cycle
+guard to admit source 32/format four, then creates the lookup index. It uses the
+shared predecessor row/identity/object/history proof before the delta and after
+the final marker. Destination-name collisions fail before the delta; failed
+DDL, copy, index or marker work rolls back all changes. Current reentry validates
+without repairing, and source-31 definitions remain unchanged. Backup, recovery,
+relocation, Viewer, Evidence and the independent reader use actual source 32
+with the unchanged format and domain contracts.
 
 <a id="task-event-note-body-migration"></a>
 

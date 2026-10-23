@@ -1,4 +1,4 @@
-"""Read-only predecessor preservation for the schema 29, 30 and 31 migrations.
+"""Read-only predecessor preservation for schema 29 through 32 migrations.
 
 Callers own admission, intentional DDL changes, marker insertion and the complete
 transaction. This module only freezes and compares the old state in that writer.

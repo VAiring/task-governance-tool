@@ -115,7 +115,7 @@ class CompletionEvidenceBundleStorageTests(unittest.TestCase):
                     with self.assertRaisesRegex(RuntimeError, "test-only fixture interruption"):
                         remove_v24_ownership_for_test(connection)
                 self.assertEqual(logical_database_digest(connection), before)
-                self.assertEqual(current_schema_version(connection), 31)
+                self.assertEqual(current_schema_version(connection), 32)
                 self.assertEqual(connection.execute("PRAGMA foreign_keys").fetchone()[0], 1)
                 self.assertEqual(connection.execute("PRAGMA legacy_alter_table").fetchone()[0], 0)
 
@@ -131,7 +131,7 @@ class CompletionEvidenceBundleStorageTests(unittest.TestCase):
                 before = tuple(tuple(row) for row in connection.execute("SELECT rowid,* FROM review_receipts"))
                 self.assertTrue(before)
                 apply_migrations(connection)
-                self.assertEqual(current_schema_version(connection), 31)
+                self.assertEqual(current_schema_version(connection), 32)
                 self.assertEqual(connection.execute("SELECT COUNT(*) FROM review_receipt_judgments").fetchone()[0], len(before))
                 remove_v24_ownership_for_test(connection)
                 self.assertEqual(current_schema_version(connection), 23)

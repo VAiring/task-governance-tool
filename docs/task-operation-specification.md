@@ -422,6 +422,10 @@ pending Task to in_progress requires the other held Tasks to release first;
 the complete mutation rolls back on conflict. Unstarted organization, reads,
 other sessions/projects and independent reviewer participation remain unaffected.
 No operation silently pauses, cancels or reassigns another Task.
+Schema 32 indexes that same combined actor/project and held-state predicate
+without changing acquisition or release semantics. Its non-unique lookup
+index preserves legacy overlap and the existing atomic guards; unrelated
+inactive holdings, actors or projects are not candidates for a slot conflict.
 
 Explicit cross-session recovery is exactly a status edit from active/review-pending
 to paused with a nonempty pause reason and a valid caller. It may not include

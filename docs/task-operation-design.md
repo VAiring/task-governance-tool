@@ -114,6 +114,11 @@ Ordinary Task adapters use the
 they retain selected current ownership and locked generation checks, rather
 than replaying all immutable transition history. Slot acquisition still checks
 the combined session/project holdings and SQL guards remain unchanged.
+The [schema-32 lookup index](database-design.md#combined-slot-index-migration)
+supports that same predicate in `_free_slot` and the retained INSERT/UPDATE
+guards. Active registration, start/resume, pending-to-active, reopen and later
+reacquisition share it; release does not add a lookup. It is non-unique so the
+existing legacy-overlap and writer-rollback behavior remains controlling.
 Packet content binding excludes ownership display, while all writes still compare
 its independently captured generation.
 

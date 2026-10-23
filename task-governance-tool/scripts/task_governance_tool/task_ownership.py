@@ -174,6 +174,8 @@ def _next_generation(current: OwnershipBasis) -> int:
 
 
 def _free_slot(connection: sqlite3.Connection, *, project_id: str, task_id: str, actor: str) -> None:
+    # Schema 32's non-unique partial expression index supports this exact
+    # predicate and the retained acquisition triggers, including legacy overlap.
     from task_governance_tool.storage import current_schema_version
     combined = current_schema_version(connection) >= 26
     subject = "coalesce(owner_session_id, completion_session_id)" if combined else "owner_session_id"
@@ -385,7 +387,7 @@ def validate_storage_rows(connection: sqlite3.Connection) -> None:
         if connection.execute(
             "SELECT 1 FROM completion_evidence_bundles AS bundle "
             "LEFT JOIN task_execution_cycles AS link ON link.completion_cycle_id=bundle.completion_cycle_id "
-            "WHERE bundle.source_schema_version IN (24, 25, 26, 27, 28, 29, 30, 31) AND link.completion_cycle_id IS NULL LIMIT 1"
+            "WHERE bundle.source_schema_version IN (24, 25, 26, 27, 28, 29, 30, 31, 32) AND link.completion_cycle_id IS NULL LIMIT 1"
         ).fetchone():
             raise _unreadable()
     except (TaskValidationError, StorageError, UnicodeError, sqlite3.Error) as exc:

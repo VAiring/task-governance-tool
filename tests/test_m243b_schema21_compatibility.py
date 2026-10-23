@@ -125,7 +125,7 @@ def _physical_current21_install(root: Path, *, git_managed: bool = False):
     install = make_physical_install(root, git_managed=git_managed)
     installed_storage = install.skill_root / "scripts" / "task_governance_tool" / "storage.py"
     source = installed_storage.read_text(encoding="utf-8")
-    current_declaration = "SCHEMA_VERSION = 31"
+    current_declaration = "SCHEMA_VERSION = 32"
     if source.count(current_declaration) != 1:
         raise AssertionError("schema21 fixture requires the exact current declaration")
     installed_storage.write_text(
@@ -382,8 +382,8 @@ def _seed_targeted_m21_fixture(
     title: str = "Persisted schema21 Runner history",
     description: str = "",
 ):
-    if source_schema_version not in (21, 31):
-        raise AssertionError("completion fixture supports only historical21 or current31")
+    if source_schema_version not in (21, 32):
+        raise AssertionError("completion fixture supports only historical21 or current32")
     install = (
         _physical_current21_install(root, git_managed=True)
         if source_schema_version == 21
@@ -451,7 +451,7 @@ def _seed_targeted_m21_fixture(
             )
             if verification_required
             else (("--verification-not-required", "Completion fixture without executable changes")
-                  if source_schema_version == 31 else ())
+                  if source_schema_version == 32 else ())
         ),
         "--contract-scope",
         "Validate one persisted schema21 Runner history fixture.",
@@ -2607,7 +2607,7 @@ class M243BSchema21CompatibilityTests(unittest.TestCase):
             24,
         )
         with self.assertRaises(RelocationTokenError):
-            RelocationContext(**values, source_schema_version=32)
+            RelocationContext(**values, source_schema_version=33)
         self.assertEqual(RelocationContext(**values, source_schema_version=27).source_schema_version, 27)
         self.assertEqual(RelocationContext(**values, source_schema_version=28).source_schema_version, 28)
         self.assertEqual(RelocationContext(**values, source_schema_version=29).source_schema_version, 29)

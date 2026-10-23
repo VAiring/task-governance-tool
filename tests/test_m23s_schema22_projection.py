@@ -203,7 +203,7 @@ class Schema22PureProjectionTests(unittest.TestCase):
 
     def test_future_index_and_v1_source22_index_reject_read_only(self):
         envelope = _reference_envelope(_payload("not_required"))
-        future = _index_payload(envelope, source_version=32)
+        future = _index_payload(envelope, source_version=33)
         with self.assertRaises(projection.EvidenceProjectionError):
             projection.build_index_artifact(future)
         for payload, format_version in ((future, 2), (_index_payload(envelope), 1)):

@@ -2,15 +2,15 @@
 
 Status: The immutable published product remains v0.10.0/schema v16/Viewer v4
 sources v5-v16/20 leaves; its identity is fixed in `docs/release-install.md`.
-The current unpublished candidate is v0.13.0 with SQLite schema v31, Viewer
-snapshot v4 accepting source schemas v5-v31, and 23 public command leaves.
+The current unpublished candidate is v0.13.0 with SQLite schema v32, Viewer
+snapshot v4 accepting source schemas v5-v32, and 23 public command leaves.
 Its supported behavior includes tool-owned Verification Receipt subjects,
 versioned Review provenance, immutable Evidence References and completion
 Bundles, deterministic Evidence JSON, and the explicitly opted-in trusted-local
 verification Runner with a closed manual fallback. Schema v20 remains a
 supported migration source and
 audit-only Runner lineage; only fresh gate-eligible evidence under the unchanged
-schema-v21 protocol retained by schema v31 may
+schema-v21 protocol retained by schema v32 may
 satisfy the Runner branch. Select-Split-Merge-Register is active only as
 Skill instruction-layer guidance. Completed execution narrative belongs only in
 indexed history, and
@@ -463,7 +463,9 @@ Current detail is owned by the [Task operation specification](task-operation-spe
 
 <a id="current-schema-v30-verification-ledger-and-bundle-contract"></a>
 
-## Current Schema-v31 Verification, Ledger, And Bundle Contract
+<a id="current-schema-v31-verification-ledger-and-bundle-contract"></a>
+
+## Current Schema-v32 Verification, Ledger, And Bundle Contract
 
 This section defines current post-publication product behavior. It does not
 rewrite the immutable v0.10.0 publication record or claim a later published
@@ -471,13 +473,13 @@ artifact identity. Schema v20 retains schema-v18 capture, the 21st public
 command leaf, schema-v19 completion Bundles and Evidence JSON compatibility, and
 publicly activates the existing migration-20 storage foundation plus the
 Bundle-v2 null-Runner writer and format-v2 Evidence index.
-Schema v31 retains the schema-v21 Runner basis protocol, schema-v22 Analyzer
+Schema v32 retains the schema-v21 Runner basis protocol, schema-v22 Analyzer
 reservation cleanup and schema-v23 explicit verification declarations. It adds
 session ownership, exact execution/cycle links and reviewer bindings. Its
 [collected-answer contract](review-completion-specification.md#collected-review-answers)
 adds typed source/registration/capture relations and v2 provenance. Newly sealed
-completion Evidence uses [source-31 Bundle 4/index 3 and graph 2](evidence-specification.md#collected-answer-evidence),
-while retaining source-19/20/21/22/23/24/25/26/27/28/29/30 sealed history
+completion Evidence uses [source-32 Bundle 4/index 3 and graph 2](evidence-specification.md#collected-answer-evidence),
+while retaining source-19/20/21/22/23/24/25/26/27/28/29/30/31 sealed history
 unchanged. Empty verification alone no longer authorizes a new completion;
 the [Task declaration](task-operation-specification.md#verification-declaration)
 must be specified or explicitly waived with a reason.
@@ -486,6 +488,8 @@ Skill guidance form one supported candidate boundary.
 Schema 31 provides the explicit-Setup
 [criterion-link producer repair](database-specification.md#collected-answer-criterion-link-repair)
 without changing those Evidence formats or completion gates.
+Schema 32 adds the [combined session lookup index](database-specification.md#schema-v32-combined-session-slot-lookup),
+preserving acquisition guards, legacy overlaps and all sealed source identities.
 
 ### Authority Snapshot, Whole-Field Criteria, And References
 
@@ -559,7 +563,9 @@ Current detail is owned by the [Database persistence and migration specification
 
 <a id="current-schema-v30-persistence-contract"></a>
 
-### Current Schema-v31 Persistence Contract
+<a id="current-schema-v31-persistence-contract"></a>
+
+### Current Schema-v32 Persistence Contract
 
 Current detail is owned by the [Database persistence and migration specification](database-specification.md#current-schema-v22-persistence-contract).
 
@@ -568,7 +574,7 @@ Current detail is owned by the [Database persistence and migration specification
 ### Schema-v21 Persistence Compatibility And Shared Runner Protocol
 
 The following retains the exact schema-v21 migration/storage contract and the
-structural Runner protocol inherited by current schema v31. Source-21 Bundle
+structural Runner protocol inherited by current schema v32. Source-21 Bundle
 and migration statements describe that supported predecessor, not the current
 setup target or a relabelling of retained evidence. The
 [current delta](database-specification.md#current-schema-v22-persistence-contract) owns
@@ -890,7 +896,7 @@ retains its sanitized caller label as explicit legacy data. Neither form stores 
 arguments, exit code, result body, stream, log, environment, exception,
 arbitrary coverage prose, or debug-retention variant.
 
-Current schema-v31 free-form limits not narrowed above are: title 200
+Current schema-v32 free-form limits not narrowed above are: title 200
 characters; description 4,000; stored/read/internal verification and its
 derivatives 1,000; explicit public Task add/edit verification 1,000;
 tags/reviewer/target/external revision/authority ref

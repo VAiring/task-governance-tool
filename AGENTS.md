@@ -287,11 +287,15 @@ The product must not become:
 - Verification Receipt retention is deny-by-default: only the bounded fields
   and structural binding metadata in [Receipt meaning and record](docs/review-completion-specification.md#receipt-meaning-and-record).
   Version-one subjects are tool-owned; never accept a caller label or subject.
-- Never store the verification command body or arguments, exit code,
-  stdout/stderr, stack trace, environment, log, exception, prompt, diff,
+- Never store in Verification Receipts the verification command body or
+  arguments, exit code, stdout/stderr, stack trace, environment, log, exception, prompt, diff,
   credential, arbitrary coverage prose, or debug-retention variant.
 - Do not store API keys, tokens, cookies, authorization headers, raw provider
   bodies, full private prompts, full chat logs, or large raw diffs by default.
+- Separately enabled local development debug and performance logs follow the
+  [diagnostic logging requirements](docs/specification.md#local-development-debug-and-performance-logs),
+  including secret exclusion or masking before recording. Their diagnostic
+  content is not an exception to Task-input, Receipt, or Evidence contracts.
 - Prefer deactivation, supersession, or history rows over hard deletion for
   durable records.
 - If hard deletion is added, document what is deleted, why it is safe, and what

@@ -848,16 +848,19 @@ in their respective sections of this document.
 
 ## Privacy, Safety, And Stable Errors
 
-Taskgov stores only bounded sanitized summaries, legacy command labels, exit/duration/
-status/time metadata, hashes, stable IDs, and explicit structured evidence.
-It never stores or emits API keys, credential/session tokens, cookies,
+Taskgov's business records and public projections retain only their defined
+bounded sanitized summaries, legacy command labels, exit/duration/status/time
+metadata, hashes, stable IDs, and explicit structured evidence. These channels
+never store or emit API keys, credential/session tokens, cookies,
 authorization headers, raw provider bodies, private prompts, chat transcripts,
 large/raw diffs, automatically captured or free-standing raw stdout/stderr,
 full logs, stack traces, environment dumps, review reasoning/bodies,
 OS/SQLite exception detail, raw paths in identity metadata, expected/actual
 hash pairs, or rejected values. The sole stream-text exception is the bounded,
 validated manual Task quotation defined below; it is not automatic capture or
-a separate output field.
+a separate output field. These restrictions govern Task inputs/state, Receipts,
+Evidence and public CLI/MCP output; separately enabled local development
+diagnostics follow the [logging requirements below](#local-development-debug-and-performance-logs).
 
 The session ownership ledger stores only canonical nonsecret thread UUIDs,
 execution and Task IDs, generations, closed transitions, times and the explicit
@@ -1049,6 +1052,52 @@ include `paused_tasks_present`, `handoff_delivery_pending`,
 `effort_advisory_threshold_exceeded`, package/setup advisory codes, and the
 six maintenance codes. Warnings never carry Task prose, secrets, raw output,
 diffs, paths, or exception text.
+
+### Local Development Debug And Performance Logs
+
+Local development diagnostics may record exception details, stack traces,
+code locations and processing context needed to investigate failures, together
+with performance measurements. Diagnostic formats are not prohibited merely
+because Task records or public responses cannot contain them. Debug detail is
+explicitly enabled and its verbosity is selectable; normal public output keeps
+its existing contract.
+
+Secrets must be excluded or masked before a diagnostic record reaches any log
+file, console output, queue or other logging destination. This includes API
+keys, passwords, private keys, credential/session tokens, cookies and
+authorization values, including those embedded in exception messages, source
+lines, paths or nested context. Masking uses a non-reversible replacement, not
+an encoded or otherwise recoverable copy. Omit a sensitive value when it cannot
+be safely sanitized; do not save an unprocessed copy for later redaction or
+emit it through a logging-error fallback. Review before sharing is an additional
+check, not a replacement for protection at recording time.
+
+Performance logs may record operation/stage names, correlation IDs, timestamps,
+elapsed time, counts, data sizes, retries, and relevant CPU or memory usage.
+Measurements identify their units and measured scope; absent measurements are
+not reported as zero or success. Labels and correlation context receive the
+same secret protection as debug messages. Measuring performance does not
+require retaining the contents of the measured inputs or outputs.
+
+Collect the context needed for diagnosis rather than wholesale environment,
+provider, prompt, conversation or command-stream dumps. Local diagnostics are
+separate from Task state, Verification Receipts, completion Evidence and public
+CLI/MCP responses; they do not establish a verification, review or completion
+gate. Existing stored-input rejection and public error sanitization remain in
+force, and no rejected Task-input body is automatically copied to a log.
+
+Logging implementation must define its enablement, destination, verbosity,
+capacity and retention, keep generated logs outside source commits and release
+artifacts, and avoid changing the primary operation's outcome when recording
+fails. Performance instrumentation must account for its own overhead. Sharing
+or transmitting a log requires the authority for that operation.
+
+This is the approved privacy requirement for development diagnostics, not a
+claim that a general logging facility is implemented. It does not activate a
+new sink, setting or command, relax existing read-only/no-write behavior, or
+expand the temporary [Review Wait trace](review-completion-specification.md#development-review-wait-trace)
+and its feature-specific limits. Logging functionality is separate implementation
+work under this requirement.
 
 ## Published v0.10.0 Release Record
 

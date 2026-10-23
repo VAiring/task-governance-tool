@@ -783,8 +783,8 @@ exception type and unchanged validation order. Task operation records,
 lifecycle, stored-row relationships, and database work remain outside it;
 `tasks.py` imports the shared exception rather than defining a second type.
 
-Every free-form input uses the common deny-by-default privacy guard. Fields
-with defined contracts also have code-point/UTF-8 bounds; the existing `lane`
+Every stored business-record free-form input uses the common deny-by-default
+privacy guard. Fields with defined contracts also have code-point/UTF-8 bounds; the existing `lane`
 and `blocked_reason` fields are privacy-validated but have no numeric character
 cap. `lane` is trimmed; `blocked_reason` is retained as supplied after
 string/privacy and state validation. The guard rejects likely credentials and raw dumps,
@@ -849,8 +849,8 @@ does not rewrite a row, broaden a schema or writer, or authorize a Task,
 dispatch, Git, network, or other external mutation. Compound credential/token
 content remains visible after substitution and fails closed.
 
-Stored or emitted data excludes secrets, cookies, provider bodies,
-authorization material, automatically captured or free-standing raw
+Business records and public projections exclude secrets, cookies, provider
+bodies, authorization material, automatically captured or free-standing raw
 stdout/stderr, stack traces, environment dumps, full prompts/conversations,
 private reasoning, raw reviews, large diffs, unsafe paths, and OS/SQLite/Git
 exception detail. The only stream-text exception is the validated manual Task
@@ -858,6 +858,23 @@ quotation above, retained within existing Task title/description fields rather
 than a new stream field. Review, Contract, handoff, checkpoint, completion, and
 history projections use explicit allow-lists and revalidate stored text before
 output.
+
+Separately enabled local debug and performance diagnostics follow the
+[development logging requirements](specification.md#local-development-debug-and-performance-logs).
+Their recording boundary is separate from `task_values.py` and the Task,
+Receipt, Evidence and public-output serializers. A diagnostic implementation
+must remove or mask secrets before queueing, formatting to an output sink or
+persisting records, including exception and context fields. Only sanitized
+records may reach a sink or a logging-failure fallback. The existing stored-input
+guard continues to reject prohibited Task content; it is not a log sanitizer.
+
+Logging configuration and sinks own verbosity, capacity and retention;
+instrumentation owns meaningful operation boundaries, correlation and
+measurements with explicit units/scope. Preserve primary operation outcomes
+on recording failure and measure instrumentation overhead. These are design
+requirements for separate logging implementation, not new runtime modules or
+settings. The existing temporary Review Wait trace retains its own narrow
+contract; public CLI/MCP envelopes and read-only behavior are unchanged.
 
 Git subprocesses use fixed argument vectors, no shell, bounded timeout, safe
 environment and disabled optional locks/lazy fetching. Ordinary operations are

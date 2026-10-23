@@ -165,6 +165,20 @@ def fetch_stored_task_row(
         raise stored_task_sqlite_error(exc) from exc
 
 
+def iter_stored_task_batches(connection, query, parameters=()):
+    """Read complete candidate rows with bounded retention and fixed errors."""
+    cursor = None
+    try:
+        cursor = connection.execute(query, parameters)
+        while batch := cursor.fetchmany(128):
+            yield batch
+    except sqlite3.Error as exc:
+        raise stored_task_sqlite_error(exc) from exc
+    finally:
+        if cursor is not None:
+            cursor.close()
+
+
 def _stored_value(row: sqlite3.Row | dict[str, Any], field: str) -> object:
     try:
         if field not in row.keys():
@@ -687,8 +701,11 @@ def validate_current_stored_task_rows(
     rows: list[sqlite3.Row] | tuple[sqlite3.Row, ...],
     *,
     expected_project_id: str,
+    source_schema_version: int | None = None,
 ) -> None:
-    version = current_schema_version(connection)
+    # A streaming caller may reuse its observed schema within this snapshot.
+    version = (current_schema_version(connection) if source_schema_version is None
+               else source_schema_version)
     validation = validate_stored_task_rows(
         rows,
         connection=connection,

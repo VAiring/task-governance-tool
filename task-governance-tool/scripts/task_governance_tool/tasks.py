@@ -74,6 +74,7 @@ from task_governance_tool.storage import (
     utc_now,
 )
 from task_governance_tool.stored_task_validation import (
+    iter_stored_task_batches,
     fetch_stored_task_row,
     fetch_stored_task_rows,
     fetch_validated_current_task_row,
@@ -951,16 +952,26 @@ def list_tasks(
     if requested_tag is None:
         query += " LIMIT ?"
         query_values.append(row_limit)
-    stored_rows = fetch_stored_task_rows(connection, query, query_values)
-    validate_current_stored_task_rows(
-        connection,
-        stored_rows,
-        expected_project_id=project.project_id,
-    )
-    rows = [row_to_task(row) for row in stored_rows]
-    if requested_tag is not None:
-        rows = [row for row in rows if task_matches_tag(str(row["tags"]), requested_tag)]
-    tasks = task_ownership.project_tasks(connection, rows[:row_limit], caller)
+    batches = (iter_stored_task_batches(connection, query, query_values)
+               if requested_tag is not None else
+               (fetch_stored_task_rows(connection, query, query_values),))
+    rows = []
+    source_schema_version = current_schema_version(connection) if requested_tag is not None else None
+    try:
+        for stored_rows in batches:
+            validate_current_stored_task_rows(
+                connection, stored_rows, expected_project_id=project.project_id,
+                source_schema_version=source_schema_version,
+            )
+            # Validate every candidate, including those after the output is full.
+            # Only matching output rows need a public projection or retention.
+            for row in stored_rows:
+                if len(rows) < row_limit and (requested_tag is None or task_matches_tag(row["tags"], requested_tag)):
+                    rows.append(row_to_task(row))
+    finally:
+        if requested_tag is not None:
+            batches.close()
+    tasks = task_ownership.project_tasks(connection, rows, caller)
     return TaskListResult(tasks=tasks, count=len(tasks), limit=row_limit)
 
 

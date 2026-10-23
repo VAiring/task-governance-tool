@@ -7,6 +7,8 @@ import tempfile
 import unittest
 from contextlib import closing
 from pathlib import Path
+from types import SimpleNamespace
+from unittest import mock
 
 from tests.review_test_helpers import seed_review_evidence, start_ready_review_fixture
 from tests.m14_test_support import (
@@ -64,6 +66,64 @@ def list_tasks(db, repo, *extra):
 
 
 class TaskListTests(unittest.TestCase):
+    def test_tag_batches_bound_retention_without_skipping_late_corruption(self):
+        from tests.m214c_test_support import seed_current_task
+        from task_governance_tool import tasks, storage, stored_task_validation as validation
+        for count in (150, 1000):
+            with self.subTest(count=count), tempfile.TemporaryDirectory() as temporary:
+                repo, db, task = seed_current_task(Path(temporary))
+                with closing(storage.connect(db)) as connection:
+                    connection.row_factory = sqlite3.Row
+                    template = dict(connection.execute("SELECT * FROM tasks").fetchone())
+                    # Retain the seed's event/authority foreign keys; exclude
+                    # that seed from the measured normal-priority candidates.
+                    connection.execute("UPDATE tasks SET priority='low'")
+                    for position in range(count):
+                        row = dict(template, task_id=f"tg_task_{position:016x}",
+                                   tags="other" if position < 130 else " ui , ready ",
+                                   current_authority_snapshot_id=None,
+                                   current_authority_snapshot_generation=0)
+                        connection.execute("INSERT INTO tasks (" + ",".join(row) + ") VALUES (" +
+                                           ",".join("?" for _ in row) + ")", tuple(row.values()))
+                        tasks.task_ownership.initialize_task(connection, project_id=row["project_id"],
+                            task_id=row["task_id"], status=row["status"],
+                            caller=tasks.CallerIdentity(None), now=row["created_at"])
+                        tasks.capture_or_reuse_current_authority_snapshot_locked(connection,
+                            project_id=row["project_id"], task_id=row["task_id"], created_at=row["created_at"])
+                    connection.commit()
+                    project = SimpleNamespace(project_id=template["project_id"])
+                    sizes = []
+                    validate = tasks.validate_current_stored_task_rows
+                    def checked(core, rows, **kwargs):
+                        sizes.append(len(rows))
+                        return validate(core, rows, **kwargs)
+                    with mock.patch.object(tasks, "validate_current_stored_task_rows", side_effect=checked), \
+                            mock.patch.object(tasks, "row_to_task", wraps=tasks.row_to_task) as project_row, \
+                            mock.patch.object(tasks, "current_schema_version", wraps=tasks.current_schema_version) as schema_read, \
+                            mock.patch.object(validation, "current_schema_version", wraps=validation.current_schema_version) as schema_reread:
+                        result = tasks.list_tasks(connection, project, tag="ui", status="ready",
+                                                  priority="normal", kind="optional", limit=2)
+                        self.assertEqual([row["task_id"] for row in result.tasks],
+                                         [f"tg_task_{position:016x}" for position in (130, 131)])
+                        self.assertEqual((result.count, result.limit), (2, 2))
+                        self.assertEqual(project_row.call_count, 2)
+                        schema_read.assert_called_once_with(connection)
+                        schema_reread.assert_not_called()
+                    self.assertEqual(sum(sizes), count)
+                    self.assertLessEqual(max(sizes), 128)
+                    self.assertEqual(tasks.list_tasks(connection, project, tag="u", limit=2).count, 0)
+                    # Nonmatching corruption after the output fills still fails
+                    # before returning any projection, including bad Contracts.
+                    for field, value in (("tags", b"bad"), ("current_contract_revision", 1)):
+                        with self.subTest(field=field), connection:
+                            connection.execute(f"UPDATE tasks SET {field}=? WHERE task_id=?",
+                                               (value, f"tg_task_{count-1:016x}"))
+                            with self.assertRaises(validation.StorageError) as rejected:
+                                tasks.list_tasks(connection, project, tag="ui", limit=2)
+                            self.assertEqual(rejected.exception.code, "project_state_unreadable")
+                            connection.execute(f"UPDATE tasks SET {field}=? WHERE task_id=?",
+                                               (template[field], f"tg_task_{count-1:016x}"))
+
     def seed_tasks(self, db, repo):
         seeded = {
             "ready_optional": add_task(

@@ -50,6 +50,31 @@ def duplicate_lane_order_sql(task_alias: str = "task") -> str:
     """
 
 
+def lane_ordering_cte(*, lane_filter: str = "") -> str:
+    """Compute project ordering once, within the caller's SQL snapshot.
+
+    The optional SQL fragment is repository-owned, never user input. The
+    caller binds project_id followed by any affected-lane parameters. Keep
+    null orders non-colliding, as in the scalar equality predicate above.
+    Count only non-null IDs: SQL ``duplicate.task_id != task.task_id``
+    excludes null operands. The rowid is private to this one statement.
+    """
+    return f"""
+    lane_ordering AS MATERIALIZED (
+      SELECT rowid AS task_rowid, task_id, status, lane_order,
+             {canonical_lane_sql('lane')} AS canonical_lane,
+             MIN(CASE WHEN status NOT IN ('done', 'cancelled')
+                      THEN lane_order END)
+               OVER (PARTITION BY {canonical_lane_sql('lane')}) AS first_incomplete,
+             COUNT(task_id) OVER (
+               PARTITION BY {canonical_lane_sql('lane')}, lane_order
+             ) AS same_order_count
+        FROM tasks
+       WHERE project_id = ? AND kind = 'sequential' {lane_filter}
+    )
+    """
+
+
 def first_out_of_order_advanced_task(
     connection: sqlite3.Connection,
     *,
@@ -61,16 +86,15 @@ def first_out_of_order_advanced_task(
         return None
     ordered_lanes = sorted({canonical_lane(lane) for lane in lanes})
     placeholders = ", ".join("?" for _ in ordered_lanes)
+    lane_filter = f"AND {canonical_lane_sql('lane')} IN ({placeholders})"
     row = connection.execute(
         f"""
-        SELECT task.task_id
-          FROM tasks AS task
-         WHERE task.project_id = ?
-           AND task.kind = 'sequential'
-           AND {canonical_lane_sql("task.lane")} IN ({placeholders})
-           AND task.status IN ('in_progress', 'review_pending', 'done')
-           AND {incomplete_predecessor_sql('task')}
-         ORDER BY {canonical_lane_sql("task.lane")}, task.lane_order, task.task_id
+        WITH {lane_ordering_cte(lane_filter=lane_filter)}
+        SELECT task_id
+          FROM lane_ordering
+         WHERE status IN ('in_progress', 'review_pending', 'done')
+           AND first_incomplete < lane_order
+         ORDER BY canonical_lane, lane_order, task_id
          LIMIT 1
         """,
         [project_id, *ordered_lanes],

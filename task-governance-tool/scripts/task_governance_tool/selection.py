@@ -11,8 +11,7 @@ from task_governance_tool.task_ownership import project_tasks
 
 from task_governance_tool.ordering import (
     canonical_lane_sql,
-    duplicate_lane_order_sql,
-    incomplete_predecessor_sql,
+    lane_ordering_cte,
 )
 from task_governance_tool.storage import ProjectIdentity
 from task_governance_tool.tasks import row_to_task
@@ -52,10 +51,19 @@ def selection_rules() -> dict[str, Any]:
 
 
 def next_task_readiness_sql(task_alias: str = "task") -> str:
+    """Use one eligible-row set; optional-only queries never evaluate it.
+
+    A malformed non-sequential kind reaches the existing complete-row
+    validator rather than disappearing behind the sequential filter. Use the
+    statement's non-null row identity, not an unvalidated business ID.
+    """
     return (
-        f"({task_alias}.kind = 'optional' OR "
-        f"(NOT {incomplete_predecessor_sql(task_alias)} "
-        f"AND NOT {duplicate_lane_order_sql(task_alias)}))"
+        f"({task_alias}.kind IS NOT 'sequential' OR "
+        f"{task_alias}.rowid IN ("
+        "SELECT task_rowid FROM lane_ordering "
+        "WHERE (lane_order IS NULL OR first_incomplete IS NULL OR "
+        "NOT first_incomplete < lane_order) "
+        "AND (task_id IS NULL OR same_order_count = 1 OR lane_order IS NULL)))"
     )
 
 
@@ -83,13 +91,14 @@ def next_task_filters(
 def count_next_tasks(connection: sqlite3.Connection, project_id: str) -> int:
     row = connection.execute(
         f"""
+        WITH {lane_ordering_cte()}
         SELECT COUNT(*) AS count
           FROM tasks AS task
          WHERE task.project_id = ?
            AND task.status = 'ready'
            AND {next_task_readiness_sql("task")}
         """,
-        (project_id,),
+        (project_id, project_id),
     ).fetchone()
     if row is None:
         return 0
@@ -109,11 +118,13 @@ def select_next_tasks(
     caller: CallerIdentity = CallerIdentity(None),
 ) -> TaskNextResult:
     filters, values = next_task_filters(project, kind=kind, lane=lane, priority=priority)
+    values.insert(0, project.project_id)
     row_limit = validate_limit(limit, default=5)
     values.append(row_limit)
     rows = fetch_stored_task_rows(
         connection,
         f"""
+        WITH {lane_ordering_cte()}
         SELECT task.*, COUNT(*) OVER() AS total_matching
           FROM tasks AS task
          WHERE {" AND ".join(filters)}

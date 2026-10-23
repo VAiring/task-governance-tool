@@ -10,11 +10,15 @@ SCRIPTS_ROOT = ROOT / "task-governance-tool" / "scripts"
 if str(SCRIPTS_ROOT) not in sys.path:
     sys.path.insert(0, str(SCRIPTS_ROOT))
 
-from task_governance_tool.selection import select_next_tasks  # noqa: E402
+from task_governance_tool.selection import count_next_tasks, select_next_tasks  # noqa: E402
+from task_governance_tool.ordering import (  # noqa: E402
+    duplicate_lane_order_sql, incomplete_predecessor_sql,
+)
 from task_governance_tool.evidence_repository import (  # noqa: E402
     capture_or_reuse_current_authority_snapshot_locked,
 )
 from task_governance_tool.storage import (  # noqa: E402
+    StorageError,
     connect,
     initialize_database,
     resolve_database_target,
@@ -145,6 +149,75 @@ def titles(result):
 
 
 class SelectionTests(unittest.TestCase):
+    def insert_variant(self, connection, original, **changes):
+        """Corrupt only an isolated fixture; keep the real DDL and triggers."""
+        row = dict(connection.execute('SELECT * FROM tasks WHERE task_id=?', (original['task_id'],)).fetchone())
+        row.update(changes)
+        columns = ','.join(row)
+        connection.execute(f"INSERT INTO tasks({columns}) VALUES ({','.join('?' for _ in row)})", tuple(row.values()))
+        self.assertEqual(connection.execute('PRAGMA quick_check').fetchone()[0], 'ok')
+        self.assertEqual(connection.execute('PRAGMA foreign_key_check').fetchall(), [])
+
+    def scalar_count(self, connection, project):
+        return connection.execute(f"""SELECT COUNT(*) FROM tasks task
+            WHERE task.project_id=? AND task.status='ready'
+              AND (task.kind='optional' OR (NOT {incomplete_predecessor_sql()}
+                   AND NOT {duplicate_lane_order_sql()}))""", (project.project_id,)).fetchone()[0]
+
+    def test_malformed_identifiers_reach_validation_with_real_schema_and_triggers(self):
+        for malformed in (None, '', 42, b'tg_task_0000000000000abc'):
+            with self.subTest(identifier=malformed), tempfile.TemporaryDirectory() as tmp:
+                target = initialized_target(tmp)
+                with closing(connect(target.db_path)) as connection:
+                    with connection:
+                        original = add(connection, target.project, 'Fixture source', status='cancelled')
+                        self.insert_variant(connection, original, task_id=malformed,
+                                            kind='sequential', lane='ID', lane_order=1, status='ready')
+                    self.assertEqual(self.scalar_count(connection, target.project), 1)
+                    self.assertEqual(count_next_tasks(connection, target.project.project_id), 1)
+                    with self.assertRaises(StorageError) as raised:
+                        select_next_tasks(connection, target.project)
+                    self.assertEqual(raised.exception.code, 'project_state_unreadable')
+
+    def test_null_identifier_neighbors_preserve_scalar_collision_and_predecessor_semantics(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            target = initialized_target(tmp)
+            with closing(connect(target.db_path)) as connection:
+                with connection:
+                    valid = add(connection, target.project, 'Valid candidate', kind='sequential', lane='ID', lane_order=10)
+                    self.insert_variant(connection, valid, task_id=None, lane=' ID ', status='cancelled')
+                self.assertEqual(self.scalar_count(connection, target.project), 1)
+                self.assertEqual(count_next_tasks(connection, target.project.project_id), 1)
+                self.assertEqual(titles(select_next_tasks(connection, target.project)), ['Valid candidate'])
+                # A second NULL row remains an independent candidate and must
+                # not alias the first NULL row or be treated as a collision.
+                with connection:
+                    self.insert_variant(connection, valid, task_id=None, lane='\tID', status='ready')
+                self.assertEqual(self.scalar_count(connection, target.project), 2)
+                self.assertEqual(count_next_tasks(connection, target.project.project_id), 2)
+                with self.assertRaises(StorageError):
+                    select_next_tasks(connection, target.project)
+                # Strict predecessor checks still apply to malformed IDs;
+                # there is no unconditional all-NULL-row bypass.
+                with connection:
+                    self.insert_variant(connection, valid, task_id=None, lane='ID', lane_order=1, status='ready')
+                self.assertEqual(self.scalar_count(connection, target.project), 1)
+                self.assertEqual(count_next_tasks(connection, target.project.project_id), 1)
+                with self.assertRaises(StorageError):
+                    select_next_tasks(connection, target.project)
+
+    def test_malformed_kind_is_not_hidden_by_sequential_eligibility_set(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            target = initialized_target(tmp)
+            with closing(connect(target.db_path)) as connection:
+                with connection:
+                    task = add(connection, target.project, "Malformed selected kind")
+                    connection.execute("PRAGMA ignore_check_constraints=ON")
+                    connection.execute("UPDATE tasks SET kind='invalid' WHERE task_id=?", (task['task_id'],))
+                with self.assertRaises(StorageError) as raised:
+                    select_next_tasks(connection, target.project)
+                self.assertEqual(raised.exception.code, 'project_state_unreadable')
+
     def test_ready_optional_tasks_remain_selectable_when_one_sequential_lane_is_blocked(self):
         with tempfile.TemporaryDirectory() as tmp:
             target = initialized_target(tmp)

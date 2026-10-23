@@ -359,6 +359,14 @@ incomplete predecessor before active, review-pending, or done work with
 `sequential_predecessor_incomplete` and no event/write. Blocked lanes never
 hide unrelated ready optional work or other ready lanes.
 
+Batch lane eligibility and next selection aggregate their ordering facts once
+per statement rather than rescan predecessor history for each candidate.
+Canonical same-order collisions still exclude sequential next candidates,
+regardless of the colliding row's status. The complete matching count,
+priority/lane/order/timestamp/ID ordering and bounded output remain unchanged.
+Required cross-Task status checks confer no review-history validation or gate
+evidence; no result is reused across operations or transactions.
+
 Blocked requires a concise reason. Paused requires a concise reason and is
 reachable only from in-progress or review-pending; normal resume is paused to
 in-progress. Initial paused is prohibited. Lane values are trimmed, and

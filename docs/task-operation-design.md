@@ -266,13 +266,45 @@ and closes only the read transaction it owns.
 
 ### Sequential Ordering
 
-One repository predicate determines whether an earlier same-project,
+One repository rule determines whether an earlier same-project,
 same-lane sequential row is incomplete. Only done and cancelled predecessors
 are complete. `task next` and direct transitions to in-progress,
-review-pending, or done use that predicate. Task add and edits that change
+review-pending, or done use that rule. Task add and edits that change
 kind/lane/order/status validate every already-active, review-pending, and done
 row in both affected lanes inside the serialized write, preventing
 registration or reordering ahead of active successors. There is no override.
+
+`ordering.lane_ordering_cte` calculates the first incomplete order per
+canonical lane and the population of each canonical lane/order once in the
+current statement. The advanced-row guard restricts that relation to the
+affected lanes; next selection and its count use one eligible-row set from
+the project relation. Optional candidates bypass that set, so optional-only
+selection does not scan sequential history. SQLite window grouping and
+statement-local materialization replace
+per-candidate predecessor/collision rescans, including all-done lanes. The
+same SELECT still owns the complete matching count, sort and output limit.
+This is a query-local relation, not a persistent verification cache or a
+whole-project semantic audit. It reads only ordering columns for related
+rows, and does not load their review or Contract histories. Complete returned
+Task rows retain their existing validation. There is no schema/index change.
+
+The eligible-row set uses SQLite rowid only within that statement, never as a
+stored/public business identity. A nullable malformed Task ID must still reach
+selected-row validation. Collision counts include only non-null Task IDs and
+a null candidate ID cannot collide under the scalar SQL inequality; this also
+preserves valid candidates beside null-ID neighbors. Neither membership nor
+grouping may silently discard an otherwise selected malformed row.
+
+Single-Task completion-basis/proposed-done checks retain their scalar
+predecessor and collision predicates. Append-order MAX and direct collision
+checks also remain single scans: unlike batch eligibility, they have no outer
+candidate loop. Single/batch registration, Contract activation, state edits
+and reopen reuse the affected-lane guard inside their existing transactions;
+both old and new lanes, input-order visibility and whole-write rollback stay
+unchanged. Canonical whitespace, strict earlier order and null-order SQL
+semantics are shared with the scalar predicates. The query-cost tests use
+current table/index DDL and actual issued SQL, while lifecycle tests retain
+real triggers and row validation; no synthetic query fixture proves writes.
 
 Lane input is trimmed and validated once. Sequential omission chooses the
 deterministic default lane and next order; all integers fit SQLite signed

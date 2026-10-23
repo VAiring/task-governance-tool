@@ -179,7 +179,7 @@ class M244BLegacyFreshAcceptanceTests(unittest.TestCase):
         index = read_evidence_index(target.resolved_evidence_root)
         entry = next(row for row in index.entries if row["task_id"] == task_id)
         source = validate_evidence_source(index, entry)
-        self.assertEqual((index.source_schema_version, index.format_version), (32, 3))
+        self.assertEqual((index.source_schema_version, index.format_version), (33, 3))
         self.assertEqual(index.project_id, target.project.project_id)
         self.assertEqual(
             index.projection_generation,
@@ -193,7 +193,7 @@ class M244BLegacyFreshAcceptanceTests(unittest.TestCase):
             source.source_basis,
             {
                 "index_format_version": 3,
-                "source_schema_version": 32,
+                "source_schema_version": 33,
                 "project_id": index.project_id,
                 "projection_generation": index.projection_generation,
                 "index_digest": index.index_digest,
@@ -202,7 +202,7 @@ class M244BLegacyFreshAcceptanceTests(unittest.TestCase):
         )
         self.assertEqual(source.source, published_bundle)
         self.assertEqual(source.source["format_version"], 4)
-        self.assertEqual(source.source["payload"]["source_schema_version"], 32)
+        self.assertEqual(source.source["payload"]["source_schema_version"], 33)
         self.assertEqual(source.source["payload"]["bundle_version"], 4)
         self.assertEqual(source.source["payload"]["task"]["task_id"], task_id)
         self.assertEqual(tree_snapshot(target.resolved_evidence_root), before)
@@ -219,7 +219,7 @@ class M244BLegacyFreshAcceptanceTests(unittest.TestCase):
                 _schema21_fixture._seed_completed_m21_fixture(
                     self,
                     Path(temporary),
-                    source_schema_version=32,
+                    source_schema_version=33,
                 )
             )
             source = self._assert_published_current26_source(target, task_id)
@@ -246,7 +246,7 @@ class M244BLegacyFreshAcceptanceTests(unittest.TestCase):
                 self,
                 Path(temporary),
                 verification_required=False,
-                source_schema_version=32,
+                source_schema_version=33,
             )
             source = self._assert_published_current26_source(target, task_id)
             payload = source.source["payload"]
@@ -274,7 +274,7 @@ class M244BLegacyFreshAcceptanceTests(unittest.TestCase):
             install, target, task_id = _schema21_fixture._seed_completed_m21_fixture(
                 self,
                 Path(temporary),
-                source_schema_version=32,
+                source_schema_version=33,
                 title=title,
             )
             shown = _schema21_fixture._installed_json(
@@ -303,7 +303,7 @@ class M244BLegacyFreshAcceptanceTests(unittest.TestCase):
         title = "Authorization: Bearer <redacted>"
         with tempfile.TemporaryDirectory(prefix=".tmp-pmc2-redacted-reader-", dir=ROOT) as temporary:
             install, target, task_id = _schema21_fixture._seed_completed_m21_fixture(
-                self, Path(temporary), source_schema_version=32, title=title,
+                self, Path(temporary), source_schema_version=33, title=title,
             )
             shown = _schema21_fixture._installed_json(
                 self, install, "task", "show", task_id, "--read-only",
@@ -326,7 +326,7 @@ class M244BLegacyFreshAcceptanceTests(unittest.TestCase):
             install, target, task_id = _schema21_fixture._seed_completed_m21_fixture(
                 self,
                 Path(temporary),
-                source_schema_version=32,
+                source_schema_version=33,
                 title=title,
                 description=description,
             )

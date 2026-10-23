@@ -106,7 +106,7 @@ target/generation and review tier, so these are not repeated here. Gate retains
 `required_independent_passes`, `qualifying_independent_passes`, `fallback_kind`,
 and `satisfied`. Counts retains `receipts_current_generation`,
 `changes_requested_current_generation`, and `open_high`, `open_medium`, `open_low`.
-Schemas 30, 31 and 32 additionally report `unable_current_generation`, counting effective
+Schemas 30, 31, 32 and 33 additionally report `unable_current_generation`, counting effective
 unsuspended unable judgments for the exact current basis. The shared gate,
 manual completion and integrated finalizer return `review_unable` while this
 count is nonzero, even with two other PASS receipts. An unable result is valid
@@ -341,7 +341,7 @@ helper below performs caller-owned transport without changing this writer.
 
 ### Collected Review Answers
 
-An explicitly opted-in preparation on current schema 32 fixes protocol
+An explicitly opted-in preparation on current schema 33 fixes protocol
 `review-answer-v1` and attestation `assigned-independent-review-v1` in its
 immutable request basis. The reviewer returns exactly:
 
@@ -2764,7 +2764,7 @@ repeating timer changes, Task completion or review registration.
 
 ### Reviewer Session Binding
 
-This section applies from schema 25 (retained by current schema 32) under the
+This section applies from schema 25 (retained by current schema 33) under the
 [approved participation design](session-usage-plan.md#reviewer-participation-without-new-manual-steps)
 and preserves the version-1 reviewer's judgment template. Schema migration
 remains setup-only; numerical collection and lifecycle integration are separate.

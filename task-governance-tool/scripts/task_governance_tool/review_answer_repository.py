@@ -236,22 +236,40 @@ LEFT JOIN review_receipt_provenance_v2 AS p ON p.review_receipt_id=s.review_rece
 LEFT JOIN review_receipts AS r ON r.review_receipt_id=s.review_receipt_id
 WHERE p.review_receipt_id IS NULL AND """ + own_receipt + " LIMIT 1", own_parameters).fetchone():
         raise _bad()
-    if connection.execute("SELECT 1 FROM review_receipt_provenance_v2 AS p JOIN review_receipt_provenance AS old ON old.review_provenance_id=p.review_provenance_id" +
-                          (" WHERE EXISTS (SELECT 1 FROM review_receipts AS r WHERE r.task_id=? AND "
-                           "(r.review_receipt_id=p.review_receipt_id OR r.review_provenance_id=p.review_provenance_id))" if review_task is not None else "") + " LIMIT 1",
-                          (review_task[1],) if review_task is not None else ()).fetchone():
+    # Start from own Receipts on either identity arm. Do not restrict the v2
+    # owner's project: a foreign row aliasing our provenance is corruption too.
+    collision_sql = "SELECT 1 FROM review_receipt_provenance_v2 AS p JOIN review_receipt_provenance AS old ON old.review_provenance_id=p.review_provenance_id"
+    if review_task is not None:
+        collision_sql += """ WHERE p.rowid IN (
+SELECT p.rowid FROM review_receipts AS r
+JOIN review_receipt_provenance_v2 AS p ON p.review_receipt_id=r.review_receipt_id
+WHERE r.task_id=?
+UNION SELECT p.rowid FROM review_receipts AS r
+JOIN review_receipt_provenance_v2 AS p ON p.review_provenance_id=r.review_provenance_id
+WHERE r.task_id=?)"""
+    if connection.execute(collision_sql + " LIMIT 1",
+                          (review_task[1],) * 2 if review_task is not None else ()).fetchone():
         raise _bad()
     # Include parents reached through own sources/entries even if their declared
     # owner was changed. Inspect the relation, never the foreign Task's graph.
-    dispatch_scope = "" if review_task is None else """ WHERE dispatch.task_id=?
-OR (dispatch.preparation_id,dispatch.submission_digest) IN (
-  SELECT source.preparation_id,source.submission_digest
+    # Select physical rows before ordering. Composite-key IN plus ORDER BY can
+    # make SQLite scan the whole dispatch primary-key index despite a small set.
+    dispatch_scope = "" if review_task is None else """ WHERE dispatch.rowid IN (
+  SELECT rowid FROM review_collection_dispatches WHERE task_id=?
+  UNION
+  SELECT parent.rowid
   FROM review_collection_sources AS source JOIN review_receipts AS receipt
-    ON receipt.review_receipt_id=source.review_receipt_id WHERE receipt.task_id=?)
-OR (dispatch.preparation_id,dispatch.submission_digest) IN (
-  SELECT entry.preparation_id,entry.submission_digest
+    ON receipt.review_receipt_id=source.review_receipt_id
+  JOIN review_collection_dispatches AS parent
+    ON parent.preparation_id=source.preparation_id AND parent.submission_digest=source.submission_digest
+  WHERE receipt.task_id=?
+  UNION
+  SELECT parent.rowid
   FROM review_collection_dispatch_entries AS entry JOIN review_receipts AS receipt
-    ON receipt.review_receipt_id=entry.review_receipt_id WHERE receipt.task_id=?)"""
+    ON receipt.review_receipt_id=entry.review_receipt_id
+  JOIN review_collection_dispatches AS parent
+    ON parent.preparation_id=entry.preparation_id AND parent.submission_digest=entry.submission_digest
+  WHERE receipt.task_id=?)"""
     for dispatch in connection.execute("SELECT dispatch.* FROM review_collection_dispatches AS dispatch" +
             dispatch_scope + " ORDER BY preparation_id,submission_digest",
             (review_task[1],) * 3 if review_task is not None else ()):

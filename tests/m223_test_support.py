@@ -195,11 +195,12 @@ def remove_v24_ownership_for_test(connection: sqlite3.Connection) -> None:
     from task_governance_tool import schema_review_answers as answers
     from task_governance_tool import schema_criterion_link_collector as collector
     from task_governance_tool import schema_session_slot_index as slot_index
+    from task_governance_tool import schema_own_review_indexes as review_indexes
     version = storage.current_schema_version(connection)
-    if version not in (24, 25, 26, 27, 28, 29, 30, 31, 32):
+    if version not in (24, 25, 26, 27, 28, 29, 30, 31, 32, 33):
         return
     connection.commit()
-    (slot_index if version == 32 else collector if version == 31 else answers if version == 30 else continuation if version == 29 else notes if version == 28 else reacquisition if version == 27 else slot if version == 26 else reviewer if version == 25 else ownership).validate_storage(connection)
+    (review_indexes if version == 33 else slot_index if version == 32 else collector if version == 31 else answers if version == 30 else continuation if version == 29 else notes if version == 28 else reacquisition if version == 27 else slot if version == 26 else reviewer if version == 25 else ownership).validate_storage(connection)
     if (any(connection.execute(f"SELECT 1 FROM {table} LIMIT 1").fetchone()
             for table in ("task_executions", "task_owner_transitions", "task_execution_cycles"))
         or connection.execute("SELECT 1 FROM task_ownership WHERE generation != 0 LIMIT 1").fetchone()
@@ -247,7 +248,7 @@ def remove_v24_ownership_for_test(connection: sqlite3.Connection) -> None:
         for sql in statements:
             if storage._schema20_statement_identity(sql)[0] != "table":
                 connection.execute(sql)
-        connection.execute("DELETE FROM schema_migrations WHERE version IN (24, 25, 26, 27, 28, 29, 30, 31, 32)")
+        connection.execute("DELETE FROM schema_migrations WHERE version IN (24, 25, 26, 27, 28, 29, 30, 31, 32, 33)")
         declaration.validate_storage(connection)
         connection.commit()
     except Exception:
@@ -261,7 +262,7 @@ def remove_v24_ownership_for_test(connection: sqlite3.Connection) -> None:
 def _remove_collected_answer_shape_for_test(connection: sqlite3.Connection) -> None:
     """Restore v29 DDL inside the enclosing fixture transaction, never product state.
 
-    The caller admits exact v30/v31/v32 and refuses collected or sealed history before
+    The caller admits exact v30/v31/v32/v33 and refuses collected or sealed history before
     entering this writer. Retained legacy Receipts and unrelated objects keep
     their original rows; the enclosing reducer validates the final v23 shape.
     """

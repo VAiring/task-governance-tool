@@ -176,7 +176,7 @@ the object inventory, schema fingerprints and all compatible read consumers.
 
 `completion_evidence_bundles.continuation_basis_json` is nullable TEXT with
 valid JSON and a 16,777,216 UTF-8 byte bound. It is null for formats one/two and
-non-null for source-schema-29 format three or source-schema-30/31/32 format four
+non-null for source-schema-29 format three or source-schema-30/31/32/33 format four
 when a continuation graph exists. Format four without a continuation keeps it
 null. The existing immutable Bundle
 guards protect this column. It stores the closed sanitized continuation graph
@@ -196,7 +196,7 @@ validation across reads, and do not change the caller's transaction ownership.
 ## Collected Answer Value Schemas
 
 These are the current closed schemas introduced by schema 30 and retained by
-schema 32, the public writer
+schema 33, the public writer
 and Evidence; the [review owner](review-completion-specification.md#collected-review-answers)
 owns answer and operation behavior. Every listed key is mandatory, including
 nullable keys; objects admit no extras. JSON integers are exact signed-64-bit
@@ -405,7 +405,7 @@ atomically; readers cannot supply independent public metadata as proof.
 ## Migration Sequence
 
 `schema_preservation.py` owns the read-only predecessor snapshot and comparison
-used by migrations 29, 30, 31 and 32. Each caller fixes its exact allowed object
+used by migrations 29, 30, 31, 32 and 33. Each caller fixes its exact allowed object
 changes before the delta. The helper captures all predecessor tables, typed
 column/row-identity projections, unaffected objects and the complete
 `(rowid,version,name,applied_at)` migration history. It performs no DDL, marker
@@ -466,7 +466,7 @@ Receipt version two uses its separate relation; the former v1-only Receipt FK
 is replaced by exact union admission, without creating a v1 row for v2. Legacy
 v1 code rows and bytes remain unchanged. Read admission rejects orphan/multiple
 arms, invalid kind/version/source/target/digest matrices, missing Findings or
-normalization mismatches. Bundle 4 uses source 30, 31 or 32 and the existing nullable
+normalization mismatches. Bundle 4 uses source 30, 31, 32 or 33 and the existing nullable
 `continuation_basis_json` for graph 2; the coupled native-cycle guard requires
 null graph with ordinary gate basis one and a graph with continuation basis two.
 
@@ -534,6 +534,7 @@ Current sequential migrations are:
 | 30 | `collected_review_answers`: v2 provenance/source, immutable dispatch inventory and typed collected captures |
 | 31 | `criterion_link_collector`: collected producer on criterion links and native source-31 Bundle/cycle discriminators |
 | 32 | `session_slot_lookup_index`: non-unique combined actor/project lookup and native source-32 Bundle/cycle discriminators |
+| 33 | `own_review_lookup_indexes`: Task-local review history/dispatch lookup indexes and native source-33 Bundle/cycle discriminators |
 
 Every migration is ordered, idempotent on reentry, transactional, and
 rollback-tested. Reentry validates rather than synthesizing missing data.
@@ -546,10 +547,10 @@ checkpoint, maintenance, identity, and completion traces. The sole current
 exception is migration 20's Bundle-rebuild retirement of the
 unsupported attached residue defined below; it changes no other migration.
 
-The fixed-state setup migrator accepts complete source schemas v1-v31 and
-treats v32 as current. Legacy `state/projects` discovery is intentionally
+The fixed-state setup migrator accepts complete source schemas v1-v32 and
+treats v33 as current. Legacy `state/projects` discovery is intentionally
 narrower: v1-v13 plus the explicit schema-v14 legacy-layout transition.
-Viewer compatibility is independent and accepts source schemas v5-v32.
+Viewer compatibility is independent and accepts source schemas v5-v33.
 Incomplete history, a missing required object/row, a later marker, too-new
 state, unsupported layout, foreign identity, or corrupt integrity fails closed.
 
@@ -576,7 +577,7 @@ actor UUID, optional sanitized recovery reason and timestamp. `task_execution_cy
 links one exact native cycle to its unique execution; its insert guard checks the
 cycle's project/Task and immutable triggers prevent rewriting the relation.
 The shared ownership row validator also rejects missing links for native Bundle
-sources 24 through 32 in ordinary global and recovery admission. Earlier retained
+sources 24 through 33 in ordinary global and recovery admission. Earlier retained
 completion history remains valid without an invented execution/cycle link.
 No prompt, response body, environment, cost, session liveness or caller-specific
 flags are retained. This schema does not create the later numerical usage store
@@ -659,6 +660,27 @@ DDL, copy, index or marker work rolls back all changes. Current reentry validate
 without repairing, and source-31 definitions remain unchanged. Backup, recovery,
 relocation, Viewer, Evidence and the independent reader use actual source 32
 with the unchanged format and domain contracts.
+
+### Own Review Index Migration
+
+`schema_own_review_indexes.py` owns Setup-only 32→33 migration and its exact
+owned fingerprint. It adds `idx_review_continuations_task_history`,
+`idx_review_dispatches_task` and `idx_review_dispatch_entries_receipt` with the
+keys in the [persistence contract](database-specification.md#schema-v33-own-review-lookup).
+The Bundle/cycle source widening, predecessor projection proof, marker-last
+transaction, rollback and connection-flag restoration use the established
+migration protocol. Earlier migration code and fingerprints remain immutable.
+
+`validate_judgment_storage` keeps its all-state Task predicate and ordered history.
+`review_answer_repository.validate_storage_rows` selects provenance candidate
+rowids through the union of both Receipt identity arms. Dispatch candidate
+rowids are the union of owner and source/entry reverse references; each arm
+uses the appropriate task/Receipt index and dispatch primary key. Final rowid
+lookups then sort only that set. Physical rowids are statement-local selectors,
+not durable business IDs or cached admission. This avoids the whole primary-key
+scan SQLite can choose for composite-key IN plus ORDER BY. Foreign owners,
+duplicates, source identity and fresh writer validation are still checked.
+Global branches continue full review validation.
 
 <a id="task-event-note-body-migration"></a>
 

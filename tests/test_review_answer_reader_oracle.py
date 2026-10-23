@@ -101,7 +101,7 @@ class CollectedReaderTests(unittest.TestCase):
             with self.subTest(format=format_version, maximum=maximum), self.assertRaises(reader.EvidenceConsumerError):
                 reader._validate_bundle_payload(payload, entry=native, project_id=payload["project_id"],
                     bundle_format_version=format_version, maximum_source_schema_version=maximum)
-        for source, version in ((31, 2), (33, 3)):
+        for source, version in ((31, 2), (34, 3)):
             changed = copy.deepcopy(index)
             changed["format_version"] = version
             changed["payload"]["source_schema_version"] = source

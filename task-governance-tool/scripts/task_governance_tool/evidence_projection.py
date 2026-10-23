@@ -576,7 +576,7 @@ def _validate_bundle_payload(
     source_schema_version = _integer(payload["source_schema_version"])
     bundle_version = _integer(payload["bundle_version"])
     version_pair = (source_schema_version, bundle_version)
-    if version_pair not in {(19, 1), (20, 2), (21, 2), (22, 2), (23, 2), (24, 2), (25, 2), (26, 2), (27, 2), (28, 2), (29, 2), (29, 3), (30,4), (31,4),(32,4)}:
+    if version_pair not in {(19, 1), (20, 2), (21, 2), (22, 2), (23, 2), (24, 2), (25, 2), (26, 2), (27, 2), (28, 2), (29, 2), (29, 3), (30,4), (31,4),(32,4),(33,4)}:
         raise _inconsistent()
     is_v2 = bundle_version in (2, 3, 4)
     _utf8(payload["project_id"])
@@ -838,7 +838,7 @@ def _validate_bundle_payload(
             runner = _runner_observation(payload["runner_observation"])
             runner_id = verification_basis["runner_observation_id"]
             if (
-                source_schema_version not in {23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 21, 22}
+                source_schema_version not in {23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 21, 22}
                 or verification is not None
                 or verification_basis["verification_receipt_id"] is not None
                 or type(runner_id) is not str
@@ -889,7 +889,7 @@ def assemble_bundle_payload(
     )
     keys = (
         _PAYLOAD_V2_KEYS | {"review_continuation_basis"}
-        if version_pair in ((29, 3),(30,4),(31,4),(32,4)) else
+        if version_pair in ((29, 3),(30,4),(31,4),(32,4),(33,4)) else
         _PAYLOAD_V2_KEYS
         if version_pair in {(20, 2), (21, 2), (22, 2), (23, 2), (24, 2), (25, 2), (26, 2), (27, 2), (28, 2), (29, 2)}
         else _PAYLOAD_KEYS
@@ -899,7 +899,7 @@ def assemble_bundle_payload(
 
 
 def _bundle_domain_and_format(payload: Mapping[str, Any]) -> tuple[bytes, int]:
-    if (payload["source_schema_version"],payload["bundle_version"]) in ((30,4),(31,4),(32,4)):
+    if (payload["source_schema_version"],payload["bundle_version"]) in ((30,4),(31,4),(32,4),(33,4)):
         return BUNDLE_V4_DOMAIN,4
     if (payload["source_schema_version"], payload["bundle_version"]) == (29, 3):
         return BUNDLE_V3_DOMAIN, 3
@@ -1308,7 +1308,7 @@ def build_native_bundle_plan(
         omissions.append("historical_finding_reference_absent")
 
     bundle_version = (
-        4 if basis.source_schema_version in {30, 31, 32}
+        4 if basis.source_schema_version in {30, 31, 32, 33}
         else 3 if getattr(basis, "review_continuation_basis", None) is not None
         else 2
     )
@@ -1485,7 +1485,7 @@ def _index_domain_and_format(source_schema_version: object) -> tuple[bytes, int]
         return INDEX_DOMAIN, 1
     if version in {20, 21, 22, 23, 24, 25, 26, 27, 28, 29}:
         return INDEX_V2_DOMAIN, 2
-    if version in {30, 31, 32}:
+    if version in {30, 31, 32, 33}:
         return INDEX_V3_DOMAIN, 3
     raise _inconsistent()
 
@@ -1766,7 +1766,7 @@ def _build_projection_bundle_artifact(
         ),
     }
     version_pair = (bundle.source_schema_version, bundle.bundle_version)
-    if version_pair in {(20, 2), (21, 2), (22, 2), (23, 2), (24, 2), (25, 2), (26, 2), (27, 2), (28, 2), (29, 2), (29, 3), (30,4), (31,4),(32,4)}:
+    if version_pair in {(20, 2), (21, 2), (22, 2), (23, 2), (24, 2), (25, 2), (26, 2), (27, 2), (28, 2), (29, 2), (29, 3), (30,4), (31,4),(32,4),(33,4)}:
         payload["verification_basis"] = {
             "basis_version": 1,
             "kind": bundle.verification_basis_kind,

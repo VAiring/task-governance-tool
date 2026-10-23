@@ -806,7 +806,7 @@ class M224ReportVersionTests(unittest.TestCase):
                             self.assertEqual(tree_snapshot(evidence), sealed)
 
     def test_current_and_retained_ordinary_formats_keep_report_and_bytes(self):
-        for source in range(19, 33):
+        for source in range(19, 34):
             bundle_format = 1 if source == 19 else 4 if source >= 30 else 2
             index_format = 1 if source == 19 else 3 if source >= 30 else 2
             with self.subTest(source=source), tempfile.TemporaryDirectory() as temporary:
@@ -833,7 +833,7 @@ class M224ReportVersionTests(unittest.TestCase):
                         "sha256:98d79472e8909bbe01285f52e59b94215023d27783ad08d3491284fad397a992")
                 # A new index may point to these exact old Bundle bytes.
                 index["format_version"] = 3
-                index["payload"]["source_schema_version"] = 32
+                index["payload"]["source_schema_version"] = 33
                 for entry in index["payload"]["entries"]:
                     entry["bundle_format_version"] = (
                         bundle_format if entry["bundle_state"] == "native" else None
@@ -850,7 +850,7 @@ class M224ReportVersionTests(unittest.TestCase):
         cases = (
             # index source/format, Bundle source/format
             (19, 2, 19, 1), (29, 3, 29, 2), (30, 2, 29, 2), (31, 2, 29, 2),
-            (33, 3, 31, 4), (30, 3, 31, 4),
+            (34, 3, 31, 4), (30, 3, 31, 4),
             (31, 3, 20, 1), (31, 3, 19, 2), (31, 3, 30, 2), (31, 3, 31, 2),
             (31, 3, 28, 3), (31, 3, 29, 3),  # v3 needs a real continuation.
             (31, 3, 29, 4), (31, 3, 32, 4),
@@ -1294,24 +1294,24 @@ class M224EvidenceAcceptanceTests(unittest.TestCase):
             )
             self.assertEqual(tree_snapshot(report_copy), before_report)
             self.assertEqual(index["format_version"], 3)
-            self.assertEqual(index["payload"]["source_schema_version"], 32)
-            self.assertEqual(primary_bundle["source_schema_version"], 32)
+            self.assertEqual(index["payload"]["source_schema_version"], 33)
+            self.assertEqual(primary_bundle["source_schema_version"], 33)
             self.assertEqual(primary_bundle["bundle_version"], 4)
             self.assertEqual(bundles[primary_task_id]["format_version"], 4)
             self.assertIsNone(primary_bundle["review_continuation_basis"])
             # Re-seal unsupported source versions so rejection cannot depend
-            # merely on a stale digest after this reader's schema-32 admission.
+            # merely on a stale digest after this reader's schema-33 admission.
             for changed_part in ("index", "bundle"):
                 with self.subTest(future_source=changed_part):
                     future_root = root / f"evidence-future-{changed_part}"
                     shutil.copytree(report_copy, future_root)
                     future_index = deepcopy(index)
                     if changed_part == "index":
-                        future_index["payload"]["source_schema_version"] = 33
+                        future_index["payload"]["source_schema_version"] = 34
                         reseal_evidence_tree(future_root, future_index)
                     else:
                         future_bundle = deepcopy(bundles[primary_task_id])
-                        future_bundle["payload"]["source_schema_version"] = 33
+                        future_bundle["payload"]["source_schema_version"] = 34
                         reseal_evidence_tree(future_root, future_index, future_bundle)
                     future_before = tree_snapshot(future_root)
                     with self.assertRaises(EvidenceReportError) as rejected:

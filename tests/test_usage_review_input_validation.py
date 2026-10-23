@@ -2,6 +2,10 @@
 from contextlib import closing, contextmanager
 import sqlite3
 import unittest
+import tempfile
+from pathlib import Path
+from types import SimpleNamespace
+from unittest import mock
 
 from tests import test_review_session_install as install_support
 from tests.test_review_session_repository import REVIEWER
@@ -12,6 +16,7 @@ from task_governance_tool.state_resolver import resolve_project_state
 from task_governance_tool.task_ownership import validate_storage_rows
 from task_governance_tool.usage_attribution_repository import registered_participants
 from task_governance_tool.usage_values import UsageError
+from task_governance_tool.usage_publication_repository import UsagePublicationRepository
 
 
 class UsageReviewInputValidationTests(unittest.TestCase):
@@ -68,6 +73,11 @@ class UsageReviewInputValidationTests(unittest.TestCase):
         with self.reader() as core:
             self.assertIn(self.receipt_id, read_bindings(core))
             self.assertEqual(repository.read(core, task_id=self.task)["status"], "pending")
+            for audit in (False, True):
+                expected = repository.read(core, task_id=self.task, audit=audit)
+                with mock.patch.object(service, "validate_usage_ownership", wraps=validate_storage_rows) as validate:
+                    self.assertEqual(service.read_task_usage(self.target, core, self.task, audit=audit), expected)
+                validate.assert_called_once_with(core)
         with repository.publication_guard(self.reader, index, state):
             pass
 
@@ -110,3 +120,40 @@ class UsageReviewInputValidationTests(unittest.TestCase):
 
     def test_legacy_handoff_binding_is_revalidated_after_capture(self):
         self.check_fresh_reads("handoff")
+
+
+class UsageUnavailableAdmissionTests(unittest.TestCase):
+    def test_unavailable_store_never_consumes_core_ownership_or_creates_state(self):
+        from tests.m14_test_support import tree_snapshot
+        for state in ("absent", "schema", "binding", "busy"):
+            with self.subTest(state=state), tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary).resolve()
+                path = root / "usage.sqlite"
+                repository = UsagePublicationRepository(path, "project", "a" * 64, 1)
+                if state != "absent":
+                    repository.initialize()
+                if state == "schema":
+                    with closing(sqlite3.connect(path)) as numerical, numerical:
+                        numerical.execute("DROP TABLE usage_meta")
+                if state == "binding":
+                    repository = UsagePublicationRepository(path, "other-project", "b" * 64, 1)
+                repository.connection_timeout = 0
+                lock = sqlite3.connect(path) if state == "busy" else None
+                try:
+                    if lock is not None:
+                        lock.execute("BEGIN EXCLUSIVE")
+                    before = tree_snapshot(root)
+                    target = SimpleNamespace()
+                    core = object()
+                    with mock.patch.object(service, "repository_for", return_value=repository), \
+                            mock.patch.object(service, "validate_usage_ownership", wraps=validate_storage_rows) as validate:
+                        for audit in (False, True):
+                            self.assertEqual(service.read_task_usage(target, core, "task", audit=audit),
+                                {"status": "unknown", "coverage": "registered_only", "periods": [],
+                                 "cycle_links": [], "diagnostics": ["usage_unavailable"]})
+                        validate.assert_not_called()
+                    self.assertEqual(tree_snapshot(root), before)
+                finally:
+                    if lock is not None:
+                        lock.rollback()
+                        lock.close()

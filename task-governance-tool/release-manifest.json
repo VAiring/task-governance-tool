@@ -187,7 +187,7 @@
     "scripts/task_governance_tool/usage_collection.py": "sha256:f6666b2a5effb00e5b651c7a7c2d97d16bc92d1e85867f60731680bbddd968f5",
     "scripts/task_governance_tool/usage_evidence.py": "sha256:10d7435caaca5a816b3e85ed85b5f64122c80b4f7170a2d6f83445c664ef83ca",
     "scripts/task_governance_tool/usage_evidence_repository.py": "sha256:eb1bafaa7c7c452179d2def0b351adc08aa7b60dc32e3118a9de957fba6dc28b",
-    "scripts/task_governance_tool/usage_evidence_service.py": "sha256:b775e96edc8d14b62d764be35a70d865754a98f57ecbe4cc5db3b0b58a6b818b",
+    "scripts/task_governance_tool/usage_evidence_service.py": "sha256:a9452b5febc1cc68af43ea63c08b1a73e667d003695951cb34e756665421547b",
     "scripts/task_governance_tool/usage_hook_setup.py": "sha256:bcf37aeb3053fbb65c7903acc1c156cc3d6c5e80939bb92f105293155b6714e1",
     "scripts/task_governance_tool/usage_incremental_adapter.py": "sha256:fff9217faf1a9a7cfd45d3f67518848bdcf72e7cfca5f0c1a478314ac74496d4",
     "scripts/task_governance_tool/usage_incremental_projection.py": "sha256:6ee4b32e0ed44e86e6c2fcbe1d6db3d17af7b188963ecac6ad276a0c84914553",

@@ -28,10 +28,15 @@ def repository_for(target):
 
 def read_task_usage(target, core, task_id, *, audit=False):
     try:
-        # Task reads already admit core structure. The shared capture basis
-        # consumes ownership/cycle identities across the project, not all reviews.
-        validate_usage_ownership(core)
-        return repository_for(target).read(core, task_id=task_id, audit=audit)
+        repository = repository_for(target)
+        # Reject unavailable numerical state before consuming core history.
+        # Keep admission and projection in the same numerical transaction.
+        with repository.connection() as numerical:
+            # Task reads already admit core structure. The shared capture basis
+            # consumes ownership/cycle identities across the project, not all reviews.
+            validate_usage_ownership(core)
+            return repository.read(core, task_id=task_id, audit=audit,
+                                   numerical_connection=numerical)
     except Exception:
         # Unknown is not measured zero; numerical corruption is not core failure.
         return {"status": "unknown", "coverage": "registered_only", "periods": [],

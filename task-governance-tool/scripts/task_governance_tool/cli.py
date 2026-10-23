@@ -1268,6 +1268,11 @@ def task_show_failure_result(
 
 
 def handle_task_show(context: CommandContext, *, current_checkpoint: tuple[sqlite3.Connection, str, dict[str, Any] | None] | None = None) -> CommandResult:
+    return read_task_detail(context, current_checkpoint=current_checkpoint, public_display=True)
+
+
+def read_task_detail(context: CommandContext, *, current_checkpoint: tuple[sqlite3.Connection, str, dict[str, Any] | None] | None = None, public_display: bool = False) -> CommandResult:
+    """Shared validated detail; internal finalization does not consume usage/display."""
     from task_governance_tool.usage_evidence_service import read_task_usage
     from task_governance_tool import review_answer_audit
     target = resolve_context_target(context)
@@ -1308,7 +1313,8 @@ def handle_task_show(context: CommandContext, *, current_checkpoint: tuple[sqlit
                             and current_checkpoint[0] is connection and connection.in_transaction
                             and current_checkpoint[1] == task_id else None),
                     )
-                    usage = read_task_usage(target, connection, task_id, audit=audit)
+                    if public_display:
+                        usage = read_task_usage(target, connection, task_id, audit=audit)
                     collection_registration = review_answer_audit.read(connection, target.project.project_id,
                         task_id, collection_selectors)
         finally:
@@ -1336,7 +1342,8 @@ def handle_task_show(context: CommandContext, *, current_checkpoint: tuple[sqlit
                     include_current_context=not audit,
                     caller=context.caller,
                 )
-                usage = read_task_usage(target, connection, task_id, audit=audit)
+                if public_display:
+                    usage = read_task_usage(target, connection, task_id, audit=audit)
                 collection_registration = review_answer_audit.read(connection, target.project.project_id,
                     task_id, collection_selectors)
     except TaskValidationError as exc:
@@ -1410,6 +1417,9 @@ def handle_task_show(context: CommandContext, *, current_checkpoint: tuple[sqlit
     data = build_task_show_data(result, audit=audit)
     if collection_selectors is not None:
         data["collection_registration"] = collection_registration
+    if not public_display:
+        return CommandResult(ok=True, command=context.command,
+            project_id=target.project.project_id, data=data, text="", exit_code=EXIT_SUCCESS)
     data["usage"] = usage
     effort_profile = load_effort_profile(skill_root_from_script(cli_script_path()))
     data["effort_advisory_enabled"] = bool(

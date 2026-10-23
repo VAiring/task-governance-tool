@@ -118,8 +118,10 @@ opening a snapshot or revalidating a writer. Packet projection, retained hook
 reads and event lookup validate the selected review storage inside their
 existing snapshot once that Task is known. Schema/policy/location-only reads
 remain structural; Runner audit consumers validate their consumed Runner rows
-and required pending-attempt inventory. Integrated Core delegates selected review
-validation to the Task projection, and typed finalization completion uses the
+and required pending-attempt inventory. Integrated Core detail delegates selected
+review validation to the Task projection; exact collected-registration inventory
+instead validates the admitted Task and selected review storage directly, without
+usage or report-only detail. Typed finalization completion uses the
 same local boundary as ordinary completion. Source leases, native basis and
 effect fences remain independently checked at their existing boundaries.
 

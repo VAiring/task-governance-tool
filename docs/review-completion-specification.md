@@ -1782,6 +1782,14 @@ all gates, using the same old-ID comparison; never create a replacement candidat
 An unknown or changed observation blocks that stage. A lost completion response
 is reconciled through the exact completion revision and released original owner.
 
+Internal finalization reads validate the selected Task, Contract, ownership,
+review and verification relationships at each existing fresh boundary. They do
+not acquire numerical usage or assemble public display-only fields. Exact
+collected-registration inspection validates that same selected Task/review
+boundary and exact registration inventory without reading report-only detail.
+This does not change public show/context or registration-context usage, native
+writer checks, completion gates or report content.
+
 Reports distinguish journal intent from observed registration IDs, Git publication
 and Task status. They include every registered Finding, including resolved low
 Findings, and all available original verdicts/summaries. `completion_gate`, when

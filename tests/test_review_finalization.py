@@ -211,6 +211,11 @@ class InstalledFinalizationTests(fixtures.PreparationFixture):
 
     def service(self, task):
         from task_governance_tool import review_handoff_scope
+        from task_governance_tool import usage_evidence_service
+        usage = self.enterContext(mock.patch.object(usage_evidence_service, "read_task_usage",
+            wraps=usage_evidence_service.read_task_usage))
+        self.addCleanup(lambda: self.assertEqual(usage.call_count, 0,
+            "internal finalization must not read numerical usage"))
         for module in (review_handoff_scope, review_wait_basis):
             self.enterContext(mock.patch.object(module, "__file__", str(self.install.skill_root /
                 "scripts/task_governance_tool" / (module.__name__.split(".")[-1] + ".py"))))

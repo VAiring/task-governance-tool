@@ -60,15 +60,29 @@ class OperationAdmissionTests(unittest.TestCase):
         from task_governance_tool.session_identity import capture_caller_identity
         self.fixture.corrupt_other_binding()
         core = Core(self.fixture.repo, self.fixture.target, capture_caller_identity())
-        self.assertEqual(core.read(self.task_id)["task"]["task_id"], self.task_id)
         submission = SimpleNamespace(preparation_id="tg_review_preparation_0123456789abcdef",
             submission_digest="sha256:" + "0" * 64)
-        self.assertEqual(core.collection_registration(self.task_id, submission)["status"], "absent")
+        from task_governance_tool import usage_evidence_service
+        with mock.patch.object(usage_evidence_service, "read_task_usage", wraps=usage_evidence_service.read_task_usage) as usage:
+            state = core.read(self.task_id)
+            self.assertEqual(state["task"]["task_id"], self.task_id)
+            self.assertNotIn("usage", state)
+            with mock.patch.object(cli, "show_task", wraps=cli.show_task) as detail:
+                self.assertEqual(core.collection_registration(self.task_id, submission)["status"], "absent")
+                self.assertEqual(detail.call_count, 0)
+            self.assertEqual(usage.call_count, 0)
+            for operation in ("show", "context"):
+                args = ("task", operation, self.task_id) if operation == "show" else ("task", operation)
+                self.success(*args)
+            self.assertEqual(usage.call_count, 2)
         self.success("task", "show", self.task_id)
         self.fixture.extra_v2_provenance(self.task_id)
         with self.assertRaises(FinalizationError) as rejected:
             core.read(self.task_id)
         self.assertEqual(rejected.exception.code, "evidence_ledger_inconsistent")
+        with self.assertRaises(storage.StorageError) as inventory_rejected:
+            core.collection_registration(self.task_id, submission)
+        self.assertEqual(inventory_rejected.exception.code, "evidence_ledger_inconsistent")
 
     def test_review_target_packet_result_and_finding_writes_ignore_unrelated_history(self):
         from tests.test_review_results import BinaryInput, encode, receipt

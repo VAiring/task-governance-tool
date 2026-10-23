@@ -1398,6 +1398,16 @@ hold SQLite transactions across subprocesses.
 
 `review_finalization.py` composes the existing typed CLI registration/completion
 handlers and their bounded maintenance, with the genuine parent caller identity.
+Its Core detail reader shares Task/Contract, selected review, verification,
+ownership, checkpoint and note validation with public show, but omits numerical
+usage and public text/Advisory assembly. Generation discovery, fresh effect
+checks, completed/check recovery and notification checks all use that internal
+reader; no value is reused across snapshots. Exact collected-registration
+inspection separately validates the selected Task and complete review storage,
+then reads only the exact preparation/submission inventory in that snapshot.
+It does not assemble report detail. Public show/context and post-registration
+context retain their numerical usage projection. Registration/completion writers
+and locked rechecks remain unchanged.
 `review_finalization_basis.py` carries the immutable retained project, execution,
 owner generation, Contract, target and manifest constraints through those handlers.
 Native admission checks the retained project binding. Batch registration checks

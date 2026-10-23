@@ -15,9 +15,11 @@ import json,sys
 from pathlib import Path
 from unittest.mock import patch
 sys.path.insert(0,sys.argv[1])
-from task_governance_tool import review_finalization as f
+from task_governance_tool import review_finalization as f,usage_evidence_service
 from task_governance_tool.session_identity import capture_caller_identity
 repo,task,mode=Path(sys.argv[2]),sys.argv[3],sys.argv[4]
+usage_patch=patch.object(usage_evidence_service,'read_task_usage',wraps=usage_evidence_service.read_task_usage)
+usage=usage_patch.start()
 service=f.Finalizer(repo,task,capture_caller_identity())
 registered,lookups=0,0
 register=f.Core.register;lookup=f.Core.collection_registration
@@ -33,6 +35,8 @@ def interrupted(self,task,submission,**kwargs):
 def forbidden(*args,**kwargs):raise AssertionError('registered source dispatched twice')
 with patch.object(f.Core,'register',interrupted if mode=='lose-registration-output' else forbidden),patch.object(f.Core,'collection_registration',observe_lookup):
  result=service.execute()
+assert usage.call_count==0,usage.call_count
+usage_patch.stop()
 print(json.dumps(dict(report=result,registrations=registered,lookups=lookups),ensure_ascii=True))
 '''
 

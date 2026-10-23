@@ -53,15 +53,26 @@ class Core:
         with closing(connect_initialized_readonly(self.target, operation_local=True)) as connection:
             context = replace(self.context("task.show", task_id=task_id, **arguments),
                 read_connection_override=connection)
-            return _result(cli.handle_task_show(context))
+            return _result(cli.read_task_detail(context))
 
     def read(self, task_id):
         return self._show(task_id)
 
     def collection_registration(self, task_id, submission):
-        return self._show(task_id, audit=True,
+        # Exact inventory needs the admitted Task/review graph, not report notes,
+        # checkpoints, public presentation or numerical usage.
+        from . import review_answer_audit
+        from .storage import connect_initialized_readonly, current_schema_version, validate_task_review_storage
+        arguments = self.context("task.show", task_id=task_id, audit=True,
             collection_preparation=submission.preparation_id,
-            collection_submission=submission.submission_digest)["collection_registration"]
+            collection_submission=submission.submission_digest).args
+        selectors = review_answer_audit.selection(arguments)
+        with closing(connect_initialized_readonly(self.target, operation_local=True)) as connection:
+            if cli.read_internal_task(connection, self.target.project.project_id, task_id) is None:
+                _fail("not_found")
+            validate_task_review_storage(connection, project_id=self.target.project.project_id,
+                task_id=task_id, source_schema_version=current_schema_version(connection))
+            return review_answer_audit.read(connection, self.target.project.project_id, task_id, selectors)
 
     def register(self, task_id, submission, *, basis, registration_recovery=None):
         context = self.context("review.result.add", task_id=task_id, user_approved_reviewers=[])

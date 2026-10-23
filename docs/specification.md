@@ -1095,9 +1095,8 @@ or transmitting a log requires the authority for that operation.
 This is the approved privacy requirement for development diagnostics, not a
 claim that a general logging facility is implemented. It does not activate a
 new sink, setting or command, relax existing read-only/no-write behavior, or
-expand the temporary [Review Wait trace](review-completion-specification.md#development-review-wait-trace)
-and its feature-specific limits. Logging functionality is separate implementation
-work under this requirement.
+broaden an existing diagnostic component's implemented scope. Logging
+functionality is separate implementation work under this requirement.
 
 ## Published v0.10.0 Release Record
 

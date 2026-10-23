@@ -873,8 +873,8 @@ instrumentation owns meaningful operation boundaries, correlation and
 measurements with explicit units/scope. Preserve primary operation outcomes
 on recording failure and measure instrumentation overhead. These are design
 requirements for separate logging implementation, not new runtime modules or
-settings. The existing temporary Review Wait trace retains its own narrow
-contract; public CLI/MCP envelopes and read-only behavior are unchanged.
+settings. Existing diagnostic components retain their defined scope; public
+CLI/MCP envelopes and read-only behavior are unchanged.
 
 Git subprocesses use fixed argument vectors, no shell, bounded timeout, safe
 environment and disabled optional locks/lazy fetching. Ordinary operations are

@@ -14,7 +14,8 @@ from . import review_handoff_transport as files
 from .review_answer import AnswerError, decode_answer
 from .review_answer_collection import CollectionService, CollectionInvalidated
 from .review_answer_collection_repository import CollectionRepository
-from .review_answer_transport import (CollectedItem, CollectedSubmission, LegacyItem, SettledRegistrationRecovery, frame_collected_submission,
+from .review_answer_transport import (CollectedItem, CollectedSubmission, LegacyItem, SettledRegistrationRecovery,
+    ManualRegistrationRecovery, frame_collected_submission,
     answer_input_error)
 from .review_answer_values import basis_digest
 from .review_handoff_scope import resolve
@@ -329,6 +330,22 @@ class RegistrationAdmission:
                 or row["submission_digest_match"] != "matching" or row["receipt_id"] is not None
                 for row in self.registration_states()):
             raise AnswerError("registration_unknown", reason="effect_unknown")
+
+    def manual_recovery(self):
+        """Select only an interrupted complete manual batch; normal dispatch stays normal."""
+        if (self.replacements or any(type(item) is not CollectedItem
+                or item.metadata["basis"]["route"] != "manual" for item in self.submission.items)):
+            return None
+        sources = self.registration_states()
+        if all(row["state"] == "not_started" for row in sources):
+            return None
+        request = ManualRegistrationRecovery(self.submission.preparation_id,
+            self.submission.submission_digest, tuple(row["receipt_id"] for row in sources))
+        request.require_submission(self.submission, None)
+        if any(row["state"] not in ("dispatched", "unknown", "registered")
+                or row["submission_digest_match"] != "matching" for row in sources):
+            raise AnswerError("registration_unknown", reason="effect_unknown")
+        return request
 
     def dispatch(self):
         # Check every source store before persisting any registration intent.

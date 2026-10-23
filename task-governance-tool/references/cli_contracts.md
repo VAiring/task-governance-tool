@@ -2708,6 +2708,17 @@ Unknown/lost source or submission outcomes require public-state inspection first
 For corrections or alternative actual Receipt declarations, use
 [workflow recovery](task_workflow.md#review-handoff-recovery).
 
+For an interrupted complete collected-answer manual submission with unchanged
+preparation and execution basis, use the retained `submit_command` once after
+that inspection. The public writer freshly admits every source and proves
+complete absence under its writer lock before registration, or confirms and
+returns the exact already-recorded batch without another registration. It never
+resets an intent or uses the earlier inspection as permission. A changed owner
+generation or target, conflicting/partial inventory, mixed transport, busy
+admission or unresolved publication remains a blocker. Preserve rejected state
+and follow its recovery condition; do not loop, rebind old answers, or convert a
+manual preparation to integrated finalization.
+
 Reads check identity and metadata before/after, with final byte rechecks before
 submission. These trusted-local checks do not isolate a hostile peer with the
 same permissions or guarantee future immutability. Save never overwrites, and

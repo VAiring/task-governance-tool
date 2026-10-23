@@ -857,10 +857,32 @@ This proof concerns settled effects in the currently admitted canonical state,
 not historical non-commit across an arbitrary database restoration. Known
 identity, binding or restore conflicts, changed basis, incomplete or mixed
 submissions, busy leases, unreadable state and any registration residue remain
-closed. Ordinary registration still requires `not_started` sources; a complete
+closed. First-time registration still requires `not_started` sources; a complete
 matching recorded inventory uses confirmation only. Neither this recovery nor
 the non-dispatch proof adds a normal-loop query, CLI option, schema or separate
 finalizer.
+
+The parent-managed `submit` route also supports settled-effect recovery for a
+complete all-collected manual submission through the same public writer. It
+requires the unchanged current preparation, exact original bytes and complete
+execution basis, including current ownership generation. Its internal request
+does not supply or impersonate a finalization basis. Matching dispatched/unknown
+source intents with no Receipt may proceed only after the same complete absence
+proof under all source leases and the native writer lock described above. No
+intent is reset, and a prior busy error or read-only absence is not that proof.
+
+If the complete current native inventory already matches every submitted source,
+original, target and digest, manual recovery returns the existing Receipts and
+Findings and confirms only their source acknowledgements. Any previously
+confirmed source Receipt must agree. It never creates another Receipt, Finding
+or dispatch, and it reports the current review gate rather than inferring PASS.
+Incomplete or conflicting inventory, mixed legacy/integrated sources, changed
+ownership or target, unresolved publication, busy admission and unavailable
+state remain closed. Ordinary resume does not refresh old answer bindings;
+stale ownership requires fresh review preparation under the existing rules.
+Recovery uses the retained submission once after investigating the failed or
+uncertain outcome; it adds no automatic retry loop, new source metadata or
+permission to complete a Task.
 
 For an unresolved outer registration reservation, retained `finalize --check`
 adds a read-only `registration_observation` for collected or mixed submissions.

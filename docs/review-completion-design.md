@@ -768,6 +768,16 @@ and the existing `add_collected_review_results` composition. Exact selectors
 and a non-null typed finalization basis are required. No new public flag or
 alternate registration path is introduced.
 
+`ManualRegistrationRecovery` is a separate internal request for an exact
+all-collected manual submission. `review_answer_registration` selects it only
+inside the existing complete source admission; integrated recovery retains its
+typed finalization-basis requirement. Manual recovery preserves current
+preparation, execution/ownership and original-byte checks. A matching recorded
+inventory returns stored Receipt/Finding acknowledgements and the current gate,
+then confirms the existing source tuples without another native registration.
+An absent inventory uses the shared locked absence proof below. Partial,
+conflicting, stale or mixed-route sources never supply a recovery request.
+
 The registration wrapper acquires every exact source lease and freshly admits
 the complete all-collected batch. Each source must be dispatched/unknown with
 the exact submission digest and null Receipt ID. It holds these leases through

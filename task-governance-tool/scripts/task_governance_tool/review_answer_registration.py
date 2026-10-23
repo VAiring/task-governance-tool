@@ -28,7 +28,9 @@ def register(context, target, submission, *, finalization_basis=None, registrati
             registration_recovery.require_submission(submission, finalization_basis)
         with registration_admission(context.repo, submission, context.caller) as admitted:
             if registration_recovery is None:
-                admitted.dispatch()
+                registration_recovery = admitted.manual_recovery()
+                if registration_recovery is None:
+                    admitted.dispatch()
             else:
                 # This fresh admission, not an earlier audit or caller's request,
                 # excludes every cooperating writer through commit/close/confirm.

@@ -169,6 +169,28 @@ class SettledRegistrationRecovery:
             raise input_error("registration_unknown", reason="effect_unknown")
 
 
+@dataclass(frozen=True)
+class ManualRegistrationRecovery:
+    """Same-original manual recovery intent, freshly checked under source leases."""
+    preparation_id: str
+    submission_digest: str
+    receipt_ids: tuple[str | None, ...]
+
+    def require_submission(self, submission, finalization_basis):
+        if (finalization_basis is not None
+                or type(submission) is not CollectedSubmission
+                or self.preparation_id != submission.preparation_id
+                or self.submission_digest != submission.submission_digest
+                or not 1 <= len(submission.items) <= 8
+                or type(self.receipt_ids) is not tuple
+                or len(self.receipt_ids) != len(submission.items)
+                or any(value is not None and not identifier(value, "tg_review_receipt_")
+                       for value in self.receipt_ids)
+                or any(type(item) is not CollectedItem or item.metadata["basis"]["route"] != "manual"
+                       for item in submission.items)):
+            raise input_error("registration_unknown", reason="effect_unknown")
+
+
 def _bytes(value):
     if type(value) is not str:
         raise _invalid()

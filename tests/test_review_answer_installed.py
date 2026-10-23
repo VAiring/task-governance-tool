@@ -148,16 +148,19 @@ elif mode=='readback-fails':
  try:service.readback(1)
  except AnswerError:pass
  else:raise AssertionError('unknown residue accepted implicitly')
-elif mode=='drop-ack':
- from task_governance_tool import cli
+elif mode in ('drop-ack','busy-registration'):
+ from task_governance_tool import cli,review_answer_registration as registration
  from task_governance_tool.review_answer_handoff import RegistrationAdmission
+ from task_governance_tool.storage import StorageError
  task,raw=initial_submission(repo,root,resolution,root.result_paths)
  class Input:
   buffer=io.BytesIO(raw)
  sys.stdin=Input()
- with patch.object(RegistrationAdmission,'confirm',side_effect=OSError('isolated lost acknowledgement')):
+ if mode=='drop-ack':target,method,error=RegistrationAdmission,'confirm',OSError('isolated lost acknowledgement')
+ else:target,method,error=registration,'connect_initialized',StorageError('database_busy','task database is busy')
+ with patch.object(target,method,side_effect=error):
   result=cli.main(['--repo',str(repo),'review','result','add',task,'--json'])
- assert result==0
+ assert (result==0)==(mode=='drop-ack')
  sys.exit(0)
 elif mode=='confirm':
  entries=json.loads(sys.argv[5])['entries']
@@ -272,9 +275,50 @@ class InstalledAnswerTests(fixtures.PreparationFixture):
         self.assertTrue(registered['current_basis'])
         self.assertEqual([e['original_digest'] for e in registered['entries']],observed['digests'])
         self.assertEqual(self.cli('task','show',self.task_id)['task']['status'],'review_pending')
-        rejected=self.invoke('submit','--repo',str(self.root),'--packet',self.packet,'--',*self.results)
-        self.assertNotEqual(rejected.returncode,0)
+        repeated=self.invoke('submit','--repo',str(self.root),'--packet',self.packet,'--',*self.results)
+        self.assertEqual(repeated.returncode,0,repeated.stdout or repeated.stderr)
+        self.assertEqual(json.loads(repeated.stdout)['data'],json.loads(submitted.stdout)['data'])
         self.assertEqual(self.audit(state),registered)
+
+    def test_manual_submit_recovers_database_busy_after_dispatch_with_exact_saved_originals(self):
+        self.assertEqual(self.handoff['preparation']['route'],'manual')
+        collected=self.collect('collect-parent')
+        originals={path:(self.root/path).read_bytes() for path in self.results}
+        failed=self.collect('busy-registration')
+        self.assertFalse(failed['ok'])
+        self.assertEqual([error['code'] for error in failed['errors']],['database_busy'])
+        state=self.collect('inspect')
+        self.assertEqual([row['state'] for row in state['states']],['dispatched','dispatched'])
+        self.assertEqual(self.audit(state)['status'],'absent')
+        self.assertEqual(self.cli('task','show',self.task_id)['review_evidence']['counts']['receipts_current_generation'],0)
+        submitted=self.invoke('submit','--repo',str(self.root),'--packet',self.packet,'--',*self.results)
+        self.assertEqual(submitted.returncode,0,submitted.stdout or submitted.stderr)
+        response=json.loads(submitted.stdout)
+        registered=self.audit(state)
+        self.assertEqual(registered['status'],'recorded')
+        self.assertTrue(registered['current_basis'])
+        self.assertEqual([entry['receipt_id'] for entry in registered['entries']],
+            [row['receipt']['review_receipt_id'] for row in response['data']['receipts']])
+        self.assertEqual([entry['original_digest'] for entry in registered['entries']],collected['digests'])
+        repeated=self.invoke('submit','--repo',str(self.root),'--packet',self.packet,'--',*self.results)
+        self.assertEqual(repeated.returncode,0,repeated.stdout or repeated.stderr)
+        self.assertEqual(json.loads(repeated.stdout)['data'],response['data'])
+        self.assertEqual(self.audit(state),registered)
+        self.assertEqual(self.cli('task','show',self.task_id)['review_evidence']['counts']['receipts_current_generation'],2)
+        self.assertEqual({path:(self.root/path).read_bytes() for path in self.results},originals)
+
+    def test_manual_submit_confirms_lost_ack_without_recreating_receipts(self):
+        self.collect('collect-parent')
+        response=self.collect('drop-ack')
+        self.assertTrue(response['ok'])
+        state=self.collect('inspect')
+        self.assertEqual([row['state'] for row in state['states']],['dispatched','dispatched'])
+        before=self.audit(state)
+        submitted=self.invoke('submit','--repo',str(self.root),'--packet',self.packet,'--',*self.results)
+        self.assertEqual(submitted.returncode,0,submitted.stdout or submitted.stderr)
+        self.assertEqual(json.loads(submitted.stdout)['data'],response['data'])
+        self.assertEqual(self.audit(state),before)
+        self.assertEqual([row['state'] for row in self.collect('inspect')['states']],['registered','registered'])
 
     def test_failed_save_restart_and_lost_registration_acknowledgement_do_not_replay(self):
         failed=self.collect('fail-save')

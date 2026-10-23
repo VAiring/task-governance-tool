@@ -155,6 +155,7 @@ def show_task(
     runner_selection: VerificationRunnerGateSelection | None = None,
     include_current_context: bool = False,
     caller: CallerIdentity = CallerIdentity(None),
+    checkpoint_read: tuple[dict[str, Any] | None] | None = None,
 ) -> TaskShowResult:
     normalized_task_id = validate_task_id(task_id)
     source_schema_version = current_schema_version(connection)
@@ -267,10 +268,10 @@ def show_task(
         task_id=normalized_task_id,
         current_revision=task_row["current_contract_revision"],
     )
-    latest_checkpoint = read_latest_checkpoint(
-        connection,
-        project_id=project.project_id,
-        task_id=normalized_task_id,
+    # Only the caller's still-retained current-selection snapshot may supply
+    # this already validated value; None inside the tuple means read absence.
+    latest_checkpoint = checkpoint_read[0] if checkpoint_read is not None else read_latest_checkpoint(
+        connection, project_id=project.project_id, task_id=normalized_task_id,
     )
     raw_completion_history = read_completion_history(
         connection,

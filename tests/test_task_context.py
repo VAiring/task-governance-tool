@@ -39,6 +39,24 @@ def run(db: Path, repo: Path, *arguments: str):
 
 
 class TaskContextTests(unittest.TestCase):
+    def test_separate_read_checkpoint_is_not_reused(self):
+        from task_governance_tool import checkpoints
+        task = self.add("Checkpoint reuse", "--status", "in_progress")
+        for present in (False, True):
+            if present:
+                self.success("task", "checkpoint", task["task_id"], "--summary", "Resume here",
+                             "--next-action", "Continue verification")
+            expected = self.success("task", "show", task["task_id"])["data"]["latest_checkpoint"]
+            with mock.patch.object(checkpoints, "read_latest_checkpoint", wraps=checkpoints.read_latest_checkpoint) as read:
+                actual = self.success("task", "context")["data"]
+            self.assertEqual(actual["selected"]["latest_checkpoint"], expected)
+            # Explicit-DB fixtures open separate reads and must not reuse.
+            self.assertEqual(read.call_count, 2)
+            for arguments in (("task", "current"), ("task", "current", "--compact")):
+                with mock.patch.object(checkpoints, "read_latest_checkpoint", wraps=checkpoints.read_latest_checkpoint) as read:
+                    self.success(*arguments)
+                self.assertEqual(read.call_count, 1)
+
     def setUp(self):
         temporary = tempfile.TemporaryDirectory()
         self.addCleanup(temporary.cleanup)
@@ -309,8 +327,8 @@ class TaskContextTests(unittest.TestCase):
         task = self.add("Candidate observation", "--status", "in_progress")
         original_show = cli_service.handle_task_show
 
-        def changed_observation(context):
-            result = original_show(context)
+        def changed_observation(context, **kwargs):
+            result = original_show(context, **kwargs)
             changed = copy.deepcopy(result.data)
             changed["task"]["title"] = "Later detail observation"
             changed["suggested_next_action"] = "A distinct detail action"
@@ -516,6 +534,40 @@ class ContextCandidateProjectionTests(unittest.TestCase):
 
 
 class TaskContextCompactSelectionTests(unittest.TestCase):
+    def test_fixed_layout_current_checkpoint_is_reused_on_retained_read(self):
+        from task_governance_tool import checkpoints
+        task = self.add("Retained checkpoint", "--status", "in_progress")
+        for present in (False, True):
+            if present:
+                self.success("task", "checkpoint", task["task_id"], "--summary", "Resume here",
+                             "--next-action", "Continue verification")
+            expected = self.success("task", "show", task["task_id"])["data"]["latest_checkpoint"]
+            with mock.patch.object(checkpoints, "read_latest_checkpoint", wraps=checkpoints.read_latest_checkpoint) as read:
+                result = _run_cli(self.install, "task", "context")
+                self.assertEqual(result.returncode, 0, result.stdout)
+                actual = json.loads(result.stdout)["data"]
+            self.assertEqual(actual["selected"]["latest_checkpoint"], expected)
+            self.assertEqual(read.call_count, 1)
+
+        # Damage only this disposable checkpoint, preserving trigger DDL.
+        with closing(sqlite3.connect(self.install.db_path)) as core, core:
+            core.execute("PRAGMA ignore_check_constraints=ON")
+            triggers = core.execute("SELECT name,sql FROM sqlite_master WHERE type='trigger' AND tbl_name='task_checkpoints'").fetchall()
+            for name, _ in triggers:
+                core.execute('DROP TRIGGER "' + name.replace('"', '""') + '"')
+            core.execute("UPDATE task_checkpoints SET unresolved_risks_json='{}'")
+            for _, sql in triggers:
+                core.execute(sql)
+        before = file_snapshot(self.install.project_root)
+        for leaf in (("context",), ("current",), ("current", "--compact")):
+            result = _run_cli(self.install, "task", *leaf)
+            self.assertEqual(result.returncode, 2, result.stdout)
+            payload = json.loads(result.stdout)
+            self.assertFalse(payload["ok"])
+            self.assertIsNone(payload["data"].get("selected"))
+            self.assertFalse(payload["data"].get("tasks"))
+        self.assertEqual(file_snapshot(self.install.project_root), before)
+
     def setUp(self):
         temporary = tempfile.TemporaryDirectory()
         self.addCleanup(temporary.cleanup)
@@ -594,6 +646,62 @@ class TaskContextCompactSelectionTests(unittest.TestCase):
 
 
 class TaskContextRunnerTests(unittest.TestCase):
+    def test_marker_two_discards_retained_checkpoint_before_fresh_detail(self):
+        import argparse
+        from task_governance_tool import checkpoints
+        from task_governance_tool.session_identity import capture_caller_identity
+        from tests.test_m242_runner_service import RunnerServiceFixture
+        from tests.test_m243c_runner_gate import _launch, _persist_terminal
+        from task_governance_tool import verification_runner_selection as selection
+
+        with tempfile.TemporaryDirectory() as temporary:
+            fixture = RunnerServiceFixture(Path(temporary))
+            _prepared, intent = _launch(fixture)
+            _persist_terminal(fixture, intent, branch="pass")
+            pending = run(fixture.db, fixture.repo, "task", "edit", fixture.task_id, "--status", "review_pending")
+            self.assertEqual(pending.returncode, 0, pending.stdout)
+            def checkpoint(summary):
+                result = run(fixture.db, fixture.repo, "task", "checkpoint", fixture.task_id,
+                             "--summary", summary, "--next-action", "Continue review")
+                self.assertEqual(result.returncode, 0, result.stdout)
+                return json.loads(result.stdout)["data"]["checkpoint"]
+            old = checkpoint("Before physical selection")
+            reads, fresh = [], []
+            read = checkpoints.read_latest_checkpoint
+            select = cli_service.select_current_verification_runner_basis
+            with closing(storage.connect_initialized_readonly(fixture.target, operation_local=True)) as retained:
+                if not retained.in_transaction:
+                    retained.execute("BEGIN")
+                context = cli_service.CommandContext(command="task.context", repo=str(fixture.repo),
+                    repo_explicit=True, json_output=True, read_only=True, args=argparse.Namespace(),
+                    caller=capture_caller_identity(), target_override=fixture.target,
+                    read_connection_override=retained)
+                def observed(core, **kwargs):
+                    value = read(core, **kwargs)
+                    reads.append((core, value))
+                    return value
+                def physical(*args, **kwargs):
+                    self.assertEqual(reads, [(retained, old)])
+                    with self.assertRaises(sqlite3.ProgrammingError):
+                        retained.execute("SELECT 1")
+                    fresh.append(checkpoint("After physical selection"))
+                    return select(*args, **kwargs)
+                with mock.patch.object(selection, "_stored_runner_physical_basis_matches", return_value=True), \
+                        mock.patch.object(checkpoints, "read_latest_checkpoint", side_effect=observed), \
+                        mock.patch.object(cli_service, "select_current_verification_runner_basis", side_effect=physical) as select_runner, \
+                        mock.patch.object(cli_service, "show_task", wraps=cli_service.show_task) as show:
+                    result = cli_service.handle_task_context(context)
+                self.assertTrue(result.ok, result.errors)
+                self.assertEqual(result.data["selection"], "current")
+                select_runner.assert_called_once()
+                show.assert_called_once()
+                self.assertNotIn("checkpoint_read", show.call_args.kwargs)
+                self.assertEqual(len(reads), 2)
+                self.assertIsNot(reads[1][0], retained)
+                self.assertNotEqual(old["checkpoint_id"], fresh[0]["checkpoint_id"])
+                self.assertEqual(reads[1][1], fresh[0])
+                self.assertEqual(result.data["selected"]["latest_checkpoint"], fresh[0])
+
     def test_marker_two_selected_detail_reuses_the_exact_show_runner_route(self):
         from tests.test_m242_runner_service import RunnerServiceFixture
         from tests.test_m243c_runner_gate import _launch, _persist_terminal

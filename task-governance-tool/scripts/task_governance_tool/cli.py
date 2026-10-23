@@ -1267,7 +1267,7 @@ def task_show_failure_result(
     )
 
 
-def handle_task_show(context: CommandContext) -> CommandResult:
+def handle_task_show(context: CommandContext, *, current_checkpoint: tuple[sqlite3.Connection, str, dict[str, Any] | None] | None = None) -> CommandResult:
     from task_governance_tool.usage_evidence_service import read_task_usage
     from task_governance_tool import review_answer_audit
     target = resolve_context_target(context)
@@ -1304,6 +1304,9 @@ def handle_task_show(context: CommandContext) -> CommandResult:
                         task_id,
                         include_current_context=not audit,
                         caller=context.caller,
+                        checkpoint_read=((current_checkpoint[2],) if current_checkpoint is not None
+                            and current_checkpoint[0] is connection and connection.in_transaction
+                            and current_checkpoint[1] == task_id else None),
                     )
                     usage = read_task_usage(target, connection, task_id, audit=audit)
                     collection_registration = review_answer_audit.read(connection, target.project.project_id,
@@ -1549,7 +1552,12 @@ def handle_task_context(
                 context,
                 command="task.show",
                 args=argparse.Namespace(task_id=selected_task["task_id"]),
-            )
+            ),
+            current_checkpoint=(
+                (context.read_connection_override, selected_task["task_id"], selected_task["latest_checkpoint"])
+                if selection == "current" and context.read_connection_override is not None
+                and context.read_connection_override.in_transaction else None
+            ),
         )
         if not selected.ok:
             return task_context_failure_result(context, selected)

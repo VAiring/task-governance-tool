@@ -413,6 +413,13 @@ new semantic change.
 
 ### Typed Checkpoints
 
+Context reuses the current selection's validated latest checkpoint, including
+validated absence, only for the selected Task on the same retained connection
+and active read transaction. Standalone current still validates checkpoints
+before compact omission. Next fallback reads its selected checkpoint normally;
+marker-2 detail rereads after physical selection releases the original read.
+No checkpoint proof or cache survives that boundary or another operation.
+
 `task checkpoint` requires bounded summary and next action and accepts at most
 eight bounded unresolved risks. Limits are 1,024 UTF-8 bytes for summary and
 next action, 512 per risk, 4,096 aggregate risks, and 6,144 for caller input.

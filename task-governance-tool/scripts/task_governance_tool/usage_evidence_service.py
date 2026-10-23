@@ -4,7 +4,7 @@ No public command, ownership permission, hook install or implicit setup. The
 internal worker consumes a resolver-admitted target, never caller-supplied IDs.
 """
 
-from contextlib import closing, contextmanager, suppress
+from contextlib import closing, contextmanager, nullcontext, suppress
 from uuid import uuid4
 
 from task_governance_tool.artifact_lock import zero_wait_artifact_lock
@@ -53,24 +53,35 @@ def _directory(path, root):
     return inspect_physical_directory(path, root=root)
 
 
-def _publish(path, document, root, *, immutable):
+def _publish(path, document, root, *, immutable, guard=None):
+    """Prepare bytes before admission; retain fresh readers only for adoption."""
     data = encode(document)
     identity = None
+    same_bytes = False
     if path_lexically_exists(path):
         old, validated = read_physical_file_bounded(path, root=root, max_bytes=MAX_DOCUMENT_BYTES)
-        if old == data:
+        same_bytes = old == data
+        if same_bytes and guard is None:
             return
-        if immutable:
+        if immutable and not same_bytes:
             raise UsageError()
         identity = validated.identity
-    temporary = create_exclusive_durable_file(path.parent / (".usage-" + uuid4().hex + ".tmp"),
-                                               data, root=root, max_bytes=MAX_DOCUMENT_BYTES)
+    temporary = None if same_bytes else create_exclusive_durable_file(
+        path.parent / (".usage-" + uuid4().hex + ".tmp"),
+        data, root=root, max_bytes=MAX_DOCUMENT_BYTES)
     try:
-        if identity is None:
-            rename_no_replace(temporary, path, root=root)
-        else:
-            _atomic_replace_temporary(temporary, path, root=root, maximum=MAX_DOCUMENT_BYTES,
-                                      expected_destination=identity)
+        with guard if guard is not None else nullcontext():
+            if same_bytes:
+                # Earlier equal bytes are only an observation, never adoption.
+                current, validated = read_physical_file_bounded(
+                    path, root=root, max_bytes=MAX_DOCUMENT_BYTES)
+                if validated.identity != identity or current != data:
+                    raise UsageError()
+            elif identity is None:
+                rename_no_replace(temporary, path, root=root)
+            else:
+                _atomic_replace_temporary(temporary, path, root=root, maximum=MAX_DOCUMENT_BYTES,
+                                          expected_destination=identity)
         temporary = None
     finally:
         if temporary is not None:
@@ -119,8 +130,8 @@ def refresh_usage(target, *, deadline=None):
                 state = repository.advance_publication(state)
             if deadline is not None:
                 repository.check_budget()
-            with repository.publication_guard(core_reader, index, state):
-                _publish(target.resolved_usage_index, index, root, immutable=False)
+            _publish(target.resolved_usage_index, index, root, immutable=False,
+                     guard=repository.publication_guard(core_reader, index, state))
             repository.advance_publication(state, published=True)
         return {"status": "pending", "publication": "current", "diagnostics": ["evidence_verification_deferred"]}
     except Exception:

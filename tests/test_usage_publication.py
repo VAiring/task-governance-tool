@@ -1,6 +1,7 @@
 """Resumable real-repository publication and explicitly deferred integrity."""
 
-from contextlib import ExitStack, closing
+from contextlib import ExitStack, closing, contextmanager
+from concurrent.futures import ThreadPoolExecutor
 import json
 import os
 import sqlite3
@@ -282,6 +283,261 @@ class UsagePublicationTests(unittest.TestCase):
             connection.execute("UPDATE usage_publication SET position=total")
         self.assertEqual(self.refresh()["publication"], "pending")
         self.assertFalse(self.target.resolved_usage_index.exists())
+
+    def _changed_index(self):
+        self.history(2)
+        self.assertEqual(self.refresh()["publication"], "current")
+        last_good = self.target.resolved_usage_index.read_bytes()
+        self.append(usage("next-index", turn=turn(1)))
+        self.ingest()
+        return last_good
+
+    def _assert_no_temporary(self):
+        self.assertEqual(list(self.target.resolved_usage_root.rglob(".usage-*.tmp")), [])
+
+    def _after_index_preparation(self, change):
+        create = service.create_exclusive_durable_file
+        def prepare(path, data, **kwargs):
+            temporary = create(path, data, **kwargs)
+            if json.loads(data)["format"] == "taskgov-usage-index-v2":
+                change()
+            return temporary
+        return mock.patch.object(service, "create_exclusive_durable_file", side_effect=prepare)
+
+    def test_preparation_releases_readers_but_adoption_blocks_real_writers(self):
+        self._changed_index()
+        live, phases = set(), []
+        connect, encode = sqlite3.connect, service.encode
+        create, replace = service.create_exclusive_durable_file, service._atomic_replace_temporary
+        read_file = service.read_physical_file_bounded
+        class TrackedConnection(sqlite3.Connection):
+            def __init__(connection, *args, **kwargs):
+                super().__init__(*args, **kwargs)
+                live.add(connection)
+            def close(connection):
+                try:
+                    super().close()
+                finally:
+                    live.discard(connection)
+        def tracked(*args, **kwargs):
+            return connect(*args, **kwargs, factory=TrackedConnection)
+        def writers(*, blocked):
+            # Force a real SQLite page change; a no-op UPDATE is not sufficient.
+            def write(path):
+                with closing(connect(path, timeout=0.02)) as writer:
+                    writer.execute("BEGIN IMMEDIATE")
+                    version = writer.execute("PRAGMA user_version").fetchone()[0]
+                    writer.execute(f"PRAGMA user_version={version + 1}")
+                    if blocked:
+                        with self.assertRaises(sqlite3.OperationalError) as error:
+                            writer.commit()
+                        self.assertEqual(error.exception.sqlite_errorcode, sqlite3.SQLITE_BUSY)
+                        writer.rollback()
+                    else:
+                        writer.commit()
+                        self.assertEqual(writer.execute("PRAGMA user_version").fetchone()[0], version + 1)
+            # This controlled barrier holds the publication phase until the
+            # independent writer threads have attempted their actual COMMITs.
+            with ThreadPoolExecutor(max_workers=2) as pool:
+                for future in [pool.submit(write, path) for path in (self.core_path, self.repository.path)]:
+                    future.result(timeout=5)
+        def encoded(document):
+            if document.get("format") == "taskgov-usage-index-v2":
+                phases.append("encode")
+                self.assertEqual(len(live), 0)
+                writers(blocked=False)
+            return encode(document)
+        def prepared(path, data, **kwargs):
+            self.assertEqual(len(live), 0)  # Immutable snapshots also prepare after close.
+            if json.loads(data)["format"] == "taskgov-usage-index-v2":
+                phases.append("temporary")
+                writers(blocked=False)
+            return create(path, data, **kwargs)
+        def observed(path, **kwargs):
+            if path == self.target.resolved_usage_index:
+                phases.append("existing_index")
+                self.assertEqual(len(live), 0)
+            return read_file(path, **kwargs)
+        def adopted(*args, **kwargs):
+            phases.append("adoption")
+            self.assertEqual(len(live), 2)
+            writers(blocked=True)
+            return replace(*args, **kwargs)
+        with mock.patch.object(sqlite3, "connect", side_effect=tracked), \
+                mock.patch.object(service, "encode", side_effect=encoded), \
+                mock.patch.object(service, "read_physical_file_bounded", side_effect=observed), \
+                mock.patch.object(service, "create_exclusive_durable_file", side_effect=prepared), \
+                mock.patch.object(service, "_atomic_replace_temporary", side_effect=adopted):
+            self.assertEqual(self.refresh()["publication"], "current")
+        self.assertEqual(phases, ["encode", "existing_index", "temporary", "adoption"])
+        self.assertEqual(len(live), 0)
+        writers(blocked=False)
+        self._assert_no_temporary()
+
+    def test_core_change_after_index_preparation_is_rejected(self):
+        last_good = self._changed_index()
+        def change():
+            self.acknowledgement(A, 1, "paused")
+        with self._after_index_preparation(change):
+            self.assertEqual(self.refresh()["publication"], "pending")
+        self.assertEqual(self.target.resolved_usage_index.read_bytes(), last_good)
+        self._assert_no_temporary()
+        self.assertEqual(self.refresh()["publication"], "current")
+
+    def test_numerical_change_after_index_preparation_is_rejected(self):
+        last_good = self._changed_index()
+        def change():
+            self.append(usage("after-preparation", turn=turn(1)))
+            self.ingest()
+        with self._after_index_preparation(change):
+            self.assertEqual(self.refresh()["publication"], "pending")
+        self.assertEqual(self.target.resolved_usage_index.read_bytes(), last_good)
+        self._assert_no_temporary()
+        self.assertEqual(self.refresh()["publication"], "current")
+
+    def test_cursor_change_after_index_preparation_is_rejected(self):
+        last_good = self._changed_index()
+        with self._after_index_preparation(lambda: self.repository.prepare_publication(self.reader)):
+            self.assertEqual(self.refresh()["publication"], "pending")
+        self.assertEqual(self.target.resolved_usage_index.read_bytes(), last_good)
+        self._assert_no_temporary()
+        self.assertEqual(self.refresh()["publication"], "current")
+
+    def test_same_bytes_replay_requires_fresh_core_and_second_content_read(self):
+        self.history(2)
+        self.assertEqual(self.refresh()["publication"], "current")
+        last_good = self.target.resolved_usage_index.read_bytes()
+        guard = self.repository.publication_guard
+        guarded, reads = [False], []
+        read_file = service.read_physical_file_bounded
+        @contextmanager
+        def observe(*args):
+            with guard(*args):
+                guarded[0] = True
+                try:
+                    yield
+                finally:
+                    guarded[0] = False
+        def read(path, **kwargs):
+            if path == self.target.resolved_usage_index:
+                reads.append(guarded[0])
+            return read_file(path, **kwargs)
+        with mock.patch.object(self.repository, "publication_guard", side_effect=observe), \
+                mock.patch.object(service, "read_physical_file_bounded", side_effect=read):
+            self.assertEqual(self.refresh()["publication"], "current")
+        self.assertEqual(reads, [False, True])
+        @contextmanager
+        def changed(*args):
+            self.acknowledgement(A, 1, "paused")
+            with guard(*args):
+                yield
+        with mock.patch.object(self.repository, "publication_guard", side_effect=changed):
+            self.assertEqual(self.refresh()["publication"], "pending")
+        self.assertEqual(self.target.resolved_usage_index.read_bytes(), last_good)
+
+    def test_same_bytes_replay_rejects_replacement_and_same_identity_corruption(self):
+        self.history(2)
+        self.assertEqual(self.refresh()["publication"], "current")
+        path = self.target.resolved_usage_index
+        original = path.read_bytes()
+        guard = self.repository.publication_guard
+        for change in ("replacement", "same_identity"):
+            with self.subTest(change=change):
+                path.write_bytes(original)
+                expected = [original]
+                @contextmanager
+                def changed(*args):
+                    previous = path.stat()
+                    if change == "replacement":
+                        other = path.with_name("replacement.json")
+                        other.write_bytes(original)
+                        os.replace(other, path)
+                        self.assertNotEqual(previous.st_ino, path.stat().st_ino)
+                    else:
+                        # Same inode, size and restored mtime cannot certify content.
+                        corrupted = original.replace(b'"verification_deferred"', b'"verification_deferrex"')
+                        self.assertNotEqual(original, corrupted)
+                        self.assertEqual(len(original), len(corrupted))
+                        path.write_bytes(corrupted)
+                        expected[0] = corrupted
+                    os.utime(path, ns=(previous.st_atime_ns, previous.st_mtime_ns))
+                    with guard(*args):
+                        yield
+                with mock.patch.object(self.repository, "publication_guard", side_effect=changed):
+                    self.assertEqual(self.refresh()["publication"], "pending")
+                self.assertEqual(path.read_bytes(), expected[0])
+                self._assert_no_temporary()
+
+    def test_changed_destination_after_temporary_is_not_overwritten(self):
+        last_good = self._changed_index()
+        path = self.target.resolved_usage_index
+        def replace_destination():
+            other = path.with_name("concurrent-index.json")
+            other.write_bytes(last_good)
+            os.replace(other, path)
+        with self._after_index_preparation(replace_destination):
+            self.assertEqual(self.refresh()["publication"], "pending")
+        self.assertEqual(path.read_bytes(), last_good)
+        self._assert_no_temporary()
+
+    def test_absent_destination_that_appears_after_preparation_is_preserved(self):
+        self.history(2)
+        path = self.target.resolved_usage_index
+        with self._after_index_preparation(lambda: path.write_bytes(b"concurrent-index")):
+            self.assertEqual(self.refresh()["publication"], "pending")
+        self.assertEqual(path.read_bytes(), b"concurrent-index")
+        self._assert_no_temporary()
+        with self.repository.connection() as connection:
+            self.assertEqual(self.repository._publication_state(connection)["published"], 0)
+
+    def test_oversize_preparation_never_enters_guard_or_changes_last_good(self):
+        self.history(2)
+        self.assertEqual(self.refresh()["publication"], "current")
+        path = self.target.resolved_usage_index
+        last_good = path.read_bytes()
+        @contextmanager
+        def forbidden():
+            self.fail("oversize bytes entered the adoption guard")
+            yield
+        with self.assertRaises(UsageError):
+            service._publish(path, {"oversize": "x" * service.MAX_DOCUMENT_BYTES},
+                             self.target.resolved_usage_root, immutable=False, guard=forbidden())
+        self.assertEqual(path.read_bytes(), last_good)
+        self._assert_no_temporary()
+
+    def test_budget_expiry_after_preparation_and_during_guard_preserves_last_good(self):
+        last_good = self._changed_index()
+        for expire_at in ("preparation", "guard"):
+            with self.subTest(expire_at=expire_at):
+                clock, prepared = [0.0], [False]
+                basis = self.repository._core_basis
+                def preparation():
+                    prepared[0] = True
+                    if expire_at == "preparation":
+                        clock[0] = 11.0
+                def checked(*args, **kwargs):
+                    result = basis(*args, **kwargs)
+                    if prepared[0] and expire_at == "guard":
+                        clock[0] = 11.0
+                    return result
+                with mock.patch.object(incremental, "monotonic", side_effect=lambda: clock[0]), \
+                        self._after_index_preparation(preparation), \
+                        mock.patch.object(self.repository, "_core_basis", side_effect=checked):
+                    self.assertEqual(service.refresh_usage(self.target, deadline=10.0)["publication"], "pending")
+                self.assertEqual(self.target.resolved_usage_index.read_bytes(), last_good)
+                self._assert_no_temporary()
+        self.repository.deadline = float("inf")
+        self.assertEqual(self.refresh()["publication"], "current")
+
+    def test_failed_snapshot_or_index_adoption_cleans_temporary_and_replays(self):
+        last_good = self._changed_index()
+        for operation in ("rename_no_replace", "_atomic_replace_temporary"):
+            with self.subTest(operation=operation):
+                with mock.patch.object(service, operation, side_effect=UsageError()):
+                    self.assertEqual(self.refresh()["publication"], "pending")
+                self.assertEqual(self.target.resolved_usage_index.read_bytes(), last_good)
+                self._assert_no_temporary()
+        self.assertEqual(self.refresh()["publication"], "current")
 
     def test_explicit_migration_preserves_populated_schema6_and_all_older_schemas(self):
         for previous in UsagePublicationRepository._previous_repositories:

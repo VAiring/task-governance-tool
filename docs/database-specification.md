@@ -1319,8 +1319,17 @@ The cursor is scoped to the exact prospective index (snapshot identities,
 current identities, valid original-cycle links, attribution, core basis and
 unattributed totals). A changed basis invalidates its reuse. Stale concurrent
 advances fail closed; a failed file operation never advances that step.
-After every item is visited, fresh admitted reads recheck the capture, source
-and structural classification inputs and index membership before replacement.
+After every item is visited, index encoding, observation of existing bytes and
+durable temporary-file preparation run without core or numerical readers.
+Fresh admitted reads then recheck the cursor, capture, source and structural
+classification inputs and index membership, and remain open only through final
+destination validation and atomic adoption. The prior physical destination
+identity is revalidated; an absent destination must remain absent. Equal-byte
+index replay also checks fresh database state and re-reads the same physical
+file's bytes before adoption. A preparation or guard failure cleans up its
+temporary file without advancing the cursor or replacing last-good output.
+The existing cooperative deadline applies through preparation and the final
+guard; temporary preparation does not reset or extend it.
 Snapshot files always precede the index. If index publication fails, its
 completed audit position can be retried on the unchanged basis.
 

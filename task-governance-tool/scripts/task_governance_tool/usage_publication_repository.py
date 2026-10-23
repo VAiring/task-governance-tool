@@ -153,9 +153,11 @@ class UsagePublicationRepository(UsageResponseRepository):
         guard checks structural capture/collection changes, not mtime or a
         promise that previous files are still intact.
         """
+        index_basis = digest(index)
+        self.check_budget()
         with self.connection() as connection, core_reader() as core:
             if (self._publication_state(connection) != state or state["position"] != state["total"]
-                    or state["basis"] != digest(index)):
+                    or state["basis"] != index_basis):
                 raise UsageError("cursor_stale")
             fingerprint, periods = self._core_basis(core, connection)
             capture = connection.execute("SELECT core_digest FROM usage_capture WHERE singleton=1").fetchone()
@@ -164,4 +166,5 @@ class UsagePublicationRepository(UsageResponseRepository):
                     or self._index_metadata(connection, periods) != {key: index[key] for key in
                         ("snapshots", "current_snapshot_ids", "cycle_links")}):
                 raise UsageError("usage_pending")
+            self.check_budget()
             yield

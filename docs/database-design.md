@@ -1346,10 +1346,20 @@ The writer closes before file I/O. Each subsequent short numerical read fully
 validates one snapshot; the service compares/publishes its immutable bytes,
 then CAS-advances the saved position. A losing cursor never regresses a winner.
 A new event retains the cursor only for the identical prospective index and
-an unfinished sweep, otherwise starts at zero. A final fresh numerical/core
-read validates the saved cursor, capture, no pending dirty turns and exact
-index metadata, and remains open during index replacement to fence concurrent
-normal writers. The published flag is saved afterward; an interruption at
+an unfinished sweep, otherwise starts at zero. The service encodes the index,
+observes destination bytes/physical identity and creates its durable temporary
+before entering `publication_guard`; computing the index digest also precedes
+opening its readers. The guard checks the cooperative budget, then fresh
+numerical/core reads validate the saved cursor, capture, no pending dirty turns
+and exact index metadata. A second budget check precedes adoption. These readers
+remain open during final destination validation and index replacement to fence
+concurrent normal writers. Equal-byte replay re-reads bytes and checks the
+observed physical identity under that same fresh guard; it cannot return on
+the earlier observation alone. The service retains validated no-replace/replace
+operations and temporary cleanup on guard or adoption failure. Immutable
+snapshot preparation already follows its numerical reader's close, and cursor
+CAS still follows file adoption without retaining either guard reader.
+The published flag is saved afterward; an interruption at
 that boundary permits idempotent index replay. No core writer spans this work.
 
 The saved position is completed work, not an unchanged-byte certificate. The

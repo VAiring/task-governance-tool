@@ -931,9 +931,15 @@ observed by these methods. Any script invalidates lifetime measurement because
 an internal commit/restart may have occurred. SAVEPOINT/RELEASE/ROLLBACK TO use
 closed labels without names. Backup API calls have one aggregate observation;
 private destinations use the low-level observer without changing configuration.
-The driver's shortcut methods return native cursors: their fetch and subsequent
-execution are not intercepted; explicit default `connection.cursor()` execution
-is intercepted. Caller-supplied connection factories remain authoritative and
+For common logging, `sqlite_sql_trace.py` supplies the shared default cursor
+observer for explicit cursors and connection shortcuts. A shortcut constructs
+one default native cursor subclass and invokes its native Cursor API once;
+it does not also call Connection.execute and double-count the operation.
+Fetch/iteration delegate once without inspecting SQL, parameters or row values.
+Native connection context exit remains unchanged. Dedicated SQLite-only logging
+keeps native shortcut cursors and its existing transaction-only behavior.
+Caller-supplied cursor factories are passed through unchanged and counted as
+unmeasured. Caller-supplied connection factories remain authoritative and
 suppress publication because their close cannot be tracked.
 SQL classification remains transient and only a
 closed phase label reaches the collector. Public error mapping, driver waits
@@ -943,8 +949,24 @@ The counters exclude final serialization and sink I/O, which take place after
 tracked connections close and cannot lengthen their measured transaction span.
 Scope exit seals the collector: late close cannot revive an ended operation.
 Cross-thread use without an independent collector makes publication unavailable.
+That guard and current read-only suppression also apply to borrowed existing
+connections/cursors before native SQL, fetch, creation or close dispatch. The
+common publisher rechecks its owning thread and suppression at finalization.
+Unobservable native outcomes start unknown; captured failure/cancellation is
+retained before fallible aggregation. Iterator EOF is inferred only under
+known built-in conversion without enabled converters; otherwise its exception
+is an explicitly unknown outcome, including in errors-only output.
 The [inventory](logger-design.md#connection-inventory) maps every application
 opener and entry, including no-write exceptions and static regression coverage.
+SQL observations reuse those scopes. Bounded execution metadata and call-site
+aggregates live in the common Session's collector; they contain no cursor,
+connection, frame, SQL, parameter or result objects. Cursor reuse closes the
+previous observation, while scripts preserve its existing result association.
+Native reexecution failure makes subsequent consumption unbound. Connection
+close ends outstanding observations; scope exit discards or publishes them
+under the same admission and closed-connection rules. The
+[SQL design](logger-design.md#sql-measurements) owns the budgets and precise
+unknown/partial timing and row semantics. It adds no database inspection.
 Other diagnostic components retain their defined scope and public envelopes are unchanged.
 
 Git subprocesses use fixed argument vectors, no shell, bounded timeout, safe

@@ -15,6 +15,7 @@ from uuid import uuid4
 from . import debug_log_values as projection
 from . import sqlite_diagnostics as sqlite
 from .debug_log_sink import admit
+from .sqlite_sql_trace import Metrics, RESERVED_EVENTS
 
 MAX_EVENTS = 256
 MAX_BUFFER_BYTES = 512 * 1024
@@ -42,11 +43,12 @@ class Session:
         self.collector = sqlite.Collector(sink.directory, sink.root, "transactions", operation=operation,
             marker=sink.marker, directory_identity=sink.identity, record_sink=self.db_event)
         self.collector.operation_id = self.invocation_id
+        self.collector.sql_metrics = Metrics(self.mode, self.emit, self.collector)
 
     def drop(self, reason):
         self.dropped[reason] = self.dropped.get(reason, 0) + 1
 
-    def emit(self, kind, details, *, failed=False, moment=None):
+    def emit(self, kind, details, *, failed=False, moment=None, reserved=False):
         """Internal protected-record entry, not an arbitrary public message API."""
         started = time.perf_counter_ns()
         try:
@@ -67,6 +69,8 @@ class Session:
             # Reserve the final summary's event slot as part of the same
             # operation budget, including when the detail buffer overflowed.
             limit = MAX_EVENTS if kind == "diagnostic.summary" else MAX_EVENTS - 1
+            if kind != "diagnostic.summary" and not reserved:
+                limit -= RESERVED_EVENTS
             while len(self.events) >= limit or self.size + len(data) > MAX_BUFFER_BYTES:
                 if not failed or not self.events:
                     self.drop("buffer_limit")
@@ -87,8 +91,12 @@ class Session:
         self.emit("db.transaction", record, failed=record["outcome"] in {"failed", "cancelled"}, moment=moment)
 
     def finish(self):
+        if sqlite.suppressed() or threading.get_ident() != self.collector.thread_id:
+            self.collector.mark_untracked()
+        allowed = self.validated and not self.collector._open and not self.collector._untracked
+        self.collector.sql_metrics.finish(publish=allowed)
         self.collector.sealed = True
-        if not self.validated or self.collector._open or self.collector._untracked:
+        if not allowed:
             self.events.clear()
             return
         batches = {}

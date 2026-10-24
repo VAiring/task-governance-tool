@@ -1155,6 +1155,35 @@ fresh/relocated state; unconfirmed destinations never receive diagnostic output.
 See the [connection and entry inventory](logger-design.md#connection-inventory)
 for ownership, admission, finite scopes and no-write exceptions.
 
+Common `debug` logging also observes application SQL execution and result
+consumption through the shared connection/default cursor layer. Each execution
+has a generated ID, connection/transaction association and a code-owned call-site
+SQL ID; SQL text, its hash, parameters and row values are never identifiers or
+log content. `execute`, `executemany`, `executescript`, `fetchone`, `fetchmany`,
+`fetchall` and iteration are measured once at their native API boundary.
+Shortcut-returned default cursors retain observation when reused. Explicit
+custom cursor factories are preserved and reported as unmeasured.
+
+Native API time includes conversion, row factories and user functions; it is
+not SQLite CPU time. Execution time, fetch time, result lifetime and observer
+overhead have separate meanings. Inclusive nested times must not be summed.
+Only rows actually returned are counted, with unknown/partial consumption
+explicit; no prefetch, COUNT, added SQL, schema or per-call file I/O is allowed.
+Scripts, parameter batches and triggers remain aggregate-only: internal
+statement counts/durations are unknown. Failed reexecution cannot bind old
+remaining rows to the failed SQL. Code location is revision-local, not a durable
+cross-version query identity.
+
+Per-operation bounded aggregates retain call counts, totals and maxima even
+when individual details overflow. Omitted groups/details, unknown binding,
+unmeasured factories and observation failures explicitly indicate partial
+coverage. Iterator exceptions that cannot be distinguished from converter or
+factory failures are explicitly unknown and retained in `errors`; ordinary
+native EOF remains successful. `errors` otherwise keeps failed SQL/fetch
+observations, not successful SQL details or aggregates. Existing OFF, read-only,
+admission, output and primary exception guarantees remain unchanged. The exact budgets, correlation and
+consumption rules are in [SQL measurements](logger-design.md#sql-measurements).
+
 #### SQLite Transaction Diagnostics
 
 The reusable SQLite logger is disabled by default. Explicit local opt-in

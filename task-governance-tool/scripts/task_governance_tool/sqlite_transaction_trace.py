@@ -12,6 +12,7 @@ import sys
 from time import perf_counter_ns
 
 from .debug_log_values import plain_fields
+from . import sqlite_sql_trace as sql_trace
 
 
 _ROLES = frozenset({"core", "numerical", "operational", "backup", "other"})
@@ -132,28 +133,18 @@ def _overhead(collector, started, native_elapsed, previous):
         pass
 
 
-class _ObservedCursor(sqlite3.Cursor):
-    def execute(self, *args, **kwargs):
-        native = super().execute
-        return self.connection._observe(lambda: native(*args, **kwargs), None, sql=(args, kwargs))
-
-    def executemany(self, *args, **kwargs):
-        native = super().executemany
-        return self.connection._observe(lambda: native(*args, **kwargs), None, sql=(args, kwargs))
-
-    def executescript(self, *args, **kwargs):
-        native = super().executescript
-        return self.connection._observe(lambda: native(*args, **kwargs), "script")
+_ObservedCursor = sql_trace._ObservedCursor
 
 
 class _ObservedConnection(sqlite3.Connection):
-    def _bind_observer(self, collector, connection_id):
+    def _bind_observer(self, collector, connection_id, *, converters_possible=True):
         self._diagnostic_collector = collector
         self._diagnostic_id = connection_id
         self._diagnostic_transaction = None
         self._diagnostic_started = None
         self._diagnostic_sequence = 0
         self._diagnostic_closed = False
+        self._diagnostic_converters_possible = converters_possible
 
     def _active(self):
         try:
@@ -228,8 +219,8 @@ class _ObservedConnection(sqlite3.Connection):
             self._diagnostic_collector.closed(self._diagnostic_id)
 
     def _observe(self, native, phase, *, mode=None, context_exit=False, sql=None,
-                 transaction_method=False):
-        collector = getattr(self, "_diagnostic_collector", None)
+                 transaction_method=False, observed=None):
+        collector = sql_trace.observer_collector(self)
         if collector is None:
             return native()
         try:
@@ -252,6 +243,7 @@ class _ObservedConnection(sqlite3.Connection):
             except BaseException:
                 pass
             else:
+                sql_trace.safe(observed, None, error, started, ended)
                 _overhead(collector, overhead_started, ended - started, previous_overhead)
             raise
         try:
@@ -261,24 +253,24 @@ class _ObservedConnection(sqlite3.Connection):
         except BaseException:
             pass
         else:
+            sql_trace.safe(observed, result, None, started, ended)
             _overhead(collector, overhead_started, ended - started, previous_overhead)
         return result
 
     def execute(self, *args, **kwargs):
-        native = super().execute
-        return self._observe(lambda: native(*args, **kwargs), None, sql=(args, kwargs))
+        return sql_trace.shortcut(self, 'execute', args, kwargs)
 
     def executemany(self, *args, **kwargs):
-        native = super().executemany
-        return self._observe(lambda: native(*args, **kwargs), None, sql=(args, kwargs))
+        return sql_trace.shortcut(self, 'executemany', args, kwargs)
 
     def executescript(self, *args, **kwargs):
-        native = super().executescript
-        return self._observe(lambda: native(*args, **kwargs), "script")
+        return sql_trace.shortcut(self, 'executescript', args, kwargs)
 
     def cursor(self, *args, **kwargs):
+        sql_trace.observer_collector(self)
         if not args and not kwargs:
             return super().cursor(factory=_ObservedCursor)
+        sql_trace.custom_cursor(self)
         return super().cursor(*args, **kwargs)
 
     def commit(self):
@@ -292,7 +284,9 @@ class _ObservedConnection(sqlite3.Connection):
         return self._observe(lambda: native(*args, **kwargs), "backup")
 
     def close(self):
-        return self._observe(super().close, "close")
+        result = self._observe(super().close, "close")
+        sql_trace.connection_closed(self)
+        return result
 
     def __exit__(self, *args):
         phase = ("commit" if args and args[0] is None else "rollback") if self._active() else "context_exit"
@@ -343,7 +337,9 @@ def connect_traced(database, *args, access="readwrite", role=None, **kwargs):
         raise
     try:
         ended = perf_counter_ns()
-        connection._bind_observer(collector, connection_id)
+        detect_types = args[1] if len(args) > 1 else fields.get('detect_types', 0)
+        connection._bind_observer(collector, connection_id,
+                                  converters_possible=type(detect_types) is not int or detect_types != 0)
         connection._after("open", False, started, ended, None, None, False)
         _overhead(collector, overhead_started, ended - started, previous_overhead)
     except BaseException:

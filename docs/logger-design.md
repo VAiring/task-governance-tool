@@ -112,6 +112,75 @@ summaryのbuffer_instrumentation_nsは保護済みレコード構築・JSON化�
 呼出し側の引数投影、summary自身、sink I/O、admissionを含まない。全費用は隔離環境で
 OFF/ONの呼出し全体を比較する。SQLite計測負荷は既存collector値を別記する。
 
+<a id="sql-measurements"></a>
+
+### SQLと結果取得の計測
+
+一般loggerのdebug/errorsだけで `sqlite_sql_trace.py` を使う。SQL本文・そのhash・
+引数値・行値を読まず、コード位置（package内module/function/行/bytecode offset/API）を
+sql_idにする。最大32フレームの字句的な探索で特定不能なら `other:<API>`。
+同じ呼出し位置の動的SQLは同一集計となる。これはSQLの意味や版をまたぐ同一性を
+保証するIDではない。入力由来のSQL名・自由ラベルを受け付けない。
+
+invocation_id内でexecution_idを発行し、connection_id、開始前と戻り時のtransaction_id、
+親execution_id、API、bindingを保持する。transactionがない場合はnull。
+fetch時点のtransactionは別記し、消費中に切り替わった場合はmixedとして単一IDを推測しない。
+connectionのshortcutは既定cursorを1つ作りnative Cursor APIを1回だけ呼ぶ。
+明示cursorと同じobserverを通り、shortcut再利用・bound method・iteratorも追跡する。
+任意のcursor factoryはnativeへそのまま渡し、その呼出しを未計測として数える。
+cursor生成の失敗はSQLに到達していない未計測であり、SQL時間0の成功として扱わない。
+
+| 計測 | 意味 |
+|---|---|
+| execute_ns / execute_max_ns | execute/many/scriptのnative API試行時間。batchやscript内部の件数・時間はunknown |
+| fetch_ns / fetch_max_ns / fetch_calls | fetchone/many/all/nextのnative呼出し。executeとは別集計 |
+| rows_lower_bound / rows_known | 実際に返された行数の下限と全呼出しで正確に数えられたか |
+| wall_lifetime_ns | 実行観測開始から再利用・close・解放・scope終了まで。利用者の待ち時間も含む |
+| SQL summaryのinstrumentation_ns | native時間を除くSQL wrapper内の観測負荷。admission、sink I/O、最終集計出力を除く |
+
+API時間はUDF・adapter・converter・row factoryを含むinclusive時間であり、SQLite単体CPU
+時間ではない。親SQLからUDFが子SQLを呼べば親時間に子の実行・観測が含まれる。
+親子時間やexecute/fetchとwall lifetimeを合算しない。SQL wrapper、transaction observer、
+bufferの負荷計測にも包含関係があり、これらを足して総負荷としない。全費用はOFF/ON比較で測る。
+trigger内部、script内部、manyの個別パラメーター実行は外側APIに含め、内訳を捏造しない。
+
+fetchmany/allの返却listと成功nextだけは実返却数を数える。fetchoneは標準tuple/Rowの
+結果だけNoneをEOFと判断する。nextのStopIterationは、接続時にconverterが無効と確認でき、
+取得前後とも標準row/text factoryである場合だけEOFとする。それ以外のStopIterationは
+converter/text/row factoryの例外と区別できないため、outcomeとconsumptionをunknownにし、
+errorsでも不確かな取得例外として保存する。変換設定の確認はcode-ownedな真偽値と
+native factory descriptorだけで行い、converterや行を追加実行・展開しない。
+custom row factoryのNoneもunknownにする。fetchoneのrow factoryは取得前後とも
+標準であることを確認し、factory自身が設定を変更して返したNoneをEOFと断定しない。
+fetch中の例外では途中生成した行を取得できないため、その呼出しの数はunknown。
+SELECTの未取得・途中再利用/closeはpartial、EOF確認はcomplete、結果なしはno_rows、
+script内部の結果はdiscarded。これらは処理成功やDB変更件数の証拠ではない。
+再実行失敗は以前の結果を残す場合も消す場合もあるため、旧観測を閉じ、新しいfetchを
+unboundにする。失敗したSQLへ旧結果を帰属させない。scriptは既存cursorの結果を保つので、
+script自身のaggregateを閉じても旧結果との対応は維持する。COUNTやprefetchは追加しない。
+
+1操作の独立上限は32 SQL集計、128同時実行観測、64実行詳細。count/累積nsは
+63bit非負整数で飽和を表示する。上限後も保持済みSQL集計は継続する。
+計測できなかったexecute時間はnullとし、0の実測と区別する。
+実行状態の初期値もunknownとし、native成否を集計より先に確定する。観測障害時に
+確定していない成否や消費状態を成功・完全取得にせず、既知の失敗・取消を保持する。
+超過した集計呼出し、詳細、追跡不能実行、unbound fetch、custom cursor、位置不明、観測失敗を
+SQL summaryで報告する。詳細は失敗を優先し、同じ優先度では古い失敗を落とす。
+256イベントのうち97枠をSQL詳細・集計・summary、1枠を全体summaryに予約する。
+既存のbyte上限やsink拒否で出力自体が失われ得るため、summaryのpartial=falseでも
+全体ログの破棄件数と欠落条件を無視して完全性を主張しない。
+errorsでは失敗したSQL/fetchと上記の不確かな取得例外だけを有限保存し、成功詳細と成功集計は出力しない。
+日付は実行詳細の終了・失敗観測時、集計はscope終了時。全体の保存条件は変えない。
+
+静的棚卸しは `tests/fixtures/sql_api_inventory.json` を正本fixtureとして
+`test_sql_api_inventory` が照合する。66 SQL所有moduleの2,260属性参照を列挙し、
+同名executeを持つ2つのGit finalizer所有moduleは非SQLとして明示する。
+直接callだけでなくbound aliasへの属性取得を含める。SQL文字列はfixtureにも持たない。
+接続棚卸しと組み合わせ、native dispatch・動的dispatchの新規経路を要確認とする。
+静的検査はPython全体の型/動的制御の証明ではない。implicit iterationとshortcut再利用は
+実SQLiteのnative比較と実運用入口の回帰で補う。独自factory・scopeなし・read-only抑止は
+未計測/保存対象外として既存境界を維持する。
+
 <a id="sqlite-integration"></a>
 
 ## SQLiteとの接続
@@ -156,7 +225,8 @@ factoryを使用する。usageのlocator/attribution/publication repositoryも�
 factoryを使う。直接connectを使う独自の設定は低層connect_tracedへ接続し、共有factory
 への置換によってisolationやRow factoryを変えない。利用者指定factoryは従来どおり
 nativeへ渡し、closeを証明できないためその操作の出力を抑止する。アプリ所有の接続に
-独自factoryの使用はない。SQL成功・fetchの個別計測はこのtransaction観測の責務ではない。
+独自factoryの使用はない。SQL成功・fetchは一般loggerの上記SQL observerが所有し、
+transaction専用sinkへ重複して追加しない。
 
 | 処理入口 | process/thread・scope | 既存admission・出力条件 |
 |---|---|---|
@@ -174,6 +244,9 @@ nativeへ渡し、closeを証明できないためその操作の出力を抑止
 workerにはproject/packageだけを渡すscope factoryを明示配線する。ContextVarや
 可変collectorを親から共有しない。終了したcollectorはsealし、遅延closeから再開しない。
 同一collectorを別threadで使った場合も保存を抑止する。
+既存connection/cursorの再利用でも、SQL・fetch/iteration・close・transaction経路で
+現在の抑止状態とthread所有者を確認する。別threadやread-only抑止中の利用は、
+nativeが成功したか拒否したかにかかわらず元のcollectorを未追跡にし、後からの公開を防ぐ。
 
 doctor・明示read-only・レビューread/material/wait-basis/finalize --check・MCP
 inspect/view/direct_statusは、内部の共有factoryを隔離harnessで観測するが実運用では

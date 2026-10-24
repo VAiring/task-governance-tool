@@ -691,12 +691,12 @@ schema, selected recovery schema, or null. Policy values are effective
 requested/stored values, not persistence claims. `maintenance_enabled`,
 Evidence status, and Viewer status describe durable post-command state.
 
-`usage` independently contains `status`, `schema_to=8`, `planned_writes`,
+`usage` independently contains `status`, `schema_to=9`, `planned_writes`,
 `completed_writes` and `error`. Status is `not_attempted` after core failure,
 `pending_core_setup` when preview cannot yet admit the future core binding,
 `not_present` for an admitted missing-store preview, `initialized` after
-publication, `migration_required` for exact schema 1 through 7 in preview, `migrated`
-after the atomic schema-1-through-7-to-8 transaction, `current` after validation, or `unavailable`.
+publication, `migration_required` for exact schema 1 through 8 in preview, `migrated`
+after the atomic schema-1-through-8-to-9 transaction, `current` after validation, or `unavailable`.
 Write stages are `usage_initialize` and `usage_migrate`; completed writes are empty in preview. `error` is null
 except the fixed `usage_unavailable` for numerical failure. Core `ok`, errors,
 status and write lists remain about core setup: numerical failure does not
@@ -1001,7 +1001,7 @@ Persisted complete records flow through the existing atomic cursor/observation
 writer and immutable usage publisher. Delayed endpoint records, completed Tasks
 and previous participants are retried at later events. Interrupted/concurrent
 work remains replayable; stale batches do not rerun a Task command. Missing or
-invalid sources preserve observed totals with gaps. Existing schema8 is required:
+invalid sources preserve observed totals with gaps. Existing schema9 is required:
 events never initialize, migrate, repair or rebind a database.
 
 Collection reserves bounded work for previous participants, old segments and

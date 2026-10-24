@@ -17,12 +17,12 @@ from task_governance_tool.state_paths import (
 from task_governance_tool.storage import connect_initialized_readonly
 from task_governance_tool.task_ownership import validate_storage_rows as validate_usage_ownership
 from task_governance_tool.usage_evidence import encode, MAX_DOCUMENT_BYTES
-from task_governance_tool.usage_locator_repository import UsageLocatorRepository
+from task_governance_tool.usage_work_order_repository import UsageWorkOrderRepository
 from task_governance_tool.usage_values import UsageError
 
 
 def repository_for(target):
-    return UsageLocatorRepository(target.resolved_usage_database, target.project.project_id,
+    return UsageWorkOrderRepository(target.resolved_usage_database, target.project.project_id,
                                    target.binding_path_hash, target.binding_generation)
 
 

@@ -368,11 +368,11 @@
     },
     "storage.py": {
       "attributes": {
-        "execute": 424,
+        "execute": 426,
         "executescript": 2,
-        "fetchall": 109,
+        "fetchall": 108,
         "fetchmany": 2,
-        "fetchone": 132
+        "fetchone": 134
       },
       "kind": "observed_connection"
     },
@@ -428,7 +428,7 @@
     },
     "usage_incremental_repository.py": {
       "attributes": {
-        "execute": 30,
+        "execute": 29,
         "executemany": 3,
         "fetchone": 13
       },

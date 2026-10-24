@@ -716,9 +716,9 @@ or general migration framework is added.
 
 ## Numerical Usage Store
 
-Numerical collection uses independent schema 8 in the resolver-owned
+Numerical collection uses independent schema 9 in the resolver-owned
 `current/taskgov-usage.sqlite`, not the main schema sequence. Explicit setup
-initializes an absent store, migrates exact schema 1 through 7, and validates
+initializes an absent store, migrates exact schema 1 through 8, and validates
 current state. Normal reads and
 collection never initialize, migrate or repair it. Incompatible structure,
 WAL, corruption, contention or project/binding mismatch produces unavailable
@@ -726,6 +726,16 @@ usage, never a core admission failure or a weakened quality gate. Existing
 core backup/restore does not copy this store or claim a paired numerical
 snapshot. Attribution revalidates Task/execution references against restored
 core state; immutable cycle-linked snapshots follow the contract below.
+
+Schema 9 adds only an index on the existing attempt number, plus its migration
+marker. Candidate ordering and partial-page coverage read only their supplied
+source identities. The oldest-candidate/current allocation, failed-attempt
+updates and monotonic watermark meaning remain unchanged. Maximum-attempt
+lookup uses the index inside the same writer as its update or discovery CAS;
+there is no separately cached counter. Migration preserves existing IDs,
+observations, attempt numbers and schema-6-and-later continuations; schemas 1–5
+retain their existing contextual replay rule. Old DDL and migration identities
+remain frozen, and ordinary access never performs the upgrade.
 
 The internal collector accepts one registered participant session and one
 explicit physical segment under its allowed local source root. Header thread,

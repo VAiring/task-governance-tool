@@ -803,6 +803,25 @@ retired component bases can be deleted because their effect is already captured
 in immutable snapshots; no response, observation, incarnation, snapshot, member,
 cycle link or supersession history is deleted.
 
+Candidate attempt lookups use source-primary-key searches for the supplied
+page only, in parameter batches of at most 128 without truncating a larger
+internal selection. `work_order` keeps the same `(last_attempt, source_id)`
+ordering (unseen first) and current-participant preference. `unattempted_sources`
+compares only those candidates with the page's strict attempt watermark.
+Neither operation materializes unrelated attempt history.
+
+`UsageWorkOrderRepository` in `usage_work_order_repository.py` extends the
+locator repository with numerical schema 9 (`indexed_work_order`) and
+`usage_work_order_by_attempt ON usage_work_order(last_attempt)`. The existing
+`MAX(last_attempt)` statements in `_record_attempt` and `commit_discovery` use
+that index; their writer, cursor/discovery CAS and rollback boundaries do not
+change. No persisted counter or validated-state cache is introduced. Current
+factories select this subclass. Explicit Setup creates it or upgrades exact
+schemas 1–8 atomically through the existing engine. Schema 8 retains every
+existing row and continuation; earlier versions use their existing migration
+policy. The old schema statements remain unchanged. Failure rolls back the
+index and marker; reentry validates rather than repairs.
+
 `UsageLocatorRepository` in `usage_locator_repository.py` extends the publication
 repository with numerical schema 8 (`source_locators`). `usage_locators` holds
 registered-session location candidates separately from `usage_sources`; its
@@ -851,15 +870,16 @@ to loss diagnosis. Known sources rely on direct attempt diagnostics, while the
 missing-session fallback reports participants with no admitted source. No
 locator operation deletes previously recorded source gaps.
 
-Explicit Setup creates schema 8 through the existing temporary/no-replace path
-or migrates each exact schema 1-7 using the existing atomic migration engine.
+The retained schema-8 locator layer uses the existing temporary/no-replace
+creation path or atomic migration engine for each exact schema 1-7 predecessor.
 The new tables start empty; a source hash cannot reconstruct a location. The
 schema-7 predecessor keeps every existing table row and continuation unchanged.
 Schema 6 likewise retains its collection contexts; schemas 1-5 use the existing
 response-format replay rule. The exact predecessor admitted under the migration
 writer selects this behavior. Failure rolls back the delta, and normal reads
-or Hook events neither initialize nor migrate it. Factories select this subclass
-without replacing the publication repository's existing audit behavior.
+or Hook events neither initialize nor migrate it. Current factories select
+`UsageWorkOrderRepository`, which extends this locator layer without replacing
+the publication repository's existing audit behavior.
 
 `usage_incremental_projection.py` reevaluates structural interval geometry and
 diagnostics using the admitted core and numerical snapshot. A component basis
@@ -922,9 +942,9 @@ Turn observations, response observations and source cursor commit atomically.
 `usage_review_boundaries` and `usage_review_receipt_turns`
 to numerical schema 1. Explicit initialization migrates the migration-marker
 table and adds the new relations in one short transaction, recording version 2
-last. No ordinary read or collector migrates. The setup factory selects schema 8
+last. No ordinary read or collector migrates. The setup factory selects schema 9
 for the current package. Preview returns `migration_required` and planned `usage_migrate` for
-an exact schema-1 through schema-7 store; explicit setup returns `migrated` and that completed
+an exact schema-1 through schema-8 store; explicit setup returns `migrated` and that completed
 write on success. Fresh-store creation keeps `usage_initialize`. Failure remains
 a separate numerical outcome, not rollback or rejection of core setup.
 
@@ -1323,7 +1343,7 @@ Task totals and work-unit parts union original keys; shared parts name actual
 Task/execution identities instead of displaying another period's shared total
 as an exclusive value. The v2 index exposes known-unassigned versus unknown
 observed values without a completion gate or new hook/LLM action. Current
-factories select the schema-8 locator subclass through `usage_collection.py` and
+factories select the schema-9 work-order subclass through `usage_collection.py` and
 `usage_evidence_service.py`; lifecycle composition and source discovery stay
 with their existing owners.
 

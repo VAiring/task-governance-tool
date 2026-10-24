@@ -156,13 +156,30 @@ class UsageIncrementalRepository(UsageWaitRepository):
 
     def work_order(self, sources, thread, *, hint_id=None):
         with self.connection() as connection:
-            attempts = dict(connection.execute("SELECT source_id,last_attempt FROM usage_work_order"))
+            attempts = self._candidate_attempts(connection, sources)
         fair = sorted(sources, key=lambda key: (attempts.get(key, -1), key))
         # Reserve the first slot for globally oldest work, then one caller slot.
         # Even tiny budgets therefore advance old sessions/segments under load.
         priority = (hint_id if hint_id in sources and sources[hint_id].thread_id == thread else
                     next((key for key in fair if sources[key].thread_id == thread), None))
         return list(dict.fromkeys([*fair[:1], *([priority] if priority else []), *fair[1:]]))
+
+    def _candidate_attempts(self, connection, sources):
+        """Lookup only this candidate page, within one admitted connection.
+
+        Chunk bind parameters without truncating a larger internal caller's
+        selection. The source primary key bounds each lookup, including absent
+        candidates; no unrelated history is materialized in Python.
+        """
+        identities = tuple(dict.fromkeys(sources))
+        attempts = {}
+        for start in range(0, len(identities), 128):
+            page = identities[start:start + 128]
+            placeholders = ",".join("?" for _ in page)
+            attempts.update(connection.execute(
+                "SELECT source_id,last_attempt FROM usage_work_order WHERE source_id IN ("
+                + placeholders + ")", page))
+        return attempts
 
     def discovery_position(self):
         with self.connection() as connection:
@@ -187,10 +204,11 @@ class UsageIncrementalRepository(UsageWaitRepository):
 
     def unattempted_sources(self, sources, attempt_floor):
         """Page completion accumulates across events, including failed attempts."""
+        candidates = set(sources)
         with self.connection() as connection:
-            attempted = {row[0] for row in connection.execute(
-                "SELECT source_id FROM usage_work_order WHERE last_attempt>?", (attempt_floor,))}
-        return set(sources) - attempted
+            attempted = {source for source, attempt in self._candidate_attempts(connection, candidates).items()
+                         if attempt > attempt_floor}
+        return candidates - attempted
 
     def missing_sessions(self, sessions, cycle):
         """A finished inventory can diagnose participants never admitted as sources."""

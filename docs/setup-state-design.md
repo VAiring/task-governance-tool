@@ -266,6 +266,11 @@ watermark in the same cursor/CAS transaction; a deadline immediately after that
 commit cannot erase the successful attempt. Other collector callers do not
 change attempt ordering. Each inventory page retains an attempt
 watermark; already attempted candidates remain covered across partial events.
+Ordering and coverage load only the supplied candidates, using their source
+primary key. Schema 9's attempt index supplies the maximum watermark in the
+existing writer transaction, preserving atomic progress even if the deadline
+expires immediately after commit. No all-source attempt-history scan is needed
+for these operations; inventory-loss diagnosis keeps its separate scope.
 Once all page candidates have been attempted, continuation can advance even if
 no single event processed the whole page. An already completed page can advance
 without rereading its bodies. No pending candidate is
@@ -289,7 +294,7 @@ operations, one bounded record, current-component validation and metadata passes
 wall time; there is no universal host-timeout guarantee. The same
 compare-and-commit cursor/continuation rule handles interruption, followed by
 `refresh_usage` for exact-cycle capture and snapshot-first publication. Its
-schema-7 publication cursor, preserved by schema 8, continues the rotating history audit across events; a completed
+schema-7 publication cursor, preserved by schemas 8 and 9, continues the rotating history audit across events; a completed
 sweep retains explicit deferred-integrity status. It uses
 the existing canonical paths above; no daemon, timer, process, model call,
 post-commit Task callback or host-settings writer is added. A later same-project

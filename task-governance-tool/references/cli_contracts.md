@@ -444,7 +444,7 @@ and retry using [outcome and retry rules](#setup-outcomes-and-recovery):
   "viewer_status": "published",
   "usage": {
     "status": "initialized",
-    "schema_to": 8,
+    "schema_to": 9,
     "planned_writes": ["usage_initialize"],
     "completed_writes": ["usage_initialize"],
     "error": null
@@ -556,8 +556,8 @@ durable stages.
 Its status is `not_attempted`, `pending_core_setup` (preview before core
 binding is admitted), `not_present`, `initialized`, `migration_required`,
 `migrated`, `current`, or `unavailable`. Writes are `usage_initialize` and
-`usage_migrate` (exact schema 1 through 7 to 8); preview has no completed write.
-`schema_to` is 8 and `error` is null or fixed `usage_unavailable`. Numerical
+`usage_migrate` (exact schema 1 through 8 to 9); preview has no completed write.
+`schema_to` is 9 and `error` is null or fixed `usage_unavailable`. Numerical
 failure never undoes successful core setup or blocks ordinary Task work;
 do not repeat Task writes to recover usage. This adds no normal-loop action,
 session registration step or automatic collection.

@@ -6,7 +6,7 @@ import re
 
 from . import review_continuation as continuation
 from .evidence_ledger import canonical_json_bytes as canonical_bytes, domain_digest
-from .review_answer import AnswerError, scan_strings, privacy_scan, decode_answer
+from .review_answer import AnswerError, DecodedAnswer, scan_strings, privacy_scan, decode_answer
 from .review_provenance import REVIEW_PROFILES, REVIEW_LENSES, CONTEXT_RELATIONS
 from .session_identity import is_session_id
 from .task_values import TaskValidationError, reject_private_or_raw_content
@@ -197,7 +197,15 @@ def _identity(value):
     session(value["reviewer_session_id"])
     session(value["turn_id"]); host_id(value["message_id"])
 
-def _original(value, raw=None, include_path=True):
+def _match_original(value, answer):
+    """Match all physical facts; answer is local to the admitting operation."""
+    require(type(answer) is DecodedAnswer, "type")
+    require(value["byte_length"] == len(answer.raw) and value["digest"] == answer.original_digest and
+            value["payload_start"] == answer.payload_start and value["payload_length"] == answer.payload_length and
+            value["payload_digest"] == answer.payload_digest, "identity")
+
+
+def _original(value, raw=None, include_path=True, *, answer=None):
     if include_path:
         path = value["path"]
         require(bool(path) and len(path.encode("utf-8")) <= 4096 and "\\" not in path and not any(ord(c) < 32 for c in path), "bound")
@@ -210,19 +218,32 @@ def _original(value, raw=None, include_path=True):
     require(value["payload_start"] + value["payload_length"] <= value["byte_length"], "bound")
     digest(value["digest"]); digest(value["payload_digest"])
     if raw is not None:
-        decoded = decode_answer(raw)
-        require(value["byte_length"] == len(raw) and value["digest"] == decoded.original_digest and
-                value["payload_start"] == decoded.payload_start and value["payload_length"] == decoded.payload_length and
-                value["payload_digest"] == decoded.payload_digest, "identity")
+        answer = decode_answer(raw)
+    if answer is not None:
+        _match_original(value, answer)
+    return answer
 
 def validate_original(value, raw=None, include_path=True):
     result = prepare(value, ORIGINAL if include_path else {k:v for k,v in ORIGINAL.items() if k != "path"})
     _original(result, raw, include_path)
     return result
 
-def _metadata(value, raw=None, include_path=True):
+def _decode_original(value, raw):
+    """Readback admission, preserving OriginalRef-before-raw diagnostics."""
+    result = prepare(value, ORIGINAL)
+    return _original(result, raw)
+
+
+def _validate_original_with_answer(value, answer):
+    require(type(answer) is DecodedAnswer, "type")
+    result = prepare(value, ORIGINAL)
+    _original(result, answer=answer)
+    return result
+
+
+def _metadata(value, raw=None, include_path=True, *, answer=None):
     _basis(value["basis"]); _binding(value["binding"], value["basis"])
-    _identity(value["source_identity"]); _original(value["original"], raw, include_path)
+    _identity(value["source_identity"]); _original(value["original"], raw, include_path, answer=answer)
     binding, identity = value["binding"], value["source_identity"]
     integer(value["attempt"], 0, 1)
     require(identity["reviewer_session_id"] == binding["reviewer_session_id"], "identity")
@@ -247,6 +268,14 @@ def validate_metadata(value, raw=None):
     result = prepare(value, metadata_schema(value))
     _metadata(result, raw)
     return result
+
+def _validate_metadata_with_answer(value, answer):
+    """Internal handoff only; public validators always admit their own raw."""
+    require(type(answer) is DecodedAnswer, "type")
+    result = prepare(value, metadata_schema(value))
+    _metadata(result, answer=answer)
+    return result
+
 
 def metadata_digest(value):
     return domain_digest(b"taskgov-collected-review-metadata-v1\0", validate_metadata(value))

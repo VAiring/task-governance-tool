@@ -380,6 +380,14 @@ The original and payload ranges retain exact delivered UTF-8 bytes; no trimming,
 normalization or reserialization changes their hashes. The payload range
 excludes only surrounding JSON whitespace and, where present, the fence lines.
 
+One internal operation may pass its freshly decoded immutable original and
+validated detached values to its direct consumers. It still compares every
+original/range/digest fact and validates complete metadata and provenance
+structure and context binding. This is not reusable admission: external inputs,
+standalone validators, physical rereads and effect-boundary writer admission
+remain fresh. No public skip-validation option, cross-call cache, original
+reserialization, or change to diagnostic order or protocol arms is permitted.
+
 `review result add` accepts collected originals only through this distinct
 closed stdin discriminator, never by guessing a legacy result's shape:
 

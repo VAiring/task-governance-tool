@@ -148,6 +148,7 @@ LANE_MODULES: dict[str, tuple[str, ...]] = {
         "test_review_answer_pure_provenance",
         "test_review_answer_pure_values",
         "test_review_answer_reader_oracle",
+        "test_review_answer_reuse",
         "test_review_answer_round_binding",
         "test_review_answer_transport",
         "test_review_continuation",

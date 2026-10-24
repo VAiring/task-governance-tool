@@ -515,6 +515,24 @@ detached closed values. `review_answer_provenance.py` builds and validates v2
 after the actual Receipt ID is known; requested assignment and observed sources
 remain separate, and actual model/Skill/methods stay unknown.
 
+Within one transport decode or collection readback, private value helpers pass
+the freshly decoded answer through complete OriginalRef/Metadata checks instead
+of parsing its bytes again. Readback retains the physical confirmation read;
+publication retains its fresh validation immediately before writing. Recovery
+of saved publication validates its newly read bytes once. These values never
+cross a writer or physical-read admission boundary as proof.
+
+The provenance builder validates metadata and payload once, freshly parses
+the supplied `DecodedAnswer.raw`, and compares all decoded fields and exact
+metadata byte facts. Its private matching parser reuses only that same call's
+validated payload when the parsed value is equal; different content is fully
+validated and then rejected as a binding mismatch. The builder admits the
+complete generated structure and size, checks privacy for every other field,
+and uses the standalone validator's provenance semantics and context seal.
+Public provenance validation always validates its own payload. The existing
+payload-dictionary construction arm remains distinct and makes no physical-raw
+assertion. No mutable `DecodedAnswer` payload is trusted from a previous call.
+
 `review_answer_preparation.py` selects the opt-in only for admitted current-schema
 preparations with known execution and a nonzero review tier. Preparation-record
 version two adds per-slot `collection_bases`; version one remains exact and

@@ -206,7 +206,7 @@ class CollectionService:
                 payload_start=decoded.payload_start, payload_length=decoded.payload_length, payload_digest=decoded.payload_digest)
             # A correction never overwrites the invalid initial answer (which
             # was not published). There is one accepted original path per slot.
-            values.validate_original(original, decoded.raw)
+            values._validate_original_with_answer(original, decoded)
             path = files.checked_path(self.repo, original["path"])
             self.check_basis(record["basis"], slot, lease=lease)
             def intent(row):
@@ -266,7 +266,7 @@ class CollectionService:
             original = dict(path=self.original_paths[slot - 1], byte_length=len(decoded.raw),
                 digest=decoded.original_digest, payload_start=decoded.payload_start,
                 payload_length=decoded.payload_length, payload_digest=decoded.payload_digest)
-            values.validate_original(original, decoded.raw)
+            values._validate_original_with_answer(original, decoded)
             path = files.checked_path(self.repo, original["path"])
             self.check_basis(record["basis"], slot, lease=lease)
             def freeze(row):
@@ -338,8 +338,7 @@ class CollectionService:
         if original["path"] != self.original_paths[slot - 1]:
             _fail("binding_mismatch", "identity")
         raw = files.read_bounded(files.checked_path(self.repo, original["path"]), 262144)
-        values.validate_original(original, raw)
-        decode_answer(raw)
+        answer = values._decode_original(original, raw)
         correction = record["correction"]
         metadata = dict(basis=record["basis"], binding=record["binding"], attempt=ordinal,
             source_identity=attempt["source_identity"], original=original, answer_source=source("answer_observation", record["version"]),
@@ -349,8 +348,9 @@ class CollectionService:
                 initial_turn_id=record["binding"]["initial_turn_id"], correction_turn_id=correction["correction_turn_id"],
                 source=correction["binding_source"])
         if require_terminal:
-            values.validate_metadata(metadata, raw)
-        return raw, metadata
+            values._validate_metadata_with_answer(metadata, answer)
+        # Preserve framing key order while detaching the caller's saved record.
+        return raw, deepcopy(metadata)
 
     def readback(self, slot, *, require_terminal=True):
         """Confirm exact saved bytes; hook-only reads preserve pending terminal facts."""
@@ -384,7 +384,6 @@ class CollectionService:
             try:
                 raw = files.read_bounded(files.checked_path(self.repo, original["path"]), 262144)
                 values.validate_original(original, raw)
-                decode_answer(raw)
             except Exception:
                 # Missing, partial, changed or unsafe residue does not settle
                 # the saved effect and never authorizes a new publication.

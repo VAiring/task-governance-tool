@@ -211,6 +211,13 @@ nesting is at most sixteen containers. All typed strings receive the common
 privacy check before semantic validation; errors never echo rejected values.
 Text lengths count Unicode scalar values and byte offsets address exact UTF-8.
 
+Private same-operation consumers may receive a freshly decoded answer for
+OriginalRef matching; all length, range and digest comparisons remain required.
+Metadata stays detached and fully structurally and semantically validated.
+This internal handoff is not a stored value, schema extension, or admission
+token. Standalone value validators retain their complete raw validation, and
+later physical reads or writer admissions cannot reuse an earlier result.
+
 `CollectionBasis` is exactly:
 
 ```text

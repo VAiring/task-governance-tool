@@ -201,7 +201,7 @@ def _capture_session(value):
 
 def decode_collected_submission(raw):
     from .review_answer import decode_answer, AnswerError, scan_strings, _unique, _number
-    from .review_answer_values import validate_metadata, metadata_digest
+    from .review_answer_values import _validate_metadata_with_answer, metadata_digest
     from .review_session_transport import validate_metadata as validate_legacy
     from .review_results import decode_review_results
     try:
@@ -264,7 +264,7 @@ def decode_collected_submission(raw):
                 from .review_answer_values import shape, metadata_schema
                 shape(entry["metadata"], metadata_schema(entry["metadata"]))
                 answer = decode_answer(original)
-                metadata = validate_metadata(entry["metadata"], raw=original)
+                metadata = _validate_metadata_with_answer(entry["metadata"], answer)
                 basis, binding = metadata["basis"], metadata["binding"]
                 if basis["preparation_id"] != value["preparation_id"]:
                     raise _binding()

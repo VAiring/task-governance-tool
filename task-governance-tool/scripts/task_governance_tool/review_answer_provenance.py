@@ -1,8 +1,10 @@
 """Pure v2 collected-review provenance construction and validation."""
 from __future__ import annotations
 
+import json
+
 from . import review_answer_values as v
-from .review_answer import validate_payload
+from .review_answer import DecodedAnswer, _decode_matching_payload, validate_payload
 from .review_provenance import generate_review_provenance_id
 
 UNKNOWN = dict(state=str, value=(str,), source=(v.SOURCE,))
@@ -39,6 +41,15 @@ def provenance_digest(provenance, *, project_id, task_id, review_receipt_id, rec
 
 def validate_provenance_v2(provenance, *, project_id, task_id, review_receipt_id, receipt_kind, target):
     result = v.prepare(provenance, SCHEMA, 262144)
+    context = dict(project_id=project_id, task_id=task_id, review_receipt_id=review_receipt_id,
+                   receipt_kind=receipt_kind, target=target)
+    _validate_prefix(result, **context)
+    validate_payload(result["answer_attestation"]["payload"])
+    _validate_suffix(result, **context)
+    return result
+
+
+def _validate_prefix(result, *, project_id, task_id, review_receipt_id, receipt_kind, target):
     _context(project_id, task_id, review_receipt_id, receipt_kind, target)
     v.identifier(result["review_provenance_id"], "tg_review_provenance_")
     v.require(result["provenance_version"] == 2 and result["producer_version"] == 1)
@@ -47,7 +58,9 @@ def validate_provenance_v2(provenance, *, project_id, task_id, review_receipt_id
     v.require(attestation["protocol"] == "review-answer-v1" and attestation["attestation"] == "assigned-independent-review-v1")
     v.digest(attestation["request_digest"])
     v._original(attestation["original"], include_path=False)
-    validate_payload(attestation["payload"])
+
+
+def _validate_suffix(result, *, project_id, task_id, review_receipt_id, receipt_kind, target):
     v._assignment(result["assignment"])
     host = result["host_observation"]
     v.digest(host["basis_digest"]); v.identifier(host["preparation_id"], "tg_review_preparation_")
@@ -66,14 +79,40 @@ def validate_provenance_v2(provenance, *, project_id, task_id, review_receipt_id
     v.digest(result["digest"])
     v.require(result["digest"] == provenance_digest(result, project_id=project_id, task_id=task_id,
         review_receipt_id=review_receipt_id, receipt_kind=receipt_kind, target=target), "identity")
-    return result
+
+
+def _validate_built_provenance(result, **context):
+    """The builder alone owns this detached value and its admitted payload.
+
+    Admit the complete shape/bound and every other field, then run exactly the
+    same provenance semantics and context seal as the standalone validator.
+    Nothing from this operation is retained for a later admission.
+    """
+    v.scan_strings(result)
+    v.shape(result, SCHEMA)
+    raw = v.canonical_bytes(result)
+    if len(raw) > 262144:
+        v.fail("bound", "capacity_exceeded")
+    other_fields = {**result, "answer_attestation": {
+        key: value for key, value in result["answer_attestation"].items() if key != "payload"}}
+    v.privacy_scan(other_fields)
+    detached = json.loads(raw)
+    _validate_prefix(detached, **context)
+    _validate_suffix(detached, **context)
+    return detached
 
 def build_provenance_v2(*, project_id, task_id, review_receipt_id, target, metadata, answer,
                         receipt_kind="independent", review_provenance_id=None):
     metadata = v.validate_metadata(metadata)
-    payload = validate_payload(answer.payload if hasattr(answer, "payload") else answer)
-    if hasattr(answer, "raw"):
-        v.validate_metadata(metadata, answer.raw)
+    v.require(type(answer) in (DecodedAnswer, dict), "type")
+    payload = validate_payload(answer.payload if type(answer) is DecodedAnswer else answer)
+    if type(answer) is DecodedAnswer:
+        decoded = _decode_matching_payload(answer.raw, payload)
+        v.shape(dict(payload_start=answer.payload_start, payload_length=answer.payload_length,
+                     original_digest=answer.original_digest, payload_digest=answer.payload_digest),
+                dict(payload_start=int, payload_length=int, original_digest=str, payload_digest=str))
+        v.require(answer == decoded, "identity")
+        v._match_original(metadata["original"], decoded)
     basis, binding, identity = metadata["basis"], metadata["binding"], metadata["source_identity"]
     execution = basis["execution_basis"]
     v.require(execution["project_id"] == project_id and execution["task_id"] == task_id, "identity")
@@ -91,5 +130,5 @@ def build_provenance_v2(*, project_id, task_id, review_receipt_id, target, metad
         assurance_class="bound_attestation", producer_class="taskgov_answer_collector", producer_version=1, digest="")
     result["digest"] = provenance_digest(result, project_id=project_id, task_id=task_id, review_receipt_id=review_receipt_id,
                                          receipt_kind=receipt_kind, target=target)
-    return validate_provenance_v2(result, project_id=project_id, task_id=task_id, review_receipt_id=review_receipt_id,
-                                  receipt_kind=receipt_kind, target=target)
+    return _validate_built_provenance(result, project_id=project_id, task_id=task_id, review_receipt_id=review_receipt_id,
+                                      receipt_kind=receipt_kind, target=target)

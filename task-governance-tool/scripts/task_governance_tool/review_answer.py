@@ -213,6 +213,20 @@ def decode_answer(raw: bytes) -> DecodedAnswer:
     return DecodedAnswer(raw, payload, start, length, byte_digest(raw), byte_digest(raw[start:start + length]))
 
 
+def _decode_matching_payload(raw, payload):
+    """Fresh raw admission against a payload validated in this same call.
+
+    Only the provenance builder uses this after validate_payload. Parsing is
+    never cached: syntax, exact bytes and byte ranges are admitted anew. A
+    different raw payload receives its own validation before binding fails.
+    """
+    value, start, length = _parse_answer(raw)
+    if value != payload:
+        validate_payload(value, observed_digest=byte_digest(raw))
+        raise AnswerError(reason="identity")
+    return DecodedAnswer(raw, payload, start, length, byte_digest(raw), byte_digest(raw[start:start + length]))
+
+
 def inspect_retirement_rejection(raw, original):
     """Old saved bytes only: return closed facts, never an admissible answer.
 

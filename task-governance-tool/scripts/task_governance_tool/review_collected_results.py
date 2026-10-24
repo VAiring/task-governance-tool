@@ -122,12 +122,15 @@ def add_collected_review_results(connection, project, task_id, submission, *, ca
             database_target=database_target, caller=caller, session_binding=item.session_binding,
             _continued_publication=batch.publications.get(item.session_binding.session_id))
         findings = []
-        for finding in entry["findings"]:
-            saved = add_review_finding(connection, project, task_id,
-                receipt_id=receipt.receipt["review_receipt_id"], **finding,
-                database_target=database_target, caller=caller)
-            findings.append({"finding": {key: saved.finding[key] for key in (
-                "review_finding_id", "review_receipt_id", "severity", "summary", "status")}})
+        if entry["findings"]:
+            from .review_material_repository import finding_batch
+            with finding_batch(connection, project, locked) as finding_basis:
+                for finding in entry["findings"]:
+                    saved = add_review_finding(connection, project, task_id,
+                        receipt_id=receipt.receipt["review_receipt_id"], **finding,
+                        database_target=database_target, caller=caller, _batch=finding_basis)
+                    findings.append({"finding": {key: saved.finding[key] for key in (
+                        "review_finding_id", "review_receipt_id", "severity", "summary", "status")}})
         result = {"receipt": {key: receipt.receipt[key] for key in (
             "review_receipt_id", "reviewer_key", "receipt_kind", "verdict", "summary", "user_approved")},
             "findings": findings}

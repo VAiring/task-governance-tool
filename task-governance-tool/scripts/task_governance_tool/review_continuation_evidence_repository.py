@@ -136,10 +136,13 @@ LEFT JOIN review_continuations AS continuation ON continuation.continuation_id=j
 WHERE original.project_id=? AND original.task_id=? ORDER BY link.review_finding_id,link.successor_receipt_id""",
         (project_id, task_id)).fetchall()
     finding_ids = sorted({row["review_finding_id"] for row in rows})
-    for start in range(0, len(finding_ids), COMPLETION_RECEIPT_VALIDATION_CHUNK_SIZE):
-        validate_selected_task_receipt_evidence(connection, project_id=project_id, task_id=task_id,
-            review_receipt_ids=set(), review_finding_ids=set(finding_ids[start:start + COMPLETION_RECEIPT_VALIDATION_CHUNK_SIZE]),
-            verification_receipt_ids=set())
+    from .review_material_repository import review_materials
+    if finding_ids:
+        with review_materials(connection, project_id=project_id, task_id=task_id) as materials:
+            for start in range(0, len(finding_ids), COMPLETION_RECEIPT_VALIDATION_CHUNK_SIZE):
+                validate_selected_task_receipt_evidence(connection, project_id=project_id, task_id=task_id,
+                    review_receipt_ids=set(), review_finding_ids=set(finding_ids[start:start + COMPLETION_RECEIPT_VALIDATION_CHUNK_SIZE]),
+                    verification_receipt_ids=set(), _materials=materials)
     ancestry = _JudgmentAncestry.read(connection, project_id=project_id, task_id=task_id) if rows else None
     result = []
     for row in rows:

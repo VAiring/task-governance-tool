@@ -162,6 +162,7 @@ LANE_MODULES: dict[str, tuple[str, ...]] = {
         "test_review_handoff",
         "test_review_handoff_preparation",
         "test_review_handoff_windows",
+        "test_review_material_reuse",
         "test_review_packet",
         "test_review_preparation_repository",
         "test_review_results",

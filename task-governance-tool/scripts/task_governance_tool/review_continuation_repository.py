@@ -392,10 +392,13 @@ ORDER BY receipt.review_receipt_id""", (basis["project_id"], basis["task_id"], b
     ids = [row["review_receipt_id"] for row in rows]
     if len(set(ids)) != len(ids):
         raise _inconsistent()
-    for offset in range(0, len(ids), COMPLETION_RECEIPT_VALIDATION_CHUNK_SIZE):
-        validate_selected_task_receipt_evidence(connection, project_id=basis["project_id"], task_id=basis["task_id"],
-            review_receipt_ids=set(ids[offset:offset + COMPLETION_RECEIPT_VALIDATION_CHUNK_SIZE]),
-            review_finding_ids=set(), verification_receipt_ids=set())
+    from .review_material_repository import review_materials
+    if ids:
+        with review_materials(connection, project_id=basis["project_id"], task_id=basis["task_id"]) as materials:
+            for offset in range(0, len(ids), COMPLETION_RECEIPT_VALIDATION_CHUNK_SIZE):
+                validate_selected_task_receipt_evidence(connection, project_id=basis["project_id"], task_id=basis["task_id"],
+                    review_receipt_ids=set(ids[offset:offset + COMPLETION_RECEIPT_VALIDATION_CHUNK_SIZE]),
+                    review_finding_ids=set(), verification_receipt_ids=set(), _materials=materials)
     bindings = read_bindings(connection, receipt_ids=set(ids))
     result = []
     for row in rows:
@@ -635,7 +638,7 @@ def resolution_digest(*, finding_id: str, successor_id: str, continuation_id: st
 
 
 def append_resolution_locked(connection: sqlite3.Connection, *, finding_id: str,
-                             successor_id: str, summary: str) -> dict:
+                             successor_id: str, summary: str, _materials=None) -> dict:
     from .storage import utc_now
     _writer(connection)
     summary = validate_text("review_finding_resolution", summary, required=True, limit=1000)
@@ -648,7 +651,8 @@ def append_resolution_locked(connection: sqlite3.Connection, *, finding_id: str,
     if owner is None:
         raise _inconsistent()
     validate_selected_task_receipt_evidence(connection, project_id=owner["project_id"], task_id=owner["task_id"],
-        review_receipt_ids={successor_id}, review_finding_ids={finding_id}, verification_receipt_ids=set())
+        review_receipt_ids={successor_id}, review_finding_ids={finding_id}, verification_receipt_ids=set(),
+        _materials=_materials)
     continuation = successor["continuation_id"]
     digest = resolution_digest(finding_id=finding_id, successor_id=successor_id, continuation_id=continuation,
         summary=summary, original_resolution=finding["resolution_summary"], resolved_at=finding["resolved_at"])

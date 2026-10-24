@@ -1287,9 +1287,13 @@ def add_review_finding(
     summary: Any,
     database_target: DatabaseTarget | None = None,
     caller: CallerIdentity = CallerIdentity(None),
+    _batch=None,
 ) -> ReviewFindingResult:
     normalized_task_id = validate_task_id(task_id)
-    observed_task, ownership = read_mutation_basis(connection, project.project_id, normalized_task_id)
+    observed_task, ownership = (read_mutation_basis(connection, project.project_id, normalized_task_id)
+        if _batch is None else _batch.read_basis(connection))
+    if _batch is not None:
+        _batch.materials.require(connection, project.project_id, normalized_task_id)
     if observed_task is None:
         raise TaskRepositoryError("not_found", "task was not found")
     reject_done_task_write(observed_task)
@@ -1319,6 +1323,7 @@ def add_review_finding(
         review_receipt_ids={normalized_receipt_id},
         review_finding_ids=set(),
         verification_receipt_ids=set(),
+        _materials=None if _batch is None else _batch.materials,
     )
     if (
         observed_receipt["target_generation"]
@@ -1343,14 +1348,17 @@ def add_review_finding(
         ).get(normalized_receipt_id)
         if review_session is None or review_session.session_id != caller.require():
             raise review_error("review_receipt_mismatch", "the caller is not the bound reviewer for this receipt")
-    task = lock_and_reread_target_owner(
-        connection,
-        project,
-        normalized_task_id,
-        database_target=database_target,
-        caller=caller, ownership=ownership,
-        review_session=review_session,
-    )
+    if _batch is None:
+        task = lock_and_reread_target_owner(connection, project, normalized_task_id,
+            database_target=database_target, caller=caller, ownership=ownership,
+            review_session=review_session)
+    else:
+        task, _ = _batch.read_basis(connection)
+        if ownership is not None:
+            if review_session is not None and current_schema_version(connection) >= 25:
+                review_sessions.require_review_writer(connection, ownership, caller, review_session)
+            else:
+                task_ownership.require_mutation(connection, ownership, caller)
     reject_concurrent_review_basis_change(
         observed_task,
         task,
@@ -1377,6 +1385,7 @@ def add_review_finding(
         review_receipt_ids={normalized_receipt_id},
         review_finding_ids=set(),
         verification_receipt_ids=set(),
+        _materials=None if _batch is None else _batch.materials,
     )
     try:
         parent_reference_rows = connection.execute(
@@ -1632,22 +1641,24 @@ def resolve_review_findings(
         seen.add(finding_id)
         items.append((finding_id, resolution))
 
-    lock_and_reread_target_owner(connection, project, normalized_task_id, database_target=database_target, caller=caller)
+    locked_task = lock_and_reread_target_owner(connection, project, normalized_task_id, database_target=database_target, caller=caller)
     savepoint = f"taskgov_finding_batch_{secrets.token_hex(4)}"
     connection.execute(f"SAVEPOINT {savepoint}")
     results = []
     try:
-        for finding_id, resolution in items:
-            row = _read_owned_review_finding(connection, finding_id=finding_id, project_id=project.project_id)
-            if row is None:
-                raise TaskRepositoryError("not_found", "review finding was not found")
-            if row["task_id"] != normalized_task_id:
-                raise review_error("invalid_review_evidence", "review finding belongs to a different Task")
-            results.append(resolve_review_finding(
-                connection, project, finding_id, resolution=resolution, database_target=database_target,
-                caller=caller,
-                reassessment_receipt=reassessment_receipt,
-            ))
+        from .review_material_repository import finding_batch
+        with finding_batch(connection, project, locked_task) as finding_basis:
+            for finding_id, resolution in items:
+                row = _read_owned_review_finding(connection, finding_id=finding_id, project_id=project.project_id)
+                if row is None:
+                    raise TaskRepositoryError("not_found", "review finding was not found")
+                if row["task_id"] != normalized_task_id:
+                    raise review_error("invalid_review_evidence", "review finding belongs to a different Task")
+                results.append(resolve_review_finding(
+                    connection, project, finding_id, resolution=resolution, database_target=database_target,
+                    caller=caller, _batch=finding_basis,
+                    reassessment_receipt=reassessment_receipt,
+                ))
     except Exception:
         connection.execute(f"ROLLBACK TO SAVEPOINT {savepoint}")
         connection.execute(f"RELEASE SAVEPOINT {savepoint}")
@@ -1665,6 +1676,7 @@ def resolve_review_finding(
     database_target: DatabaseTarget | None = None,
     caller: CallerIdentity = CallerIdentity(None),
     reassessment_receipt: str | None = None,
+    _batch=None,
 ) -> ReviewFindingResult:
     normalized_finding_id = validate_text(
         "review_finding_id", finding_id, required=True, limit=128
@@ -1683,8 +1695,10 @@ def resolve_review_finding(
         review_receipt_ids=set(),
         review_finding_ids={normalized_finding_id},
         verification_receipt_ids=set(),
+        _materials=None if _batch is None else _batch.materials,
     )
-    observed_task, ownership = read_mutation_basis(connection, project.project_id, str(row["task_id"]))
+    observed_task, ownership = (read_mutation_basis(connection, project.project_id, str(row["task_id"]))
+        if _batch is None else _batch.read_basis(connection))
     if observed_task is None:
         raise TaskRepositoryError(
             "internal_error",
@@ -1704,13 +1718,13 @@ def resolve_review_finding(
             "review finding is already resolved and its original resolution is preserved",
             "review_finding_id",
         )
-    task = lock_and_reread_target_owner(
-        connection,
-        project,
-        str(row["task_id"]),
-        database_target=database_target,
-        caller=caller, ownership=ownership,
-    )
+    if _batch is None:
+        task = lock_and_reread_target_owner(connection, project, str(row["task_id"]),
+            database_target=database_target, caller=caller, ownership=ownership)
+    else:
+        task, _ = _batch.read_basis(connection)
+        if ownership is not None:
+            task_ownership.require_mutation(connection, ownership, caller)
     reject_concurrent_review_basis_change(
         observed_task,
         task,
@@ -1737,6 +1751,7 @@ def resolve_review_finding(
         review_receipt_ids=set(),
         review_finding_ids={normalized_finding_id},
         verification_receipt_ids=set(),
+        _materials=None if _batch is None else _batch.materials,
     )
     row = locked_row
     now = utc_now()
@@ -1757,7 +1772,8 @@ def resolve_review_finding(
     if reassessment_receipt is not None:
         from .review_continuation_repository import append_resolution_locked
         append_resolution_locked(connection, finding_id=normalized_finding_id,
-            successor_id=reassessment_receipt, summary=resolution_summary)
+            successor_id=reassessment_receipt, summary=resolution_summary,
+            _materials=None if _batch is None else _batch.materials)
     connection.execute(
         "UPDATE tasks SET updated_at = ? WHERE project_id = ? AND task_id = ?",
         (now, project.project_id, row["task_id"]),
@@ -2057,7 +2073,14 @@ def read_review_evidence(
     )
 
 
-def _read_review_evidence(
+def _read_review_evidence(connection, project_id, task_id, **options):
+    from .review_material_repository import review_materials
+    with review_materials(connection, project_id=project_id, task_id=task_id) as materials:
+        return _read_review_evidence_with_materials(connection, project_id, task_id,
+            _materials=materials, **options)
+
+
+def _read_review_evidence_with_materials(
     connection: sqlite3.Connection,
     project_id: str,
     task_id: str,
@@ -2069,6 +2092,7 @@ def _read_review_evidence(
     task_show_details: TaskShowReviewDetails | None = None,
     finding_stream: _ViewerFindingStream | None = None,
     _continuation_snapshot: EffectiveReviewSnapshot | None = None,
+    _materials=None,
 ) -> dict[str, Any]:
     if not 1 <= recent_limit <= 10:
         raise review_error("invalid_review_evidence", "recent review evidence limit must be 1 to 10")
@@ -2307,6 +2331,7 @@ def _read_review_evidence(
                     review_receipt_ids=selected_receipt_ids,
                     review_finding_ids=set(),
                     verification_receipt_ids=set(),
+                    _materials=_materials,
                 )
             for row in chunk:
                 total_receipts += 1
@@ -2423,6 +2448,7 @@ def _read_review_evidence(
                     review_receipt_ids=selected_receipt_ids,
                     review_finding_ids=set(),
                     verification_receipt_ids=set(),
+                    _materials=_materials,
                 )
 
         while True:
@@ -2453,6 +2479,7 @@ def _read_review_evidence(
                     review_receipt_ids=set(),
                     review_finding_ids=selected_finding_ids,
                     verification_receipt_ids=set(),
+                    _materials=_materials,
                 )
             for row in chunk:
                 finding = dict(row)
@@ -2539,6 +2566,7 @@ def _read_review_evidence(
                     review_receipt_ids=set(),
                     review_finding_ids=selected_finding_ids,
                     verification_receipt_ids=set(),
+                    _materials=_materials,
                 )
     except sqlite3.Error as exc:
         if is_sqlite_busy_or_locked(exc):

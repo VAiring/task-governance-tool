@@ -351,6 +351,7 @@ def reported_review_evidence(target, record, registered_receipt_ids):
     graph validation, receipt selection and complete Finding projection.
     """
     from .evidence_validation_repository import validate_selected_task_receipt_evidence
+    from .review_material_repository import review_materials
     from .review_repository import validate_stored_review_finding_projection
     from .storage import COMPLETION_RECEIPT_VALIDATION_CHUNK_SIZE
     roles = {key: {"registered"} for key in registered_receipt_ids}
@@ -358,7 +359,8 @@ def reported_review_evidence(target, record, registered_receipt_ids):
         roles.setdefault(key, set()).add("retained")
     if not roles:
         return [], []
-    with closing(connect_initialized_readonly(target, operation_local=True, review_task_id=record.basis["task_id"])) as connection:
+    with closing(connect_initialized_readonly(target, operation_local=True, review_task_id=record.basis["task_id"])) as connection, review_materials(
+            connection, project_id=record.basis["project_id"], task_id=record.basis["task_id"]) as materials:
         successors = {}
         if record.continuation_id is not None:
             from .review_continuation import quality_identity
@@ -409,14 +411,14 @@ def reported_review_evidence(target, record, registered_receipt_ids):
         for offset in range(0, len(receipt_ids), size):
             provenance.update(validate_selected_task_receipt_evidence(connection, project_id=record.basis["project_id"],
                 task_id=record.basis["task_id"], review_receipt_ids=set(receipt_ids[offset:offset + size]),
-                review_finding_ids=set(), verification_receipt_ids=set()))
+                review_finding_ids=set(), verification_receipt_ids=set(), _materials=materials))
         # Finding validation includes its parents. Do not add an unrelated
         # Receipt batch to that union or it could exceed the same bounded API.
         for offset in range(0, len(rows), size):
             validate_selected_task_receipt_evidence(connection, project_id=record.basis["project_id"],
                 task_id=record.basis["task_id"], review_receipt_ids=set(),
                 review_finding_ids={row["review_finding_id"] for row in rows[offset:offset + size]},
-                verification_receipt_ids=set())
+                verification_receipt_ids=set(), _materials=materials)
         for row in rows:
             validate_stored_review_finding_projection(row)
         versions = {row["review_receipt_id"]: row["review_provenance_basis_version"] for row in receipts}

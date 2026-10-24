@@ -2420,6 +2420,7 @@ def validate_selected_task_receipt_evidence(
     review_receipt_ids: set[str],
     review_finding_ids: set[str],
     verification_receipt_ids: set[str],
+    _materials=None,
 ) -> dict[str, dict[str, Any] | None]:
     """Validate a bounded source set and return its exact review provenance.
 
@@ -2573,28 +2574,27 @@ def validate_selected_task_receipt_evidence(
             manifest_ids.add(manifest_id)
             snapshot_ids.add(snapshot_id)
 
-        authority = _validated_authority_context(
-            connection,
-            snapshot_ids=snapshot_ids,
-        )
-        manifests, manifests_by_target = _validate_artifact_manifest_storage(
-            connection,
-            snapshots=authority.snapshots,
-            links=authority.links,
-            manifest_ids=manifest_ids,
-        )
+        if _materials is None:
+            authority = _validated_authority_context(connection, snapshot_ids=snapshot_ids)
+            snapshots, criteria, links = authority.snapshots, authority.criteria, authority.links
+            manifests, manifests_by_target = _validate_artifact_manifest_storage(
+                connection, snapshots=snapshots, links=links, manifest_ids=manifest_ids)
+        else:
+            snapshots, criteria, links, manifests, manifests_by_target = _materials.selected(
+                connection, project_id=project_id, task_id=task_id,
+                manifest_ids=manifest_ids, snapshot_ids=snapshot_ids)
         _validate_stored_verification_subject_rows(
             verification_rows,
             table_name="verification_receipts",
-            snapshots=authority.snapshots,
-            criteria=authority.criteria,
-            links=authority.links,
+            snapshots=snapshots,
+            criteria=criteria,
+            links=links,
         )
         references = _validate_evidence_reference_storage(
             connection,
             manifests=manifests,
             manifests_by_target=manifests_by_target,
-            snapshots=authority.snapshots,
+            snapshots=snapshots,
             verification_receipt_ids=verification_receipt_ids,
             review_receipt_ids=selected_review_receipt_ids,
             review_finding_ids=review_finding_ids,

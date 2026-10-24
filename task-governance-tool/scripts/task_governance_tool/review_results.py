@@ -632,19 +632,21 @@ def add_review_results(
             _continued_publication=continued_batch.publications.get(session_binding.session_id) if continued_batch else None,
         )
         findings = []
-        for entry_finding in entry["findings"]:
-            finding = add_review_finding(
-                connection, project, normalized_task_id,
-                receipt_id=receipt.receipt["review_receipt_id"],
-                severity=entry_finding["severity"], summary=entry_finding["summary"],
-                database_target=database_target,
-                caller=caller,
-            )
-            findings.append({"finding": {
-                field: finding.finding[field] for field in (
-                    "review_finding_id", "review_receipt_id", "severity", "summary", "status",
-                )
-            }})
+        if entry["findings"]:
+            from .review_material_repository import finding_batch
+            with finding_batch(connection, project, locked) as finding_basis:
+                for entry_finding in entry["findings"]:
+                    finding = add_review_finding(
+                        connection, project, normalized_task_id,
+                        receipt_id=receipt.receipt["review_receipt_id"],
+                        severity=entry_finding["severity"], summary=entry_finding["summary"],
+                        database_target=database_target, caller=caller, _batch=finding_basis,
+                    )
+                    findings.append({"finding": {
+                        field: finding.finding[field] for field in (
+                            "review_finding_id", "review_receipt_id", "severity", "summary", "status",
+                        )
+                    }})
         receipts.append({
             "receipt": {field: receipt.receipt[field] for field in (
                 "review_receipt_id", "reviewer_key", "receipt_kind", "verdict",

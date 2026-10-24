@@ -177,6 +177,13 @@ Physical SQLite integrity and foreign-key checks remain database-wide; this
 exception concerns review semantics, not admission of physically invalid storage.
 The scoped review checks run again after acquiring the completion writer; no
 cross-operation validation cache is introduced.
+Within one selected review read or writer transaction for one Task, repeated
+Receipt/Finding/Reference validation may borrow the same fully validated
+immutable authority and manifest originals. Each mutable source and relation
+remains freshly validated; no gate, ownership, resolution or Task projection is
+reused. Scope exit, a transaction restart, a different connection/Task, or schema
+change invalidates the borrow. This changes validation repetition, not the
+selected graph, physical integrity checks or fresh completion writer admission.
 After native cycle insertion, selected-cycle Evidence and Bundle validation
 checks that cycle's persisted sources instead of replaying all Tasks' Bundles.
 

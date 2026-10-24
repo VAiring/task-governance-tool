@@ -170,6 +170,13 @@
       },
       "kind": "non_sql_finalizer"
     },
+    "review_material_repository.py": {
+      "attributes": {
+        "execute": 7,
+        "fetchone": 2
+      },
+      "kind": "observed_connection"
+    },
     "review_preparation_repository.py": {
       "attributes": {
         "execute": 14,

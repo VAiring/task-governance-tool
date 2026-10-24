@@ -235,7 +235,7 @@ connection, outer transaction, sanitized failure, and post-commit maintenance.
 `reviews.py::resolve_review_findings` validates the flat inputs, locks and
 rereads the declared Task using the existing writer boundary, and checks each
 Finding's same-project/same-Task ownership on that writer. It delegates each
-resolution to unchanged `resolve_review_finding`, retaining stored-ledger checks,
+resolution to `resolve_review_finding` with a private batch context, retaining stored-ledger checks,
 done/replay rejection, original content, timestamps, events, and revalidation.
 An outer batch savepoint rolls back a successful prefix on any failure, even
 when a repository caller catches it. No per-item commit or partial-success
@@ -245,6 +245,23 @@ boundary. The service deliberately does not use current-capture or
 Receipt-creation freshness checks: historical Finding resolution remains valid.
 No schema, new durable batch record, alternative gate, or new normal-loop step
 is introduced.
+
+`review_material_repository.py` lends validated immutable authority snapshots,
+criterion links and artifact manifests only within a lexical scope on the same
+connection, transaction, project and Task. Its private savepoint guard and schema
+cookie reject a transaction restart or schema change; scope exit clears the
+borrowed material. These scopes nest lexically and never commit the writer.
+Each item still reads and validates current Task/Contract/ownership and compares
+the original locked basis, plus its own Receipt, Finding, Reference, status and
+resolution relations. The batch ends with complete Task validation. Standalone
+writers retain their separate preflight and locked admission, with no borrowed
+material crossing that boundary. No gate or other mutable projection is cached.
+The same batch materials reach `append_resolution_locked` when a reassessment
+Receipt is supplied, for both open and already resolved Findings. Successor
+ownership, each source/Reference, resolution digest and duplicate-link rejection
+remain individual checks. Continuation judgment and resolution-history readers
+also borrow immutable materials across their selected-ID chunks; the graph,
+ancestry and mutable resolution state are still validated independently.
 
 ### Structured Result Registration
 
@@ -284,6 +301,14 @@ the submitted Task, Contract revision and complete target against the locked
 Task before any insert. A concurrent tier or authority change cannot reuse
 pre-lock normalization. Each Receipt and its Findings use the same connection,
 including their individual References, provenance and events.
+
+Both legacy and collected-result registration lend the fixed materials above
+to the Findings of each Receipt. The outer locked admission and final gate stay
+fresh. The selected Receipt/Finding/Reference inventory in `read_review_evidence`
+uses the same immutable-material scope across its validation chunks, sharing one
+read transaction when it owns the connection's read boundary. Show, gate and
+report consumers retain their own complete source checks and output selection;
+this does not cache continuation judgments or completion admission.
 
 After the inserts, the service captures `read_review_evidence` on that same
 connection and validated locked Task, then calls `first_review_gate_error`.
@@ -1530,6 +1555,9 @@ versions explicitly report unrecorded null arrays. This borrows facts from the
 same read transaction, without another provenance lookup/validation, a global
 history read, persistent cache or any Evidence/Bundle format change. Finding
 batches retain their validation and discard this optional return value.
+The Receipt and Finding batches share only immutable manifest/authority
+validation through `review_material_repository` for that same read transaction.
+Source, Reference, status and continuation graph checks remain independent.
 The original-summary projection never consumes this expanded reporting set.
 `recorded_work.recent_notes` filters already validated normal Task events by
 `note_added` or non-null `note_body`; it does not parse summaries, widen history,

@@ -171,6 +171,13 @@ failures expose `data.findings=[]`; parse rejection retains the ordinary parse
 envelope. Unselected Findings, original Finding content and prior resolutions
 remain unchanged. Maintenance runs once only after the successful commit.
 
+Within that writer, repeated selected validation may reuse already validated
+immutable manifest and authority material for the same Task. Every Finding's
+owner, Receipt, Reference, status and resolution relation remains independently
+validated, as do the current Task basis and ownership. Standalone operations keep
+their fresh preflight and locked checks. Mutable projections, different
+transactions and later operations cannot reuse this material.
+
 Confirmed rollback permits correcting and resubmitting the explicit selection.
 There is no automatic replay, overwrite, or idempotent success for resolved IDs.
 A lost response requires inspecting the stored state before another write;
@@ -289,6 +296,10 @@ fallback rule. Missing required approval, unmatched or ineligible flags fail
 
 Any validation, conflict or persistence failure rolls back all Receipts,
 provenance, Findings, Evidence References, events and timestamps from the batch.
+Legacy and collected registration may share immutable manifest/authority
+validation across the Findings of one Receipt on the same writer and Task,
+under the boundaries in [Structured Finding Resolutions](#structured-finding-resolutions).
+The final review gate still validates its complete applicable mutable inventory.
 Failure data is exactly `{receipts: []}`. Success data contains exactly
 `receipts`, `review_gate`, and `omitted_details`. `receipts` retains flattened
 input document/Receipt order and each Receipt's Finding order as

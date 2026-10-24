@@ -4806,13 +4806,13 @@ def _validate_schema21_admitted_rows(
     connection: sqlite3.Connection,
     *,
     _privacy_success_cache: set[tuple[str, str, str]] | None = None,
-) -> None:
+) -> tuple[sqlite3.Row, ...]:
     try:
         _validated_verification_runner_references(connection)
         validate_completion_cycle_storage(connection)
-        validate_evidence_ledger_storage(
+        return _validate_evidence_ledger_storage_with_task_rows(
             connection,
-            _privacy_success_cache=_privacy_success_cache,
+            privacy_success_cache=_privacy_success_cache,
         )
     except StorageError as exc:
         if exc.code == "database_busy":
@@ -11568,6 +11568,7 @@ def _validate_evidence_ledger_storage_with_task_rows(
     *,
     privacy_success_cache: set[tuple[str, str, str]] | None = None,
 ) -> tuple[sqlite3.Row, ...]:
+    _validate_privacy_success_cache(privacy_success_cache)
     _validate_evidence_ledger_schema_contract(connection)
     task_rows = _validate_evidence_ledger_rows(
         connection,
@@ -11585,6 +11586,13 @@ def validate_evidence_ledger_storage(
 ) -> None:
     """Validate the complete current Evidence storage and row relations."""
 
+    _validate_evidence_ledger_storage_with_task_rows(
+        connection,
+        privacy_success_cache=_privacy_success_cache,
+    )
+
+
+def _validate_privacy_success_cache(_privacy_success_cache) -> None:
     if _privacy_success_cache is not None and (
         type(_privacy_success_cache) is not set
         or any(
@@ -11596,10 +11604,6 @@ def validate_evidence_ledger_storage(
         )
     ):
         raise evidence_ledger_inconsistent()
-    _validate_evidence_ledger_storage_with_task_rows(
-        connection,
-        privacy_success_cache=_privacy_success_cache,
-    )
 
 
 def validate_evidence_ledger_storage_for_recovery(
@@ -12566,6 +12570,7 @@ def read_setup_state(
                 "project_mismatch",
                 "task database belongs to a different project",
             )
+        validated_task_rows = None
         if version == PRIVATE_SCHEMA20_VERSION:
             validate_current_schema20_admitted_rows(connection)
         elif version == PRIVATE_SCHEMA21_VERSION:
@@ -12576,8 +12581,8 @@ def read_setup_state(
             from task_governance_tool.schema_verification_declaration import validate_storage
             validate_storage(connection)
         elif version == 33:
-            from task_governance_tool.schema_own_review_indexes import validate_storage
-            validate_storage(connection)
+            from task_governance_tool.schema_own_review_indexes import _validate_storage_with_task_rows
+            validated_task_rows = _validate_storage_with_task_rows(connection)
         elif version == 32:
             from task_governance_tool.schema_session_slot_index import validate_storage
             validate_storage(connection)
@@ -12607,19 +12612,22 @@ def read_setup_state(
             validate_storage(connection)
         from task_governance_tool.stored_task_validation import validate_stored_task_rows
 
-        try:
-            task_rows = connection.execute(
-                "SELECT * FROM tasks ORDER BY task_id"
-            ).fetchall()
-        except sqlite3.Error as exc:
-            raise stored_task_sqlite_error(exc) from exc
-        validate_stored_task_rows(
-            task_rows,
-            connection=connection,
-            source_schema_version=version,
-            expected_project_id=target.project.project_id,
-        )
-        if version == SCHEMA_VERSION:
+        if validated_task_rows is None:
+            try:
+                task_rows = connection.execute(
+                    "SELECT * FROM tasks ORDER BY task_id"
+                ).fetchall()
+            except sqlite3.Error as exc:
+                raise stored_task_sqlite_error(exc) from exc
+            validate_stored_task_rows(
+                task_rows,
+                connection=connection,
+                source_schema_version=version,
+                expected_project_id=target.project.project_id,
+            )
+        elif any(row["project_id"] != target.project.project_id for row in validated_task_rows):
+            raise _unreadable_project_state()
+        if version == SCHEMA_VERSION and validated_task_rows is None:
             try:
                 validate_completion_cycle_storage(connection)
                 validate_evidence_ledger_storage(connection)

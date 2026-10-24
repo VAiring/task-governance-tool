@@ -1402,7 +1402,12 @@ def _inspect_database(
                     review_task_id=review_task_id,
                     # Recovery's exact-schema audit below runs on this very
                     # connection/snapshot. Do not duplicate its row traversal.
-                    operation_local=operation_local or classify_recovery_content,
+                    # A matching current Doctor read below performs the exact
+                    # global audit on this connection, including these rows.
+                    operation_local=(operation_local or classify_recovery_content or (
+                        doctor_current_root is not None
+                        and stored.canonical_path_hash == doctor_current_root.canonical_path_hash
+                    )),
                 )
             elif version != SCHEMA_VERSION and read_viewer_maintenance(
                 connection,

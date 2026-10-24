@@ -778,7 +778,18 @@ The maintenance projection adds one fixed `evidence` object beside backup and Vi
 
 The coherent project snapshot loads complete Task rows once and validates the
 whole batch with the shared stored-Task/Contract validator before computing Task
-counts. On a
+counts. For a matching current-schema Doctor observation, resolver admission
+checks structure and project metadata, then the exact-schema Setup reader owns
+the global Runner, ownership, review, note, cycle and ledger row audit on that
+same connection. It does not first repeat that row audit in the resolver.
+The exact-schema validator privately returns its complete validated Task batch
+to the Setup reader, which checks the target project association without
+reloading or revalidating those Tasks or repeating cycle/ledger validation.
+The batch is consumed inside this read call; it is not an exported certificate,
+an input bypass, or a cache across connections, snapshots or Setup stages.
+Standalone Setup, Doctor and schema-validation entries still perform their
+full applicable validation. Older-schema and recovery paths retain their
+existing validation and classification. On a
 Task fault, doctor maps project state to `unreadable`, every other
 project-backed component to `unavailable`, and setup eligibility to false;
 the package observation remains independent.

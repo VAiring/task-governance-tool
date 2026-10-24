@@ -357,6 +357,7 @@ LANE_MODULES: dict[str, tuple[str, ...]] = {
         "test_setup_backup",
         "test_setup_features",
         "test_setup_recovery",
+        "test_setup_snapshot_validation",
         "test_setup_state_separation",
         "test_sql_api_inventory",
         "test_sql_observation_boundaries",

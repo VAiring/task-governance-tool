@@ -34,7 +34,11 @@ one independent bounded filesystem observation. When state is readable, all
 project-backed components come from one lock-respecting read transaction; an
 unavailable project-backed component is exactly `{"code":"unavailable"}`.
 Doctor validates the complete project Task batch before returning Task-derived
-counts. A stored Task fault makes `project_state.code="unreadable"`, every
+counts. Within one current-schema read, Setup and Doctor may share the exact
+validator's complete Task batch and completed row checks privately. All global
+relationships and privacy checks remain required; reuse never spans a snapshot,
+connection or Setup stage and never admits caller-supplied validation claims.
+Standalone entries retain complete validation. A stored Task fault makes `project_state.code="unreadable"`, every
 other project-backed component `{"code":"unavailable"}`, and
 `setup_eligible=false`, with the fixed `project_state_unreadable` error.
 

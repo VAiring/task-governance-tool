@@ -121,5 +121,6 @@ def wait_intervals(owners, turns, observations, valid_observations, *, conflicti
                  and keys <= starts.keys() and not keys.intersection(invalid))
         thread, turn = min(keys, key=lambda key: (starts.get(key, 0), key)) if known else (min(senders), None)
         result.append(Interval(owner.task_id, execution, owner.preceding_completion, thread,
-                               turn, turn, True, () if known else ("boundary_unknown",)))
+                               turn, turn, True, () if known else ("boundary_unknown",),
+                               source_admitted=known))
     return tuple(result)

@@ -241,8 +241,8 @@ class OriginReplayTests(unittest.TestCase):
         after = self.read(audit=True)
         documents = {item["snapshot_id"]: item for item in after["snapshots"]}
         self.assertTrue(all(documents[item["snapshot_id"]] == item for item in old["snapshots"]))
-        self.assertTrue(all(documents[key]["algorithm"] == "response-partitions-v5" for key in after["current_snapshot_ids"]))
-        self.assertTrue(any(item["predecessors"] for item in after["snapshots"] if item["algorithm"] == "response-partitions-v5"))
+        self.assertTrue(all(documents[key]["algorithm"] == "response-partitions-v6" for key in after["current_snapshot_ids"]))
+        self.assertTrue(any(item["predecessors"] for item in after["snapshots"] if item["algorithm"] == "response-partitions-v6"))
         with self.repository.connection() as connection:
             _, boundaries = self.repository._relations(connection)
         self.assertEqual([(item.response_id, item.origin_version) for _, _, item in boundaries], [(None, 2)])

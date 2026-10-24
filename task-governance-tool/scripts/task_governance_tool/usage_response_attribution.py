@@ -10,7 +10,7 @@ from collections import defaultdict
 from task_governance_tool.usage_attribution import _models, _coverage
 
 
-ALGORITHM = "response-partitions-v5"
+ALGORITHM = "response-partitions-v6"
 
 
 def response_order(positions, turns, conflicting_turns=frozenset()):
@@ -290,6 +290,8 @@ def project_responses(transitions, bindings, checks, positions, turns, responses
                         if active_match or completed_match:
                             pending_checks = []
                 if active is not None:
+                    # Retain diagnostics for active work even when its only
+                    # numerical observation is missing or conflicting.
                     execution_gaps[active].update((thread_diagnostics or {}).get(thread, ()))
 
         keys = [key for _, _, sequence in sorted(timelines) for key in sequence]
@@ -353,6 +355,8 @@ def project_responses(transitions, bindings, checks, positions, turns, responses
     for interval in additional:
         covered, gaps = _coverage(interval, starts)
         execution_gaps[interval.execution_id].update(gaps | set(interval.diagnostics))
+        if interval.source_admitted:
+            execution_gaps[interval.execution_id].update((thread_diagnostics or {}).get(interval.thread_id, ()))
         owner = executions.get(interval.execution_id)
         parent_receipt = (owner is not None and owner.current_status == "done"
                           and owner.actor_session_id == interval.thread_id and interval.start_turn == interval.end_turn
@@ -373,9 +377,21 @@ def project_responses(transitions, bindings, checks, positions, turns, responses
                     # complete ordered interval. Keep its partial
                     # classification independent of the stored first clock.
                     unknown.add(key)
+    # Qualified operation/receipt boundaries identify an admitted source even
+    # when this response's counters are missing or conflicting. Require final
+    # ownership; diagnostic propagation never creates numerical membership.
+    for index, key in valid_boundaries.items():
+        execution = affected_executions[index]
+        if execution in owners.get(key, ()):
+            execution_gaps[execution].update((thread_diagnostics or {}).get(transitions[index].actor_session_id, ()))
     groups = defaultdict(set)
     for key, members in owners.items():
-        if key not in good:
+        if key in good:
+            # Allocation is final only after preparation, fallback and added
+            # participation. A same-response stop must not erase source gaps.
+            for member in members:
+                execution_gaps[member].update((thread_diagnostics or {}).get(good[key].thread_id, ()))
+        else:
             for member in members:
                 execution_gaps[member].add("response_conflict" if key in conflicts else "usage_pending")
     for key, members in owners.items():

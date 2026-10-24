@@ -1243,7 +1243,7 @@ models and diagnostics for one admitted input/core basis. Core restore does
 not rebind missing executions, cycles or immutable wait/reviewer anchors.
 
 Snapshot v2 validation is closed and separate from retained v1 validation.
-The current `response-partitions-v5` policy requires positive call-origin proof
+The current `response-partitions-v6` policy requires positive call-origin proof
 and applies confirmed pause/block exits
 and resume origins. Whole-response owner allocation is separate from applying
 the same response's committed state order, so a same-execution stop/resume
@@ -1280,13 +1280,27 @@ organization releases are excluded. Empty carried state does not permit an
 organization update to certify an unassigned interval. Terminal-result replay
 uses the unchanged call identity and original response, never its arrival time.
 No SQL structure, core write or result-body retention is introduced.
+Source diagnostics are merged into each execution's final admitted response
+membership, after preparation, fallback and additional participation allocation.
+Qualified operation/receipt boundary sources also supply diagnostics when the
+final owner set includes the execution but counters are missing or conflicting.
+They are also merged from each admitted additional interval's source, including
+intervals without numerical observations. An internal, non-persisted interval
+flag separates source admission from unknown coverage: committed exact reviewer
+bindings admit their reviewer source; wait intervals admit only a validated,
+uniquely ordered sender/turn. Invalid-anchor or ambiguous-sender wait placeholders
+retain boundary diagnostics without admitting any source. Existing active-work
+diagnostics are retained. A terminal state in the same response does not erase
+these diagnostics; unrelated threads supply none.
+This changes diagnostic propagation only, not original keys, counters, owner
+sets or exclusive/shared/partial classification.
 Retained `response-partitions-v1`, `response-partitions-v2`, `response-partitions-v3`
-and `response-partitions-v4` snapshot bodies remain
+`response-partitions-v4` and `response-partitions-v5` snapshot bodies remain
 valid unchanged; algorithm identity is part of the capture and geometry basis,
 forcing new successors instead of reusing old-policy totals. A read before
 permitted refresh returns the existing pending/unavailable outcome without
 writing. Existing numerical collection/publication invokes that refresh and
-publishes v5 successors; it preserves prior snapshot bytes, membership and
+publishes v6 successors; it preserves prior snapshot bytes, membership and
 cycle links and needs no Setup, new hook/LLM action or core write. No DDL changes.
 Task totals and work-unit parts union original keys; shared parts name actual
 Task/execution identities instead of displaying another period's shared total

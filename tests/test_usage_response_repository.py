@@ -724,12 +724,12 @@ class ResponseRepositoryTests(unittest.TestCase):
         current = self.read(audit=True)
         documents = {item["snapshot_id"]: item for item in current["snapshots"]}
         self.assertEqual(documents[original["snapshot_id"]], original)
-        self.assertTrue(all(documents[key]["algorithm"] == "response-partitions-v5" for key in current["current_snapshot_ids"]))
+        self.assertTrue(all(documents[key]["algorithm"] == "response-partitions-v6" for key in current["current_snapshot_ids"]))
         self.assertTrue(any(original["snapshot_id"] in documents[key]["predecessors"] for key in current["current_snapshot_ids"]))
         self.assertTrue(set(tuple(sorted(row.items())) for row in old["cycle_links"]) <=
                         set(tuple(sorted(row.items())) for row in current["cycle_links"]))
         self.assertEqual(self.read(A)["total"]["response_count"], 2)
-        for invalid in ([], {}, "response-partitions-v6"):
+        for invalid in ([], {}, "response-partitions-v7"):
             changed = {**original, "algorithm": invalid}
             changed["snapshot_id"] = digest({key: value for key, value in changed.items() if key != "snapshot_id"})
             with self.assertRaises(UsageError):
@@ -742,9 +742,9 @@ class ResponseRepositoryTests(unittest.TestCase):
         self.write_turn(self.operation("start", self.acknowledgement(A, 1, "in_progress"), "r0", direct=True)
                         + self.operation("done", self.acknowledgement(A, 1, "done", cycle="A"), "r1", direct=True))
         self.ingest()
-        # Positively admitted start/completion has the same meaning under v4/v5.
-        with mock.patch.object(policy, "ALGORITHM", "response-partitions-v4"), \
-                mock.patch.object(repository_module, "ALGORITHM", "response-partitions-v4"):
+        # Separate start/completion responses without source gaps agree in v5/v6.
+        with mock.patch.object(policy, "ALGORITHM", "response-partitions-v5"), \
+                mock.patch.object(repository_module, "ALGORITHM", "response-partitions-v5"):
             self.repository.refresh(self.reader)
             old = self.read(audit=True)
         original = old["snapshots"][0]
@@ -758,7 +758,7 @@ class ResponseRepositoryTests(unittest.TestCase):
         current = self.read(audit=True)
         documents = {item["snapshot_id"]: item for item in current["snapshots"]}
         self.assertEqual(documents[original["snapshot_id"]], original)
-        self.assertTrue(all(documents[key]["algorithm"] == "response-partitions-v5"
+        self.assertTrue(all(documents[key]["algorithm"] == "response-partitions-v6"
                             for key in current["current_snapshot_ids"]))
         self.assertTrue(any(original["snapshot_id"] in documents[key]["predecessors"]
                             for key in current["current_snapshot_ids"]))

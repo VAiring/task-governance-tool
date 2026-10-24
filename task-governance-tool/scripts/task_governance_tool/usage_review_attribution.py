@@ -207,5 +207,6 @@ def reviewer_intervals(owners, turns, boundaries, receipt_turns, reviews, *, col
             # exclusive assignment when the legacy interval cannot be ordered.
             identity_only = True
         result.append(Interval(target.task_id, binding.execution_id, periods[binding.execution_id],
-                               binding.session_id, start, end, True, gaps, identity_only=identity_only))
+                               binding.session_id, start, end, True, gaps, identity_only=identity_only,
+                               source_admitted=True))
     return tuple(result)

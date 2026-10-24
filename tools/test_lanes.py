@@ -222,6 +222,7 @@ LANE_MODULES: dict[str, tuple[str, ...]] = {
         "test_usage_session_slot",
         "test_usage_snapshot_read",
         "test_usage_source_boundary",
+        "test_usage_source_diagnostics",
         "test_usage_terminal_repository",
         "test_usage_terminal_transport",
         "test_usage_turn_adapter",

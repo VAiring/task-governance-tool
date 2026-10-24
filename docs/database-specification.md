@@ -1345,17 +1345,29 @@ Optional lifecycle invocation follows the separate Setup/state contract and
 cannot alter these quality or completion boundaries.
 
 Current response partitions emit `taskgov-usage-snapshot-v2` with algorithm
-`response-partitions-v5`. Retained `response-partitions-v1`,
-`response-partitions-v2`, `response-partitions-v3` and `response-partitions-v4` snapshots retain their original policy meaning and
+`response-partitions-v6`. Retained `response-partitions-v1`,
+`response-partitions-v2`, `response-partitions-v3`, `response-partitions-v4` and
+`response-partitions-v5` snapshots retain their original policy meaning and
 remain validated immutable history.
 Changing the response algorithm invalidates
 the capture basis and publishes successors without a schema migration or
-reinterpreting old snapshot bytes. Version 5 requires positive origin admission;
+reinterpreting old snapshot bytes. Versions 5 and later require positive origin admission;
 legacy stored boundaries lack that proof and remain unbound until existing
 bounded source audit/replay reevaluates them. Read-only access never performs
 replay, and a permitted refresh cannot promote old boundary proof into the new
 policy. Numerical observations, successful operation facts and immutable history
 remain; correction requires no Task recompletion or review registration.
+Source diagnostics follow the execution's admitted response membership and
+validated additional reviewer/wait participation, including work that ends or
+stops in the same response. Missing observations in a validated participation
+interval retain its source diagnostics. Admitted ownership boundaries retain
+source diagnostics even if the associated counters are missing or conflicting.
+An unbound wait placeholder, including one with missing/restored-away anchors
+or ambiguous senders, does not admit its claimed source merely by carrying
+boundary diagnostics. Diagnostics cannot infer response
+membership or draw from unrelated threads. Task periods, immutable snapshots
+and published JSON carry the existing closed codes without changing numerical
+values, original response keys or assignment semantics.
 All response algorithms keep the v1 fields and add `assignment`:
 `exclusive` has exactly one execution, `shared` at least two, and `partial`
 retains only known owners with explicit incomplete-boundary gaps. The canonical

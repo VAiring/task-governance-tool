@@ -36,6 +36,9 @@ class Interval:
     closed: bool
     diagnostics: tuple[str, ...] = ()
     identity_only: bool = False
+    # Internal diagnostic provenance, separate from uncertain interval coverage.
+    # Only the validated participation producer may admit an additional source.
+    source_admitted: bool = False
 
 
 def owner_intervals(transitions: tuple[Transition, ...], bindings: dict[str, tuple[str, str]]) -> tuple[Interval, ...]:

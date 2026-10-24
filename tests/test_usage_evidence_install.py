@@ -150,7 +150,7 @@ class UsageEvidenceInstallTests(unittest.TestCase):
                                 {tuple(sorted(row.items())) for row in index["cycle_links"]})
                 documents = {identity: json.loads((self.target.resolved_usage_snapshots / (identity + ".json")).read_bytes())
                              for identity in index["snapshots"]}
-                self.assertTrue(all(documents[identity]["algorithm"] == "response-partitions-v5"
+                self.assertTrue(all(documents[identity]["algorithm"] == "response-partitions-v6"
                                     for identity in index["current_snapshot_ids"]))
                 self.assertTrue(any(item["predecessors"] for identity, item in documents.items()
                                     if identity in index["current_snapshot_ids"]))

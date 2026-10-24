@@ -407,6 +407,7 @@ LANE_MODULES: dict[str, tuple[str, ...]] = {
         "test_m215_verification_input_capacity",
         "test_m224_package_forward",
         "test_migration_acceptance",
+        "test_migration_history_validation",
         "test_release_contract",
         "test_self_status",
         "test_skill_self_containment",

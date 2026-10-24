@@ -1156,24 +1156,83 @@ def column_exists(connection: sqlite3.Connection, table_name: str, column_name: 
 def current_schema_version(connection: sqlite3.Connection) -> int:
     if not table_exists(connection, "schema_migrations"):
         return 0
-    row = connection.execute("SELECT MAX(version) AS version FROM schema_migrations").fetchone()
-    if row is None or row["version"] is None:
+    row = connection.execute(
+        "SELECT MAX(version) AS version, COUNT(*) AS marker_count FROM schema_migrations"
+    ).fetchone()
+    if row is None or row["marker_count"] == 0:
         return 0
-    return int(row["version"])
+    if type(row["version"]) is not int or row["version"] < 1:
+        # A stored zero/negative or coerced marker is not an empty database.
+        raise _unreadable_project_state()
+    return row["version"]
+
+
+_MIGRATION_NAMES = (
+    "initial_schema",
+    "completion_commit_columns",
+    "paused_state",
+    "typed_completion_evidence",
+    "structured_review_evidence",
+    "git_snapshot_target_base",
+    "local_handoff_outbox",
+    "task_contract_revisions",
+    "informational_effort_advisory",
+    "project_maintenance",
+    "managed_backup_generations",
+    "task_checkpoints",
+    "viewer_maintenance_state",
+    "project_identity_bindings",
+    "completion_cycle_history",
+    "completion_cycle_capture_activation",
+    "verification_receipts",
+    "evidence_ledger_capture",
+    "completion_evidence_bundles",
+    "verification_runner_shadow",
+    "verification_runner_gate_basis",
+    "evidence_reservation_cleanup",
+    "verification_declaration",
+    "task_session_ownership",
+    "review_receipt_sessions",
+    "review_pending_session_slot",
+    "review_pending_reacquisition_guard",
+    "task_event_note_bodies",
+    "review_continuations",
+    "collected_review_answers",
+    "criterion_link_collector",
+    "session_slot_lookup_index",
+    "own_review_lookup_indexes",
+)
+
+
+def _validated_migration_versions(connection: sqlite3.Connection) -> set[int]:
+    """Read every marker without coercion, repair or timestamp-order inference."""
+    versions: set[int] = set()
+    for row in connection.execute("SELECT version,name,applied_at FROM schema_migrations"):
+        version = row["version"]
+        if (type(version) is not int or not 1 <= version <= len(_MIGRATION_NAMES)
+                or version in versions or type(row["name"]) is not str
+                or row["name"] != _MIGRATION_NAMES[version - 1]):
+            raise _unreadable_project_state()
+        try:
+            validate_utc_timestamp(row["applied_at"], field="migration timestamp")
+        except StorageError:
+            raise _unreadable_project_state() from None
+        versions.add(version)
+    return versions
 
 
 def missing_migration_versions(
     connection: sqlite3.Connection,
     version: int,
 ) -> list[int]:
-    if version <= 0 or not table_exists(connection, "schema_migrations"):
+    """Return gaps only after validating the complete stored marker history."""
+    if not table_exists(connection, "schema_migrations"):
         return list(range(1, max(version, 0) + 1))
-    rows = connection.execute(
-        "SELECT version FROM schema_migrations WHERE version BETWEEN 1 AND ?",
-        (version,),
-    ).fetchall()
-    present = {int(row["version"]) for row in rows}
-    return [candidate for candidate in range(1, version + 1) if candidate not in present]
+    present = _validated_migration_versions(connection)
+    # A caller validating an older supported prefix must not hide a gap in
+    # retained later history. Its own source-version admission remains separate.
+    maximum = max(version, max(present, default=0))
+    return [candidate for candidate in range(1, maximum + 1) if candidate not in present]
 
 
 def initial_schema_sql() -> str:

@@ -254,6 +254,17 @@ retains the realistic 12-Task/191-event fixture and historical completion/
 review trace through every supported source version. No migration parses
 private prose to invent structure.
 
+History admission checks every stored marker, including earlier generations:
+an integer version in the supported sequence, the exact migration name for
+that version, and a text application time in the existing canonical UTC
+second-resolution format. Extra zero/negative versions, wrong names or storage
+types, invalid times and gaps are structural failures, not initialization or
+repair requests. Future schemas retain their existing unsupported-version
+rejection. Application times need not be increasing or ordered relative to
+other records. Normal/global/local admission, Setup/Doctor, backup source/copy,
+recovery candidates, migration/reentry and Viewer source checks retain this
+same history boundary without replacing their structural or domain validation.
+
 ### Schema-v28 Task Note Bodies
 
 Explicit Setup migrates schema 27 to 28 by adding nullable `task_events.note_body`

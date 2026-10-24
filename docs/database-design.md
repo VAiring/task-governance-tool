@@ -494,7 +494,14 @@ the actual source version. Bundle format four, index three and their digest
 domains remain unchanged.
 
 `schema_migrations` is contiguous, named, and validated with required objects
-and known later-version markers. Only explicit setup invokes migration. Other
+and known later-version markers. Storage's shared history reader checks every
+row's uncoerced integer version, exact code-defined name and existing UTC
+timestamp syntax/calendar validity before calculating missing versions. It
+also rejects extra nonpositive versions, duplicate versions and invalid later
+rows even when a caller requests an older prefix. An invalid maximum marker
+cannot be mistaken for an empty database. Version selection and each consumer's
+supported-source range remain separate; no timestamp ordering, automatic repair
+or cached admission is introduced. Only explicit setup invokes migration. Other
 commands never create parents, create a database, stamp missing history, or
 perform a reverse migration. Older binaries reject newer schemas.
 

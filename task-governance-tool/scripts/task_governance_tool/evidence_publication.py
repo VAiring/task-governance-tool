@@ -1,6 +1,6 @@
 """Fixed-path Evidence publication and read-only physical projection status.
 
-Capture through storage, render with the construction boundary, then publish
+Capture fully validated documents through storage, then publish
 Bundles before the index. The index generation guard retains its connection
 through replacement; outcome recording follows publication.
 """
@@ -20,11 +20,11 @@ from task_governance_tool.artifact_lock import (
 from task_governance_tool.evidence_projection import (
     BUNDLE_MAX_BYTES,
     INDEX_MAX_BYTES,
-    BundleArtifact,
+    _BundleDocument,
     EvidenceProjectionError,
-    IndexArtifact,
+    _IndexDocument,
+    _RenderedProjection,
     _inconsistent,
-    _render_projection,
 )
 from task_governance_tool.state_paths import (
     FileIdentity,
@@ -48,11 +48,10 @@ from task_governance_tool.evidence_projection_metadata_repository import (
     record_evidence_projection_outcome,
 )
 from task_governance_tool.evidence_validation_repository import (
-    capture_evidence_projection_basis,
+    capture_evidence_projection,
 )
 from task_governance_tool.storage import (
     DatabaseTarget,
-    EvidenceProjectionBasis,
     connect_initialized_readonly,
     validate_current_database,
     utc_now,
@@ -77,7 +76,7 @@ class EvidenceProjectionRefreshResult:
 class _ProjectionCapture:
     maintenance: ProjectMaintenanceState
     state: EvidenceProjectionState
-    basis: EvidenceProjectionBasis | None
+    rendered: _RenderedProjection | None
 
 
 class _EvidenceSourceChanged(RuntimeError):
@@ -103,26 +102,26 @@ def _capture(
         )
         if maintenance is None:
             raise _inconsistent()
-        basis = None
+        rendered = None
         if include_basis and (
             not only_when_due or (maintenance.enabled and state.due)
         ):
             # Eligibility is not a publication proof. Audit the complete
             # source in this same snapshot before capturing any artifact.
             validate_current_database(connection, target)
-            basis = capture_evidence_projection_basis(
+            rendered = capture_evidence_projection(
                 connection,
                 project_id=project_id,
             )
-        if basis is not None and (
-            basis.project_id != project_id
-            or basis.source_generation != state.source_generation
+        if rendered is not None and (
+            rendered.project_id != project_id
+            or rendered.source_generation != state.source_generation
         ):
             raise _inconsistent()
         return _ProjectionCapture(
             maintenance=maintenance,
             state=state,
-            basis=basis,
+            rendered=rendered,
         )
 
 
@@ -256,7 +255,7 @@ def _revalidate_replace_destination(
 def _publish_immutable_bundle(
     target: DatabaseTarget,
     bundle_id: str,
-    artifact: BundleArtifact,
+    artifact: _BundleDocument,
     *,
     replace_existing: bool = False,
 ) -> bool:
@@ -396,7 +395,7 @@ def _generation_guard(
 
 def _replace_index(
     target: DatabaseTarget,
-    artifact: IndexArtifact,
+    artifact: _IndexDocument,
     *,
     captured_generation: int,
     replace_existing_unbounded: bool = False,
@@ -474,6 +473,8 @@ def _publish_evidence_projection(
         with zero_wait_artifact_lock(lock_path):
             capture = _capture(target, include_basis=True, only_when_due=not force)
             for attempt in range(MAX_PUBLICATIONS_PER_ATTEMPT):
+                if attempt:
+                    capture = _capture(target, include_basis=True, only_when_due=not force)
                 captured_generation = capture.state.source_generation
                 if not capture.maintenance.enabled:
                     return EvidenceProjectionRefreshResult(
@@ -487,9 +488,9 @@ def _publish_evidence_projection(
                     return EvidenceProjectionRefreshResult(
                         "succeeded" if publications else "current", publications,
                     )
-                if capture.basis is None:
+                if capture.rendered is None:
                     raise _inconsistent()
-                rendered = _render_projection(capture.basis)
+                rendered = capture.rendered
                 for bundle_id, artifact in rendered.bundles:
                     _publish_immutable_bundle(
                         target,
@@ -497,6 +498,7 @@ def _publish_evidence_projection(
                         artifact,
                         replace_existing=force,
                     )
+                    del artifact
                 try:
                     _replace_index(
                         target,
@@ -509,7 +511,8 @@ def _publish_evidence_projection(
                         raise RuntimeError(
                             "Evidence source changed during publication"
                         )
-                    capture = _capture(target, include_basis=True, only_when_due=not force)
+                    # Release the previous generation before building another.
+                    del rendered, capture
                     continue
                 except _EvidenceOptedOut:
                     return EvidenceProjectionRefreshResult(
@@ -534,7 +537,7 @@ def _publish_evidence_projection(
                     raise RuntimeError(
                         "Evidence source changed during publication"
                     )
-                capture = _capture(target, include_basis=True, only_when_due=not force)
+                del rendered, capture
     except ArtifactLockError as exc:
         code = "deferred" if exc.contended else "failed"
         _record_failure(
@@ -587,9 +590,9 @@ def inspect_canonical_evidence_status(target: DatabaseTarget) -> str:
     """Return the read-only status of the fixed DB-derived Evidence files."""
 
     capture = _capture(target, include_basis=True)
-    if capture.basis is None:
+    if capture.rendered is None:
         raise _inconsistent()
-    rendered = _render_projection(capture.basis)
+    rendered = capture.rendered
     state_root, evidence_root, index_path, bundles_path, _ = (
         _fixed_output_paths(target)
     )

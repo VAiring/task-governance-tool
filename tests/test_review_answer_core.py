@@ -332,7 +332,7 @@ class CollectedCoreTests(unittest.TestCase):
         with closing(storage.connect_initialized(self.target)) as connection:
             basis,bundles=_bundle_artifacts(connection,self.basis["project_id"])
             from task_governance_tool.evidence_projection import _render_projection
-            self.assertEqual(_render_projection(basis).index.envelope["format_version"],3)
+            self.assertEqual(json.loads(_render_projection(basis).index.document)["format_version"],3)
             self.assertEqual(len(bundles),1)
             envelope=next(iter(bundles.values())).envelope
             self.assertEqual(envelope["format_version"],4)

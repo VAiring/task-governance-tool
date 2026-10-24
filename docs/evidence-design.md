@@ -85,13 +85,14 @@ the retired `derived_analysis` reservation from current schema v22.
   generation advance retain one caller-owned writer; the outer outcome entry
   keeps the initialized writer boundary. Viewer generation logic stays separate.
 - `evidence_publication.py` consumes `DatabaseTarget` and observation time,
-  captures through the Evidence validation repository API, calls those retained
-  builders, and returns the existing refresh result or physical status.
+  captures complete publication documents through the Evidence validation
+  repository API and returns the existing refresh result or physical status.
   It owns physical path checks,
   lock/temp/rename handling, Bundle-first/index-last publication, generation
   comparison and outcome-recording calls, last-good preservation, and setup repair.
-  Capture closes its read connection before rendering; the separate index
-  generation guard retains its read connection through atomic replacement.
+  Capture validates and constructs documents in its query-only transaction,
+  releases the raw basis and closes its reader before physical file/temp I/O;
+  the separate index generation guard retains its reader through replacement.
   Completion-time construction stays in its existing transaction boundary;
   construction-side storage value types remain shared without a DTO layer.
 
@@ -302,7 +303,29 @@ generation no greater than source, nullable index digest, and the closed
 maintenance outcome/time. Every cycle insertion advances source generation
 exactly once, including the legacy bridge; no other write does. The projector
 captures project/schema, generation, all cycles, native Bundles/members, and
-legacy state in one query-only transaction and closes SQLite before rendering.
+legacy state in one query-only transaction. Its publication entry validates
+the complete ledger, cycles and Bundle relations, then renders each raw basis
+once in that same read. Canonical Bundle construction is also record validation:
+it retains the stored digest/payload-size comparison and document size bound.
+Each successful construction is immediately reduced to document bytes and the
+Bundle/file digests needed for the index. The full index is validated and built
+before any Bundle is physically published. Only document bytes, IDs, digests and
+generation leave this entry; payload dictionaries, payload bytes, envelopes and
+the raw basis do not survive into publication. The capture reader closes before
+physical file/temp I/O. A later generation capture releases the previous
+documents and independently validates its new source.
+
+This reuse is confined to one capture/render call. Standalone storage and raw
+basis validators still perform their complete canonical validation, and pure
+rendering of a separately supplied basis validates its records independently.
+No certificate is attached to a shared value type or carried into a fresh guard,
+writer, transaction or later capture. Native completion and the independent
+Reader retain their existing validation and value contracts.
+
+Retained publication memory still scales with all Bundle document bytes plus
+the complete index and its metadata. This is not streaming, spooling, an O(1)
+memory bound or a persistent cache. Capacity comparisons include acquisition of
+the raw basis and canonical construction, not just post-capture rendering.
 One encoder owns the exact canonical JSON and array orders. There is no clock
 input, so same-basis repair is byte-identical.
 `evidence_projection` owns native Bundle format selection and the shared index

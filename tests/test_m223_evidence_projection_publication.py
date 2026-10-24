@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import os
 import re
 import sys
@@ -54,31 +55,25 @@ def _target(root: Path) -> DatabaseTarget:
 
 
 def _bundle_artifact(document: bytes = b'{"bundle":1}\n'):
-    return construction.BundleArtifact(
-        payload={},
-        payload_bytes=b"{}",
+    return construction._BundleDocument(
         bundle_digest="sha256:" + "b" * 64,
-        envelope={},
         document=document,
         file_digest="sha256:" + hashlib.sha256(document).hexdigest(),
     )
 
 
 def _index_artifact(document: bytes = b'{"index":1}\n'):
-    return construction.IndexArtifact(
-        payload={},
-        payload_bytes=b"{}",
+    return construction._IndexDocument(
         index_digest="sha256:" + "c" * 64,
-        envelope={},
         document=document,
     )
 
 
-def _capture(*, generation: int, basis: object | None):
+def _capture(*, generation: int, rendered: object | None):
     return projection._ProjectionCapture(
         maintenance=SimpleNamespace(enabled=True),
         state=SimpleNamespace(source_generation=generation, due=True),
-        basis=basis,
+        rendered=rendered,
     )
 
 
@@ -89,8 +84,8 @@ def _write_sized_file(path: Path, size: int) -> None:
 
 class EvidenceProjectionPublicationTests(unittest.TestCase):
     def test_routine_orders_bundle_index_and_success_record(self):
-        basis = object()
         rendered = construction._RenderedProjection(
+            project_id=PROJECT_ID,
             source_generation=3,
             bundles=((BUNDLE_ID, _bundle_artifact()),),
             index=_index_artifact(),
@@ -117,14 +112,9 @@ class EvidenceProjectionPublicationTests(unittest.TestCase):
                     projection,
                     "_capture",
                     side_effect=(
-                        _capture(generation=3, basis=None),
-                        _capture(generation=3, basis=basis),
+                        _capture(generation=3, rendered=None),
+                        _capture(generation=3, rendered=rendered),
                     ),
-                ),
-                mock.patch.object(
-                    projection,
-                    "_render_projection",
-                    return_value=rendered,
                 ),
                 mock.patch.object(
                     projection,
@@ -177,15 +167,15 @@ class EvidenceProjectionPublicationTests(unittest.TestCase):
         self.assertEqual(order, ["bundle", "index", "record"])
 
     def test_one_source_change_gets_one_follow_up_capture(self):
-        first_basis = object()
-        second_basis = object()
         rendered = (
             construction._RenderedProjection(
+                project_id=PROJECT_ID,
                 source_generation=1,
                 bundles=((BUNDLE_ID, _bundle_artifact(b"first\n")),),
                 index=_index_artifact(b"first-index\n"),
             ),
             construction._RenderedProjection(
+                project_id=PROJECT_ID,
                 source_generation=2,
                 bundles=((BUNDLE_ID, _bundle_artifact(b"second\n")),),
                 index=_index_artifact(b"second-index\n"),
@@ -198,16 +188,11 @@ class EvidenceProjectionPublicationTests(unittest.TestCase):
                     projection,
                     "_capture",
                     side_effect=(
-                        _capture(generation=1, basis=None),
-                        _capture(generation=1, basis=first_basis),
-                        _capture(generation=2, basis=second_basis),
+                        _capture(generation=1, rendered=None),
+                        _capture(generation=1, rendered=rendered[0]),
+                        _capture(generation=2, rendered=rendered[1]),
                     ),
                 ) as capture,
-                mock.patch.object(
-                    projection,
-                    "_render_projection",
-                    side_effect=rendered,
-                ),
                 mock.patch.object(projection, "_prepare_output_directories"),
                 mock.patch.object(
                     projection,
@@ -330,9 +315,9 @@ class EvidenceProjectionPublicationTests(unittest.TestCase):
             )
 
     def test_setup_force_repairs_a_corrupt_referenced_bundle(self):
-        basis = object()
         bundle = _bundle_artifact()
         rendered = construction._RenderedProjection(
+            project_id=PROJECT_ID,
             source_generation=5,
             bundles=((BUNDLE_ID, bundle),),
             index=_index_artifact(),
@@ -349,14 +334,9 @@ class EvidenceProjectionPublicationTests(unittest.TestCase):
                     projection,
                     "_capture",
                     side_effect=(
-                        _capture(generation=5, basis=None),
-                        _capture(generation=5, basis=basis),
+                        _capture(generation=5, rendered=None),
+                        _capture(generation=5, rendered=rendered),
                     ),
-                ),
-                mock.patch.object(
-                    projection,
-                    "_render_projection",
-                    return_value=rendered,
                 ),
                 mock.patch.object(
                     projection,
@@ -396,9 +376,9 @@ class EvidenceProjectionPublicationTests(unittest.TestCase):
     def test_only_setup_force_repairs_an_oversized_bundle_without_reading_it(
         self,
     ):
-        basis = object()
         bundle = _bundle_artifact()
         rendered = construction._RenderedProjection(
+            project_id=PROJECT_ID,
             source_generation=6,
             bundles=((BUNDLE_ID, bundle),),
             index=_index_artifact(),
@@ -424,12 +404,7 @@ class EvidenceProjectionPublicationTests(unittest.TestCase):
                 mock.patch.object(
                     projection,
                     "_capture",
-                    return_value=_capture(generation=6, basis=basis),
-                ),
-                mock.patch.object(
-                    projection,
-                    "_render_projection",
-                    return_value=rendered,
+                    return_value=_capture(generation=6, rendered=rendered),
                 ),
                 mock.patch.object(
                     projection,
@@ -479,8 +454,8 @@ class EvidenceProjectionPublicationTests(unittest.TestCase):
     def test_only_setup_force_repairs_an_oversized_index_without_reading_it(
         self,
     ):
-        basis = object()
         rendered = construction._RenderedProjection(
+            project_id=PROJECT_ID,
             source_generation=7,
             bundles=(),
             index=_index_artifact(),
@@ -504,12 +479,7 @@ class EvidenceProjectionPublicationTests(unittest.TestCase):
                 mock.patch.object(
                     projection,
                     "_capture",
-                    return_value=_capture(generation=7, basis=basis),
-                ),
-                mock.patch.object(
-                    projection,
-                    "_render_projection",
-                    return_value=rendered,
+                    return_value=_capture(generation=7, rendered=rendered),
                 ),
                 mock.patch.object(
                     projection,
@@ -554,9 +524,9 @@ class EvidenceProjectionPublicationTests(unittest.TestCase):
     def test_setup_force_rejects_database_alias_and_destination_identity_race(
         self,
     ):
-        basis = object()
         bundle = _bundle_artifact()
         rendered = construction._RenderedProjection(
+            project_id=PROJECT_ID,
             source_generation=8,
             bundles=((BUNDLE_ID, bundle),),
             index=_index_artifact(),
@@ -576,12 +546,7 @@ class EvidenceProjectionPublicationTests(unittest.TestCase):
                 mock.patch.object(
                     projection,
                     "_capture",
-                    return_value=_capture(generation=8, basis=basis),
-                ),
-                mock.patch.object(
-                    projection,
-                    "_render_projection",
-                    return_value=rendered,
+                    return_value=_capture(generation=8, rendered=rendered),
                 ),
                 mock.patch.object(
                     projection,
@@ -611,12 +576,7 @@ class EvidenceProjectionPublicationTests(unittest.TestCase):
                 mock.patch.object(
                     projection,
                     "_capture",
-                    return_value=_capture(generation=8, basis=basis),
-                ),
-                mock.patch.object(
-                    projection,
-                    "_render_projection",
-                    return_value=rendered,
+                    return_value=_capture(generation=8, rendered=rendered),
                 ),
                 mock.patch.object(
                     projection,
@@ -669,6 +629,12 @@ class EvidenceProjectionPublicationTests(unittest.TestCase):
             )
             bundle_path.write_bytes(bundle.document)
             target.resolved_evidence_index.write_bytes(index.document)
+            rendered = construction._RenderedProjection(
+                project_id=PROJECT_ID,
+                source_generation=7,
+                bundles=((BUNDLE_ID, bundle),),
+                index=index,
+            )
             capture = projection._ProjectionCapture(
                 maintenance=SimpleNamespace(enabled=True),
                 state=SimpleNamespace(
@@ -676,23 +642,13 @@ class EvidenceProjectionPublicationTests(unittest.TestCase):
                     published_generation=7,
                     index_digest=index.index_digest,
                 ),
-                basis=object(),
-            )
-            rendered = construction._RenderedProjection(
-                source_generation=7,
-                bundles=((BUNDLE_ID, bundle),),
-                index=index,
+                rendered=rendered,
             )
             with (
                 mock.patch.object(
                     projection,
                     "_capture",
                     return_value=capture,
-                ),
-                mock.patch.object(
-                    projection,
-                    "_render_projection",
-                    return_value=rendered,
                 ),
             ):
                 self.assertEqual(
@@ -731,7 +687,7 @@ class EvidenceProjectionPublicationTests(unittest.TestCase):
         )
         self.assertEqual(rendered.bundles, ())
         self.assertEqual(
-            rendered.index.payload["entries"],
+            json.loads(rendered.index.document)["payload"]["entries"],
             [
                 {
                     "task_id": cycle.task_id,
@@ -748,7 +704,7 @@ class EvidenceProjectionPublicationTests(unittest.TestCase):
             ],
         )
 
-    def test_projection_capture_closes_sqlite_before_returning_basis(self):
+    def test_projection_capture_closes_sqlite_before_returning_documents(self):
         class Connection:
             closed = False
 
@@ -761,7 +717,7 @@ class EvidenceProjectionPublicationTests(unittest.TestCase):
         )
         maintenance = SimpleNamespace(enabled=True)
         state = SimpleNamespace(source_generation=9)
-        basis = SimpleNamespace(
+        rendered = SimpleNamespace(
             project_id=PROJECT_ID,
             source_generation=9,
         )
@@ -783,8 +739,8 @@ class EvidenceProjectionPublicationTests(unittest.TestCase):
             ),
             mock.patch.object(
                 projection,
-                "capture_evidence_projection_basis",
-                return_value=basis,
+                "capture_evidence_projection",
+                return_value=rendered,
             ),
             mock.patch.object(projection, "validate_current_database") as validate,
         ):
@@ -792,7 +748,7 @@ class EvidenceProjectionPublicationTests(unittest.TestCase):
 
         validate.assert_called_once_with(connection, target)
         self.assertTrue(connection.closed)
-        self.assertIs(captured.basis, basis)
+        self.assertIs(captured.rendered, rendered)
 
     def test_generation_guard_holds_connection_through_yield_and_closes_on_drift(self):
         class Connection:

@@ -212,7 +212,7 @@ class MaintenanceAdmissionTests(unittest.TestCase):
 
         target = self.make_fixture()
         for service, builder, capture in (
-            (evidence, "capture_evidence_projection_basis",
+            (evidence, "capture_evidence_projection",
                 lambda: evidence._capture(target, include_basis=True, only_when_due=True)),
             (viewer_maintenance_service, "build_viewer_snapshot",
                 lambda: viewer_maintenance_service._capture(target, force=False,

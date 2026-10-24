@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import tempfile
 import unittest
 from contextlib import contextmanager
@@ -98,6 +99,18 @@ def _basis(index, entry):
         "source_schema_version": index.payload["source_schema_version"],
         "project_id": index.payload["project_id"],
         "projection_generation": index.payload["projection_generation"],
+        "index_digest": index.index_digest,
+        "entry": deepcopy(entry),
+    }
+
+
+def _basis_document(index, entry):
+    envelope = json.loads(index.document)
+    return {
+        "index_format_version": envelope["format_version"],
+        "source_schema_version": envelope["payload"]["source_schema_version"],
+        "project_id": envelope["payload"]["project_id"],
+        "projection_generation": envelope["payload"]["projection_generation"],
         "index_digest": index.index_digest,
         "entry": deepcopy(entry),
     }
@@ -203,7 +216,7 @@ class Schema22PureProjectionTests(unittest.TestCase):
 
     def test_future_index_and_v1_source22_index_reject_read_only(self):
         envelope = _reference_envelope(_payload("not_required"))
-        future = _index_payload(envelope, source_version=33)
+        future = _index_payload(envelope, source_version=storage.SCHEMA_VERSION + 1)
         with self.assertRaises(projection.EvidenceProjectionError):
             projection.build_index_artifact(future)
         for payload, format_version in ((future, 2), (_index_payload(envelope), 1)):
@@ -272,16 +285,18 @@ class Schema22StoredProjectionTests(unittest.TestCase):
             connection.execute("PRAGMA query_only = ON")
             basis = storage.capture_evidence_projection_basis(connection, project_id=project_id)
             rendered = projection._render_projection(basis)
-            self.assertEqual(rendered.index.payload["source_schema_version"], 22)
-            self.assertEqual(rendered.index.envelope["format_version"], 2)
+            self.assertEqual(json.loads(rendered.index.document)["payload"]["source_schema_version"], 22)
+            self.assertEqual(json.loads(rendered.index.document)["format_version"], 2)
             self.assertEqual(rendered.source_generation, original.source_generation)
-            self.assertEqual(rendered.index.payload["entries"], original.index.payload["entries"])
+            self.assertEqual(json.loads(rendered.index.document)["payload"]["entries"], json.loads(original.index.document)["payload"]["entries"])
             for bundle_id, artifact in rendered.bundles:
-                self.assertEqual(artifact, before_artifacts[bundle_id])
-                self.assertEqual(artifact.payload["source_schema_version"], 21)
-                entry = next(row for row in rendered.index.payload["entries"] if row["bundle_id"] == bundle_id)
-                source = ValidatedEvidenceSource("native_bundle", _basis(rendered.index, entry), artifact.envelope)
-                self.assertEqual(source.source, artifact.envelope)
+                self.assertEqual(artifact.document, before_artifacts[bundle_id].document)
+                self.assertEqual(artifact.bundle_digest, before_artifacts[bundle_id].bundle_digest)
+                self.assertEqual(artifact.file_digest, before_artifacts[bundle_id].file_digest)
+                self.assertEqual(json.loads(artifact.document)["payload"]["source_schema_version"], 21)
+                entry = next(row for row in json.loads(rendered.index.document)["payload"]["entries"] if row["bundle_id"] == bundle_id)
+                source = ValidatedEvidenceSource("native_bundle", _basis_document(rendered.index, entry), json.loads(artifact.document))
+                self.assertEqual(source.source, json.loads(artifact.document))
             self.assertEqual(_logical_snapshot(connection), snapshot)
 
     def test_source22_manual_and_runner_payloads_validate_in_actual22_only(self):
@@ -298,9 +313,9 @@ class Schema22StoredProjectionTests(unittest.TestCase):
                     for other_id in set(artifacts) - {bundle_id}:
                         self.assertEqual(artifacts[other_id], original[other_id])
                     rendered = projection._render_projection(basis)
-                    entry = next(row for row in rendered.index.payload["entries"] if row["bundle_id"] == bundle_id)
-                    source = ValidatedEvidenceSource("native_bundle", _basis(rendered.index, entry), artifact.envelope)
-                    self.assertEqual(source.source, artifact.envelope)
+                    entry = next(row for row in json.loads(rendered.index.document)["payload"]["entries"] if row["bundle_id"] == bundle_id)
+                    source = ValidatedEvidenceSource("native_bundle", _basis_document(rendered.index, entry), json.loads(artifact.document))
+                    self.assertEqual(source.source, json.loads(artifact.document))
                     self.assertEqual(source.source_basis["source_schema_version"], 22)
                     self.assertEqual(source.source["payload"]["source_schema_version"], 22)
                     storage.read_completion_history(connection, project_id=project_id, task_id=task_id)

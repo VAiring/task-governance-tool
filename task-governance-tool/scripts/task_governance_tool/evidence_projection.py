@@ -341,10 +341,26 @@ class NativeBundlePlan:
 
 
 @dataclass(frozen=True)
+class _BundleDocument:
+    """Publication bytes and index facts; no retained payload representations."""
+
+    document: bytes
+    bundle_digest: str
+    file_digest: str
+
+
+@dataclass(frozen=True)
+class _IndexDocument:
+    document: bytes
+    index_digest: str
+
+
+@dataclass(frozen=True)
 class _RenderedProjection:
+    project_id: str
     source_generation: int
-    bundles: tuple[tuple[str, BundleArtifact], ...]
-    index: IndexArtifact
+    bundles: tuple[tuple[str, _BundleDocument], ...]
+    index: _IndexDocument
 
 
 def _inconsistent() -> EvidenceProjectionError:
@@ -1809,12 +1825,19 @@ def _render_projection(
     }
     if len(bundle_rows) != len(basis.bundles):
         raise _inconsistent()
-    rendered_by_id: dict[str, BundleArtifact] = {}
+    rendered_by_id: dict[str, _BundleDocument] = {}
     for record in basis.native_bundles:
         bundle_id = record.bundle.completion_evidence_bundle_id
         if bundle_id not in bundle_rows or bundle_id in rendered_by_id:
             raise _inconsistent()
-        rendered_by_id[bundle_id] = build_projection_bundle_artifact(record)
+        artifact = build_projection_bundle_artifact(record)
+        rendered_by_id[bundle_id] = _BundleDocument(
+            document=artifact.document,
+            bundle_digest=artifact.bundle_digest,
+            file_digest=artifact.file_digest,
+        )
+        # Do not retain the preceding payload while constructing the next one.
+        del artifact
     if set(rendered_by_id) != set(bundle_rows):
         raise _inconsistent()
 
@@ -1886,7 +1909,8 @@ def _render_projection(
         }
     )
     return _RenderedProjection(
+        project_id=basis.project_id,
         source_generation=basis.source_generation,
         bundles=tuple(sorted(rendered_by_id.items())),
-        index=index,
+        index=_IndexDocument(document=index.document, index_digest=index.index_digest),
     )

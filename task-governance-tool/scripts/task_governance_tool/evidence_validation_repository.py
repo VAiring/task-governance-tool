@@ -9,7 +9,11 @@ from __future__ import annotations
 import json
 import re
 import sqlite3
-from typing import Any
+from collections.abc import Iterator
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from task_governance_tool.evidence_projection import _RenderedProjection
 
 
 def _validate_selected_completion_bundle_history(
@@ -2371,6 +2375,28 @@ def _validated_completion_evidence_projection_bases(
         dict[tuple[str, str, int], dict[str, Any]] | None
     ) = None,
 ) -> dict[str, _storage.EvidenceProjectionBasis]:
+    result = {}
+    for basis in _completion_evidence_projection_bases(
+        connection, _validated_runner_generations=_validated_runner_generations,
+    ):
+        for record in basis.native_bundles:
+            _validate_projection_bundle_record(record)
+        result[basis.project_id] = basis
+    return result
+
+
+def _completion_evidence_projection_bases(
+    connection: sqlite3.Connection,
+    *,
+    _validated_runner_generations: (
+        dict[tuple[str, str, int], dict[str, Any]] | None
+    ) = None,
+) -> Iterator[_storage.EvidenceProjectionBasis]:
+    """Acquire row-validated bases; callers must still validate canonical bytes.
+
+    Both standalone validation and publication exhaust this private iterator.
+    It carries no admission proof into another transaction or capture.
+    """
     from task_governance_tool.storage import (
         _validate_completion_evidence_bundle_schema_contract,
         evidence_ledger_inconsistent,
@@ -2393,17 +2419,12 @@ def _validated_completion_evidence_projection_bases(
         or len(set(project_ids)) != len(project_ids)
     ):
         raise evidence_ledger_inconsistent()
-    result: dict[str, EvidenceProjectionBasis] = {}
     for project_id in project_ids:
-        basis = _capture_evidence_projection_basis_rows(
+        yield _capture_evidence_projection_basis_rows(
             connection,
             project_id=project_id,
             _validated_runner_generations=runner_generations,
         )
-        for record in basis.native_bundles:
-            _validate_projection_bundle_record(record)
-        result[project_id] = basis
-    return result
 
 
 def validate_completion_evidence_bundle_storage(
@@ -3739,6 +3760,49 @@ def capture_evidence_projection_basis(
 ) -> _storage.EvidenceProjectionBasis:
     """Validate and capture one coherent Evidence projection basis once."""
 
+    _validate_evidence_projection_source(connection, project_id=project_id)
+    bases = _validated_completion_evidence_projection_bases(connection)
+    basis = bases.get(project_id)
+    if basis is None:
+        raise _storage.evidence_ledger_inconsistent()
+    return basis
+
+
+def capture_evidence_projection(
+    connection: sqlite3.Connection,
+    *,
+    project_id: str,
+) -> _RenderedProjection:
+    """Validate the complete source and build publication bytes in this read.
+
+    Rendering performs canonical record and whole-index validation once. Only
+    compact documents leave this call; raw bases and builder intermediates do
+    not survive until physical I/O. Standalone basis validation stays separate.
+    """
+    from task_governance_tool.evidence_projection import (
+        EvidenceProjectionError, _render_projection,
+    )
+
+    _validate_evidence_projection_source(connection, project_id=project_id)
+    selected = None
+    try:
+        for basis in _completion_evidence_projection_bases(connection):
+            rendered = _render_projection(basis)
+            if basis.project_id == project_id:
+                selected = rendered
+    except EvidenceProjectionError as exc:
+        raise _storage.evidence_ledger_inconsistent() from exc
+    if selected is None:
+        raise _storage.evidence_ledger_inconsistent()
+    return selected
+
+
+def _validate_evidence_projection_source(
+    connection: sqlite3.Connection,
+    *,
+    project_id: str,
+) -> None:
+
     from task_governance_tool.storage import (
         PRIVATE_SCHEMA22_VERSION,
         SCHEMA_VERSION,
@@ -3758,11 +3822,6 @@ def capture_evidence_projection_basis(
     _validate_evidence_ledger_schema_contract(connection)
     _validate_evidence_ledger_rows(connection)
     validate_completion_cycle_storage(connection)
-    bases = _validated_completion_evidence_projection_bases(connection)
-    basis = bases.get(project_id)
-    if basis is None:
-        raise evidence_ledger_inconsistent()
-    return basis
 
 
 # Shared value types remain storage-owned. Bind the module after definitions

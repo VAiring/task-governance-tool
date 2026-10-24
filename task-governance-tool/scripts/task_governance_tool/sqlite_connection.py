@@ -11,6 +11,7 @@ import sqlite3
 from pathlib import Path
 
 from task_governance_tool.ordering import LANE_SQL_FUNCTION, canonical_lane
+from task_governance_tool.sqlite_transaction_trace import connect_traced
 
 
 VERIFICATION_SPECIFIED_SQL_FUNCTION = "taskgov_verification_specified"
@@ -74,13 +75,13 @@ def operational_sqlite_error(
 
 
 def connect(db_path: Path) -> sqlite3.Connection:
-    return configure_connection(sqlite3.connect(db_path))
+    return configure_connection(connect_traced(db_path, access="create"))
 
 
 def connect_existing(db_path: Path, *, timeout: float = 5.0) -> sqlite3.Connection:
     """Open an existing database read/write without allowing SQLite to create it."""
     uri = db_path.resolve(strict=False).as_uri() + "?mode=rw"
-    return configure_connection(sqlite3.connect(uri, uri=True, timeout=timeout))
+    return configure_connection(connect_traced(uri, uri=True, timeout=timeout, access="readwrite"))
 
 
 def connect_readonly(db_path: Path, *, timeout: float = 5.0) -> sqlite3.Connection:
@@ -93,7 +94,7 @@ def connect_readonly(db_path: Path, *, timeout: float = 5.0) -> sqlite3.Connecti
         )
     uri = db_path.resolve(strict=False).as_uri() + "?mode=ro"
     try:
-        connection = sqlite3.connect(uri, uri=True, timeout=timeout)
+        connection = connect_traced(uri, uri=True, timeout=timeout, access="readonly")
     except sqlite3.Error as exc:
         raise operational_sqlite_error(
             exc,

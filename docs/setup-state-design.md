@@ -24,6 +24,8 @@ One validated governed project and one physical package determine:
 
 ```text
 state root       <governed-project>/.taskgov
+SQLite diagnostics <state-root>/diagnostics/sqlite
+Common diagnostics <state-root>/diagnostics/logger
 transition lock  <state-root>/taskgov-state.lock
 fixed root       <state-root>/current
 database         <fixed-root>/taskgov.sqlite
@@ -56,6 +58,12 @@ Review-wait association, request and lock-only dispatch paths are derived by
 this same resolver; their operational protocol is owned by
 [Review/completion design](review-completion-design.md#host-owned-review-waiting).
 No dispatch database, alternate state root or core migration is introduced.
+
+`CanonicalStatePaths.sqlite_diagnostics` and `debug_logs` derive the separate
+fixed diagnostic directories. They are outside `current` and core backup/recovery;
+its explicit opt-in and publication belong to the
+[logging contracts](specification.md#common-debug-logger).
+The logger does not initialize or repair the state layout.
 
 For the Runner subsystem, `CanonicalStatePaths` derives the four fixed paths above
 and `DatabaseTarget` carries them to the parent service. Internal test targets
@@ -299,6 +307,12 @@ Those three digests have different meanings: SQLite backup need not reproduce
 original database bytes. Fresh preparation has no source basis and persists
 its UUID once. Missing preparation digests are permitted only in `private`
 and cannot authorize fencing. No arbitrary path or business row is recorded.
+
+The state-root inventory also admits the physical `diagnostics/` directory as
+a non-state sibling. It validates the directory boundary without traversing,
+copying, deleting or treating its contents as transition/recovery evidence.
+Other unknown root entries and non-directory/linklike `diagnostics` entries
+retain the existing refusal. The diagnostic sink owns its deeper path checks.
 
 `setup_state_separation.py` owns explicit offline planning and the retained
 lock sequence: new-root transition, old-root transition, then source Runner,

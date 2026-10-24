@@ -134,6 +134,16 @@ class CanonicalStatePaths:
     legacy_projects: Path = field(repr=False)
 
     @property
+    def sqlite_diagnostics(self) -> Path:
+        """Opt-in local logs are outside the recoverable current-state tree."""
+        return self.state_root / "diagnostics" / "sqlite"
+
+    @property
+    def debug_logs(self) -> Path:
+        """Separately enabled daily diagnostics, outside recoverable state."""
+        return self.state_root / "diagnostics" / "logger"
+
+    @property
     def usage_database(self) -> Path:
         return self.fixed_root / "taskgov-usage.sqlite"
 

@@ -230,13 +230,16 @@ def inspect_separation(
         inspect_physical_directory(state_root)
         names = set()
         for entry in state_root.iterdir():
-            if entry.name not in {"taskgov-state.lock", "current", ".state-separation"}:
+            if entry.name not in {"taskgov-state.lock", "current", ".state-separation", "diagnostics"}:
                 raise SeparationError()
             names.add(entry.name)
             if entry.name == "taskgov-state.lock":
                 inspect_physical_file(entry, root=state_root, max_bytes=1)
                 inspect_existing_artifact_lock(entry)
             else:
+                # Diagnostics are an explicitly opted-in, non-state sibling.
+                # Admit only the physical directory; its contents are neither
+                # transition/recovery evidence nor part of source inventory.
                 inspect_physical_directory(entry, root=state_root)
         paths = separation_paths(state_root)
         if ".state-separation" not in names:

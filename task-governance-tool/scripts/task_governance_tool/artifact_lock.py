@@ -28,7 +28,7 @@ def _identity(details: os.stat_result) -> tuple[int, int]:
     return (int(details.st_dev), int(details.st_ino))
 
 
-def _same_open_file(path: Path, details: os.stat_result) -> bool:
+def _same_open_file(path: Path, details: os.stat_result, *, require_single_link: bool = False) -> bool:
     try:
         observed = path.lstat()
     except OSError:
@@ -37,6 +37,7 @@ def _same_open_file(path: Path, details: os.stat_result) -> bool:
         not _is_reparse(observed)
         and stat.S_ISREG(observed.st_mode)
         and _identity(observed) == _identity(details)
+        and (not require_single_link or observed.st_nlink == details.st_nlink == 1)
     )
 
 
@@ -122,7 +123,7 @@ def inspect_existing_artifact_lock(path: Path) -> None:
 
 
 @contextmanager
-def zero_wait_artifact_lock(path: Path) -> Iterator[bytes]:
+def zero_wait_artifact_lock(path: Path, *, require_single_link: bool = False) -> Iterator[bytes]:
     """Lock one validated regular file without waiting or stale-file cleanup."""
 
     descriptor: int | None = None
@@ -142,7 +143,7 @@ def zero_wait_artifact_lock(path: Path) -> Iterator[bytes]:
             or not stat.S_ISDIR(parent_after.st_mode)
             or not stat.S_ISREG(details.st_mode)
             or int(details.st_size) not in {0, 1}
-            or not _same_open_file(path, details)
+            or not _same_open_file(path, details, require_single_link=require_single_link)
         ):
             raise ArtifactLockError(contended=False)
         if details.st_size == 0:
@@ -161,7 +162,7 @@ def zero_wait_artifact_lock(path: Path) -> Iterator[bytes]:
         if (
             lock_bytes.__len__() != 1
             or int(current.st_size) != 1
-            or not _same_open_file(path, current)
+            or not _same_open_file(path, current, require_single_link=require_single_link)
         ):
             raise ArtifactLockError(contended=False)
     except ArtifactLockError:

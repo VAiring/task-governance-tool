@@ -83,6 +83,14 @@ def register_wait_supervisor(repo, caller):
 def collect_event(payload, *, skill_root, repo, environment, repo_explicit=False):
     """Internal report is for tests/diagnosis; never sent as model hook context."""
     started = monotonic()
+    from task_governance_tool.sqlite_diagnostics import diagnostic_scope
+    with diagnostic_scope(repo, entrypoint=skill_root / "scripts/usage_hook.py", operation="usage_hook",
+                          repo_explicit=repo_explicit):
+        return _collect_event(payload, skill_root=skill_root, repo=repo, environment=environment,
+                              repo_explicit=repo_explicit, started=started)
+
+
+def _collect_event(payload, *, skill_root, repo, environment, repo_explicit, started):
     unavailable = {"status": "unknown", "collected_sources": 0, "diagnostics": ["usage_unavailable"]}
     try:
         if not collection_allowed(skill_root):
@@ -100,6 +108,8 @@ def collect_event(payload, *, skill_root, repo, environment, repo_explicit=False
         if monotonic() >= deadline:
             return unavailable
         target = _target(skill_root, repo, repo_explicit=repo_explicit, operation_local=True, deadline=deadline)
+        from task_governance_tool.sqlite_diagnostics import allow_output
+        allow_output()
         if monotonic() >= deadline:
             return unavailable
         repository = repository_for(target)

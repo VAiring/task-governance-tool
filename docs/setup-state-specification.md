@@ -206,6 +206,12 @@ one physical package, then run setup in that offline maintenance window. A
 new transition lock cannot establish that every old executable has stopped.
 Taskgov does not kill processes, relax host protection or claim online cutover.
 
+The separately opted-in [development diagnostics](specification.md#common-debug-logger)
+directory is a physical non-state sibling under `.taskgov/`. Its presence does
+not require setup or affect transition/recovery selection. State separation
+preserves it without traversing, copying or deleting its diagnostic contents;
+it supplies no evidence for state admission or repair.
+
 Before upgrading, finish any incomplete predecessor-layout migration with the
 compatible installed pre-separation version's `setup`. This prerequisite applies
 only to validated `legacy_cleanup_pending` state or recognized owned

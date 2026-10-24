@@ -204,6 +204,12 @@ The implementation keeps these narrow ownership boundaries:
   and copying; neither introduces a general filesystem migration service.
 - `sqlite_connection.py` owns configured SQLite connections, registered SQL
   functions, journal/sidecar preflight, and sanitized low-level errors.
+- `sqlite_transaction_trace.py` observes SQLite transaction boundaries through
+  an enabled-only Connection/Cursor subclass; `sqlite_diagnostics.py` owns the
+  opt-in operation scope, sanitized bounded buffer and fixed diagnostic sink.
+- `debug_log.py` owns common diagnostic scopes, spans and the finite protected
+  buffer; `debug_log_values.py` projects values and exceptions before buffering;
+  `debug_log_sink.py` admits and appends the fixed daily diagnostic files.
 - `project_binding_repository.py` owns validated binding snapshots and lineage,
   binding compare-and-swap, and cleanup-pending metadata updates. It uses the
   initialized connection/writer entry in `storage.py`; relocation intent,
@@ -439,6 +445,9 @@ selected internally by `artifact_lock.py`; callers keep the existing
 the internal acquire/release functions use non-waiting `fcntl.flock` on the
 independently opened descriptor, so same-process and cross-process contention
 are both rejected. Other OS lock mechanics remain unchanged.
+The logger selects `require_single_link=True` on this shared entry point,
+checking both descriptor and pathname link counts before its first write and
+after acquisition. Other callers retain their existing default admission.
 `no_replace.py` retains containment and identity checks before and after the
 native move;
 `windows_no_replace.py` owns only the Windows rename call, while
@@ -551,7 +560,9 @@ checkpoint caller input at 6,144 bytes, and a complete Review Packet at 32,768
 bytes. The final JSON boundary also bounds lexical parse errors and replaces an
 otherwise unbounded message with a fixed omission message.
 
-Inspection leaves are no-create and no-write. A missing database,
+Inspection leaves are no-create and no-write except for the separately opted-in
+[development diagnostic files](specification.md#common-debug-logger).
+Explicit `--read-only` and `doctor` suppress that logger. A missing database,
 migration-required source, unsupported journal, invalid identity/binding, or
 busy database returns its stable error and the command's fixed empty data
 shape. Successful business writes describe the record they committed; only
@@ -874,10 +885,52 @@ guard continues to reject prohibited Task content; it is not a log sanitizer.
 Logging configuration and sinks own verbosity, capacity and retention;
 instrumentation owns meaningful operation boundaries, correlation and
 measurements with explicit units/scope. Preserve primary operation outcomes
-on recording failure and measure instrumentation overhead. These are design
-requirements for separate logging implementation, not new runtime modules or
-settings. Existing diagnostic components retain their defined scope; public
-CLI/MCP envelopes and read-only behavior are unchanged.
+on recording failure and measure instrumentation overhead.
+
+The [common logger design](logger-design.md) owns its enabled-only internal API.
+CLI state admission permits publication without another DB inspection. A
+Collector record-sink adapter reuses SQLite observation and connection tracking;
+only sanitized fields enter the common operation buffer. Common publication
+replaces the dedicated SQLite sink for that invocation and waits for all
+registered connections to close. The daily sink performs bounded inventory and
+zero-wait thread/OS locking, without background work, retries or log deletion.
+Setup, doctor and explicit read-only calls suppress both scopes, including
+nested scopes. Other individual diagnostic components keep their own scope.
+
+For [SQLite diagnostics](specification.md#sqlite-transaction-diagnostics),
+`sqlite_diagnostics.py` admits the physical project/package and the fixed
+marker before runtime state resolution, without opening a database. Nested
+operation scopes reuse the current collector. CLI scopes enclose resolution,
+command handling and synchronous maintenance; usage lifecycle scopes enclose
+target resolution and collection. Both entries permit publication only after
+their existing state/binding admission succeeds, without another database read.
+Rejected resolution discards buffered observations. Explicit read-only calls and `doctor` do
+not enter a diagnostic scope. No scope is implicitly inherited by a review
+worker. The collector accepts sanitized closed fields, never SQL or exception
+objects, and defers file I/O until operation exit after connection cleanup.
+
+Shared connection factories select `sqlite_transaction_trace.py` only when a
+collector is active. Disabled connections retain the ordinary sqlite3 factory.
+Connection and default Cursor execution, commit, rollback, close and context
+exit delegate to the original driver exactly once. In particular, context
+exit is observed around `sqlite3.Connection.__exit__`, not reimplemented with
+Python commit/rollback calls. Before/after `in_transaction` observations govern
+transaction lifetime; savepoint rollback is not a whole-transaction end.
+`executescript` is aggregate-only because its internal boundaries cannot be
+observed by these methods. An active-to-active script invalidates subsequent
+lifetime measurement because an internal commit/restart may have occurred.
+The driver's shortcut methods return native cursors: their fetch and subsequent
+execution are not intercepted; explicit default `connection.cursor()` execution
+is intercepted. Caller-supplied connection factories remain authoritative and
+suppress publication because their close cannot be tracked.
+SQL classification remains transient and only a
+closed phase label reaches the collector. Public error mapping, driver waits
+and retry policy remain with their existing owners. Admission and buffered
+instrumentation costs are separate from SQLite attempt/lifetime measurements.
+The counters exclude final serialization and sink I/O, which take place after
+tracked connections close and cannot lengthen their measured transaction span.
+Other diagnostic components retain their defined scope and public envelopes
+are unchanged.
 
 Git subprocesses use fixed argument vectors, no shell, bounded timeout, safe
 environment and disabled optional locks/lazy fetching. Ordinary operations are
@@ -889,7 +942,9 @@ release work performed only under their separate approvals, not new Taskgov
 commands.
 
 Read-only commands do not create SQLite sidecars, locks, directories, state,
-Viewer output, Git changes, or target files. Atomic file publication and
+Viewer output, Git changes, or target files, except for the separately opted-in
+SQLite diagnostic files described above. Explicit `--read-only` and `doctor`
+retain their complete no-write guarantee. Atomic file publication and
 last-good preservation protect generated artifacts. The threat model covers
 ordinary misunderstanding, over-implementation, local races, crashes, and
 accidental path changes; it does not add signing, hostile-kernel protection, or

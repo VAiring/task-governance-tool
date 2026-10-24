@@ -291,6 +291,11 @@ Inherently read-only commands are `doctor`, task `list`, `next`, `current`, `con
 `effort`, and `show`, `task complete --check`, handoff `list` and `show`, and
 `review prepare`. `setup --read-only` is a no-write preview.
 
+Separately enabled local diagnostics may append a log for these inspections,
+except `doctor` or any invocation with explicit `--read-only`. Common logging
+and SQLite-only logging have separate opt-ins; neither changes public output
+or business state. See [Local diagnostic logging](#local-diagnostic-logging).
+
 Write commands other than `setup` require current initialized state. They
 never initialize or migrate implicitly. `setup` is the only initializer and
 migrator. `--read-only` rejects a write form before a business write.
@@ -2995,3 +3000,43 @@ The sole legacy reader is confined to already-stored bounded lowercase
 `dispatch_authorization` positive-canonical-integer equality and numeric JSON
 counter forms in Contract constraints and checkpoint summaries. It preserves their original text, performs
 no write, and leaves compound credentials or tokens rejected.
+
+## Local Diagnostic Logging
+
+Logging is OFF by default and has no normal Task-loop command. With explicit
+local authorization, prepare the physical, effectively Git-ignored directory
+`<project>/.taskgov/diagnostics/logger/` and its `enabled` file containing
+exactly `taskgov-logger-v1 debug` or `taskgov-logger-v1 errors` followed by one
+LF (ASCII, no BOM). Removing the marker disables subsequent output. Normal
+Task operations do not create or alter opt-in. Setup, doctor and explicit
+`--read-only` suppress logging. No host trust, install, or network permission
+is implied by enabling diagnostics.
+
+The common logger writes bounded UTF-8 JSONL to
+`taskgov-debug.log.YYYY-MM-DD`, using each event's local occurrence date even
+when deferred across midnight. Ordinary numbers, booleans and standard Task
+IDs are retained unless secret-labelled; free strings, nested dynamic keys and
+exception messages are protected or omitted before buffering. Logs are
+separate from public output and Task evidence, and never prove completion.
+Output waits until the operation exits and all observed SQLite connections
+close. Missing output can mean disabled/invalid opt-in, capacity, contention,
+unclosed connections, crashes or sink failure; it does not establish success.
+
+Limits are 256 events and 512 KiB buffered per operation, 16 KiB per event,
+10 MiB per daily file, 30 daily files, and 100 MiB total. A bounded inventory
+and zero-wait lock protect append. There is no deletion or rotation; explicit
+local cleanup is needed at capacity. Keep logs out of source and release
+artifacts and obtain authority before sharing them.
+
+SQLite-only diagnosis remains available via
+`<project>/.taskgov/diagnostics/sqlite/enabled` containing exactly
+`taskgov-sqlite-diagnostics-v1 transactions` or
+`taskgov-sqlite-diagnostics-v1 failures` plus one LF. The first records successful
+boundaries and failures, the second only operations with an observed failure.
+It retains at most 128 fixed files of 64 KiB each and 256 events per operation,
+without replacement. The common CLI logger takes precedence when both are
+enabled, avoiding duplicate DB records. Usage lifecycle remains SQLite-only.
+Separate review workers and unscoped direct library calls are outside both
+entry integrations. Neither facility changes DB timeouts, retries or results.
+SQLite durations are observed transaction lifetimes, not exact lock intervals;
+SQL, bindings, rows and exception messages are excluded from DB records.

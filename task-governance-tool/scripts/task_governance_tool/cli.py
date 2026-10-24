@@ -401,8 +401,11 @@ def handle_command(context: CommandContext) -> CommandResult:
             target_override=resolution.target,
             read_connection_override=resolution.read_connection,
         )
+    from task_governance_tool.debug_log import allow_output, span
+    allow_output()
     try:
-        result = dispatch_stateful_command(context)
+        with span(dispatch_stateful_command, context=context):
+            result = dispatch_stateful_command(context)
     finally:
         if context.read_connection_override is not None:
             context.read_connection_override.close()
@@ -3073,37 +3076,46 @@ def main(
                 "invalid_argument",
                 "review target set requires --revision unless --kind is git_snapshot",
             )
-        context = make_context(args, target_override=_target_override)
-        result = handle_command(context)
-        if _maintenance_enabled:
-            result = apply_post_commit_maintenance(context, result)
-        try:
-            exit_code = emit_result(
-                result,
-                json_output=context.json_output,
-                max_json_bytes=bounded_json_limit_from_args(args),
-            )
-            if result.command == "review.result.add" and result.ok:
-                sys.stdout.flush()
-            return exit_code
-        except Exception:
-            if result.command != "review.result.add" or not result.ok:
-                raise
-            # Even serialization/stream failure cannot roll back saved rows.
-            # Do not attempt another stdout response or invite blind replay.
+        from task_governance_tool.debug_log import operation_scope
+        # Explicit inspection remains entirely write-free, even with logging
+        # enabled. Other admitted calls flush only after handlers/maintenance
+        # have unwound their connections; no argument values enter the label.
+        diagnostics = operation_scope(Path(getattr(args, "repo", ".")),
+                           entrypoint=cli_script_path(), operation=command_name(args),
+                           repo_explicit=hasattr(args, "repo"),
+                           read_only=args.command in {"doctor", "setup"} or bool(getattr(args, "read_only", False)))
+        with diagnostics:
+            context = make_context(args, target_override=_target_override)
+            result = handle_command(context)
+            if _maintenance_enabled:
+                result = apply_post_commit_maintenance(context, result)
             try:
-                # Keep Python's later buffered-stream finalization from writing
-                # to the failed destination again. Only this failed command's
-                # stdout descriptor changes; stderr retains its diagnostic.
-                with open(os.devnull, "wb") as sink:
-                    os.dup2(sink.fileno(), sys.stdout.fileno())
-            except (OSError, ValueError, AttributeError):
-                pass  # An embedded caller may supply a stream without a fd.
-            try:
-                print("Review results recorded, but output failed. Do not resubmit; inspect recorded evidence before retrying.", file=sys.stderr)
+                exit_code = emit_result(
+                    result,
+                    json_output=context.json_output,
+                    max_json_bytes=bounded_json_limit_from_args(args),
+                )
+                if result.command == "review.result.add" and result.ok:
+                    sys.stdout.flush()
+                return exit_code
             except Exception:
-                pass  # Both output channels may be unavailable.
-            return EXIT_TOOL_ERROR
+                if result.command != "review.result.add" or not result.ok:
+                    raise
+                # Even serialization/stream failure cannot roll back saved rows.
+                # Do not attempt another stdout response or invite blind replay.
+                try:
+                    # Keep Python's later buffered-stream finalization from writing
+                    # to the failed destination again. Only this failed command's
+                    # stdout descriptor changes; stderr retains its diagnostic.
+                    with open(os.devnull, "wb") as sink:
+                        os.dup2(sink.fileno(), sys.stdout.fileno())
+                except (OSError, ValueError, AttributeError):
+                    pass  # An embedded caller may supply a stream without a fd.
+                try:
+                    print("Review results recorded, but output failed. Do not resubmit; inspect recorded evidence before retrying.", file=sys.stderr)
+                except Exception:
+                    pass  # Both output channels may be unavailable.
+                return EXIT_TOOL_ERROR
     except CommandLineError as exc:
         json_output = lexical_json_requested(raw_argv)
         if not json_output and exc.code in {"invalid_command", "invalid_option"}:

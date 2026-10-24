@@ -151,6 +151,8 @@ content. The fixed generated targets are:
 <governed-project>/.taskgov/current/evidence/taskgov-evidence.lock
 <governed-project>/.taskgov/current/viewer/task-viewer.html
 <governed-project>/.taskgov/current/verification-runner/
+<governed-project>/.taskgov/diagnostics/sqlite/
+<governed-project>/.taskgov/diagnostics/logger/
 ```
 
 The governed project's `.taskgov/` is the generated-state and Git-ignore boundary.
@@ -282,7 +284,9 @@ Exit status is 0 for success, 1 for parser/validation usage errors, and 2 for
 database, migration, project-state, or tool-service errors unless a command
 section fixes a narrower result. Inspection leaves are inherently read-only;
 `--read-only` rejects every write before database, artifact, Git, or target
-change.
+change. Separately opted-in [development diagnostics](#common-debug-logger)
+may append diagnostic files for an inspection without that flag; `doctor` and
+every explicit `--read-only` invocation suppress this logger entirely.
 
 Every JSON parser rejection requested lexically before `--`, including a
 supported abbreviation of `--json`, uses the bounded formatter with an
@@ -1098,11 +1102,112 @@ artifacts, and avoid changing the primary operation's outcome when recording
 fails. Performance instrumentation must account for its own overhead. Sharing
 or transmitting a log requires the authority for that operation.
 
-This is the approved privacy requirement for development diagnostics, not a
-claim that a general logging facility is implemented. It does not activate a
-new sink, setting or command, relax existing read-only/no-write behavior, or
-broaden an existing diagnostic component's implemented scope. Logging
-functionality is separate implementation work under this requirement.
+These requirements govern each separately implemented diagnostic component;
+they do not enable logging or broaden another component's scope by themselves.
+
+#### Common Debug Logger
+
+The common logger is OFF by default. Explicit local opt-in consists of the
+physical `.taskgov/diagnostics/logger/` directory and `enabled` containing
+exactly `taskgov-logger-v1 debug` or `taskgov-logger-v1 errors` plus one LF
+(ASCII, no BOM). No command, environment option, setup default or arbitrary
+output path is added. Normal commands never create that directory or marker.
+Supported physical source/installed packages use the fixed state resolver and
+effective Git-ignore checks. CLI state admission must succeed before output.
+Setup, doctor and explicit read-only suppress both diagnostic scopes.
+
+The common API records protected method start/end and duration, explicit
+exceptions and existing SQLite boundary observations. It does not instrument
+every function, migrate individual backup/review diagnostics, or change public
+responses, DB semantics, Task/Receipt/Evidence or error decisions. Ordinary
+inspection may append these logs only after this separate opt-in.
+`debug` retains successful events; `errors` retains failures and exceptions
+without expanding successful arguments. Ordinary numbers, booleans and
+standard Task IDs are retained; secret fields override their value retention.
+Null, empty, whitespace and missing values remain distinct. Free strings,
+dynamic dictionary keys and unknown objects are protected before buffering;
+exception messages, source lines, locals and cause chains are omitted.
+The exact bounds and simple call examples are in the
+[logger design](logger-design.md#argument-policy).
+
+Protected events are buffered until operation exit and all tracked connections
+close, with at most 256 events, 512 KiB per buffer and 16 KiB per event.
+Unknown connection cleanup suppresses output. At exit, events are appended to
+UTF-8 JSONL `taskgov-debug.log.YYYY-MM-DD`, using each event's local occurrence
+date, UTC timestamp and offset, including delayed events across midnight.
+One zero-wait thread/OS lock protects each daily batch. Incomplete trailing
+lines are separated, never truncated. At most 30 daily files, 10 MiB per day,
+100 MiB total and a 128-entry inventory bound apply. No automatic deletion or
+rotation occurs. Logging failures, capacity or contention drop diagnostics and
+preserve the primary outcome. Missing logs do not prove absence or success;
+crashes may lose the whole operation. Logs are excluded from source/release
+and core backup/recovery inventories. Neither logs nor summary counters prove
+a verification, review or completion gate.
+
+When common logging is active, its SQLite adapter uses the existing collector
+and observer with the same operation identity, and the dedicated SQLite sink
+is suppressed. SQLite-only opt-in keeps the dedicated behavior below. Usage
+lifecycle remains SQLite-only; other entry points and individual diagnostic
+systems are outside this foundation's integration scope.
+
+#### SQLite Transaction Diagnostics
+
+The reusable SQLite logger is disabled by default. Explicit local opt-in
+consists of preparing the physical directory `.taskgov/diagnostics/sqlite/`
+under the governed project and its `enabled` file containing exactly either
+`taskgov-sqlite-diagnostics-v1 transactions` or
+`taskgov-sqlite-diagnostics-v1 failures`, followed by one LF (ASCII, no BOM).
+`transactions` retains successful boundaries as well as failures to help
+identify readers competing with a writer. `failures` retains only operations
+with an observed failure, including their successful boundary context.
+Removing the marker disables subsequent invocations. There is no new
+command, environment setting, setup default, arbitrary output path, or host
+configuration. Source and physical project-installed packages are supported.
+
+The CLI operation and lifecycle usage collection scope the shared core and
+numerical SQLite connections, including resolver reads and synchronous
+maintenance. Publication requires that entry's existing state/binding admission
+to succeed; rejected relocation or invalid state never writes diagnostic files.
+No additional database inspection is performed for logging.
+`doctor` and any explicit `--read-only` call remain entirely
+no-write and do not enable this logger. Direct library calls without a scope,
+separate review MCP/background workers, raw SQLite connections used for private
+backup copies, and statements inside `executescript` are not individually
+traced. Scripts have an aggregate boundary only. This is not a process-wide
+SQLite audit or evidence that unobserved transactions did not occur.
+
+Records identify the invocation, process, thread, connection and transaction,
+fixed operation/database/access labels, code origin, UTC and monotonic times,
+boundary result, attempt duration and transaction lifetime in nanoseconds.
+BEGIN and COMMIT failures are distinguishable, including the COMMIT executed
+by a connection context manager. Rollback, close, implicit transaction starts
+and statement failures are identified separately. A COMMIT failure followed
+by the driver's implicit rollback is reported as an observed ended state,
+not as a separately measured rollback. Lifetime starts when a successful
+BEGIN is observed (or an implicit transaction is first observed) and ends at
+COMMIT, rollback or close; it is not the exact SQLite lock-holding interval.
+Deferred BEGIN may precede the first acquired read lock. Failed BEGIN does
+not create a successful transaction duration.
+
+Only closed labels, code-owned origins, generated correlation identifiers and
+bounded numerical measurements/error codes reach the buffer. SQL, bindings,
+row values, Task/Contract text, command arguments, paths, environment values,
+exception messages and stack contents are never logged. No SQLite SQL trace
+callback is installed. Diagnostics do not change busy timeouts, transactions,
+retries, schema, public errors or command output.
+
+The sink requires physical non-link directories and marker, and effective
+Git ignore when enclosed by a Git repository. It never creates directories.
+Each operation buffers at most 256 events and reports dropped events and
+instrumentation/admission overhead. It writes at most one exclusively created
+file of at most 64 KiB after its connections have closed; an unclosed tracked
+connection suppresses publication. There are 128 fixed file slots (at most
+8 MiB); full capacity drops subsequent files without overwriting, deleting or
+rotating older files. Users retain and remove logs explicitly. Logs are outside
+the core backup/recovery inventory, source commits and release artifacts.
+Malformed configuration, unsafe paths, full capacity and logging failures are
+silent and cannot replace the primary result or exception. A process crash or
+unfinished invocation can leave no diagnostic file; absence is not success.
 
 ## Published v0.10.0 Release Record
 

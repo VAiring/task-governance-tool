@@ -33,19 +33,20 @@ _OPERATIONS = frozenset({
     "handoff.record", "handoff.list", "handoff.show", "handoff.withdraw",
     "review.prepare", "review.target.set", "review.receipt.add", "review.result.add",
     "review.finding.add", "review.finding.resolve", "verification.receipt.add",
-    "usage_hook", "review_handoff", "review_wait", "review_wait_worker",
+    "usage_hook", "review_handoff", "review_wait", "review_wait_worker", "review_wait_cleanup",
     "maintenance", "other",
 })
 _ROLES = frozenset({"core", "numerical", "operational", "backup", "other"})
 _ACCESS = frozenset({"readonly", "readwrite", "create"})
 _PHASES = frozenset({
     "open", "begin", "implicit_begin", "statement", "commit", "rollback",
-    "close", "script", "transaction_end", "context_exit",
+    "close", "script", "transaction_end", "context_exit", "savepoint",
+    "release", "rollback_to", "backup",
 })
-_OUTCOMES = frozenset({"succeeded", "failed", "observed"})
+_OUTCOMES = frozenset({"succeeded", "failed", "cancelled", "observed"})
 _BEGIN_MODES = frozenset({"deferred", "immediate", "exclusive"})
 _END_REASONS = frozenset({
-    "ended_after_commit_failure", "commit", "rollback", "close", "script", "observed",
+    "ended_after_commit_failure", "commit", "rollback", "close", "script", "release", "observed",
 })
 # Code-owned labels only. Unknown code remains "other"; caller strings are
 # never accepted merely because they resemble a Python identifier.
@@ -152,6 +153,7 @@ class Collector:
         self._failed = False
         self.record_sink = record_sink
         self.validated = False
+        self.sealed = False
 
     def register_connection(self, role, access, origin):
         """Return a call-local ID. Rejected/overflow tracking prevents output."""
@@ -197,10 +199,15 @@ class Collector:
 
     def event(self, connection_id, phase, outcome, elapsed_ns, *, transaction_id=None,
               transaction_elapsed_ns=None, sqlite_errorcode=None, origin=None,
-              in_transaction=None, begin_mode=None, end_reason=None):
+              in_transaction=None, begin_mode=None, end_reason=None, lifetime=None):
         """Accept closed labels and bounded primitives only; never stringify input."""
         started = None
         try:
+            if self.sealed:
+                return
+            if threading.get_ident() != self.thread_id:
+                self._untracked = True
+                return
             started = time.monotonic_ns()
             if (not _integer(connection_id) or connection_id not in self._open
                     or type(phase) is not str or phase not in _PHASES
@@ -208,17 +215,17 @@ class Collector:
                     or not _integer(elapsed_ns)):
                 self.records_dropped += 1
                 return
-            if outcome == "failed":
+            if outcome in {"failed", "cancelled"}:
                 self._failed = True
             if len(self.records) >= MAX_RECORDS:
                 self.records_dropped += 1
-                if outcome != "failed":
+                if outcome not in {"failed", "cancelled"}:
                     return
                 # Late COMMIT failures must survive a buffer filled by earlier
                 # successful readers. If all retained events failed, keep the
                 # more recent failure without exceeding the cap.
                 removable = next((index for index, item in enumerate(self.records)
-                                  if item["outcome"] != "failed"), 0)
+                                  if item["outcome"] not in {"failed", "cancelled"}), 0)
                 self.records.pop(removable)
             role, access, registered_origin = self._open[connection_id]
             record = {
@@ -240,6 +247,8 @@ class Collector:
                 record["begin_mode"] = begin_mode
             if type(end_reason) is str and end_reason in _END_REASONS:
                 record["end_reason"] = end_reason
+            if type(lifetime) is str and lifetime in {"observed", "unknown"}:
+                record["lifetime"] = lifetime
             if self.record_sink is None:
                 self.records.append(record)
             else:
@@ -259,6 +268,7 @@ class Collector:
 
     def finish(self):
         """Best effort output, called only after context reset and resource exit."""
+        self.sealed = True
         try:
             self._finish()
         except BaseException:

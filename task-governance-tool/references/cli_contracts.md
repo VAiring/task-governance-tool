@@ -3008,7 +3008,7 @@ local authorization, prepare the physical, effectively Git-ignored directory
 `<project>/.taskgov/diagnostics/logger/` and its `enabled` file containing
 exactly `taskgov-logger-v1 debug` or `taskgov-logger-v1 errors` followed by one
 LF (ASCII, no BOM). Removing the marker disables subsequent output. Normal
-Task operations do not create or alter opt-in. Setup, doctor and explicit
+Task operations do not create or alter opt-in. Doctor and explicit
 `--read-only` suppress logging. No host trust, install, or network permission
 is implied by enabling diagnostics.
 
@@ -3034,9 +3034,11 @@ SQLite-only diagnosis remains available via
 `taskgov-sqlite-diagnostics-v1 failures` plus one LF. The first records successful
 boundaries and failures, the second only operations with an observed failure.
 It retains at most 128 fixed files of 64 KiB each and 256 events per operation,
-without replacement. The common CLI logger takes precedence when both are
-enabled, avoiding duplicate DB records. Usage lifecycle remains SQLite-only.
-Separate review workers and unscoped direct library calls are outside both
-entry integrations. Neither facility changes DB timeouts, retries or results.
+without replacement. The common logger takes precedence when both are
+enabled, avoiding duplicate DB records. Usage lifecycle, write Setup, review
+handoff, MCP requests and finite review workers use the same opt-in. Each entry
+requires its existing binding admission; no diagnostic DB reread is added.
+Read-only review/material/basis/check and MCP inspection remain no-write.
+Unscoped library calls cannot enable diagnostics. Neither facility changes DB timeouts, retries or results.
 SQLite durations are observed transaction lifetimes, not exact lock intervals;
 SQL, bindings, rows and exception messages are excluded from DB records.

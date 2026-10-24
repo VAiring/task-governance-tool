@@ -1113,8 +1113,9 @@ exactly `taskgov-logger-v1 debug` or `taskgov-logger-v1 errors` plus one LF
 (ASCII, no BOM). No command, environment option, setup default or arbitrary
 output path is added. Normal commands never create that directory or marker.
 Supported physical source/installed packages use the fixed state resolver and
-effective Git-ignore checks. CLI state admission must succeed before output.
-Setup, doctor and explicit read-only suppress both diagnostic scopes.
+effective Git-ignore checks. Each entry's existing identity/binding admission
+must succeed before output. Doctor, explicit read-only, read-only review
+material/basis/finalization checks and MCP inspection suppress both scopes.
 
 The common API records protected method start/end and duration, explicit
 exceptions and existing SQLite boundary observations. It does not instrument
@@ -1147,8 +1148,12 @@ a verification, review or completion gate.
 When common logging is active, its SQLite adapter uses the existing collector
 and observer with the same operation identity, and the dedicated SQLite sink
 is suppressed. SQLite-only opt-in keeps the dedicated behavior below. Usage
-lifecycle remains SQLite-only; other entry points and individual diagnostic
-systems are outside this foundation's integration scope.
+lifecycle, write Setup, review handoff, MCP requests and finite worker operations
+share this foundation. Existing component-specific diagnostics are not replaced.
+Setup uses matching-state admission, or the successful publication outcome for
+fresh/relocated state; unconfirmed destinations never receive diagnostic output.
+See the [connection and entry inventory](logger-design.md#connection-inventory)
+for ownership, admission, finite scopes and no-write exceptions.
 
 #### SQLite Transaction Diagnostics
 
@@ -1164,16 +1169,15 @@ Removing the marker disables subsequent invocations. There is no new
 command, environment setting, setup default, arbitrary output path, or host
 configuration. Source and physical project-installed packages are supported.
 
-The CLI operation and lifecycle usage collection scope the shared core and
-numerical SQLite connections, including resolver reads and synchronous
-maintenance. Publication requires that entry's existing state/binding admission
+The CLI, usage collection, write Setup, review handoff and admitted MCP/worker
+operations scope core, numerical, operational and private-copy connections,
+including resolver reads and synchronous maintenance. Publication requires the entry's existing admission
 to succeed; rejected relocation or invalid state never writes diagnostic files.
 No additional database inspection is performed for logging.
 `doctor` and any explicit `--read-only` call remain entirely
-no-write and do not enable this logger. Direct library calls without a scope,
-separate review MCP/background workers, raw SQLite connections used for private
-backup copies, and statements inside `executescript` are not individually
-traced. Scripts have an aggregate boundary only. This is not a process-wide
+no-write and do not enable this logger. Direct library calls without an admitted
+entry scope and statements inside `executescript` are not individually traced.
+Scripts and the backup API have aggregate boundaries only. This is not a process-wide
 SQLite audit or evidence that unobserved transactions did not occur.
 
 Records identify the invocation, process, thread, connection and transaction,
@@ -1187,7 +1191,16 @@ not as a separately measured rollback. Lifetime starts when a successful
 BEGIN is observed (or an implicit transaction is first observed) and ends at
 COMMIT, rollback or close; it is not the exact SQLite lock-holding interval.
 Deferred BEGIN may precede the first acquired read lock. Failed BEGIN does
-not create a successful transaction duration.
+not create a successful transaction duration. SAVEPOINT, RELEASE and ROLLBACK TO
+are separate phases, with names omitted; partial rollback does not end a
+transaction. Internal script boundaries make its lifetime unknown, including
+newly observed transactions and failures. Unknown lifetime is explicit and has
+no duration, rather than zero. Cancellation remains distinct from success.
+Successful no-op commit/rollback/context-exit calls under native autocommit=True
+do not end or rename an explicit transaction. Only native transaction methods
+under autocommit=False infer an immediate reopening; SQL execution does not.
+Control-token comments are treated as whitespace within a bounded prefix;
+an incomplete prefix does not justify a guessed transaction boundary.
 
 Only closed labels, code-owned origins, generated correlation identifiers and
 bounded numerical measurements/error codes reach the buffer. SQL, bindings,

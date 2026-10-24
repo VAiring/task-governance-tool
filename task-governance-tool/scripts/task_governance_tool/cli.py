@@ -3083,7 +3083,7 @@ def main(
         diagnostics = operation_scope(Path(getattr(args, "repo", ".")),
                            entrypoint=cli_script_path(), operation=command_name(args),
                            repo_explicit=hasattr(args, "repo"),
-                           read_only=args.command in {"doctor", "setup"} or bool(getattr(args, "read_only", False)))
+                           read_only=args.command == "doctor" or bool(getattr(args, "read_only", False)))
         with diagnostics:
             context = make_context(args, target_override=_target_override)
             result = handle_command(context)

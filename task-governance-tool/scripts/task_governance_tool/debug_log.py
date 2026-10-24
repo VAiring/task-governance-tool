@@ -84,9 +84,10 @@ class Session:
     def db_event(self, record):
         # Collector has already reduced every field to closed labels/numbers.
         moment = {key: record.pop(key) for key in ("observed_at", "log_date", "utc_offset")}
-        self.emit("db.transaction", record, failed=record["outcome"] == "failed", moment=moment)
+        self.emit("db.transaction", record, failed=record["outcome"] in {"failed", "cancelled"}, moment=moment)
 
     def finish(self):
+        self.collector.sealed = True
         if not self.validated or self.collector._open or self.collector._untracked:
             self.events.clear()
             return
@@ -103,7 +104,9 @@ class Session:
             # This summary excludes its own construction/write and sink I/O.
             self.emit("diagnostic.summary", {"dropped": self.dropped.copy(),
                       "buffer_instrumentation_ns": self.instrumentation_ns,
-                      "sqlite_instrumentation_ns": self.collector.instrumentation_ns}, failed=bool(self.dropped))
+                      "sqlite_instrumentation_ns": self.collector.instrumentation_ns,
+                      "connections_registered": self.collector.connections_registered,
+                      "db_records_dropped": self.collector.records_dropped}, failed=bool(self.dropped))
             for day, data, _ in self.events:
                 self.sink.write(day, data)
             self.events.clear()
@@ -123,9 +126,11 @@ class operation_scope:
     A class context manager does not read/write the primary exception's
     __traceback__ property, unlike contextlib's generator adapter.
     """
-    def __init__(self, repo, *, entrypoint, operation, repo_explicit=False, validated=False, read_only=False):
+    def __init__(self, repo, *, entrypoint, operation, repo_explicit=False, validated=False, read_only=False,
+                 independent=False):
         self.repo, self.entrypoint, self.operation = repo, entrypoint, operation
         self.repo_explicit, self.validated, self.read_only = repo_explicit, validated, read_only
+        self.independent = independent
         self.session = self.collector = None
         self.stack = ExitStack()
 
@@ -136,6 +141,10 @@ class operation_scope:
                 self.stack.callback(_current.reset, token)
                 self.stack.enter_context(sqlite.suppress_diagnostics())
                 return None
+            if self.independent:
+                token = _current.set(None)
+                self.stack.callback(_current.reset, token)
+                self.stack.enter_context(sqlite.bind_collector(None))
             if _current.get() is not None:
                 return _current.get()
             sink = admit(self.repo, self.entrypoint, repo_explicit=self.repo_explicit)

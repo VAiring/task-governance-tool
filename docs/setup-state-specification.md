@@ -761,6 +761,11 @@ zero-wait artifact lock through backup publication/reconciliation and the
 corresponding migration commit, but never a SQLite writer while copying.
 Preview creates neither lock nor artifact.
 
+Explicitly opted-in [common diagnostics](specification.md#common-debug-logger)
+observe write Setup and private-copy connections only after existing admission.
+Preview and doctor remain no-write. Diagnostic failure cannot alter a Setup
+stage, enablement choice, error or durable completed prefix.
+
 The initial source connection is closed immediately after SQLite backup
 finishes, before independent validation of the private copy. Copy preparation
 does not retain that live reader. Initial-source, copied-database and fresh

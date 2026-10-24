@@ -1946,6 +1946,24 @@ def run_setup(
     confirmation_token: str | None = None,
     feature_selections: dict[str, bool] | None = None,
 ) -> SetupServiceResult:
+    from .debug_log import operation_scope, allow_output
+    with operation_scope(Path(repo), entrypoint=script_path, operation="setup",
+                         repo_explicit=repo_explicit, read_only=read_only):
+        result = _run_setup(repo=repo, repo_explicit=repo_explicit, script_path=script_path,
+            read_only=read_only, backup_interval_minutes=backup_interval_minutes,
+            backup_generations=backup_generations, confirmation_token=confirmation_token,
+            feature_selections=feature_selections)
+        # Fresh/relocated state has no admitted destination before publication.
+        # Reuse the successful setup outcome, never perform a diagnostic reread.
+        if result.ok and result.data["status"] in {"setup_complete", "already_setup"}:
+            allow_output()
+        return result
+
+
+def _run_setup(
+    *, repo, repo_explicit, script_path, read_only, backup_interval_minutes,
+    backup_generations, confirmation_token=None, feature_selections=None,
+) -> SetupServiceResult:
     """Plan or execute setup using only fixed, local stages."""
 
     inspection = inspect_project_scope(
@@ -2034,6 +2052,9 @@ def _run_setup_from_inspection(
             code=resolution.error_code,
             message=error_message,
         )
+    if resolution.binding == "matching" and resolution.target is not None:
+        from .debug_log import allow_output
+        allow_output()
     if resolution.layout_migration is not None:
         from task_governance_tool.setup_state_separation import run_state_separation
 

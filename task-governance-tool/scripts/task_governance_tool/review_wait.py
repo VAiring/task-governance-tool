@@ -31,6 +31,8 @@ def wait_ended(repo, *, packet_path=None, raw=None):
         caller = capture_caller_identity()
         caller.require()
         target = _target(Path(__file__).absolute().parents[2], repo, repo_explicit=True, operation_local=True)
+        from task_governance_tool.debug_log import allow_output
+        allow_output()
         with closing(connect_initialized_readonly(target, operation_local=True, review_task_id=packet["task"]["task_id"])) as core:
             metadata = capture_wait_metadata(core, project_id=target.project.project_id,
                                              packet=packet, caller=caller)

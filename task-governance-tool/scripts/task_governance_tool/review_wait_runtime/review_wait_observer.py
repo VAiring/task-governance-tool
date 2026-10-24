@@ -9,6 +9,7 @@ cleanup. Stopping observation never implicitly pauses a reservation.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from contextlib import ExitStack, nullcontext
 import threading
 import time
 
@@ -41,7 +42,8 @@ class ReviewWaitObserver:
     """
 
     def __init__(self, runtime: ReviewWaitRuntime, *, wait_timeout_ms: int = 30_000,
-                 join_timeout_seconds: float = 40, minimum_cycle_seconds: float = 1):
+                 join_timeout_seconds: float = 40, minimum_cycle_seconds: float = 1,
+                 diagnostic_scope=None):
         if (type(wait_timeout_ms) is not int or not 1_000 <= wait_timeout_ms <= 30_000
                 or type(join_timeout_seconds) not in (int, float)
                 or not 0 < join_timeout_seconds <= 60
@@ -56,6 +58,7 @@ class ReviewWaitObserver:
         self._lock = threading.Lock()
         self._thread: threading.Thread | None = None
         self._state, self._reason = "new", None
+        self._diagnostic_scope = diagnostic_scope or nullcontext
 
     def snapshot(self) -> ObserverSnapshot:
         with self._lock:
@@ -105,7 +108,9 @@ class ReviewWaitObserver:
         final = ("stopped", None)
         cursors: dict[str, str] = {}
         batch_number = 0
+        diagnostics = ExitStack()
         try:
+            diagnostics.enter_context(self._diagnostic_scope())
             # This first exact observation retains endings that predate arm or
             # subscription; no future completion event is required for them.
             controller = self._runtime.repository.read().controller
@@ -133,8 +138,13 @@ class ReviewWaitObserver:
                 # a 64-reviewer set must not take eight 30-second waits.
                 timeout_ms = max(1, self._wait_timeout // len(batches))
                 started = time.monotonic()
+                # Flush a finite observation before blocking for the next event.
+                # Each subsequent cycle starts unadmitted and relies only on
+                # its existing fresh basis check; idle polls cannot grant output.
+                diagnostics.close()
                 waited = self._runtime.host.wait_children(batch, timeout_ms=timeout_ms,
                     cursors={child: cursors[child] for child in batch if child in cursors})
+                diagnostics.enter_context(self._diagnostic_scope())
                 if self._stop.is_set():
                     return
                 if not isinstance(waited, WaitSnapshot) or {t.child_id for t in waited.turns} != set(batch):
@@ -172,6 +182,7 @@ class ReviewWaitObserver:
         except Exception:
             final = ("error", "observer_failed")
         finally:
+            diagnostics.close()
             # Never retain raw exception details, provider text or caller meta.
             with self._lock:
                 self._state, self._reason = final

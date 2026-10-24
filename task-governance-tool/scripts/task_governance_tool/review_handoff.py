@@ -91,6 +91,7 @@ class _Parser(argparse.ArgumentParser):
 def main(argv=None):
     raw_argv = tuple(argv if argv is not None else sys.argv[1:])
     registration_status = None
+    diagnostics = None
     try:
         from task_governance_tool.review_handoff_preparation import (
             add_parser, add_material_parser, prepare, read_for_reviewer, read_material,
@@ -156,6 +157,12 @@ def main(argv=None):
         if args.operation == "submit":
             registration_status = "not_started"
         repo = Path(os.path.abspath(args.repo))
+        from .debug_log import operation_scope
+        diagnostics = operation_scope(repo, entrypoint=Path(__file__).parent.parent / "review_handoff.py",
+            operation="review_handoff", repo_explicit=True,
+            read_only=args.operation in {"read", "material", "wait-basis"}
+                      or args.operation == "finalize" and args.check)
+        diagnostics.__enter__()
         if args.operation == "continue":
             from task_governance_tool.review_continuation import INPUT_LIMIT
             result = review_handoff_continuation.continue_reviews(repo, args, sys.stdin.buffer.read(INPUT_LIMIT + 1))
@@ -227,6 +234,9 @@ def main(argv=None):
         code = "handoff_io_or_input_failed"
     except KeyboardInterrupt:
         code = "handoff_outcome_unknown"
+    finally:
+        if diagnostics is not None:
+            diagnostics.__exit__(None, None, None)
     if "args" in locals() and args.operation == "material":
         files.emit_json({"ok": False, "status": "incomplete", "code": code,
                "message": "Material unavailable; preserve complete matching siblings and recover only the missing fixed-target material. Do not treat this as PASS."}, utf8=True)

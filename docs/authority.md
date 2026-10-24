@@ -178,8 +178,9 @@ controlling until each unit synchronizes its implementation and contracts.
 design for the enabled-only common diagnostic foundation: protected arguments
 and exceptions, method/transaction correlation, and daily log files. Product
 behavior, privacy and read-only rules remain with the specification and design
-owners linked there. Individual subsystem instrumentation remains outside this
-foundation. This route does not enable logging or change runtime configuration.
+owners linked there. Its adopted connection/entry inventory defines current
+instrumentation; further subsystem instrumentation needs its own Task scope.
+This route does not enable logging or change runtime configuration.
 
 ## Delegated Repository Operating Guides
 

@@ -6,6 +6,7 @@ import os
 import re
 import secrets
 import sqlite3
+from .sqlite_transaction_trace import connect_traced
 import stat
 import tempfile
 from contextlib import ExitStack, closing, contextmanager, suppress
@@ -951,7 +952,7 @@ def restore_managed_backup(
             if not _recovery_content_valid(source, source_version, target):
                 raise _restore_failure()
             with closing(
-                configure_connection(sqlite3.connect(temporary))
+                configure_connection(connect_traced(temporary, access="create", role="backup"))
             ) as destination:
                 source.backup(destination)
                 source_scope.close()
@@ -1097,7 +1098,7 @@ def copy_database_snapshot(
             ):
                 raise _failure()
             with closing(
-                configure_connection(sqlite3.connect(destination))
+                configure_connection(connect_traced(destination, access="create", role="backup"))
             ) as copied:
                 source.backup(copied)
                 source_scope.close()
@@ -1458,7 +1459,7 @@ def _copy(
             os.close(descriptor)
             descriptor = None
             with closing(
-                configure_connection(sqlite3.connect(temporary))
+                configure_connection(connect_traced(temporary, access="create", role="backup"))
             ) as destination:
                 source.backup(destination)
                 # The copy now owns its snapshot; source validation is repeated

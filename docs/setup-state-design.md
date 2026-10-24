@@ -799,6 +799,11 @@ updates, or compares upstream state.
 
 ### Setup Plan And Stages
 
+`run_setup` owns one [common diagnostic scope](logger-design.md#connection-inventory),
+reusing an enclosing CLI scope. Matching resolution permits output; fresh or
+relocated destinations require the existing successful publication outcome.
+No diagnostic DB reread is added. Read-only suppression also covers nested calls.
+
 After core and numerical setup, `setup_features.py` applies only the seven
 explicit optional choices and projects saved intent separately from current
 configuration. `setup_feature_config.py` owns the closed local choice file and

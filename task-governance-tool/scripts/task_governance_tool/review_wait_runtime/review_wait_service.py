@@ -168,7 +168,8 @@ class ReviewWaitService:
     """
 
     def __init__(self, config: ServiceConfig, current_binding: Callable[[], WaitBinding],
-                 clock: Callable[[], datetime], *, host_factory=None, observer_factory=None):
+                 clock: Callable[[], datetime], *, host_factory=None, observer_factory=None,
+                 diagnostic_scope=None):
         try:
             _require(type(config) is ServiceConfig and callable(current_binding) and callable(clock),
                      "invalid_configuration")
@@ -188,6 +189,7 @@ class ReviewWaitService:
                 observer_factory = ReviewWaitObserver
             _require(callable(self._host_factory) and callable(observer_factory), "invalid_configuration")
             self._observer_factory, self._observer = observer_factory, None
+            self._diagnostic_scope = diagnostic_scope
             self._lock, self._closed = RLock(), False
         except ServiceError:
             raise
@@ -259,7 +261,8 @@ class ReviewWaitService:
 
     def _start_observer(self, runtime: ReviewWaitRuntime) -> None:
         try:
-            self._observer = self._observer_factory(runtime)
+            options = {"diagnostic_scope": self._diagnostic_scope} if self._diagnostic_scope is not None else {}
+            self._observer = self._observer_factory(runtime, **options)
             self._observer.start()
             snapshot = self._observer.snapshot()
             _require(type(snapshot.worker_alive) is bool, "observer_unavailable")

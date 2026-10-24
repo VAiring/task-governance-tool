@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 import os
 import sqlite3
+from task_governance_tool.sqlite_transaction_trace import connect_traced
 import stat
 import threading
 from contextlib import contextmanager
@@ -254,8 +255,9 @@ class ReviewWaitRepository:
         before = self._inspect()
         connection = None
         try:
-            connection = sqlite3.connect(self.path.as_uri() + ("?mode=rw" if write else "?mode=ro"), uri=True,
-                                         timeout=self._connection_timeout, isolation_level=None)
+            connection = connect_traced(self.path.as_uri() + ("?mode=rw" if write else "?mode=ro"), uri=True,
+                timeout=self._connection_timeout, isolation_level=None, role="operational",
+                access="readwrite" if write else "readonly")
             connection.execute("PRAGMA trusted_schema = OFF")
             if not write:
                 connection.execute("PRAGMA query_only = ON")

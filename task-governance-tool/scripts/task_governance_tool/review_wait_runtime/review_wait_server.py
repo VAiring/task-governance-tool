@@ -243,7 +243,8 @@ class ReviewWaitSession:
     """
 
     def __init__(self, config: SessionConfig, *, host_factory=None, basis_factory=None,
-                 clock=None, service_factory=None, direct_factory=None, prepare_reviewer_reader=None):
+                 clock=None, service_factory=None, direct_factory=None, prepare_reviewer_reader=None,
+                 diagnostic_scope=None):
         from task_governance_tool.review_wait_runtime.review_wait_host import PublicMcpHost
         from task_governance_tool.review_wait_runtime.review_wait_service import ReviewWaitService, ServiceConfig
         from task_governance_tool.review_wait_runtime.review_wait_basis import PublicTaskBasisReader
@@ -258,6 +259,7 @@ class ReviewWaitSession:
         self.service_factory = service_factory or ReviewWaitService
         self.direct_factory = direct_factory
         self.prepare_reviewer_reader = prepare_reviewer_reader
+        self.diagnostic_scope = diagnostic_scope
         self.service = None
         self.direct = None
         self.closed = False
@@ -273,8 +275,9 @@ class ReviewWaitSession:
                 or controller.reservation.timer_id != self.config.automation_id):
             raise ValueError("configuration_mismatch")
         reader = self._reader(controller.binding.parent_thread_id, controller.binding.wait_id)
+        options = {"diagnostic_scope": self.diagnostic_scope} if self.diagnostic_scope is not None else {}
         self.service = self.service_factory(self.config.service, reader, self.clock,
-                                            host_factory=self.host_factory)
+                                            host_factory=self.host_factory, **options)
         self._basis_reader = reader
 
     def _direct(self):
@@ -289,8 +292,9 @@ class ReviewWaitSession:
                     automation_id=self.config.automation_id, codex_home=config.codex_home,
                     confirmed_timezone=config.confirmed_timezone,
                     timezone_source=config.timezone_source, reviewer_ids=reviewers)
+            options = {"diagnostic_scope": self.diagnostic_scope} if self.diagnostic_scope is not None else {}
             self.direct = (self.direct_factory or DirectProbe)(config.repository_path,
-                self._basis_reader, host, self.clock)
+                self._basis_reader, host, self.clock, **options)
         return self.direct
 
     def handle(self, operation, arguments, metadata):

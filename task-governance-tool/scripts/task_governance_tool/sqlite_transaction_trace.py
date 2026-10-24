@@ -66,7 +66,36 @@ def _control(arguments, keywords):
         sql = arguments[0] if arguments else fields.get("sql") if fields is not None else None
         if type(sql) is not str:
             return "statement", None
-        tokens = sql[:80].strip().rstrip(";").upper().split()
+        # Read at most three control words, treating comments between them as
+        # whitespace too. An incomplete/budget-exhausted prefix stays unknown.
+        prefix, position, tokens = sql[:4096], 0, []
+        while len(tokens) < 3:
+            while position < len(prefix):
+                if prefix[position].isspace() or (not tokens and prefix[position] == ";"):
+                    position += 1
+                elif prefix.startswith("--", position):
+                    end = prefix.find("\n", position + 2)
+                    if end < 0:
+                        if len(sql) > len(prefix):
+                            return "statement", None
+                        position = len(prefix)
+                    else:
+                        position = end + 1
+                elif prefix.startswith("/*", position):
+                    end = prefix.find("*/", position + 2)
+                    if end < 0:
+                        return "statement", None
+                    position = end + 2
+                else:
+                    break
+            start = position
+            while position < len(prefix) and ("a" <= prefix[position] <= "z" or "A" <= prefix[position] <= "Z"):
+                position += 1
+            if position == len(prefix) and len(sql) > len(prefix):
+                return "statement", None
+            if position == start:
+                break
+            tokens.append(prefix[start:position].upper())
         if not tokens:
             return "statement", None
         if tokens[0] == "BEGIN":
@@ -74,8 +103,10 @@ def _control(arguments, keywords):
             return "begin", mode if mode in {"immediate", "exclusive"} else "deferred"
         if tokens[0] in {"COMMIT", "END"}:
             return "commit", None
-        if tokens[0] == "ROLLBACK" and "TO" not in tokens[1:3]:
-            return "rollback", None
+        if tokens[0] == "ROLLBACK":
+            return ("rollback_to" if "TO" in tokens[1:3] else "rollback"), None
+        if tokens[0] in {"SAVEPOINT", "RELEASE"}:
+            return tokens[0].lower(), None
     except BaseException:
         pass
     return "statement", None
@@ -140,45 +171,64 @@ class _ObservedConnection(sqlite3.Connection):
                 transaction_id=self._diagnostic_transaction,
                 transaction_elapsed_ns=transaction_elapsed,
                 sqlite_errorcode=_numeric_error(error), origin=_origin(),
-                in_transaction=active, begin_mode=mode, end_reason=reason)
+                in_transaction=active, begin_mode=mode, end_reason=reason,
+                lifetime=("observed" if self._diagnostic_started is not None else "unknown")
+                         if self._diagnostic_transaction is not None else None)
         except BaseException:
             pass
 
-    def _after(self, phase, before, started, ended, error, mode, context_exit):
+    def _after(self, phase, before, started, ended, error, mode, context_exit, *, native_restart=False):
         """Diagnostic-only work; callers suppress failures in this observer."""
         after = False if phase == "close" and error is None else self._active()
-        if phase == "script" and before is True and after is True:
-            # A script may commit and begin again internally. Do not report a
-            # continuous measured lifetime across that unobservable boundary.
+        # In autocommit=False the native commit/rollback immediately opens a
+        # fresh transaction. True -> True is not a continuous lifetime.
+        restarted = (native_restart and before is True and after is True and error is None
+                     and sqlite3.Connection.autocommit.__get__(self) is False
+                     and phase in {"commit", "rollback"})
+        if phase == "script":
+            self._diagnostic_started = None
+        if context_exit and error is not None and before is True and after is True:
             self._diagnostic_started = None
         if after is True and self._diagnostic_transaction is None:
             self._diagnostic_sequence += 1
             self._diagnostic_transaction = self._diagnostic_sequence
             # Successful BEGIN/implicit-DML return is the observed start.
-            self._diagnostic_started = ended
+            self._diagnostic_started = None if phase == "script" else ended
             if phase != "begin":
                 self._event("implicit_begin", "observed", 0, active=after)
+        if phase == "script" and after is True:
+            # Internal BEGIN/COMMIT/restart is not observable. Even a newly
+            # discovered transaction has unknown start, including failed scripts.
+            self._diagnostic_started = None
         elapsed = ended - started
         duration = (max(0, ended - self._diagnostic_started)
                     if self._diagnostic_started is not None else None)
         if phase != "statement" or error is not None:
-            self._event(phase, "failed" if error is not None else "succeeded", elapsed,
+            outcome = ("succeeded" if error is None else "failed"
+                       if issubclass(type(error), Exception) else "cancelled")
+            self._event(phase, outcome, elapsed,
                         error=error, mode=mode, active=after, transaction_elapsed=duration)
         if context_exit and phase != "context_exit":
             self._event("context_exit", "failed" if error is not None else "succeeded", elapsed,
                         error=error, active=after, transaction_elapsed=duration)
-        if self._diagnostic_transaction is not None and after is False:
+        if self._diagnostic_transaction is not None and (after is False or restarted):
             reason = ("ended_after_commit_failure" if context_exit and phase == "commit" and error is not None
-                      else phase if phase in {"commit", "rollback", "close", "script"} else "observed")
+                      else phase if phase in {"commit", "rollback", "close", "script", "release"} else "observed")
             self._event("transaction_end", "observed", 0, reason=reason,
                         active=False, transaction_elapsed=duration)
             self._diagnostic_transaction = None
             self._diagnostic_started = None
+        if restarted:
+            self._diagnostic_sequence += 1
+            self._diagnostic_transaction = self._diagnostic_sequence
+            self._diagnostic_started = ended
+            self._event("implicit_begin", "observed", 0, active=True)
         if phase == "close" and error is None and not self._diagnostic_closed:
             self._diagnostic_closed = True
             self._diagnostic_collector.closed(self._diagnostic_id)
 
-    def _observe(self, native, phase, *, mode=None, context_exit=False, sql=None):
+    def _observe(self, native, phase, *, mode=None, context_exit=False, sql=None,
+                 transaction_method=False):
         collector = getattr(self, "_diagnostic_collector", None)
         if collector is None:
             return native()
@@ -186,6 +236,7 @@ class _ObservedConnection(sqlite3.Connection):
             overhead_started = perf_counter_ns()
             previous_overhead = collector.instrumentation_ns
             before = self._active()
+            native_restart = transaction_method and sqlite3.Connection.autocommit.__get__(self) is False
             if sql is not None:
                 phase, mode = _control(*sql)
             started = perf_counter_ns()
@@ -196,7 +247,8 @@ class _ObservedConnection(sqlite3.Connection):
         except BaseException as error:
             try:
                 ended = perf_counter_ns()
-                self._after(phase, before, started, ended, error, mode, context_exit)
+                self._after(phase, before, started, ended, error, mode, context_exit,
+                            native_restart=native_restart)
             except BaseException:
                 pass
             else:
@@ -204,7 +256,8 @@ class _ObservedConnection(sqlite3.Connection):
             raise
         try:
             ended = perf_counter_ns()
-            self._after(phase, before, started, ended, None, mode, context_exit)
+            self._after(phase, before, started, ended, None, mode, context_exit,
+                        native_restart=native_restart)
         except BaseException:
             pass
         else:
@@ -229,10 +282,14 @@ class _ObservedConnection(sqlite3.Connection):
         return super().cursor(*args, **kwargs)
 
     def commit(self):
-        return self._observe(super().commit, "commit")
+        return self._observe(super().commit, "commit", transaction_method=True)
 
     def rollback(self):
-        return self._observe(super().rollback, "rollback")
+        return self._observe(super().rollback, "rollback", transaction_method=True)
+
+    def backup(self, *args, **kwargs):
+        native = super().backup
+        return self._observe(lambda: native(*args, **kwargs), "backup")
 
     def close(self):
         return self._observe(super().close, "close")
@@ -240,7 +297,7 @@ class _ObservedConnection(sqlite3.Connection):
     def __exit__(self, *args):
         phase = ("commit" if args and args[0] is None else "rollback") if self._active() else "context_exit"
         native = super().__exit__
-        return self._observe(lambda: native(*args), phase, context_exit=True)
+        return self._observe(lambda: native(*args), phase, context_exit=True, transaction_method=True)
 
 
 def connect_traced(database, *args, access="readwrite", role=None, **kwargs):
@@ -287,8 +344,7 @@ def connect_traced(database, *args, access="readwrite", role=None, **kwargs):
     try:
         ended = perf_counter_ns()
         connection._bind_observer(collector, connection_id)
-        collector.event(connection_id, "open", "succeeded", ended - started,
-                        origin=_origin(), in_transaction=connection.in_transaction)
+        connection._after("open", False, started, ended, None, None, False)
         _overhead(collector, overhead_started, ended - started, previous_overhead)
     except BaseException:
         # Failure to attach diagnostics never closes a successfully opened DB.

@@ -230,6 +230,7 @@ LANE_MODULES: dict[str, tuple[str, ...]] = {
     "integration": (
         "test_debug_log",
         "test_debug_log_entry",
+        "test_debug_log_adoption",
         "test_backup_copy_lifetime",
         "test_backup_outcome",
         "test_backup_validation",
@@ -357,6 +358,7 @@ LANE_MODULES: dict[str, tuple[str, ...]] = {
         "test_setup_state_separation",
         "test_sqlite_diagnostics",
         "test_sqlite_diagnostics_entry",
+        "test_sqlite_observation_coverage",
         "test_state_resolver",
         "test_state_resolver_validation_reuse",
         "test_state_separation",

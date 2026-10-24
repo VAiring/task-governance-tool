@@ -1981,6 +1981,13 @@ completion with unknown receipt, no resend and no added normal-path LLM operatio
 
 #### Worker Observation And Exit Evidence
 
+Optional [common diagnostics](logger-design.md#connection-inventory) use one
+MCP request or bounded worker scope, never the resident service lifetime.
+The configured project passes a fresh scope factory to direct/legacy workers.
+Each reuses its existing basis admission; termination confirmation reuses its
+exact saved worker/binding check. Inspection and explicit checks stay no-write.
+Operational connections retain their native isolation and timeout settings.
+
 `worker_observation` owns the shared version-one projection. Managed inspection
 reads the latest request sequence and exact controller/direct siblings, checks
 Task/parent, basis digest, automation, original parent turn and reviewer pairs,

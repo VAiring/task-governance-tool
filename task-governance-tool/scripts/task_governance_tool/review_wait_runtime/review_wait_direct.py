@@ -7,6 +7,7 @@ separate facts. A lost process or response never authorizes another send.
 """
 
 from __future__ import annotations
+from contextlib import nullcontext
 
 from dataclasses import asdict, replace
 from datetime import datetime, timedelta, timezone
@@ -55,7 +56,7 @@ def _terminal(turn) -> bool:
 
 class DirectProbe:
     def __init__(self, repository_path: Path, current_binding, host_factory, clock,
-                 *, cycle_seconds: float = 1, join_seconds: float = 40):
+                 *, cycle_seconds: float = 1, join_seconds: float = 40, diagnostic_scope=None):
         if (not callable(current_binding) or not callable(host_factory) or not callable(clock)
                 or type(cycle_seconds) not in (int, float) or not 0 < cycle_seconds <= 30
                 or type(join_seconds) not in (int, float) or not 0 < join_seconds <= 60):
@@ -75,6 +76,7 @@ class DirectProbe:
         self._observations_lock = threading.Lock()
         self._host = None
         self._closed = False
+        self._diagnostic_scope = diagnostic_scope or nullcontext
 
     def blocks_timer(self) -> bool:
         return marker_exists(self.wait.path)
@@ -230,7 +232,7 @@ class DirectProbe:
                     read = read_failure(error)
                     return {**self._summary(), **({"host_failure": failure} if failure is not None else {}),
                             **({"read_failure": read} if read is not None else {})}
-        self._worker = threading.Thread(target=self._run, args=(host, record, time.monotonic() + duration), name="review-direct-probe", daemon=False)
+        self._worker = threading.Thread(target=self._run_scoped, args=(host, record, time.monotonic() + duration), name="review-direct-probe", daemon=False)
         try:
             self._worker.start()
         except Exception:
@@ -258,8 +260,13 @@ class DirectProbe:
             worker.join(timeout)
             if worker.is_alive():
                 return
-            self.repository.confirm_worker_stopped(record.probe_id, record.worker_id,
-                                                   record.binding_digest, instant(self._now()))
+            with self._diagnostic_scope():
+                self.repository.confirm_worker_stopped(record.probe_id, record.worker_id,
+                                                       record.binding_digest, instant(self._now()))
+                # This exact saved worker/binding check is the existing
+                # termination operation's authority; never add a Task DB read.
+                from task_governance_tool.debug_log import allow_output
+                allow_output()
             self._worker_stop_persistence = "confirmed"
         except Exception:
             self._worker_stop_persistence = "failed"
@@ -311,6 +318,12 @@ class DirectProbe:
                 self._cleanup(host)
             except Exception:
                 pass  # The retained active/pending phase exposes unresolved cleanup.
+
+    def _run_scoped(self, host, record, monotonic_deadline):
+        # One explicitly deadline-bounded worker, never the resident server.
+        # Admission remains its existing fresh binding reads inside _run.
+        with self._diagnostic_scope():
+            return self._run(host, record, monotonic_deadline)
 
     def _retain_read_failure(self, error, record):
         """Legacy waits do not retain process-local purpose diagnostics."""
@@ -502,6 +515,12 @@ class DirectProbe:
                 observer.join(1.1)
         if (not owned_only or self._owned_probe_id is not None) and self.repository.exists():
             record = self.repository.read()
+            if (self._owned_probe_id is not None and record.probe_id == self._owned_probe_id
+                    and record.worker_id == self._owned_worker_id):
+                # Reuse the cleanup's existing owned-record identity check,
+                # including reads preceding it; no diagnostic-only DB lookup.
+                from task_governance_tool.debug_log import allow_output
+                allow_output()
             if record.status == "waiting" and (not owned_only or record.probe_id == self._owned_probe_id):
                 self.repository.update(record.probe_id, status=status)
         return {"ok": True}

@@ -35,6 +35,8 @@ def resolve(repo, *, writing, retain_read_connection=False, validation_reuse=Non
         if resolution.read_connection is not None:
             resolution.read_connection.close()
         raise ReviewHandoffScopeError()
+    from .debug_log import allow_output
+    allow_output()
     return resolution
 
 

@@ -10,9 +10,10 @@
 ## 適用条件と責任
 
 正式基盤は `debug_log.py`、`debug_log_values.py`、`debug_log_sink.py`。
-既存SQLite観測を再利用し、通常CLIの既存state admissionを通った操作だけに接続する。
-Setup、doctor、明示read-onlyは対象外。usage lifecycleはSQLite専用診断のままとする。
-レビュー待機・バックアップの個別診断や全メソッドへの一律追加は含めない。
+既存SQLite観測を再利用し、通常CLI、書込Setup、usage、レビュー引渡し・MCP要求・
+workerの既存admissionを通った処理へ接続する。doctor、明示read-only、レビューの
+読取専用表示・basis・finalization check・MCP inspectは保存しない。
+既存の個別診断の置換や全メソッドへの一律追加は含めない。
 入口は[fixed state resolver](setup-state-design.md#fixed-state-resolver)と
 [effective ignore](setup-state-specification.md#effective-git-ignore-preflight)を再利用する。
 現用の有効化・設定・信頼の変更は通常Task作業に含まれない。
@@ -30,7 +31,7 @@ ASCII、BOMなし、末尾LFが1つの `taskgov-logger-v1 debug` または
 debugは開始・終了・DB・例外、errorsは失敗終了・失敗DBイベント・例外を記録する。
 errorsは成功引数を展開しない。書込直前も物理パス・マーカー・実効ignoreを確認する。
 マーカー変更を検知した操作は残りを保存しない。リンク・junction・不一致bindingへの
-書込を許可しない。CLIの既存state admissionが成功するまでは保存を許可しない。
+書込を許可しない。各入口の既存admissionが成功するまでは保存を許可しない。
 通常参照の診断書込は明示opt-in時だけの限定例外。公開応答・Task・Receipt・Evidenceに
 ログを混ぜず、consoleへのfallbackもしない。
 
@@ -90,7 +91,7 @@ def load_task(task_id, limit=20):
             return None
 ```
 
-operation_scopeがなければ何も記録しない。通常CLIが入口を所有する。新しい入口は
+operation_scopeがなければ何も記録しない。下記の各処理が入口を所有する。新しい入口は
 既存project/state admission後に保存を許可する。スコープはDBを開いたりbindingを
 推定・修復しない。spanは処理本体を明示的に囲むコンテキストマネージャーであり、
 デコレーターやgeneratorへの自動ラップは提供しない。
@@ -117,9 +118,9 @@ OFF/ONの呼出し全体を比較する。SQLite計測負荷は既存collector�
 
 `sqlite_transaction_trace.py` と `sqlite_diagnostics.Collector` の既存観測を使う。
 record_sinkに渡すのは閉じたラベル・数値・時刻だけ。invocation_idとoperation_idは同一。
-SQLや例外オブジェクトを渡さない。一般loggerが有効なCLIはそのsinkだけを使い、
+SQLや例外オブジェクトを渡さない。一般loggerが有効な処理はそのsinkだけを使い、
 SQLite専用マーカーによる二重保存をしない。専用マーカーだけなら固定slot方式を維持する。
-専用診断もCLI・usage lifecycleの既存state/binding admission成功後だけ保存を許可し、
+専用診断も各入口の既存state/binding admission成功後だけ保存を許可し、
 拒否された操作の観測は破棄する。診断のためのDB検査は追加しない。
 観測上のtransaction lifetimeはロック保持時間ではない。BEGIN/COMMIT失敗、rollback、
 savepoint、scriptの意味は[SQLite diagnostics](specification.md#sqlite-transaction-diagnostics)のまま。
@@ -129,6 +130,65 @@ driver呼出し、busy timeout、リトライ、公開エラーを変えない�
 全登録connectionのcloseを確認できなければ未保存分を破棄する。接続前の開始も
 ハング・クラッシュ時には失われ得る。発生日付ごとにまとめて書き、DB接続中の
 ファイルI/Oやイベントごとのignore subprocessを追加しない。
+
+<a id="connection-inventory"></a>
+
+## 接続と入口の対応表
+
+アプリの接続は下表の低層呼出しを通る。`sqlite3.connect` はobserver内の
+無効時・観測開始不能時・有効時の3分岐だけに残る。直接呼出し・import/代入別名は
+`test_sqlite_observation_coverage` が静的検査し、追加経路を要確認として検出する。
+DBの内容やパスを保存して役割を特定しない。共有factoryは既知のファイル名だけで
+core/numericalを分類し、private-copyは呼出し側の固定backupラベルを使う。
+
+| 接続所有者 | DB・access | 接続設定・transaction・終了 |
+|---|---|---|
+| sqlite_connection.connect | core/numerical・create | native既定設定と既存configure、呼出し側の初期化・migration、明示close/closing |
+| sqlite_connection.connect_existing | core/numerical・readwrite | mode=rw、元のtimeout、既存configure、BEGIN IMMEDIATE/savepoint/commit/rollback、close/closing |
+| sqlite_connection.connect_readonly（snapshot別名含む） | core/numerical/backup原本・readonly | mode=ro/query_only/BEGIN、元のtimeout、読取終了後close/closing |
+| backup.restore_managed_backup | backupコピー・create | native既定＋configure、backup aggregate、検証・復元、closing |
+| backup.copy_database_snapshot | backupコピー・create | native既定＋configure、backup aggregate、private stage検証、closing |
+| backup._copy | backupコピー・create | native既定＋configure、backup後BEGIN・公開前検証、closing |
+| ReviewWaitRepository._connection（DirectRepository含む） | operational・readwrite/readonly | 元のtimeout・isolation_level=None、trusted_schema OFF、BEGIN IMMEDIATE/BEGIN、commit、finally close |
+
+storage、state resolver、Task/Review/Evidence/Viewer/maintenanceのrepositoryは共有
+factoryを使用する。usageのlocator/attribution/publication repositoryも同じnumerical
+factoryを使う。直接connectを使う独自の設定は低層connect_tracedへ接続し、共有factory
+への置換によってisolationやRow factoryを変えない。利用者指定factoryは従来どおり
+nativeへ渡し、closeを証明できないためその操作の出力を抑止する。アプリ所有の接続に
+独自factoryの使用はない。SQL成功・fetchの個別計測はこのtransaction観測の責務ではない。
+
+| 処理入口 | process/thread・scope | 既存admission・出力条件 |
+|---|---|---|
+| taskgov.py main | 呼出しprocess/thread、CLIと同期maintenanceの終了まで | 既存dispatch_stateful_commandのstate/binding成立 |
+| setup.run_setup | CLIと同一scopeを再利用。直接呼出しも1回のSetupだけ | matching resolution、またはfresh/relocationの成功した公開結果。未確定先は保存しない |
+| usage_lifecycle.collect_event | Hook process/thread、1eventだけ。元のevent時間予算を維持 | _target成功。登録のみの補助呼出しは親のadmitted scopeを再利用 |
+| review_handoff.py main | helper process/thread、1操作だけ。子CLIは独立scope | review_handoff_scope.resolve成功。子processとoperation IDを混同しない |
+| review_handoff wait-ended（互換入口） | helper process/thread、1宣言だけ | usage_lifecycle._targetの既存成功を再利用。通常ループへの追加ではない |
+| ProjectReviewWaitSession.handle | 常駐MCPの1要求だけ | _location/既存basis reader/handoff resolveの成功 |
+| DirectProbe worker（Managed含む） | 専用thread、元のdeadlineで有限の1worker | 既存のfresh current_binding、location、handoff resolve。新しいDB検査は追加しない |
+| ReviewWaitObserver | 専用thread、次のblocking waitまでの1観測cycle | そのcycleの既存basis確認。fresh admissionがないidle cycleは保存しない |
+| worker終了確認 | join後の独立した短いthread scope | 既存confirm_worker_stoppedのexact worker/binding照合成功 |
+| ProjectReviewWaitSession.close（EOF・取消を含む） | 呼出しthread、既存sessionごとの有限cleanup scope | 既存の所有probe/worker照合。新規DB確認なし。読取だけのsessionや照合未成立では保存しない |
+
+workerにはproject/packageだけを渡すscope factoryを明示配線する。ContextVarや
+可変collectorを親から共有しない。終了したcollectorはsealし、遅延closeから再開しない。
+同一collectorを別threadで使った場合も保存を抑止する。
+
+doctor・明示read-only・レビューread/material/wait-basis/finalize --check・MCP
+inspect/view/direct_statusは、内部の共有factoryを隔離harnessで観測するが実運用では
+保存禁止。admission失敗、未close、観測上限でcloseを追えない場合、未計測factory、
+クラッシュ、sink拒否も欠落条件であり、成功や無操作を意味しない。scopeのない直接
+ライブラリ呼出しや注入stateを使う開発専用入口は現用projectへの書込権限を持たない。
+本番入口の除外ではなく、同じ低層observerを注入collectorで検証する例外である。
+
+SAVEPOINT/RELEASE/ROLLBACK TOは名前を保持せず区別する。scriptは途中のcommit・
+再開始を観測できないためlifetime=unknown、durationなしとする。BEGIN失敗は寿命を
+作らない。native cancellationと失敗を区別し、backupはsource側のaggregateを記録する。
+SQLの先頭・制御語間コメントを有限範囲で読み飛ばし、範囲外は推測しない。
+active→activeだけでは再開始としない。autocommit=Falseのnative commit/rollback/with
+だけが再開始を保証し、autocommit=Trueのno-opやSQLの部分rollbackはIDを維持する。
+summaryは登録接続数とDB/一般イベントの欠落数を持つが、summary自体も失われ得る。
 
 <a id="exceptions-and-masking"></a>
 

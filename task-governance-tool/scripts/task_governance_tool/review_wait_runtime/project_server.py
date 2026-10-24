@@ -303,6 +303,8 @@ class ProjectReviewWaitSession:
             if reason is None and resolution.binding != "matching":
                 reason = "project_relocation_required"
             raise DiagnosticError(reason if reason in PROJECT_REASONS else "project_unavailable")
+        from task_governance_tool.debug_log import allow_output
+        allow_output()
         return resolution.paths
 
     def _reader(self, repo, task, parent, wait_id, **kwargs):
@@ -310,7 +312,10 @@ class ProjectReviewWaitSession:
         def current():
             if not self._policy_enabled():
                 raise BasisError()
-            return reader()
+            result = reader()
+            from task_governance_tool.debug_log import allow_output
+            allow_output()
+            return result
         return current
 
     def _finalizer(self, binding):
@@ -436,7 +441,7 @@ class ProjectReviewWaitSession:
                                 self.config.timezone, "host_node_intl")
         config = SessionConfig(service, self.config.repo, task_id, automation_id,
                                self.skill / "scripts/review_handoff.py")
-        options = {}
+        options = {"diagnostic_scope": self._worker_scope}
         host_factory = self.host_factory
         if managed:
             def answer_reviewers(controller):
@@ -484,7 +489,19 @@ class ProjectReviewWaitSession:
         return {"version": 1, "code_id": None, "supported_schema": None,
                 "deployed_supported_schema": None, "comparison": "unknown"}
 
+    def _worker_scope(self, *, operation="review_wait_worker"):
+        from task_governance_tool.debug_log import operation_scope
+        return operation_scope(self.config.repo, entrypoint=self.skill / "scripts/review_wait_server.py",
+            operation=operation, repo_explicit=True, independent=True)
+
     def handle(self, operation, arguments, metadata):
+        from task_governance_tool.debug_log import operation_scope
+        with operation_scope(self.config.repo, entrypoint=self.skill / "scripts/review_wait_server.py",
+                operation="review_wait", repo_explicit=True,
+                read_only=operation in {"inspect", "view", "direct_status"}):
+            return self._handle_scoped(operation, arguments, metadata)
+
+    def _handle_scoped(self, operation, arguments, metadata):
         diagnostic = CallDiagnostics()
         admitted = False
         try:
@@ -611,7 +628,11 @@ class ProjectReviewWaitSession:
         succeeded = True
         for session in self.sessions.values():
             try:
-                succeeded = session.close() == {"ok": True} and succeeded
+                # A finite scope per existing session, including EOF cleanup.
+                # Its existing exact owned-worker checks admit publication;
+                # a read-only-only session has no such proof and emits nothing.
+                with self._worker_scope(operation="review_wait_cleanup"):
+                    succeeded = session.close() == {"ok": True} and succeeded
             except Exception:
                 succeeded = False
         return {"ok": True} if succeeded else {"ok": False, "error": "observer_cleanup_unknown"}

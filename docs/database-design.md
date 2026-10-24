@@ -678,6 +678,16 @@ The Bundle/cycle source widening, predecessor projection proof, marker-last
 transaction, rollback and connection-flag restoration use the established
 migration protocol. Earlier migration code and fingerprints remain immutable.
 
+Current admission in `storage._validate_current_schema_contract` obtains one
+complete schema-33 owned result, passes it only through the synchronous
+Evidence schema checks and invalidates it on every exit. This closed read-only
+call chain performs no DDL or transaction transition. The private result also
+checks connection identity, transaction state and the schema cookie before
+reuse; it is not a connection cache or a certificate for a later stage.
+Standalone Evidence helpers run their own complete owned check (once inside
+the ledger's table loop), retaining the individual column/FK checks. Earlier
+schema branches and separate migration preservation stages are unchanged.
+
 `validate_judgment_storage` keeps its all-state Task predicate and ordered history.
 `review_answer_repository.validate_storage_rows` selects provenance candidate
 rowids through the union of both Receipt identity arms. Dispatch candidate

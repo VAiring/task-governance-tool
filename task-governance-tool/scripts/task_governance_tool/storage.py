@@ -5477,13 +5477,42 @@ _SCHEMA21_EXPECTED_OBJECTS = tuple(_schema21_expected_objects().items())
 _SCHEMA22_EXPECTED_OBJECTS = tuple(_schema22_expected_objects().items())
 
 
+class _Schema33OwnedValidation:
+    """Complete owned validation, usable only inside one synchronous admission."""
+
+    def __init__(self, connection: sqlite3.Connection) -> None:
+        from task_governance_tool.schema_own_review_indexes import validate_owned_contract
+
+        self.connection: sqlite3.Connection | None = connection
+        self.schema_cookie = connection.execute("PRAGMA schema_version").fetchone()[0]
+        self.in_transaction = connection.in_transaction
+        validate_owned_contract(connection)
+        self.require(connection)
+
+    def require(self, connection: sqlite3.Connection) -> None:
+        if (
+            self.connection is not connection
+            or connection.in_transaction != self.in_transaction
+            or connection.execute("PRAGMA schema_version").fetchone()[0] != self.schema_cookie
+        ):
+            raise _unreadable_project_state()
+
+    def close(self) -> None:
+        self.connection = None
+
+
 def _validate_completion_evidence_bundle_schema_contract(
     connection: sqlite3.Connection,
+    *,
+    _owned_contract: _Schema33OwnedValidation | None = None,
 ) -> None:
     version = current_schema_version(connection)
     if version == 33:
         from task_governance_tool.schema_own_review_indexes import validate_owned_contract
-        validate_owned_contract(connection)
+        if _owned_contract is None:
+            validate_owned_contract(connection)
+        else:
+            _owned_contract.require(connection)
         return
     if version == 32:
         from task_governance_tool.schema_session_slot_index import validate_owned_contract
@@ -10460,6 +10489,8 @@ def read_project_meta_id(connection: sqlite3.Connection) -> str | None:
 
 def _validate_evidence_ledger_schema_contract(
     connection: sqlite3.Connection,
+    *,
+    _owned_contract: _Schema33OwnedValidation | None = None,
 ) -> None:
     marker = connection.execute(
         "SELECT name FROM schema_migrations WHERE version = 18"
@@ -10649,6 +10680,7 @@ def _validate_evidence_ledger_schema_contract(
             "evidence-ledger ALTER table inventory is incomplete"
         )
 
+    current_owned_checked = False
     table_sql: dict[str, str] = {}
     table_columns: dict[str, dict[str, sqlite3.Row]] = {}
     table_foreign_keys: dict[
@@ -10749,7 +10781,13 @@ def _validate_evidence_ledger_schema_contract(
                     from task_governance_tool.schema_review_answers import validate_owned_contract
                 else:
                     from task_governance_tool.schema_review_continuation import validate_owned_contract
-                validate_owned_contract(connection)
+                if current_schema_version(connection) != 33:
+                    validate_owned_contract(connection)
+                elif _owned_contract is not None:
+                    _owned_contract.require(connection)
+                elif not current_owned_checked:
+                    validate_owned_contract(connection)
+                    current_owned_checked = True
             elif not table_sql[table_name].endswith(expected_suffix):
                 raise evidence_ledger_inconsistent()
             base_version, expected_columns = base_columns[table_name]
@@ -11852,11 +11890,17 @@ def _validate_current_schema_contract(
         raise _unreadable_project_state()
 
     if version == 33:
-        from task_governance_tool.schema_own_review_indexes import validate_owned_contract, MIGRATION_NAME
+        from task_governance_tool.schema_own_review_indexes import MIGRATION_NAME
         marker = connection.execute("SELECT name FROM schema_migrations WHERE version = 33").fetchone()
         if marker is None or marker["name"] != MIGRATION_NAME:
             raise _unreadable_project_state()
-        validate_owned_contract(connection)
+        owned_contract = _Schema33OwnedValidation(connection)
+        try:
+            return _validate_current_evidence_schema_contracts(
+                connection, version, _owned_contract=owned_contract,
+            )
+        finally:
+            owned_contract.close()
     elif version == 32:
         from task_governance_tool.schema_session_slot_index import validate_owned_contract, MIGRATION_NAME
         marker = connection.execute("SELECT name FROM schema_migrations WHERE version = 32").fetchone()
@@ -11947,10 +11991,22 @@ def _validate_current_schema_contract(
         _validate_schema21_owned_contract(connection)
     elif schema_objects_inconsistent_with_version(connection, version):
         raise _unreadable_project_state()
+    return _validate_current_evidence_schema_contracts(connection, version)
+
+
+def _validate_current_evidence_schema_contracts(
+    connection: sqlite3.Connection,
+    version: int,
+    *,
+    _owned_contract: _Schema33OwnedValidation | None = None,
+) -> int:
+    # This closed read-only call chain never changes transactions or DDL. The
+    # schema-33 result is invalidated by its caller on every exit, not retained
+    # by a connection or handed to later row validation/publication stages.
     try:
         _validate_completion_history_structure(connection)
-        _validate_evidence_ledger_schema_contract(connection)
-        _validate_completion_evidence_bundle_schema_contract(connection)
+        _validate_evidence_ledger_schema_contract(connection, _owned_contract=_owned_contract)
+        _validate_completion_evidence_bundle_schema_contract(connection, _owned_contract=_owned_contract)
     except StorageError as exc:
         if exc.code == "database_busy":
             raise

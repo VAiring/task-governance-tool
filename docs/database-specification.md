@@ -79,6 +79,15 @@ Task's review, ownership-transition, retained-note or Runner history merely
 to enter an operation. The same boundary applies to completion and repeats
 under the existing writer lock. The public command surface is unchanged.
 
+Within one current schema admission, the complete owned-definition validation
+is shared by the Evidence ledger and Bundle schema checks. Their individual
+column, foreign-key and relationship checks remain required. Standalone schema
+helpers establish their own complete validation; no result survives the
+admission call or crosses a connection, transaction or DDL boundary. Migration
+history, additional owned attachments and migration temporary-object rejection
+remain unchanged. Separate migration/reentry and publication stages retain
+their independent validations.
+
 Every consumed Task row and Contract pointer, current ownership/execution
 relationship, note body, checkpoint and evidence relationship retains its
 existing repository validation. Start and metadata writes need no review

@@ -319,6 +319,7 @@ LANE_MODULES: dict[str, tuple[str, ...]] = {
         "test_review_continuation_snapshot",
         "test_review_finalization",
         "test_review_finalization_continuation",
+        "test_review_finalization_restore",
         "test_review_handoff_continuation",
         "test_review_handoff_continuation_recovery",
         "test_review_migration_preservation",

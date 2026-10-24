@@ -262,7 +262,24 @@ class Finalizer:
             return False
         record = self.journal.read()
         self._match(record, self.core.read(self.task_id), allow_done=True)
+        if record.registration == "succeeded":
+            self._require_registration(record)
         return True
+
+    def _require_registration(self, record, available=None):
+        """Observe the saved batch in current core before any later effect.
+
+        The operational journal is outside core backup. Its successful phase
+        cannot replace the exact immutable Receipts after a core restoration.
+        This observation never registers again or resets an uncertain effect.
+        """
+        originals = self._originals(record) if available is None else available
+        if not originals or any(item["status"] != "available" for item in originals):
+            _fail("finalization_originals_unavailable")
+        if (record.registration != "succeeded" or not record.receipt_ids
+                or registered_originals(self.resolution.target, record, record.receipt_ids)
+                    != record.receipt_ids):
+            _fail("finalization_registration_incomplete")
 
     def _require_reviewer_history(self, record):
         """An explicit successor judgment can retire only its actual reviewer.
@@ -331,6 +348,7 @@ class Finalizer:
             return False
         state = self.core.read(self.task_id)
         self._match(record, state, allow_done=True)
+        self._require_registration(record)
         if record.reviewer_blocker and not self._incidental_mismatch_ready(record, state):
             return False
         if state["task"]["status"] != "done":
@@ -477,6 +495,8 @@ class Finalizer:
             available = self._originals(record)
             state = self.core.read(self.task_id)
             self._match(record, state, allow_done=True)
+            if record.registration == "succeeded":
+                self._require_registration(record, available)
             if check:
                 self._require_current_reviewers(record, state)
                 return
@@ -548,6 +568,7 @@ class Finalizer:
                            expected_branch=record.branch)
             if record.candidate is None:
                 guarded()
+                self._require_registration(record)
                 candidate = git.create_candidate(self.repo, **binding, task_id=self.task_id)
                 record = self.journal.advance(lease, candidate=candidate)
             def ready():
@@ -555,6 +576,7 @@ class Finalizer:
                 guarded()
                 fresh = self.core.read(self.task_id)
                 self._match(record, fresh)
+                self._require_registration(record)
                 require_no_findings(fresh["review_evidence"])
                 gate = self.core.complete(self.task_id, record.candidate, basis=FinalizationBasis.from_record(record), check=True)
                 if gate["ready"] is not True:
@@ -577,6 +599,7 @@ class Finalizer:
             if record.completion == "not_started":
                 record = self.journal.advance(lease, completion="dispatching")
             guarded()
+            self._require_registration(record)
             self.core.complete(self.task_id, record.candidate, basis=FinalizationBasis.from_record(record))
             state = self.core.read(self.task_id)
             self._match(record, state, allow_done=True)
@@ -613,9 +636,13 @@ class Finalizer:
                 _fail("finalization_registration_incomplete")
             result["observed_registered_receipt_ids"] = list(actual)
             result["originals"] = project_original_summaries(result, record, actual)
-        except Exception:
+        except Exception as exc:
             result["observed_registered_receipt_ids"] = None
             result["unavailable"].append("registered_reviews_and_findings")
+            if record.registration == "succeeded":
+                result.update(ok=False, status="attention_required",
+                    blocking_code=result["blocking_code"] or _code(exc),
+                    next_action="Inspect the exact saved originals and registered Receipts; preserve successful stages and do not replay registration or completion.")
         try:
             if result["observed_registered_receipt_ids"] is None:
                 _fail("state_unreadable")
@@ -675,7 +702,7 @@ def project_original_summaries(result, record, matched_receipt_ids):
 
 def report(record, state, available, error, gate):
     task = state["task"] if state else None
-    completed = bool(task and task["status"] == "done" and record.completion == "succeeded")
+    completed = bool(error is None and task and task["status"] == "done" and record.completion == "succeeded")
     notes = [item for item in state["events"] if
              item["event_type"] == "note_added" or item.get("note_body") is not None] if state else []
     return {

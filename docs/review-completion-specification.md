@@ -1782,6 +1782,20 @@ all gates, using the same old-ID comparison; never create a replacement candidat
 An unknown or changed observation blocks that stage. A lost completion response
 is reconciled through the exact completion revision and released original owner.
 
+A successful registration journal is not evidence that its Receipts survived a
+core restoration. Before candidate creation, each publication preflight and
+native completion dispatch, the finalizer freshly validates the saved originals
+and their complete ordered expected Receipt bindings in the current core.
+Another PASS or a same-body Receipt with a different identity cannot substitute.
+Missing or mismatched expected registration stops with
+`finalization_registration_incomplete`; unreadable evidence remains unavailable.
+This check also applies to saved-result readiness, notification admission and
+completed/read-only recovery reports. Unconfirmed registration yields
+`attention_required`, preserving actual Task/Git observations and successful
+journal phases. It never resets the journal, re-registers a successful batch,
+creates a replacement candidate or infers historical non-commit from absence.
+Existing fresh gate checks and native writer admission remain independent.
+
 Internal finalization reads validate the selected Task, Contract, ownership,
 review and verification relationships at each existing fresh boundary. They do
 not acquire numerical usage or assemble public display-only fields. Exact

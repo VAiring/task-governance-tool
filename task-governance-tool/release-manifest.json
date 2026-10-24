@@ -92,7 +92,7 @@
     "scripts/task_governance_tool/review_continuation_registration_repository.py": "sha256:bbac1572e582bb6c5b7e37e5c07a0a0db3c356881ee7b1cf08c37e94bb0da888",
     "scripts/task_governance_tool/review_continuation_repository.py": "sha256:ba6f32e348f164255d20649ade77151b449275e90fe3251499a992c62415d9ea",
     "scripts/task_governance_tool/review_delivery.py": "sha256:4bbdb8d1ad0008eea196d54d1740904893b675355bd83ce10f41d3bd43509443",
-    "scripts/task_governance_tool/review_finalization.py": "sha256:ebdb8ff1cb04385df871429612bf8f3d807bbd2c289c7e2a0bc91fe0384e140b",
+    "scripts/task_governance_tool/review_finalization.py": "sha256:11a03c90c2bdf017f3dfef1c470404bb5d6c612b3234fbd82f2b5395814c0323",
     "scripts/task_governance_tool/review_finalization_basis.py": "sha256:27df4b2c15ee42404bfbcc7c695fbdd4c64ee94b16d1afd4e1f608c32155b4b1",
     "scripts/task_governance_tool/review_finalization_continuation_repository.py": "sha256:ace44559ebef0b3dfef1990c912ef433578cc19b70c01e894caa0bc4bbc225ba",
     "scripts/task_governance_tool/review_finalization_git.py": "sha256:57e24101588f0fdd2c3525b9db11e02949b3694fea5d01cb48c34c6ab1c46347",

@@ -1427,6 +1427,16 @@ null initial sources. It does not call writer admission or authorize effects.
 Task and complete target, then compares session/original/execution bindings and
 source judgment IDs. Recovery uses that same comparison after registration;
 same-body predecessor judgments cannot substitute for the expected source.
+The finalizer's `_require_registration` reuses that query-only comparison with
+the journal's exact ordered Receipt IDs and freshly reads the saved originals.
+It runs on successful-registration reentry before any completed/check shortcut,
+before candidate creation, inside each publication revalidation and immediately
+before native completion dispatch. Saved-result and notification admissions use
+the same check. Each boundary reads anew; journal success and unrelated current
+PASS counts are never a substitute. Reporting an unavailable exact registration
+also marks the result attention-required without erasing earlier effects or
+changing the actual Task state. No registration replay, state repair or new
+persisted field is introduced; native writer and all-severity gates remain.
 Existing locked basis, selection, capture and expected-head checks stay in the
 registration writer. The canonical resolver's `review_finalization_store` names one
 `finalize-<sha256(parent UUID:Task ID)>-<target generation>.sqlite`. Its exact schema

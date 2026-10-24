@@ -1006,7 +1006,10 @@ explicit 29 migration.
 Eligibility snapshots use structural admission and validated policy/generation
 metadata, without whole-project Task-history validation. Evidence and Viewer
 repeat eligibility under their artifact locks and validate the complete source
-in that same snapshot before capturing a due artifact. Explicit force repair
+in that same snapshot before capturing a due artifact. Viewer composes shared
+admission with its snapshot validation under the
+[Viewer responsibility boundary](viewer-design.md#snapshot-and-publication),
+without a second global ownership/note/session-binding scan. Explicit force repair
 still captures and validates a current artifact. The backup's initial policy
 and generation inventory read alone is local; its cheap crash-residue comparison
 does not certify artifact contents. A due or reconciliation attempt retains

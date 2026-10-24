@@ -124,6 +124,13 @@ generation and managed-backup metadata. Disabled, current and not-due paths do
 not audit Task histories. Such observations never certify an artifact: actual
 whole-project capture/publication, backup and reconciliation retain global
 validation at their existing locked effect boundaries.
+Current Viewer capture composes that global admission with its complete
+snapshot validation: global session bindings already validated by the full
+Evidence Ledger are not scanned again, while Runner, collected-source,
+judgment, ownership, retained-note and project metadata checks remain required.
+This private same-read composition is not an operation-local source certificate;
+older-schema reads and separate publication/outcome transactions keep their own
+admission, as specified by the [Viewer owner](viewer-design.md#snapshot-and-publication).
 Failed/deferred backup outcome-only writes also use structural admission and
 the consumed maintenance metadata, repeated under the writer. They compare the
 observed success generation, outcome basis and complete generation metadata

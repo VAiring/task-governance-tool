@@ -24,6 +24,12 @@ Task batch through the stored-row and Contract-relationship boundary, and
 assembles rows; rendering and
 publication occur after close. A stored Task fault produces no snapshot or
 replacement and therefore preserves the last-good Viewer.
+Current-source capture composes common admission with Viewer validation in
+that same transaction. Global ownership, retained notes and review-session
+bindings are validated once per capture;
+collected-answer and judgment admission remain required. This neither narrows
+the all-Task inventory nor transfers validation to a later publication guard.
+Older source schemas retain independent compatible admission.
 
 It contains version/UTC `generated_at`, project ID/display, source schema,
 seven status counts, explicit Task allow-list, newest at most 10 sanitized

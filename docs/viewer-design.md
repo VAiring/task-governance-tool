@@ -37,10 +37,29 @@ command, output choice, browser launch, server, or browser-to-SQLite path.
 `_capture` first opens a structurally admitted metadata snapshot. Disabled or
 current routine state returns without whole-project semantic validation.
 After the artifact lock, the fresh capture repeats eligibility; only a due
-capture or enabled force repair validates the complete database in that same
-snapshot before building snapshot v4. Publication guards and outcome writers
+capture or enabled force repair enters the snapshot builder's composed complete
+admission before projecting snapshot v4. Publication guards and outcome writers
 retain global admission. Metadata eligibility never supplies a reusable source
 proof or relaxes the generation/opt-out checks at replacement.
+
+For a current source, `storage._validate_snapshot_database_state` composes the
+following responsibilities within that single query-only call chain:
+
+| Responsibility | Validation owner |
+|---|---|
+| Exact schema, complete migration history, project binding and maintenance metadata | Current structural admission; Viewer compatibility/error checks remain |
+| All Task/Contract rows, authority, References, Receipt/Finding/provenance and Bundles | Complete Evidence Ledger validation, returning the existing private Task batch proof |
+| Global review-session bindings, including orphan/foreign relations | The Ledger's complete Receipt validator; no second admission scan |
+| Runner graph and collected-answer/source/dispatch and judgment storage | The existing current Runner and collected-review admission helpers |
+| All ownership/execution history and retained note bodies/parents/privacy | Their original global validators, once per capture |
+
+Only a successful fixed composition establishes these facts; no public flag,
+caller-supplied certificate or persistent cache is accepted. Selected binding
+reads used by provenance, history and projection keep their individual checks.
+The same current-source composition serves direct snapshot consumers, including
+Setup's physical Viewer inspection. Older supported sources retain their own
+source-version admission; they cannot borrow current-source results. No result
+crosses the capture's transaction into a guard, another capture or outcome writer.
 
 The repository selects complete rows for all project Tasks in list order and
 validates them as one source-schema-aware stored-Task/Contract batch before any

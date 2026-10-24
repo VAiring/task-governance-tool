@@ -165,6 +165,7 @@ class MaintenanceAdmissionTests(unittest.TestCase):
     def test_evidence_and_viewer_recheck_current_or_disabled_state_under_lock(self):
         from dataclasses import replace
         from task_governance_tool import evidence_publication as evidence
+        from task_governance_tool import viewer
 
         for service, state_table, generation_field in (
             (evidence, "evidence_projection_state", "published_generation"),
@@ -194,8 +195,10 @@ class MaintenanceAdmissionTests(unittest.TestCase):
                                     yield
                             else:
                                 yield
+                    audit_owner = viewer if service is viewer_maintenance_service else service
+                    audit_name = "validate_snapshot_database_for_viewer" if service is viewer_maintenance_service else "validate_current_database"
                     with mock.patch.object(service, "zero_wait_artifact_lock", side_effect=change_before_capture), \
-                         mock.patch.object(service, "validate_current_database",
+                         mock.patch.object(audit_owner, audit_name,
                              side_effect=AssertionError("Ineligible locked capture must not audit")) as audit:
                         result = (evidence.run_routine_evidence_projection(target)
                             if service is evidence else service.run_routine_viewer_refresh(target))
@@ -205,6 +208,7 @@ class MaintenanceAdmissionTests(unittest.TestCase):
 
     def test_full_capture_audits_the_same_snapshot_before_building(self):
         from task_governance_tool import evidence_publication as evidence
+        from task_governance_tool import viewer
 
         target = self.make_fixture()
         for service, builder, capture in (
@@ -215,7 +219,9 @@ class MaintenanceAdmissionTests(unittest.TestCase):
                     generated_at="2026-07-27T00:00:00Z")),
         ):
             observed = []
-            original_audit = service.validate_current_database
+            audit_owner = viewer if service is viewer_maintenance_service else service
+            audit_name = "validate_snapshot_database_for_viewer" if service is viewer_maintenance_service else "validate_current_database"
+            original_audit = getattr(audit_owner, audit_name)
             original_build = getattr(service, builder)
             def audit(connection, current_target):
                 self.assertTrue(connection.in_transaction)
@@ -223,9 +229,10 @@ class MaintenanceAdmissionTests(unittest.TestCase):
                 observed.append(connection)
                 return original_audit(connection, current_target)
             def build(connection, *args, **kwargs):
+                result = original_build(connection, *args, **kwargs)
                 self.assertEqual(observed, [connection])
-                return original_build(connection, *args, **kwargs)
-            with mock.patch.object(service, "validate_current_database", side_effect=audit), \
+                return result
+            with mock.patch.object(audit_owner, audit_name, side_effect=audit), \
                  mock.patch.object(service, builder, side_effect=build):
                 capture()
             self.assertEqual(len(observed), 1)

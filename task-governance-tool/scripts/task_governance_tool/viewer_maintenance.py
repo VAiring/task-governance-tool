@@ -23,7 +23,6 @@ from task_governance_tool.viewer_metadata_repository import (
 from task_governance_tool.storage import (
     DatabaseTarget,
     connect_initialized_readonly,
-    validate_current_database,
     utc_now,
     validate_utc_timestamp,
 )
@@ -84,8 +83,8 @@ def _capture(
             raise RuntimeError("Viewer maintenance state is unavailable")
         snapshot = None
         if include_snapshot and maintenance.enabled and (force or viewer.due):
-            # A metadata-only observation never certifies the full Viewer.
-            validate_current_database(connection, target)
+            # The builder composes complete admission and Viewer validation in
+            # this same read. Metadata eligibility is not a source proof.
             snapshot = build_viewer_snapshot(
                 connection,
                 target,

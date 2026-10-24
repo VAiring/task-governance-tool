@@ -12053,6 +12053,11 @@ def _validate_review_storage_rows(connection, version, *, review_task=None) -> N
                 if any(type(row[0]) is not str or row[1] != review_task[0] for row in rows):
                     raise evidence_ledger_inconsistent()
                 read_bindings(connection, receipt_ids={row[0] for row in rows})
+    _validate_collected_review_storage_rows(connection, version, review_task=review_task)
+
+
+def _validate_collected_review_storage_rows(connection, version, *, review_task=None) -> None:
+    """Collected-source and judgment admission, separate from session bindings."""
     if version in {30, 31, 32, 33}:
         from task_governance_tool.review_answer_repository import validate_storage_rows
         from task_governance_tool.review_continuation_repository import validate_judgment_storage
@@ -12384,12 +12389,19 @@ def _validate_snapshot_database_state(
             "migration_required",
             "database schema is inconsistent with its declared version",
         )
+    # Compose current admission here, not in a separate capture preflight.
+    # The complete ledger below already validates global session bindings.
+    # No proof or caller-controlled bypass leaves this fixed read call chain.
+    current_admitted = version == SCHEMA_VERSION
+    if current_admitted:
+        validate_current_database(connection, target, operation_local=True)
     if version == PRIVATE_SCHEMA20_VERSION:
         validate_current_schema20_admitted_rows(connection)
     validated_task_rows: tuple[sqlite3.Row, ...] | None = None
     if version >= 15:
         try:
-            _validate_completion_history_structure(connection)
+            if not current_admitted:
+                _validate_completion_history_structure(connection)
             if version >= 18:
                 validated_task_rows = (
                     _validate_evidence_ledger_storage_with_task_rows(connection)
@@ -12399,10 +12411,14 @@ def _validate_snapshot_database_state(
                 raise
             raise _unreadable_project_state() from exc
 
+    if current_admitted:
+        if version in {23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, PRIVATE_SCHEMA21_VERSION, PRIVATE_SCHEMA22_VERSION}:
+            validate_current_schema21_admitted_rows(connection)
+        _validate_collected_review_storage_rows(connection, version)
     if version in {24, 25, 26, 27, 28, 29, 30, 31, 32, 33}:
         from task_governance_tool.task_ownership import validate_storage_rows
         validate_storage_rows(connection)
-    if version in {25, 26, 27, 28, 29, 30, 31, 32, 33}:
+    if not current_admitted and version in {25, 26, 27, 28, 29, 30, 31, 32, 33}:
         from task_governance_tool.review_session_repository import read_bindings
         read_bindings(connection)
 
@@ -12464,7 +12480,9 @@ def _validate_snapshot_database_state(
             "database review schema is incomplete for Viewer snapshot version 4",
         )
 
-    if version >= 14:
+    if current_admitted:
+        existing_project_id = target.project.project_id
+    elif version >= 14:
         binding = read_project_binding_state(connection)
         _validate_target_binding(binding, target)
         existing_project_id = binding.project_id

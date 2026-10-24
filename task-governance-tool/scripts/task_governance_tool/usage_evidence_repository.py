@@ -256,9 +256,9 @@ class UsageEvidenceRepository(UsageAttributionRepository):
         with (self.connection() if numerical_connection is None else nullcontext(numerical_connection)) as connection:
             return self._read(core, connection, task_id=task_id, audit=audit)[0]
 
-    def _read(self, core, connection, *, task_id=None, audit=False):
+    def _read(self, core, connection, *, task_id=None, audit=False, _basis=None):
         """Return the validated documents/basis with the projection for subclasses."""
-        fingerprint, periods = self._core_basis(core, connection)
+        fingerprint, periods = self._core_basis(core, connection) if _basis is None else _basis
         capture = connection.execute("SELECT core_digest FROM usage_capture WHERE singleton=1").fetchone()
         if capture is None or capture[0] != fingerprint:
             raise UsageError("usage_pending")

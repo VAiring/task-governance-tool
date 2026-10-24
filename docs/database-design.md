@@ -1382,7 +1382,18 @@ classification to the publisher in the same numerical writer/core read.
 It builds only index metadata for history, without repeating historical
 membership/counter validation or classification. Ordinary response reads reuse
 the base reader's validated documents and periods in that same connection;
-there is no cross-connection verified cache. `usage_snapshot_read.py` owns an
+there is no cross-connection verified cache. Response capture also passes one
+private relation input through basis calculation and classification. It reads
+current-incarnation positions and all boundary history once, validates each
+boundary's shape, type, digest and source identity, and retains a separate
+current-incarnation boundary view. Historical origins remain available to
+conflict detection; old positions never become current. Standalone current-only
+relation reads keep their narrower validation scope. Ordinary response display
+shares these same local inputs with its freshly computed base-reader basis.
+Standalone attribution/basis calls and every final publication guard load their
+own inputs; none is retained on a repository or passed across calls, transactions,
+connections or events. Snapshot and public classification contracts are unchanged.
+`usage_snapshot_read.py` owns an
 explicit read value with validated documents, member/predecessor maps, original
 responses and execution/response/partition indexes. It belongs to the active
 numerical transaction, checks its lifetime and cooperative budget, and is passed

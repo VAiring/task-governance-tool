@@ -214,6 +214,7 @@ LANE_MODULES: dict[str, tuple[str, ...]] = {
         "test_usage_locators",
         "test_usage_origin_admission",
         "test_usage_publication",
+        "test_usage_relation_inputs",
         "test_usage_response_adapter",
         "test_usage_response_attribution",
         "test_usage_response_repository",

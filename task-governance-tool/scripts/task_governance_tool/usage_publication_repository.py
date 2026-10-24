@@ -44,8 +44,10 @@ class UsagePublicationRepository(UsageResponseRepository):
     def _before_publication_marker(self, connection):
         """Fault seam before the complete numerical migration commits."""
 
-    def _core_basis(self, core, connection, *, _review_inputs=None):
-        basis, periods = super()._core_basis(core, connection, _review_inputs=_review_inputs)
+    def _core_basis(self, core, connection, *, _review_inputs=None, _relation_inputs=None):
+        relations = self._relation_inputs(connection, _relation_inputs)
+        basis, periods = super()._core_basis(core, connection, _review_inputs=_review_inputs,
+                                            _relation_inputs=relations)
         # Include every mutable structural classifier input as closed metadata.
         # No counters or private bodies enter this guard. Original-counter integrity is
         # checked by the snapshot audit, not certified by this fingerprint.
@@ -55,7 +57,7 @@ class UsagePublicationRepository(UsageResponseRepository):
                                   "usage_conflicts", "usage_diagnostics")}
         operations = [OperationObservation(row[1], row[2], row[3], row[4], row[0], row[5], row[6])
                       for row in metadata["usage_operation_turns"]]
-        _, boundaries = self._relations(connection, history=True)
+        boundaries = relations.history
         operations.extend(OperationObservation(item.thread_id, item.turn_id, item.project_id, item.task_id,
                                                item.event_id, item.generation, item.status)
                           for _, _, item in boundaries if item.event_id is not None)

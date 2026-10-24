@@ -56,6 +56,16 @@ class ResponseIdentity:
     turn_id: str
 
 
+@dataclass(frozen=True)
+class _RelationInputs:
+    """Explicit, call-local facts from one admitted numerical transaction."""
+
+    connection: object
+    positions: tuple
+    current: tuple
+    history: tuple
+
+
 def component_identity(component):
     return digest([component.get("format", RESPONSE_FORMAT), component.get("algorithm", ALGORITHM),
                    component["executions"], component.get("assignment", "legacy")])
@@ -114,14 +124,26 @@ class UsageResponseRepository(UsageIncrementalRepository):
                                    (batch.source_id, batch.successor.incarnation, digest(body), encode(body).decode()))
 
     def _relations(self, connection, *, history=False):
-        positions, boundaries = [], []
+        # Preserve the standalone current-only validation boundary.
+        inputs = self._load_relations(connection, history=history)
+        return list(inputs.positions), list(inputs.history if history else inputs.current)
+
+    def _relation_inputs(self, connection, inputs=None):
+        if not connection.in_transaction or (inputs is not None and inputs.connection is not connection):
+            raise UsageError("usage_schema_invalid")
+        self.check_budget()
+        return self._load_relations(connection, history=True) if inputs is None else inputs
+
+    def _load_relations(self, connection, *, history):
+        positions, current, boundaries = [], [], []
         for row in connection.execute("SELECT position.*,source.thread_id AS source_thread FROM usage_response_positions position JOIN usage_sources source "
                                       "ON source.source_id=position.source_id AND source.incarnation=position.incarnation"):
             item = ResponsePosition(**{name: row[name] for name in ResponsePosition.__dataclass_fields__})
             if item.thread_id != row["source_thread"]:
                 raise UsageError("usage_schema_invalid")
             positions.append((row["source_id"], row["incarnation"], item))
-        for row in connection.execute("SELECT boundary.*,source.thread_id AS source_thread FROM usage_response_boundaries boundary JOIN usage_sources source "
+        for row in connection.execute("SELECT boundary.*,source.thread_id AS source_thread,source.incarnation AS current_incarnation "
+                                      "FROM usage_response_boundaries boundary JOIN usage_sources source "
                                       "ON source.source_id=boundary.source_id" + ("" if history else
                                       " AND source.incarnation=boundary.incarnation")):
             try:
@@ -134,8 +156,11 @@ class UsageResponseRepository(UsageIncrementalRepository):
                     raise UsageError("usage_schema_invalid")
             except (ValueError, TypeError, KeyError):
                 raise UsageError("usage_schema_invalid") from None
-            boundaries.append((row["source_id"], row["incarnation"], item))
-        return positions, boundaries
+            relation = (row["source_id"], row["incarnation"], item)
+            boundaries.append(relation)
+            if row["incarnation"] == row["current_incarnation"]:
+                current.append(relation)
+        return _RelationInputs(connection, tuple(positions), tuple(current), tuple(boundaries))
 
     def _collected_review_endpoints(self, core):
         from task_governance_tool.storage import current_schema_version
@@ -146,7 +171,7 @@ class UsageResponseRepository(UsageIncrementalRepository):
             "SELECT review_receipt_id FROM review_receipts WHERE project_id=?", (self.basis[0],))}
         return read_collected_review_endpoints(core, receipt_ids=receipts)
 
-    def _core_basis(self, core, connection, *, _review_inputs=None):
+    def _core_basis(self, core, connection, *, _review_inputs=None, _relation_inputs=None):
         if _review_inputs is None:
             from task_governance_tool.review_answer_repository import _read_usage_review_inputs
 
@@ -154,7 +179,8 @@ class UsageResponseRepository(UsageIncrementalRepository):
             # Collected endpoints alone do not validate those relationships.
             _review_inputs = _read_usage_review_inputs(core, project_id=self.basis[0])
         basis, periods = super()._core_basis(core, connection)
-        positions, boundaries = self._relations(connection, history=True)
+        inputs = self._relation_inputs(connection, _relation_inputs)
+        positions, boundaries = inputs.positions, inputs.history
         relations = [[source, incarnation, asdict(item)] for source, incarnation, item in positions + boundaries]
         contexts = []
         for row in connection.execute("SELECT source_id,document FROM usage_response_context WHERE lane='ingest' ORDER BY source_id"):
@@ -168,11 +194,12 @@ class UsageResponseRepository(UsageIncrementalRepository):
                        sorted(relations, key=lambda item: encode(item)), contexts, sources,
                        [_COLLECTED_ENDPOINT_BASIS, endpoints]]), periods
 
-    def attribution(self, core_connection, *, numerical_connection=None, geometry_only=False, _review_inputs=None):
+    def attribution(self, core_connection, *, numerical_connection=None, geometry_only=False, _review_inputs=None,
+                    _relation_inputs=None):
         with (self.connection() if numerical_connection is None else nullcontext(numerical_connection)) as connection:
             transitions = core_transitions(core_connection, self.basis[0])
-            positions, boundaries = self._relations(connection)
-            _, historic = self._relations(connection, history=True)
+            inputs = self._relation_inputs(connection, _relation_inputs)
+            positions, boundaries, historic = inputs.positions, inputs.current, inputs.history
             origins, call_origins = {}, {}
             for _, _, item in historic:
                 if item.origin_version == 2 and item.response_id is not None:
@@ -288,14 +315,17 @@ class UsageResponseRepository(UsageIncrementalRepository):
         # The inputs never outlive this capture or enter a repository cache.
         # The final publication guard opens and validates its own fresh read.
         reviews = _read_usage_review_inputs(core, project_id=self.basis[0])
-        fingerprint, periods = self._core_basis(core, connection, _review_inputs=reviews)
+        relations = self._relation_inputs(connection)
+        fingerprint, periods = self._core_basis(core, connection, _review_inputs=reviews, _relation_inputs=relations)
         read = self._snapshot_read(connection, current=True)
         previous = read.documents
-        projected = self._project_for_refresh(core, connection, previous, _review_inputs=reviews, read=read)
+        projected = self._project_for_refresh(core, connection, previous, _review_inputs=reviews,
+                                              _relation_inputs=relations, read=read)
         return fingerprint, periods, previous, projected, read
 
-    def _project_for_refresh(self, core, connection, previous, *, _review_inputs=None, read=None):
-        geometry = self.attribution(core, numerical_connection=connection, geometry_only=True, _review_inputs=_review_inputs)
+    def _project_for_refresh(self, core, connection, previous, *, _review_inputs=None, _relation_inputs=None, read=None):
+        geometry = self.attribution(core, numerical_connection=connection, geometry_only=True,
+                                    _review_inputs=_review_inputs, _relation_inputs=_relation_inputs)
         dirty = {tuple(row) for row in connection.execute("SELECT * FROM usage_dirty_turns")}
         cached = {row["component_id"]: dict(row) for row in connection.execute("SELECT * FROM usage_component_basis")}
         snapshots = {item["snapshot_id"]: item for item in previous}
@@ -331,10 +361,13 @@ class UsageResponseRepository(UsageIncrementalRepository):
 
     def read(self, core, *, task_id=None, audit=False, numerical_connection=None):
         with (self.connection() if numerical_connection is None else nullcontext(numerical_connection)) as connection:
-            result, current, periods, read = self._read(core, connection, task_id=task_id, audit=audit)
+            relations = self._relation_inputs(connection)
+            basis = self._core_basis(core, connection, _relation_inputs=relations)
+            result, current, periods, read = self._read(core, connection, task_id=task_id, audit=audit, _basis=basis)
             current = [item for item in current if item["format"] == RESPONSE_FORMAT]
             if task_id is None:
-                classification = self.attribution(core, numerical_connection=connection, geometry_only=True)
+                classification = self.attribution(core, numerical_connection=connection, geometry_only=True,
+                                                  _relation_inputs=relations)
                 result["format"] = "taskgov-usage-index-v2"
                 result["attribution"] = ALGORITHM
                 result["unattributed"] = {kind: self._totals(connection, classification[field], read=read) for kind, field in

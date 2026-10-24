@@ -1609,6 +1609,15 @@ same complete notification/Task/target identity. Its local prompt lock freezes
 the body before the single transport attempt, including unknown/rejected outcomes;
 later receipt comparison cannot observe a rewritten message.
 Legacy experiments keep their original-turn rule.
+The managed failure route uses `_failure_parent` after the ACTIVE heartbeat
+read and again after notification observation: it refreshes cancellation/clock/
+deadline, parent identity/idleness and the existing `_prepared` policy/basis
+admission. It does not require the invalidated reviewer observation to qualify
+as ended. The due cutoff is checked before the heartbeat read and immediately
+before saving deletion intent. A deleted timer bypasses only that new-sequence
+cutoff, never the fresh send guard or outer deadline. Existing failure
+suppression, known-ACTIVE cleanup and uncertain-effect exclusions remain;
+there is no new retry, worker or timer state transition.
 When scheduled-check preflight and an existing worker retain reviewer facts at
 the same time, the finalization observation writer may wait at most one second
 for its OS lease. Only lock admission repeats; transactions and effects do not.

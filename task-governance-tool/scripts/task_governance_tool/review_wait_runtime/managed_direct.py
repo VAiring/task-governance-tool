@@ -2,6 +2,7 @@
 
 import time
 from dataclasses import asdict
+from datetime import datetime
 
 from .review_wait_direct import DirectProbe, DirectError, _terminal, _reason, binding_digest
 from .review_wait_repository import RepositoryError
@@ -201,6 +202,16 @@ class ManagedDirectProbe(DirectProbe):
                 # its native effect guards and occurrence fence remain intact.
         return controller.reviewers
 
+    def _failure_parent(self, host, controller, record, monotonic_deadline):
+        """Fresh effect guard without requiring a failed reviewer to qualify."""
+        if self._halt_wait(record, monotonic_deadline):
+            return None
+        parent = host.read_parent()
+        if not self._parent_ready(parent, controller, record):
+            return None
+        self._prepared(controller)
+        return None if self._halt_wait(record, monotonic_deadline) else parent
+
     def _on_failure(self, host, record, error, monotonic_deadline):
         """One failure outcome through the existing same-parent send admission.
 
@@ -228,7 +239,13 @@ class ManagedDirectProbe(DirectProbe):
                     if not self._parent_ready(parent, controller, record):
                         return False
                     if current.timer_phase == "active":
+                        if self._now() >= datetime.fromisoformat(current.timer_due_at):
+                            return False
                         before = self._heartbeat(host, controller, current)
+                        if self._failure_parent(host, controller, record, monotonic_deadline) is None:
+                            return False
+                        if self._now() >= datetime.fromisoformat(current.timer_due_at):
+                            return False
                         self.repository.update(record.probe_id, timer_phase="deleting")
                         try:
                             host.delete_heartbeat(before)
@@ -241,9 +258,8 @@ class ManagedDirectProbe(DirectProbe):
                         continuation_id=getattr(occurrence, "continuation_id", None),
                         continuation_sequence=getattr(occurrence, "continuation_sequence", 0))
                     self._notification_observation(host, controller, current)
-                    parent = host.read_parent()
-                    self._prepared(controller)
-                    if not self._parent_ready(parent, controller, record) or self._halt_wait(record, monotonic_deadline):
+                    parent = self._failure_parent(host, controller, record, monotonic_deadline)
+                    if parent is None:
                         return False
                     self._send_parent_turn = parent.turn_id
                     self.repository.update(record.probe_id, status="dispatching", reason=reason)

@@ -331,6 +331,7 @@ LANE_MODULES: dict[str, tuple[str, ...]] = {
         "test_review_wait_continuation_cleanup",
         "test_review_wait_controller",
         "test_review_wait_direct",
+        "test_review_wait_failure_boundaries",
         "test_review_wait_failure_diagnostics",
         "test_review_wait_failure_notification",
         "test_review_wait_generation_switch",

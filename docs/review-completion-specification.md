@@ -1998,6 +1998,14 @@ Failed/interrupted reviewers permit complete-batch registration but stop commit.
 Fresh parent/reviewer/cancellation/deadline checks guard every effect. Legitimate
 completion and its owner release preserve delivery to that original parent;
 unrelated basis drift permits only a bound failure report, never Task/Git writes.
+Bound failure notification also rechecks enabled policy, current admitted basis,
+idle parent, cancellation, clock and outer deadline after reading the ACTIVE
+reservation and immediately before deletion intent. The ten-minute due cutoff
+forbids starting a new deletion/send sequence on this route too. Suppression
+only after deletion is insufficient. Already-started deletion may settle and
+confirmed deletion may precede one fresh-guarded send within the original outer
+deadline. Failure suppression retains its existing known-ACTIVE cleanup; it
+does not replay pending/unknown effects or change normal due-time observation.
 Neither preparing a manual handoff nor merely enabling waiting grants this intent.
 The complete available result is sent in one notification. A history-read cap
 is not a send limit and never authorizes omitting work, verification, verdicts,

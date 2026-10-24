@@ -6,7 +6,8 @@ import threading
 import unittest
 from unittest import mock
 
-from tests.test_sqlite_diagnostics import SQLiteDiagnosticsTests, SECRET
+from tests import test_sqlite_diagnostics as fixture_support
+from tests.test_sqlite_diagnostics import SECRET
 from task_governance_tool import debug_log as log, debug_log_sink as sink, debug_log_values as values
 from task_governance_tool import sqlite_connection as db
 
@@ -16,8 +17,8 @@ def example(task_id=None, count=None, force=None, title=None, note=None, passwor
 
 
 class DebugLogTests(unittest.TestCase):
-    setUp = SQLiteDiagnosticsTests.setUp
-    enable = SQLiteDiagnosticsTests.enable
+    setUp = fixture_support.SQLiteDiagnosticsTests.setUp
+    enable = fixture_support.SQLiteDiagnosticsTests.enable
 
     def configure(self, mode="debug"):
         directory = self.root / '.taskgov/diagnostics/logger'

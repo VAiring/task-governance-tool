@@ -1272,6 +1272,11 @@ schema-5 class and its policy remain available for old-schema validation.
 Projection revalidates exact core operations and response identity, then uses
 one consistent source-order graph per turn; disconnected/conflicting order is
 unknown. Source positions are metadata, not inferred wall-clock Task duration.
+`UsageResponseRepository.attribution` materializes one response identity row set
+per admitted numerical read, using it for both boundary identity comparison and
+`geometry_only` typed identities. The full path keeps its separate all-column
+response read. This local reuse does not cross a call, connection, or the fresh
+publication guard.
 The geometry pass remains global. Exact partition identity, metadata basis and
 dirty turns select model aggregation; validated unchanged snapshots reuse their
 totals. Changed partitions preserve predecessor overlap through original keys.

@@ -1,5 +1,6 @@
 """Schema-6 preservation, atomic relation cursors and execution partitions."""
 
+from collections import Counter
 from contextlib import closing
 from dataclasses import replace
 import json
@@ -91,6 +92,58 @@ class ResponseRepositoryTests(unittest.TestCase):
     def read(self, task=None, audit=False):
         with self.reader() as core:
             return self.repository.read(core, task_id=task, audit=audit)
+
+    def test_geometry_reuses_one_response_identity_read_and_full_keeps_all_columns(self):
+        start = self.acknowledgement(A, 1, "in_progress")
+        self.write_turn(self.operation("start", start, "r0", direct=True)
+                        + [usage("r1", turn=turn(1)), usage("r2", turn=turn(1))])
+        self.ingest()
+        identity_sql = "SELECT provider,response_id,thread_id,turn_id FROM usage_responses"
+        full_sql = "SELECT * FROM usage_responses"
+
+        class CountedCursor:
+            def __init__(self, cursor, counts, key):
+                self.cursor, self.counts, self.key = cursor, counts, key
+
+            def __iter__(self):
+                for row in self.cursor:
+                    self.counts[self.key + "_rows"] += 1
+                    yield row
+
+            def fetchall(self):
+                rows = self.cursor.fetchall()
+                self.counts[self.key + "_rows"] += len(rows)
+                return rows
+
+        class CountedConnection:
+            def __init__(self, connection, counts):
+                self.connection, self.counts = connection, counts
+
+            def __getattr__(self, name):
+                return getattr(self.connection, name)
+
+            def execute(self, sql, *args):
+                cursor = self.connection.execute(sql, *args)
+                key = "identity" if sql == identity_sql else "full" if sql == full_sql else None
+                if key is None:
+                    return cursor
+                self.counts[key + "_queries"] += 1
+                return CountedCursor(cursor, self.counts, key)
+
+        with self.reader() as core, self.repository.connection() as numerical:
+            baseline_geometry = self.repository.attribution(core, numerical_connection=numerical,
+                                                             geometry_only=True)
+            baseline_full = self.repository.attribution(core, numerical_connection=numerical)
+            geometry_counts, full_counts = Counter(), Counter()
+            geometry = self.repository.attribution(core,
+                numerical_connection=CountedConnection(numerical, geometry_counts), geometry_only=True)
+            full = self.repository.attribution(core,
+                numerical_connection=CountedConnection(numerical, full_counts))
+        self.assertEqual(geometry, baseline_geometry)
+        self.assertEqual(full, baseline_full)
+        self.assertEqual(geometry_counts, Counter(identity_queries=1, identity_rows=3))
+        self.assertEqual(full_counts, Counter(identity_queries=1, identity_rows=3,
+                                              full_queries=1, full_rows=3))
 
     def test_same_turn_three_completion_periods_are_exclusive_and_total_is_a_union(self):
         rows = []

@@ -882,6 +882,10 @@ Current capture shares member/original lookups and overlap indexes within its
 one admitted read state. This is transaction-local reuse, not a persisted
 validation result; selected Task reads and the independent final-publication
 guard retain the boundaries in [immutable usage evidence](#immutable-usage-evidence).
+Within one response-attribution call, the geometry classification uses the same
+response identity rows for boundary matching and typed response
+identities. Full attribution still reads all response columns separately, and a
+fresh publication guard obtains its own response observation.
 
 Stored snapshot shape/digest, exact membership, original counters, supersession
 and published immutable bytes are checked by the rotating publication audit

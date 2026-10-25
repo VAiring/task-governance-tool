@@ -210,8 +210,10 @@ class UsageResponseRepository(UsageIncrementalRepository):
             by_event, checks, unresolved = {}, [], set()
             first_positions = {(source, incarnation, item.provider, item.response_id): item
                                for source, incarnation, item in positions}
+            identity_rows = tuple(connection.execute(
+                "SELECT provider,response_id,thread_id,turn_id FROM usage_responses"))
             numerical = {(row["provider"], row["response_id"]): (row["thread_id"], row["turn_id"])
-                         for row in connection.execute("SELECT provider,response_id,thread_id,turn_id FROM usage_responses")}
+                         for row in identity_rows}
             anchored = []
             for source, incarnation, item in boundaries:
                 if item.project_id != self.basis[0]:
@@ -251,8 +253,9 @@ class UsageResponseRepository(UsageIncrementalRepository):
             positions = [entry for entry in positions if (entry[0], entry[1], entry[2].provider, entry[2].response_id)
                          not in anchor_keys] + anchored
             turns = tuple(TurnObservation(**dict(row)) for row in connection.execute("SELECT * FROM usage_turns"))
-            fields = "provider,response_id,thread_id,turn_id" if geometry_only else "*"
-            rows = connection.execute("SELECT " + fields + " FROM usage_responses").fetchall()
+            # The geometry pass needs exactly the identity rows already used for
+            # boundary validation. Full attribution still reads all columns.
+            rows = identity_rows if geometry_only else connection.execute("SELECT * FROM usage_responses").fetchall()
             responses = tuple(ResponseIdentity(row["provider"], row["response_id"], row["thread_id"], row["turn_id"])
                               if geometry_only else _response(row) for row in rows)
             conflicts = frozenset(tuple(row) for row in connection.execute("SELECT * FROM usage_conflicts"))

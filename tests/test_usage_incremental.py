@@ -43,6 +43,66 @@ class IncrementalCollectionTests(unittest.TestCase):
     def audit(self, **limits):
         return self.repository.collect_source(self.source, lane="audit", **limits)
 
+    def test_saved_turn_model_lookup_is_once_per_scan_and_not_resaved(self):
+        for count in (1, 16, 128):
+            with self.subTest(responses=count):
+                self.setUp()
+                self.write(self.records())
+                self.ingest()
+                self.append(*(usage(f"later-{n}") for n in range(count)))
+
+                def model_rows(lane):
+                    with self.repository.connection() as connection:
+                        return tuple(map(tuple, connection.execute(
+                            "SELECT turn_id,model,effort FROM usage_scan_models "
+                            "WHERE source_id=? AND lane=? ORDER BY turn_id",
+                            (self.source.source_id, lane))))
+
+                before_ingest = model_rows("ingest")
+                with mock.patch.object(self.repository, "_model", wraps=self.repository._model) as lookup:
+                    self.ingest(max_records=count)
+                    self.assertEqual(lookup.call_count, 1)
+                self.assertEqual(model_rows("ingest"), before_ingest)
+                self.assertEqual(self.repository.summary()["models"][0]["response_count"], count)
+
+                self.audit(max_records=1)  # Save turn_context in the audit lane.
+                before_audit = model_rows("audit")
+                with mock.patch.object(self.repository, "_model", wraps=self.repository._model) as lookup:
+                    self.audit(max_records=count)
+                    self.assertEqual(lookup.call_count, 1)
+                self.assertEqual(model_rows("audit"), before_audit)
+
+    def test_missing_model_cache_is_overridden_by_new_context_in_same_slice(self):
+        self.write(self.records())
+        self.ingest()
+        self.append(usage("unknown-1", turn=TURN2), usage("unknown-2", turn=TURN2),
+                    event("turn_context", turn_id=TURN2, model="second"), usage("known", turn=TURN2))
+        with mock.patch.object(self.repository, "_model", wraps=self.repository._model) as lookup:
+            self.ingest()
+            self.assertEqual(lookup.call_count, 1)
+        with self.repository.connection() as connection:
+            rows = tuple(map(tuple, connection.execute(
+                "SELECT turn_id,model FROM usage_scan_models WHERE source_id=? AND lane='ingest' ORDER BY turn_id",
+                (self.source.source_id,))))
+            response_models = tuple(map(tuple, connection.execute(
+                "SELECT response_id,model FROM usage_responses WHERE response_id IN "
+                "('unknown-1','unknown-2','known') ORDER BY response_id")))
+        self.assertEqual(rows, ((TURN, "fixture-model"), (TURN2, "second")))
+        self.assertEqual(response_models, (("known", "second"), ("unknown-1", None), ("unknown-2", None)))
+
+    def test_model_read_cache_does_not_enter_changed_context(self):
+        reads = []
+        models = Models(lambda key: reads.append(key) or (("saved", "high") if key == TURN else None))
+        self.assertEqual(models.get(TURN), ("saved", "high"))
+        self.assertEqual(models.get(TURN), ("saved", "high"))
+        self.assertEqual(models.get(TURN2, (None, None)), (None, None))
+        self.assertEqual(models.get(TURN2, "missing"), "missing")
+        self.assertEqual(reads, [TURN, TURN2])
+        self.assertEqual(dict(models), {})
+        models[TURN2] = ("observed", "medium")
+        self.assertEqual(models.get(TURN2), ("observed", "medium"))
+        self.assertEqual(dict(models), {TURN2: ("observed", "medium")})
+
     def test_small_append_and_unchanged_do_not_reparse_history(self):
         self.write(self.records(*(usage(f"r{i}") for i in range(2000))))
         work = []

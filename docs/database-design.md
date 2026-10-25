@@ -806,6 +806,11 @@ audit cycle clears only the obsolete lane context. Adopted dirty marks and
 retired component bases can be deleted because their effect is already captured
 in immutable snapshots; no response, observation, incarnation, snapshot, member,
 cycle link or supersession history is deleted.
+`usage_incremental_adapter.Models` keeps saved-model lookup results, including
+missing values, in a private per-scan read cache. The inherited dictionary holds
+only turn contexts observed in that slice, so `dict(models)` writes no cached
+rows back through `usage_scan_models`. Its `get` checks observed changes first;
+ingest/audit create separate instances and later scans query fresh state.
 
 Candidate attempt lookups use source-primary-key searches for the supplied
 page only, in parameter batches of at most 128 without truncating a larger

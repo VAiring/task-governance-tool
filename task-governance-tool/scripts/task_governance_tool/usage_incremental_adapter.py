@@ -53,11 +53,14 @@ class Models(dict):
     def __init__(self, lookup):
         super().__init__()
         self.lookup = lookup
+        self._read_cache = {}
 
     def get(self, key, default=None):
         if key in self:
             return self[key]
-        return self.lookup(key) or default
+        if key not in self._read_cache:
+            self._read_cache[key] = self.lookup(key)
+        return self._read_cache[key] or default
 
 
 def chain(prefix, value):

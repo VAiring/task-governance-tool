@@ -867,6 +867,11 @@ batches do not regress or advance unread positions; later collection retries
 numerical work, never the user's Task mutation. Explicit migration preserves
 old evidence and starts contextual replay in a new incarnation; old prefix
 formats are not silently interpreted as new continuations.
+Within one bounded ingest or audit scan, repeated saved-model lookups for the
+same turn use the first result from that scan's admitted numerical read. A newly
+observed turn context in the same scan takes precedence and alone enters the
+changed context saved with the cursor. Missing models remain unknown; no lookup
+result is carried into another scan, lane or incarnation.
 
 After fresh core admission, changed interval geometry, turn ordering/conflicts,
 boundaries, reviewer and actual-receipt bindings, source diagnostics, unresolved

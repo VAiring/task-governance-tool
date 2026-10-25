@@ -16,6 +16,7 @@ if str(SCRIPTS_ROOT) not in sys.path:
 from task_governance_tool.checkpoints import (  # noqa: E402
     PUBLIC_CHECKPOINT_EVENT_FIELDS,
     PUBLIC_CHECKPOINT_FIELDS,
+    _row_to_checkpoint,
     read_latest_checkpoint,
     record_checkpoint,
 )
@@ -366,6 +367,44 @@ class CheckpointRepositoryTests(unittest.TestCase):
         )
         self.assertEqual(latest, second.checkpoint)
         self.assertNotEqual(latest, first.checkpoint)
+
+    def test_stored_contract_revision_requires_exact_nonnegative_sqlite_integer(self):
+        connection = checkpoint_connection(self.project)
+        self.addCleanup(connection.close)
+        record_checkpoint(
+            connection, self.project, "tg_task_checkpoint",
+            summary="Safe summary", next_action="Continue",
+        )
+        connection.commit()
+        row = dict(connection.execute("SELECT * FROM task_checkpoints").fetchone())
+
+        for revision in (0, 1):
+            with self.subTest(valid_revision=revision):
+                self.assertEqual(
+                    _row_to_checkpoint({**row, "contract_revision": revision})["contract_revision"],
+                    revision,
+                )
+        for revision in (1.5, "1.5", "bogus", b"raw", None, True, -1, 1 << 63):
+            with self.subTest(invalid_revision=revision):
+                with self.assertRaises(TaskRepositoryError) as raised:
+                    _row_to_checkpoint({**row, "contract_revision": revision})
+                self.assertEqual(raised.exception.code, "internal_error")
+
+        for revision in (1.5, "bogus", sqlite3.Binary(b"raw")):
+            with self.subTest(stored_revision=revision):
+                connection.execute(
+                    "UPDATE task_checkpoints SET contract_revision = ?", (revision,)
+                )
+                connection.commit()
+                before = connection.serialize()
+                with self.assertRaises(TaskRepositoryError) as raised:
+                    read_latest_checkpoint(
+                        connection,
+                        project_id=self.project.project_id,
+                        task_id="tg_task_checkpoint",
+                    )
+                self.assertEqual(raised.exception.code, "internal_error")
+                self.assertEqual(connection.serialize(), before)
 
     def test_validates_privacy_and_utf8_bounds_before_write_transaction(self):
         connection = checkpoint_connection(self.project)

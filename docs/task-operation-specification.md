@@ -941,6 +941,10 @@ Checkpoint keys are `checkpoint_id`, `task_id`, `contract_revision`,
 `summary`, `next_action`, `unresolved_risks`, and `created_at`. New event
 output contains only ID, type, and time; replay event is null. Text is
 `Checkpoint <checkpoint_id>: recorded|replayed for task <task_id>\n`.
+The stored checkpoint Contract revision must be an exact SQLite INTEGER from
+zero through the signed 64-bit maximum. Reads reject other storage classes
+before projection without coercing or rewriting the value; current, show, and
+context retain the existing fixed stored-checkpoint error.
 
 ## Task Decomposition And Registration
 

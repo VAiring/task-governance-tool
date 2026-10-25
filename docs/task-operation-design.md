@@ -453,6 +453,12 @@ new semantic change.
 
 ### Typed Checkpoints
 
+`checkpoints.py::_row_to_checkpoint` checks the raw stored Contract revision's
+exact integer type and nonnegative SQLite range before building a public
+checkpoint. It does not use `int(...)` on stored values. Standalone current,
+show, and context use that same repository conversion before compact omission
+or detail reuse; a malformed latest row fails closed without a write.
+
 Context reuses the current selection's validated latest checkpoint, including
 validated absence, only for the selected Task on the same retained connection
 and active read transaction. Standalone current still validates checkpoints

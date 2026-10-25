@@ -362,6 +362,50 @@ class CheckpointCliTests(unittest.TestCase):
             self.assertNotIn("not-json", result.stdout)
             self.assertNotIn("Traceback", result.stderr)
 
+    def test_checkpoint_revision_real_fails_closed_for_all_detail_consumers(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            db = Path(tmp) / "taskgov.sqlite"
+            repo = Path(tmp) / "repo"
+            init_db(db, repo)
+            task = add_active_task(db, repo)
+            with closing(sqlite3.connect(db)) as connection:
+                connection.execute(
+                    """
+                    INSERT INTO task_checkpoints(
+                      checkpoint_id, task_id, project_id, contract_revision,
+                      summary, next_action, unresolved_risks_json, created_at
+                    ) VALUES (
+                      'tg_checkpoint_bad_revision', ?, ?, 1.5,
+                      'Safe summary', 'Safe next action', '[]',
+                      '2026-07-27T00:00:00Z'
+                    )
+                    """,
+                    (task["task_id"], task["project_id"]),
+                )
+                connection.commit()
+            before = db.read_bytes()
+
+            for command in (
+                ("task", "current"),
+                ("task", "current", "--compact"),
+                ("task", "show", task["task_id"]),
+                ("task", "context"),
+            ):
+                with self.subTest(command=command):
+                    result = run_taskgov(
+                        *command, "--repo", str(repo), "--db", str(db), "--json",
+                        maintenance_enabled=False,
+                    )
+                    self.assertEqual(result.returncode, 2)
+                    payload = json.loads(result.stdout)
+                    self.assertEqual(payload["errors"][0]["code"], "internal_error")
+                    self.assertEqual(
+                        payload["errors"][0]["message"], "stored checkpoint is invalid"
+                    )
+                    self.assertNotIn("1.5", result.stdout)
+                    self.assertNotIn("Traceback", result.stderr)
+            self.assertEqual(db.read_bytes(), before)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -25,7 +25,7 @@
     "scripts/task_governance_tool/artifact_manifest.py": "sha256:c1b80272c9fe8a9ac1099dc2ad8f32162888326711648dba1e0fae220dde7e39",
     "scripts/task_governance_tool/backup.py": "sha256:307f41f6ab7b6447d1f245263ab4a8bd14087f69487c6cf704b227c322956b82",
     "scripts/task_governance_tool/backup_metadata_repository.py": "sha256:c2cb36395cff9c7c9134003c47cf93e9284e50e5b4bf51d52903697621fd876d",
-    "scripts/task_governance_tool/checkpoints.py": "sha256:045612c5429710355e73c8f6b2cc4b7921d2d55ea053380e768eca9ec15094e0",
+    "scripts/task_governance_tool/checkpoints.py": "sha256:13fd10ebd6dff84b3c60c3d4cc750ff5ac09b4b816a61bf4937a4e5ecee06244",
     "scripts/task_governance_tool/cli.py": "sha256:f04a41e6b45755df18d6e8bd38942f1e16bd2e769514b484d4f5c47f83fc8c86",
     "scripts/task_governance_tool/cli_handoff.py": "sha256:10584ed0469eabf6d22655378f50d8585b2de98d74293374fee741f207e99f32",
     "scripts/task_governance_tool/cli_output.py": "sha256:ac9fd41cabbbde4eadf31036c149be62641001ce969902830238ce3261d9f49b",

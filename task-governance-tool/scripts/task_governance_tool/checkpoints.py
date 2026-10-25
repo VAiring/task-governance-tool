@@ -27,6 +27,7 @@ from task_governance_tool.tasks import (
     reject_done_task_write,
 )
 from task_governance_tool.task_values import (
+    SQLITE_INT64_MAX,
     TaskValidationError,
     validate_legacy_m19_7_stored_text,
     validate_task_id,
@@ -195,8 +196,8 @@ def _row_to_checkpoint(row: sqlite3.Row) -> dict[str, Any]:
             limit=128,
         )
         task_id = validate_task_id(row["task_id"])
-        contract_revision = int(row["contract_revision"])
-        if contract_revision < 0 or isinstance(row["contract_revision"], bool):
+        contract_revision = row["contract_revision"]
+        if type(contract_revision) is not int or not 0 <= contract_revision <= SQLITE_INT64_MAX:
             raise ValueError
         created_at = validate_utc_timestamp(
             str(row["created_at"]),

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import sqlite3
+import secrets
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -45,6 +46,63 @@ from task_governance_tool.verification_runner import (
 CURRENT_CONTEXT_EVENT_TYPES = (
     "note_added", "task_updated", "review_tier_changed", "task_reopened",
 )
+
+
+@dataclass(frozen=True)
+class ValidatedTaskRead:
+    connection: sqlite3.Connection
+    row: sqlite3.Row
+    savepoint: str
+
+
+def retain_validated_task_read(
+    connection: sqlite3.Connection, row: sqlite3.Row,
+) -> ValidatedTaskRead:
+    """Keep a validated row bound to this exact read transaction."""
+    if (not connection.in_transaction
+            or int(connection.execute("PRAGMA query_only").fetchone()[0]) != 1):
+        raise TaskRepositoryError("internal_error", "could not show task")
+    savepoint = f"taskgov_detail_{secrets.token_hex(16)}"
+    connection.execute(f"SAVEPOINT {savepoint}")
+    return ValidatedTaskRead(connection, row, savepoint)
+
+
+def _check_retained_task_read(
+    retained: ValidatedTaskRead,
+    connection: sqlite3.Connection,
+    project_id: str,
+    task_id: str,
+    *,
+    consume: bool,
+) -> sqlite3.Row:
+    if (
+        retained.connection is not connection
+        or not connection.in_transaction
+        or int(connection.execute("PRAGMA query_only").fetchone()[0]) != 1
+        or retained.row["project_id"] != project_id
+        or retained.row["task_id"] != task_id
+    ):
+        raise TaskRepositoryError("internal_error", "could not show task")
+    operation = "RELEASE" if consume else "ROLLBACK TO"
+    try:
+        connection.execute(f"{operation} SAVEPOINT {retained.savepoint}")
+    except sqlite3.OperationalError as exc:
+        if "no such savepoint" in str(exc).lower():
+            raise TaskRepositoryError("internal_error", "could not show task") from exc
+        raise
+    return retained.row
+
+
+def inspect_validated_task_read(
+    retained: ValidatedTaskRead,
+    connection: sqlite3.Connection,
+    project_id: str,
+    task_id: str,
+) -> sqlite3.Row:
+    """Confirm the original transaction survived before using its row for routing."""
+    return _check_retained_task_read(
+        retained, connection, project_id, task_id, consume=False,
+    )
 
 
 @dataclass(frozen=True)
@@ -152,14 +210,21 @@ def show_task(
     include_current_context: bool = False,
     caller: CallerIdentity = CallerIdentity(None),
     checkpoint_read: tuple[dict[str, Any] | None] | None = None,
+    validated_task_read: ValidatedTaskRead | None = None,
 ) -> TaskShowResult:
     normalized_task_id = validate_task_id(task_id)
     source_schema_version = current_schema_version(connection)
-    task_row = fetch_validated_current_task_row(
-        connection,
-        project_id=project.project_id,
-        task_id=normalized_task_id,
-    )
+    if validated_task_read is None:
+        task_row = fetch_validated_current_task_row(
+            connection,
+            project_id=project.project_id,
+            task_id=normalized_task_id,
+        )
+    else:
+        task_row = _check_retained_task_read(
+            validated_task_read, connection, project.project_id,
+            normalized_task_id, consume=True,
+        )
     if task_row is None:
         raise TaskRepositoryError("not_found", "task was not found")
     validate_task_review_storage(connection, project_id=project.project_id,
@@ -244,6 +309,7 @@ def show_task(
         project_id=project.project_id,
         task_id=normalized_task_id,
         current_revision=task_row["current_contract_revision"],
+        pointer_validated_in_snapshot=connection.in_transaction,
     )
     # Only the caller's still-retained current-selection snapshot may supply
     # this already validated value; None inside the tuple means read absence.

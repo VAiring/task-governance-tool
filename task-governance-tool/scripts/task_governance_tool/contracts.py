@@ -79,6 +79,7 @@ def read_current_contract(
     project_id: str,
     task_id: str,
     current_revision: Any,
+    pointer_validated_in_snapshot: bool = False,
 ) -> dict[str, Any]:
     try:
         revision = validate_sqlite_int64(
@@ -95,6 +96,8 @@ def read_current_contract(
             "internal_error",
             "stored Task Contract pointer is invalid",
         )
+    if pointer_validated_in_snapshot and not connection.in_transaction:
+        raise TaskRepositoryError("internal_error", "stored Task Contract pointer is invalid")
     if revision == 0:
         return {
             "revision": 0,
@@ -120,24 +123,25 @@ def read_current_contract(
             "internal_error",
             "stored Task Contract pointer has no matching revision",
         )
-    max_row = connection.execute(
-        """
-        SELECT MAX(revision) AS max_revision
-          FROM task_contract_revisions
-         WHERE project_id = ?
-           AND task_id = ?
-        """,
-        (project_id, task_id),
-    ).fetchone()
-    if (
-        max_row is None
-        or max_row["max_revision"] is None
-        or int(max_row["max_revision"]) != revision
-    ):
-        raise TaskRepositoryError(
-            "internal_error",
-            "stored Task Contract pointer is not the latest revision",
-        )
+    if not pointer_validated_in_snapshot:
+        max_row = connection.execute(
+            """
+            SELECT MAX(revision) AS max_revision
+              FROM task_contract_revisions
+             WHERE project_id = ?
+               AND task_id = ?
+            """,
+            (project_id, task_id),
+        ).fetchone()
+        if (
+            max_row is None
+            or max_row["max_revision"] is None
+            or int(max_row["max_revision"]) != revision
+        ):
+            raise TaskRepositoryError(
+                "internal_error",
+                "stored Task Contract pointer is not the latest revision",
+            )
     return _validate_stored_contract(
         row,
         project_id=project_id,

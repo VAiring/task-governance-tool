@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import argparse
 import json
 import copy
 import os
@@ -39,6 +40,54 @@ def run(db: Path, repo: Path, *arguments: str):
 
 
 class TaskContextTests(unittest.TestCase):
+    def test_detail_rejects_validated_row_from_other_task_or_connection(self):
+        from task_governance_tool import stored_task_validation, task_show_projection
+        from task_governance_tool.tasks import TaskRepositoryError
+
+        first = self.add("First selected Task")
+        second = self.add("Second selected Task")
+        project = storage.ProjectIdentity(first["project_id"], self.repo, "fixture", "fixture")
+        with closing(storage.connect(self.db)) as source, closing(storage.connect(self.db)) as other:
+            source.execute("PRAGMA query_only=ON")
+            other.execute("PRAGMA query_only=ON")
+            source.execute("BEGIN")
+            other.execute("BEGIN")
+            row = stored_task_validation.fetch_validated_current_task_row(
+                source, project_id=first["project_id"], task_id=first["task_id"],
+            )
+            self.assertIsNotNone(row)
+            retained = task_show_projection.retain_validated_task_read(source, row)
+            for connection, task_id in ((other, first["task_id"]), (source, second["task_id"])):
+                with self.subTest(task_id=task_id, connection=connection is source), \
+                        self.assertRaises(TaskRepositoryError) as error:
+                    task_show_projection.show_task(
+                        connection, project, task_id,
+                        validated_task_read=retained,
+                    )
+                self.assertEqual(error.exception.code, "internal_error")
+
+            other.rollback()
+            source.rollback()
+            self.success("task", "edit", first["task_id"], "--title", "Updated selected Task")
+            source.execute("BEGIN")
+            with self.assertRaises(TaskRepositoryError) as error:
+                task_show_projection.show_task(
+                    source, project, first["task_id"], validated_task_read=retained,
+                )
+            self.assertEqual(error.exception.code, "internal_error")
+            stale_context = cli_service.CommandContext(
+                command="task.show", repo=str(self.repo), repo_explicit=True,
+                json_output=True, read_only=True,
+                args=argparse.Namespace(task_id=first["task_id"]),
+                target_override=storage.DatabaseTarget(project, self.db, True),
+                read_connection_override=source,
+            )
+            stale_result = cli_service.read_task_detail(
+                stale_context, selected_task_read=retained,
+            )
+            self.assertFalse(stale_result.ok)
+            self.assertEqual(stale_result.errors[0]["code"], "internal_error")
+
     def test_separate_read_checkpoint_is_not_reused(self):
         from task_governance_tool import checkpoints
         task = self.add("Checkpoint reuse", "--status", "in_progress")
@@ -534,6 +583,39 @@ class ContextCandidateProjectionTests(unittest.TestCase):
 
 
 class TaskContextCompactSelectionTests(unittest.TestCase):
+    def test_selected_detail_reuses_validated_task_and_contract_pointer(self):
+        from task_governance_tool import contracts, task_show_projection
+
+        task = self.add("Reuse selected Task", "--contract-scope", "One selected Task",
+                        "--contract-acceptance", "Same detail")
+        for selection in ("next", "current"):
+            if selection == "current":
+                self.success("task", "edit", task["task_id"], "--status", "in_progress")
+            with mock.patch.object(cli_service, "fetch_validated_current_task_row",
+                                   wraps=cli_service.fetch_validated_current_task_row) as initial, \
+                    mock.patch.object(task_show_projection, "fetch_validated_current_task_row",
+                                      wraps=task_show_projection.fetch_validated_current_task_row) as detail, \
+                    mock.patch.object(contracts, "read_current_contract",
+                                      wraps=contracts.read_current_contract) as contract:
+                result = _run_cli(self.install, "task", "context")
+            self.assertEqual(result.returncode, 0, result.stdout)
+            data = json.loads(result.stdout)["data"]
+            self.assertEqual(data["selection"], selection)
+            self.assertEqual(data["selected"]["contract"]["revision"], 1)
+            self.assertEqual(initial.call_count, 0)
+            self.assertEqual(detail.call_count, 0)
+            contract.assert_called_once()
+            self.assertTrue(contract.call_args.kwargs["pointer_validated_in_snapshot"])
+
+        with mock.patch.object(cli_service, "fetch_validated_current_task_row",
+                               wraps=cli_service.fetch_validated_current_task_row) as initial, \
+                mock.patch.object(task_show_projection, "fetch_validated_current_task_row",
+                                  wraps=task_show_projection.fetch_validated_current_task_row) as detail:
+            shown = _run_cli(self.install, "task", "show", task["task_id"])
+        self.assertEqual(shown.returncode, 0, shown.stdout)
+        self.assertEqual(initial.call_count, 1)
+        self.assertEqual(detail.call_count, 0)
+
     def test_fixed_layout_current_checkpoint_is_reused_on_retained_read(self):
         from task_governance_tool import checkpoints
         task = self.add("Retained checkpoint", "--status", "in_progress")

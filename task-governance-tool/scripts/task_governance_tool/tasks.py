@@ -204,6 +204,7 @@ class CurrentTaskResult:
     total_matching: int
     limit: int
     statuses: tuple[str, ...]
+    validated_rows: tuple[sqlite3.Row, ...] = field(default_factory=tuple, repr=False, compare=False)
 
 
 @dataclass(frozen=True)
@@ -1604,6 +1605,7 @@ def list_current_tasks(
         total_matching=(int(rows[0]["total_matching"]) if rows else 0),
         limit=row_limit,
         statuses=result_statuses,
+        validated_rows=tuple(rows),
     )
 
 

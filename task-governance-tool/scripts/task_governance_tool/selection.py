@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import sqlite3
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 from task_governance_tool.session_identity import CallerIdentity
@@ -38,6 +38,7 @@ class TaskNextResult:
     total_matching: int
     limit: int
     selection_rules: dict[str, Any]
+    validated_rows: tuple[sqlite3.Row, ...] = field(default_factory=tuple, repr=False, compare=False)
 
 
 def selection_rules() -> dict[str, Any]:
@@ -157,4 +158,5 @@ def select_next_tasks(
         total_matching=(int(rows[0]["total_matching"]) if rows else 0),
         limit=row_limit,
         selection_rules=selection_rules(),
+        validated_rows=tuple(rows),
     )

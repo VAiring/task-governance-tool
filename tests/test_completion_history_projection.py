@@ -401,6 +401,7 @@ class CompletionHistoryProjectionTests(unittest.TestCase):
 
     def test_task_show_reports_sanitized_history_error_with_exit_two(self):
         retained_connection = mock.Mock()
+        retained_connection.in_transaction = False
         project = ProjectIdentity(
             project_id="tg_project_projection",
             canonical_repo=ROOT,
@@ -430,7 +431,10 @@ class CompletionHistoryProjectionTests(unittest.TestCase):
             "review_target_runner_basis_version": 0,
         }
         with mock.patch(
-            "task_governance_tool.cli.read_internal_task",
+            "task_governance_tool.cli.fetch_validated_current_task_row",
+            return_value=object(),
+        ), mock.patch(
+            "task_governance_tool.cli.row_to_internal_task",
             return_value=observed_task,
         ), mock.patch(
             "task_governance_tool.cli.connect_initialized_task_readonly",

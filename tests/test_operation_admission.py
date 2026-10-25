@@ -58,6 +58,8 @@ class OperationAdmissionTests(unittest.TestCase):
         from types import SimpleNamespace
         from task_governance_tool.review_finalization import Core, FinalizationError
         from task_governance_tool.session_identity import capture_caller_identity
+        from task_governance_tool import review_finalization
+        from task_governance_tool.tasks import read_internal_task
         self.fixture.corrupt_other_binding()
         core = Core(self.fixture.repo, self.fixture.target, capture_caller_identity())
         submission = SimpleNamespace(preparation_id="tg_review_preparation_0123456789abcdef",
@@ -67,9 +69,12 @@ class OperationAdmissionTests(unittest.TestCase):
             state = core.read(self.task_id)
             self.assertEqual(state["task"]["task_id"], self.task_id)
             self.assertNotIn("usage", state)
-            with mock.patch.object(cli, "show_task", wraps=cli.show_task) as detail:
+            with mock.patch.object(cli, "show_task", wraps=cli.show_task) as detail, \
+                    mock.patch.object(review_finalization, "read_internal_task",
+                                      wraps=read_internal_task) as inventory_task:
                 self.assertEqual(core.collection_registration(self.task_id, submission)["status"], "absent")
                 self.assertEqual(detail.call_count, 0)
+                inventory_task.assert_called_once()
             self.assertEqual(usage.call_count, 0)
             for operation in ("show", "context"):
                 args = ("task", operation, self.task_id) if operation == "show" else ("task", operation)

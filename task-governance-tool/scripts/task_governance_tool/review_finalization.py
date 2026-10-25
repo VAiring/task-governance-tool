@@ -17,6 +17,7 @@ from .review_finalization_repository import FinalizationRecord, FinalizationRepo
 from .review_finalization_basis import FinalizationBasis, require_no_findings
 from .review_session_transport import decode_submission, frame_submission
 from .review_wait_basis import wait_basis
+from .tasks import read_internal_task
 from .session_identity import CallerIdentity
 from .state_paths import create_physical_directory_exclusive, inspect_physical_directory, path_lexically_exists
 
@@ -68,7 +69,7 @@ class Core:
             collection_submission=submission.submission_digest).args
         selectors = review_answer_audit.selection(arguments)
         with closing(connect_initialized_readonly(self.target, operation_local=True)) as connection:
-            if cli.read_internal_task(connection, self.target.project.project_id, task_id) is None:
+            if read_internal_task(connection, self.target.project.project_id, task_id) is None:
                 _fail("not_found")
             validate_task_review_storage(connection, project_id=self.target.project.project_id,
                 task_id=task_id, source_schema_version=current_schema_version(connection))

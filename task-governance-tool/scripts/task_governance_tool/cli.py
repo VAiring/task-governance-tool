@@ -118,7 +118,13 @@ from task_governance_tool.review_results import (
     ReviewResultInputError,
     add_review_results,
 )
-from task_governance_tool.task_show_projection import build_task_show_data, show_task
+from task_governance_tool.task_show_projection import (
+    ValidatedTaskRead,
+    build_task_show_data,
+    inspect_validated_task_read,
+    retain_validated_task_read,
+    show_task,
+)
 from task_governance_tool.tasks import (
     CURRENT_STATUSES,
     CurrentTaskResult,
@@ -129,10 +135,11 @@ from task_governance_tool.tasks import (
     edit_task,
     list_current_tasks,
     list_tasks,
-    read_internal_task,
     row_to_event,
+    row_to_internal_task,
     validate_current_status_filter,
 )
+from task_governance_tool.stored_task_validation import fetch_validated_current_task_row
 from task_governance_tool.task_values import (
     TaskValidationError,
     validate_task_id,
@@ -1270,11 +1277,12 @@ def task_show_failure_result(
     )
 
 
-def handle_task_show(context: CommandContext, *, current_checkpoint: tuple[sqlite3.Connection, str, dict[str, Any] | None] | None = None) -> CommandResult:
-    return read_task_detail(context, current_checkpoint=current_checkpoint, public_display=True)
+def handle_task_show(context: CommandContext, *, current_checkpoint: tuple[sqlite3.Connection, str, dict[str, Any] | None] | None = None, selected_task_read: ValidatedTaskRead | None = None) -> CommandResult:
+    return read_task_detail(context, current_checkpoint=current_checkpoint,
+        selected_task_read=selected_task_read, public_display=True)
 
 
-def read_task_detail(context: CommandContext, *, current_checkpoint: tuple[sqlite3.Connection, str, dict[str, Any] | None] | None = None, public_display: bool = False) -> CommandResult:
+def read_task_detail(context: CommandContext, *, current_checkpoint: tuple[sqlite3.Connection, str, dict[str, Any] | None] | None = None, selected_task_read: ValidatedTaskRead | None = None, public_display: bool = False) -> CommandResult:
     """Shared validated detail; internal finalization does not consume usage/display."""
     from task_governance_tool.usage_evidence_service import read_task_usage
     from task_governance_tool import review_answer_audit
@@ -1291,13 +1299,22 @@ def read_task_detail(context: CommandContext, *, current_checkpoint: tuple[sqlit
                 else closing(connect_initialized_task_readonly(target))
             )
             with initial_manager as connection:
-                observed_task = read_internal_task(
-                    connection,
-                    target.project.project_id,
-                    task_id,
-                )
-                if observed_task is None:
+                if selected_task_read is not None:
+                    observed_row = inspect_validated_task_read(
+                        selected_task_read, connection, target.project.project_id, task_id,
+                    )
+                    observed_read = selected_task_read
+                else:
+                    observed_row = fetch_validated_current_task_row(
+                        connection, project_id=target.project.project_id, task_id=task_id,
+                    )
+                    observed_read = (
+                        retain_validated_task_read(connection, observed_row)
+                        if observed_row is not None and connection.in_transaction else None
+                    )
+                if observed_row is None:
                     raise TaskRepositoryError("not_found", "task was not found")
+                observed_task = row_to_internal_task(observed_row)
                 runner_selection_required = (
                     str(observed_task.get("status", "")) != "done"
                     and observed_task.get(
@@ -1312,7 +1329,9 @@ def read_task_detail(context: CommandContext, *, current_checkpoint: tuple[sqlit
                         task_id,
                         include_current_context=not audit,
                         caller=context.caller,
-                        checkpoint_read=((current_checkpoint[2],) if current_checkpoint is not None
+                        validated_task_read=observed_read,
+                        checkpoint_read=((current_checkpoint[2],) if selected_task_read is not None
+                            and current_checkpoint is not None
                             and current_checkpoint[0] is connection and connection.in_transaction
                             and current_checkpoint[1] == task_id else None),
                     )
@@ -1330,10 +1349,13 @@ def read_task_detail(context: CommandContext, *, current_checkpoint: tuple[sqlit
                 task=observed_task,
             )
             with closing(connect_initialized_task_readonly(target)) as connection:
-                current_task = read_internal_task(
-                    connection,
-                    target.project.project_id,
-                    task_id,
+                current_row = fetch_validated_current_task_row(
+                    connection, project_id=target.project.project_id, task_id=task_id,
+                )
+                current_task = row_to_internal_task(current_row) if current_row is not None else None
+                current_read = (
+                    retain_validated_task_read(connection, current_row)
+                    if current_row is not None and connection.in_transaction else None
                 )
                 result = show_task(
                     connection,
@@ -1344,6 +1366,7 @@ def read_task_detail(context: CommandContext, *, current_checkpoint: tuple[sqlit
                     ),
                     include_current_context=not audit,
                     caller=context.caller,
+                    validated_task_read=current_read,
                 )
                 if public_display:
                     usage = read_task_usage(target, connection, task_id, audit=audit)
@@ -1560,6 +1583,17 @@ def handle_task_context(
     if selected_task is not None:
         # The existing handler owns Runner physical selection and the fresh
         # Task comparison after it releases the retained SQLite read.
+        selected_task_read = None
+        if (context.read_connection_override is not None
+                and context.read_connection_override.in_transaction):
+            selected_rows = (current_read.validated_rows if selection == "current"
+                             else next_read[0].validated_rows)
+            selected_row = next((row for row in selected_rows
+                                 if row["task_id"] == selected_task["task_id"]), None)
+            if selected_row is not None:
+                selected_task_read = retain_validated_task_read(
+                    context.read_connection_override, selected_row,
+                )
         selected = handle_task_show(
             replace(
                 context,
@@ -1571,6 +1605,7 @@ def handle_task_context(
                 if selection == "current" and context.read_connection_override is not None
                 and context.read_connection_override.in_transaction else None
             ),
+            selected_task_read=selected_task_read,
         )
         if not selected.ok:
             return task_context_failure_result(context, selected)

@@ -246,9 +246,17 @@ requires no extra LLM read, reconciliation or restoration procedure and does
 not change standalone current/next/show or their validation.
 
 The public operation reuses the resolver's retained read for selection and
-detail. Live marker-2 show retains its existing release, physical Runner-basis
+detail. For a selected Task in that same connection and read transaction, detail
+consumes the already validated complete Task row and Contract-pointer relationship
+without fetching and validating them again. It still reads and validates the
+current Contract content and all dependent evidence before presentation. A
+standalone show or a different connection/snapshot performs its own Task and
+relationship validation; a different Task ID cannot borrow the selection.
+Live marker-2 show retains its existing release, physical Runner-basis
 selection, and Task comparison before final projection; there is no claim of a
 single SQLite snapshot across that physical phase or a second global scan.
+Its post-selection detail uses a fresh validated Task row from the new read
+transaction, never the row retained before physical selection.
 Individual current/next/show commands remain available for explicit inspection.
 
 Every Task-loading operation applies the current stored-row and
@@ -1353,7 +1361,10 @@ content or mutation. Doctor, Viewer capture, setup, migration/reentry, and
 managed recovery load every Task row without a project filter and validate the
 complete batch, including project ownership. A caller that
 already holds a validated Task row passes it to dependent review/history
-readers, avoiding per-Task schema introspection or duplicate Task reads.
+readers, avoiding per-Task schema introspection or duplicate Task reads. The
+selected detail consumer may use that row only while its original read transaction
+and exact Task identity are retained; this internal handoff does not weaken
+standalone show or later-snapshot validation.
 
 A current stored Task fault always fails closed with exit 2, code
 `project_state_unreadable`, and message
@@ -1396,6 +1407,9 @@ The relationship read is scoped only to the already validated selected batch.
 It does not query once per Task, scan an unselected Task's Contract history, or
 perform a general cross-table audit. Existing Contract-content validation
 remains owned by the Contract repository after this relationship boundary.
+The detail consumer need not repeat a latest-revision aggregate inside that
+same validated snapshot; a standalone Contract read without that relation
+validation retains its own latest-pointer check.
 Bounded list/current/next therefore retain their selected-row behavior, while
 Doctor, Viewer, setup, migration/reentry, and managed recovery apply the check
 to their existing whole-Task batch.

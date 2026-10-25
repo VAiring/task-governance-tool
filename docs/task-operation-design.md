@@ -146,6 +146,23 @@ module. Task operations, shared row converters, and Viewer proof consumption sta
 in `tasks.py`; `task_show_projection.py` assembles the Task detail result from
 the caller's snapshot and existing validation/readers. Its latest-history
 summary is only a text fallback, not an additional public JSON field.
+The bounded current/next result retains its already validated raw rows privately
+for a direct selected-detail consumer. `cli.read_task_detail` matches the exact
+Task ID and original active connection before passing one row to
+`task_show_projection.show_task`. A private random-name savepoint on the
+query-only read connection accompanies
+that handoff: checking it before the routing decision and releasing it at
+projection rejects a row whose original transaction ended, even when the same
+connection later enters a new transaction. The savepoint contains no write and
+is not an external token, persisted proof or cache. The projection also rejects
+a mismatched connection, Task, or project. A standalone detail reads and
+validates its own row. Marker-2
+discards the pre-physical row, rereads and validates on the new connection, and
+only then reuses that fresh row for projection. The Contract repository skips
+its redundant latest-revision aggregate only when the relationship was already
+validated in the active transaction; Contract content validation and all other
+detail readers remain unchanged. No retained row is persisted or exposed in
+public output.
 For the narrow missing-review hint, it passes its already-read review and
 verification evidence to `tasks.py::suggested_next_action`. That pure formatter
 uses `reviews.py::first_review_gate_error` and existing required/qualifying
@@ -266,6 +283,11 @@ relationship rows therefore come from one SQLite snapshot even when another
 writer commits a Contract revision between calls. Existing query-only and
 locked write transactions are reused unchanged; the helper performs no write
 and closes only the read transaction it owns.
+The selected-detail reuse above requires the caller's retained transaction.
+When a caller has no retained transaction, detail uses the ordinary fresh
+validation path and does not treat a row from a closed read as current proof.
+The original read savepoint disappears at transaction end; a later transaction
+on the same connection cannot revive that handoff.
 
 ### Sequential Ordering
 

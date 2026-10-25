@@ -1,0 +1,16 @@
+# Repository-wide Python performance diagnostics: `ruff check .` at repo root.
+required-version = "==0.17.2"
+target-version = "py312"
+preview = false
+fix = false
+unsafe-fixes = false
+cache-dir = ".tmp-ruff-cache"
+
+# Product, tools, tests, and current investigation scripts. Normal Git ignores
+# keep local environments, generated state, and copied references out of scope.
+include = ["*.py", "*.pyi"]
+extend-exclude = ["docs/history"]
+force-exclude = true
+
+[lint]
+select = ["RUF017", "PERF"]

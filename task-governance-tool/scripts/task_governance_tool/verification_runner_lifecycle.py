@@ -352,8 +352,9 @@ def create_attempt_directories(
         created.append(
             create_physical_directory_exclusive(exact.root, root=paths.root)
         )
+        # Retain every successful creation for partial-failure cleanup.
         for child in (exact.target, exact.scratch):
-            created.append(
+            created.append(  # noqa: PERF401
                 create_physical_directory_exclusive(child, root=paths.root)
             )
         return exact
@@ -410,8 +411,9 @@ def create_scratch_directories(
     exact = validate_empty_attempt_tree(paths, attempt_id)
     created: list[ValidatedDirectory] = []
     try:
+        # Retain every successful creation for partial-failure cleanup.
         for name in _EXPECTED_SCRATCH_CHILDREN:
-            created.append(
+            created.append(  # noqa: PERF401
                 create_physical_directory_exclusive(
                     exact.scratch / name,
                     root=paths.root,

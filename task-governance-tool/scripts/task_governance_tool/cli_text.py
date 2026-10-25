@@ -120,11 +120,11 @@ def task_context_text(
     ]
     if held:
         lines.append("Held work recalled:")
-        for task in held:
-            lines.append(
-                f"{task['task_id']} [{task['status']}] {task['title']} | "
-                f"{task['suggested_next_action']}"
-            )
+        lines.extend(
+            f"{task['task_id']} [{task['status']}] {task['title']} | "
+            f"{task['suggested_next_action']}"
+            for task in held
+        )
     if current["truncated"] or current["total_matching"] > current["returned_count"]:
         lines.append(
             "Current recall: "
@@ -315,11 +315,11 @@ def handoff_text(command: str, data: dict[str, Any]) -> str:
             f"Handoffs: {data['count']} of {data['total_matching']} "
             f"(limit {data['limit']})"
         ]
-        for handoff in data["handoffs"]:
-            lines.append(
-                f"{handoff['handoff_id']} [{handoff['state']}] "
-                f"{handoff['source_task_id']} - {handoff['summary']}"
-            )
+        lines.extend(
+            f"{handoff['handoff_id']} [{handoff['state']}] "
+            f"{handoff['source_task_id']} - {handoff['summary']}"
+            for handoff in data["handoffs"]
+        )
         return "\n".join(lines)
     if command == "handoff.withdraw":
         handoff = data["handoff"]

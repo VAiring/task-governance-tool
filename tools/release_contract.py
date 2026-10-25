@@ -681,15 +681,15 @@ def _license_checks(
             )
         )
 
-    for relative in ("NOTICE", f"{SKILL_DIRECTORY}/NOTICE"):
-        if (repo_root / Path(*relative.split("/"))).exists():
-            issues.append(
-                ContractIssue(
-                    "notice_present",
-                    relative,
-                    "NOTICE requires a separately reviewed attribution duty",
-                )
-            )
+    issues.extend(
+        ContractIssue(
+            "notice_present",
+            relative,
+            "NOTICE requires a separately reviewed attribution duty",
+        )
+        for relative in ("NOTICE", f"{SKILL_DIRECTORY}/NOTICE")
+        if (repo_root / Path(*relative.split("/"))).exists()
+    )
 
 
 def _metadata_checks(
@@ -1251,15 +1251,15 @@ def check_release_contract(
         tracked_path_count = None
     else:
         tracked_path_count = len(observed_paths)
-        for path in observed_paths:
-            if forbidden_tracked_artifact(path):
-                issues.append(
-                    ContractIssue(
-                        "generated_artifact_tracked",
-                        path,
-                        "generated or local-only artifact is tracked",
-                    )
-                )
+        issues.extend(
+            ContractIssue(
+                "generated_artifact_tracked",
+                path,
+                "generated or local-only artifact is tracked",
+            )
+            for path in observed_paths
+            if forbidden_tracked_artifact(path)
+        )
 
     return ReleaseContractResult(
         runtime=runtime,

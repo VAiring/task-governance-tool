@@ -1238,15 +1238,15 @@ def _scan(relative: str, text: str, issues: list[Issue]) -> Scan:
             for start, end in full_spans:
                 shortcut_source[start:end] = " " * (end - start)
             shortcut_text = "".join(shortcut_source)
-            for match in SHORTCUT_REFERENCE.finditer(shortcut_text):
-                if not _is_escaped(shortcut_text, match.start()):
-                    reference_uses.append(
-                        (
-                            index,
-                            _reference_label(match.group(1)),
-                            False,
-                        )
-                    )
+            reference_uses.extend(
+                (
+                    index,
+                    _reference_label(match.group(1)),
+                    False,
+                )
+                for match in SHORTCUT_REFERENCE.finditer(shortcut_text)
+                if not _is_escaped(shortcut_text, match.start())
+            )
 
     for line, label, route_eligible in reference_uses:
         target = reference_definitions.get(label)

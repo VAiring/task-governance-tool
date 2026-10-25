@@ -197,9 +197,7 @@ def _normalized_codes(
         raise _invalid(field, "array")
     if len(items) > maximum:
         raise _invalid(field, "bound")
-    normalized: list[str] = []
-    for item in items:
-        normalized.append(_normalized_choice(item, allowed, field))
+    normalized = [_normalized_choice(item, allowed, field) for item in items]
     if len(set(normalized)) != len(normalized):
         raise _invalid(field, "duplicate")
     selected = set(normalized)

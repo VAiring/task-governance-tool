@@ -599,20 +599,20 @@ def write_mixed_evidence_tree(root: Path) -> Path:
                 "sealed_at": payload["sealed_at"],
             }
         )
-    for suffix in ("d", "e"):
-        entries.append(
-            {
-                "task_id": "tg_task_" + suffix * 16,
-                "completion_cycle_id": "tg_completion_cycle_" + suffix * 16,
-                "cycle_ordinal": 1,
-                "bundle_state": "legacy_unknown",
-                "bundle_id": None,
-                "bundle_file": None,
-                "bundle_digest": None,
-                "file_digest": None,
-                "sealed_at": None,
-            }
-        )
+    entries.extend(
+        {
+            "task_id": "tg_task_" + suffix * 16,
+            "completion_cycle_id": "tg_completion_cycle_" + suffix * 16,
+            "cycle_ordinal": 1,
+            "bundle_state": "legacy_unknown",
+            "bundle_id": None,
+            "bundle_file": None,
+            "bundle_digest": None,
+            "file_digest": None,
+            "sealed_at": None,
+        }
+        for suffix in ("d", "e")
+    )
     entries.sort(
         key=lambda item: (
             item["task_id"].encode("utf-8"),

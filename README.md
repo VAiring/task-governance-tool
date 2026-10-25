@@ -638,6 +638,50 @@ authorized here.
 
 ## Development Checks
 
+### Ruff performance checks
+
+Ruff is a repository-only development dependency pinned in
+[`requirements-dev.txt`](requirements-dev.txt). The
+[`ruff.toml`](ruff.toml) scope covers repository Python files (`.py`/`.pyi`),
+including product code, development tools, tests, and current investigation
+scripts. Normal Git ignores exclude local environments, generated state, and
+copied references; `docs/history/` is explicitly excluded. It selects only
+`RUF017` and the `PERF` family,
+with Python 3.12 as the minimum supported target. Preview rules and automatic
+fixes are disabled.
+
+From the repository root, create the local environment once and install the
+pinned tool (installation requires network access):
+
+```powershell
+python -m venv --without-pip .venv
+python -m pip --python .venv install --only-binary=:all: -r requirements-dev.txt
+.venv\Scripts\python.exe -m ruff check .
+```
+
+On Linux/macOS use `python3` for the first two commands, then
+`.venv/bin/python -m ruff check .`. An existing `uv` installation can instead
+install into the same environment with
+`uv pip install --python .venv -r requirements-dev.txt`.
+The environment and Ruff's `.tmp-ruff-cache/` are ignored local artifacts;
+neither the tool nor its configuration is part of the installable Skill.
+
+Run the check from the repository root with `.` to retain the configured scope.
+Use `--show-files` to inspect that scope or `--output-format json` for diagnostic
+output. Explicit file arguments still respect configured exclusions.
+Exit code 1 means findings were detected; 2 means the check failed to run.
+This initial check is a local diagnostic, not an additional CI/completion gate.
+Do not apply automatic fixes without reviewing behavior and the affected tests.
+
+These rules identify local code patterns, not repeated SQL across functions,
+unnecessary whole-history validation, or measured runtime cost. Zero findings
+does not close the existing performance investigations. `PERF203` is selected
+but intentionally does not report for Python 3.11 or newer; see the
+[Ruff rule documentation](https://docs.astral.sh/ruff/rules/try-except-in-loop/).
+The existing isolated regression and performance checks remain necessary.
+
+### Repository validation
+
 On Windows, for current development and any later release candidate, run at least:
 
 ```powershell

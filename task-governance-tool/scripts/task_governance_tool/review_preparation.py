@@ -39,11 +39,13 @@ def _replacement_collection_fence(paths, current):
         # A currently selected batch can also consume an older unregistered
         # capture. Include every explicitly indexed collected source rather
         # than guessing only the latest round or scanning the filesystem.
-        for row in sorted(rounds, key=lambda row: row.continuation_id):
+        stores.extend(
+            paths.review_answer_collection_store(basis["parent_session_id"], basis["task_id"],
+                basis["target_generation"], current.preparation_id, row.continuation_id)
+            for row in sorted(rounds, key=lambda row: row.continuation_id)
             if (row.preparation_id == current.preparation_id and row.answer_protocol == "review-answer-v1"
-                    and row.collection_basis_digests):
-                stores.append(paths.review_answer_collection_store(basis["parent_session_id"], basis["task_id"],
-                    basis["target_generation"], current.preparation_id, row.continuation_id))
+                and row.collection_basis_digests)
+        )
     with ExitStack() as stack:
         if current.route == "integrated":
             path = paths.review_finalization_store(basis["parent_session_id"], basis["task_id"],

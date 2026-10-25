@@ -235,10 +235,11 @@ class Collector:
                 "observed_at": datetime.now(timezone.utc).isoformat(),
                 "monotonic_ns": started,
             }
+            # At most two optional fields; a temporary dict adds no value.
             for key, value in (("transaction_id", transaction_id),
                                ("transaction_elapsed_ns", transaction_elapsed_ns)):
                 if _integer(value):
-                    record[key] = value
+                    record[key] = value  # noqa: PERF403
             if _integer(sqlite_errorcode, maximum=65535):
                 record["sqlite_errorcode"] = sqlite_errorcode
             if type(in_transaction) is bool:

@@ -1,0 +1,2 @@
+# Repository-only analysis tool; not a taskgov runtime dependency.
+ruff==0.17.2

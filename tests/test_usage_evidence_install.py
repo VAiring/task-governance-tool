@@ -414,8 +414,7 @@ class UsageEvidenceInstallTests(unittest.TestCase):
         for number in range(1, count + 1):
             rows.extend([event("event_msg", type="task_started", turn_id=turn(number), started_at=number * 1000),
                          event("turn_context", turn_id=turn(number), model="fixture-model")])
-            for ack in acknowledgements.get(number, ()):
-                rows.append(tool_record(ack, number))
+            rows.extend(tool_record(ack, number) for ack in acknowledgements.get(number, ()))
             rows.append(usage(f"r{number}", turn=turn(number)))
         source.path.write_bytes(b"".join(json.dumps(row).encode() + b"\n" for row in rows))
         self.assertNotEqual(collect_registered(self.repository, source)["status"], "unknown")

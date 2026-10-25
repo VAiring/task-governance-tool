@@ -356,34 +356,34 @@ def build_artifact_entries(
                 )
             )
 
-    for leaf in deletes:
-        if leaf.relative_posix_path not in renamed_delete_paths:
-            provisional.append(
-                ArtifactManifestEntry(
-                    ordinal=0,
-                    kind="delete",
-                    old_path=leaf.relative_posix_path,
-                    new_path=None,
-                    before_mode=leaf.mode,
-                    before_object_id=leaf.object_id,
-                    after_mode=None,
-                    after_object_id=None,
-                )
-            )
-    for leaf in adds:
-        if leaf.relative_posix_path not in renamed_add_paths:
-            provisional.append(
-                ArtifactManifestEntry(
-                    ordinal=0,
-                    kind="add",
-                    old_path=None,
-                    new_path=leaf.relative_posix_path,
-                    before_mode=None,
-                    before_object_id=None,
-                    after_mode=leaf.mode,
-                    after_object_id=leaf.object_id,
-                )
-            )
+    provisional.extend(
+        ArtifactManifestEntry(
+            ordinal=0,
+            kind="delete",
+            old_path=leaf.relative_posix_path,
+            new_path=None,
+            before_mode=leaf.mode,
+            before_object_id=leaf.object_id,
+            after_mode=None,
+            after_object_id=None,
+        )
+        for leaf in deletes
+        if leaf.relative_posix_path not in renamed_delete_paths
+    )
+    provisional.extend(
+        ArtifactManifestEntry(
+            ordinal=0,
+            kind="add",
+            old_path=None,
+            new_path=leaf.relative_posix_path,
+            before_mode=None,
+            before_object_id=None,
+            after_mode=leaf.mode,
+            after_object_id=leaf.object_id,
+        )
+        for leaf in adds
+        if leaf.relative_posix_path not in renamed_add_paths
+    )
     if len(provisional) > ARTIFACT_ENTRY_LIMIT:
         raise _too_large()
     ordered = sorted(provisional, key=_entry_sort_key)

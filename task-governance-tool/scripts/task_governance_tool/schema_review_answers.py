@@ -58,9 +58,11 @@ result_receipt_id TEXT UNIQUE REFERENCES review_receipts(review_receipt_id),
 PRIMARY KEY(continuation_id,session_id)
 )""",
     ]
-    for table in ("review_receipt_provenance_v2", "review_collection_sources", "review_collection_dispatches", "review_collection_dispatch_entries"):
-        for operation in ("UPDATE", "DELETE"):
-            statements.append(f"CREATE TRIGGER trg_{table}_no_{operation.lower()} BEFORE {operation} ON {table} BEGIN SELECT RAISE(ABORT,'immutable_collected_review'); END")
+    statements.extend(
+        f"CREATE TRIGGER trg_{table}_no_{operation.lower()} BEFORE {operation} ON {table} BEGIN SELECT RAISE(ABORT,'immutable_collected_review'); END"
+        for table in ("review_receipt_provenance_v2", "review_collection_sources", "review_collection_dispatches", "review_collection_dispatch_entries")
+        for operation in ("UPDATE", "DELETE")
+    )
     statements.extend((
         """CREATE TRIGGER trg_review_collected_captures_no_delete BEFORE DELETE ON review_collected_captures BEGIN SELECT RAISE(ABORT,'immutable_collected_capture'); END""",
         """CREATE TRIGGER trg_review_collected_captures_publish BEFORE UPDATE ON review_collected_captures WHEN

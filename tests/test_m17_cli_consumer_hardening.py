@@ -228,11 +228,11 @@ class M17CliConsumerHardeningTests(unittest.TestCase):
             )
             for node in ast.walk(tree):
                 if isinstance(node, ast.ImportFrom):
-                    for imported in node.names:
-                        if imported.name in forbidden:
-                            violations.append(
-                                f"{source.name}:{node.lineno}:{imported.name}"
-                            )
+                    violations.extend(
+                        f"{source.name}:{node.lineno}:{imported.name}"
+                        for imported in node.names
+                        if imported.name in forbidden
+                    )
                 elif isinstance(node, ast.Call):
                     called = node.func
                     name = (

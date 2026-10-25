@@ -165,9 +165,7 @@ class PublicAnswerHost:
         _content_complete(parent)
         if parent["id"] != self.parent_turn_id or parent["error"] is not None:
             _fail("identity", "binding_mismatch")
-        dispatches = []
-        for child in children:
-            dispatches.append(_dispatch_activity(parent["items"], child))
+        dispatches = [_dispatch_activity(parent["items"], child) for child in children]
         if len(set(dispatches)) != len(dispatches):
             _fail("conflict", "binding_mismatch")
         results = []

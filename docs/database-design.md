@@ -1399,6 +1399,12 @@ latest-owner lookup or separate usage schema is needed.
 ### Immutable Usage Persistence
 
 `usage_evidence.py` owns the closed metadata-only snapshot format and validation.
+Response attribution reads `usage_sources.pending` alongside joined durable
+`usage_diagnostics` in the same numerical transaction. It maps `partial_tail`
+to that existing gap, `unread` and `more_records` to `collection_pending`, and
+`none` to no transient gap before projecting admitted thread diagnostics.
+Unknown pending values fail closed. This changes neither source rows nor
+response membership and uses the existing capture/publication successor path.
 `usage_evidence_repository.py` owns numerical schema 3 and its setup-only atomic
 schema-1/2 migration. It preserves all original observations and cursors and adds
 `usage_snapshots`, `usage_snapshot_members`, `usage_cycle_links`,

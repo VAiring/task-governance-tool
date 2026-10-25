@@ -257,10 +257,17 @@ class UsageResponseRepository(UsageIncrementalRepository):
                               if geometry_only else _response(row) for row in rows)
             conflicts = frozenset(tuple(row) for row in connection.execute("SELECT * FROM usage_conflicts"))
             diagnostics = {}
-            for row in connection.execute("SELECT source.thread_id,gap.code FROM usage_sources source LEFT JOIN "
+            for row in connection.execute("SELECT source.thread_id,source.pending,gap.code FROM usage_sources source LEFT JOIN "
                                           "usage_diagnostics gap USING(source_id)"):
+                codes = diagnostics.setdefault(row["thread_id"], set())
                 if row["code"] is not None:
-                    diagnostics.setdefault(row["thread_id"], set()).add(row["code"])
+                    codes.add(row["code"])
+                if row["pending"] == "partial_tail":
+                    codes.add("partial_tail")
+                elif row["pending"] in {"unread", "more_records"}:
+                    codes.add("collection_pending")
+                elif row["pending"] != "none":
+                    raise UsageError("usage_schema_invalid")
             old_operations = [OperationObservation(**dict(row)) for row in connection.execute(
                 "SELECT thread_id,turn_id,project_id,task_id,event_id,generation,status FROM usage_operation_turns "
                 "WHERE event_id NOT IN (SELECT event_id FROM usage_operation_conflicts)")]

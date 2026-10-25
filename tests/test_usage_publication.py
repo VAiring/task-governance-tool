@@ -11,7 +11,7 @@ from unittest import mock
 
 from tests import test_usage_response_repository as support
 from tests.test_usage_response_repository import A
-from tests.test_usage_collection import usage
+from tests.test_usage_collection import THREAD, PARENT, event, usage
 from tests.test_usage_attribution import turn
 from task_governance_tool import usage_evidence_service as service
 from task_governance_tool import usage_incremental_repository as incremental
@@ -67,6 +67,91 @@ class UsagePublicationTests(unittest.TestCase):
 
     def restart(self):
         self.repository = UsagePublicationRepository(self.repository.path, *self.repository.basis)
+
+    def _completed_two_turn_fixture(self):
+        rows = self.operation("start", self.acknowledgement(A, 1, "in_progress"), "r1", direct=True)
+        rows += [event("event_msg", type="task_started", turn_id=turn(2), started_at=2),
+                 event("turn_context", turn_id=turn(2), model="fixture-model")]
+        rows += self.operation("done", self.acknowledgement(A, 1, "done", cycle="A"),
+                               "r2", number=2, direct=True)
+        self.write_turn(rows)
+        self.ingest(max_records=1)
+        self.repository.refresh(self.reader)
+        self.assertEqual(self.read(A)["total"]["models"][0]["total_tokens"], 240)
+        self.assertEqual(self.refresh()["publication"], "current")
+
+    def _assert_task_and_public_gap(self, code, present):
+        task = self.read(A)
+        period = task["periods"][0]
+        self.assertEqual(code in period["gaps"], present)
+        self.assertEqual(task["total"]["models"][0]["total_tokens"], 240)
+        index = json.loads(self.target.resolved_usage_index.read_bytes())
+        current = [json.loads((self.target.resolved_usage_snapshots / (identity + ".json")).read_bytes())
+                   for identity in index["current_snapshot_ids"]]
+        self.assertTrue(current)
+        self.assertEqual(any(code in item["gaps"] for item in current), present)
+        self.assertEqual(any(code in item["gaps"] for item in self.read(audit=True)["snapshots"]
+                             if item["snapshot_id"] in index["current_snapshot_ids"]), present)
+        return index["current_snapshot_ids"]
+
+    def test_saved_partial_tail_reaches_task_snapshot_and_publication_then_clears(self):
+        self._completed_two_turn_fixture()
+        self._assert_task_and_public_gap("partial_tail", False)
+        unfinished = json.dumps(event("event_msg", type="fixture")).encode()
+        with self.source.path.open("ab") as stream:
+            stream.write(unfinished[:20])
+        self.assertEqual(self.repository.collect_source(self.source)["pending"], "partial_tail")
+        self.restart()
+        self.assertIn("partial_tail", self.repository.summary()["diagnostics"])
+        self.repository.refresh(self.reader)
+        self.assertEqual(self.refresh()["publication"], "current")
+        pending = self._assert_task_and_public_gap("partial_tail", True)
+        self.assertIn("prefix_verification_deferred", self.read(A)["periods"][0]["gaps"])
+        with self.source.path.open("ab") as stream:
+            stream.write(unfinished[20:] + b"\n")
+        self.ingest(max_records=1)
+        self.repository.refresh(self.reader)
+        self.assertEqual(self.refresh()["publication"], "current")
+        cleared = self._assert_task_and_public_gap("partial_tail", False)
+        self.assertNotEqual(pending, cleared)
+        self.assertTrue(all((self.target.resolved_usage_snapshots / (identity + ".json")).exists()
+                            for identity in pending))
+
+    def test_saved_backlog_reaches_task_snapshot_and_publication_without_other_source_leak(self):
+        from dataclasses import replace
+        from task_governance_tool.session_identity import CallerIdentity
+        from task_governance_tool.usage_collection import register_source
+
+        self._completed_two_turn_fixture()
+        other = replace(self.source, thread_id=PARENT, path=self.logs / "other.jsonl")
+        self.write(self.records(thread=PARENT), path=other.path)
+        register_source(self.repository, other, CallerIdentity(PARENT))
+        with other.path.open("ab") as stream:
+            stream.write(b"{")
+        self.assertEqual(self.repository.collect_source(other)["pending"], "partial_tail")
+        self.repository.refresh(self.reader)
+        self.assertNotIn("partial_tail", self.read(A)["periods"][0]["gaps"])
+        self.append(usage("r3", thread=THREAD, turn=turn(1)))
+        self.assertEqual(self.repository.collect_source(self.source, max_records=0)["pending"], "more_records")
+        self.restart()
+        self.assertIn("collection_pending", self.repository.summary()["diagnostics"])
+        self.repository.refresh(self.reader)
+        self.assertEqual(self.refresh()["publication"], "current")
+        self._assert_task_and_public_gap("collection_pending", True)
+        self.assertNotIn("partial_tail", self.read(A)["periods"][0]["gaps"])
+        self.ingest(max_records=1)
+        self.repository.refresh(self.reader)
+        self.assertEqual(self.refresh()["publication"], "current")
+        self.assertNotIn("collection_pending", self.read(A)["periods"][0]["gaps"])
+        self.assertEqual(self.read(A)["total"]["models"][0]["total_tokens"], 360)
+
+    def test_saved_durable_source_diagnostic_remains_after_pending_clears(self):
+        self._completed_two_turn_fixture()
+        self.repository.record_gap(self.source.source_id, THREAD, "source_unreadable")
+        self.repository.refresh(self.reader)
+        self.assertEqual(self.refresh()["publication"], "current")
+        self._assert_task_and_public_gap("source_unreadable", True)
+        self._assert_task_and_public_gap("collection_pending", False)
 
     def test_stable_history_advances_across_restart_and_fixed_budget_then_matches_full_projection(self):
         self.history(64)

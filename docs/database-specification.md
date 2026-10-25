@@ -897,6 +897,10 @@ incomplete or conflicting, never final complete/billing accuracy. A failed
 collection reports unknown while preserving any readable prior observations.
 Unresolved source loss and replacement remain explicit diagnostics. Partial
 tails and bounded-batch backlog are transient and disappear after catch-up.
+Response-boundary attribution reads the same saved per-source pending state:
+`partial_tail` remains a partial-tail gap, and unread or bounded-batch backlog
+remains `collection_pending`. A source without pending work adds neither gap;
+existing durable source diagnostics remain independent.
 The lifecycle adapter consumes this same numerical foundation and attribution.
 
 <a id="conditional-inclusive-turn-attribution"></a>
@@ -1404,7 +1408,11 @@ or ambiguous senders, does not admit its claimed source merely by carrying
 boundary diagnostics. Diagnostics cannot infer response
 membership or draw from unrelated threads. Task periods, immutable snapshots
 and published JSON carry the existing closed codes without changing numerical
-values, original response keys or assignment semantics.
+values, original response keys or assignment semantics. Current source pending
+state participates in that propagation by the same per-thread rule as durable
+source diagnostics. Once collection clears a transient pending state, the next
+capture follows the normal successor-snapshot rule; previous immutable
+snapshots retain their recorded gaps.
 All response algorithms keep the v1 fields and add `assignment`:
 `exclusive` has exactly one execution, `shared` at least two, and `partial`
 retains only known owners with explicit incomplete-boundary gaps. The canonical

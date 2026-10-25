@@ -1003,6 +1003,9 @@ and previous participants are retried at later events. Interrupted/concurrent
 work remains replayable; stale batches do not rerun a Task command. Missing or
 invalid sources preserve observed totals with gaps. Existing schema9 is required:
 events never initialize, migrate, repair or rebind a database.
+Saved partial tails and unread backlog remain visible as their existing fixed
+gaps in Task usage and published snapshots until later collection clears the
+source pending state. Hook silence alone never clears those gaps.
 
 Collection reserves bounded work for previous participants, old segments and
 prefix audits as well as the invoking participant. Newly observed candidates

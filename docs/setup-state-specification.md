@@ -1019,6 +1019,9 @@ position. Its exact host hint takes priority within that allocation; other
 discovered segments retain fair turns. Partial tails, replay, errors or no
 forward progress do not trigger immediate repetition. The allocation uses the
 existing event budget and does not discover extra paths or infer attribution.
+An idle reentry of a source whose oversized unfinished line has drained to EOF
+continues to report `partial_tail` without claiming ingest progress or another
+immediate priority slice.
 Later cycles catch moved directory entries. Unobserved old logs, missed segments
 and arbitrary renames retain best-effort discovery; this is not a complete
 discovery guarantee and adds no mandatory manual recovery command. Work and

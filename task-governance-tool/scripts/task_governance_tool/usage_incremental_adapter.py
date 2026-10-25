@@ -108,7 +108,10 @@ def scan(source, state, models, *, file_id="", goal=None, project_id=None,
             responses, attribution, gaps = [], [], set()
             modern, legacy = set(), set()
             count = 0
-            pending = "none"
+            # A drain at EOF still belongs to an unfinished oversized line.
+            # No loop iteration follows until more bytes arrive, including on
+            # an idle or zero-record-budget reentry.
+            pending = "partial_tail" if state.drain and stream.tell() >= limit else "none"
             while stream.tell() < limit:
                 if count >= max_records or (bytes_read >= max_bytes and count) or monotonic() >= deadline:
                     pending = "more_records"

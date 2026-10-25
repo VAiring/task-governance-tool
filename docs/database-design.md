@@ -762,6 +762,10 @@ Oversized records drain in 64 KiB chunks with a separate byte position; no body
 is saved and the complete cursor does not move until newline. A monotonic
 deadline stops further work at record/chunk boundaries. These are work bounds,
 not acceptance truncation or an all-environment latency promise.
+When the saved drain position is already at the captured EOF, ingest reports
+`partial_tail` even if the slice reads no new record. A later newline resumes the
+existing oversized-complete-record path; the stored complete cursor remains
+behind the line until then.
 
 The resumable hash chain includes only normalized allowlisted metadata/fixed
 markers, structural turn projections and byte boundaries. Unknown bodies affect

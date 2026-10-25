@@ -856,6 +856,10 @@ or detection guarantee. Continuous append cannot move an in-flight audit goal.
 
 A partial tail remains unread; an oversized complete record creates a fixed gap.
 Its drain position is separate from the complete cursor and retains no bytes.
+When an oversized unfinished line has drained to EOF, an idle or zero-record
+reentry retains `partial_tail`; only observing its newline permits complete-line
+processing and the existing fixed gap. Neither reentry advances the complete
+cursor or fabricates numerical observations.
 Source changes during a slice commit no observations or continuation. Cursor,
 parser context, coverage and dirty-response impact commit atomically after
 checking both previous cursor and continuation revision. Stale concurrent

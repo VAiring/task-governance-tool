@@ -14,6 +14,10 @@ from tests.test_usage_evidence_repository import UsageEvidenceRepositoryTests, e
 from tests.test_usage_attribution import turn
 from task_governance_tool.usage_incremental_repository import UsageIncrementalRepository, _PREVIOUS
 from task_governance_tool.usage_incremental_adapter import scan, Models, ScanState
+from task_governance_tool.usage_work_order_repository import UsageWorkOrderRepository
+from task_governance_tool.usage_adapter import MAX_LINE, SourceInput
+from task_governance_tool.usage_collection import register_source
+from task_governance_tool.session_identity import CallerIdentity
 from task_governance_tool.usage_values import UsageError
 
 
@@ -81,6 +85,94 @@ class IncrementalCollectionTests(unittest.TestCase):
         self.assertEqual((result["pending"], result["progressed"], result["records"]),
                          ("more_records", True, 0))
         self.assertEqual(self.repository.cursor(self.source.source_id, THREAD), boundary)
+
+    def _real_limit_unfinished_tail(self, length, *, oversized):
+        self.repository = UsageWorkOrderRepository(self.repository.path, *self.repository.basis)
+        self.assertEqual(self.repository.initialize(), "migrated")
+        self.write(self.records(usage()))
+        self.ingest()
+        cursor = self.repository.cursor(self.source.source_id, THREAD)
+        with self.source.path.open("ab") as stream:
+            stream.write(b"x" * length)
+        first = self.ingest()
+        if oversized and first["pending"] == "more_records":
+            self.assertEqual(first["pending"], "more_records")
+            self.assertTrue(first["progressed"])
+            first = self.ingest()
+        self.assertEqual(first["pending"], "partial_tail")
+        self.assertEqual(self.repository.cursor(self.source.source_id, THREAD), cursor)
+        self.assertIn("partial_tail", self.repository.summary()["diagnostics"])
+        with self.repository.connection() as connection:
+            self.assertEqual(connection.execute(
+                "SELECT pending FROM usage_sources WHERE source_id=?", (self.source.source_id,)
+            ).fetchone()[0], "partial_tail")
+        for limits in (({}, {"max_records": 0}) if oversized else ({},)):
+            idle = self.ingest(**limits)
+            self.assertEqual((idle["pending"], idle["progressed"], idle["records"]),
+                             ("partial_tail", False, 0))
+            self.assertEqual(self.repository.cursor(self.source.source_id, THREAD), cursor)
+            self.assertIn("partial_tail", self.repository.summary()["diagnostics"])
+        if not oversized:
+            return
+
+        self.repository = UsageWorkOrderRepository(self.repository.path, *self.repository.basis)
+        self.assertEqual(self.ingest()["pending"], "partial_tail")
+        with self.repository.connection() as connection:
+            before_rollback = (
+                tuple(connection.execute("SELECT incarnation,offset,prefix,file_id,pending FROM usage_sources WHERE source_id=?",
+                                         (self.source.source_id,)).fetchone()),
+                tuple(connection.execute("SELECT revision,document FROM usage_scan_state WHERE source_id=? AND lane='ingest'",
+                                         (self.source.source_id,)).fetchone()),
+            )
+        with mock.patch.object(self.repository, "_before_scan_commit", side_effect=UsageError("usage_pending")):
+            with self.assertRaises(UsageError):
+                self.ingest()
+        with self.repository.connection() as connection:
+            after_rollback = (
+                tuple(connection.execute("SELECT incarnation,offset,prefix,file_id,pending FROM usage_sources WHERE source_id=?",
+                                         (self.source.source_id,)).fetchone()),
+                tuple(connection.execute("SELECT revision,document FROM usage_scan_state WHERE source_id=? AND lane='ingest'",
+                                         (self.source.source_id,)).fetchone()),
+            )
+        self.assertEqual(before_rollback, after_rollback)
+        self.assertEqual(self.repository.cursor(self.source.source_id, THREAD), cursor)
+        self.assertIn("partial_tail", self.repository.summary()["diagnostics"])
+        self.audit()
+        self.assertIn("partial_tail", self.repository.summary()["diagnostics"])
+
+        other = SourceInput(THREAD, self.logs / "other.jsonl", self.logs, self.root)
+        register_source(self.repository, other, CallerIdentity(THREAD))
+        self.write(self.records(usage("other")), path=other.path)
+        self.repository.collect_source(other)
+        self.assertIn("partial_tail", self.repository.summary()["diagnostics"])
+
+        with self.source.path.open("ab") as stream:
+            stream.write(b"x")
+        self.assertEqual(self.ingest()["pending"], "partial_tail")
+        self.assertEqual(self.ingest()["pending"], "partial_tail")
+        with self.source.path.open("ab") as stream:
+            stream.write(b"\n")
+        complete = self.ingest()
+        self.assertEqual(complete["pending"], "none")
+        self.assertEqual(self.repository.cursor(self.source.source_id, THREAD).offset,
+                         self.source.path.stat().st_size)
+        self.assertIn("record_too_large", self.repository.summary()["diagnostics"])
+        self.assertNotIn("partial_tail", self.repository.summary()["diagnostics"])
+        self.append(usage("later"))
+        self.ingest()
+        self.assertEqual(self.repository.summary()["models"][0]["response_count"], 3)
+
+    def test_real_line_limit_minus_one_retains_partial_tail(self):
+        self._real_limit_unfinished_tail(MAX_LINE - 1, oversized=False)
+
+    def test_real_line_limit_exact_retains_partial_tail(self):
+        self._real_limit_unfinished_tail(MAX_LINE, oversized=False)
+
+    def test_real_line_limit_plus_one_retains_partial_tail_through_reentry(self):
+        self._real_limit_unfinished_tail(MAX_LINE + 1, oversized=True)
+
+    def test_real_line_limit_drain_to_eof_retains_partial_tail(self):
+        self._real_limit_unfinished_tail(MAX_LINE + 16, oversized=True)
 
     def test_page_attempt_and_ingest_progress_commit_or_rollback_together(self):
         self.write(self.records(usage("first")))

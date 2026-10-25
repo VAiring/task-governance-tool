@@ -89,6 +89,15 @@ hide an already registered result. A successor increments exactly one and has
 the same actual session, key, Contract, authority/criteria and four-part target;
 one predecessor has at most one successor. One actual reviewer counts once.
 
+`review_continuation_registration_repository` lends its complete validated
+history to publication preparation and judgment selection only within that
+registration's unchanged writer interval. A lexical scope checks connection,
+Task, write count and schema before each use. A private savepoint proves that
+commit/rollback followed by another transaction cannot reuse the borrow. The
+scope invalidates the borrow on exit.
+Standalone publication preparation opens its own such scope. Source, expected
+head and saved-row checks still run; writes and the later gate use fresh state.
+
 Global admission validates the full graph, even when display uses a bounded
 historical page, within the operation's admitted scope. Completion supplies its
 Task ID through the internal `review_task_id` storage argument on each initialized

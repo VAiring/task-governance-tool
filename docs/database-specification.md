@@ -44,6 +44,13 @@ cross-Contract, cross-condition or cross-target graph is
 Old unbound evidence retains its ordinary gate meaning but is not eligible for
 same-session reassessment.
 
+Continuation registration may pass one fully validated own-Task continuation
+history and exact-basis judgment graph through the same writer's lexical,
+write-free preparation interval. The borrow ends before any row write,
+transaction exit, external effect or later gate; a different connection or Task
+cannot consume it. Complete native graph checks and the post-registration gate
+remain required.
+
 Known settled cleanup can explicitly supersede an unjudged pending continuation
 and admit its successor atomically. The old round, choices and any captured
 unregistered originals remain history; superseded is not registered. Exact

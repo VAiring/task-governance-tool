@@ -18,6 +18,7 @@ from tests.review_answer_fixture_support import ReviewFixture, review_fixture
 from tests.test_review_continuation import A, B, ident
 from task_governance_tool import storage, review_results, reviews
 from task_governance_tool import review_continuation as values, review_continuation_repository as repository
+from task_governance_tool import review_continuation_registration_repository as registration
 from task_governance_tool import schema_review_continuation as schema
 from task_governance_tool import review_continuation_evidence as frozen
 from task_governance_tool.evidence_ledger import canonical_json_bytes, EvidenceLedgerError
@@ -58,6 +59,97 @@ class ContinuationRegistrationTests(unittest.TestCase):
             self.assertEqual(records[0].state, "registered")
             self.assertEqual(connection.execute("SELECT count(*) FROM review_receipts").fetchone()[0], 2)
             schema.validate_storage(connection)
+
+    def test_publication_preparation_validates_history_once_in_one_writer_interval(self):
+        record = self.prepare()
+        with closing(storage.connect_initialized(self.target)) as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            original_read = repository.read_continuations
+            with mock.patch.object(repository, "read_continuations", wraps=original_read) as reads:
+                first = repository.prepare_publications_locked(connection, record, self.caller)
+                self.assertEqual(set(first), {A})
+                self.assertEqual(reads.call_count, 1)
+                before = reads.call_count
+                with repository.validated_continuation_history(connection,
+                        project_id=self.basis["project_id"], task_id=self.task_id) as history:
+                    self.assertEqual(repository.prepare_publications_locked(
+                        connection, record, self.caller, _history=history), first)
+                    self.assertEqual(repository.prepare_publications_locked(
+                        connection, record, self.caller, _history=history), first)
+                    self.assertEqual(reads.call_count - before, 1)
+                with self.assertRaises(storage.StorageError):
+                    history.records(connection, project_id=self.basis["project_id"], task_id=self.task_id)
+            connection.rollback()
+
+    def test_validated_history_rejects_other_connection_task_and_intervening_write(self):
+        self.prepare()
+        with closing(storage.connect_initialized(self.target)) as connection, closing(storage.connect_initialized(self.target)) as other:
+            connection.execute("BEGIN IMMEDIATE")
+            connection.execute("CREATE TEMP TABLE ca02_probe(value INTEGER)")
+            with repository.validated_continuation_history(connection,
+                    project_id=self.basis["project_id"], task_id=self.task_id) as history:
+                with self.assertRaises(storage.StorageError):
+                    history.records(other, project_id=self.basis["project_id"], task_id=self.task_id)
+                with self.assertRaises(storage.StorageError):
+                    history.records(connection, project_id=self.basis["project_id"], task_id=ident("tg_task_"))
+                connection.execute("INSERT INTO ca02_probe(value) VALUES(1)")
+                with self.assertRaises(storage.StorageError):
+                    history.records(connection, project_id=self.basis["project_id"], task_id=self.task_id)
+            connection.rollback()
+
+    def test_validated_history_rejects_transaction_restart_even_without_row_write(self):
+        self.prepare()
+        for ending in ("commit", "rollback"):
+            for consumer in ("records", "judgments"):
+                with self.subTest(ending=ending, consumer=consumer):
+                    with closing(storage.connect_initialized(self.target)) as connection:
+                        connection.execute("BEGIN IMMEDIATE")
+                        with self.assertRaises(storage.StorageError):
+                            with repository.validated_continuation_history(connection,
+                                    project_id=self.basis["project_id"], task_id=self.task_id) as history:
+                                history.judgments(connection, basis=self.basis)
+                                before = connection.total_changes
+                                getattr(connection, ending)()
+                                connection.execute("BEGIN IMMEDIATE")
+                                self.assertEqual(connection.total_changes, before)
+                                if consumer == "records":
+                                    history.records(connection, project_id=self.basis["project_id"], task_id=self.task_id)
+                                else:
+                                    history.judgments(connection, basis=self.basis)
+                        if connection.in_transaction:
+                            connection.rollback()
+
+    def test_legacy_registration_reads_own_history_once_before_writes(self):
+        record = self.prepare()
+        actual_begin = registration.begin_locked
+        actual_read = repository.read_continuations
+        observations = []
+
+        def counted_begin(*args, **kwargs):
+            with mock.patch.object(repository, "read_continuations", wraps=actual_read) as reads:
+                batch = actual_begin(*args, **kwargs)
+                observations.append(reads.call_count)
+                return batch
+
+        with mock.patch.object(registration, "begin_locked", side_effect=counted_begin):
+            self.register([self.original(A, continued=record)], continued=record)
+        self.assertEqual(observations, [1])
+
+    def test_collected_registration_reads_own_history_once_before_writes(self):
+        with review_fixture(schema_version=30) as fixture:
+            actual_begin = registration.begin_collected_locked
+            actual_read = repository.read_continuations
+            observations = []
+
+            def counted_begin(*args, **kwargs):
+                with mock.patch.object(repository, "read_continuations", wraps=actual_read) as reads:
+                    batch = actual_begin(*args, **kwargs)
+                    observations.append(reads.call_count)
+                    return batch
+
+            with mock.patch.object(registration, "begin_collected_locked", side_effect=counted_begin):
+                fixture.register_collected_source()
+            self.assertEqual(observations, [1])
 
     def test_reassessment_replaces_effective_verdict_but_preserves_ng_and_finding(self):
         initial = self.register([self.original(A, verdict="changes_requested", findings=[dict(severity="medium", summary="Reconsider this precise condition")]), self.original(B)])

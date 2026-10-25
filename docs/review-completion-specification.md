@@ -1090,6 +1090,10 @@ before the atomic writer. The complete retained/new inventory must still fit
 one through eight original slots and the existing input byte bound. The writer
 rechecks expected heads and full basis, validates all originals, skips only
 exact already-registered immutable originals and publishes one batch.
+Its write-free preparation may share one fully validated continuation history
+and exact-basis judgment graph across legacy and collected registration checks.
+The sharing is confined to the same connection, Task and transaction scope;
+source and ownership checks remain, and registration writes end that scope.
 Explicitly superseding an unjudged pending round requires exact settled old
 effects and worker termination, preserves all required slots/captured originals,
 and atomically admits its successor. It cannot erase a saved result from a

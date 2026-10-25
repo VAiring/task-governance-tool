@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import secrets
 import sqlite3
+from contextlib import contextmanager
 from dataclasses import dataclass
 
 from . import review_continuation as values
@@ -63,6 +64,85 @@ class OriginalSources:
     collected_captures: tuple[dict, ...]
 
 
+class ValidatedContinuationHistory:
+    """Borrow complete native history only in one write-free writer interval."""
+
+    def __init__(self, connection, project_id, task_id):
+        from .storage import StorageError
+        if not connection.in_transaction:
+            raise StorageError("internal_error", "validated continuation history requires a transaction")
+        self._connection = connection
+        self._project_id = project_id
+        self._task_id = task_id
+        self._total_changes = connection.total_changes
+        self._schema_cookie = connection.execute("PRAGMA schema_version").fetchone()[0]
+        self._active = True
+        self._guard = "taskgov_continuation_history_" + secrets.token_hex(8)
+        connection.execute(f"SAVEPOINT {self._guard}")
+        try:
+            self._records = read_continuations(connection, project_id=project_id, task_id=task_id)
+        except BaseException:
+            try:
+                connection.execute(f"RELEASE SAVEPOINT {self._guard}")
+            except sqlite3.Error:
+                pass
+            raise
+        self._judgment_basis = None
+        self._judgments = None
+
+    def records(self, connection, *, project_id, task_id):
+        from .storage import StorageError
+        if (not self._active or connection is not self._connection
+            or not connection.in_transaction or connection.total_changes != self._total_changes
+            or (project_id, task_id) != (self._project_id, self._task_id)
+            or connection.execute("PRAGMA schema_version").fetchone()[0] != self._schema_cookie):
+            raise StorageError("internal_error", "validated continuation history is outside its scope")
+        # A commit/rollback followed by BEGIN preserves both in_transaction and
+        # total_changes. Only the original transaction still owns this savepoint.
+        try:
+            connection.execute(f"RELEASE SAVEPOINT {self._guard}")
+            connection.execute(f"SAVEPOINT {self._guard}")
+        except sqlite3.Error as exc:
+            self._active = False
+            raise StorageError("internal_error", "validated continuation history is outside its scope") from exc
+        return self._records
+
+    def close(self):
+        from .storage import StorageError
+        connection, self._connection = self._connection, None
+        self._active = False
+        self._records = ()
+        self._judgments = None
+        try:
+            connection.execute(f"RELEASE SAVEPOINT {self._guard}")
+        except sqlite3.Error as exc:
+            raise StorageError("internal_error", "validated continuation history is outside its scope") from exc
+
+    def judgments(self, connection, *, basis):
+        checked = values.validate_basis(basis)
+        history = self.records(connection, project_id=checked["project_id"], task_id=checked["task_id"])
+        if checked != self._judgment_basis:
+            self._judgments = read_judgments(connection, basis=checked, _validated_continuations=history)
+            self._judgment_basis = dict(checked)
+        return self._judgments
+
+
+@contextmanager
+def validated_continuation_history(connection, *, project_id, task_id):
+    """Never lend a validated graph beyond the caller's lexical read scope."""
+    history = ValidatedContinuationHistory(connection, project_id, task_id)
+    try:
+        yield history
+    except BaseException:
+        try:
+            history.close()
+        except Exception:
+            pass
+        raise
+    else:
+        history.close()
+
+
 def read_original_sources(connection, continuation_id, active_sessions) -> OriginalSources:
     """Share source interpretation without invoking publication/writer admission.
 
@@ -110,15 +190,23 @@ def packet_context(connection, *, task, preparing_id=None):
 
 
 def prepare_publications_locked(connection: sqlite3.Connection, record: Continuation,
-                                caller: CallerIdentity) -> dict[str, JudgmentPublication]:
+                                caller: CallerIdentity, *, _history=None) -> dict[str, JudgmentPublication]:
     """Prepare every expected head before any item of the atomic batch is written."""
     require_current_basis(connection, record.basis, caller)
-    fresh = next((row for row in read_continuations(connection, project_id=record.basis["project_id"],
-        task_id=record.basis["task_id"]) if row.continuation_id == record.continuation_id), None)
+    if _history is None:
+        with validated_continuation_history(connection, project_id=record.basis["project_id"],
+                                            task_id=record.basis["task_id"]) as history:
+            return _prepare_publications_with_history(connection, record, history)
+    return _prepare_publications_with_history(connection, record, _history)
+
+
+def _prepare_publications_with_history(connection, record, history):
+    records = history.records(connection, project_id=record.basis["project_id"], task_id=record.basis["task_id"])
+    fresh = next((row for row in records if row.continuation_id == record.continuation_id), None)
     if fresh is None or fresh != record or fresh.state != "prepared":
         raise validation_error("review_continuation_conflict", "review continuation is not prepared")
-    nodes = read_judgments(connection, basis=record.basis)
-    by_record = {row.continuation_id: row for row in read_continuations(connection, project_id=record.basis["project_id"], task_id=record.basis["task_id"])}
+    nodes = history.judgments(connection, basis=record.basis)
+    by_record = {row.continuation_id: row for row in records}
     captured = []
     sources = read_original_sources(connection, record.continuation_id,
                                     (choice.session_id for choice in record.selected))

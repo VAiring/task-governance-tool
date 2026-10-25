@@ -6,6 +6,7 @@ registered originals; it neither reads transport files nor commits SQLite.
 """
 
 from dataclasses import dataclass
+from contextlib import nullcontext
 
 from . import review_continuation as values
 from . import review_continuation_repository as repository
@@ -29,7 +30,15 @@ def begin_locked(connection, *, project_id, task_id, identity, bindings,
                  retained_receipt_ids, caller, database_target=None, retained_originals=()):
     if type(identity) is not ContinuationIdentity or bindings is None:
         raise values._invalid()
-    records = repository.read_continuations(connection, project_id=project_id, task_id=task_id)
+    with repository.validated_continuation_history(connection, project_id=project_id, task_id=task_id) as history:
+        return _begin_locked(connection, project_id=project_id, task_id=task_id, identity=identity,
+            bindings=bindings, retained_receipt_ids=retained_receipt_ids, caller=caller,
+            database_target=database_target, retained_originals=retained_originals, history=history)
+
+
+def _begin_locked(connection, *, project_id, task_id, identity, bindings,
+                  retained_receipt_ids, caller, database_target, retained_originals, history):
+    records = history.records(connection, project_id=project_id, task_id=task_id)
     record = next((row for row in records if row.continuation_id == identity.continuation_id), None)
     if (record is None or record.preparation_id != identity.preparation_id
         or record.sequence != identity.continuation_sequence or record.state not in ("prepared", "registered")):
@@ -66,7 +75,7 @@ def begin_locked(connection, *, project_id, task_id, identity, bindings,
             raise _conflict()
     if not (set(selected) | set(captured)) <= seen:
         raise _conflict()
-    nodes = repository.read_judgments(connection, basis=record.basis)
+    nodes = history.judgments(connection, basis=record.basis)
     effective = values.select_effective(nodes, quality_basis=values.quality_identity(record.basis))
     bindings_by_id = connection.execute("""SELECT binding.*,receipt.reviewer_key FROM review_receipt_sessions AS binding
 JOIN review_receipts AS receipt ON receipt.review_receipt_id=binding.review_receipt_id
@@ -91,7 +100,7 @@ WHERE receipt.project_id=? AND receipt.task_id=? AND receipt.target_generation=?
     if (type(retained_receipt_ids) is not tuple or len(set(retained_receipt_ids)) != len(retained_receipt_ids)
         or set(retained_receipt_ids) != expected_retained):
         raise _conflict()
-    publications = repository.prepare_publications_locked(connection, record, caller) if record.state == "prepared" else {}
+    publications = repository.prepare_publications_locked(connection, record, caller, _history=history) if record.state == "prepared" else {}
     return ContinuedBatch(record, publications, tuple(existing), tuple(sorted(retained_receipt_ids)))
 
 
@@ -128,17 +137,26 @@ def begin_collected_locked(connection, *, project_id, task_id, submission, calle
     Operational file/host observations are admitted outside this writer. This
     boundary still compares the full current execution basis and capture graph.
     """
-    from .review_answer_transport import CollectedItem, LegacyItem, CollectedSubmission
-    from .review_answer_values import validate_metadata
+    from .review_answer_transport import CollectedSubmission
     if type(submission) is not CollectedSubmission:
         raise _conflict()
+    scope = (repository.validated_continuation_history(connection, project_id=project_id, task_id=task_id)
+             if submission.continuation is not None else nullcontext(None))
+    with scope as history:
+        return _begin_collected_locked(connection, project_id=project_id, task_id=task_id,
+            submission=submission, caller=caller, database_target=database_target, history=history)
+
+
+def _begin_collected_locked(connection, *, project_id, task_id, submission, caller, database_target, history):
+    from .review_answer_transport import CollectedItem, LegacyItem
+    from .review_answer_values import validate_metadata
     identity = submission.continuation
     record = None
     publications = {}
     captures = {}
     selected = {}
     if identity is not None:
-        records = repository.read_continuations(connection,project_id=project_id,task_id=task_id)
+        records = history.records(connection, project_id=project_id, task_id=task_id)
         record = next((r for r in records if r.continuation_id == identity["continuation_id"]),None)
         if record is None or record.preparation_id != submission.preparation_id or record.sequence != identity["sequence"] or record.state not in ("prepared","registered"):
             raise _conflict()
@@ -149,8 +167,8 @@ def begin_collected_locked(connection, *, project_id, task_id, submission, calle
         sources = repository.read_original_sources(connection, record.continuation_id, selected)
         captures = {r["capture_identity"]["session_id"]:r for r in sources.collected_captures}
         if record.state == "prepared":
-            publications = repository.prepare_publications_locked(connection,record,caller)
-            nodes = repository.read_judgments(connection,basis=record.basis)
+            publications = repository.prepare_publications_locked(connection,record,caller,_history=history)
+            nodes = history.judgments(connection,basis=record.basis)
             by_id = {n.receipt_id:n for n in nodes}
             by_record = {r.continuation_id:r for r in records}
             for actor,capture in captures.items():
@@ -175,7 +193,7 @@ def begin_collected_locked(connection, *, project_id, task_id, submission, calle
             or initial_sessions & {choice.session_id for row in records
                 if row.basis["target_generation"] == record.basis["target_generation"] for choice in row.selected}):
             raise _conflict()
-        nodes = repository.read_judgments(connection, basis=record.basis)
+        nodes = history.judgments(connection, basis=record.basis)
         if record.state == "prepared" and initial_sessions & {node.session_id for node in nodes}:
             raise _conflict()
     for item in submission.items:
@@ -233,7 +251,7 @@ def begin_collected_locked(connection, *, project_id, task_id, submission, calle
     if record is None and (submission.retained_receipt_ids or submission.retained_originals or legacy_bindings):
         raise _conflict()
     if record is not None:
-        heads = values.select_effective(repository.read_judgments(connection,basis=record.basis),quality_basis=values.quality_identity(record.basis))
+        heads = values.select_effective(history.judgments(connection,basis=record.basis),quality_basis=values.quality_identity(record.basis))
         retained = {r.receipt_id for r in heads.heads if r.session_id not in selected} - set(existing)
         if set(submission.retained_receipt_ids) != retained:
             raise _conflict()

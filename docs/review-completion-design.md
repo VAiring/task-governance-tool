@@ -301,6 +301,10 @@ the submitted Task, Contract revision and complete target against the locked
 Task before any insert. A concurrent tier or authority change cannot reuse
 pre-lock normalization. Each Receipt and its Findings use the same connection,
 including their individual References, provenance and events.
+Legacy and collected continuation adapters pass one scoped, fully validated
+history into publication preparation and judgment selection before inserts.
+The adapter closes that scope before returning to the service's write phase;
+no cached history crosses registration, transaction or effect boundaries.
 
 Both legacy and collected-result registration lend the fixed materials above
 to the Findings of each Receipt. The outer locked admission and final gate stay

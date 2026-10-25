@@ -20,7 +20,6 @@ from task_governance_tool.completion_history_repository import (
 from task_governance_tool.storage import (
     CompletionHistory,
     ProjectIdentity,
-    StorageError,
     current_schema_version,
     validate_task_review_storage,
 )
@@ -36,9 +35,6 @@ from task_governance_tool.tasks import (
     suggested_next_action,
 )
 from task_governance_tool.task_values import (
-    TEXT_LIMITS,
-    TaskValidationError,
-    validate_event_summary,
     validate_task_id,
 )
 from task_governance_tool.verification_runner import (
@@ -205,25 +201,6 @@ def show_task(
             if (index != 0 and row["event_type"] not in CURRENT_CONTEXT_EVENT_TYPES
                     and ("note_body" not in row.keys() or row["note_body"] is None)):
                 continue
-            if event_limit >= 0 and index >= event_limit:
-                # Only these rows are newly exposed beyond the prior read window.
-                # Validate the existing emitted-summary policy without normalizing
-                # stored bytes or changing direct-service/audit admission.
-                if (
-                    type(row["summary"]) is not str
-                    or len(row["summary"]) > TEXT_LIMITS["event_summary"]
-                ):
-                    raise StorageError(
-                        "project_state_unreadable",
-                        "project state could not be read safely",
-                    )
-                try:
-                    validate_event_summary(row["summary"])
-                except TaskValidationError as exc:
-                    raise StorageError(
-                        "project_state_unreadable",
-                        "project state could not be read safely",
-                    ) from exc
             current_events.append(row_to_event(row, include_note_body=True,
                 deduplicate_note_summary=True,
                 expected_project_id=project.project_id, expected_task_id=normalized_task_id))

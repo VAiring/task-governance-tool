@@ -929,6 +929,12 @@ character limit and still use the common privacy guard and state validation.
 `lane` is canonicalized by trimming outer whitespace; `blocked_reason` is
 retained as supplied after string/privacy checks.
 
+Every emitted stored Task event summary is validated for type, capacity and
+privacy at its shared projection boundary, independently of whether its note
+body is retained or a display mode deduplicates the summary. A rejected summary
+produces the same sanitized unreadable-state error without partial output or a
+read-side repair.
+
 An explicitly supplied, privacy-validated Task note is retained in full in
 `task_events.note_body`, with its existing 2,000-character input limit; its
 separate event summary remains at most 1,000 characters. Detail reads revalidate

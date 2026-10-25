@@ -308,6 +308,80 @@ class TaskNoteBodyTests(unittest.TestCase):
                 self.assertNotIn("private-value", result.stdout + result.stderr)
             self.assertEqual(before, self.snapshot())
 
+    def test_stored_summary_is_validated_without_note_or_deduplication(self):
+        with closing(storage.connect(self.db)) as connection:
+            event = tasks.create_task_event(
+                connection, project_id=self.task["project_id"], task_id=self.task_id,
+                event_type="task_updated", summary="Valid summary", created_at=storage.utc_now(),
+            )
+            connection.commit()
+        event_id = event["task_event_id"]
+        target = target_for(self.db, self.repo)
+        for summary in (b"invalid type", "x" * 1001, "token=private-value"):
+            with self.subTest(summary_type=type(summary).__name__, summary_length=len(summary)):
+                with closing(storage.connect(self.db)) as connection:
+                    connection.execute("UPDATE task_events SET summary=? WHERE task_event_id=?", (summary, event_id))
+                    connection.commit()
+                before = self.snapshot()
+                for arguments in (
+                    ("task", "current"), ("task", "current", "--compact"),
+                    ("task", "show", self.task_id),
+                    ("task", "show", self.task_id, "--audit"),
+                    ("task", "context"),
+                ):
+                    result = self.run_cli(*arguments, "--read-only")
+                    self.assertEqual(
+                        payload(result)["errors"],
+                        [{"code": "project_state_unreadable", "message": "project state could not be read safely"}],
+                    )
+                    self.assertNotIn("private-value", result.stdout + result.stderr)
+                    self.assertNotIn("x" * 1001, result.stdout + result.stderr)
+                for arguments in (("task", "current"), ("task", "show", self.task_id)):
+                    result = run_taskgov(*arguments, "--repo", str(self.repo), "--db", str(self.db), "--read-only")
+                    self.assertNotEqual(result.returncode, 0)
+                    self.assertNotIn("private-value", result.stdout + result.stderr)
+                    self.assertNotIn("x" * 1001, result.stdout + result.stderr)
+                with closing(storage.connect_snapshot_readonly(self.db)) as connection, self.assertRaises(storage.StorageError) as caught:
+                    viewer.build_viewer_snapshot(connection, target, generated_at="2026-10-25T00:00:00Z")
+                self.assertEqual(caught.exception.code, "project_state_unreadable")
+                self.assertEqual(before, self.snapshot())
+        with closing(storage.connect(self.db)) as connection:
+            connection.execute("UPDATE task_events SET summary='Valid summary' WHERE task_event_id=?", (event_id,))
+            connection.commit()
+        self.assertEqual(self.success("task", "current", "--read-only")["tasks"][0]["latest_event"]["summary"], "Valid summary")
+        with closing(storage.connect_snapshot_readonly(self.db)) as connection:
+            snapshot = viewer.build_viewer_snapshot(connection, target, generated_at="2026-10-25T00:00:00Z").snapshot
+        self.assertEqual(snapshot["tasks"][0]["events"][0]["summary"], "Valid summary")
+        self.assertIn(viewer.encode_snapshot(snapshot), viewer.render_viewer_html(snapshot))
+
+    def test_old_emitted_summary_is_checked_but_unselected_history_stays_out_of_scope(self):
+        with closing(storage.connect(self.db)) as connection:
+            old = tasks.create_task_event(
+                connection, project_id=self.task["project_id"], task_id=self.task_id,
+                event_type="task_updated", summary="Old summary", created_at="2000-01-01T00:00:00Z",
+            )
+            for index in range(11):
+                tasks.create_task_event(
+                    connection, project_id=self.task["project_id"], task_id=self.task_id,
+                    event_type="checkpoint_recorded", summary="Checkpoint recorded",
+                    created_at=f"2026-01-01T00:00:{index:02d}Z",
+                )
+            connection.execute(
+                "UPDATE task_events SET summary=? WHERE task_event_id=?",
+                ("token=private-value", old["task_event_id"]),
+            )
+            connection.commit()
+        before = self.snapshot()
+        result = self.run_cli("task", "show", self.task_id, "--read-only")
+        self.assertEqual(payload(result)["errors"][0]["code"], "project_state_unreadable")
+        self.assertNotIn("private-value", result.stdout + result.stderr)
+        self.success("task", "show", self.task_id, "--audit", "--read-only")
+        self.success("task", "current", "--read-only")
+        with closing(storage.connect_snapshot_readonly(self.db)) as connection:
+            viewer.build_viewer_snapshot(connection, target_for(self.db, self.repo),
+                                         generated_at="2026-10-25T00:00:00Z")
+        self.assertEqual(before, self.snapshot())
+
 
 class NoteDisplayComparisonTests(unittest.TestCase):
     def test_recorded_items_and_delimiters_are_not_guessed(self):

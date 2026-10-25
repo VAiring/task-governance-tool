@@ -399,16 +399,16 @@ def row_to_event(
     expected_task_id: str | None = None,
 ) -> dict[str, Any]:
     event = {field: row[field] for field in PUBLIC_EVENT_FIELDS}
+    if type(event["summary"]) is not str or len(event["summary"]) > TEXT_LIMITS["event_summary"]:
+        raise StorageError("project_state_unreadable", "project state could not be read safely")
+    try:
+        validate_event_summary(event["summary"])
+    except TaskValidationError as exc:
+        raise StorageError("project_state_unreadable", "project state could not be read safely") from exc
     if include_note_body:
         event["note_body"] = validated_event_note(row, expected_project_id=expected_project_id,
                                                   expected_task_id=expected_task_id)
         if deduplicate_note_summary and event["note_body"] is not None:
-            if type(event["summary"]) is not str or len(event["summary"]) > TEXT_LIMITS["event_summary"]:
-                raise StorageError("project_state_unreadable", "project state could not be read safely")
-            try:
-                validate_event_summary(event["summary"])
-            except TaskValidationError as exc:
-                raise StorageError("project_state_unreadable", "project state could not be read safely") from exc
             event["summary"] = note_display_summary(event["event_type"], event["summary"], event["note_body"])
     return event
 

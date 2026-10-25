@@ -76,7 +76,10 @@ backup/recovery validate all retained bodies and their parent relationships.
 Ordinary Task reads validate consumed bodies; unrelated note history is
 outside operation-local admission.
 
-The converter's explicit `deduplicate_note_summary` option is used only by
+The shared event converter validates each stored summary before any projection,
+including summary-only callers. It maps invalid type, capacity or privacy to
+the sanitized unreadable-state error and leaves stored bytes unchanged. The
+converter's explicit `deduplicate_note_summary` option is used only by
 normal detail and CLI JSON body-bearing write acknowledgements. It validates the original
 summary before `note_display_summary` compares it against the existing bounded
 generator and retained body. A unique exact note-summary interpretation keeps

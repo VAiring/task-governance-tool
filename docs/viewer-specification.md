@@ -56,7 +56,9 @@ private transport path, collection control or new Evidence panel enters snapshot
 v4 or its UI.
 It discards every joined ledger field. It validates schema-28 full Task notes
 and their parent bindings but excludes note
-bodies from its snapshot and HTML; existing event summaries remain unchanged.
+bodies from its snapshot and HTML; emitted event summaries receive the same
+stored type, capacity and privacy validation as other Task projections, with
+their accepted text unchanged.
 The Viewer selects all project Tasks; 500 Tasks is the accepted performance fixture, not a
 selection cap. The HTML artifact is at most 64 MiB.
 

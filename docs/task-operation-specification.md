@@ -139,12 +139,14 @@ mechanical event nor a checkpoint is proof that an older note is superseded.
 No event prose is parsed to infer relevance. The retained subset can therefore
 grow with genuine operation history. Audit events keep the previous newest-ten
 window; normal events are not derived by filtering that window.
-Additional event summaries exposed beyond that former window must satisfy the
-existing event-summary text/privacy limits before output. Their original bytes
+Every emitted stored event summary, including latest-event, compact, normal,
+audit, edit acknowledgement and Viewer projections, must satisfy the existing
+event-summary type, capacity and privacy limits before output. The validation
+does not depend on note-body presence, event age or display mode. Original bytes
 are preserved in storage; normal display may apply the exact note comparison
-below. Rejection uses the existing sanitized
-`project_state_unreadable` failure without a partial result or write. This local
-output check does not change audit reads or global state admission.
+below. Rejection uses the existing sanitized `project_state_unreadable` failure
+without a partial result or write. This local output check does not change
+global state admission.
 
 Both detail modes additionally return each event's `note_body`: the complete
 normalized text accepted by `--add-note`, at most 2,000 characters, or null when

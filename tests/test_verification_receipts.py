@@ -27,7 +27,7 @@ from task_governance_tool import cli as cli_module
 from task_governance_tool import review_packet as packet_module
 from task_governance_tool import review_verification as verification_context
 from task_governance_tool import verification_receipts as receipt_service
-from task_governance_tool.storage import verification_expectation_digest
+from task_governance_tool.storage import resolve_database_target, verification_expectation_digest
 from task_governance_tool.verification_receipts import (
     VerificationReceiptError,
     normalize_verification_receipt_input,
@@ -540,6 +540,50 @@ class ReceiptPacketConnectionTests(unittest.TestCase):
         if receipt_id is not None:
             args.extend(("--verification-receipt-id", receipt_id))
         return run_taskgov(*args)
+
+    def test_final_packet_shares_only_its_validated_receipt_snapshot(self):
+        with tempfile.TemporaryDirectory() as temp:
+            repo, db = initialize(Path(temp))
+            task_id = add_task(db, repo)["task_id"]
+            generation = set_target(db, repo, task_id)
+            receipt_id = payload(add_receipt(db, repo, task_id, generation))["data"]["receipt"]["verification_receipt_id"]
+            target = resolve_database_target(repo=repo, db=db,
+                script_path=Path(__file__).resolve().parents[1] / "task-governance-tool/scripts/taskgov.py")
+            before = db.read_bytes()
+            with mock.patch.object(receipt_service, "read_verification_receipt_snapshot",
+                                   wraps=receipt_service.read_verification_receipt_snapshot) as collect, \
+                 mock.patch.object(receipt_service, "_validate_snapshot_rows",
+                                   wraps=receipt_service._validate_snapshot_rows) as validate:
+                selected = packet_module.prepare_review_packet(target, task_id,
+                    verification_receipt_id=receipt_id)
+                self.assertEqual((collect.call_count, validate.call_count), (2, 2))
+                self.assertEqual(selected["verification_evidence"]["current_receipt"]["verification_receipt_id"],
+                                 receipt_id)
+                self.assertTrue(selected["verification_evidence"]["gate"]["satisfied"])
+                unselected = packet_module.prepare_review_packet(target, task_id)
+                self.assertEqual((collect.call_count, validate.call_count), (3, 3))
+                self.assertEqual(
+                    {key: value for key, value in selected["verification_evidence"].items()
+                     if key != "observed_at"},
+                    {key: value for key, value in unselected["verification_evidence"].items()
+                     if key != "observed_at"},
+                )
+            from task_governance_tool.storage import connect_initialized_readonly
+            from task_governance_tool.tasks import read_internal_task
+            with closing(connect_initialized_readonly(target, operation_local=True)) as first:
+                task = read_internal_task(first, target.project.project_id, task_id)
+                with mock.patch.object(receipt_service, "read_verification_receipt_snapshot",
+                                       wraps=receipt_service.read_verification_receipt_snapshot) as collect:
+                    receipt_service.require_packet_verification_receipt(first, task=task,
+                        receipt_id=receipt_id)
+                    verification_context.read_review_verification(first, task=task)
+                    self.assertEqual(collect.call_count, 2)
+                validated = receipt_service._validated_packet_receipt_snapshot(first, task=task)
+                with closing(connect_initialized_readonly(target, operation_local=True)) as second:
+                    with self.assertRaises(VerificationReceiptError):
+                        receipt_service.require_packet_verification_receipt(second, task=task,
+                            receipt_id=receipt_id, _validated_snapshot=validated)
+            self.assertEqual(db.read_bytes(), before)
 
     def test_success_keeps_both_operations_but_removes_the_public_relay(self):
         with tempfile.TemporaryDirectory() as temp:

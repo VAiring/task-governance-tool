@@ -586,6 +586,53 @@ def _validate_snapshot_rows(
     return exact, recent
 
 
+@dataclass(frozen=True)
+class _ValidatedPacketReceiptSnapshot:
+    """One Task's validated Receipt set, scoped to one Packet read transaction."""
+
+    connection: sqlite3.Connection
+    task_basis: tuple[Any, ...]
+    snapshot: Any
+    expectation: str
+    contract_revision: int
+    digest: str
+    source_revision: dict[str, Any] | None
+    current_subject: dict[str, Any] | None
+    exact_rows: tuple[dict[str, Any], ...]
+    recent_rows: tuple[dict[str, Any], ...]
+
+
+def _packet_task_basis(task: Mapping[str, Any]) -> tuple[Any, ...]:
+    return (str(task["project_id"]), str(task["task_id"]), str(task["status"]), *_task_basis(task))
+
+
+def _validated_packet_receipt_snapshot(
+    connection: sqlite3.Connection, *, task: Mapping[str, Any],
+) -> _ValidatedPacketReceiptSnapshot:
+    """Collect and validate once inside the final coherent Packet snapshot."""
+    project_id, task_id, *_ = _packet_task_basis(task)
+    snapshot, expectation, revision, digest, source, subject = _snapshot_for_task(
+        connection, task=task, project_id=project_id, task_id=task_id,
+    )
+    exact, recent = _validate_snapshot_rows(
+        raw_same_generation=tuple(snapshot.same_generation), raw_exact=tuple(snapshot.exact_current),
+        raw_recent=tuple(snapshot.recent), project_id=project_id, task_id=task_id,
+        expectation=expectation, contract_revision=revision, digest=digest,
+        source_revision=source, current_subject=subject,
+    )
+    return _ValidatedPacketReceiptSnapshot(connection, _packet_task_basis(task), snapshot,
+        expectation, revision, digest, source, subject, exact, recent)
+
+
+def _require_packet_snapshot_context(
+    connection: sqlite3.Connection, task: Mapping[str, Any],
+    snapshot: _ValidatedPacketReceiptSnapshot,
+) -> None:
+    if (not connection.in_transaction or snapshot.connection is not connection
+            or snapshot.task_basis != _packet_task_basis(task)):
+        raise _invalid_stored()
+
+
 def _gate_from_exact(
     *,
     expectation: str,
@@ -668,30 +715,29 @@ def require_packet_verification_receipt(
     *,
     task: Mapping[str, Any],
     receipt_id: str,
+    _validated_snapshot: _ValidatedPacketReceiptSnapshot | None = None,
 ) -> dict[str, Any]:
     """Bind Packet preparation to one immutable exact-current pass/full Receipt.
 
     This checks the Receipt arm, not the final completion/Runner selector.
     Both Packet reads call it on their own coherent current Task basis.
     """
-    snapshot, expectation, revision, digest, source, subject = _snapshot_for_task(
-        connection,
-        task=task,
-        project_id=str(task["project_id"]),
-        task_id=str(task["task_id"]),
-    )
-    exact, _recent = _validate_snapshot_rows(
-        raw_same_generation=tuple(snapshot.same_generation),
-        raw_exact=tuple(snapshot.exact_current),
-        raw_recent=tuple(snapshot.recent),
-        project_id=str(task["project_id"]),
-        task_id=str(task["task_id"]),
-        expectation=expectation,
-        contract_revision=revision,
-        digest=digest,
-        source_revision=source,
-        current_subject=subject,
-    )
+    if _validated_snapshot is None:
+        snapshot, expectation, revision, digest, source, subject = _snapshot_for_task(
+            connection, task=task, project_id=str(task["project_id"]),
+            task_id=str(task["task_id"]),
+        )
+        exact, _recent = _validate_snapshot_rows(
+            raw_same_generation=tuple(snapshot.same_generation),
+            raw_exact=tuple(snapshot.exact_current), raw_recent=tuple(snapshot.recent),
+            project_id=str(task["project_id"]), task_id=str(task["task_id"]),
+            expectation=expectation, contract_revision=revision, digest=digest,
+            source_revision=source, current_subject=subject,
+        )
+    else:
+        _require_packet_snapshot_context(connection, task, _validated_snapshot)
+        exact = _validated_snapshot.exact_rows
+        subject = _validated_snapshot.current_subject
     if (
         task["status"] not in VERIFICATION_ACTIVE_STATUSES
         or subject is None
@@ -838,37 +884,41 @@ def read_verification_evidence(
     completion_cycle: CompletionCycle | None = None,
     runner_selection: VerificationRunnerGateSelection | None = None,
     task_show_details: TaskShowVerificationDetails | None = None,
+    _validated_snapshot: _ValidatedPacketReceiptSnapshot | None = None,
 ) -> dict[str, Any]:
     """Return the bounded JSON-only Task-show projection."""
 
     project_id = str(task["project_id"])
     task_id = str(task["task_id"])
-    (
-        snapshot,
-        expectation,
-        contract_revision,
-        digest,
-        source_revision,
-        current_subject,
-    ) = _snapshot_for_task(
-        connection,
-        task=task,
-        project_id=project_id,
-        task_id=task_id,
-    )
-    total = _stored_integer(snapshot.total)
-    exact_rows, recent_rows = _validate_snapshot_rows(
-        raw_same_generation=tuple(snapshot.same_generation),
-        raw_exact=tuple(snapshot.exact_current),
-        raw_recent=tuple(snapshot.recent),
-        project_id=project_id,
-        task_id=task_id,
-        expectation=expectation,
-        contract_revision=contract_revision,
-        digest=digest,
-        source_revision=source_revision,
-        current_subject=current_subject,
-    )
+    if _validated_snapshot is None:
+        (
+            snapshot,
+            expectation,
+            contract_revision,
+            digest,
+            source_revision,
+            current_subject,
+        ) = _snapshot_for_task(
+            connection, task=task, project_id=project_id, task_id=task_id,
+        )
+        total = _stored_integer(snapshot.total)
+        exact_rows, recent_rows = _validate_snapshot_rows(
+            raw_same_generation=tuple(snapshot.same_generation),
+            raw_exact=tuple(snapshot.exact_current), raw_recent=tuple(snapshot.recent),
+            project_id=project_id, task_id=task_id, expectation=expectation,
+            contract_revision=contract_revision, digest=digest,
+            source_revision=source_revision, current_subject=current_subject,
+        )
+    else:
+        _require_packet_snapshot_context(connection, task, _validated_snapshot)
+        snapshot = _validated_snapshot.snapshot
+        expectation = _validated_snapshot.expectation
+        contract_revision = _validated_snapshot.contract_revision
+        digest = _validated_snapshot.digest
+        source_revision = _validated_snapshot.source_revision
+        current_subject = _validated_snapshot.current_subject
+        exact_rows, recent_rows = _validated_snapshot.exact_rows, _validated_snapshot.recent_rows
+        total = _stored_integer(snapshot.total)
     if total < len(exact_rows) or total < len(recent_rows):
         raise _invalid_stored()
     done = str(task["status"]) == "done"

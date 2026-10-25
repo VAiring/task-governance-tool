@@ -59,6 +59,7 @@ from task_governance_tool.task_values import (
     validate_text,
 )
 from task_governance_tool.verification_receipts import (
+    _validated_packet_receipt_snapshot,
     require_packet_verification_receipt,
     validate_verification_receipt_id,
 )
@@ -273,9 +274,16 @@ def _read_basis(
                 raise ValueError("review target generation must be positive")
 
             validate_stored_review_target(stored)
+            # The final Packet read may bind an ID and display a summary from
+            # the same validated Receipt set. Initial and standalone reads stay fresh.
+            verified = (
+                _validated_packet_receipt_snapshot(active_connection, task=stored)
+                if verification_receipt_id is not None and include_verification else None
+            )
             if verification_receipt_id is not None:
                 require_packet_verification_receipt(
                     active_connection, task=stored, receipt_id=verification_receipt_id,
+                    _validated_snapshot=verified,
                 )
             if normalized_kind == "git_commit":
                 if (
@@ -326,7 +334,8 @@ def _read_basis(
                 stability_token=stability_token,
                 internal_task=dict(stored),
                 verification_evidence=(
-                    _review_verification(active_connection, stored, runner_selection)
+                    _review_verification(active_connection, stored, runner_selection,
+                                         _validated_snapshot=verified)
                     if include_verification else None
                 ),
                 review_session_context=session_context,
@@ -533,9 +542,10 @@ def project_changed_paths(
     return retained, total, len(retained) != total
 
 
-def _review_verification(connection, task, runner_selection):
+def _review_verification(connection, task, runner_selection, *, _validated_snapshot=None):
     from task_governance_tool.review_verification import read_review_verification
-    return read_review_verification(connection, task=task, runner_selection=runner_selection)
+    return read_review_verification(connection, task=task, runner_selection=runner_selection,
+                                    _validated_snapshot=_validated_snapshot)
 
 
 def prepare_review_packet(

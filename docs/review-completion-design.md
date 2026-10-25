@@ -2527,6 +2527,11 @@ the existing complete preparation binding is also compared between reads, and
 drift rejection precedes output. The conditional Runner selector retains its own
 bounded physical checks in addition to the Packet's target-path observation;
 it neither shares nor expands that observer's ten-process budget.
+With an exact Receipt ID, the final read passes one connection- and Task-basis-
+bound validated Receipt snapshot to both ID checking and summary projection.
+The collection and row/Reference validation run once there. A different
+connection or Task basis cannot reuse the transient value; the initial read,
+standalone consumers and later write gates collect afresh.
 The summary includes the read time,
 source kind and existing normal verification fields, under the unchanged Packet
 byte cap. Public text appends compact summary JSON. No verification execution,
@@ -2995,6 +3000,9 @@ existing snapshot validator. `review_packet.py` applies it in both existing
 reads, including readonly `--verification-receipt-id` retries. No generic
 workflow engine, new ledger, or completion selector
 is introduced. Packet-only retries cannot write or change the recorded basis.
+Only the final Packet read with an ID shares its validated Receipt set with
+`review_verification.py`; the first read and completion revalidation remain
+independent snapshots. The shared value is neither cached nor persisted.
 `task show` obtains Receipt totals, exact-current
 counts, gate, and newest 10 rows in the same query-only transaction as the
 Task. A show-only collector retains the validated exact-current row for normal

@@ -3136,6 +3136,11 @@ Text order is `Task`, `Status`, `Verification`, `Verification not required reaso
 LF-terminated. After Git, a second short
 read revalidates Task, Contract, and every target field/generation; drift fails
 `review_packet_stale` with `review context changed while preparing the packet`.
+When a Receipt ID is supplied, that final coherent read obtains and validates
+its Task's Verification Receipt/Reference set once. The ID binding and
+point-in-time verification summary consume the same validated set. The initial
+and final reads remain separate across Git or Runner observation; neither set
+is reused by later save, registration, or completion gates.
 
 <a id="completion-evidence-and-commands"></a>
 
@@ -3591,6 +3596,10 @@ fixed messages:
 Invalid stored Receipt structure or binding fails closed with
 `invalid_verification_evidence` and message
 `stored verification evidence is inconsistent`; no unsafe value is returned.
+Receipt-ID Packet preparation still checks both the initial and final Task
+snapshot. Within the final snapshot, its exact-current pass/full ID check and
+the displayed verification summary share one validated Receipt/Reference set;
+direct callers and completion use their own fresh reads.
 An invalid completion-cycle basis version or link fails through the existing
 `completion_history_inconsistent` contract before a success projection.
 

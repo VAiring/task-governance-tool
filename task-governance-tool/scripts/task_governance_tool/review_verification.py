@@ -16,7 +16,7 @@ COUNT_KEYS = {"receipts_exact_current", "qualifying_exact_current", "blocking_ex
 KEYS = {"observed_at", "source_kind", "current_verification_subject", "gate", "counts", "current_receipt"}
 
 
-def read_review_verification(connection, *, task, runner_selection=None):
+def read_review_verification(connection, *, task, runner_selection=None, _validated_snapshot=None):
     """Reuse the existing exact-current evaluator on the Packet's read snapshot."""
     cycle = None
     if task["status"] == "done":
@@ -24,7 +24,8 @@ def read_review_verification(connection, *, task, runner_selection=None):
         cycle = history.cycles[0] if history.cycles else None
     details = TaskShowVerificationDetails()
     evidence = read_verification_evidence(connection, task=task, completion_cycle=cycle,
-        runner_selection=runner_selection, task_show_details=details)
+        runner_selection=runner_selection, task_show_details=details,
+        _validated_snapshot=_validated_snapshot)
     gate = evidence["gate"]
     source = "unavailable"
     if not gate["required"] and gate["satisfied"]:

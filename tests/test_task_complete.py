@@ -33,6 +33,7 @@ from task_governance_tool.completion import (  # noqa: E402
     COMPLETION_CHECK_MAX_BYTES,
 )
 from task_governance_tool.storage import (  # noqa: E402
+    SCHEMA_VERSION,
     apply_completion_evidence_bundle_migration,
     apply_evidence_ledger_capture_migration,
     apply_migrations,
@@ -1122,7 +1123,9 @@ class TaskCompleteCliTests(unittest.TestCase):
                 connection.commit()
                 apply_evidence_ledger_capture_migration(connection)
                 apply_completion_evidence_bundle_migration(connection)
-                self.assertEqual(apply_migrations(connection), ([20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31], []))
+                self.assertEqual(
+                    apply_migrations(connection), (list(range(20, SCHEMA_VERSION + 1)), []),
+                )
                 legacy_provenance = connection.execute(
                     """
                     SELECT COUNT(*)

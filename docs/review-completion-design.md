@@ -1633,6 +1633,63 @@ readiness only from the same live owned worker and confirmed active state.
 
 `ManagedDirectProbe` adds integrated finalization before sending when an exact
 prepared intent exists, and post-send observation for both routes.
+Ordinary polling follows the
+[observation cycle](review-completion-specification.md#review-wait-observation-cycle):
+host/control facts are observed on a ten-second cadence, separately from
+core-consuming result collection and completion decisions. An exact host-ended
+turn is not derived from a frozen collected answer. Each handled reviewer change
+is scoped to the admitted preparation/request/turn, so one collected reviewer
+does not keep core admission, all-reviewer tracking or finalizer creation active
+while another reviewer runs. The existing valid saved-result path remains
+available. Saved-result readiness is established before collection-source admission,
+including initial observer construction and readmission. Control observation
+remains independent of that optional collection setup, so a legitimately
+completed Task with released ownership retains its guarded notification route.
+All-ended and parent-idle conditions admit pending-result observation;
+only unresolved targets are checked again at the bounded cadence. Parent busy
+state returns to light observation. No observation snapshot certifies a later
+effect or survives as a reusable validation proof.
+The direct record is observed once at the cycle boundary. Intervening host reads
+use local stop/clock checks; journal, collection and dispatch effect boundaries
+still obtain fresh cancellation state. No direct snapshot survives into a later
+cycle or lends effect authority.
+The worker's Task-local control observer follows the
+[database boundary](database-specification.md#operation-local-admission): unchanged
+physical hints open no core connection; changed hints compare only the original
+Task's controls before requesting existing full admission. The control observer's
+initial changed result is not consumed without admission: baseline capture is
+followed by fresh preparation, detecting drift since the first admission.
+Request and continuation occurrence reads use their validated observation paths
+only in ordinary polling; native SQLite busy defers the tick, while effect
+guards retain ordinary reads and invalid identity/state rejection. Pending collected
+answers use a bounded host-only candidate probe. Its non-persisted comparison
+state follows the separate current collection policy: OFF prevents body probes
+and cannot consume pending progress. Re-enablement discards the old comparison
+and progress hints and establishes fresh admitted tracking, including when only
+one reviewer ended. A policy change between probe and collector cannot strand
+that same candidate. Durable frozen and unknown-effect state is preserved.
+The initial observer uses the policy value actually read during source
+admission; an earlier separate policy sample cannot label an OFF admission ON.
+Unresolved tracked reviewers retain bounded candidate probing at the normal
+cadence even while a peer runs. Only candidate changes enter collection; a
+handled host terminal state cannot suppress later answer changes or consume an
+unprocessed candidate. Frozen results do not trigger a new body read.
+The comparison key includes completeness/source/terminal and raw-body SHA-256, so same-ID
+content or completeness changes remain observable. It keeps no body and has no
+role in acceptance, privacy admission, stored `observed_digest`, or effect
+authority. Wait/basis replacement discards it. A private purpose-specific
+`PublicAnswerHost` adapter shares the probe's key calculation for its single
+latest-answer override: the fresh collector's actual successful or unavailable
+read becomes the last hint, including when it reads a different rejected body.
+It retains no body and performs no general delegation or provider caching.
+New candidates invoke the existing fresh collector; a complete candidate
+interrupted by native `writer_busy` may request re-observation through an
+internal callback without changing public output.
+Only the next fresh operational snapshot's watching/no-publication/not-started
+registration state clears that exact candidate hint. An observation busy keeps
+the bounded request for the next poll; generic exceptions, mismatched candidates
+and unknown publication/registration do not authorize replay. Current
+policy/basis/unknown-effect guards still apply.
 The inherited worker retains intent-before-effect, one deletion/send attempt,
 parent/reviewer freshness, due cutoff and twenty-minute outer deadline. After
 accepted/unknown send settlement, it observes the original parent for up to
@@ -1671,10 +1728,11 @@ there is no new retry, worker or timer state transition.
 When scheduled-check preflight and an existing worker retain reviewer facts at
 the same time, the finalization observation writer may wait at most one second
 for its OS lease. Only lock admission repeats; transactions and effects do not.
-This operational finalization repository alone uses a one-second SQLite busy
+The operational finalization repository uses a one-second SQLite busy
 timeout so concurrent preflight reads and short observation commits can settle.
 No transaction or external stage is replayed. The request repository has the
-separately described short occurrence-read timeout; other wait stores keep
+separately described short occurrence-read timeout. The direct repository also
+uses the bounded native wait described below; other wait stores keep
 their existing admission policy.
 
 Immediately before the durable send intent the worker captures the fresh idle
@@ -2326,9 +2384,20 @@ the server also rejects arm/rearm when a marker exists. A malformed marker or
 broken link fails closed. Each record is one-shot and cannot be overwritten to
 retry. Short transactions retain intent before the host effect; host calls run
 outside SQLite transactions. Metadata stays only in the current worker's memory.
-Short reads and writes of the experiment record share its own lease with bounded
-lock-acquisition waiting, so status inspection cannot obstruct a sender's commit.
-This retries no transaction or host call. Inspection-only instances never cancel
+Serialized reads and writes of the experiment record share its own lease with
+bounded lock-acquisition waiting, so status inspection cannot obstruct a sender's
+commit. Ordinary direct-record connections, including initialization, serialized
+reads, intent/settlement, receipt, cancellation and exit-evidence writes, use a
+one-second native SQLite busy timeout. This permits a single transaction's
+commit to wait for a short concurrent observation without replaying SQL or an
+effect; prolonged contention closes and rolls back the transaction with the
+existing error. The separate `read_observation` path uses no OS lease and opens a
+query-only snapshot with zero SQLite busy timeout. Only native `SQLITE_BUSY`
+is classified as deferred observation; the connection closes before that outcome
+reaches orchestration. Corruption, I/O faults and `SQLITE_LOCKED` retain failure
+semantics. Deferral retries no transaction or host effect and never settles a
+send, receipt or cancellation. Physical identity, schema and record validation
+still apply to the operational snapshot. Inspection-only instances never cancel
 another session's worker when they close; explicit admitted cancellation remains
 separate from the owning worker's EOF cleanup.
 

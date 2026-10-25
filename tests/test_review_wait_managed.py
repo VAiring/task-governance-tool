@@ -533,6 +533,18 @@ class ManagedFlowTests(unittest.TestCase):
                 replace(self.bases.get(task, self.basis), task_id=task, wait_id=wait))
         session._enabled = lambda: self.enabled
         session._location = lambda **kwargs: self.paths
+        # This fixture supplies its own live tracking source instead of a core
+        # store. Production's reader is tested with issued collection sources.
+        session._tracking_observer = lambda binding, reviewers: lambda: session._answer_tracking(binding, reviewers)
+        def control_observer(paths, binding):
+            previous = None
+            def changed():
+                nonlocal previous
+                current = self.bases.get(binding.task_id, self.basis)
+                result, previous = current != previous, current
+                return result
+            return changed
+        session._control_observer = control_observer
         self.sessions.append(session)
         return session
 

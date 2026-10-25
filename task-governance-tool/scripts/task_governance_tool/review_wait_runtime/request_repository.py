@@ -254,6 +254,15 @@ class RequestRepository(ReviewWaitRepository):
         with self._connection() as connection:
             return self._load(connection, with_rounds=True)
 
+    def read_admission_observation(self):
+        """Observe the same validated occurrence without lending effect authority.
+
+        Native SQLite busy closes this snapshot and defers only observation.
+        Ordinary admission and effects keep their existing read boundary.
+        """
+        with self._connection(observation=True) as connection:
+            return self._load(connection, with_rounds=True)
+
     def append(self, lease, record):
         lease._check()
         if record.phase != "creating":

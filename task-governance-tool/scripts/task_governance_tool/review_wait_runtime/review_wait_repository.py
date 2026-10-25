@@ -40,6 +40,13 @@ class RepositoryError(Exception):
         super().__init__(code)
 
 
+class ObservationBusy(RepositoryError):
+    """A read-only observation was unavailable due to SQLite contention."""
+
+    def __init__(self):
+        super().__init__("observation_busy")
+
+
 @dataclass(frozen=True)
 class StoredWait:
     revision: int
@@ -251,12 +258,14 @@ class ReviewWaitRepository:
         return details
 
     @contextmanager
-    def _connection(self, *, write: bool = False) -> Iterator[sqlite3.Connection]:
+    def _connection(self, *, write: bool = False, observation: bool = False) -> Iterator[sqlite3.Connection]:
+        if write and observation:
+            raise RepositoryError("invalid_request")
         before = self._inspect()
         connection = None
         try:
             connection = connect_traced(self.path.as_uri() + ("?mode=rw" if write else "?mode=ro"), uri=True,
-                timeout=self._connection_timeout, isolation_level=None, role="operational",
+                timeout=0 if observation else self._connection_timeout, isolation_level=None, role="operational",
                 access="readwrite" if write else "readonly")
             connection.execute("PRAGMA trusted_schema = OFF")
             if not write:
@@ -268,7 +277,13 @@ class ReviewWaitRepository:
             if _identity(self._inspect()) != _identity(before):
                 raise RepositoryError("state_unreadable")
             connection.commit()
-        except sqlite3.Error:
+        except sqlite3.Error as error:
+            # The ordinary rollback-journal writer contention has a native
+            # SQLITE_BUSY code. Do not infer retryability from error text or
+            # treat corruption, I/O failures or SQLITE_LOCKED as that case.
+            code = getattr(error, "sqlite_errorcode", None)
+            if observation and type(code) is int and (code & 0xFF) == sqlite3.SQLITE_BUSY:
+                raise ObservationBusy() from None
             raise RepositoryError("state_unreadable") from None
         finally:
             if connection is not None:
@@ -289,6 +304,15 @@ class ReviewWaitRepository:
 
     def read(self) -> StoredWait:
         with self._connection() as connection:
+            return self._load(connection)
+
+    def read_observation(self) -> StoredWait:
+        """Observe one short snapshot; this never supplies writer authority.
+
+        A caller may defer only ObservationBusy to its next bounded poll.
+        Both success and failure close the connection before returning.
+        """
+        with self._connection(observation=True) as connection:
             return self._load(connection)
 
     @contextmanager

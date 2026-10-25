@@ -126,6 +126,19 @@ required review history, as defined by
 This includes integrated Core reads and typed finalization completion at every
 fresh snapshot and locked writer. Scope follows the admitted native Task and
 prepared basis, never a public bypass or the Task command's display label.
+An unchanged [review-wait observation cycle](review-completion-specification.md#review-wait-observation-cycle)
+uses host facts and bounded operational control state without opening a core
+snapshot or repeating resolver admission. A physical file-change hint permits
+one short Task-local control snapshot to detect cancellation, basis drift or
+newly saved review results. It reads no unrelated Task or history body and does
+not certify eligibility; relevant changes request existing fresh admission.
+Initial baseline capture likewise requires fresh admission before light polling.
+This avoids periodic whole-database physical, foreign-key, schema and
+migration-history checks; it does not waive them when an operation actually
+enters the resolver. Initial admission,
+necessary result collection, completion decisions, recovery and effect guards
+retain their current fresh validation. An observation is neither a reusable
+admission proof nor authority to mutate Task state.
 Maintenance eligibility reads use the structural boundary and validated policy,
 generation and managed-backup metadata. Disabled, current and not-due paths do
 not audit Task histories. Such observations never certify an artifact: actual

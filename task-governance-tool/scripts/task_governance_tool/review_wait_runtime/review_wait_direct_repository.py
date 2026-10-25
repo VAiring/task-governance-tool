@@ -183,6 +183,11 @@ def _encode(record: DirectRecord) -> str:
 class DirectRepository(ReviewWaitRepository):
     """One fixed sibling marker; existence permanently prevents another probe."""
 
+    # Observation snapshots do not take the OS lease. Let SQLite settle a short
+    # read/commit overlap without replaying a transaction or an external effect.
+    # The inherited observation connection still explicitly uses timeout=0.
+    _connection_timeout = 1
+
     @classmethod
     def for_wait(cls, path: Path):
         return cls(marker_path(path))
@@ -192,8 +197,8 @@ class DirectRepository(ReviewWaitRepository):
 
     @contextmanager
     def _serial(self, *, create_lock=False):
-        # Reads and writes are short, so serialize both. A read must not hold a
-        # SQLite shared lock while a sender's intent/settlement tries to commit.
+        # Serialize ordinary reads and writes. The separate observation path
+        # relies on the bounded native SQLite wait for a short commit overlap.
         # Only OS-lock acquisition is retried, never a transaction or effect.
         deadline = time.monotonic() + 1
         while True:
@@ -223,6 +228,16 @@ class DirectRepository(ReviewWaitRepository):
         with self._serial():
             with self._connection() as connection:
                 return self._load(connection)
+
+    def read_observation(self) -> DirectRecord:
+        """Poll without the OS writer lease, closing before any caller work.
+
+        This is not the pre-effect read: read/update and their lease retain
+        serialization. A busy observation may be deferred, never interpreted
+        as a stopped worker or a settled effect.
+        """
+        with self._connection(observation=True) as connection:
+            return self._load(connection)
 
     def create_record(self, record: DirectRecord) -> None:
         if (record.status != "waiting" or record.acknowledged_turn is not None or record.worker_stopped_at is not None

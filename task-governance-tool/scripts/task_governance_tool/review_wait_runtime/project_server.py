@@ -132,19 +132,27 @@ class ProjectReviewWaitSession:
         except Exception:
             raise DiagnosticError("policy_unreadable") from None
 
-    def _collect_answers(self, binding, host, reviewers=None, *, explicit_recovery=False, diagnostic=None):
+    def _collect_answers(self, binding, host, reviewers=None, *, explicit_recovery=False, diagnostic=None,
+                         observation=None):
         from task_governance_tool.review_answer_host import PublicAnswerHost
         from task_governance_tool.review_answer_runtime import sources_for_reviewers, collect_sources
+        if observation is not None and not observation.collection_allowed():
+            return None
         with diagnostic.reading_retained() if diagnostic is not None else nullcontext():
-            groups = sources_for_reviewers(self.config.repo, self.skill, binding, reviewers)
+            options = {} if observation is None else {"observe_policy": observation.observe_collection_policy}
+            groups = sources_for_reviewers(self.config.repo, self.skill, binding, reviewers, **options)
         if groups is None:
             # OFF, no preparation and legacy are normal wait non-applicability.
+            if observation is not None:
+                observation.collection_disabled()
             return None
-        adapter = PublicAnswerHost(host, binding.parent_thread_id, executor_turn_id(host._metadata))
+        adapter_factory = getattr(observation, "make_host", PublicAnswerHost)
+        adapter = adapter_factory(host, binding.parent_thread_id, executor_turn_id(host._metadata))
         result = dict(collected=[], unavailable=[])
         for group in groups:
             with diagnostic.collecting(group.service.repository) if diagnostic is not None else nullcontext():
-                observed = collect_sources(group, adapter, explicit_recovery=explicit_recovery)
+                observed = collect_sources(group, adapter, explicit_recovery=explicit_recovery,
+                                           on_retryable=getattr(observation, "retry_unprocessed", None))
                 result["collected"].extend(observed["collected"])
                 result["unavailable"].extend(observed["unavailable"])
         return result
@@ -167,6 +175,38 @@ class ProjectReviewWaitSession:
     def _answer_tracking(self, binding, reviewers):
         from task_governance_tool.review_answer_runtime import tracking_for_reviewers
         return tracking_for_reviewers(self.config.repo, self.skill, binding, reviewers)
+
+    def _tracking_observer(self, binding, reviewers):
+        from task_governance_tool.review_answer_runtime import tracking_observer_for_reviewers
+        return tracking_observer_for_reviewers(self.config.repo, self.skill, binding, reviewers)
+
+    def _control_observer(self, paths, binding):
+        from task_governance_tool.review_wait_control_observation import ReviewWaitControlObservation
+        return ReviewWaitControlObservation(paths.database, binding.project_id, binding.task_id)
+
+    def _polling_sources(self, binding, automation_id, reviewers, *, collect=True):
+        # Resolve once for this worker's effect-free operational observations.
+        # Every later effect keeps its original resolver/basis admission.
+        paths = self._location(enabling=False)
+        # Saved native results can remain valid after completion releases the
+        # active owner required by collection. Their wait still observes controls.
+        tracking = self._tracking_observer(binding, reviewers) if collect else None
+        control = self._control_observer(paths, binding)
+        # The first control observation must reach the guard below: its new
+        # baseline can include changes after the worker's initial admission.
+        # The caller re-admits after True; later changes remain observable.
+        candidate = None
+        if hasattr(tracking, "candidate_changed"):
+            def candidate(host, reviewer):
+                from task_governance_tool.review_answer_host import PublicAnswerHost
+                adapter = PublicAnswerHost(host, binding.parent_thread_id, executor_turn_id(host._metadata))
+                return tracking.candidate_changed(adapter, reviewer)
+        def guard():
+            if not self._policy_enabled():
+                raise BasisError()
+            self._wait_occurrence_current(binding, automation_id, paths=paths, observation=True)
+            return control()
+        return guard, tracking, candidate
 
     def _collect_hook(self, event, metadata, diagnostic):
         from task_governance_tool.review_answer import AnswerError
@@ -406,22 +446,28 @@ class ProjectReviewWaitSession:
             or replace(transition, phase="prepared") != replace(round_record, phase="prepared")):
             raise DiagnosticError("review_continuation_conflict")
 
-    def _wait_occurrence_current(self, binding, automation_id):
-        """Fence obsolete workers using the explicit operational transition."""
+    def _wait_occurrence_current(self, binding, automation_id, *, paths=None, observation=False):
+        """Fence obsolete workers using the explicit operational transition.
+
+        Only ordinary polling selects busy-deferable snapshots. Effect guards
+        retain ordinary admission and the same complete occurrence validation.
+        """
         from .continuation_transition_repository import TransitionRepository
         from .request_repository import RequestRepository
         from .managed_wait import basis_digest
-        paths = self._location(enabling=False)
+        paths = self._location(enabling=False) if paths is None else paths
         transition_path = paths.review_continuation_store(binding.parent_thread_id, binding.task_id, binding.target_generation)
         if not path_lexically_exists(transition_path):
             return  # Legacy/initial occurrence, without a continuation fence.
-        transitions = TransitionRepository(transition_path).read()
+        repository = TransitionRepository(transition_path)
+        transitions = repository.read_observation() if observation else repository.read()
         if not transitions:
             return
         transition = transitions[-1]
         if transition.phase not in ("prepared", "published"):
             raise DiagnosticError("review_continuation_conflict")
-        _, attempt, rounds = RequestRepository(paths.review_wait_request_store(binding.parent_thread_id, binding.task_id)).read_admission()
+        repository = RequestRepository(paths.review_wait_request_store(binding.parent_thread_id, binding.task_id))
+        _, attempt, rounds = (repository.read_admission_observation() if observation else repository.read_admission())
         if (attempt is None or attempt.automation_id != automation_id or attempt.continuation_id != transition.continuation_id
             or attempt.continuation_sequence != transition.continuation_sequence or attempt.basis_digest != basis_digest(binding)
             or not rounds or rounds[-1].continuation_id != transition.continuation_id or rounds[-1].phase != "published"):
@@ -466,8 +512,10 @@ class ProjectReviewWaitSession:
                     answer_reviewers(controller)),
                 answer_tracking=lambda controller: self._answer_tracking(controller.binding,
                     answer_reviewers(controller)),
-                tracked_answer_collector=lambda host, controller, reviewer: self._collect_answers(
-                    controller.binding, host, (reviewer,)),
+                tracked_answer_collector=lambda host, controller, reviewer, **options: self._collect_answers(
+                    controller.binding, host, (reviewer,), **options),
+                polling_factory=lambda controller, **options: self._polling_sources(controller.binding, automation_id,
+                    answer_reviewers(controller), **options),
                 occurrence_guard=lambda controller: self._wait_occurrence_current(controller.binding, automation_id), **kwargs)
         session = self.session_factory(config, host_factory=host_factory,
             basis_factory=self._reader, clock=self.clock, **options)

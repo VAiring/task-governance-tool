@@ -1947,8 +1947,8 @@ with the minimum current-state arguments, no cursor and no history traversal. Va
 chat ID, latest turn ID/state and chat state; missing, conflicting or mismatched
 observations fail closed. A completed earlier turn while the chat is active is
 not an ended reviewer or an idle parent. Failed/interrupted turns may be ended
-but never prove review PASS. All existing preparation, wait, pre-effect and
-finalization guards remain. The existing parent status read retains its bounded
+but never prove review PASS. Preparation, pre-effect and finalization guards
+remain; ordinary observation follows the bounded cycle below. The existing parent status read retains its bounded
 public `read_thread` route. Structured handle mapping below and exact notification
 receipt checks also use public `read_thread`; UUID references require no mapping/history lookup.
 The four purpose-specific readers return only current-state facts, selected validated
@@ -2005,6 +2005,89 @@ serialize fresh checks, deletion, integrated finalization and sending under one
 internal OS lease. Each notification still has its own one-shot send intent;
 cancel or genuine basis change affects only its association. The explicit legacy
 development experiment retains its original-turn restriction.
+
+<a id="review-wait-observation-cycle"></a>
+
+Ordinary observation uses a ten-second cadence for the admitted reviewers,
+parent and bounded control state. It retains cancellation, policy/OFF,
+occurrence replacement, EOF and deadline handling without repeatedly opening
+the core database while its file-change hint and observed progress are unchanged.
+A changed physical hint may read the original Task's minimal control values in
+one short snapshot, so owner/target changes and saved valid results remain
+detectable during review. This is distinct from completion-decision polling;
+it grants no eligibility proof, and relevant changes require fresh admission.
+The ten seconds bound repeated observation, not a transaction's lifetime.
+Connections and read transactions close before a host call or sleep.
+
+Host observation of the exact requested review turn ending is separate from
+answer collection and its stored terminal evidence. Collection cannot be a
+prerequisite for detecting the event that starts collection. A newly ended
+reviewer may trigger its required individual collection; a handled end does not
+keep all-reviewer tracking or completion inspection active while another
+reviewer runs. Pending individual collection remains explicit. Handled changes
+are scoped to the admitted preparation, request and reviewer turn, and cannot
+be carried into a new request or reassessment. Existing valid saved-result
+precedence remains; unrelated later chat activity cannot invalidate that result.
+That precedence includes initial observation setup and reconstruction: a valid
+saved result does not require collection-source admission for an active Task.
+Control observation and fresh dispatch checks still apply after legitimate
+completion releases ownership.
+
+Completion-decision database observation starts only when all required reviews
+have ended and the same parent is idle, or existing valid saved results already
+satisfy the result-readiness route and that parent is idle. Only outstanding
+collection or database reflection is rechecked, no more often than every ten
+seconds. A busy parent returns the worker to light observation. Ready results
+proceed to the existing completion/notification route and end waiting; a known
+review failure takes its failure route. Unavailable observations do not become
+ended reviews, and unknown outcomes never become unlimited reflection waiting.
+The original due cutoff and outer deadline still apply.
+
+Pending answer collection first compares bounded public-host candidate facts.
+Candidate observation honors the separate current answer-collection policy.
+An unresolved tracked reviewer keeps this light candidate observation while
+another reviewer runs; unchanged host terminal status does not consume pending
+answer changes. Frozen results need no new answer probe.
+OFF neither reads an answer body nor marks an uncollected answer as handled.
+Re-enabling collection freshly admits tracking and permits the same unchanged
+pending answer to be observed again. Policy changes discard only transient
+comparison/progress hints, never frozen results or uncertain-effect records.
+An unchanged candidate does not repeat core admission or answer collection,
+except after known pre-lease writer contention when a fresh operational
+snapshot still shows watching, no publication and
+not-started registration. Generic failures or publication/registration intent
+and unknown outcomes never authorize that reset; busy re-observation retains
+only the bounded retry request until the next normal poll.
+The comparison includes completeness, exact source identity, terminal state and
+the full bounded body's digest; the same message ID with newly complete or
+changed content is a new observation. These worker-only hints retain no body,
+are discarded with the wait or basis change, and are never persisted, logged,
+returned, or used as an answer/evidence/validation proof. They do not change
+the collection record's privacy admission or `observed_digest` retention rules.
+New candidates enter the existing fresh collection admission before adoption.
+The collector's actual successful or unavailable host read replaces the
+comparison hint, so a different rejected body or a failed second read cannot
+mark the earlier probe's candidate as handled.
+
+Ordinary direct-state observation does not acquire its independent OS writer
+lease. It reads direct status once per ordinary cycle; checks between host
+observations retain in-memory stop and deadline checks without rereading that
+snapshot. Actual journal, collection and dispatch effects retain fresh state
+checks and cannot use that cycle's observation as authorization.
+Direct, request and continuation occurrence observation use short
+query-only snapshots; native SQLite busy contention closes
+that attempt and defers observation, without inferring failure, stopped state or
+permission to delete a timer or send. Other invalid state remains rejected.
+SQLite's own read locking is retained. Ordinary direct-record reads and writes
+allow up to one second of native SQLite busy waiting so a short observation
+does not immediately fail cancellation or result persistence. This bounded wait
+repeats no transaction or external effect; timeout rolls back without claiming
+the write succeeded. Observation itself retains zero busy timeout.
+This observation-only path does not
+replace the serialized read/write and fresh Task, binding, reviewer, parent,
+cancellation and deadline checks at actual effects. Those checks are outside
+the ten-second observation throttle and retain the existing writer and
+same-parent dispatch leases.
 
 For ordinary review-only preparation, the fixed direct message identifies the original Task and directs its
 existing result processing. It requires no ACK, ID handoff or routine view/status.

@@ -13,7 +13,7 @@ from .review_wait_host import read_failure, host_failure
 class ManagedDirectProbe(DirectProbe):
     def __init__(self, *args, finalization_factory=None, dispatch_path=None,
                  observation_factory=None, runtime_observer=None, occurrence_guard=None, answer_collector=None,
-                 answer_tracking=None, tracked_answer_collector=None, **kwargs):
+                 answer_tracking=None, tracked_answer_collector=None, polling_factory=None, **kwargs):
         super().__init__(*args, **kwargs)
         self.finalization_factory = finalization_factory
         self.dispatch_path = dispatch_path
@@ -23,10 +23,23 @@ class ManagedDirectProbe(DirectProbe):
         self.answer_collector = answer_collector
         self.answer_tracking = answer_tracking
         self.tracked_answer_collector = tracked_answer_collector
+        self.polling_factory = polling_factory
+        self._polling_sources = None
+        self._progress_seen = {}
+        self._saved_results_ready = False
         self._answers_collected = False
         self._finalization_prepared = False
         self.read_diagnostic = None
         self._read_diagnostic_identity = None
+
+    def _run_scoped(self, host, record, monotonic_deadline):
+        try:
+            return super()._run_scoped(host, record, monotonic_deadline)
+        finally:
+            # Ended associations remain inspectable; polling hints must not.
+            self._polling_sources = None
+            self._progress_seen.clear()
+            self._saved_results_ready = False
 
     def read_diagnostic_for(self, probe_id, worker_id):
         """Return a transient cause only for the exact observed owned worker."""
@@ -141,23 +154,176 @@ class ManagedDirectProbe(DirectProbe):
                     or self._finalizer(controller) is None):
                 raise
 
-    def _observe_reviewer(self, controller, observation):
+    def _observe_reviewer(self, controller, observation, *, effect_guard=None):
         finalizer = self._finalizer(controller)
         if finalizer is not None:
+            if effect_guard is not None and not effect_guard():
+                return False
             finalizer.observe_reviewers((observation,))
+        return True
 
     def _tracking(self, controller, expected):
         values = self.answer_tracking(controller) if self.answer_tracking is not None else {}
         return values.get(expected.reviewer_id)
 
-    def _read_reviewer(self, host, controller, expected, *, terminal=False, reviewer_observer=None):
+    def _prepare_observation(self, controller):
+        if self.polling_factory is None:
+            return self._prepared(controller)
+        if self._polling_sources is None:
+            from task_governance_tool.review_wait_basis_repository import WaitBasisError
+            self._prepared(controller)
+            self._saved_results_ready = not self._reviewers_to_observe(controller)
+            try:
+                self._polling_sources = self.polling_factory(
+                    controller, collect=not self._saved_results_ready)
+            except WaitBasisError as error:
+                if error.code != "wait_basis_inactive":
+                    raise
+                # Completion can release ownership after the readiness read.
+                # Only fresh qualified native results replace that failed
+                # collection admission; other errors keep their failure route.
+                self._prepared(controller)
+                self._saved_results_ready = not self._reviewers_to_observe(controller)
+                if not self._saved_results_ready:
+                    raise
+                self._polling_sources = self.polling_factory(controller, collect=False)
+        guard, tracking, _ = self._polling_sources
+        if guard():
+            self._prepared(controller)
+            self._saved_results_ready = not self._reviewers_to_observe(controller)
+        if not self._saved_results_ready and tracking is None:
+            # The saved route retained controls, not collection admission.
+            # Rebuild on the next ordinary tick after readiness is invalidated.
+            self._polling_sources = None
+            self._progress_seen.clear()
+
+    @staticmethod
+    def _completed_tracking(expected, tracked):
+        if tracked["boundary_turn_id"] != expected.turn_id:
+            raise DirectError("reviewer_turn_changed")
+        if not tracked["frozen"]:
+            return False
+        if tracked["source_identity"] is None or tracked["terminal"] != "completed":
+            raise DirectError("child_status_unavailable")
+        return True
+
+    def _observe_progress(self, host, controller, parent, record, monotonic_deadline):
+        if self.polling_factory is None:
+            return super()._observe_progress(host, controller, parent, record, monotonic_deadline)
+        from task_governance_tool.review_answer_runtime import TrackingReadmissionRequired
+        if self._saved_results_ready:
+            return True  # Dispatch still validates the live native judgments.
+        if self._polling_sources is None:
+            return False
+        _, tracking_reader, candidate_probe = self._polling_sources
+        try:
+            tracking = tracking_reader()
+        except TrackingReadmissionRequired:
+            # A newly bound source requires its original admission, not a
+            # guessed child/slot mapping. No effect has been attempted here.
+            self._polling_sources = None
+            self._progress_seen.clear()
+            return False
+        pending = []
+        all_ended = True
+        for expected in controller.reviewers:
+            if self._halt_observation(record, monotonic_deadline):
+                return False
+            tracked = tracking.get(expected.reviewer_id)
+            if tracked is not None and self._completed_tracking(expected, tracked):
+                continue
+            try:
+                child = host.read_child(expected.reviewer_id)
+            except Exception:
+                self._observe_reviewer(controller, (expected.reviewer_id, expected.turn_id, "unknown"),
+                    effect_guard=lambda: not self._halt_wait(record, monotonic_deadline))
+                raise
+            if tracked is None:
+                self._record_reviewer_observation(expected, child)
+            else:
+                with self._observations_lock:
+                    self._reviewer_observations.pop(expected.reviewer_id, None)
+            if self._halt_observation(record, monotonic_deadline):
+                return False
+            if child.child_id != expected.reviewer_id or (tracked is None and child.turn_id != expected.turn_id):
+                if not self._observe_reviewer(controller, (expected.reviewer_id, expected.turn_id, "unknown"),
+                        effect_guard=lambda: not self._halt_wait(record, monotonic_deadline)):
+                    return False
+                raise DirectError("reviewer_turn_changed")
+            ended = _terminal(child)
+            all_ended = all_ended and ended
+            state = (child.turn_id, child.status, child.thread_status)
+            changed = self._progress_seen.get(expected.reviewer_id) != state
+            # Retain each failure or untracked terminal fact before the next
+            # host read can fail. Tracked completion still comes only from its
+            # admitted frozen answer, never this latest-turn progress hint.
+            if changed and (child.status in {"failed", "interrupted"} or tracked is None and ended):
+                if not self._observe_reviewer(controller, (expected.reviewer_id, child.turn_id, child.status),
+                        effect_guard=lambda: not self._halt_wait(record, monotonic_deadline)):
+                    return False
+                self._progress_seen[expected.reviewer_id] = state
+            if ended:
+                if tracked is not None:
+                    pending.append((expected, child, state, changed))
+            else:
+                self._progress_seen[expected.reviewer_id] = state
+        parent_idle = _terminal(parent) and parent.thread_status == "idle"
+        collected = False
+        for expected, child, state, changed in pending:
+            if candidate_probe is None and not changed and not (all_ended and parent_idle):
+                continue  # Compatibility callbacks have no bounded candidate hint.
+            if child.status in {"failed", "interrupted"}:
+                if all_ended and parent_idle:
+                    raise DirectError("child_status_unavailable")
+                continue
+            if self._halt_observation(record, monotonic_deadline):
+                return False
+            try:
+                candidate_changed = candidate_probe is None or candidate_probe(host, expected.reviewer_id)
+            except TrackingReadmissionRequired:
+                self._polling_sources = None
+                self._progress_seen.clear()
+                return False
+            if self._halt_observation(record, monotonic_deadline):
+                return False
+            if candidate_changed is None:
+                continue
+            if not candidate_changed:
+                self._progress_seen[expected.reviewer_id] = state
+                continue
+            if self.tracked_answer_collector is not None:
+                self._prepared(controller)
+                if self._halt_wait(record, monotonic_deadline):
+                    return False
+                self.tracked_answer_collector(host, controller, expected.reviewer_id,
+                                              observation=tracking_reader)
+                collected = True
+            self._progress_seen[expected.reviewer_id] = state
+        if collected:
+            try:
+                tracking = tracking_reader()
+            except TrackingReadmissionRequired:
+                self._polling_sources = None
+                self._progress_seen.clear()
+                return False
+        if pending:
+            all_ended = all_ended and all(
+                expected.reviewer_id in tracking
+                and self._completed_tracking(expected, tracking[expected.reviewer_id])
+                for expected, _, _, _ in pending)
+        return all_ended
+
+    def _read_reviewer(self, host, controller, expected, *, terminal=False, reviewer_observer=None,
+                       effect_guard=None):
         tracked = self._tracking(controller, expected)
         if tracked is None:
             return super()._read_reviewer(host, controller, expected, terminal=terminal,
-                                         reviewer_observer=reviewer_observer)
+                                         reviewer_observer=reviewer_observer, effect_guard=effect_guard)
         if tracked["boundary_turn_id"] != expected.turn_id:
             raise DirectError("reviewer_turn_changed")
         if not tracked["frozen"] and self.tracked_answer_collector is not None:
+            if effect_guard is not None and not effect_guard():
+                return None
             self.tracked_answer_collector(host, controller, expected.reviewer_id)
             tracked = self._tracking(controller, expected)
         if tracked is None or tracked["boundary_turn_id"] != expected.turn_id:
@@ -166,7 +332,10 @@ class ManagedDirectProbe(DirectProbe):
             source = tracked["source_identity"]
             if source is None or tracked["terminal"] != "completed":
                 raise DirectError("child_status_unavailable")
-            observe = reviewer_observer or (lambda value: self._observe_reviewer(controller, value))
+            observe = reviewer_observer or (lambda value: self._observe_reviewer(
+                controller, value, effect_guard=effect_guard))
+            if reviewer_observer is not None and effect_guard is not None and not effect_guard():
+                return None
             observe((expected.reviewer_id, source["turn_id"], "completed"))
         # The collector independently observes the source. No synthetic latest
         # turn or invented current thread activity is returned to the wait loop.

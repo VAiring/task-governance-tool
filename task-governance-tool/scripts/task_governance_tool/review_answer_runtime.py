@@ -4,6 +4,7 @@ No scheduler, worker owner, native message send or second finalizer lives here.
 The caller supplies the existing public executor and saved preparation service.
 """
 
+import hashlib
 import json
 from contextlib import closing, contextmanager
 from copy import deepcopy
@@ -11,7 +12,7 @@ from dataclasses import asdict, dataclass
 from typing import Callable
 
 from .review_answer import AnswerError
-from .review_answer_host import _uuid
+from .review_answer_host import PublicAnswerHost, _uuid
 from .review_answer_hook import collect_event
 from .review_answer_values import basis_digest, validate_binding, validate_source
 
@@ -88,8 +89,10 @@ def bind_initial(service, host, reviewer_ids, *, creation_context=False,
     return service.repository.read()
 
 
-def collect_bound(service, host, reviewer_ids=None, *, explicit_recovery=False):
+def collect_bound(service, host, reviewer_ids=None, *, explicit_recovery=False, on_retryable=None):
     """Recover each selected saved source once; keep per-slot failures bounded."""
+    from .review_wait_runtime.review_wait_repository import RepositoryError
+
     records = service.repository.read()
     if reviewer_ids is None:
         selected = None
@@ -109,11 +112,18 @@ def collect_bound(service, host, reviewer_ids=None, *, explicit_recovery=False):
             continue
         try:
             service.recover(slot, host, explicit_recovery=explicit_recovery)
-            collected.append(slot)
         except AnswerError as error:
-            unavailable.append(dict(slot=slot, failure=error.failure))
-        except Exception:
-            unavailable.append(dict(slot=slot, failure={"class": "collection_unavailable", "field": None, "reason": "incomplete"}))
+            failure = error.failure
+            retryable = False
+        except Exception as error:
+            failure = {"class": "collection_unavailable", "field": None, "reason": "incomplete"}
+            retryable = isinstance(error, RepositoryError) and error.code == "writer_busy"
+        else:
+            collected.append(slot)
+            continue
+        if retryable and binding is not None and on_retryable is not None:
+            on_retryable(binding["reviewer_session_id"])
+        unavailable.append(dict(slot=slot, failure=failure))
     return dict(collected=collected, unavailable=unavailable)
 
 
@@ -217,14 +227,17 @@ def reviewer_hook_admission(service, parent_id, reviewer_id, turn_id, *, admit_c
         service.admit_basis = current_admission
 
 
-def _source_context(repo, skill, binding):
+def _source_context(repo, skill, binding, *, observe_policy=None):
     """Read one indexed preparation and its explicit transition, without scans."""
     from .review_handoff_scope import resolve
     from .review_preparation_repository import PreparationRepository
     from .review_wait_runtime.continuation_transition_repository import TransitionRepository
     from .setup_feature_config import answer_collection_allowed
     from .state_paths import path_lexically_exists
-    if not answer_collection_allowed(skill):
+    enabled = answer_collection_allowed(skill)
+    if observe_policy is not None:
+        observe_policy(enabled)
+    if not enabled:
         return None
     resolution = resolve(repo, writing=False)
     paths = resolution.paths
@@ -246,7 +259,7 @@ def _source_context(repo, skill, binding):
     return resolution, root, current
 
 
-def _source_service(repo, skill, context, *, initial=False):
+def _source_service(repo, skill, context, *, initial=False, observe_policy=None):
     from .review_answer_handoff import service_for
     from .review_answer_collection_repository import CollectionRepository
     from .setup_feature_config import answer_collection_allowed
@@ -265,7 +278,12 @@ def _source_service(repo, skill, context, *, initial=False):
             value["target_generation"], root.preparation_id, transition.continuation_id)
         from .review_answer_continuation_preparation import issued_bases
         basis = issued_bases(root, transition, CollectionRepository(store).read())[0]
-    return service_for(repo, resolution, root, basis, enabled=lambda: answer_collection_allowed(skill))
+    def enabled():
+        allowed = answer_collection_allowed(skill)
+        if observe_policy is not None:
+            observe_policy(allowed)
+        return allowed
+    return service_for(repo, resolution, root, basis, enabled=enabled)
 
 
 def service_for_wait(repo, skill, binding):
@@ -282,7 +300,7 @@ class SourceGroup:
     response_slots: tuple
 
 
-def sources_for_reviewers(repo, skill, binding, reviewer_ids):
+def sources_for_reviewers(repo, skill, binding, reviewer_ids, *, observe_policy=None):
     """Resolve exact fresh sources from issuance, selection history and bindings.
 
     Latest selected requests and never-selected initial slots are the only
@@ -292,7 +310,7 @@ def sources_for_reviewers(repo, skill, binding, reviewer_ids):
     from .review_continuation_repository import read_continuations
     from .review_wait_basis_repository import read_review_basis
     from .storage import connect_initialized_readonly
-    context = _source_context(repo, skill, binding)
+    context = _source_context(repo, skill, binding, observe_policy=observe_policy)
     if context is None:
         return None
     resolution, root, transition = context
@@ -319,7 +337,8 @@ def sources_for_reviewers(repo, skill, binding, reviewer_ids):
                 or transition.continuation_id != latest.continuation_id):
             _fail()
         if initial not in services:
-            services[initial] = _source_service(repo, skill, context, initial=initial)
+            services[initial] = _source_service(repo, skill, context, initial=initial,
+                                                observe_policy=observe_policy)
         service = services[initial]
         if service is None:
             # An entirely legacy request remains normal non-applicability.
@@ -462,6 +481,25 @@ def bound_turn(record):
     return record["attempts"][-1]["turn_id"]
 
 
+def _tracking_projection(row, child):
+    if row["basis"]["version"] != 2:
+        return None
+    if row["tracking_state"] == "invalidated":
+        _fail()
+    binding = row["binding"]
+    if binding is None:
+        if row["basis"]["continuation"] is not None:
+            _fail()
+        return None
+    if binding["reviewer_session_id"] != child:
+        _fail()
+    attempt = row["attempts"][0]
+    return dict(boundary_turn_id=bound_turn(row),
+        frozen=row["tracking_state"] == "frozen",
+        source_identity=deepcopy(attempt["source_identity"]),
+        terminal=attempt["terminal"])
+
+
 def tracking_for_reviewers(repo, skill, binding, reviewer_ids):
     groups = sources_for_reviewers(repo, skill, binding, reviewer_ids)
     result = {}
@@ -472,24 +510,217 @@ def tracking_for_reviewers(repo, skill, binding, reviewer_ids):
             if row["basis"]["version"] != 2:
                 continue
             group.service.check_basis(row["basis"], slot)
-            if row["tracking_state"] == "invalidated":
-                _fail()
-            if row["binding"] is None:
-                if row["basis"]["continuation"] is not None:
-                    _fail()
-                # Optional initial collection can be unavailable while the
-                # ordinary exact-turn wait still has an admitted reviewer.
-                continue
-            attempt = row["attempts"][0]
-            result[child] = dict(boundary_turn_id=bound_turn(row),
-                frozen=row["tracking_state"] == "frozen",
-                source_identity=deepcopy(attempt["source_identity"]),
-                terminal=attempt["terminal"])
+            projection = _tracking_projection(row, child)
+            if projection is not None:
+                result[child] = projection
     return result
 
 
-def collect_sources(group, host, *, explicit_recovery=False):
-    result = collect_bound(group.service, host, group.reviewer_ids, explicit_recovery=explicit_recovery)
+class TrackingReadmissionRequired(Exception):
+    """A new slot binding or re-enabled collection needs fresh source admission."""
+
+
+class _TrackingCollectionHost(PublicAnswerHost):
+    """Retain only the candidate identity actually read by the fresh collector."""
+
+    def __init__(self, host, parent_session_id, parent_turn_id, observer):
+        super().__init__(host, parent_session_id, parent_turn_id)
+        self._observer = observer
+
+    def observe_latest_answer(self, **arguments):
+        if not self._observer.collection_allowed():
+            raise AnswerError("collection_unavailable", reason="incomplete")
+        return self._observer._observe_candidate(super().observe_latest_answer, arguments)
+
+
+class _TrackingObserver:
+    """Bounded, disposable progress hints; never source admission or evidence."""
+
+    def __init__(self, admitted, observed, collection_policy, collection_enabled):
+        self._admitted = admitted
+        self._observed = observed
+        self._sources = {child: (slot, binding)
+            for _repository, _count, selected in admitted
+            for child, slot, _basis, binding in selected}
+        self._candidate_keys = {}
+        self._retry_requested = {}
+        self._collection_policy = collection_policy
+        self._collection_disabled = not collection_enabled
+
+    def collection_disabled(self):
+        """Discard only unadopted comparison hints, never saved source state."""
+        self._collection_disabled = True
+        self._candidate_keys.clear()
+        self._retry_requested.clear()
+
+    def observe_collection_policy(self, enabled):
+        """Retain a denial seen by fresh admission even if policy changes again."""
+        if not enabled:
+            self.collection_disabled()
+
+    def collection_allowed(self):
+        """Fresh body-read policy; renewed collection requires source admission."""
+        if not self._collection_policy():
+            self.collection_disabled()
+            return False
+        if self._collection_disabled:
+            raise TrackingReadmissionRequired()
+        return True
+
+    def __call__(self):
+        if self._collection_disabled:
+            self.collection_allowed()
+        result, collectable = {}, set()
+        try:
+            for repository, count, selected in self._admitted:
+                records = repository.read_observation()
+                if len(records) != count:
+                    _fail()
+                for child, slot, expected_basis, expected_binding in selected:
+                    row = records[slot - 1]
+                    if row["basis"] != expected_basis:
+                        _fail()
+                    projection = _tracking_projection(row, child)
+                    if row["binding"] != expected_binding:
+                        if expected_binding is None and row["binding"] is not None:
+                            raise TrackingReadmissionRequired()
+                        _fail()
+                    if projection is not None:
+                        result[child] = projection
+                        attempt = row["attempts"][0]
+                        if (row["tracking_state"] == "watching"
+                                and row["registration"]["state"] == "not_started"
+                                and attempt["publication"] is None):
+                            collectable.add(child)
+        except (AnswerError, TrackingReadmissionRequired):
+            self._candidate_keys.clear()
+            self._retry_requested.clear()
+            self._observed = {}
+            raise
+        self._observed = result
+        for child, candidate in tuple(self._retry_requested.items()):
+            if child in collectable and self._candidate_keys.get(child) == candidate:
+                self._forget_candidate(child)
+            self._retry_requested.pop(child, None)
+        return deepcopy(result)
+
+    def _forget_candidate(self, reviewer_id):
+        self._candidate_keys.pop(reviewer_id, None)
+        self._retry_requested.pop(reviewer_id, None)
+
+    def retry_unprocessed(self, reviewer_id):
+        """Remember a typed pre-lease busy until the next fresh observation.
+
+        collect_bound calls this only for native writer_busy, never inferred
+        from a generic result. No retry is authorized until __call__
+        rechecks watching, publication absence and not-started registration.
+        A busy observation leaves this bounded request for the next poll.
+        """
+        candidate = self._candidate_keys.get(reviewer_id)
+        if candidate is not None and candidate[0] == "complete":
+            self._retry_requested[reviewer_id] = candidate
+
+    def make_host(self, host, parent_session_id, parent_turn_id=None):
+        return _TrackingCollectionHost(host, parent_session_id, parent_turn_id, self)
+
+    def _candidate_arguments(self, reviewer_id):
+        slot, binding = self._sources[reviewer_id]
+        tracking = binding["tracking"]
+        return dict(basis_digest=binding["basis_digest"], slot=slot,
+            reviewer_session_id=reviewer_id, boundary_turn_id=tracking["boundary_turn_id"],
+            boundary=tracking["boundary"])
+
+    def _observe_candidate(self, read, arguments):
+        """Use the same bounded key for the probe and the actual collection read."""
+        from .review_answer_collection import AnswerTurnInProgress
+
+        reviewer_id = arguments["reviewer_session_id"]
+        if reviewer_id not in self._sources or arguments != self._candidate_arguments(reviewer_id):
+            _fail()
+        try:
+            observed = read(**arguments)
+        except AnswerTurnInProgress as pending:
+            self._candidate_keys[reviewer_id] = ("pending", pending.turn_id)
+            raise
+        except AnswerError as error:
+            failure = error.failure
+            self._candidate_keys[reviewer_id] = (
+                "unavailable", failure["class"], failure["field"], failure["reason"])
+            raise
+        except Exception:
+            self._candidate_keys[reviewer_id] = (
+                "unavailable", "collection_unavailable", None, "transport_unavailable")
+            raise
+        identity = observed["source_identity"]
+        self._candidate_keys[reviewer_id] = (
+            "complete", identity["reviewer_session_id"], identity["turn_id"], identity["message_id"],
+            hashlib.sha256(observed["answer_bytes"]).digest(), observed["terminal"])
+        return observed
+
+    def candidate_changed(self, host, reviewer_id):
+        """Probe only host completeness/identity; fresh collection reads again.
+
+        The last __call__ snapshot is only a hint. This method opens no core
+        connection or lease and parses no review JSON. A bounded opaque digest
+        distinguishes changed bytes under the same public message ID. Neither
+        bytes nor digest is logged, persisted, published or used as evidence.
+        """
+        from .review_answer_collection import AnswerTurnInProgress
+
+        projection = self._observed.get(reviewer_id)
+        if projection is None:
+            return False
+        if projection["frozen"]:
+            self._forget_candidate(reviewer_id)
+            return False
+        if not self.collection_allowed():
+            return None  # No candidate observation or handled-progress claim.
+        previous = self._candidate_keys.get(reviewer_id)
+        try:
+            self._observe_candidate(host.observe_latest_answer, self._candidate_arguments(reviewer_id))
+        except AnswerTurnInProgress:
+            return False
+        except Exception:
+            pass
+        return self._candidate_keys.get(reviewer_id) != previous
+
+
+def tracking_observer_for_reviewers(repo, skill, binding, reviewer_ids):
+    """Admit bounded source locations once, then observe only their records.
+
+    Returned facts are progress hints, never evidence or effect authority.
+    Callers keep their occurrence fence and use tracking_for_reviewers again
+    at effect boundaries. A newly bound initial slot cannot inherit admission
+    from its unbound predecessor; the caller must recreate this observer.
+    """
+    from .setup_feature_config import answer_collection_allowed
+    collection_policy = lambda: answer_collection_allowed(skill)
+    policy_observation = []
+    groups = sources_for_reviewers(repo, skill, binding, reviewer_ids,
+                                  observe_policy=policy_observation.append)
+    collection_enabled = policy_observation[-1]
+    admitted, observed = [], {}
+    for group in groups or ():
+        records = group.service.repository.read()
+        selected = []
+        for child, slot in zip(group.reviewer_ids, group.source_slots):
+            row = records[slot - 1]
+            if row["basis"]["version"] != 2:
+                continue
+            group.service.check_basis(row["basis"], slot)
+            projection = _tracking_projection(row, child)
+            if projection is not None:
+                observed[child] = projection
+            selected.append((child, slot, deepcopy(row["basis"]), deepcopy(row["binding"])))
+        if selected:
+            admitted.append((group.service.repository, len(records), tuple(selected)))
+
+    return _TrackingObserver(tuple(admitted), observed, collection_policy, collection_enabled)
+
+
+def collect_sources(group, host, *, explicit_recovery=False, on_retryable=None):
+    result = collect_bound(group.service, host, group.reviewer_ids,
+        explicit_recovery=explicit_recovery, on_retryable=on_retryable)
     positions = dict(zip(group.source_slots, group.response_slots))
     return dict(collected=[positions[slot] for slot in result["collected"]],
         unavailable=[{**item, "slot": positions[item["slot"]]} for item in result["unavailable"]])

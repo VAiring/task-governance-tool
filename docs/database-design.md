@@ -141,6 +141,28 @@ usage or report-only detail. Typed finalization completion uses the
 same local boundary as ordinary completion. Source leases, native basis and
 effect fences remain independently checked at their existing boundaries.
 
+Review-wait orchestration separates unchanged host/control observation from
+core-consuming callbacks, as specified by the
+[wait observation cycle](review-completion-specification.md#review-wait-observation-cycle).
+Its ordinary tick does not call the core resolver, basis reader, all-reviewer
+tracking or finalizer merely to discover that a reviewer is still running.
+Result collection and completion decisions enter their existing admission when
+needed; effect-time checks are fresh and independent of the observation cadence.
+No resolver bypass, cross-transaction validation cache or new database schema is
+introduced. Operational observation connections close before host calls or sleep.
+`review_wait_control_observation` starts only with an already admitted canonical
+core path. It compares physical identity/stamp and fixed change-counter/schema
+metadata as change hints, not integrity proofs. Only a changed hint opens one
+zero-timeout read-only snapshot of the bound Task/ownership/project controls,
+current-target Receipt count and that Task's unresolved blocking-Finding count.
+Unrelated Task commits do not trigger full admission when those controls are
+unchanged. File replacement or invalid reads fail closed; native SQLite busy
+defers without consuming the old baseline. A file change across the read cannot
+attach a new hint to an older snapshot. The initial baseline also requests fresh
+admission, so a change after initial preparation cannot be swallowed as the
+baseline. Fresh effect admission remains mandatory
+regardless of the hints.
+
 Maintenance opens metadata-only eligibility snapshots with local admission.
 Evidence and Viewer captures read enabled/generation state first, then call
 `validate_current_database` in the same snapshot only when a complete artifact

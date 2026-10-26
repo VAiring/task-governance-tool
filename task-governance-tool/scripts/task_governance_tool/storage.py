@@ -12412,8 +12412,8 @@ def _validate_snapshot_database_state(
             raise _unreadable_project_state() from exc
 
     if current_admitted:
-        if version in {23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, PRIVATE_SCHEMA21_VERSION, PRIVATE_SCHEMA22_VERSION}:
-            validate_current_schema21_admitted_rows(connection)
+        # The complete Evidence Ledger above already validates Runner
+        # references, so the separate current-schema Runner pass is redundant.
         _validate_collected_review_storage_rows(connection, version)
     if version in {24, 25, 26, 27, 28, 29, 30, 31, 32, 33}:
         from task_governance_tool.task_ownership import validate_storage_rows

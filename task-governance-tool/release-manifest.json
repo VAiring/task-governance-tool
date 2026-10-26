@@ -187,7 +187,7 @@
     "scripts/task_governance_tool/state_resolver.py": "sha256:2f10c96792049a4bad55545bc4419aaf1febed2cd1bfcf26bffae307be07c035",
     "scripts/task_governance_tool/state_separation.py": "sha256:8a457013dd89621bbcff99d7b67e26eaebcde232e409261809925741e9946c4c",
     "scripts/task_governance_tool/state_transition.py": "sha256:9c18bbe9bbf0d4714483219781d37e8ef60fbd69be14e0329fdbeb53836f4c90",
-    "scripts/task_governance_tool/storage.py": "sha256:1e03d1b2986e7ac7c53c176e245457dd00297f305efb484cd7e42ad4bb0802c1",
+    "scripts/task_governance_tool/storage.py": "sha256:990f472531e8f3343caf18f516b7335444a8cd31a3925708b34c3ded441ceee5",
     "scripts/task_governance_tool/stored_task_validation.py": "sha256:f8e0c8016b89a266ec29f225afb69cd7be5deaeeabc4d4d95fe1f412fb7534c7",
     "scripts/task_governance_tool/strict_path.py": "sha256:1e8ca595b4762e12cd7dd122aaf8f9fe4208896ce6802175b316172ecd0afd27",
     "scripts/task_governance_tool/task_ownership.py": "sha256:f7ae3e875e3d15bb3a668d8cfc661e535ae5b1a2e7806dff394df9f65d3f4de9",

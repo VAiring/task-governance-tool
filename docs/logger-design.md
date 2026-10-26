@@ -9,7 +9,7 @@
 
 ## 適用条件と責任
 
-正式基盤は `debug_log.py`、`debug_log_values.py`、`debug_log_sink.py`。
+正式基盤は `debug_log.py`、`debug_log_values.py`、`debug_log_metrics.py`、`debug_log_sink.py`。
 既存SQLite観測を再利用し、通常CLI、書込Setup、usage、レビュー引渡し・MCP要求・
 workerの既存admissionを通った処理へ接続する。doctor、明示read-only、レビューの
 読取専用表示・basis・finalization check・MCP inspectは保存しない。
@@ -44,8 +44,9 @@ errorsは成功引数を展開しない。書込直前も物理パス・マー�
 超えればそのイベントを破棄する。JSONを途中切断しない。保存可能なら末尾summaryに
 理由別破棄件数を記録するが、summary自体も失われ得る。
 引数は開始時だけ。戻り値、Task本文、SQL、行、コマンド入出力、環境、自由文をダンプしない。
-spanは失敗終了だけを記録し、例外詳細は処理境界で1回明示記録する。
-自動的な例外同一性追跡・反復集約は初期基盤に含めない。
+errorsのspanは失敗終了だけを記録し、例外詳細は処理境界で1回明示記録する。
+反復には明示的なaggregateを使い、反復ごとの開始・終了や引数を出力しない。
+自動的な例外同一性追跡や全メソッドへの一律計測は行わない。
 
 <a id="argument-policy"></a>
 
@@ -102,6 +103,25 @@ ContextVarを終了時に戻す。thread・別プロセスへの引継ぎは明�
 コード位置は字句的に投影し、計測中のファイル存在確認やパス解決を行わない。
 Task IDは渡された引数として扱い、推定やDB問い合わせを行わない。
 
+反復呼出しは `aggregate(function)` で本体を囲む。同じコード位置の呼出しを
+operation単位でまとめ、呼出しごとのspanや自由ラベルを増やさない。
+
+```python
+from task_governance_tool.debug_log import aggregate
+
+def process_batch(batch):
+    with aggregate(process_batch) as work:
+        processed = process_existing_items(batch)
+        work.count(processed)  # 本処理ですでに分かっている件数だけを渡す
+```
+
+`span(...) as work` も同じ `work.count(n)` を持ち、終了イベントに合計件数を付ける。
+どちらも件数は任意で、exact intの非負値を加算する。bool・負値・未知オブジェクトは
+変換せず、件数が不確かであることを残す。未指定はnull、明示した0は0。
+無効時にも同じ呼出しを使え、件数の投影・計測・保存は行わない。
+件数のために結果を再走査したりSQLを追加したりしない。
+通常処理への計測箇所の追加は、この基盤を使う各Taskが所有する。
+
 <a id="performance"></a>
 
 ## 計測
@@ -111,6 +131,23 @@ Task IDは渡された引数として扱い、推定やDB問い合わせを行�
 summaryのbuffer_instrumentation_nsは保護済みレコード構築・JSON化・投入を測る。
 呼出し側の引数投影、summary自身、sink I/O、admissionを含まない。全費用は隔離環境で
 OFF/ONの呼出し全体を比較する。SQLite計測負荷は既存collector値を別記する。
+
+aggregateは本体のinclusive時間を計測し、operation終了時にコード位置ごとの
+`performance.aggregate` を出す。module/function/定義行で区別し、operation内だけで
+有効なmeasurement_idを振る。同名でも異なる位置は別集計。位置不明はotherにまとめ、
+summaryに示す。複雑な親子集計木や反復ごとの詳細は作らない。
+既知コード位置は操作内で最大32件だけ再利用し、反復ごとの位置投影を避ける。
+呼出し回数、実測回数、累積・最大ns、指定された件数の合計、件数を指定した呼出し数、
+正確な件数のある呼出し数・不明な呼出し数、失敗・取消数を残す。
+未計測時間はnullであり、0の実測と区別する。件数合計は既知の入力分だけの合計で、
+不明呼出しや飽和があれば全体件数の証明にはならない。
+
+1操作32集計まで。保持済み集計は上限後も更新し、最大32集計イベントと1 summaryを
+operation終了時に出す。開始・終了数、集計省略、位置不明、観測失敗、63bit非負整数の
+飽和をsummaryで示す。errorsでは失敗・取消の呼出しだけを集計して出し、成功集計は
+出さない。summaryのpartialと各集計の実測・件数カバレッジを併せて判断する。
+このAPI自身の集計・最終出力・保存を含む費用は、admissionからscope終了後までを
+囲んだOFF/ON比較で測る。bufferやSQLの内部負荷だけを総追加負荷としない。
 
 <a id="sql-measurements"></a>
 
@@ -125,6 +162,11 @@ sql_idにする。最大32フレームの字句的な探索で特定不能なら
 invocation_id内でexecution_idを発行し、connection_id、開始前と戻り時のtransaction_id、
 親execution_id、API、bindingを保持する。transactionがない場合はnull。
 fetch時点のtransactionは別記し、消費中に切り替わった場合はmixedとして単一IDを推測しない。
+SQL実行開始時のspan_idとmeasurement_idを保持し、後で別scopeからfetchしても
+付け替えない。measurement_idは反復1回ごとのIDではなく上記の通常処理集計との対応。
+同じSQL位置が複数の通常処理集計から呼ばれた場合、SQL集計のmeasurement_bindingを
+mixed、measurement_idをnullにする。対応なしはnone、観測不能はunknownとし、
+実行詳細の対応はその開始時点のまま残す。SQL時間を通常処理時間から自動減算しない。
 connectionのshortcutは既定cursorを1つ作りnative Cursor APIを1回だけ呼ぶ。
 明示cursorと同じobserverを通り、shortcut再利用・bound method・iteratorも追跡する。
 任意のcursor factoryはnativeへそのまま渡し、その呼出しを未計測として数える。
@@ -166,7 +208,8 @@ script自身のaggregateを閉じても旧結果との対応は維持する。CO
 確定していない成否や消費状態を成功・完全取得にせず、既知の失敗・取消を保持する。
 超過した集計呼出し、詳細、追跡不能実行、unbound fetch、custom cursor、位置不明、観測失敗を
 SQL summaryで報告する。詳細は失敗を優先し、同じ優先度では古い失敗を落とす。
-256イベントのうち97枠をSQL詳細・集計・summary、1枠を全体summaryに予約する。
+256イベントのうち97枠をSQL詳細・集計・summary、33枠を通常処理の集計・summary、
+1枠を全体summaryに予約する。
 既存のbyte上限やsink拒否で出力自体が失われ得るため、summaryのpartial=falseでも
 全体ログの破棄件数と欠落条件を無視して完全性を主張しない。
 errorsでは失敗したSQL/fetchと上記の不確かな取得例外だけを有限保存し、成功詳細と成功集計は出力しない。
@@ -286,25 +329,39 @@ scopeとspanはclassのコンテキストマネージャーとし、終了処理
 ## 日別保存
 
 UTF-8、BOMなし、LFのJSONL。ファイル名は `taskgov-debug.log.YYYY-MM-DD`。
-当日にも末尾日付を付け、遅延イベントは発生時現地日付へ追記する。日付が戻れば
-以前の日へ追記する。空の日のファイル、日付なしcurrent、renameはない。
+当日にも末尾日付を付け、遅延イベントは保持対象内なら発生時現地日付へ追記する。
+空の日のファイル、日付なしcurrent、renameはない。
 thread lockと専用OS artifact lockをこの順で取得し、非待機1回で競合を断念する。
-lockファイルの存在は所有の証拠にしない。再確認・容量検査・追記・closeまでを囲む。
+lockファイルの存在は所有の証拠にしない。再確認・世代整理・容量検査・追記・closeまでを囲む。
 logger.lockは共有artifact lockのrequire_single_linkを有効にし、最初の書込前と
 取得後に開いたdescriptorとパスのリンク数1を確認する。他の利用者の既定契約は変えない。
 os.writeの非バッファ追記で、不完全な末尾行はLFで分離し切り詰めない。
 読み手は不正行を不完全記録として扱う。電源断時の永続性は保証しない。
-1日10 MiB、最大30日付ファイル、合計100 MiB。厳密な名前のファイルだけを数え、
-ディレクトリ走査自体は128エントリまで。容量超過・検査不能なら保存せず継続する。
-自動削除・上書き・ローテーションはない。利用者の明示整理まで総量上限は戻らない。
+1ファイル100 MiB、当日を含む最新3日付世代、合計300 MiBを上限とする。
+書込時、実在する既知ログ日付・書込日・現在の現地日付の和集合から新しい3日付を
+保持対象にする。当日が未作成でも1世代として数え、時計が戻った場合は既知の新しい
+日付を優先する。保持対象外の遅延イベントは旧世代を再生成せず、新世代を追い出さない。
+日次容量に達しても同日の別世代は増やさない。末尾LF補完に必要な実byte数も容量に含む。
+
+厳密な名前と実在日付を持つ物理的な単一リンクファイルだけを管理する。
+ディレクトリ全体を最大128エントリで検査してから、保持対象外を古い順に削除する。
+開始時に4世代以上あっても整理でき、旧世代は容量超過でも本文を読まずに削除できる。
+既知名のリンク・非regularファイルや検査不能があれば整理・出力を断念する。
+マーカー、ロック、似た名前、無関係なファイル、子ディレクトリ内の退避資料は削除しない。
+各削除・追記の直前にも物理パスと同一性を再確認する。ログ全本文は走査しない。
+保持対象の外部改変による容量超過は切り詰めず、保存を断念する。削除・検査失敗や競合は
+本処理の結果を変えず、待機・再試行・追加DB接続をしない。OFF・read-only・admission失敗時は
+整理も行わない。容量保証は管理可能な既知ログだけに適用し、削除不能ファイルや
+外部ファイルの強制縮減は保証しない。
 ログはcoreバックアップ、配布物、source commitから除外する。
 
 <a id="implementation-boundaries"></a>
 
 ## 実装境界
 
-valuesは記録前投影、debug_logは相関・span・有限バッファ・SQLite adapter、sinkは
-固定パスadmissionと日別追記を所有する。業務エラー、transaction cleanup、Task入力検査の
+valuesは記録前投影、metricsは件数と有限の反復集計、debug_logは相関・span・aggregate・
+有限バッファ・SQLite adapter、sinkは固定パスadmissionと日別保持・追記を所有する。
+業務エラー、transaction cleanup、Task入力検査の
 所有者は変更しない。ログのためのDB接続・migration・ネットワーク・背景処理を追加しない。
 
 <a id="verification"></a>
@@ -312,6 +369,8 @@ valuesは記録前投影、debug_logは相関・span・有限バッファ・SQLi
 ## 検証
 
 短い呼出し例、OFF/ON/errors、数値と状態、ネスト秘密と未知オブジェクト、開始終了と
-例外不変、実SQLite失敗・close、日跨ぎと遅延、thread/process競合、途中行と容量・
-書込失敗、マーカー変更とunsafe path、公開出力とdoctor/read-onlyを隔離検証する。
-OFF/ONの全体時間と出力量を比較し、文書・配布整合を確認する。レビューはTier 2。
+例外不変、実SQLite失敗・close、有限集計・件数・欠落・SQLとの対応を隔離検証する。
+日跨ぎ・遅延・時計巻戻り、過剰世代整理、thread/process競合、途中行と容量・削除失敗・
+書込失敗、マーカー変更とunsafe path、公開出力とdoctor/read-onlyも確認する。
+OFF/ONの全体時間と出力量を比較し、計測・集計・保存を含む追加負荷を確認する。
+文書・配布整合を確認し、レビューはTier 2とする。

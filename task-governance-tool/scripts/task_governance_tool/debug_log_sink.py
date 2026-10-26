@@ -13,10 +13,10 @@ from .state_paths import (inspect_physical_directory, inspect_physical_file,
                           read_physical_file_bounded, path_lexically_exists)
 
 MODES = {b"taskgov-logger-v1 debug\n": "debug", b"taskgov-logger-v1 errors\n": "errors"}
-MAX_DAY_BYTES = 10 * 1024 * 1024
-MAX_TOTAL_BYTES = 100 * 1024 * 1024
-MAX_FILES = 30
-_FILE = re.compile(r"taskgov-debug\.log\.(\d{4}-\d{2}-\d{2})\Z")
+MAX_DAY_BYTES = 100 * 1024 * 1024
+MAX_TOTAL_BYTES = 300 * 1024 * 1024
+MAX_FILES = 3
+_FILE = re.compile(r"taskgov-debug\.log\.([0-9]{4}-[0-9]{2}-[0-9]{2})\Z")
 _LOCK = threading.Lock()
 
 
@@ -54,8 +54,17 @@ class DailySink:
         finally:
             _LOCK.release()
 
+    def _inspect_log(self, path):
+        _, identity = inspect_physical_file(path, root=self.root)
+        details = path.lstat()
+        if (details.st_nlink != 1 or
+                (details.st_dev, details.st_ino, details.st_size, details.st_mtime_ns) !=
+                (identity.device, identity.inode, identity.size, identity.modified_ns)):
+            raise OSError("diagnostic file changed")
+        return identity
+
     def _append(self, day, data):
-        total, files = 0, {}
+        files = {}
         # Bound inventory work even if unrelated artifacts have accumulated.
         with os.scandir(self.directory) as entries:
             for index, entry in enumerate(entries):
@@ -64,21 +73,31 @@ class DailySink:
                 match = _FILE.fullmatch(entry.name)
                 if match is None:
                     continue
-                date.fromisoformat(match[1])
-                _, identity = inspect_physical_file(Path(entry.path), root=self.root, max_bytes=MAX_DAY_BYTES)
-                files[entry.name] = identity
-                total += identity.size
-                if len(files) > MAX_FILES or total > MAX_TOTAL_BYTES:
-                    return "capacity"
+                try:
+                    date.fromisoformat(match[1])
+                except ValueError:
+                    continue
+                files[match[1]] = self._inspect_log(Path(entry.path))
+        # Existing newer dates also anchor retention when the clock rolls back.
+        retained = set(sorted({*files, date.today().isoformat(), day}, reverse=True)[:MAX_FILES])
+        for expired in sorted(files.keys() - retained):
+            path = self.directory / ("taskgov-debug.log." + expired)
+            if (self._inspect_log(path) != files[expired] or
+                    inspect_physical_directory(self.directory, root=self.root).identity != self.identity):
+                return "changed"
+            path.unlink()
+            del files[expired]
+        if day not in retained:
+            return "capacity"
+        total = sum(identity.size for identity in files.values())
         path = self.directory / ("taskgov-debug.log." + day)
-        previous = files.get(path.name)
+        previous = files.get(day)
         size = previous.size if previous else 0
-        if (previous is None and len(files) >= MAX_FILES or
-                size + len(data) + 1 > MAX_DAY_BYTES or total + len(data) + 1 > MAX_TOTAL_BYTES):
+        if (any(identity.size > MAX_DAY_BYTES for identity in files.values()) or
+                size + len(data) > MAX_DAY_BYTES or total + len(data) > MAX_TOTAL_BYTES):
             return "capacity"
         if path_lexically_exists(path):
-            _, current = inspect_physical_file(path, root=self.root, max_bytes=MAX_DAY_BYTES)
-            if current != previous:
+            if self._inspect_log(path) != previous:
                 return "changed"
         flags = os.O_RDWR | os.O_APPEND | getattr(os, "O_BINARY", 0) | getattr(os, "O_NOFOLLOW", 0)
         if previous is None:
@@ -86,15 +105,23 @@ class DailySink:
         descriptor = os.open(path, flags, 0o600)
         try:
             details = os.fstat(descriptor)
-            _, current = inspect_physical_file(path, root=self.root, max_bytes=MAX_DAY_BYTES)
+            current = self._inspect_log(path)
             if (not stat.S_ISREG(details.st_mode) or details.st_nlink != 1 or
-                    (details.st_dev, details.st_ino) != (current.device, current.inode) or
+                    (details.st_dev, details.st_ino, details.st_size, details.st_mtime_ns) !=
+                    (current.device, current.inode, current.size, current.modified_ns) or
+                    (current != previous if previous else current.size != 0) or
                     inspect_physical_directory(self.directory, root=self.root).identity != self.identity):
                 return "changed"
+            separator = b""
             if details.st_size:
                 os.lseek(descriptor, -1, os.SEEK_END)
                 if os.read(descriptor, 1) != b"\n":
-                    _write_all(descriptor, b"\n")
+                    separator = b"\n"
+            added = len(separator) + len(data)
+            if details.st_size + added > MAX_DAY_BYTES or total + added > MAX_TOTAL_BYTES:
+                return "capacity"
+            if separator:
+                _write_all(descriptor, separator)
             _write_all(descriptor, data)
             # os.write is unbuffered; closing releases the file for other users.
             return "written"

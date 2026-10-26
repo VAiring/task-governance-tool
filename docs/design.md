@@ -910,12 +910,27 @@ Collector record-sink adapter reuses SQLite observation and connection tracking;
 only sanitized fields enter the common operation buffer. Common publication
 replaces the dedicated SQLite sink for that invocation and waits for all
 registered connections to close. The daily sink performs bounded inventory and
-zero-wait thread/OS locking, without background work, retries or log deletion.
+zero-wait thread/OS locking, including oldest-first deletion of strictly known,
+physical single-link daily logs outside the retained date generations. Its
+[daily-file contract](logger-design.md#daily-files) bounds inventory and capacity,
+preserves newer generations against late events, and excludes unrelated and
+archived files. It adds no background work, retry or whole-log content scan.
 Doctor, explicit read-only and read-only review/MCP inspection suppress both
 scopes, including nested scopes. Write Setup, usage, review handoff and MCP
 requests enter finite scopes; workers create independent scopes from the
 configured project/package, never inheriting a mutable request collector.
 Other individual diagnostic components keep their own scope.
+
+`debug_log_metrics.py` owns bounded operation-local method aggregates and item
+counts; `debug_log.py` exposes `aggregate(function)` and `span(...).count(n)`
+through the existing admitted scope. Callers supply already-known counts without
+result traversal or extra SQL. Aggregates keep code-owned method identity, call
+counts, total/maximum inclusive time, item counts and explicit coverage; they
+emit once per retained method at operation exit, not once per iteration.
+The [performance design](logger-design.md#performance) owns the limits and
+unknown/saturated meanings. Whole-operation OFF/ON comparison includes admission,
+instrumentation, final aggregation and sink I/O. Adding instrumentation throughout
+ordinary processing remains separate from this common API.
 
 For [SQLite diagnostics](specification.md#sqlite-transaction-diagnostics),
 `sqlite_diagnostics.py` admits the physical project/package and the fixed
@@ -979,6 +994,10 @@ SQL observations reuse those scopes. Bounded execution metadata and call-site
 aggregates live in the common Session's collector; they contain no cursor,
 connection, frame, SQL, parameter or result objects. Cursor reuse closes the
 previous observation, while scripts preserve its existing result association.
+The Session supplies the method span and method-aggregate measurement ID at SQL
+execution start. Later fetches retain that captured association. SQL aggregates
+remain grouped by SQL call site and mark differing method measurements as mixed,
+so correlation does not multiply SQL groups or invent exclusive SQL time.
 Native reexecution failure makes subsequent consumption unbound. Connection
 close ends outstanding observations; scope exit discards or publishes them
 under the same admission and closed-connection rules. The

@@ -1143,15 +1143,38 @@ exception messages, source lines, locals and cause chains are omitted.
 The exact bounds and simple call examples are in the
 [logger design](logger-design.md#argument-policy).
 
+Repeated processing may use an explicit, bounded aggregate API that emits
+call counts, cumulative/maximum elapsed time and already-known item counts
+at operation exit, without per-iteration detail. Ordinary method ends may
+also report counts. An unspecified count or missing timing remains unknown;
+an explicitly known zero remains zero. Counting adds no SQL or result rescan.
+Code-owned method identity and generated operation-local measurement IDs
+associate ordinary processing with SQL. This foundation does not add measurement
+sites throughout ordinary processing. Bounds, partial coverage and the small
+API are owned by the [performance design](logger-design.md#performance).
+
 Protected events are buffered until operation exit and all tracked connections
 close, with at most 256 events, 512 KiB per buffer and 16 KiB per event.
 Unknown connection cleanup suppresses output. At exit, events are appended to
 UTF-8 JSONL `taskgov-debug.log.YYYY-MM-DD`, using each event's local occurrence
 date, UTC timestamp and offset, including delayed events across midnight.
-One zero-wait thread/OS lock protects each daily batch. Incomplete trailing
-lines are separated, never truncated. At most 30 daily files, 10 MiB per day,
-100 MiB total and a 128-entry inventory bound apply. No automatic deletion or
-rotation occurs. Logging failures, capacity or contention drop diagnostics and
+One zero-wait thread/OS lock protects each daily batch, including bounded old-log
+cleanup. Incomplete trailing lines are separated, never truncated, with their
+actual LF cost included in capacity. The latest three date generations,
+including today, have limits of 100 MiB per file and 300 MiB total; reaching
+the daily limit never creates another same-day generation. A complete inventory
+of at most 128 directory entries validates strictly named physical single-link
+logs before deleting expired dates oldest first, including when more than three
+generations already exist. Existing dates, the event date and today's local
+date determine the newest three; known newer dates prevail after clock rollback.
+Late events outside retention never recreate an expired generation or displace
+newer logs. Markers, locks, links, unrelated files and archived subdirectories
+are not deleted. OFF, read-only and failed admission perform no cleanup.
+No whole-log scan, added DB connection, waiting or retry is introduced.
+Capacity guarantees cover manageable known logs, without force-shrinking
+external or undeletable files. The exact rules are in the
+[daily-file design](logger-design.md#daily-files).
+Logging failures, deletion failure, capacity or contention drop diagnostics and
 preserve the primary outcome. Missing logs do not prove absence or success;
 crashes may lose the whole operation. Logs are excluded from source/release
 and core backup/recovery inventories. Neither logs nor summary counters prove
@@ -1175,6 +1198,9 @@ log content. `execute`, `executemany`, `executescript`, `fetchone`, `fetchmany`,
 `fetchall` and iteration are measured once at their native API boundary.
 Shortcut-returned default cursors retain observation when reused. Explicit
 custom cursor factories are preserved and reported as unmeasured.
+Execution-start method-span and ordinary-processing measurement associations
+remain fixed during later fetches. A SQL aggregate spanning different ordinary
+measurements reports mixed association instead of assigning one guessed ID.
 
 Native API time includes conversion, row factories and user functions; it is
 not SQLite CPU time. Execution time, fetch time, result lifetime and observer

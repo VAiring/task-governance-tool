@@ -1,7 +1,10 @@
 """Common logger privacy, native DB boundaries, timing and daily retention."""
 from contextlib import closing
+from datetime import date, timedelta
 import json
+import os
 from pathlib import Path
+import subprocess
 import threading
 import unittest
 from unittest import mock
@@ -34,6 +37,11 @@ class DebugLogTests(unittest.TestCase):
         directory = self.root / '.taskgov/diagnostics/logger'
         return [json.loads(line) for path in directory.glob('taskgov-debug.log.*')
                 for line in path.read_bytes().splitlines() if line.startswith(b'{')]
+
+    def admitted_sink(self):
+        admitted = sink.admit(self.root, self.entrypoint, repo_explicit=True)
+        self.assertIsNotNone(admitted)
+        return admitted
 
     def test_off_does_not_expand_arguments_or_allocate_logger_artifacts(self):
         self.marker.unlink()  # both facilities OFF
@@ -416,14 +424,187 @@ class DebugLogTests(unittest.TestCase):
             pass
         self.assertEqual(target.read_bytes(), b'preserve')
 
-    def test_file_count_and_total_limits_do_not_delete_existing_files(self):
+    def test_retention_cleans_existing_generations_and_preserves_unrelated_files(self):
         directory = self.configure()
-        (directory / 'taskgov-debug.log.2000-01-01').write_bytes(b'{}\n')
-        for limits in ({'MAX_FILES': 1}, {'MAX_TOTAL_BYTES': 3}):
-            with mock.patch.multiple(sink, **limits):
-                with self.scope(), log.span(example):
-                    pass
-            self.assertEqual([p.name for p in directory.glob('taskgov-debug.log.*')], ['taskgov-debug.log.2000-01-01'])
+        self.assertEqual((sink.MAX_DAY_BYTES, sink.MAX_TOTAL_BYTES, sink.MAX_FILES),
+                         (100 * 1024 * 1024, 300 * 1024 * 1024, 3))
+        for number in range(20, 25):
+            (directory / f'taskgov-debug.log.2026-10-{number}').write_bytes(b'{}\n')
+        unrelated = ['taskgov-debug.log.2026-02-31', 'taskgov-debug.log.2026-10-20.retired', 'notes.txt']
+        for name in unrelated:
+            (directory / name).write_bytes(b'preserve')
+        archive = directory / 'archive'
+        archive.mkdir()
+        (archive / 'taskgov-debug.log.2026-10-01').write_bytes(b'preserve')
+        logger = self.admitted_sink()
+        with mock.patch.object(sink, 'date', wraps=date) as clock:
+            clock.today.return_value = date(2026, 10, 25)
+            self.assertEqual(logger.write('2026-10-25', b'{}\n'), 'written')
+        for number in range(20, 26):
+            self.assertEqual((directory / f'taskgov-debug.log.2026-10-{number}').exists(), number >= 23)
+        for name in unrelated:
+            self.assertEqual((directory / name).read_bytes(), b'preserve')
+        self.assertEqual((archive / 'taskgov-debug.log.2026-10-01').read_bytes(), b'preserve')
+        self.assertEqual((directory / 'enabled').read_bytes(), b'taskgov-logger-v1 debug\n')
+        self.assertTrue((directory / 'logger.lock').is_file())
+
+    def test_delayed_and_rollback_events_cannot_recreate_evicted_dates(self):
+        directory = self.configure()
+        logger = self.admitted_sink()
+        with mock.patch.object(sink, 'date', wraps=date) as clock:
+            clock.today.return_value = date(2026, 10, 27)
+            for number in (25, 26, 27):
+                self.assertEqual(logger.write(f'2026-10-{number}', b'{}\n'), 'written')
+            self.assertEqual(logger.write('2026-10-24', b'{}\n'), 'capacity')
+            clock.today.return_value = date(2026, 10, 25)
+            self.assertEqual(logger.write('2026-10-25', b'{}\n'), 'written')
+            self.assertEqual(logger.write('2026-10-24', b'{}\n'), 'capacity')
+            self.assertEqual(logger.write('2026-10-28', b'{}\n'), 'written')
+            self.assertEqual(logger.write('2026-10-25', b'{}\n'), 'capacity')
+        self.assertEqual(sorted(p.name for p in directory.glob('taskgov-debug.log.*')),
+                         [f'taskgov-debug.log.2026-10-{number}' for number in (26, 27, 28)])
+
+    def test_current_day_reserves_a_generation_before_delayed_write(self):
+        directory = self.configure()
+        for number in (20, 21, 22):
+            (directory / f'taskgov-debug.log.2026-10-{number}').write_bytes(b'{}\n')
+        logger = self.admitted_sink()
+        with mock.patch.object(sink, 'date', wraps=date) as clock:
+            clock.today.return_value = date(2026, 10, 27)
+            self.assertEqual(logger.write('2026-10-21', b'{}\n'), 'written')
+            self.assertEqual(logger.write('2026-10-20', b'{}\n'), 'capacity')
+        self.assertEqual(sorted(p.name for p in directory.glob('taskgov-debug.log.*')),
+                         ['taskgov-debug.log.2026-10-21', 'taskgov-debug.log.2026-10-22'])
+
+    def test_daily_and_total_capacity_count_only_required_lf_bytes(self):
+        directory = self.configure()
+        logger = self.admitted_sink()
+        day = date.today().isoformat()
+        path = directory / ('taskgov-debug.log.' + day)
+        with mock.patch.multiple(sink, MAX_DAY_BYTES=3, MAX_TOTAL_BYTES=3):
+            self.assertEqual(logger.write(day, b'{}\n'), 'written')
+        self.assertEqual(path.read_bytes(), b'{}\n')
+        for before in (b'', b'{}\n', b'partial'):
+            with self.subTest(before=before):
+                path.write_bytes(before)
+                expected = before + (b'\n' if before and not before.endswith(b'\n') else b'') + b'{}\n'
+                with mock.patch.multiple(sink, MAX_DAY_BYTES=len(expected), MAX_TOTAL_BYTES=len(expected)):
+                    self.assertEqual(logger.write(day, b'{}\n'), 'written')
+                    self.assertEqual(logger.write(day, b'{}\n'), 'capacity')
+                self.assertEqual(path.read_bytes(), expected)
+                self.assertEqual(len(list(directory.glob('taskgov-debug.log.*'))), 1)
+        path.write_bytes(b'partial')
+        with mock.patch.multiple(sink, MAX_DAY_BYTES=10, MAX_TOTAL_BYTES=10):
+            self.assertEqual(logger.write(day, b'{}\n'), 'capacity')
+        self.assertEqual(path.read_bytes(), b'partial')
+
+    def test_total_capacity_covers_all_retained_files(self):
+        directory = self.configure()
+        logger = self.admitted_sink()
+        for number in (25, 26):
+            (directory / f'taskgov-debug.log.2026-10-{number}').write_bytes(b'1\n')
+        path = directory / 'taskgov-debug.log.2026-10-27'
+        with mock.patch.object(sink, 'date', wraps=date) as clock:
+            clock.today.return_value = date(2026, 10, 27)
+            with mock.patch.multiple(sink, MAX_DAY_BYTES=2, MAX_TOTAL_BYTES=5):
+                self.assertEqual(logger.write('2026-10-27', b'1\n'), 'capacity')
+                self.assertFalse(path.exists())
+            with mock.patch.multiple(sink, MAX_DAY_BYTES=2, MAX_TOTAL_BYTES=6):
+                self.assertEqual(logger.write('2026-10-27', b'1\n'), 'written')
+        self.assertEqual(sum(p.stat().st_size for p in directory.glob('taskgov-debug.log.*')), 6)
+
+    def test_retention_failures_preserve_business_result_and_known_files(self):
+        directory = self.configure()
+        day = date.today()
+        for offset in range(4):
+            (directory / ('taskgov-debug.log.' + (day - timedelta(days=offset)).isoformat())).write_bytes(b'{}\n')
+        before = {p.name: p.read_bytes() for p in directory.glob('taskgov-debug.log.*')}
+        failures = [mock.patch.object(Path, 'unlink', side_effect=OSError(SECRET)),
+                    mock.patch.object(sink.DailySink, '_inspect_log', side_effect=OSError(SECRET)),
+                    mock.patch.object(sink, 'zero_wait_artifact_lock', side_effect=OSError(SECRET))]
+        for failure in failures:
+            with failure, self.scope(), log.span(example), closing(db.connect_existing(self.database)) as connection, connection:
+                connection.execute("INSERT INTO items VALUES ('saved')")
+                result = 42
+            self.assertEqual(result, 42)
+            self.assertEqual({p.name: p.read_bytes() for p in directory.glob('taskgov-debug.log.*')}, before)
+        with closing(db.connect_existing(self.database)) as connection:
+            self.assertEqual(connection.execute('SELECT COUNT(*) FROM items').fetchone()[0], 4)
+
+    def test_unsafe_old_generation_prevents_cleanup_before_any_deletion(self):
+        directory = self.configure()
+        logger = self.admitted_sink()
+        target = self.root / 'outside-log'
+        target.write_bytes(b'preserve')
+        oldest = directory / 'taskgov-debug.log.2026-10-23'
+        for number in (24, 25, 26, 27):
+            (directory / f'taskgov-debug.log.2026-10-{number}').write_bytes(b'{}\n')
+        with mock.patch.object(sink, 'date', wraps=date) as clock:
+            clock.today.return_value = date(2026, 10, 27)
+            oldest.mkdir()
+            self.assertEqual(logger.write('2026-10-27', b'{}\n'), 'unavailable')
+            self.assertTrue(oldest.is_dir())
+            oldest.rmdir()
+            try:
+                oldest.hardlink_to(target)
+            except OSError:
+                self.skipTest('hardlink creation unavailable')
+            self.assertEqual(logger.write('2026-10-27', b'{}\n'), 'unavailable')
+        self.assertEqual(target.read_bytes(), b'preserve')
+        for number in (24, 25, 26, 27):
+            self.assertEqual((directory / f'taskgov-debug.log.2026-10-{number}').read_bytes(), b'{}\n')
+
+    @unittest.skipUnless(os.name == 'nt', 'Windows junction behavior')
+    def test_old_junction_is_preserved_and_prevents_cleanup(self):
+        directory = self.configure()
+        logger = self.admitted_sink()
+        outside = self.root / 'outside-logs'
+        outside.mkdir()
+        (outside / 'keep').write_bytes(b'preserve')
+        junction = directory / 'taskgov-debug.log.2026-10-23'
+        linked = subprocess.run(['cmd', '/c', 'mklink', '/J', str(junction), str(outside)],
+                                capture_output=True, check=False)
+        if linked.returncode:
+            self.skipTest('Windows junction creation unavailable')
+        self.addCleanup(junction.rmdir)
+        for number in (24, 25, 26, 27):
+            (directory / f'taskgov-debug.log.2026-10-{number}').write_bytes(b'{}\n')
+        with mock.patch.object(sink, 'date', wraps=date) as clock:
+            clock.today.return_value = date(2026, 10, 27)
+            self.assertEqual(logger.write('2026-10-27', b'{}\n'), 'unavailable')
+        self.assertTrue(junction.is_junction())
+        self.assertEqual((outside / 'keep').read_bytes(), b'preserve')
+        self.assertEqual(len(list(directory.glob('taskgov-debug.log.*'))), 5)
+
+    def test_bounded_inventory_does_not_start_partial_cleanup(self):
+        directory = self.configure()
+        for index in range(129):
+            (directory / f'unrelated-{index}').write_bytes(b'preserve')
+        for number in (24, 25, 26, 27):
+            (directory / f'taskgov-debug.log.2026-10-{number}').write_bytes(b'{}\n')
+        logger = self.admitted_sink()
+        self.assertEqual(logger.write(date.today().isoformat(), b'{}\n'), 'capacity')
+        self.assertEqual(len(list(directory.glob('taskgov-debug.log.*'))), 4)
+        self.assertEqual(len(list(directory.glob('unrelated-*'))), 129)
+
+    def test_off_read_only_and_unvalidated_scope_do_not_clean_old_files(self):
+        directory = self.configure()
+        for number in (20, 21, 22, 23):
+            (directory / f'taskgov-debug.log.2026-10-{number}').write_bytes(b'{}\n')
+        before = {p.name: p.read_bytes() for p in directory.glob('taskgov-debug.log.*')}
+        (directory / 'enabled').unlink()
+        with self.scope(), log.span(example):
+            pass
+        self.configure()
+        with self.scope(read_only=True), log.span(example):
+            pass
+        with log.operation_scope(self.root, entrypoint=self.entrypoint, operation='task.show', repo_explicit=True), log.span(example):
+            pass
+        with mock.patch.object(log, 'admit', return_value=None), self.scope(), log.span(example):
+            pass
+        self.assertEqual({p.name: p.read_bytes() for p in directory.glob('taskgov-debug.log.*')}, before)
+        self.assertFalse((directory / 'logger.lock').exists())
+
     def test_delayed_events_retain_occurrence_dates_across_midnight(self):
         directory = self.configure()
         times = iter([{'observed_at': '2026-12-31T14:59:59+00:00', 'log_date': '2026-12-31', 'utc_offset': '+0900'},
@@ -458,7 +639,10 @@ class DebugLogTests(unittest.TestCase):
             self.assertEqual(connection.execute('SELECT COUNT(*) FROM items').fetchone()[0], 2)
 
     def test_thread_contention_drops_without_waiting_and_json_lines_do_not_mix(self):
-        self.configure()
+        directory = self.configure()
+        for offset in range(1, 5):
+            day = (date.today() - timedelta(days=offset)).isoformat()
+            (directory / ('taskgov-debug.log.' + day)).write_bytes(b'')
         barrier = threading.Barrier(4)
         def worker():
             with self.scope(), log.span(example):
@@ -471,3 +655,4 @@ class DebugLogTests(unittest.TestCase):
             self.assertFalse(thread.is_alive())
         self.assertTrue(self.records())
         self.assertTrue(all(row['format'] == 'taskgov-debug-v1' for row in self.records()))
+        self.assertEqual(len(list(directory.glob('taskgov-debug.log.*'))), 3)

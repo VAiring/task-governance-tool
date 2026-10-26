@@ -112,7 +112,7 @@ conservative; no converter, row, exception traceback or callback is inspected.
 
 class Metrics:
     """One admitted operation, independent budgets for grouping and details."""
-    def __init__(self, mode, emit, collector):
+    def __init__(self, mode, emit, collector, *, context=None):
         self.mode, self.emit, self.collector = mode, emit, collector
         self.groups, self.active, self.details = {}, {}, []
         self.sequence = self.calls = self.omitted_groups = self.untracked = 0
@@ -121,6 +121,7 @@ class Metrics:
         self.observation_failures = 0
         self.unknown_sources = 0
         self.saturated = self.closed = False
+        self.context = context
 
     def usable(self):
         if threading.get_ident() != self.collector.thread_id:
@@ -162,6 +163,14 @@ class Metrics:
                  'rows_known': True, 'consumption': 'pending', 'outcome': 'unknown',
                  'outcome_observed': False,
                  'ended': False, 'tracked': len(self.active) < MAX_ACTIVE}
+        state.update(span_id=None, measurement_id=None, measurement_binding='none')
+        if self.context is not None:
+            try:
+                state['span_id'], state['measurement_id'] = self.context()
+                state['measurement_binding'] = 'exact' if state['measurement_id'] is not None else 'none'
+            except BaseException:
+                state['measurement_binding'] = 'unknown'
+                self.bump('observation_failures')
         if state['tracked']:
             self.active[state['execution_id']] = state
         else:
@@ -175,11 +184,17 @@ class Metrics:
                 self.bump('omitted_groups')
                 return None
             self.groups[key] = {'sql_id': key, 'api': state['api'], 'executions': 0,
+                                'measurement_id': state['measurement_id'],
+                                'measurement_binding': state['measurement_binding'],
                                 'execute_ns': 0, 'execute_max_ns': 0, 'fetch_calls': 0,
                                 'fetch_ns': 0, 'fetch_max_ns': 0, 'rows_lower_bound': 0,
                                 'unknown_rows_calls': 0, 'failures': 0, 'cancelled': 0, 'unknown_outcomes': 0,
                                 'complete_results': 0, 'partial_results': 0, 'unknown_results': 0}
-        return self.groups[key]
+        group = self.groups[key]
+        if (group['measurement_binding'] != state['measurement_binding'] or
+                group['measurement_id'] != state['measurement_id']):
+            group['measurement_id'], group['measurement_binding'] = None, 'mixed'
+        return group
 
     def observed(self, state, method, elapsed, error, *, rows=None, consumption=None, outcome=None):
         if state is None or not self.usable():
@@ -217,6 +232,8 @@ class Metrics:
             self.detail({'execution_id': state['execution_id'], 'sql_id': state['sql_id'],
                          'connection_id': state['connection_id'], 'binding': state['binding'],
                          'transaction_id': state['transaction_id'],
+                         'span_id': state['span_id'], 'measurement_id': state['measurement_id'],
+                         'measurement_binding': state['measurement_binding'],
                          'parent_execution_id': state['parent_execution_id'],
                          'method': method, 'outcome': outcome, 'elapsed_ns': elapsed}, failed=True)
 

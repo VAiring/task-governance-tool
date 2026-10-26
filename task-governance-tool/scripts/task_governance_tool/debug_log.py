@@ -1,4 +1,4 @@
-"""Small local diagnostic API: operation_scope, span, and record_exception.
+"""Small local diagnostic API: operation_scope, span, aggregate, record_exception.
 
 Caller functions supply code-owned field names; runtime strings are values, not
 labels. All events are protected before entering the finite operation buffer.
@@ -16,12 +16,14 @@ from . import debug_log_values as projection
 from . import sqlite_diagnostics as sqlite
 from .debug_log_sink import admit
 from .sqlite_sql_trace import Metrics, RESERVED_EVENTS
+from .debug_log_metrics import Aggregates, ItemCount, RESERVED_EVENTS as PERFORMANCE_EVENTS
 
 MAX_EVENTS = 256
 MAX_BUFFER_BYTES = 512 * 1024
 MAX_EVENT_BYTES = 16 * 1024
 _current = ContextVar("debug_log", default=None)
 _span = ContextVar("debug_log_span", default=None)
+_measurement = ContextVar("debug_log_measurement", default=None)
 
 
 def _moment():
@@ -43,7 +45,13 @@ class Session:
         self.collector = sqlite.Collector(sink.directory, sink.root, "transactions", operation=operation,
             marker=sink.marker, directory_identity=sink.identity, record_sink=self.db_event)
         self.collector.operation_id = self.invocation_id
-        self.collector.sql_metrics = Metrics(self.mode, self.emit, self.collector)
+        self.performance = Aggregates(self.mode, self.emit)
+        self.collector.sql_metrics = Metrics(self.mode, self.emit, self.collector, context=self.sql_context)
+
+    def sql_context(self):
+        if _current.get() is not self:
+            return None, None
+        return _span.get(), _measurement.get()
 
     def drop(self, reason):
         self.dropped[reason] = self.dropped.get(reason, 0) + 1
@@ -70,7 +78,7 @@ class Session:
             # operation budget, including when the detail buffer overflowed.
             limit = MAX_EVENTS if kind == "diagnostic.summary" else MAX_EVENTS - 1
             if kind != "diagnostic.summary" and not reserved:
-                limit -= RESERVED_EVENTS
+                limit -= RESERVED_EVENTS + PERFORMANCE_EVENTS
             while len(self.events) >= limit or self.size + len(data) > MAX_BUFFER_BYTES:
                 if not failed or not self.events:
                     self.drop("buffer_limit")
@@ -95,6 +103,7 @@ class Session:
             self.collector.mark_untracked()
         allowed = self.validated and not self.collector._open and not self.collector._untracked
         self.collector.sql_metrics.finish(publish=allowed)
+        self.performance.finish(publish=allowed)
         self.collector.sealed = True
         if not allowed:
             self.events.clear()
@@ -160,6 +169,9 @@ class operation_scope:
                 self.session = Session(sink, self.operation, validated=self.validated)
                 token = _current.set(self.session)
                 self.stack.callback(_current.reset, token)
+                for variable in (_span, _measurement):
+                    token = variable.set(None)
+                    self.stack.callback(variable.reset, token)
                 self.stack.enter_context(sqlite.bind_collector(self.session.collector))
                 return self.session
         except BaseException:
@@ -207,13 +219,15 @@ class span:
         self.function, self.arguments = function, arguments
         self.session = self.token = self.started = None
         self.details = {}
+        self.counts = None
 
     def __enter__(self):
         self.session = _current.get()
         if self.session is None:
             self.function = self.arguments = None
-            return
+            return self
         try:
+            self.counts = ItemCount()
             identity, parent = uuid4().hex, _span.get()
             self.token = _span.set(identity)
             self.details = {"span_id": identity, "parent_span_id": parent, "method": "other"}
@@ -229,6 +243,15 @@ class span:
             self.started = time.perf_counter_ns()
         except BaseException:
             pass
+        return self
+
+    def count(self, value):
+        """Add an already-known item count, including an explicitly known zero."""
+        try:
+            if self.counts is not None and _current.get() is self.session:
+                self.counts.add(value)
+        except BaseException:
+            pass
 
     def __exit__(self, error_type, error, traceback):
         if self.session is None:
@@ -239,10 +262,69 @@ class span:
             ended = time.perf_counter_ns()
             timing = {"duration_ns": ended - self.started} if self.started is not None else {}
             outcome = 'succeeded' if error is None else 'failed' if issubclass(type(error), Exception) else 'cancelled'
-            self.session.emit("method.end", {**self.details, "outcome": outcome, **timing},
+            counts = self.counts.fields() if self.counts is not None else {}
+            self.session.emit("method.end", {**self.details, "outcome": outcome, **timing, **counts},
                               failed=error is not None)
         except BaseException:
             pass
+        return False
+
+
+class aggregate:
+    """Use around a repeated body; emit one aggregate per code location at exit.
+
+    with aggregate(process_batch) as work:
+        ...
+        work.count(processed)  # no result iteration or query by the logger
+    """
+    def __init__(self, function):
+        self.function = function
+        self.session = self.group = self.token = self.started = self.counts = None
+
+    def __enter__(self):
+        self.session = _current.get()
+        if self.session is None:
+            self.function = None
+            return self
+        try:
+            self.counts = ItemCount()
+            self.group = self.session.performance.begin(self.function)
+            self.token = _measurement.set(self.group['measurement_id'] if self.group else None)
+            self.started = time.perf_counter_ns()
+        except BaseException:
+            self._failed_observation()
+        finally:
+            self.function = None
+        return self
+
+    count = span.count
+
+    def _failed_observation(self):
+        try:
+            self.session.performance.bump('failures')
+        except BaseException:
+            pass
+
+    def __exit__(self, error_type, error, traceback):
+        if self.session is None:
+            return False
+        try:
+            try:
+                ended = time.perf_counter_ns()
+                duration = ended - self.started if self.started is not None else None
+            except BaseException:
+                duration = None
+                self._failed_observation()
+            outcome = 'succeeded' if error is None else 'failed' if issubclass(type(error), Exception) else 'cancelled'
+            self.session.performance.end(self.group, duration, outcome, self.counts or ItemCount())
+        except BaseException:
+            self._failed_observation()
+        finally:
+            if self.token is not None:
+                try:
+                    _measurement.reset(self.token)
+                except BaseException:
+                    pass
         return False
 
 

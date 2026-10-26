@@ -49,6 +49,7 @@ EXPECTED_CANONICAL_DOCS = (
     "docs/review-answer-collection-design.md",
     "docs/operation-admission-plan.md",
     "docs/logger-design.md",
+    "docs/async-backup-plan.md",
     "docs/history/README.md",
 )
 EXPECTED_METRIC_DOCS = EXPECTED_CANONICAL_DOCS + (
@@ -57,6 +58,8 @@ EXPECTED_METRIC_DOCS = EXPECTED_CANONICAL_DOCS + (
 )
 FIXTURE_LINK_TARGETS = (
     "LICENSE",
+    "requirements-dev.txt",
+    "ruff.toml",
     "docs/proposals/review-wait-notification.md",
     "docs/releases/v0.10.0.md",
     "docs/releases/v0.11.0.md",
@@ -253,9 +256,9 @@ class DocumentContractTests(unittest.TestCase):
         self.assertNotIn(secret, serialized)
         self.assertNotIn("Traceback", serialized)
 
-    def test_registry_v26_is_closed(self):
+    def test_registry_v27_is_closed(self):
         expected = {
-            "schema": "taskgov-document-authority-v26",
+            "schema": "taskgov-document-authority-v27",
             "mandatory_start": [
                 "AGENTS.md",
                 "docs/authority.md",
@@ -280,7 +283,7 @@ class DocumentContractTests(unittest.TestCase):
                 "docs/database-design.md",
             ],
             "mixed_execution": [],
-            "conditional": ["docs/state-layout-separation-plan.md", "docs/verification-declaration-plan.md", "docs/session-usage-plan.md", "docs/review-finalization-plan.md", "docs/usage-response-attribution-design.md", "docs/review-continuation-plan.md", "docs/review-answer-collection-design.md", "docs/operation-admission-plan.md", "docs/logger-design.md"],
+            "conditional": ["docs/state-layout-separation-plan.md", "docs/verification-declaration-plan.md", "docs/session-usage-plan.md", "docs/review-finalization-plan.md", "docs/usage-response-attribution-design.md", "docs/review-continuation-plan.md", "docs/review-answer-collection-design.md", "docs/operation-admission-plan.md", "docs/logger-design.md", "docs/async-backup-plan.md"],
             "history_index": "docs/history/README.md",
         }
         with self.fixture() as root:
@@ -485,6 +488,11 @@ class DocumentContractTests(unittest.TestCase):
         self.assertEqual(
             contract.ROUTE_SECTIONS,
             (
+                (
+                    contract.AUTHORITY,
+                    "## Conditional Asynchronous Backup Plan",
+                    ("async-backup-plan.md",),
+                ),
                 (
                     contract.AUTHORITY,
                     "## Conditional Logger Design",

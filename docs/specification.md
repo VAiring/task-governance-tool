@@ -78,8 +78,10 @@ of an already authorized fixed snapshot on its existing branch. Ordinary
 commands retain read-only Git subprocesses only for the exact
 [validation and review operations](review-completion-specification.md#git-snapshot-and-target-binding). Explicit setup may create the
 canonical ignored project-local state and generated Viewer; successful
-business mutations may perform the opted-in bounded same-process maintenance
-defined below. One explicit `task edit --runner-plan-action` invocation may
+business mutations may perform the opted-in bounded post-commit maintenance
+defined below, including one due asynchronous backup opportunity for the existing
+project MCP service. One explicit
+`task edit --runner-plan-action` invocation may
 also create or replace only the canonical ignored package-local Runner Plan
 under the current authoring contract.
 Explicit [Setup optional-feature choices](setup-state-specification.md#optional-feature-selection)
@@ -146,6 +148,7 @@ content. The fixed generated targets are:
 <governed-project>/.taskgov/current/taskgov.sqlite
 <governed-project>/.taskgov/current/taskgov-usage.sqlite
 <governed-project>/.taskgov/current/backups/
+<governed-project>/.taskgov/current/backups/runtime/
 <governed-project>/.taskgov/current/evidence/index.json
 <governed-project>/.taskgov/current/evidence/bundles/<completion-evidence-bundle-id>.json
 <governed-project>/.taskgov/current/evidence/taskgov-evidence.lock
@@ -1066,7 +1069,9 @@ Warnings are bounded, sanitized, and non-authoritative. Required warning codes
 include `paused_tasks_present`, `handoff_delivery_pending`,
 `effort_advisory_profile_invalid`,
 `effort_advisory_threshold_exceeded`, package/setup advisory codes, and the
-four Evidence/Viewer maintenance codes. Warnings never carry Task prose,
+four Evidence/Viewer maintenance codes and the two asynchronous-backup request
+codes owned by [post-commit maintenance](setup-state-specification.md#same-process-maintenance).
+Warnings never carry Task prose,
 secrets, raw output,
 diffs, paths, or exception text.
 

@@ -220,6 +220,15 @@ The implementation keeps these narrow ownership boundaries:
   storage-owned admission, including the existing migration-source path;
   physical copy, reconciliation, pruning, locking, and recovery selection stay
   with their existing callers.
+- `async_backup_opportunity.py` owns bounded request publication and service
+  ownership; `async_backup_service.py` owns the existing MCP service's ten-second
+  observer, with no database or package-content hashing on idle observations.
+  `async_backup.py` and `async_backup_state.py` own service-invoked child startup,
+  one-attempt ownership and its runtime observation. The dedicated
+  `async_backup_repository.py` and `async_backup_capture.py` own short live
+  control/metadata transactions and private-copy validation/publication,
+  respectively; the [Setup/state design](setup-state-design.md#asynchronous-backup-worker)
+  defines their relationship to unchanged synchronous Setup/recovery helpers.
 - `viewer_metadata_repository.py` owns Viewer maintenance read/seed and
   publication/attempt-outcome metadata. It keeps storage-owned admission and
   the existing short writer transactions; snapshot capture, rendering, file
@@ -632,6 +641,13 @@ is held. Residual SQLite busy/locked results map after the normal driver wait to
 `database_busy`, exit 2, with no raw SQLite text or retry question. Handoff
 record may retry its whole fresh local transaction once; no general automatic
 retry exists.
+
+Asynchronous backup follows its private
+[live-control admission](database-specification.md#asynchronous-backup-admission):
+the live reader closes after SQLite captures the copy, before complete copied
+content validation. Its short metadata writer admits only the consumed control
+basis and performs no copy, full audit, artifact scan or child launch. This
+does not change normal Task writer admission or Setup/recovery protections.
 
 ### Migration Sequence
 
@@ -1232,6 +1248,7 @@ Apple Silicon with Python 3.12 and the same repository runner's
 `--platform-smoke` entry. Both hosts include the ordinary-flow selection
 alongside the common, artifact-operation, Runner-preparation, and private
 Runner-process selection. Both hosts also select the public Runner gate module.
+The async-backup runtime and real-process lifecycle modules run on both hosts.
 Manual `platform_only=true` selects policy and platform
 checks alone; the Windows matrix and candidate gate are explicitly skipped and
 no release qualification is claimed. The default full route retains both
@@ -1241,7 +1258,7 @@ remains owned by the release/install contract.
 
 Tier-2 changes use two independent exact-target reviews. Tests hard-fail count,
 byte, subprocess, attempt, and render limits; performance budgets never justify
-loosening a deterministic bound or adding asynchronous architecture.
+loosening a deterministic bound or authorize an architecture change.
 
 The release-lane backup/Viewer performance module separates two deterministic
 functional/capacity methods from two wall-clock qualification methods through

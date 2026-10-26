@@ -278,8 +278,9 @@ The format-v2 index reports its actual source schema and can reference preserved
 source-19/v1 and source-20/21/v2 Bundles without rewriting their bytes or digests.
 Pre-v19 cycles remain index-only as `legacy_unknown`; SQLite remains
 canonical. Setup repairs the projection, doctor observes it read-only, and
-post-commit maintenance currently runs Evidence and Viewer; automatic backup
-is suspended until the separate asynchronous replacement. Viewer snapshot v4
+post-commit maintenance runs Evidence and Viewer, then publishes one due
+asynchronous backup opportunity for the existing MCP service without waiting
+for worker startup or completion. Viewer snapshot v4
 accepts v5-v22 but adds no Evidence UI.
 
 Schema v22 uses the current

@@ -34,7 +34,7 @@ _OPERATIONS = frozenset({
     "review.prepare", "review.target.set", "review.receipt.add", "review.result.add",
     "review.finding.add", "review.finding.resolve", "verification.receipt.add",
     "usage_hook", "review_handoff", "review_wait", "review_wait_worker", "review_wait_cleanup",
-    "maintenance", "other",
+    "maintenance", "backup_worker", "other",
 })
 _ROLES = frozenset({"core", "numerical", "operational", "backup", "other"})
 _ACCESS = frozenset({"readonly", "readwrite", "create"})
@@ -66,6 +66,7 @@ _ORIGINS = {
     "backup": {"_source_version", "_artifact_schema_version", "_discover_recovery_artifacts",
                "restore_managed_backup", "copy_database_snapshot", "_reconcile_v10", "_copy"},
     "backup_metadata_repository": {"_connect_managed_backup_repository", "record_backup_attempt_outcome"},
+    "async_backup_repository": {"control_snapshot", "copy_snapshot", "validate_snapshot", "commit_inventory"},
     "viewer_maintenance": {"_capture", "_refresh", "replace_guard"},
     "viewer_metadata_repository": {"record_viewer_publication", "record_viewer_attempt_outcome"},
     "evidence_publication": {"_capture", "_generation_guard"},

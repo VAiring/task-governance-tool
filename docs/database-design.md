@@ -167,15 +167,46 @@ Maintenance opens metadata-only eligibility snapshots with local admission.
 Evidence and Viewer captures read enabled/generation state first, then call
 `validate_current_database` in the same snapshot only when a complete artifact
 basis is needed. Their publication guards and metadata writers remain globally
-admitted. Routine backup opts into local admission for its initial policy
-and generation inventory read and failed/deferred outcome-only writes; the repository default, locked reconciliation,
-copy validation and publication remain global. No eligibility snapshot or
+admitted. The retained synchronous backup helper opts into local admission for
+its initial policy and generation inventory read and failed/deferred
+outcome-only writes; its repository default, locked reconciliation, copy
+validation and publication remain global. No eligibility snapshot or
 generation comparison is reused as a complete-source proof.
 The outcome writer rechecks its observed success/outcome tuple and complete
 ordered generation metadata inventory in its own transaction. Publication and
 recovery classification compose structural
 admission with the exact-schema complete audit within the same read snapshot,
 instead of repeating that audit through both admission entry points.
+
+Asynchronous routine backup uses `async_backup_repository.py` for separate
+request-eligibility and worker live-control boundaries. The caller eligibility
+read consumes only the single project/binding basis and validated maintenance
+policy in one short read-only transaction. It is not structural admission or a
+complete schema/history audit. Service startup and post-lease readmission
+validate current schema/binding and enabled policy without a Task audit; their
+transactions close before presence activation. Failed ownership admission or
+presence activation ends the observer instead of retrying database reads. File
+publication, standby lease retries and idle service observation contain no SQL.
+None supplies a reusable admission proof.
+
+Each worker live-control entry opens a fresh rollback-journal connection,
+validates the regular-file instance, current schema/migration identity,
+project/binding and consumed maintenance/generation metadata, then closes at
+the operation boundary. It does not call a global admission helper or execute
+whole-database physical/foreign-key scans against the live source. The complete
+schema and row audit is performed on the captured private copy by
+`async_backup_capture.py` before that file can be published.
+
+Its metadata writer acquires `BEGIN IMMEDIATE`, rechecks that same control
+basis and exact inventory, performs only the intended metadata delta, commits
+and closes. Backup copy, artifact classification, file I/O and child startup
+occur outside the writer. The live-source connection likewise closes before
+the copied-file audit. Replacing the source database or changing its binding,
+schema or backup inventory invalidates an old publication basis; unrelated
+Task updates after capture do not. The dedicated functions supply no proof to
+ordinary Task operations or Setup/recovery, whose existing admissions remain
+unchanged. Runtime attempt state is a bounded sidecar, not a core schema
+migration or a substitute for successful managed-generation rows.
 
 Task reads acquire all that Task's continuation generations
 and use the retained-original composite primary key to fetch only those

@@ -127,7 +127,7 @@ def _maintenance_component(
         "code": "enabled" if enabled else "not_opted_in",
         "opted_in": enabled,
         "backup": {
-            "code": "suspended" if enabled else "not_opted_in",
+            "code": ("due" if backup_due else "current") if enabled else "not_opted_in",
             "due": backup_due,
             "interval_minutes": (
                 maintenance.backup_interval_minutes if enabled else None
@@ -367,6 +367,18 @@ def run_doctor(
         storage_state.evidence,
         observed_at=utc_now(),
     )
+    from task_governance_tool.async_backup_state import observe_runtime
+    runtime = observe_runtime(resolution.target, schema_version=storage_state.schema_version)
+    # The DB metadata snapshot and process observation have separate lifetimes.
+    # A runtime publication only describes the stored generation when they agree.
+    if (runtime["state"] == "succeeded" and
+            (runtime["generation_id"] != storage_state.maintenance.latest_backup_generation_id
+             or runtime["published_at"] != storage_state.maintenance.backup_last_success_at)):
+        runtime.update(state="unknown", captured_at=None, published_at=None, generation_id=None)
+    maintenance["backup"]["runtime"] = runtime
+    if maintenance["opted_in"]:
+        if runtime["state"] in {"failed", "deferred"}:
+            maintenance["backup"]["code"] = runtime["state"]
     project_code = storage_state.project_code
     warning = (
         None

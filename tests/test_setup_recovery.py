@@ -41,8 +41,11 @@ except ModuleNotFoundError:
 
 from task_governance_tool import backup as backup_service
 from task_governance_tool import setup as setup_service
+from task_governance_tool import tasks as task_repository
 from task_governance_tool.state_resolver import resolve_setup_project_state
-from task_governance_tool.storage import DatabaseTarget, StorageError, SCHEMA_VERSION
+from task_governance_tool.storage import (
+    DatabaseTarget, StorageError, SCHEMA_VERSION, connect_existing,
+)
 
 
 RECOVERY_WRITES = [
@@ -86,14 +89,18 @@ class SetupManagedBackupRecoveryTests(unittest.TestCase):
         install = make_physical_install(root)
         initialized = install.run("setup", "--json")
         self.assertEqual(initialized.returncode, 0, initialized.stderr)
-        added = install.run(
-            "task",
-            "add",
-            "--title",
-            "Retained recovery task",
-            "--json",
-        )
-        self.assertEqual(added.returncode, 0, added.stderr)
+        # Prepare a recovery source explicitly. A successful ordinary CLI now
+        # returns before its detached backup finishes; that lifecycle belongs
+        # to the async-backup tests, not these Setup/restore fixtures.
+        target = install.target
+        with closing(connect_existing(target.db_path)) as connection:
+            task_repository.add_task(
+                connection, target.project, database_target=target,
+                title="Retained recovery task", kind="optional",
+            )
+            connection.commit()
+        with backup_service.managed_backup_lock(target):
+            backup_service.publish_setup_backup(target, 3)
         backups = canonical_managed_sqlite_files(
             install,
             exclude=(install.db_path,),

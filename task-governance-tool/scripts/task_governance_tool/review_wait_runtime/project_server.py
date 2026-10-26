@@ -1,8 +1,9 @@
 """Project-scoped MCP controls for canonical, one-shot review waits.
 
-Discovery is inert. Explicit prepare owns only operational-state creation;
+Review discovery is inert. Explicit prepare owns only review-state creation;
 Setup owns opt-in and the host owns configuration, trust and reservations.
-No worker is recovered or retried when the process starts or reads old state.
+The separately opted-in backup observer baselines old requests at startup;
+no worker is recovered or retried from an old request.
 """
 
 from dataclasses import asdict, dataclass, replace
@@ -98,6 +99,57 @@ class ProjectReviewWaitSession:
         self.closed = False
         self.managed = ManagedWait(self)
         self.runtime_identity = runtime_identity
+        self.backup_observer = None
+
+    def start_backup_observer(self):
+        """Called once by the configured service entry, never by an MCP tool.
+
+        Startup performs bounded control admission, then the independent
+        observer checks only its opportunity file. Review policy and individual
+        review-session lifetimes do not own this service responsibility.
+        """
+        if self.closed or self.backup_observer is not None or self.runtime_identity is None:
+            return False
+        from task_governance_tool.async_backup import launch_backup
+        from task_governance_tool.async_backup_opportunity import current_compatibility
+        from task_governance_tool.async_backup_repository import read_control, read_service_target
+        from task_governance_tool.async_backup_service import BackupServiceObserver
+        from task_governance_tool.debug_log import allow_output
+        from task_governance_tool.storage import SCHEMA_VERSION
+
+        def compatible():
+            return self.runtime_identity.inspect(loaded_schema=SCHEMA_VERSION).get("comparison") == "matching"
+
+        def launch(target):
+            with self._worker_scope(operation="maintenance"):
+                return launch_backup(target, _admit_launch=compatible)
+
+        def admit_owner(target):
+            with self._worker_scope(operation="maintenance"):
+                control = read_control(target)
+                allow_output()
+                return control.maintenance.enabled
+
+        try:
+            with self._worker_scope(operation="maintenance"):
+                inspection = inspect_project_scope(repo=self.config.repo, repo_explicit=True,
+                    script_path=self.skill / "scripts/review_wait_server.py",
+                    include_runtime=False, include_package=False, include_ignore=True)
+                if (inspection.first_issue(allowed_codes=STRUCTURAL_CODES | {"state_ignore_required"})
+                        or inspection.scope is None):
+                    return False
+                target = read_service_target(inspection.scope.skill_root,
+                                             repo=inspection.scope.canonical_repo)
+                if target is None:
+                    return False
+                allow_output()
+                observer = BackupServiceObserver(target, compatibility=current_compatibility(),
+                    compatible=compatible, launch=launch, admit_owner=admit_owner)
+                self.backup_observer = observer
+                return observer.start()
+        except Exception:
+            # No synchronous fallback, service restart or change to review tools.
+            return False
 
     @staticmethod
     def catalogue():
@@ -673,6 +725,11 @@ class ProjectReviewWaitSession:
 
     def close(self):
         self.closed = True
+        if self.backup_observer is not None:
+            try:
+                self.backup_observer.close()
+            except Exception:
+                pass
         succeeded = True
         for session in self.sessions.values():
             try:
@@ -695,7 +752,9 @@ def main(argv=None, *, runtime_identity=None):
     try:
         args = parser.parse_args(argv)
         config = ProjectConfig(Path(args.repo), Path(args.server), Path(args.codex_home), args.timezone)
-        return serve(sys.stdin.buffer, sys.stdout.buffer, ProjectReviewWaitSession(config, runtime_identity=runtime_identity))
+        session = ProjectReviewWaitSession(config, runtime_identity=runtime_identity)
+        session.start_backup_observer()
+        return serve(sys.stdin.buffer, sys.stdout.buffer, session)
     except (Exception, KeyboardInterrupt):
         sys.stderr.write("Review-wait server unavailable.\n")
         return 1

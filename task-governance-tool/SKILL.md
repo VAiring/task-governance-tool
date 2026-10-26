@@ -172,10 +172,14 @@ or authorize target/external mutation. The [integrated review finish](references
 can commit only the fixed reviewed snapshot when project rules and existing
 instructions permit it; no approval argument or repeat approval is needed.
 Leave canonical offline projections to explicit setup and bounded same-process
-Evidence/Viewer maintenance. Ordinary mutations currently perform no automatic
-backup; explicit Setup retains its required backup and recovery boundaries.
-That maintenance adds no LLM command choice or background process. No network use, hidden
-acceptance conditions, or project-specific test strategy is added by this Skill.
+Evidence/Viewer maintenance. Eligible ordinary mutations may publish one due
+backup opportunity for the existing project MCP service, without waiting for
+worker startup or completion. Unavailable service defers that request without
+changing Task success. Task completion does not
+assert that the latest state is already backed up. Explicit Setup retains its
+required migration and recovery protection. These internal operations add no
+LLM command choice, polling or completion condition. No network use or
+project-specific test strategy is added by this Skill.
 
 ## License
 

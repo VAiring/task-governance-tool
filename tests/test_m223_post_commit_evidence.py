@@ -88,6 +88,8 @@ class EvidencePostCommitOrderingTests(unittest.TestCase):
                 "run_routine_viewer_refresh",
                 side_effect=outcome("viewer", "failed"),
             ),
+            mock.patch.object(maintenance_service, "_request_due_backup",
+                              side_effect=lambda *_: (calls.append("backup_request") or "requested")),
         ):
             warnings = run_post_commit_maintenance(
                 object(),
@@ -95,7 +97,7 @@ class EvidencePostCommitOrderingTests(unittest.TestCase):
                 observed_at="2026-08-05T00:00:00Z",
             )
 
-        self.assertEqual(calls, ["evidence", "viewer"])
+        self.assertEqual(calls, ["evidence", "viewer", "backup_request"])
         self.assertEqual(
             warnings,
             [
@@ -110,7 +112,7 @@ class EvidencePostCommitOrderingTests(unittest.TestCase):
             ],
         )
 
-    def test_non_viewer_mutation_runs_evidence_only(self):
+    def test_non_viewer_mutation_runs_evidence_and_offers_backup_request(self):
         calls: list[str] = []
 
         def current(name: str):
@@ -130,6 +132,8 @@ class EvidencePostCommitOrderingTests(unittest.TestCase):
                 maintenance_service,
                 "run_routine_viewer_refresh",
             ) as viewer,
+            mock.patch.object(maintenance_service, "_request_due_backup",
+                              side_effect=lambda *_: (calls.append("backup_request") or "current")),
         ):
             warnings = run_post_commit_maintenance(
                 object(),
@@ -137,7 +141,7 @@ class EvidencePostCommitOrderingTests(unittest.TestCase):
             )
 
         self.assertEqual(warnings, [])
-        self.assertEqual(calls, ["evidence"])
+        self.assertEqual(calls, ["evidence", "backup_request"])
         viewer.assert_not_called()
 
     def test_no_change_skips_every_maintenance_stage(self):
@@ -150,6 +154,7 @@ class EvidencePostCommitOrderingTests(unittest.TestCase):
                 maintenance_service,
                 "run_routine_viewer_refresh",
             ) as viewer,
+            mock.patch.object(maintenance_service, "_request_due_backup") as backup_request,
         ):
             warnings = run_post_commit_maintenance(
                 object(),
@@ -159,6 +164,21 @@ class EvidencePostCommitOrderingTests(unittest.TestCase):
         self.assertEqual(warnings, [])
         evidence.assert_not_called()
         viewer.assert_not_called()
+        backup_request.assert_not_called()
+
+    def test_backup_request_failure_preserves_primary_projection_results(self):
+        for code in ("failed", "unknown"):
+            with self.subTest(code=code), \
+                 mock.patch.object(maintenance_service, "run_routine_evidence_projection",
+                                   return_value=SimpleNamespace(code="current")), \
+                 mock.patch.object(maintenance_service, "run_routine_viewer_refresh",
+                                   return_value=SimpleNamespace(code="current")), \
+                 mock.patch.object(maintenance_service, "_request_due_backup", return_value=code):
+                warnings = run_post_commit_maintenance(
+                    object(), MutationOutcome(state_changed=True, viewer_relevant=True))
+            expected = "deferred" if code == "unknown" else "failed"
+            self.assertEqual(warnings, [{"code": "backup_request_" + expected,
+                "message": maintenance_service.BACKUP_REQUEST_WARNING_MESSAGES[expected]}])
 
 
 if __name__ == "__main__":

@@ -142,8 +142,10 @@ admission proof nor authority to mutate Task state.
 Maintenance eligibility reads use the structural boundary and validated policy,
 generation and managed-backup metadata. Disabled, current and not-due paths do
 not audit Task histories. Such observations never certify an artifact: actual
-whole-project capture/publication, backup and reconciliation retain global
-validation at their existing locked effect boundaries.
+whole-project capture/publication retains global validation at its existing
+locked effect boundaries. Routine backup has the separately bounded
+[asynchronous admission](#asynchronous-backup-admission) below; Setup and
+recovery backup retain complete source validation.
 Current Viewer capture composes that global admission with its complete
 snapshot validation: global session bindings already validated by the full
 Evidence Ledger are not scanned again, while Runner, collected-source,
@@ -166,6 +168,56 @@ capture basis, without unrelated review-history audits. Their original-response
 validation, transaction-local reuse and separate final publication guard follow
 [immutable usage evidence](#immutable-usage-evidence); this does not narrow core
 Evidence, Viewer, backup or recovery admission.
+
+### Asynchronous Backup Admission
+
+The ordinary post-commit caller first reads only current project/binding fields
+and validated backup maintenance policy in one short read-only transaction to
+decide request eligibility. It performs no complete schema, Task, Evidence or
+history audit. That read neither certifies backup contents nor replaces worker
+admission. The subsequent fixed-file publisher opens no database. Service
+startup admits current schema/binding and maintenance. Immediately after the
+OS service lease is acquired, including after standby, a fresh read must match
+the startup target exactly and confirm enabled policy. This transaction closes
+before presence activation. Failed readmission or presence activation after
+lease acquisition ends the observer until service restart; standby retries
+only OS-lease contention. Unchanged or absent ten-second
+opportunity observations open no database.
+Only that current core admission supplies binding authority for the
+[same-project service-residue baseline](setup-state-design.md#asynchronous-backup-worker)
+after relocation or restore. A saved service/opportunity generation cannot
+advance or override the core binding; worker control and publication checks
+remain exact.
+
+The internal routine-backup repository has a dedicated live-database control
+boundary. It validates rollback-journal mode, regular-file continuity, exact
+current schema and migration identity, project identity/binding, and consumed
+maintenance/generation metadata in a coherent short snapshot. It does not
+audit unrelated Task histories, run database-wide `quick_check` or foreign-key
+scans, or classify retained file contents while holding the live database.
+This is a private backup operation, not a public admission option or a cached
+certificate for other commands.
+
+The SQLite backup API captures a consistent private copy, and the initial
+live connection closes immediately after copying. The complete exact-schema
+structural, physical, foreign-key, relationship and privacy validation runs
+on the private copy before publication. Invalid contents are never published.
+The copy's metadata must match its captured project/binding/schema basis.
+
+Fresh publication guards and metadata writers repeat the live control
+boundary, including the pinned database-file instance and consumed backup
+inventory. A file replacement cannot be accepted by restoring the same
+success tuple; equal-count inventory replacement and binding/schema drift
+also invalidate an earlier basis. Ordinary Task-row changes after capture do
+not invalidate a consistent older backup or cause automatic recapture.
+Success updates follow atomic file publication, and pruning retains the
+existing file-before-row ordering. No copy, full audit, subprocess startup or
+filesystem scan runs under the metadata writer.
+
+Explicit Setup, migration, relocation and restore retain their existing
+complete admission and protection copies. Evidence and Viewer retain their
+own validation contracts. The asynchronous exception does not weaken normal
+Task writes or interpret runtime status as business evidence.
 
 ## Completion Review Admission
 

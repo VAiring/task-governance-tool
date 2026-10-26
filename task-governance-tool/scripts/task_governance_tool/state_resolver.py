@@ -144,6 +144,11 @@ class CanonicalStatePaths:
         return self.state_root / "diagnostics" / "logger"
 
     @property
+    def backup_runtime(self) -> Path:
+        """Bounded operational state; never a recovery source."""
+        return self.backups / "runtime"
+
+    @property
     def usage_database(self) -> Path:
         return self.fixed_root / "taskgov-usage.sqlite"
 
@@ -415,6 +420,29 @@ def canonical_state_paths(skill_root: Path, *, repo: Path) -> CanonicalStatePath
     """Derive generated paths from the validated governed project root."""
 
     return _state_paths_at(skill_root, canonicalize_repo(repo) / ".taskgov")
+
+
+def backup_runtime_target(skill_root: Path, *, repo: Path, project_id: str,
+                          binding_path_hash: str, binding_generation: int) -> DatabaseTarget:
+    """Reconstitute only fixed paths; the backup repository admits live identity.
+
+    This internal child boundary does not run whole-project recovery discovery.
+    Its caller must validate the attempt record and then read_control before
+    capture. It cannot migrate, select a recovery candidate or infer a rebind.
+    """
+    paths = canonical_state_paths(skill_root, repo=repo)
+    observed = observe_current_root(repo)
+    if observed.canonical_path_hash != binding_path_hash:
+        raise StorageError("project_relocation_required", "backup binding changed")
+    from task_governance_tool.storage import ProjectIdentity
+    return DatabaseTarget(
+        project=ProjectIdentity(project_id, observed.canonical_repo,
+                                observed.canonical_path_hash, observed.display_name),
+        db_path=paths.database, explicit_db=False,
+        binding_path_hash=binding_path_hash, binding_generation=binding_generation,
+        skill_root=paths.skill_root, backups_path=paths.backups,
+        viewer_path=paths.viewer, canonical_fixed=True,
+    )
 
 
 def package_state_paths(skill_root: Path) -> CanonicalStatePaths:

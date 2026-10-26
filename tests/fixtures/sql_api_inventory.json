@@ -1,6 +1,14 @@
 {
   "dispatch_requiring_review": [],
   "owners": {
+    "async_backup_repository.py": {
+      "attributes": {
+        "execute": 5,
+        "fetchall": 2,
+        "fetchone": 1
+      },
+      "kind": "observed_connection"
+    },
     "backup.py": {
       "attributes": {
         "execute": 4,

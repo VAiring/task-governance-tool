@@ -1574,7 +1574,8 @@ assembly. Overflow retains its explicit incomplete-report behavior.
 The packaged `scripts/review_wait_server.py` runs `project_server` with only
 repository, public bundled MCP wrapper, Codex home and confirmed timezone.
 Its nine closed wait controls include the normal `wait`, optional `inspect/stop`
-and six compatible per-reservation controls. Discovery and startup are inert.
+and six compatible per-reservation controls. Discovery and startup create no
+review-wait or answer-collection effect.
 The six compatibility descriptions label the earlier association/recovery use
 and identify the normal alternative without hiding controls or changing schemas.
 The Skill's normal-wait entry routes tool discovery to the exact published name
@@ -1584,6 +1585,14 @@ the nine-entry catalogue, tool loading, schemas and dispatch remain unchanged.
 `managed_wait.ManagedWait` owns single-call admission, creation, preparation,
 start and healthy repeated waiting; the source compatibility entry keeps its
 explicit injected paths and old catalogue.
+
+The service entry separately starts the
+[backup opportunity observer](setup-state-design.md#asynchronous-backup-worker).
+It is independent of review-wait policy, reviewer workers and reservations;
+constructing a session, discovering tools or calling a wait control does not
+start it. Service startup/takeover establishes bounded ownership and baselines
+old requests without launching them. This adds no public tool, executor input,
+review timer or review completion gate.
 
 `CanonicalStatePaths.review_wait_root`, `review_wait_store` and
 `review_wait_request_store` and `review_wait_dispatch_store` own all paths. Reservation filenames hash the actual
@@ -2948,9 +2957,9 @@ target generation; drift returns `verification_basis_stale` without storage.
 Capture version must then be 1 or the write returns `evidence_basis_stale`.
 It derives the subject from the locked snapshot/criterion, computes the digest,
 appends the Receipt and Evidence Reference without changing the Task or adding
-an event, commits, and only then invokes Evidence-only post-commit
-maintenance. The Receipt write is Viewer-ineligible and does not trigger an
-automatic backup while that path is suspended.
+an event, commits, and only then invokes post-commit maintenance. The Receipt
+write may retry due Evidence and offers the ordinary asynchronous backup
+opportunity; it remains Viewer-ineligible.
 
 The caller's add invocation attests that the external run exercised the copied
 target; taskgov does not prove that claim. The caller supplies no command body,

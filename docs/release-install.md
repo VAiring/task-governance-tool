@@ -480,23 +480,41 @@ prerequisite.
 ## Runtime Maintenance
 
 After setup opt-in, every eligible successful state mutation closes its SQLite
-write before the fixed same-process maintenance coordinator runs:
+write before the fixed post-commit maintenance coordinator runs:
 
 1. refresh fixed Evidence JSON when its source generation is ahead;
-2. refresh the canonical Viewer when its source generation is ahead.
+2. refresh the canonical Viewer when its source generation is ahead;
+3. publish one due/recovery backup opportunity for the existing compatible
+   project MCP service when no worker already owns the project.
 
 Evidence and Viewer publication each permit one initial capture/render and at
 most one follow-up. Both use zero-wait OS advisory locks and bounded sanitized
 outcomes. Contention or failure preserves the primary command result and leaves
-the affected projection due for the next eligible mutation. Ordinary mutations
-do not check backup eligibility, copy the database, reconcile or prune backup
-generations, or record a backup outcome during the approved suspension. Explicit
-Setup and recovery retain their required backup protection and applied
+the affected projection due for the next eligible mutation. Backup eligibility
+uses the configured interval, with the first uncaptured state due. The caller
+waits only for bounded request-file publication, not service acceptance,
+worker startup or backup completion. The service starts a worker that captures a
+consistent copy, validates it privately, and publishes it while ordinary Task
+updates can continue. Updates after capture belong to a later due attempt.
+Explicit Setup and recovery retain their synchronous protection and applied
 generation-retention rules.
 
-Taskgov starts no daemon, thread, timer, detached process, scheduler, queue,
-service, browser, custom-destination operation, public maintenance command, or
-separate model decision. Every changed mutation may retry due Evidence work,
+The already configured MCP service observes the fixed opportunity file every
+ten seconds independently of review-wait policy and reviewer activity. Idle
+observation opens no database and hashes no package contents. An absent or
+incompatible service defers an eligible request with business success unchanged;
+ordinary commands do not start a service, alter configuration, launch a backup
+themselves or fall back to a synchronous copy. Service startup/takeover baselines
+old requests instead of replaying them. No extra LLM command or host timer is
+needed, and clock ticks alone do not schedule backups.
+
+The service-owned backup child performs one attempt and exits. It can continue
+after CLI exit. Startup failure or process termination can be recovered by a later eligible
+mutation; neither failure reverses Task success or erases the last confirmed
+backup. Doctor reports stored backup facts and a separate runtime observation
+without launching or recovering anything. There is no browser,
+custom-destination operation, public maintenance command or extra model
+decision. Every changed mutation may retry due Evidence work,
 but only cycle insertion advances its source generation; Handoff-only writes
 do not change either projection generation. Setup publishes Evidence then Viewer directly.
 
@@ -553,8 +571,8 @@ but an owned envelope is consumed before validation. Invalid profile preview is
 no-write `repair_required`; actual setup uses
 `setup_incomplete`, while routine mutations preserve their primary success and
 last-good Viewer and append `viewer_refresh_failed` for this Viewer/config
-failure. Routine Viewer failure does not trigger an automatic backup attempt
-or backup warning during the approved suspension; explicit Setup and recovery
+failure. Backup eligibility is independent of the Viewer result: an eligible
+mutation still offers its one bounded backup opportunity. Explicit Setup and recovery
 backup protection remain available.
 
 ## Public CLI Surface
@@ -772,6 +790,7 @@ The separate platform job checks CLI startup, common processing, and
 applicable artifact operations on Ubuntu 24.04 x86-64 and macOS 15 Apple Silicon
 with Python 3.12. Both hosts additionally run selected existing physical-install,
 ordinary Task completion, Evidence, Viewer, Backup, and recovery integration tests.
+The asynchronous-backup runtime and real-process lifecycle suites are included.
 Both hosts additionally select the public Runner-to-completion/Evidence tests
 and existing Runner cleanup/pending/stale gate cases. Every test selected for
 these Linux/macOS platform runs must execute; a SKIP is not platform acceptance.
@@ -806,7 +825,8 @@ preserves those Bundle bytes and digests, writes Bundle v2 with a null Runner
 observation for new native completions, and publishes Evidence index v2.
 Pre-v19 cycles remain `legacy_unknown`; setup repairs, doctor observes, and
 post-commit order at that candidate stage was Evidence, Viewer, then backup;
-current ordinary writes run Evidence and Viewer without automatic backup.
+current ordinary writes run Evidence and Viewer, then publish one asynchronous
+backup opportunity without waiting for service consumption or backup completion.
 Schema v21 preserves audit
 history as gate-ineligible. A fresh exact-current eligibility-version-1 Runner
 pass supplies the Runner-observation completion branch; only the exact closed

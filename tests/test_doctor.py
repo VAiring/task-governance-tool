@@ -1,5 +1,6 @@
 import hashlib
 import json
+import os
 import tempfile
 import unittest
 from contextlib import ExitStack
@@ -26,6 +27,8 @@ except ModuleNotFoundError:
     )
 
 from task_governance_tool import backup as backup_service
+from task_governance_tool import async_backup_repository as async_backup_repository
+from task_governance_tool import async_backup_state as async_backup_state
 from task_governance_tool import doctor as doctor_service
 from task_governance_tool import project_scope as project_scope_service
 from task_governance_tool.project_scope import ProjectScopeIssue
@@ -34,6 +37,7 @@ from task_governance_tool.state_resolver import (
     StoredProjectObservation,
     canonical_state_paths,
     observe_current_root,
+    resolve_project_state,
 )
 from task_governance_tool.backup_metadata_repository import (
     ProjectMaintenanceState,
@@ -82,6 +86,15 @@ BACKUP_KEYS = {
     "generations",
     "last_success_at",
     "last_outcome",
+    "runtime",
+}
+BACKUP_RUNTIME_KEYS = {
+    "state",
+    "observed_at",
+    "attempt_id",
+    "captured_at",
+    "published_at",
+    "generation_id",
 }
 VIEWER_KEYS = {
     "code",
@@ -152,6 +165,14 @@ def evidence_state(
 
 
 class DoctorCommandTests(unittest.TestCase):
+    def assert_backup_runtime(self, runtime: dict, expected_state: str) -> None:
+        self.assertEqual(set(runtime), BACKUP_RUNTIME_KEYS)
+        self.assertEqual(runtime["state"], expected_state)
+        self.assertIsInstance(runtime["observed_at"], str)
+        self.assertTrue(runtime["observed_at"])
+        for field in ("attempt_id", "captured_at", "published_at", "generation_id"):
+            self.assertIsNone(runtime[field], field)
+
     def assert_doctor_shape(self, payload: dict) -> dict:
         self.assertEqual(payload["command"], "doctor")
         self.assertEqual(set(payload["data"]), DOCTOR_DATA_KEYS)
@@ -275,12 +296,13 @@ class DoctorCommandTests(unittest.TestCase):
             self.assertEqual(file_snapshot(install.project_root), before)
             self.assertFalse((install.skill_root / "state").exists())
 
-    def test_fresh_setup_reports_suspended_backup_with_due_policy(self):
+    def test_fresh_setup_reports_due_backup_and_idle_runtime_without_writes(self):
         with tempfile.TemporaryDirectory() as tmp:
             install = make_physical_install(Path(tmp))
             setup = install.run("setup", "--json")
             self.assertEqual(setup.returncode, 0, setup.stderr)
             before = file_snapshot(install.project_root)
+            before_state = install.state_snapshot()
 
             result = install.run("doctor", "--json")
 
@@ -290,14 +312,18 @@ class DoctorCommandTests(unittest.TestCase):
             backup = self.assert_doctor_shape(payload)["components"][
                 "maintenance"
             ]["backup"]
-            self.assertEqual(backup["code"], "suspended")
+            self.assertEqual(set(backup), BACKUP_KEYS)
+            self.assertEqual(backup["code"], "due")
             self.assertTrue(backup["due"])
+            self.assert_backup_runtime(backup["runtime"], "idle")
             self.assertIsNone(backup["last_success_at"])
             self.assertEqual(
                 backup["last_outcome"],
                 {"code": "none", "occurred_at": None},
             )
             self.assertEqual(file_snapshot(install.project_root), before)
+            self.assertEqual(install.state_snapshot(), before_state)
+            self.assertFalse((install.fixed_root / "backups" / "runtime").exists())
 
     def test_doctor_does_not_inspect_optional_viewer_config(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -400,8 +426,9 @@ class DoctorCommandTests(unittest.TestCase):
             self.assertEqual(maintenance["code"], "enabled")
             self.assertTrue(maintenance["opted_in"])
             self.assertEqual(set(maintenance["backup"]), BACKUP_KEYS)
-            self.assertEqual(maintenance["backup"]["code"], "suspended")
+            self.assertEqual(maintenance["backup"]["code"], "current")
             self.assertFalse(maintenance["backup"]["due"])
+            self.assert_backup_runtime(maintenance["backup"]["runtime"], "idle")
             self.assertEqual(maintenance["backup"]["interval_minutes"], 30)
             self.assertEqual(maintenance["backup"]["generations"], 3)
             self.assertIsNotNone(maintenance["backup"]["last_success_at"])
@@ -443,6 +470,129 @@ class DoctorCommandTests(unittest.TestCase):
                 "succeeded",
             )
             self.assertEqual(file_snapshot(install.project_root), before)
+
+    def test_identical_database_replacement_invalidates_runtime_not_backup_history(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            install = make_physical_install(Path(tmp))
+            setup = install.run("setup", "--json")
+            self.assertEqual(setup.returncode, 0, setup.stderr)
+            target = resolve_project_state(
+                skill_root=install.skill_root, repo=install.project_root,
+            ).target
+            self.assertIsNotNone(target)
+            published = backup_service.run_routine_backup(target)
+            self.assertEqual(published.code, "succeeded")
+            control = async_backup_repository.read_control(target)
+            runtime_root = async_backup_state.runtime_root(target, create=True)
+            record = {
+                "v": 1,
+                "attempt_id": "a" * 32,
+                "state": "succeeded",
+                "started_at": FIXED_TIME,
+                "captured_at": control.maintenance.backup_last_success_at,
+                "published_at": control.maintenance.backup_last_success_at,
+                "generation_id": control.maintenance.latest_backup_generation_id,
+                "project_id": target.project.project_id,
+                "binding_path_hash": target.binding_path_hash,
+                "binding_generation": target.binding_generation,
+                "schema_version": control.schema_version,
+                "database_identity": list(control.database_identity),
+            }
+            async_backup_state.write_record(runtime_root, record)
+            before = install.state_snapshot()
+            first = install.run("doctor", "--json")
+            self.assertEqual(first.returncode, 0, first.stderr)
+            original = self.assert_doctor_shape(json_payload(first))["components"][
+                "maintenance"
+            ]["backup"]
+            self.assertEqual(set(original["runtime"]), BACKUP_RUNTIME_KEYS)
+            self.assertEqual(original["code"], "current")
+            self.assertEqual(original["runtime"]["state"], "succeeded")
+            for field in ("attempt_id", "captured_at", "published_at", "generation_id"):
+                self.assertEqual(original["runtime"][field], record[field])
+            self.assertEqual(install.state_snapshot(), before)
+
+            replacement = install.fixed_root / "replacement.sqlite"
+            source_bytes = install.db_path.read_bytes()
+            replacement.write_bytes(source_bytes)
+            os.replace(replacement, install.db_path)
+            self.assertNotEqual(
+                async_backup_repository.read_control(target).database_identity,
+                control.database_identity,
+            )
+            self.assertEqual(install.db_path.read_bytes(), source_bytes)
+            before = install.state_snapshot()
+
+            result = install.run("doctor", "--json")
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            payload = json_payload(result)
+            self.assertEqual(payload["warnings"], [])
+            backup = self.assert_doctor_shape(payload)["components"][
+                "maintenance"
+            ]["backup"]
+            self.assertEqual(backup["code"], "current")
+            self.assertFalse(backup["due"])
+            self.assertEqual(backup["last_success_at"], original["last_success_at"])
+            self.assertEqual(backup["last_outcome"], original["last_outcome"])
+            self.assert_backup_runtime(backup["runtime"], "unknown")
+            self.assertEqual(async_backup_state.read_record(runtime_root), record)
+            self.assertEqual(install.state_snapshot(), before)
+
+    def test_runtime_failure_status_is_separate_from_stored_backup_outcome(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            install = make_physical_install(Path(tmp))
+            setup = install.run("setup", "--json")
+            self.assertEqual(setup.returncode, 0, setup.stderr)
+            target = resolve_project_state(
+                skill_root=install.skill_root, repo=install.project_root,
+            ).target
+            self.assertIsNotNone(target)
+            control = async_backup_repository.read_control(target)
+            runtime_root = async_backup_state.runtime_root(target, create=True)
+            for saved, observed, expected_code in (
+                ("failed", "failed", "failed"),
+                ("deferred", "deferred", "deferred"),
+                ("running", "interrupted", "due"),
+            ):
+                with self.subTest(saved=saved):
+                    record = {
+                        "v": 1,
+                        "attempt_id": "b" * 32,
+                        "state": saved,
+                        "started_at": FIXED_TIME,
+                        "captured_at": None,
+                        "published_at": None,
+                        "generation_id": None,
+                        "project_id": target.project.project_id,
+                        "binding_path_hash": target.binding_path_hash,
+                        "binding_generation": target.binding_generation,
+                        "schema_version": control.schema_version,
+                        "database_identity": list(control.database_identity),
+                    }
+                    async_backup_state.write_record(runtime_root, record)
+                    before = install.state_snapshot()
+
+                    result = install.run("doctor", "--json")
+
+                    self.assertEqual(result.returncode, 0, result.stderr)
+                    payload = json_payload(result)
+                    self.assertEqual(payload["warnings"], [])
+                    backup = self.assert_doctor_shape(payload)["components"][
+                        "maintenance"
+                    ]["backup"]
+                    self.assertEqual(backup["code"], expected_code)
+                    self.assertTrue(backup["due"])
+                    self.assertIsNone(backup["last_success_at"])
+                    self.assertEqual(
+                        backup["last_outcome"],
+                        {"code": "none", "occurred_at": None},
+                    )
+                    self.assertEqual(set(backup["runtime"]), BACKUP_RUNTIME_KEYS)
+                    self.assertEqual(backup["runtime"]["state"], observed)
+                    self.assertEqual(backup["runtime"]["attempt_id"], record["attempt_id"])
+                    self.assertEqual(async_backup_state.read_record(runtime_root), record)
+                    self.assertEqual(install.state_snapshot(), before)
 
     def test_supported_older_schema_is_migration_required_without_mutation(self):
         with tempfile.TemporaryDirectory() as tmp:

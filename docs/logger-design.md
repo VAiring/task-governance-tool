@@ -173,7 +173,7 @@ errorsでは失敗したSQL/fetchと上記の不確かな取得例外だけを�
 日付は実行詳細の終了・失敗観測時、集計はscope終了時。全体の保存条件は変えない。
 
 静的棚卸しは `tests/fixtures/sql_api_inventory.json` を正本fixtureとして
-`test_sql_api_inventory` が照合する。66 SQL所有moduleの2,260属性参照を列挙し、
+`test_sql_api_inventory` が照合する。SQL所有moduleごとの属性参照を列挙し、
 同名executeを持つ2つのGit finalizer所有moduleは非SQLとして明示する。
 直接callだけでなくbound aliasへの属性取得を含める。SQL文字列はfixtureにも持たない。
 接続棚卸しと組み合わせ、native dispatch・動的dispatchの新規経路を要確認とする。
@@ -218,6 +218,7 @@ core/numericalを分類し、private-copyは呼出し側の固定backupラベル
 | backup.restore_managed_backup | backupコピー・create | native既定＋configure、backup aggregate、検証・復元、closing |
 | backup.copy_database_snapshot | backupコピー・create | native既定＋configure、backup aggregate、private stage検証、closing |
 | backup._copy | backupコピー・create | native既定＋configure、backup後BEGIN・公開前検証、closing |
+| async_backup_repository.copy_snapshot | backupコピー・create | native既定＋configure、backup aggregate、live sourceを閉じた後にprivate検証、closing |
 | ReviewWaitRepository._connection（DirectRepository含む） | operational・readwrite/readonly | 元のtimeout・isolation_level=None、trusted_schema OFF、BEGIN IMMEDIATE/BEGIN、commit、finally close |
 
 storage、state resolver、Task/Review/Evidence/Viewer/maintenanceのrepositoryは共有
@@ -239,6 +240,8 @@ transaction専用sinkへ重複して追加しない。
 | DirectProbe worker（Managed含む） | 専用thread、元のdeadlineで有限の1worker | 既存のfresh current_binding、location、handoff resolve。新しいDB検査は追加しない |
 | ReviewWaitObserver | 専用thread、次のblocking waitまでの1観測cycle | そのcycleの既存basis確認。fresh admissionがないidle cycleは保存しない |
 | worker終了確認 | join後の独立した短いthread scope | 既存confirm_worker_stoppedのexact worker/binding照合成功 |
+| async_backup.worker_main | 独立child process、1回のbackup attemptだけ | managed-backup lock下の既存read_controlと起動basis照合成功。追加DB確認なし。GO前EOF・拒否basisでは保存しない |
+| ProjectReviewWaitSession.start_backup_observer / backup launch | 既存MCPの起動admission1回、または新要求の有限launchごとの独立maintenance scope | 既存read_service_target/read_control成功を再利用。idleの10秒周期にはscopeもDB読取も追加しない |
 | ProjectReviewWaitSession.close（EOF・取消を含む） | 呼出しthread、既存sessionごとの有限cleanup scope | 既存の所有probe/worker照合。新規DB確認なし。読取だけのsessionや照合未成立では保存しない |
 
 workerにはproject/packageだけを渡すscope factoryを明示配線する。ContextVarや

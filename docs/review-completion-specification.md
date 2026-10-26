@@ -1888,6 +1888,14 @@ current data is named, and no unknown effect is presented as successful.
 
 ### Host-Owned Review Waiting
 
+The existing project MCP service also hosts the separate
+[backup opportunity observer](setup-state-specification.md#asynchronous-backup).
+That observer does not depend on review-wait policy being on, reviewer activity
+or a reservation. It changes no public review input, executor metadata, timer
+or gate. Review-wait completion/cancellation does not stop backup activity, and
+backup completion does not stop the service. Host/service shutdown may interrupt
+backup under its own recovery contract.
+
 The optional project MCP service owns deterministic waiting for authorized
 independent reviews. When its existing policy, availability and authorization
 prerequisites hold and dispatched reviews still need waiting, use this service

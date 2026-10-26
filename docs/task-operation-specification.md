@@ -783,7 +783,8 @@ registration (including its initial Contract, individual or structured stdin),
 ordinary state/reason/note updates, checkpoints, local Handoff recording and
 reads, target/Packet preparation without Runner execution, Verification/Review
 Receipt and Finding registration/resolution, and ordinary `task complete`.
-Their existing bounded same-process maintenance is included. Task edit admits
+Their existing bounded post-commit maintenance, including the short asynchronous
+backup opportunity publication, is included. Task edit admits
 only `--status`, `--blocked-reason`, `--pause-reason`, and `--add-note`, besides
 common options; status is ready, in_progress, review_pending, paused or blocked.
 Other edits, including purpose/metadata, existing-Task initial or revised

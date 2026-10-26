@@ -1,8 +1,13 @@
-"""Bounded same-process maintenance after successful business mutations."""
+"""Evidence/Viewer maintenance and one bounded asynchronous-backup request."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
+
+from task_governance_tool.async_backup_opportunity import request_backup
+from task_governance_tool.async_backup_repository import read_request_policy
+from task_governance_tool.async_backup_state import lock_owned, observe_runtime, runtime_root
+from task_governance_tool.backup import managed_backup_due
 
 from task_governance_tool.evidence_publication import (
     run_routine_evidence_projection,
@@ -25,6 +30,25 @@ EVIDENCE_WARNING_MESSAGES = {
         "Evidence projection refresh did not complete; task result is unchanged"
     ),
 }
+BACKUP_REQUEST_WARNING_MESSAGES = {
+    "deferred": "Backup request was deferred; task result is unchanged",
+    "failed": "Backup request could not be published; task result is unchanged",
+}
+
+
+def _request_due_backup(target: DatabaseTarget, timestamp: str) -> str:
+    if not target.canonical_fixed:
+        return "not_opted_in"
+    if lock_owned(runtime_root(target) / "worker.lock") is True:
+        return "running"
+    policy = read_request_policy(target)
+    if not policy.enabled:
+        return "not_opted_in"
+    recovery = observe_runtime(target, observed_at=timestamp)["state"] in {
+        "interrupted", "failed", "deferred"}
+    if not recovery and not managed_backup_due(policy, observed_at=timestamp):
+        return "current"
+    return request_backup(target).code
 @dataclass(frozen=True)
 class MutationOutcome:
     state_changed: bool
@@ -37,7 +61,7 @@ def run_post_commit_maintenance(
     *,
     observed_at: str | None = None,
 ) -> list[dict[str, str]]:
-    """Run bounded Evidence and Viewer post-commit work."""
+    """Run projections, then publish one service-owned backup opportunity."""
     if not outcome.state_changed:
         return []
     timestamp = observed_at or utc_now()
@@ -75,4 +99,13 @@ def run_post_commit_maintenance(
                     "message": VIEWER_WARNING_MESSAGES[viewer_code],
                 }
             )
+    try:
+        backup_code = _request_due_backup(target, timestamp)
+    except Exception:
+        backup_code = "failed"
+    if backup_code == "unknown":
+        backup_code = "deferred"
+    if backup_code in BACKUP_REQUEST_WARNING_MESSAGES:
+        warnings.append({"code": f"backup_request_{backup_code}",
+                         "message": BACKUP_REQUEST_WARNING_MESSAGES[backup_code]})
     return warnings

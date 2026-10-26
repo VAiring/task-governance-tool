@@ -195,7 +195,8 @@ note updates, checkpoints, local Handoff records, evidence and completion record
 It adds no Task-loop operation. Only state, blocker/pause reason and note options
 are admitted on `task edit`; use ordinary `task complete` for completion. Existing
 ownership, sequential, exact-target, verification and review gates still apply.
-All existing bounded same-process maintenance remains included. Shared-file
+All existing bounded post-commit maintenance remains included, including the
+internal asynchronous-backup opportunity publication. Shared-file
 `prepare/read/material/save/submit` use the same restriction and generated
 continuations preserve it. Existing literal stdin transports remain available.
 
@@ -660,7 +661,7 @@ A ready result has this structure:
       "code": "enabled",
       "opted_in": true,
       "backup": {
-        "code": "suspended",
+        "code": "current",
         "due": false,
         "interval_minutes": 30,
         "generations": 3,
@@ -668,6 +669,14 @@ A ready result has this structure:
         "last_outcome": {
           "code": "succeeded",
           "occurred_at": "2026-07-27T00:00:00Z"
+        },
+        "runtime": {
+          "state": "idle",
+          "observed_at": "2026-07-27T00:01:00Z",
+          "attempt_id": null,
+          "captured_at": null,
+          "published_at": null,
+          "generation_id": null
         }
       },
       "evidence": {
@@ -701,10 +710,20 @@ Unavailable project-backed components are exactly `{"code":"unavailable"}`.
 Not-yet-known maintenance values are `null`, not omitted. Maintenance outcome
 codes are `none`, `succeeded`, `deferred`, or `failed`; readable maintenance
 states remain successful advisory data and never create a stop.
-After setup, `maintenance.backup.code` is `suspended` regardless of its `due`
-value. `due` observes the stored interval policy; `last_success_at` and
-`last_outcome` describe prior backup activity and do not imply that an ordinary
-command will start another backup.
+`maintenance.backup.code` is `not_opted_in`, `current`, `due`, `deferred`, or
+`failed`. When enabled, an observed latest runtime `failed` or `deferred`
+takes precedence over the policy's `due` or `current`; disabled policy remains
+`not_opted_in`. `due` observes the stored interval policy; `last_success_at` and
+`last_outcome` describe persisted backup activity. `runtime` separately reports
+`state`, `observed_at`, `attempt_id`, `captured_at`, `published_at`, and
+`generation_id`. State is `idle`, `starting`, `running`, `interrupted`,
+`succeeded`, `failed`, `deferred`, or `unknown`; unobserved identities/times are
+null. The example has an earlier successful backup but no retained runtime
+attempt. Runtime observation is not atomic with the database snapshot and
+never starts or recovers a worker. Task completion and backup capture are
+separate facts; a running worker does not establish a successful backup.
+These six runtime fields describe the worker, not service availability or
+request publication. A published opportunity does not prove startup or success.
 The Evidence object has exactly `code`, `due`, `source_generation`,
 `published_generation`, `last_success_at`, and `last_outcome`; doctor never
 opens or repairs its JSON files.
@@ -2815,11 +2834,16 @@ independence, or review truth. Only current evidence can satisfy current gates.
 
 Read this section for a continuity warning or an explicit setup/Viewer
 diagnosis, not as a normal-loop action. Successful `setup` enables bounded
-same-process Evidence/Viewer maintenance; there is no disable, export,
-custom-output, or repair command. Ordinary mutations do not run automatic
-backup during the approved interval before its asynchronous replacement.
-This same-process maintenance starts no background worker, scheduler, browser, or network
-operation. SQLite stays canonical; generated Evidence JSON and Viewer files
+same-process Evidence/Viewer maintenance and bounded opportunity publication for
+one due asynchronous backup. The already configured compatible project MCP
+service observes the fixed request every ten seconds independently of review
+waiting. Idle observations open no database. There is no disable, export,
+custom-output or repair command. The CLI does not start a backup or service,
+change configuration, fall back to synchronous copying, or wait for service
+acceptance, worker startup or completion. A service-owned backup child can
+continue after the CLI returns. Startup/takeover baselines old requests; a later
+eligible mutation supplies recovery. This is not a backup schedule or a new
+host timer, browser or network operation. SQLite stays canonical; generated Evidence JSON and Viewer files
 are projections, never inputs or current completion evidence.
 
 If post-commit maintenance cannot complete, the primary business mutation
@@ -2829,9 +2853,17 @@ remains successful and only a bounded warning is appended:
 - `evidence_projection_failed`: `Evidence projection refresh did not complete; task result is unchanged`
 - `viewer_refresh_deferred`: `Viewer refresh was deferred; task result is unchanged`
 - `viewer_refresh_failed`: `Viewer refresh did not complete; task result is unchanged`
+- `backup_request_deferred`: `Backup request was deferred; task result is unchanged`
+- `backup_request_failed`: `Backup request could not be published; task result is unchanged`
 
-The operation remains due for a later eligible successful mutation. The Skill
-does not ask the LLM to retry, schedule, or stop for these warnings.
+The operation remains due for a later eligible successful mutation. An absent
+or incompatible service warns only for opted-in due/recovery opportunities.
+Unreadable eligibility may return the bounded failure warning. A confirmed
+current backup needs no service check or warning.
+An already running backup produces no request warning or additional queued
+request. Publication means requested, not accepted, started or completed;
+request warnings do not describe the later worker result. The Skill
+does not ask the LLM to retry, schedule, poll, or stop for these warnings.
 
 Use [doctor](#doctor) only for explicit read-only diagnosis and [setup](#setup)
 for authorized repair. A stored Task fault preserves the last-good Viewer;

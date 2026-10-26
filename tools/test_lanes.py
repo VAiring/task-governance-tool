@@ -37,6 +37,11 @@ CI_LANE_INVOCATION = (
 )
 CI_PLATFORM_SMOKE_INVOCATION = "python tools/test_lanes.py --repo . --platform-smoke"
 PLATFORM_SMOKE_MODULES = (
+    "test_async_backup_mcp_process",
+    "test_async_backup_opportunity",
+    "test_async_backup_process",
+    "test_async_backup_runtime",
+    "test_async_backup_service",
     "test_cli_help",
     "test_os_artifact_operations",
     "test_os_runner_preparation",
@@ -233,6 +238,15 @@ LANE_MODULES: dict[str, tuple[str, ...]] = {
         "test_usage_work_order",
     ),
     "integration": (
+        "test_async_backup_capture",
+        "test_async_backup_integration",
+        "test_async_backup_logging",
+        "test_async_backup_mcp_process",
+        "test_async_backup_opportunity",
+        "test_async_backup_process",
+        "test_async_backup_repository",
+        "test_async_backup_runtime",
+        "test_async_backup_service",
         "test_backup_copy_lifetime",
         "test_backup_outcome",
         "test_backup_validation",

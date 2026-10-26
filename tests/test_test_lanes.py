@@ -511,6 +511,8 @@ class TestLanePolicyTests(unittest.TestCase):
         self.assertEqual(
             PLATFORM_SMOKE_MODULES,
             (
+                "test_async_backup_mcp_process", "test_async_backup_opportunity",
+                "test_async_backup_process", "test_async_backup_runtime", "test_async_backup_service",
                 "test_cli_help", "test_os_artifact_operations",
                 "test_os_runner_preparation",
                 "test_os_runner_process", "test_os_runner_process_failures",

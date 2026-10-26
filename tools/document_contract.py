@@ -45,6 +45,7 @@ REVIEW_CONTINUATION_PLAN = "docs/review-continuation-plan.md"
 REVIEW_ANSWER_COLLECTION_DESIGN = "docs/review-answer-collection-design.md"
 OPERATION_ADMISSION_PLAN = "docs/operation-admission-plan.md"
 LOGGER_DESIGN = "docs/logger-design.md"
+ASYNC_BACKUP_PLAN = "docs/async-backup-plan.md"
 
 CANONICAL_DOCS = (
     "AGENTS.md",
@@ -78,6 +79,7 @@ CANONICAL_DOCS = (
     REVIEW_ANSWER_COLLECTION_DESIGN,
     OPERATION_ADMISSION_PLAN,
     LOGGER_DESIGN,
+    ASYNC_BACKUP_PLAN,
     HISTORY_INDEX,
 )
 METRIC_DOCS = CANONICAL_DOCS + (RELEASE_INSTALL, ARTIFACT_AUTHORING)
@@ -93,6 +95,7 @@ PACKAGE_LINK_TARGETS = (
 # These sections are closed authority edges. Their prose and link order are not
 # part of the contract; the required destination set is.
 ROUTE_SECTIONS = (
+    (AUTHORITY, "## Conditional Asynchronous Backup Plan", ("async-backup-plan.md",)),
     (AUTHORITY, "## Conditional Logger Design", ("logger-design.md",)),
     (AUTHORITY, "## Conditional Operation Admission Correction", ("operation-admission-plan.md",)),
     (AUTHORITY, "## Conditional Review Answer Collection Design", ("review-answer-collection-design.md",)),
@@ -605,6 +608,7 @@ FENCE_LIST_PREFIX = re.compile(
 )
 
 ROLE_TITLES = {
+    ASYNC_BACKUP_PLAN: "# Asynchronous Routine Backup Execution Plan",
     LOGGER_DESIGN: "# Logger Design",
     OPERATION_ADMISSION_PLAN: "# Operation-Scoped Admission Correction",
     REVIEW_ANSWER_COLLECTION_DESIGN: "# Conditional Review Answer Collection Design",
@@ -1280,7 +1284,7 @@ def _section_bounds(scan: Scan, heading: str) -> tuple[int, int] | None:
 
 def _expected_registry() -> dict[str, object]:
     return {
-        "schema": "taskgov-document-authority-v26",
+        "schema": "taskgov-document-authority-v27",
         "mandatory_start": ["AGENTS.md", AUTHORITY, "live_task_contract"],
         "current": [
             "docs/specification.md", "docs/design.md", "plan.md",
@@ -1294,7 +1298,7 @@ def _expected_registry() -> dict[str, object]:
             DATABASE_SPECIFICATION, DATABASE_DESIGN,
         ],
         "mixed_execution": [],
-        "conditional": [STATE_LAYOUT_PLAN, VERIFICATION_DECLARATION_PLAN, SESSION_USAGE_PLAN, REVIEW_FINALIZATION_PLAN, RESPONSE_USAGE_DESIGN, REVIEW_CONTINUATION_PLAN, REVIEW_ANSWER_COLLECTION_DESIGN, OPERATION_ADMISSION_PLAN, LOGGER_DESIGN],
+        "conditional": [STATE_LAYOUT_PLAN, VERIFICATION_DECLARATION_PLAN, SESSION_USAGE_PLAN, REVIEW_FINALIZATION_PLAN, RESPONSE_USAGE_DESIGN, REVIEW_CONTINUATION_PLAN, REVIEW_ANSWER_COLLECTION_DESIGN, OPERATION_ADMISSION_PLAN, LOGGER_DESIGN, ASYNC_BACKUP_PLAN],
         "history_index": HISTORY_INDEX,
     }
 

@@ -94,7 +94,7 @@ class ProjectWaitTests(PreparationFixture):
         worker.join(120)
         self.assertFalse(worker.is_alive(), "Physical wait worker did not terminate")
 
-    def test_physical_entry_discovery_is_inert_and_has_only_closed_controls(self):
+    def test_physical_entry_discovery_has_only_closed_controls_and_no_review_effects(self):
         before = file_snapshot(self.root)
         entry = self.install.skill_root / "scripts/review_wait_server.py"
         result = subprocess.run([sys.executable, "-I", "-B", str(entry), "--repo", str(self.root),
@@ -113,7 +113,15 @@ class ProjectWaitTests(PreparationFixture):
             self.assertIn("Compatibility", tools["review_wait_" + operation]["description"])
         self.assertEqual({"task_id", "reviewer_ids"}, set(tools["review_wait_wait"]["inputSchema"]["properties"]))
         self.assertTrue(tools["review_wait_inspect"]["annotations"]["readOnlyHint"])
-        self.assertEqual(before, file_snapshot(self.root))
+        after = file_snapshot(self.root)
+        # The separately opted-in backup observer may establish bounded service
+        # presence on entry. Discovery still creates no request/worker/backup,
+        # review state, or business mutation. Every preexisting byte is retained.
+        prefix = self.paths.backup_runtime.relative_to(self.root).as_posix()
+        presence = {prefix + "/" + name for name in (
+            "service.lock", "service.json", "opportunity.lock")}
+        self.assertLessEqual(set(after) - set(before), presence)
+        self.assertEqual(before, {name: value for name, value in after.items() if name in before})
 
     def test_prepare_canonical_isolated_associations_and_duplicate_exclusion(self):
         core = self.paths.database.read_bytes()

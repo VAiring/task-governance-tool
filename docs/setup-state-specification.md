@@ -24,14 +24,18 @@ responsibility.
 `doctor` is the sole diagnostic. It is inherently read-only, emits
 `command="doctor"`, and always includes
 `data.suggested_action="continue"`. It never fixes, initializes, migrates,
-backs up, renders, acquires a maintenance lock, runs project tests, or changes
-state. It is not a setup or normal-loop prerequisite.
+backs up, renders, acquires artifact-publication ownership, runs project tests,
+or changes state. It may probe an already existing backup-runtime lock without
+creating or modifying it, releasing an acquired probe immediately. It is not
+a setup or normal-loop prerequisite.
 
 Doctor data contains only `suggested_action`, `setup_eligible`, and
 `components`. Component keys are exactly `package`, `project_state`,
 `task_summary`, `handoff_delivery`, and `maintenance`. Package inspection is
 one independent bounded filesystem observation. When state is readable, all
-project-backed components come from one lock-respecting read transaction; an
+project-backed database values come from one lock-respecting read transaction;
+the backup-runtime observation has its own explicit observation time and is
+not claimed to be atomic with that database snapshot. An
 unavailable project-backed component is exactly `{"code":"unavailable"}`.
 Doctor validates the complete project Task batch before returning Task-derived
 counts. Within one current-schema read, Setup and Doctor may share the exact
@@ -68,11 +72,22 @@ is a declaration, not a signature; replacing both manifest and core can evade
 this local drift check.
 
 The backup object has exactly `code`, `due`, `interval_minutes`,
-`generations`, `last_success_at`, and `last_outcome`. The Viewer object has
+`generations`, `last_success_at`, `last_outcome`, and `runtime`. The Viewer object has
 exactly `code`, `due`, `source_generation`, `rendered_generation`,
 `last_success_at`, and `last_outcome`. Each outcome contains only `code`
 (`none`, `succeeded`, `deferred`, or `failed`) and `occurred_at`; not-yet-owned
 values are null.
+Backup `runtime` contains exactly `state`, `observed_at`, `attempt_id`,
+`captured_at`, `published_at`, and `generation_id`. Its state is `idle`,
+`starting`, `running`, `interrupted`, `succeeded`, `failed`, `deferred`, or
+`unknown`. The attempt/generation identities and times are null when not
+known. Capture time describes when the latest attempt's source snapshot was
+established, not the time that every later Task mutation became protected.
+Publication time is reported only for confirmed publication and metadata
+success. An earlier Setup backup can have a known core success without a
+runtime capture time. Runtime failure does not erase that core success. These
+six fields describe the worker, not a published opportunity or service
+availability. Publishing a request never changes them to started or completed.
 The Evidence object has exactly `code`, `due`, `source_generation`, `published_generation`, `last_success_at`, and `last_outcome`; doctor reports these stored facts only and never repairs or reads generated JSON.
 
 Readable/current state is exit 0, `ok=true`, and setup-eligible when package,
@@ -165,13 +180,19 @@ argument, doctor step, permission change, or stored native diagnostic data.
 
 Maintenance codes are `not_opted_in` before setup and, once enabled,
 `current`, `due`, `deferred`, or `failed` for Evidence and Viewer runtime state.
-The backup code is `suspended` after setup while ordinary automatic backup is
-retired. Its `due` value describes the stored interval policy, not a scheduled
-or running attempt. `last_success_at` and `last_outcome` remain historical
-facts; neither claims a backup after the suspension began.
-Readable maintenance never becomes an envelope warning/error. Deferred means
-zero-wait lock contention; failed means bounded artifact failure; both remain
-due.
+Backup uses the same `not_opted_in`, `current`, `due`, `deferred`, and `failed`
+codes: disabled policy is `not_opted_in`; otherwise an observed latest runtime
+`failed` or `deferred` takes precedence over the policy's `due` or `current`.
+The persisted `last_outcome` remains a separate historical fact. `runtime`
+describes the latest asynchronous attempt and current ownership observation. `due` alone
+does not establish a scheduled or running worker. A saved running phase with
+confirmed absent ownership is `interrupted`; unsafe or inconclusive ownership
+remains `unknown`. `last_success_at` and `last_outcome` remain persisted backup
+facts, not evidence that the latest Task completion was captured.
+Readable maintenance never becomes an envelope warning/error. Evidence/Viewer
+deferred means zero-wait lock contention; failed means bounded artifact failure;
+both remain due. Backup failed/deferred attempts remain eligible for recovery
+on the next changed mutation, independently of the interval's `due` value.
 
 <a id="effective-git-ignore-preflight"></a>
 
@@ -1055,7 +1076,9 @@ not guaranteed cleanup. Host-specific delivery and transcript support must be
 observed separately; mocked tests do not certify Desktop, CLI or all OSes.
 See the packaged [installation procedure](../task-governance-tool/references/usage_hooks.md).
 
-### Same-Process Maintenance
+<a id="same-process-maintenance"></a>
+
+### Post-Commit Maintenance
 
 Maintenance is permanently enabled by successful setup; there is no disable
 surface. Every successful state-changed business mutation commits and closes
@@ -1067,8 +1090,9 @@ may retry already-due Evidence. Read-only, failed, replayed, no-op,
 setup configuration, and maintenance-internal operations trigger nothing.
 Eligibility checks validate structural state and the consumed maintenance
 metadata without traversing all Task histories when disabled, current or not
-due. Actual whole-project projection or backup retains complete source
-validation; metadata observed before a lock never authorizes publication.
+due. Actual whole-project projection retains complete source validation;
+asynchronous backup validates its consistent private copy as specified below.
+Metadata observed before a lock never authorizes publication.
 The Runner path retains exactly the one existing target-set maintenance opportunity
 only for a successful or fallback command. A post-T1 Runner error invokes no
 maintenance; T1 has already advanced the ordinary due state, so the next
@@ -1076,8 +1100,8 @@ normal maintenance opportunity or explicit setup repair catches up. Internal
 Runner intent, cleanup, observation, Reference, and link writes do not add
 another coordinator call or advance Evidence or Viewer generation.
 
-This same-process maintenance starts no detached process, child process, thread, timer, watcher,
-service, queue, daemon, scheduler, or network operation. Each remaining routine artifact uses a
+Evidence and Viewer remain same-process work, without a thread, timer, watcher,
+service, queue, daemon, scheduler, or network operation. Each projection uses a
 canonical regular one-byte OS advisory lock with zero wait; process termination
 releases ownership, so leftover regular lock files are harmless and never
 deleted by age. Unsafe lock path, contention, or failure preserves primary
@@ -1090,16 +1114,112 @@ continuation warning:
 | `evidence_projection_failed` | `Evidence projection refresh did not complete; task result is unchanged` |
 | `viewer_refresh_deferred` | `Viewer refresh was deferred; task result is unchanged` |
 | `viewer_refresh_failed` | `Viewer refresh did not complete; task result is unchanged` |
+| `backup_request_deferred` | `Backup request was deferred; task result is unchanged` |
+| `backup_request_failed` | `Backup request could not be published; task result is unchanged` |
 
-Normal Task, handoff, review and Verification Receipt mutations do not inspect
-backup eligibility, copy SQLite, reconcile/prune generations, record backup
-outcomes, or emit backup warnings. This includes completion and Runner's one
-target-set maintenance opportunity. The interval policy may report due, but
-no automatic attempt runs during the approved gap before the asynchronous
-replacement. Explicit Setup's required pre-migration protection, recovery
-copies and retained valid generations remain available; ordinary mutation and
-Doctor do not repair or create them. The latest success/outcome metadata stays
-unchanged unless an explicit authorized backup operation changes it.
+Backup warnings describe only the bounded request-publication result, not
+service acceptance, worker startup or a future backup outcome. An absent or
+incompatible service produces a warning only when opted-in backup is due or
+needs recovery. Unreadable eligibility may return the bounded failure warning.
+A confirmed current backup needs no service check or warning; an already
+running backup is a normal observation.
+
+#### Asynchronous Backup
+
+The same eligible changed mutation may publish one bounded asynchronous-backup
+opportunity after Evidence and Viewer maintenance. The existing configured interval and
+last successful publication determine whether a backup is due; absence of a
+successful backup is due. An interrupted, failed or deferred attempt also
+permits bounded recovery even before that interval expires. If reconciliation
+confirms a current backup, recovery ends without taking another copy or
+continually restarting a worker. Task, handoff, review and Verification Receipt
+mutations, including completion and Runner's one target-set opportunity, use
+this same entry. Read-only, failed, replayed, no-op, configuration-only Setup
+and maintenance-internal operations never publish an opportunity. No extra LLM command,
+polling step or manual completion action is required.
+
+The caller reads only narrow backup-eligibility policy and, when needed,
+publishes one fixed local opportunity for the already configured project MCP
+service. Publication means requested only; it proves neither acceptance,
+startup nor successful backup. The caller does not launch a process, wait for
+service consumption or completion, copy the database, audit Task histories or
+reconcile/prune generations. An absent or incompatible service defers the
+request without changing business success. There is no CLI-spawn or
+synchronous-copy fallback, automatic service start, configuration write or
+additional LLM operation.
+
+The service owns a separate opportunity observer independently of review-wait
+policy and individual review workers. Every ten seconds it observes the one
+fixed opportunity file; unchanged or absent input opens no core database and
+performs no package-content hashing. Only a fresh, bounded, project-bound
+opportunity may enter fresh backup admission and child startup. Compatible
+presence uses the version-one opportunity ABI and core schema version; actual
+due startup also verifies the service's loaded/deployed runtime identity.
+One current request identity is consumed at most once, including a failed or
+unknown launch. This is coalescing, not a queue, delivery guarantee or replay
+history. Service startup and ownership takeover baseline the existing request
+without launching it. A subsequent eligible changed mutation is the recovery
+opportunity; elapsed time or service restart alone never replays old work.
+
+Service startup obtains its core target, then immediately after exclusive
+ownership acquisition reads current schema/binding and enabled policy again,
+including when acquisition follows standby. The target must still match
+exactly, and that transaction closes before presence activation. Failed
+readmission or presence activation after ownership acquisition ends the
+observer until service restart. Standby retries only OS-lease contention;
+it adds no periodic DB retry to normal idle observation.
+
+After an authorized relocation or restore, well-formed, physically safe service
+and opportunity records for the same durable project may retain a different
+binding. Only a new service with freshly confirmed current core target and
+exclusive ownership treats them as old-request baseline and publishes current
+presence. Their
+saved generation, whether higher or lower, is not binding authority. A fresh
+request may replace that same-project old opportunity only for a live service
+matching the exact current binding, owner and compatibility. Dispatch and all
+backup guards still require the current exact basis; no old request executes.
+Foreign-project, malformed or unsafe records are preserved and rejected. This
+changes no core binding, worker state, backup artifact or Setup permission.
+
+One project has at most one active backup worker. Further updates while it
+runs add no worker or queued work. A service-owned worker can continue after
+the requesting CLI exits and ends after one attempt. Backup completion does
+not stop the MCP service; review-wait completion, cancellation and timers do
+not stop the backup. Service or host shutdown may interrupt it, preserving the
+last normal generation for recovery on a later eligible mutation. The observer
+does not create a new host timer or turn a clock tick into a backup schedule.
+
+Launch and running ownership use OS locks and an attempt identity. A saved
+phase, PID, request publication, lock-file existence or elapsed time alone is not proof that a
+worker is alive or stopped. Startup failure and abnormal termination preserve
+the last normal backup. The next eligible changed mutation can recover an
+interrupted attempt and try again without a separate user operation. An
+uncertain owner remains unknown rather than being replaced unsafely.
+Runtime-state publication and reading coordinate through a short file lock,
+without retaining a database transaction or process wait. Diagnosis neither
+creates this lock nor waits for it. A transient unavailable state is not proof
+that another attempt replaced the worker; service-owned startup may observe again only within
+its original deadline. A confirmed different attempt still rejects the old one.
+If the service's cleanup of a newly launched child cannot confirm its termination, a bounded
+attempt-specific barrier prevents another launch until matching terminal
+evidence and released ownership establish its end.
+
+The worker captures one consistent rollback-journal SQLite copy while holding
+the live source only for the bounded control read and copy. Schema, integrity,
+foreign-key, complete relationship and privacy validation run on that private
+copy after closing the source. Fresh live checks before publication and short
+metadata writes validate database-file identity, project/binding/schema and
+the consumed policy/generation basis; they do not repeat the full historical
+audit. The exact boundary is owned by
+[asynchronous backup admission](database-specification.md#asynchronous-backup-admission).
+
+Ordinary updates after capture remain valid and do not force another copy or
+an unbounded catch-up loop. They belong to a later due backup. Capture time,
+publication success and Task completion are separate facts: successful Task
+completion does not assert that its final state is already in a backup, and
+backup failure never reverses the committed Task result. Explicit Setup's
+pre-migration protection, recovery copies and complete-source admission remain
+unchanged. The routine worker does not replace those synchronous protections.
 
 The retained backup primitive's successful atomic publication records its
 immutable generation ID, publication time, and 1-20
@@ -1123,7 +1243,10 @@ write. This continuity comparison is not a content-validation shortcut.
 Every v11+ backup attempt first reconciles bounded crash residue under the same
 lock: import one valid file missing a row; remove a row whose file is invalid/
 missing without deleting an untrusted path; update latest/applied retention;
-and finish file-before-row pruning oldest first. It will not publish while
+and finish file-before-row pruning oldest first. Valid physical artifacts must
+have unique generation IDs before any reconciliation metadata change or pruning.
+Duplicate IDs are rejected without discarding existing rows or success metadata.
+It will not publish while
 inconsistency remains. Publish then insert-row/update-pointer in one short
 transaction, followed by pruning. Recovery handles process termination after
 file publish, row commit, or between prune file/row. Residue cannot exceed the
@@ -1137,6 +1260,8 @@ Migration v11 discovers all canonical valid retained same-project artifacts,
 seeds one row each, includes the current copy, and prunes to that copy's
 applied retention.
 
+#### Projection And Performance Checks
+
 Viewer maintenance compares source/render generation, renders once and at most
 one follow-up per mutation, prevents older-over-newer publication, and leaves
 remaining churn due. Setup rerun is the only explicit force/repair.
@@ -1144,14 +1269,23 @@ remaining churn due. Setup rerun is the only explicit force/repair.
 The performance fixture is 12 Tasks/191 events and 500 Tasks/5,000 events,
 payloads 80/512/256 UTF-8 bytes, with eight note writes at injected minutes
 0, 1, 5, 29, 30, 31, 59, and 60. The fixture retains its `backup-only` and
-`combined` mode names for CI test identity, but no ordinary write in either
-mode attempts a backup, including when interval policy would be due. The
+`combined` mode names for CI test identity. Ordinary writes perform no
+synchronous backup copy or validation, including when interval policy is due. The
 `viewer-only` fixture has a historical backup; Viewer is eligible on all eight
 writes. Enabled-backup-policy and Viewer-only overhead versus disabled is at
 most 10 seconds, Viewer with due backup policy overhead is at most 15 seconds,
-and each command-position median is below 5 seconds on Windows CI. Backup
-absence, render, call, byte, and zero-wait limits are hard; timing cannot waive
-them.
+and each command-position median is below 5 seconds on Windows CI. Absence of
+synchronous backup work, render, call, byte, and zero-wait limits are hard;
+timing cannot waive them. Separate isolated worker tests control startup and
+capture/publication barriers, verify one active worker, and require ordinary
+updates to complete during private-copy validation. They measure CLI return,
+service observation, live reader/writer lifetime, and SQL/connection counts
+independently of the worker's total elapsed time. Request publication, service
+consumption and worker completion are separate assertions. Idle ten-second
+observations open no database and hash no package contents. Absent/incompatible
+service, restart baselining and ownership takeover retain the same non-replay
+boundary. Only due or recovery opportunities can start a worker; updates while
+it runs add no launch or queued request.
 
 Windows timing qualification uses one complete non-qualifying warm-up followed
 by six measured rounds from fresh copies of the same fixed fixture. The
@@ -1159,14 +1293,14 @@ three-mode qualifier uses every mode permutation once; the two-mode qualifier
 uses both orders equally. Every overhead remains paired with the disabled
 total from that same round. The mode-specific total budget applies to the
 median of the six paired enabled-minus-disabled totals: 10 seconds for
-`backup-only` (enabled policy with no ordinary backup) and Viewer-only, and 15
-seconds for `combined` (Viewer with due backup policy and no ordinary backup).
+`backup-only` (enabled policy without synchronous backup) and Viewer-only, and
+15 seconds for `combined` (Viewer with due backup policy).
 The strict 5-second budget applies to the median of the six
 observations at each mode and write position and requires that median to remain
 below 5 seconds; it is not averaged across commands. Diagnostics are bounded to
 the fixture and mode, the six paired
 overheads, eight command medians, and the maximum raw measured observation.
-Functional, count, byte, backup-absence, render, and call assertions remain separate
+Functional, count, byte, no-synchronous-backup, render, and call assertions remain separate
 hard failures and are never decided by the timing statistic.
 
 Repository pull-request and `main`-push CI validate the complete discovered

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Project review-wait MCP entry point; discovery performs no operations."""
+"""Project review-wait MCP entry point; discovery performs no review operations."""
 from pathlib import Path
 import sys
 

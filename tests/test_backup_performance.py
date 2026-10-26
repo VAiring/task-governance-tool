@@ -57,7 +57,6 @@ MIGRATION_FIXTURE = (
 BASE_TIME = datetime(2026, 7, 27, tzinfo=UTC)
 PERFORMANCE_CALLER = CallerIdentity("00000000-0000-4000-8000-000000000001")
 WRITE_OFFSETS = (0, 1, 5, 29, 30, 31, 59, 60)
-EXPECTED_BACKUP_OFFSETS = (0, 30, 60)
 QUALIFICATION_WARMUP_ROUNDS = 1
 QUALIFICATION_SAMPLE_ROUNDS = 6
 COMMAND_BUDGET_SECONDS = 5.0
@@ -341,7 +340,7 @@ def run_write_sequence(
         testcase.assertEqual(event["summary"], "Note added")
         testcase.assertEqual(event["note_body"], note)
         # The acknowledgement deduplicates the body; the stored workload and
-        # backup/Viewer qualification still contain the original 256-byte summary.
+        # maintenance qualification still contains the original 256-byte summary.
         with closing(connect(target.db_path)) as connection:
             stored = connection.execute(
                 "SELECT summary, note_body FROM task_events WHERE task_event_id = ?",
@@ -534,32 +533,17 @@ class BackupPerformanceTests(unittest.TestCase):
                 )
 
                 with mock.patch.object(
-                    maintenance_service,
+                    backup_service,
                     "run_routine_backup",
-                    side_effect=AssertionError(
-                        "disabled coordinator performed backup work"
-                    ),
-                ):
+                    side_effect=AssertionError("ordinary write performed backup work"),
+                ) as disabled_backup:
                     run_write_sequence(
                         self,
                         disabled,
                         task_id,
                         maintenance_enabled=False,
                     )
-
-                routine_results = []
-                published_at = []
-                real_routine = maintenance_service.run_routine_backup
-                real_copy = backup_service._copy
-
-                def counted_routine(*args, **kwargs):
-                    result = real_routine(*args, **kwargs)
-                    routine_results.append(result)
-                    return result
-
-                def counted_copy(*args, **kwargs):
-                    published_at.append(args[1].published_at)
-                    return real_copy(*args, **kwargs)
+                disabled_backup.assert_not_called()
 
                 with (
                     mock.patch.object(
@@ -571,15 +555,15 @@ class BackupPerformanceTests(unittest.TestCase):
                         ),
                     ) as viewer_refresh,
                     mock.patch.object(
-                        maintenance_service,
+                        backup_service,
                         "run_routine_backup",
-                        side_effect=counted_routine,
-                    ),
+                        side_effect=AssertionError("ordinary write performed backup work"),
+                    ) as enabled_backup,
                     mock.patch.object(
                         backup_service,
                         "_copy",
-                        side_effect=counted_copy,
-                    ),
+                        side_effect=AssertionError("ordinary write copied backup"),
+                    ) as copy,
                 ):
                     run_write_sequence(
                         self,
@@ -588,27 +572,10 @@ class BackupPerformanceTests(unittest.TestCase):
                         maintenance_enabled=True,
                     )
 
-                self.assertEqual(len(routine_results), len(WRITE_OFFSETS))
-                self.assertEqual(
-                    [
-                        WRITE_OFFSETS[index]
-                        for index, result in enumerate(routine_results)
-                        if result.attempted
-                    ],
-                    list(EXPECTED_BACKUP_OFFSETS),
-                )
-                self.assertEqual(
-                    published_at,
-                    [timestamp(minute) for minute in EXPECTED_BACKUP_OFFSETS],
-                )
-                self.assertEqual(
-                    len(discover_managed_backup_metadata(enabled)),
-                    3,
-                )
-                self.assertEqual(
-                    len(read_managed_backup_repository(enabled).generations),
-                    3,
-                )
+                enabled_backup.assert_not_called()
+                copy.assert_not_called()
+                self.assertEqual(discover_managed_backup_metadata(enabled), ())
+                self.assertEqual(len(read_managed_backup_repository(enabled).generations), 0)
                 self.assertEqual(
                     viewer_refresh.call_count,
                     len(WRITE_OFFSETS),
@@ -715,18 +682,10 @@ class BackupPerformanceTests(unittest.TestCase):
 
                 real_viewer_write = viewer_maintenance_service.write_viewer_html
                 viewer_writes = []
-                viewer_backup_results = []
 
                 def counted_viewer_write(*args, **kwargs):
                     viewer_writes.append(args[0].path)
                     return real_viewer_write(*args, **kwargs)
-
-                real_backup = maintenance_service.run_routine_backup
-
-                def counted_viewer_backup(*args, **kwargs):
-                    result = real_backup(*args, **kwargs)
-                    viewer_backup_results.append(result)
-                    return result
 
                 with (
                     mock.patch.object(
@@ -735,10 +694,10 @@ class BackupPerformanceTests(unittest.TestCase):
                         side_effect=counted_viewer_write,
                     ),
                     mock.patch.object(
-                        maintenance_service,
+                        backup_service,
                         "run_routine_backup",
-                        side_effect=counted_viewer_backup,
-                    ),
+                        side_effect=AssertionError("ordinary write performed backup work"),
+                    ) as viewer_backup,
                 ):
                     run_write_sequence(
                         self,
@@ -748,16 +707,10 @@ class BackupPerformanceTests(unittest.TestCase):
                     )
 
                 combined_writes = []
-                combined_backup_results = []
 
                 def counted_combined_write(*args, **kwargs):
                     combined_writes.append(args[0].path)
                     return real_viewer_write(*args, **kwargs)
-
-                def counted_combined_backup(*args, **kwargs):
-                    result = real_backup(*args, **kwargs)
-                    combined_backup_results.append(result)
-                    return result
 
                 with (
                     mock.patch.object(
@@ -766,10 +719,10 @@ class BackupPerformanceTests(unittest.TestCase):
                         side_effect=counted_combined_write,
                     ),
                     mock.patch.object(
-                        maintenance_service,
+                        backup_service,
                         "run_routine_backup",
-                        side_effect=counted_combined_backup,
-                    ),
+                        side_effect=AssertionError("ordinary write performed backup work"),
+                    ) as combined_backup,
                 ):
                     run_write_sequence(
                         self,
@@ -780,17 +733,10 @@ class BackupPerformanceTests(unittest.TestCase):
 
                 self.assertEqual(len(viewer_writes), len(WRITE_OFFSETS))
                 self.assertEqual(len(combined_writes), len(WRITE_OFFSETS))
-                self.assertTrue(
-                    all(not result.attempted for result in viewer_backup_results)
-                )
-                self.assertEqual(
-                    [
-                        WRITE_OFFSETS[index]
-                        for index, result in enumerate(combined_backup_results)
-                        if result.attempted
-                    ],
-                    list(EXPECTED_BACKUP_OFFSETS),
-                )
+                viewer_backup.assert_not_called()
+                combined_backup.assert_not_called()
+                self.assertEqual(len(discover_managed_backup_metadata(viewer_only)), 1)
+                self.assertEqual(len(discover_managed_backup_metadata(combined)), 0)
                 for target in (viewer_only, combined):
                     with closing(connect(target.db_path)) as connection:
                         viewer = read_viewer_maintenance(

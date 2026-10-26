@@ -171,8 +171,9 @@ Taskgov does not stage files, create branches, push, open PRs, create Issues,
 or authorize target/external mutation. The [integrated review finish](references/cli_contracts.md#integrated-review-finalization)
 can commit only the fixed reviewed snapshot when project rules and existing
 instructions permit it; no approval argument or repeat approval is needed.
-Leave canonical offline
-projections and backup to explicit setup and bounded same-process maintenance.
+Leave canonical offline projections to explicit setup and bounded same-process
+Evidence/Viewer maintenance. Ordinary mutations currently perform no automatic
+backup; explicit Setup retains its required backup and recovery boundaries.
 That maintenance adds no LLM command choice or background process. No network use, hidden
 acceptance conditions, or project-specific test strategy is added by this Skill.
 

@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from task_governance_tool.backup import run_routine_backup
 from task_governance_tool.evidence_publication import (
     run_routine_evidence_projection,
 )
@@ -26,12 +25,6 @@ EVIDENCE_WARNING_MESSAGES = {
         "Evidence projection refresh did not complete; task result is unchanged"
     ),
 }
-BACKUP_WARNING_MESSAGES = {
-    "deferred": "managed backup was deferred; task result is unchanged",
-    "failed": "managed backup did not complete; task result is unchanged",
-}
-
-
 @dataclass(frozen=True)
 class MutationOutcome:
     state_changed: bool
@@ -44,7 +37,7 @@ def run_post_commit_maintenance(
     *,
     observed_at: str | None = None,
 ) -> list[dict[str, str]]:
-    """Run bounded Evidence, Viewer, then backup post-commit work."""
+    """Run bounded Evidence and Viewer post-commit work."""
     if not outcome.state_changed:
         return []
     timestamp = observed_at or utc_now()
@@ -82,20 +75,4 @@ def run_post_commit_maintenance(
                     "message": VIEWER_WARNING_MESSAGES[viewer_code],
                 }
             )
-    try:
-        backup = run_routine_backup(
-            target,
-            observed_at=timestamp,
-        )
-    except Exception:
-        backup_code = "failed"
-    else:
-        backup_code = backup.code
-    if backup_code in BACKUP_WARNING_MESSAGES:
-        warnings.append(
-            {
-                "code": f"backup_{backup_code}",
-                "message": BACKUP_WARNING_MESSAGES[backup_code],
-            }
-        )
     return warnings

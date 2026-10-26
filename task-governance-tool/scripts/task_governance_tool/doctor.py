@@ -127,16 +127,7 @@ def _maintenance_component(
         "code": "enabled" if enabled else "not_opted_in",
         "opted_in": enabled,
         "backup": {
-            "code": (
-                (
-                    maintenance.backup_last_outcome_code
-                    if maintenance.backup_last_outcome_code
-                    in {"deferred", "failed"}
-                    else ("due" if backup_due else "current")
-                )
-                if enabled
-                else "not_opted_in"
-            ),
+            "code": "suspended" if enabled else "not_opted_in",
             "due": backup_due,
             "interval_minutes": (
                 maintenance.backup_interval_minutes if enabled else None

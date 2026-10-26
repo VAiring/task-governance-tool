@@ -1145,7 +1145,7 @@ class ReviewResultsTests(unittest.TestCase):
         envelope = json.loads(stdout)
         self.assertTrue(envelope["ok"])
         self.assertEqual(len(envelope["data"]["receipts"]), 2)
-        self.assertEqual([item["code"] for item in envelope["warnings"]], ["evidence_projection_failed", "viewer_refresh_failed", "backup_failed"])
+        self.assertEqual([item["code"] for item in envelope["warnings"]], ["evidence_projection_failed", "viewer_refresh_failed"])
         self.assertNotIn("private maintenance detail", stdout)
 
     def test_physical_public_cli_consumes_utf8_stdin_without_target_or_config_mutation(self):

@@ -17,11 +17,10 @@ from tests.m14_test_support import (
 )
 
 from task_governance_tool import cli as cli_service
+from task_governance_tool import backup as backup_service
 from task_governance_tool import maintenance as maintenance_service
 from task_governance_tool import viewer_maintenance as viewer_maintenance_service
-from task_governance_tool.backup import RoutineBackupResult
 from task_governance_tool.maintenance import (
-    BACKUP_WARNING_MESSAGES,
     MutationOutcome,
     VIEWER_WARNING_MESSAGES,
     run_post_commit_maintenance,
@@ -287,18 +286,6 @@ class PostCommitMaintenanceTests(unittest.TestCase):
                 ),
             },
         )
-        self.assertEqual(
-            BACKUP_WARNING_MESSAGES,
-            {
-                "deferred": (
-                    "managed backup was deferred; task result is unchanged"
-                ),
-                "failed": (
-                    "managed backup did not complete; task result is unchanged"
-                ),
-            },
-        )
-
     def test_false_outcome_skips_viewer_and_backup(self):
         with tempfile.TemporaryDirectory() as tmp:
             target = make_target(Path(tmp))
@@ -308,7 +295,7 @@ class PostCommitMaintenanceTests(unittest.TestCase):
                     "run_routine_viewer_refresh",
                 ) as viewer,
                 mock.patch.object(
-                    maintenance_service,
+                    backup_service,
                     "run_routine_backup",
                 ) as backup,
             ):
@@ -324,7 +311,7 @@ class PostCommitMaintenanceTests(unittest.TestCase):
             viewer.assert_not_called()
             backup.assert_not_called()
 
-    def test_viewer_runs_before_backup_and_fixed_warnings_keep_that_order(self):
+    def test_viewer_warning_does_not_start_backup(self):
         with tempfile.TemporaryDirectory() as tmp:
             target = make_target(Path(tmp))
             calls: list[str] = []
@@ -333,10 +320,6 @@ class PostCommitMaintenanceTests(unittest.TestCase):
                 calls.append("viewer")
                 return ViewerRefreshResult(code="deferred", renders=0)
 
-            def routine_backup(*args, **kwargs):
-                calls.append("backup")
-                return RoutineBackupResult(code="failed", attempted=True)
-
             with (
                 mock.patch.object(
                     maintenance_service,
@@ -344,10 +327,10 @@ class PostCommitMaintenanceTests(unittest.TestCase):
                     side_effect=viewer_refresh,
                 ),
                 mock.patch.object(
-                    maintenance_service,
+                    backup_service,
                     "run_routine_backup",
-                    side_effect=routine_backup,
-                ),
+                    side_effect=AssertionError("ordinary backup must stay suspended"),
+                ) as backup,
             ):
                 warnings = run_post_commit_maintenance(
                     target,
@@ -358,7 +341,8 @@ class PostCommitMaintenanceTests(unittest.TestCase):
                     observed_at="2026-07-27T00:00:00Z",
                 )
 
-            self.assertEqual(calls, ["viewer", "backup"])
+            self.assertEqual(calls, ["viewer"])
+            backup.assert_not_called()
             self.assertEqual(
                 warnings,
                 [
@@ -366,20 +350,12 @@ class PostCommitMaintenanceTests(unittest.TestCase):
                         "code": "viewer_refresh_deferred",
                         "message": VIEWER_WARNING_MESSAGES["deferred"],
                     },
-                    {
-                        "code": "backup_failed",
-                        "message": BACKUP_WARNING_MESSAGES["failed"],
-                    },
                 ],
             )
 
-    def test_viewer_failure_does_not_prevent_backup(self):
+    def test_viewer_failure_does_not_start_backup(self):
         with tempfile.TemporaryDirectory() as tmp:
             target = make_target(Path(tmp))
-            backup_result = RoutineBackupResult(
-                code="current",
-                attempted=False,
-            )
             with (
                 mock.patch.object(
                     maintenance_service,
@@ -387,9 +363,9 @@ class PostCommitMaintenanceTests(unittest.TestCase):
                     side_effect=RuntimeError("private Viewer failure"),
                 ) as viewer,
                 mock.patch.object(
-                    maintenance_service,
+                    backup_service,
                     "run_routine_backup",
-                    return_value=backup_result,
+                    side_effect=AssertionError("ordinary backup must stay suspended"),
                 ) as backup,
             ):
                 warnings = run_post_commit_maintenance(
@@ -401,7 +377,7 @@ class PostCommitMaintenanceTests(unittest.TestCase):
                 )
 
             viewer.assert_called_once()
-            backup.assert_called_once()
+            backup.assert_not_called()
             self.assertEqual(
                 warnings,
                 [
@@ -468,7 +444,7 @@ class PostCommitMaintenanceTests(unittest.TestCase):
             self.assertTrue(viewer["due"])
             self.assertEqual(viewer["last_outcome"]["code"], "failed")
 
-    def test_backup_failure_preserves_the_viewer_warning(self):
+    def test_due_backup_policy_does_not_change_viewer_warning(self):
         with tempfile.TemporaryDirectory() as tmp:
             target = make_target(Path(tmp))
             with (
@@ -481,9 +457,9 @@ class PostCommitMaintenanceTests(unittest.TestCase):
                     ),
                 ) as viewer,
                 mock.patch.object(
-                    maintenance_service,
+                    backup_service,
                     "run_routine_backup",
-                    side_effect=RuntimeError("private backup failure"),
+                    side_effect=AssertionError("ordinary backup must stay suspended"),
                 ) as backup,
             ):
                 warnings = run_post_commit_maintenance(
@@ -495,7 +471,7 @@ class PostCommitMaintenanceTests(unittest.TestCase):
                 )
 
             viewer.assert_called_once()
-            backup.assert_called_once()
+            backup.assert_not_called()
             self.assertEqual(
                 warnings,
                 [
@@ -503,14 +479,10 @@ class PostCommitMaintenanceTests(unittest.TestCase):
                         "code": "viewer_refresh_deferred",
                         "message": VIEWER_WARNING_MESSAGES["deferred"],
                     },
-                    {
-                        "code": "backup_failed",
-                        "message": BACKUP_WARNING_MESSAGES["failed"],
-                    },
                 ],
             )
 
-    def test_handoff_outcome_runs_backup_without_viewer(self):
+    def test_handoff_outcome_skips_viewer_and_backup(self):
         with tempfile.TemporaryDirectory() as tmp:
             target = make_target(Path(tmp))
             with (
@@ -519,12 +491,9 @@ class PostCommitMaintenanceTests(unittest.TestCase):
                     "run_routine_viewer_refresh",
                 ) as viewer,
                 mock.patch.object(
-                    maintenance_service,
+                    backup_service,
                     "run_routine_backup",
-                    return_value=RoutineBackupResult(
-                        code="current",
-                        attempted=False,
-                    ),
+                    side_effect=AssertionError("ordinary backup must stay suspended"),
                 ) as backup,
             ):
                 warnings = run_post_commit_maintenance(
@@ -537,7 +506,7 @@ class PostCommitMaintenanceTests(unittest.TestCase):
 
             self.assertEqual(warnings, [])
             viewer.assert_not_called()
-            backup.assert_called_once()
+            backup.assert_not_called()
 
     def test_pre_opt_in_viewer_path_does_not_lock_render_or_write(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -561,12 +530,9 @@ class PostCommitMaintenanceTests(unittest.TestCase):
                     "write_viewer_html",
                 ) as write,
                 mock.patch.object(
-                    maintenance_service,
+                    backup_service,
                     "run_routine_backup",
-                    return_value=RoutineBackupResult(
-                        code="not_opted_in",
-                        attempted=False,
-                    ),
+                    side_effect=AssertionError("ordinary backup must stay suspended"),
                 ),
             ):
                 warnings = run_post_commit_maintenance(
@@ -654,10 +620,6 @@ class PostCommitMaintenanceTests(unittest.TestCase):
                         "code": "viewer_refresh_deferred",
                         "message": VIEWER_WARNING_MESSAGES["deferred"],
                     },
-                    {
-                        "code": "backup_failed",
-                        "message": BACKUP_WARNING_MESSAGES["failed"],
-                    },
                 ],
                 True,
             ),
@@ -666,10 +628,6 @@ class PostCommitMaintenanceTests(unittest.TestCase):
                     {
                         "code": "viewer_refresh_failed",
                         "message": VIEWER_WARNING_MESSAGES["failed"],
-                    },
-                    {
-                        "code": "backup_deferred",
-                        "message": BACKUP_WARNING_MESSAGES["deferred"],
                     },
                 ],
                 False,
@@ -712,10 +670,7 @@ class PostCommitMaintenanceTests(unittest.TestCase):
                     )
                 else:
                     self.assertIn("Task added:", stdout)
-                    first_position = stdout.find(warnings[0]["message"])
-                    second_position = stdout.find(warnings[1]["message"])
-                    self.assertGreaterEqual(first_position, 0)
-                    self.assertGreater(second_position, first_position)
+                    self.assertIn(warnings[0]["message"], stdout)
                     self.assertNotIn("Traceback", stdout)
 
     def test_read_failure_and_contract_replay_never_call_coordinator(self):

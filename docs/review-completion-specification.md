@@ -3870,9 +3870,9 @@ bounded batch completion-history read internally joins only the Receipt fields n
 to validate version-1 cycle and subject links plus provenance, manifests, and
 References, fails closed on inconsistency, then discards them; no ledger
 dataset or fact enters the snapshot. Receipt writes are not
-Viewer-relevant and perform no Viewer refresh; a successful write remains
-backup-eligible through the existing post-commit coordinator. Failed or read-
-only calls invoke neither artifact path.
+Viewer-relevant and perform no Viewer refresh. A successful write can retry an
+already-due Evidence projection but does not trigger an automatic backup;
+failed or read-only calls invoke neither artifact path.
 
 <a id="structured-verification-result"></a>
 

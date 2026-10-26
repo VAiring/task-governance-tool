@@ -1010,9 +1010,9 @@ in that same snapshot before capturing a due artifact. Viewer composes shared
 admission with its snapshot validation under the
 [Viewer responsibility boundary](viewer-design.md#snapshot-and-publication),
 without a second global ownership/note/session-binding scan. Explicit force repair
-still captures and validates a current artifact. The backup's initial policy
+still captures and validates a current artifact. The retained backup primitive's initial policy
 and generation inventory read alone is local; its cheap crash-residue comparison
-does not certify artifact contents. A due or reconciliation attempt retains
+does not certify artifact contents. An explicitly admitted backup attempt retains
 the global locked resolver/repository checks and complete source, copied-file
 and pre-publication validation. Publication guards and success/generation
 writers remain global. Failed/deferred outcome-only writers use structural
@@ -1034,8 +1034,7 @@ Setup/doctor/recovery defaults remain global; there is no new proof cache.
 Business services retain internal `MutationOutcome(changed, viewer_relevant)`. After commit and connection close, every changed mutation may retry due Evidence projection; the coordinator runs:
 
 1. Evidence projection when due;
-2. Viewer refresh when relevant; then
-3. one backup attempt when due.
+2. Viewer refresh when relevant.
 
 They are independent same-process bounded work, never a thread, daemon, timer,
 queue, scheduler, service, sleep, or retry loop. Each uses its own zero-wait
@@ -1046,13 +1045,16 @@ target-set coordinator pass; a post-T1 Runner error does not invoke maintenance
 and leaves the already-advanced due state for a later normal opportunity or
 setup repair. Runner-internal writes never invoke a second pass.
 
-Backup is due when no success exists, the last outcome is deferred/failed, or
-the configured interval elapsed. Failed attempts do not advance success.
-Eligible mutations are Task add/edit/complete/checkpoint, handoff
-record/withdraw, and review target/receipt/finding add/resolve. Handoffs are
-not Viewer-relevant because the snapshot excludes the outbox. Verification
-Receipt add is backup-eligible and Viewer-ineligible because the snapshot has
-no Receipt dataset or field.
+No ordinary mutation calls `run_routine_backup` or another backup eligibility,
+copy, reconciliation, prune or outcome writer. This includes Task
+add/edit/complete/checkpoint, handoff record/withdraw, review
+target/receipt/finding add/resolve and Verification Receipt add. Handoffs and
+Verification Receipts remain Viewer-ineligible for their existing reasons.
+The existing backup policy, last success/outcome and generations are retained
+for explicit Setup and recovery. Doctor reports `backup.code=suspended` after
+setup and may show policy `due=true`; that observation does not schedule work.
+The approved interval without ordinary automatic backup ends only when a
+separately reviewed asynchronous replacement is activated.
 
 Only completion-cycle insertion increments Evidence source generation in its business transaction; a later changed mutation may retry an already-due projection without a third outcome flag. Viewer-relevant mutations increment source generation through `task_events` in the same transaction. Viewer refresh renders and rechecks once at most; setup uses direct Evidence/Viewer stages and does not re-enter the coordinator.
 
@@ -1061,7 +1063,6 @@ Only fixed warnings are added after a successful primary command:
 ```text
 evidence_projection_deferred | evidence_projection_failed
 viewer_refresh_deferred | viewer_refresh_failed
-backup_deferred         | backup_failed
 ```
 
 Messages state that the primary result is unchanged and include no path, exception, hash, raw output, retry, stop, or model choice. Doctor observes the latest outcome without starting work.

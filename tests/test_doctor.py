@@ -25,6 +25,7 @@ except ModuleNotFoundError:
         make_source_self_host,
     )
 
+from task_governance_tool import backup as backup_service
 from task_governance_tool import doctor as doctor_service
 from task_governance_tool import project_scope as project_scope_service
 from task_governance_tool.project_scope import ProjectScopeIssue
@@ -274,7 +275,7 @@ class DoctorCommandTests(unittest.TestCase):
             self.assertEqual(file_snapshot(install.project_root), before)
             self.assertFalse((install.skill_root / "state").exists())
 
-    def test_fresh_setup_reports_first_backup_due_without_starting_work(self):
+    def test_fresh_setup_reports_suspended_backup_with_due_policy(self):
         with tempfile.TemporaryDirectory() as tmp:
             install = make_physical_install(Path(tmp))
             setup = install.run("setup", "--json")
@@ -289,7 +290,7 @@ class DoctorCommandTests(unittest.TestCase):
             backup = self.assert_doctor_shape(payload)["components"][
                 "maintenance"
             ]["backup"]
-            self.assertEqual(backup["code"], "due")
+            self.assertEqual(backup["code"], "suspended")
             self.assertTrue(backup["due"])
             self.assertIsNone(backup["last_success_at"])
             self.assertEqual(
@@ -330,6 +331,8 @@ class DoctorCommandTests(unittest.TestCase):
             install = make_physical_install(Path(tmp))
             setup = install.run("setup", "--json")
             self.assertEqual(setup.returncode, 0, setup.stderr)
+            historical_backup = backup_service.run_routine_backup(install.target)
+            self.assertEqual(historical_backup.code, "succeeded")
             added = install.run(
                 "task",
                 "add",
@@ -397,7 +400,7 @@ class DoctorCommandTests(unittest.TestCase):
             self.assertEqual(maintenance["code"], "enabled")
             self.assertTrue(maintenance["opted_in"])
             self.assertEqual(set(maintenance["backup"]), BACKUP_KEYS)
-            self.assertEqual(maintenance["backup"]["code"], "current")
+            self.assertEqual(maintenance["backup"]["code"], "suspended")
             self.assertFalse(maintenance["backup"]["due"])
             self.assertEqual(maintenance["backup"]["interval_minutes"], 30)
             self.assertEqual(maintenance["backup"]["generations"], 3)

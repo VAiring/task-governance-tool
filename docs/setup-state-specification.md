@@ -164,7 +164,11 @@ nor replaces the Packet's public CLI live validation. It adds no CLI retry,
 argument, doctor step, permission change, or stored native diagnostic data.
 
 Maintenance codes are `not_opted_in` before setup and, once enabled,
-`current`, `due`, `deferred`, or `failed` for current runtime state.
+`current`, `due`, `deferred`, or `failed` for Evidence and Viewer runtime state.
+The backup code is `suspended` after setup while ordinary automatic backup is
+retired. Its `due` value describes the stored interval policy, not a scheduled
+or running attempt. `last_success_at` and `last_outcome` remain historical
+facts; neither claims a backup after the suspension began.
 Readable maintenance never becomes an envelope warning/error. Deferred means
 zero-wait lock contention; failed means bounded artifact failure; both remain
 due.
@@ -1055,11 +1059,11 @@ See the packaged [installation procedure](../task-governance-tool/references/usa
 
 Maintenance is permanently enabled by successful setup; there is no disable
 surface. Every successful state-changed business mutation commits and closes
-SQLite before bounded same-process maintenance. Any such mutation may retry a
-due Evidence projection; only completion-cycle insertion advances its source
-generation. Viewer refresh runs second only for Viewer-relevant mutations, and
-due backup runs third. A changed handoff advances neither projection but may
-retry already-due Evidence before backup. Read-only, failed, replayed, no-op,
+SQLite before bounded same-process Evidence and Viewer maintenance. Any such
+mutation may retry a due Evidence projection; only completion-cycle insertion
+advances its source generation. Viewer refresh runs second only for
+Viewer-relevant mutations. A changed handoff advances neither projection but
+may retry already-due Evidence. Read-only, failed, replayed, no-op,
 setup configuration, and maintenance-internal operations trigger nothing.
 Eligibility checks validate structural state and the consumed maintenance
 metadata without traversing all Task histories when disabled, current or not
@@ -1073,7 +1077,7 @@ Runner intent, cleanup, observation, Reference, and link writes do not add
 another coordinator call or advance Evidence or Viewer generation.
 
 This same-process maintenance starts no detached process, child process, thread, timer, watcher,
-service, queue, daemon, scheduler, or network operation. Each artifact uses a
+service, queue, daemon, scheduler, or network operation. Each remaining routine artifact uses a
 canonical regular one-byte OS advisory lock with zero wait; process termination
 releases ownership, so leftover regular lock files are harmless and never
 deleted by age. Unsafe lock path, contention, or failure preserves primary
@@ -1086,12 +1090,18 @@ continuation warning:
 | `evidence_projection_failed` | `Evidence projection refresh did not complete; task result is unchanged` |
 | `viewer_refresh_deferred` | `Viewer refresh was deferred; task result is unchanged` |
 | `viewer_refresh_failed` | `Viewer refresh did not complete; task result is unchanged` |
-| `backup_deferred` | `managed backup was deferred; task result is unchanged` |
-| `backup_failed` | `managed backup did not complete; task result is unchanged` |
 
-Backup is due on the first eligible mutation with no managed success, then
-after the configured interval. At most one attempt occurs per eligible
-mutation. Failure remains due. Successful atomic publication records its
+Normal Task, handoff, review and Verification Receipt mutations do not inspect
+backup eligibility, copy SQLite, reconcile/prune generations, record backup
+outcomes, or emit backup warnings. This includes completion and Runner's one
+target-set maintenance opportunity. The interval policy may report due, but
+no automatic attempt runs during the approved gap before the asynchronous
+replacement. Explicit Setup's required pre-migration protection, recovery
+copies and retained valid generations remain available; ordinary mutation and
+Doctor do not repair or create them. The latest success/outcome metadata stays
+unchanged unless an explicit authorized backup operation changes it.
+
+The retained backup primitive's successful atomic publication records its
 immutable generation ID, publication time, and 1-20
 `publication_retention`, then prunes recognized older generations to the
 applied value. Unknown/linked/foreign artifacts are never imported or deleted.
@@ -1133,11 +1143,14 @@ remaining churn due. Setup rerun is the only explicit force/repair.
 
 The performance fixture is 12 Tasks/191 events and 500 Tasks/5,000 events,
 payloads 80/512/256 UTF-8 bytes, with eight note writes at injected minutes
-0, 1, 5, 29, 30, 31, 59, and 60. Due backups are at 0, 30, 60; Viewer is
-eligible on all eight. Backup-only and Viewer-only run overhead versus disabled
-is at most 10 seconds, combined Viewer-plus-backup overhead is at most 15
-seconds, and each command-position median is below 5 seconds on Windows CI.
-Attempt, render, call, byte, and zero-wait limits are hard; timing cannot waive
+0, 1, 5, 29, 30, 31, 59, and 60. The fixture retains its `backup-only` and
+`combined` mode names for CI test identity, but no ordinary write in either
+mode attempts a backup, including when interval policy would be due. The
+`viewer-only` fixture has a historical backup; Viewer is eligible on all eight
+writes. Enabled-backup-policy and Viewer-only overhead versus disabled is at
+most 10 seconds, Viewer with due backup policy overhead is at most 15 seconds,
+and each command-position median is below 5 seconds on Windows CI. Backup
+absence, render, call, byte, and zero-wait limits are hard; timing cannot waive
 them.
 
 Windows timing qualification uses one complete non-qualifying warm-up followed
@@ -1146,13 +1159,14 @@ three-mode qualifier uses every mode permutation once; the two-mode qualifier
 uses both orders equally. Every overhead remains paired with the disabled
 total from that same round. The mode-specific total budget applies to the
 median of the six paired enabled-minus-disabled totals: 10 seconds for
-backup-only and Viewer-only, and 15 seconds for combined Viewer-plus-backup.
+`backup-only` (enabled policy with no ordinary backup) and Viewer-only, and 15
+seconds for `combined` (Viewer with due backup policy and no ordinary backup).
 The strict 5-second budget applies to the median of the six
 observations at each mode and write position and requires that median to remain
 below 5 seconds; it is not averaged across commands. Diagnostics are bounded to
 the fixture and mode, the six paired
 overheads, eight command medians, and the maximum raw measured observation.
-Functional, count, byte, attempt, render, and call assertions remain separate
+Functional, count, byte, backup-absence, render, and call assertions remain separate
 hard failures and are never decided by the timing statistic.
 
 Repository pull-request and `main`-push CI validate the complete discovered

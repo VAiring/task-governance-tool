@@ -1066,7 +1066,8 @@ Warnings are bounded, sanitized, and non-authoritative. Required warning codes
 include `paused_tasks_present`, `handoff_delivery_pending`,
 `effort_advisory_profile_invalid`,
 `effort_advisory_threshold_exceeded`, package/setup advisory codes, and the
-six maintenance codes. Warnings never carry Task prose, secrets, raw output,
+four Evidence/Viewer maintenance codes. Warnings never carry Task prose,
+secrets, raw output,
 diffs, paths, or exception text.
 
 ### Local Development Debug And Performance Logs

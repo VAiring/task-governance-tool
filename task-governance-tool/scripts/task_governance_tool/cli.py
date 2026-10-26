@@ -65,7 +65,6 @@ from task_governance_tool.effort import (
 )
 from task_governance_tool.handoffs import HandoffError
 from task_governance_tool.maintenance import (
-    BACKUP_WARNING_MESSAGES,
     EVIDENCE_WARNING_MESSAGES,
     MutationOutcome,
     VIEWER_WARNING_MESSAGES,
@@ -2978,12 +2977,6 @@ def apply_post_commit_maintenance(
                     "message": VIEWER_WARNING_MESSAGES["failed"],
                 }
             )
-        warnings.append(
-            {
-                "code": "backup_failed",
-                "message": BACKUP_WARNING_MESSAGES["failed"],
-            }
-        )
     if not warnings:
         return result
     warning_text = "\n".join(warning["message"] for warning in warnings)

@@ -2948,8 +2948,9 @@ target generation; drift returns `verification_basis_stale` without storage.
 Capture version must then be 1 or the write returns `evidence_basis_stale`.
 It derives the subject from the locked snapshot/criterion, computes the digest,
 appends the Receipt and Evidence Reference without changing the Task or adding
-an event, commits, and only then invokes backup-eligible, Viewer-ineligible
-post-commit maintenance.
+an event, commits, and only then invokes Evidence-only post-commit
+maintenance. The Receipt write is Viewer-ineligible and does not trigger an
+automatic backup while that path is suspended.
 
 The caller's add invocation attests that the external run exercised the copied
 target; taskgov does not prove that claim. The caller supplies no command body,

@@ -483,14 +483,16 @@ After setup opt-in, every eligible successful state mutation closes its SQLite
 write before the fixed same-process maintenance coordinator runs:
 
 1. refresh fixed Evidence JSON when its source generation is ahead;
-2. refresh the canonical Viewer when its source generation is ahead; then
-3. attempt at most one backup when the stored interval is due.
+2. refresh the canonical Viewer when its source generation is ahead.
 
 Evidence and Viewer publication each permit one initial capture/render and at
-most one follow-up. Backup rotation keeps only the applied configured generation count. All use
-zero-wait OS advisory locks and bounded sanitized outcomes. Contention or
-failure preserves the primary command result and leaves the maintenance stage
-due for the next eligible mutation.
+most one follow-up. Both use zero-wait OS advisory locks and bounded sanitized
+outcomes. Contention or failure preserves the primary command result and leaves
+the affected projection due for the next eligible mutation. Ordinary mutations
+do not check backup eligibility, copy the database, reconcile or prune backup
+generations, or record a backup outcome during the approved suspension. Explicit
+Setup and recovery retain their required backup protection and applied
+generation-retention rules.
 
 Taskgov starts no daemon, thread, timer, detached process, scheduler, queue,
 service, browser, custom-destination operation, public maintenance command, or
@@ -551,8 +553,9 @@ but an owned envelope is consumed before validation. Invalid profile preview is
 no-write `repair_required`; actual setup uses
 `setup_incomplete`, while routine mutations preserve their primary success and
 last-good Viewer and append `viewer_refresh_failed` for this Viewer/config
-failure. An independently due backup attempt and its existing warning remain
-unchanged.
+failure. Routine Viewer failure does not trigger an automatic backup attempt
+or backup warning during the approved suspension; explicit Setup and recovery
+backup protection remain available.
 
 ## Public CLI Surface
 
@@ -802,7 +805,9 @@ capacity, then activates Bundle v1 and fixed Evidence JSON v1. Schema v20
 preserves those Bundle bytes and digests, writes Bundle v2 with a null Runner
 observation for new native completions, and publishes Evidence index v2.
 Pre-v19 cycles remain `legacy_unknown`; setup repairs, doctor observes, and
-post-commit order is Evidence, Viewer, then backup. Schema v21 preserves audit
+post-commit order at that candidate stage was Evidence, Viewer, then backup;
+current ordinary writes run Evidence and Viewer without automatic backup.
+Schema v21 preserves audit
 history as gate-ineligible. A fresh exact-current eligibility-version-1 Runner
 pass supplies the Runner-observation completion branch; only the exact closed
 no-launch result falls back to the manual Receipt branch, while all other

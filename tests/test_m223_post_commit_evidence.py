@@ -17,7 +17,6 @@ from task_governance_tool import maintenance as maintenance_service
 from task_governance_tool.cli import apply_post_commit_maintenance
 from task_governance_tool.cli_output import CommandResult
 from task_governance_tool.maintenance import (
-    BACKUP_WARNING_MESSAGES,
     EVIDENCE_WARNING_MESSAGES,
     MutationOutcome,
     VIEWER_WARNING_MESSAGES,
@@ -62,19 +61,13 @@ class EvidencePostCommitOrderingTests(unittest.TestCase):
                             "message": VIEWER_WARNING_MESSAGES["failed"],
                         }
                     )
-                expected.append(
-                    {
-                        "code": "backup_failed",
-                        "message": BACKUP_WARNING_MESSAGES["failed"],
-                    }
-                )
                 self.assertEqual(maintained.warnings, expected)
                 self.assertEqual(
                     maintained.text.splitlines(),
                     ["task updated", *(item["message"] for item in expected)],
                 )
 
-    def test_evidence_viewer_backup_order_and_fixed_warnings(self):
+    def test_evidence_viewer_order_and_fixed_warnings(self):
         calls: list[str] = []
 
         def outcome(name: str, code: str):
@@ -95,11 +88,6 @@ class EvidencePostCommitOrderingTests(unittest.TestCase):
                 "run_routine_viewer_refresh",
                 side_effect=outcome("viewer", "failed"),
             ),
-            mock.patch.object(
-                maintenance_service,
-                "run_routine_backup",
-                side_effect=outcome("backup", "deferred"),
-            ),
         ):
             warnings = run_post_commit_maintenance(
                 object(),
@@ -107,7 +95,7 @@ class EvidencePostCommitOrderingTests(unittest.TestCase):
                 observed_at="2026-08-05T00:00:00Z",
             )
 
-        self.assertEqual(calls, ["evidence", "viewer", "backup"])
+        self.assertEqual(calls, ["evidence", "viewer"])
         self.assertEqual(
             warnings,
             [
@@ -119,14 +107,10 @@ class EvidencePostCommitOrderingTests(unittest.TestCase):
                     "code": "viewer_refresh_failed",
                     "message": VIEWER_WARNING_MESSAGES["failed"],
                 },
-                {
-                    "code": "backup_deferred",
-                    "message": BACKUP_WARNING_MESSAGES["deferred"],
-                },
             ],
         )
 
-    def test_non_viewer_mutation_still_runs_evidence_then_backup(self):
+    def test_non_viewer_mutation_runs_evidence_only(self):
         calls: list[str] = []
 
         def current(name: str):
@@ -146,11 +130,6 @@ class EvidencePostCommitOrderingTests(unittest.TestCase):
                 maintenance_service,
                 "run_routine_viewer_refresh",
             ) as viewer,
-            mock.patch.object(
-                maintenance_service,
-                "run_routine_backup",
-                side_effect=current("backup"),
-            ),
         ):
             warnings = run_post_commit_maintenance(
                 object(),
@@ -158,7 +137,7 @@ class EvidencePostCommitOrderingTests(unittest.TestCase):
             )
 
         self.assertEqual(warnings, [])
-        self.assertEqual(calls, ["evidence", "backup"])
+        self.assertEqual(calls, ["evidence"])
         viewer.assert_not_called()
 
     def test_no_change_skips_every_maintenance_stage(self):
@@ -171,10 +150,6 @@ class EvidencePostCommitOrderingTests(unittest.TestCase):
                 maintenance_service,
                 "run_routine_viewer_refresh",
             ) as viewer,
-            mock.patch.object(
-                maintenance_service,
-                "run_routine_backup",
-            ) as backup,
         ):
             warnings = run_post_commit_maintenance(
                 object(),
@@ -184,7 +159,6 @@ class EvidencePostCommitOrderingTests(unittest.TestCase):
         self.assertEqual(warnings, [])
         evidence.assert_not_called()
         viewer.assert_not_called()
-        backup.assert_not_called()
 
 
 if __name__ == "__main__":

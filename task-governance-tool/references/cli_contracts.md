@@ -660,7 +660,7 @@ A ready result has this structure:
       "code": "enabled",
       "opted_in": true,
       "backup": {
-        "code": "current",
+        "code": "suspended",
         "due": false,
         "interval_minutes": 30,
         "generations": 3,
@@ -701,6 +701,10 @@ Unavailable project-backed components are exactly `{"code":"unavailable"}`.
 Not-yet-known maintenance values are `null`, not omitted. Maintenance outcome
 codes are `none`, `succeeded`, `deferred`, or `failed`; readable maintenance
 states remain successful advisory data and never create a stop.
+After setup, `maintenance.backup.code` is `suspended` regardless of its `due`
+value. `due` observes the stored interval policy; `last_success_at` and
+`last_outcome` describe prior backup activity and do not imply that an ordinary
+command will start another backup.
 The Evidence object has exactly `code`, `due`, `source_generation`,
 `published_generation`, `last_success_at`, and `last_outcome`; doctor never
 opens or repairs its JSON files.
@@ -2811,8 +2815,10 @@ independence, or review truth. Only current evidence can satisfy current gates.
 
 Read this section for a continuity warning or an explicit setup/Viewer
 diagnosis, not as a normal-loop action. Successful `setup` enables bounded
-same-process maintenance; there is no disable, export, custom-output, or repair
-command. This same-process maintenance starts no background worker, scheduler, browser, or network
+same-process Evidence/Viewer maintenance; there is no disable, export,
+custom-output, or repair command. Ordinary mutations do not run automatic
+backup during the approved interval before its asynchronous replacement.
+This same-process maintenance starts no background worker, scheduler, browser, or network
 operation. SQLite stays canonical; generated Evidence JSON and Viewer files
 are projections, never inputs or current completion evidence.
 
@@ -2823,8 +2829,6 @@ remains successful and only a bounded warning is appended:
 - `evidence_projection_failed`: `Evidence projection refresh did not complete; task result is unchanged`
 - `viewer_refresh_deferred`: `Viewer refresh was deferred; task result is unchanged`
 - `viewer_refresh_failed`: `Viewer refresh did not complete; task result is unchanged`
-- `backup_deferred`: `managed backup was deferred; task result is unchanged`
-- `backup_failed`: `managed backup did not complete; task result is unchanged`
 
 The operation remains due for a later eligible successful mutation. The Skill
 does not ask the LLM to retry, schedule, or stop for these warnings.

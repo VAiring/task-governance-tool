@@ -2086,6 +2086,159 @@ installation and handoff, document/release/Skill checks and two independent
 Tier 2 reviews precede the bounded real-host validation. Accepted sending and
 offline fixtures never establish actual delivery.
 
+<a id="external-timer-deletion-evidence"></a>
+
+#### Conditional External Timer Deletion Reconciliation
+
+This section implements the design responsibility of the
+[conditional recovery boundary](review-completion-specification.md#conditional-external-timer-deletion-reconciliation),
+not a production transition. Runtime, operational schemas, tools and installed
+Skill instructions remain unchanged. It owns the evidence prerequisite and
+handoff to a separately authorized implementation; adoption must synchronize
+the current owners and remove this conditional label only after its gates.
+
+##### Available Evidence And Its Limits
+
+The existing `PublicMcpHost.delete_heartbeat` confirms its own single deletion
+only after fresh physical configuration admission and equality with the
+captured `HeartbeatSnapshot`, a matching structured public deletion receipt,
+and exact config absence under a healthy physical ancestor. The receipt binds
+`automationId`, `mode=delete`, `deleteStatus=deleted` and its kind/name/rule
+snapshot. Parent, prompt identity, creation/update timestamps and expected
+revision come from that call's fresh pre-effect admission; the receipt alone
+does not contain all those facts. This is evidence for the existing in-call
+protocol, not a reusable proof of a different actor's earlier deletion.
+
+The public `automation_update` definition offers current view and mutations;
+it does not specify a typed read-only deletion tombstone or an immutable
+instance/reuse guarantee. The inspected bundled `codex-app-tools` wrapper
+(26.1023.50603) forwards host-owned tools and does not define that missing
+semantic contract locally. This does not establish that every host version
+lacks such a facility; it establishes that this design cannot rely on one.
+`PublicMcpHost._call` intentionally maps tool-level error bodies to the same
+`host_tool_error` boundary. Text saying not-found or permission-denied supplies
+no typed deletion proof. Timeout, malformed output and lost results remain
+separate failed observations, never absence.
+
+A retained public `read_thread` observation of the motivating deletion exposed
+the operation, arguments and `status=completed`, but no result/receipt body.
+That marker shows a completed tool-call record, not successful deletion of the
+saved occurrence. No receipt was reconstructed from it. Raw chat content and
+private host data are not published or retained as operational proof. The
+offline tests exercise actual adapter admission and state transitions; their
+simulated receipts establish behavior under supplied inputs, not availability
+of a real external-deletion API.
+
+| Evidence | Permitted conclusion |
+|---|---|
+| Fresh admitted MCP-owned delete, exact receipt and physical absence | Existing deletion confirmation for that one call. Saved confirmation remains subject to binding and exit/send checks. |
+| Config or directory absent; view not-found; empty list | Current access supplied no admitted live config. No external deletion conclusion. |
+| Tool error, timeout, malformed/partial output, lost delete result | Observation/effect remains unknown under its current boundary; no replay. |
+| Old receipt body or completed call metadata without its original identity admission | Insufficient to reconcile the saved occurrence, even if the config is now absent. |
+| Same name/rule with another creation revision, parent, Task, attempt or probe | Conflicting identity; refuse adoption and leave the replacement untouched. |
+| Hypothetical host-attested deletion of a non-reused instance, bound to the saved occurrence | Candidate proof only after its public semantics, retention and real-host behavior are established. It is not currently available authority. |
+
+An exact recreation of all observable configuration fields is also not ruled
+out by a name, digest or timestamp. The candidate needs a host-supported
+non-reused instance identity or an equivalent documented history guarantee;
+adding a local checksum cannot manufacture it. Public proof availability,
+instance identity and retention across restart are unresolved prerequisites,
+not implementation details to guess.
+
+##### Candidate Stop Reconciliation And Crash Boundaries
+
+If those prerequisites become available, keep the existing explicit stop entry
+and request/wait writer ownership. First admit the exact latest request and
+project/binding/parent/Task identity; join the exact owned worker, or use its
+valid saved join evidence. Re-read direct/controller state after join, retaining
+the independent send and timer conclusions. A live, missing or conflicting
+worker observation, a changed attempt, or a pending/unknown effect refuses
+reconciliation before any proposed success write.
+
+For only the admitted known ACTIVE/PAUSED external-removal case, acquire the
+public read-only proof once within the existing bounded recovery call. The
+adapter would validate its host source, complete identity and documented
+freshness semantics; prose or caller-supplied proof is not an input. Compare the
+proof with the exact saved request/controller/direct binding and current host
+instance state. The local lease cannot serialize host UI activity, so the host
+identity guarantee must make a later replacement distinguishable without ever
+mutating it. Failure is a limitation, not an automatic retry loop.
+
+After successful observation, persist a bounded typed confirmation atomically
+with the timer's reconciled outcome in the existing operational repository.
+Its schema would need a versioned source kind, immutable host instance/proof
+reference and observation time bound to the original automation, attempt,
+probe, controller digest and worker identity. Retain only validated structural
+facts, never raw host bodies, prompts, paths, credentials or chat history.
+The precise fields and limits depend on the proven public source and require
+review before implementation; they are not a new schema in this design.
+Old records without such evidence remain readable but cannot acquire it by
+read repair. Local structural checksums preserve binding, not authentication
+against arbitrary local tampering.
+
+Advance the same request to closed only after its exact timer, send and worker
+facts settle. Stop does not start another wait, send a message or run business
+finalization. A later authorized ordinary wait freshly checks the current Task,
+target, reviewer selection and settled old occurrence under its existing lease.
+It cannot reuse old judgments across changed targets. Known original saves,
+registration, commit and completion are reported from their existing evidence,
+never rerun for recovery. Current normal polling and parent inputs stay unchanged.
+
+| Interruption or race | Required disposition |
+|---|---|
+| External delete happened but result was lost, or only config absence remains | Keep unknown; no second delete or fabricated confirmation. |
+| Process ends before public proof is durably saved | No recovered fact. A later explicit recovery may read a retained authoritative proof; if unavailable, remain unknown. No mutation is replayed. |
+| Proof/outcome transaction rolls back or its result is lost | Read the exact operational record on recovery. A complete valid confirmation is reusable; absent/partial/conflicting data is not success. Do not blindly rewrite. |
+| Confirmation saved but request closure not saved | Revalidate bound proof and independent exit/send facts under the request lease, then finish only the local closure. Do not repeat a host effect. |
+| Closure saved but next occurrence not created | Existing normal admission decides a fresh occurrence. It never reopens the old timer. An uncertain new create intent still blocks replay. |
+| Concurrent stop/new wait, changed attempt or bound state | Existing OS writer admission serializes local changes; losers retain refusal. A proof for an older attempt cannot close the newer one. |
+| Host replacement during observation | Instance mismatch or unproved identity stays unknown; never pause/delete the replacement. A reused name is not continuity. |
+| Late old notification/receipt after closure or a later generation | It refers only to the old occurrence; no new ACK, settlement, judgment reuse, registration, commit or completion follows from it. |
+| Saved worker exit conflicts with a live exact worker, or send is unknown | Preserve independent uncertainty, even with a valid deletion proof. No new wait. |
+
+##### Implementation Handoff And Validation Gate
+
+Existing-source inspection and isolated experiments establish the refusal gap
+and the compatibility of the current ownership boundaries. They do **not**
+establish a supported external proof source or a safe production recovery path.
+The preferred integration point is stop reconciliation, conditional on that
+source. Neither absence-only recovery nor importing a parent's copied receipt
+is selected as a fallback. There is no production implementation to activate
+from this design alone.
+
+If a supported source is demonstrated, a separately registered implementation
+would change `review_wait_host` for a closed read-only evidence adapter,
+`review_wait_direct_repository` for versioned structural confirmation and an
+atomic local transition, `DirectProbe`/`ManagedWait._cleanup` for the admitted
+stop branch, and `continuation_cleanup_repository` for exact proof consumption.
+Keep runtime orchestration free of raw SQL. Sync this specification/design and
+only the applicable Skill failure guidance; add no new normal control, parent
+timer-ID handoff, background service, core/usage migration or generic timer API.
+The persistence version and compatibility tests must be decided with the actual
+proof format, not preallocated here.
+
+The isolated test basis is `test_review_wait_host.ExternalDeletionEvidenceTests`
+and `ManagedFlowTests.test_external_removal_blocks_stop_and_fresh_generation_after_restart`:
+missing config and old receipt, fixed tool/transport failures, same-name revision
+or parent changes, stopped worker with active saved timer, restart, new target,
+writer contention and late old receipt. Existing `DeleteHeartbeatTests`,
+`ContinuationCleanupTests`, managed worker-observation and direct-wake tests
+cover the positive owned-delete control, lost result, mismatched Task/attempt/
+probe, missing/conflicting worker exit, send unknown, persistence failure and
+restart. These are reproducible evidence of the current contract, not a stub
+implementation of the conditional proof source.
+
+Before later activation, obtain separate approval for a disposable real-host
+fixture, its one external deletion and bounded stop/restart observations.
+Record sanitized actual public proof shape/meaning and host version; exercise
+wrong instance/same name, permissions/transport loss, result loss and retained
+proof after restart without touching a real pending review. Demonstrate no
+second delete/pause/send, correct local crash recovery, refusal of unknown send
+or missing exit, one freshly admitted later wait, and no added normal-path poll.
+Offline regression, document/package checks and two independent Tier 2 reviews
+must precede that activation. A successful design review or fixture cannot
+replace this host prerequisite or authorize its test mutations.
+
 #### Accepted Review Wait Query Design
 
 This approved design implements the [query-routing contract](review-completion-specification.md#accepted-review-wait-query-routing)

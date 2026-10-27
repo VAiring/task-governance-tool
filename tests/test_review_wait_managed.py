@@ -583,6 +583,44 @@ class ManagedFlowTests(unittest.TestCase):
         self.assertTrue(self.call()["replayed"])
         self.assertEqual(["create", "arm"], self.effects)
 
+    def test_external_removal_blocks_stop_and_fresh_generation_after_restart(self):
+        self.assertTrue(self.call()["ok"])
+        journal = RequestRepository(self.paths.review_wait_request_store(PARENT, TASK))
+        before = journal.read()
+        automation = before[1].automation_id
+        # No fabricated deletion receipt: the public adapter can no longer
+        # admit the original config. Only the isolated host is changed.
+        with mock.patch.object(self.hosts[automation], "view_heartbeat",
+                               side_effect=HostAdapterError("automation_config_unavailable")):
+            stopped = self.call("stop")
+            self.assertFalse(stopped["ok"], stopped)
+            self.assertEqual(stopped["observation"]["worker"]["status"], "stopped")
+            self.assertEqual(stopped["observation"]["delivery"]["timer_phase"], "active")
+            self.assertEqual(journal.read(), before)
+            self.assertEqual(self.effects, ["create", "arm"])
+            probe = stopped["observation"]["identity"]["probe_id"]
+            self.basis = replace(self.basis, target_generation=self.basis.target_generation + 1)
+            self.current_parent = ChildTurn(PARENT, NEW_TURN, "inProgress", "active")
+            metadata = {"threadId": PARENT, "turnId": NEW_TURN}
+            restarted = self.make()
+            for session in (self.session, restarted):
+                rejected = self.call(session=session, metadata=metadata)
+                self.assertFalse(rejected["ok"], rejected)
+                self.assertEqual(rejected["diagnostic"]["reason"], "review_continuation_effect_unknown")
+            # A late old notification/receipt does not settle timer state or
+            # create a new attempt. Inspection and restart remain no-write.
+            self.received[probe] = NEW_TURN
+            observed = self.call("inspect", session=restarted)
+            self.assertEqual(observed["observation"]["identity"]["probe_id"], probe)
+            self.assertEqual(observed["observation"]["delivery"]["timer_phase"], "active")
+            with journal.serial():
+                for operation in ("stop", "wait"):
+                    rejected = self.call(operation, session=restarted, metadata=metadata)
+                    self.assertFalse(rejected["ok"], rejected)
+                    self.assertEqual(rejected["diagnostic"]["reason"], "writer_busy")
+            self.assertEqual(journal.read(), before)
+            self.assertEqual(self.effects, ["create", "arm"])
+
     def test_parent_end_during_public_reviewer_read_keeps_worker_and_timer(self):
         from tests.test_review_wait_host import adapter
         original_factory = self.factory

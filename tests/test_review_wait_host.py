@@ -433,6 +433,61 @@ class DeleteHeartbeatTests(ConfigFixture, unittest.TestCase):
             service.delete_heartbeat(service.view_heartbeat())
 
 
+class ExternalDeletionEvidenceTests(ConfigFixture, unittest.TestCase):
+    """Current refusal boundaries, not a simulated external-recovery protocol."""
+
+    def test_missing_config_and_old_receipt_do_not_authorize_another_delete(self):
+        service = adapter(self.home)
+        with mock.patch.object(service, "_call", return_value=("card",)):
+            before = service.view_heartbeat()
+        self.path.unlink()  # External removal only in this disposable fixture.
+        old_receipt = {"automationId": AUTOMATION, "mode": "delete", "deleteStatus": "deleted",
+                       "snapshot": {"kind": "heartbeat", "name": config_values()["name"], "rrule": RULE}}
+        for response in (("card",), ("Deleted", json.dumps(old_receipt))):
+            with self.subTest(response=response), mock.patch.object(service, "_call", return_value=response) as call:
+                with self.assertRaisesRegex(host.HostAdapterError, "automation_config_unavailable"):
+                    service.delete_heartbeat(before)
+                self.assertEqual(call.call_args_list, [mock.call("automation_update", {"mode": "view", "id": AUTOMATION})])
+
+    def test_not_found_permission_and_transport_errors_are_not_deletion_proof(self):
+        service = adapter(self.home)
+        with mock.patch.object(service, "_call", return_value=("card",)):
+            before = service.view_heartbeat()
+        original = self.path.read_bytes()
+        responses = [
+            {"isError": True, "content": [{"type": "text", "text": message}]}
+            for message in ("not found", "permission denied", SECRET)
+        ] + [{"isError": False, "content": []}, {"isError": False, "content": [{"type": "text"}]}]
+        for response in responses:
+            with self.subTest(response=response), mock.patch.object(service, "_request", return_value=response) as request:
+                with self.assertRaises(host.HostAdapterError) as error:
+                    service.delete_heartbeat(before)
+                self.assertEqual(error.exception.code, "host_call_failed")
+                self.assertIn(error.exception.boundary_reason, {"host_tool_error", "host_response_invalid"})
+                self.assertNotIn(SECRET, str(error.exception))
+                self.assertEqual(request.call_count, 1)
+                self.assertEqual(request.call_args.args[1]["mode"], "view")
+        with mock.patch.object(service, "_request", side_effect=host.HostAdapterError(
+                "host_call_failed", boundary_reason="host_response_timeout",
+                operation="automation_update", termination="confirmed")) as request:
+            with self.assertRaises(host.HostAdapterError) as error:
+                service.delete_heartbeat(before)
+            self.assertEqual(error.exception.boundary_reason, "host_response_timeout")
+            self.assertEqual(request.call_count, 1)
+        self.assertEqual(self.path.read_bytes(), original)
+
+    def test_same_name_replacement_and_other_parent_fail_before_mutation(self):
+        service = adapter(self.home)
+        with mock.patch.object(service, "_call", return_value=("card",)):
+            before = service.view_heartbeat()
+        for changes in ({"created_at": 3, "updated_at": 4}, {"target_thread_id": OTHER}):
+            write_config(self.home, {**config_values(), **changes})
+            with self.subTest(changes=changes), mock.patch.object(service, "_call", return_value=("card",)) as call:
+                with self.assertRaises(host.HostAdapterError):
+                    service.delete_heartbeat(before)
+                self.assertEqual(call.call_args_list, [mock.call("automation_update", {"mode": "view", "id": AUTOMATION})])
+
+
 class AdmissionAndUpdateTests(ConfigFixture, unittest.TestCase):
     def simulated(self, *, stale_after_view=False, wrong_receipt=False):
         service = adapter(self.home)

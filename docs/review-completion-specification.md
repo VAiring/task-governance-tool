@@ -2347,6 +2347,54 @@ successful stages, routes parent submission only from manual preparation, and
 keeps incomplete/unknown recovery conditional. Recovery alone does not require
 new review; changed basis and observed reviewer failures retain their gates.
 
+#### Conditional External Timer Deletion Reconciliation
+
+This is a design boundary, not an implemented recovery permission. The current
+host-owned waiting, unknown-effect refusal and Skill recovery procedure above
+remain controlling. A separately authorized implementation and its host gates
+are required before activation. Design completion is not restoration of an old
+wait or automatic Task completion.
+
+The candidate extends the existing explicit `review_wait_stop(task_id)` recovery
+path, rather than adding normal parent-side timer management. It would reconcile
+only an exactly bound old occurrence whose timer was externally removed. It
+must not repeat delete, pause, send, original publication, review registration,
+commit or Task completion to obtain evidence of an earlier outcome. A later
+ordinary wait retains its own fresh admission and creates no replacement until
+the old occurrence is positively settled.
+
+The [evidence assessment and conditional design](review-completion-design.md#external-timer-deletion-evidence)
+distinguishes the existing MCP-owned deletion confirmation from an external
+deletion claim. Missing configuration, an absent timer listing, a general tool
+error, human prose, a successful call marker or a delayed notification cannot
+prove deletion of the exact saved occurrence. Not-found also cannot by itself
+distinguish a deleted timer from a wrong identity, inaccessible scope or a
+replacement. No such observation may rewrite an operational record as deleted.
+
+For the candidate to become implementable, a supported public host source must
+positively attest deletion of the same reservation instance, with a documented
+identity/reuse and retention contract. The service must obtain and validate that
+evidence itself, link it to the saved project/path binding, Task, original parent,
+request attempt, controller, reviewer pairs and direct probe, and reject a
+replacement or conflicting current observation. It must independently prove
+actual worker exit and settled sending under the existing rules. A timer proof
+cannot settle an unknown send or supply missing worker evidence. Historical
+proof is not freshness or a later effect permission.
+
+The initial candidate is limited to known ACTIVE/PAUSED timer state after an
+external removal, with no pending or unknown host-effect intent. Unknown
+creation, arm, pause, deletion or sending remains outside it. Missing,
+ambiguous, unretained or unverifiable evidence after restart remains unknown;
+neither restart nor elapsed time supplies evidence. Existing records and all
+known successful business stages remain intact.
+
+No qualifying external-deletion evidence source has yet been established by the
+available public interface and retained observations assessed in the design.
+Therefore external-deletion reconciliation is not currently an enabled path.
+Unavailable proof must remain an explicit limitation, not a synthetic success
+or a requirement for repeated failing calls. The existing failure-reporting and
+permitted review-result continuation rules still apply.
+
 #### Accepted Review Wait Query Routing
 
 This routing and bounded-read change is approved for implementation. Each changed

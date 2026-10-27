@@ -1356,7 +1356,15 @@ guards retain their existing meaning.
 Locked cycle selection borrows one typed `EffectiveReviewSnapshot` for its
 immediate gate projection. This lexical read scope is confined to the same
 connection, unchanged transaction and full validated Task projection; it expires
-on exit and is never a persisted completion token. Other reads and later writer
+on exit and is never a persisted completion token. A private SAVEPOINT proves
+the original transaction even after a write-free COMMIT or ROLLBACK followed by
+BEGIN; total changes and the schema cookie must also remain unchanged. The
+consumer checks and refreshes this outer guard before opening its inner
+`ReviewMaterials` SAVEPOINT, then passes the resolved view directly into that
+immediate read. Refreshing an outer guard while an inner scope is open would
+release the inner SAVEPOINT and is prohibited. Normal and exceptional exits
+release the private guard; cleanup failure never hides the original exception.
+Other reads and later writer
 or effect boundaries validate current state independently. Resolution links use
 one task-local native predecessor index and validated ancestor sets for complete
 chain and effective-head reachability checks. Audit limits do not bound those

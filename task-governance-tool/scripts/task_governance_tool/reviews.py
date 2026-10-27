@@ -2073,8 +2073,22 @@ def read_review_evidence(
     )
 
 
+_UNSET_CONTINUATION_VIEW = object()
+
+
 def _read_review_evidence(connection, project_id, task_id, **options):
     from .review_material_repository import review_materials
+    snapshot = options.pop("_continuation_snapshot", None)
+    if snapshot is not None:
+        task = options.get("validated_task")
+        if task is None:
+            task = read_internal_task(connection, project_id, task_id)
+        if task is None:
+            raise TaskRepositoryError("not_found", "task was not found")
+        # Refresh the outer transaction guard before the inner material
+        # savepoint exists, then consume the view in this immediate read.
+        options["_continuation_view"] = snapshot.for_task(connection, task)
+        options["validated_task"] = task
     with review_materials(connection, project_id=project_id, task_id=task_id) as materials:
         return _read_review_evidence_with_materials(connection, project_id, task_id,
             _materials=materials, **options)
@@ -2091,7 +2105,7 @@ def _read_review_evidence_with_materials(
     source_schema_version: int = SCHEMA_VERSION,
     task_show_details: TaskShowReviewDetails | None = None,
     finding_stream: _ViewerFindingStream | None = None,
-    _continuation_snapshot: EffectiveReviewSnapshot | None = None,
+    _continuation_view=_UNSET_CONTINUATION_VIEW,
     _materials=None,
 ) -> dict[str, Any]:
     if not 1 <= recent_limit <= 10:
@@ -2115,8 +2129,8 @@ def _read_review_evidence_with_materials(
     generation = int(task["review_target_generation"])
     physical_schema = current_schema_version(connection)
     continuation_view = None
-    if _continuation_snapshot is not None:
-        continuation_view = _continuation_snapshot.for_task(connection, task)
+    if _continuation_view is not _UNSET_CONTINUATION_VIEW:
+        continuation_view = _continuation_view
     elif physical_schema >= 29:
         from .review_continuation_evidence_repository import effective_for_task
         continuation_view = effective_for_task(connection, task)

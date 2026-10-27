@@ -7,6 +7,7 @@ SQLite snapshot, without using display limits or touching operational journals.
 
 from contextlib import contextmanager
 from dataclasses import dataclass, field
+import secrets
 import sqlite3
 
 from . import review_continuation as values
@@ -49,6 +50,8 @@ class EffectiveReviewSnapshot:
     _connection: sqlite3.Connection
     _task_projection: tuple
     _total_changes: int
+    _schema_cookie: int
+    _guard: str
     _view: EffectiveTaskReviews | None
     _active: bool = field(default=True, init=False)
 
@@ -56,9 +59,28 @@ class EffectiveReviewSnapshot:
         from .storage import StorageError
         if (not self._active or connection is not self._connection
             or not connection.in_transaction or connection.total_changes != self._total_changes
-            or tuple(sorted(dict(task).items())) != self._task_projection):
+            or tuple(sorted(dict(task).items())) != self._task_projection
+            or connection.execute("PRAGMA schema_version").fetchone()[0] != self._schema_cookie):
             raise StorageError("internal_error", "validated review read is outside its snapshot")
+        # The private savepoint disappears even after a write-free transaction
+        # end. Check it before opening any nested material scope: RELEASE also
+        # removes savepoints created inside this guard.
+        try:
+            connection.execute(f"RELEASE SAVEPOINT {self._guard}")
+            connection.execute(f"SAVEPOINT {self._guard}")
+        except sqlite3.Error as exc:
+            self._active = False
+            raise StorageError("internal_error", "validated review read is outside its snapshot") from exc
         return self._view
+
+    def close(self):
+        from .storage import StorageError
+        self._active = False
+        self._view = None
+        try:
+            self._connection.execute(f"RELEASE SAVEPOINT {self._guard}")
+        except sqlite3.Error as exc:
+            raise StorageError("internal_error", "validated review read is outside its snapshot") from exc
 
 
 @contextmanager
@@ -67,13 +89,24 @@ def effective_review_snapshot(connection, task):
     from .storage import StorageError
     if not connection.in_transaction:
         raise StorageError("internal_error", "validated review read requires an active transaction")
+    task_projection = tuple(sorted(dict(task).items()))
+    guard = "taskgov_effective_review_" + secrets.token_hex(8)
+    schema_cookie = connection.execute("PRAGMA schema_version").fetchone()[0]
+    connection.execute(f"SAVEPOINT {guard}")
     snapshot = EffectiveReviewSnapshot(connection,
-        tuple(sorted(dict(task).items())), connection.total_changes,
-        effective_for_task(connection, task))
+        task_projection, connection.total_changes,
+        schema_cookie, guard, None)
     try:
+        snapshot._view = effective_for_task(connection, task)
         yield snapshot
-    finally:
-        snapshot._active = False
+    except BaseException:
+        try:
+            snapshot.close()
+        except Exception:
+            pass  # Preserve the read/consumer failure; the caller owns rollback.
+        raise
+    else:
+        snapshot.close()
 
 
 @dataclass

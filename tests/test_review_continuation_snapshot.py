@@ -1,6 +1,7 @@
 """Same-transaction evidence reuse and complete native reassessment ancestry."""
 
 from contextlib import closing
+import sqlite3
 import unittest
 from unittest import mock
 
@@ -110,6 +111,89 @@ class ContinuationSnapshotTests(unittest.TestCase):
             self.assertEqual(connection.execute("SELECT verdict FROM review_receipts WHERE review_receipt_id=?",
                 (old,)).fetchone()[0], "changes_requested")
             connection.rollback()
+
+    def test_snapshot_rejects_write_free_transaction_restart_and_allows_fresh_read(self):
+        self.settled()
+        for ending in ("commit", "rollback"):
+            with self.subTest(ending=ending), closing(storage.connect_initialized(self.target)) as connection:
+                connection.execute("BEGIN IMMEDIATE")
+                task = self.task_row(connection)
+                with self.assertRaises(storage.StorageError):
+                    with evidence.effective_review_snapshot(connection, task) as snapshot:
+                        before = connection.total_changes
+                        getattr(connection, ending)()
+                        connection.execute("BEGIN IMMEDIATE")
+                        self.assertEqual(connection.total_changes, before)
+                        from task_governance_tool import review_material_repository as materials
+                        with mock.patch.object(materials, "review_materials", wraps=materials.review_materials) as inner:
+                            with self.assertRaises(storage.StorageError) as caught:
+                                reviews.read_review_evidence(connection, self.basis["project_id"], self.task_id,
+                                    validated_task=task, source_schema_version=29, _continuation_snapshot=snapshot)
+                            self.assertEqual(caught.exception.code, "internal_error")
+                            inner.assert_not_called()
+                        with evidence.effective_review_snapshot(connection, task) as fresh:
+                            self.assertEqual(len(fresh.for_task(connection, task).active_ids), 2)
+                connection.rollback()
+
+    def test_snapshot_rejects_schema_change_without_row_write(self):
+        with closing(storage.connect_initialized(self.target)) as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            task = self.task_row(connection)
+            with evidence.effective_review_snapshot(connection, task) as snapshot:
+                before = connection.total_changes
+                connection.execute("CREATE TABLE snapshot_schema_probe(value INTEGER)")
+                self.assertEqual(connection.total_changes, before)
+                with self.assertRaises(storage.StorageError) as caught:
+                    snapshot.for_task(connection, task)
+                self.assertEqual(caught.exception.code, "internal_error")
+            connection.rollback()
+
+    def test_outer_snapshot_refresh_precedes_inner_material_scope(self):
+        self.settled()
+        with closing(storage.connect_initialized(self.target)) as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            task = self.task_row(connection)
+            with evidence.effective_review_snapshot(connection, task) as snapshot:
+                statements = []
+                connection.set_trace_callback(statements.append)
+                try:
+                    result = reviews.read_review_evidence(connection, self.basis["project_id"], self.task_id,
+                        validated_task=task, source_schema_version=29, _continuation_snapshot=snapshot)
+                finally:
+                    connection.set_trace_callback(None)
+                self.assertTrue(result["gate"]["satisfied"])
+                outer_release = statements.index(f"RELEASE SAVEPOINT {snapshot._guard}")
+                inner_start = next(index for index, sql in enumerate(statements)
+                    if sql.startswith("SAVEPOINT taskgov_review_material_"))
+                self.assertLess(outer_release, inner_start)
+                self.assertTrue(any(sql.startswith("RELEASE SAVEPOINT taskgov_review_material_")
+                    for sql in statements[inner_start + 1:]))
+                self.assertEqual(len(snapshot.for_task(connection, task).active_ids), 2)
+            with self.assertRaises(sqlite3.Error):
+                connection.execute(f"RELEASE SAVEPOINT {snapshot._guard}")
+            connection.rollback()
+
+    def test_snapshot_cleanup_preserves_read_and_consumer_exceptions(self):
+        with closing(storage.connect_initialized(self.target)) as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            task = self.task_row(connection)
+            failure = RuntimeError("isolated snapshot read failure")
+            with mock.patch.object(evidence.secrets, "token_hex", return_value="a" * 16), \
+                 mock.patch.object(evidence, "effective_for_task", side_effect=failure):
+                with self.assertRaises(RuntimeError) as caught:
+                    with evidence.effective_review_snapshot(connection, task):
+                        self.fail("read failure must precede the consumer")
+            self.assertIs(caught.exception, failure)
+            with self.assertRaises(sqlite3.Error):
+                connection.execute("RELEASE SAVEPOINT taskgov_effective_review_" + "a" * 16)
+            consumer_failure = RuntimeError("isolated consumer failure")
+            with self.assertRaises(RuntimeError) as caught:
+                with evidence.effective_review_snapshot(connection, task) as snapshot:
+                    connection.rollback()
+                    raise consumer_failure
+            self.assertIs(caught.exception, consumer_failure)
+            with self.assertRaises(storage.StorageError):
+                snapshot.for_task(connection, task)
 
     def test_resolution_ancestry_follows_multiple_revisions_without_per_edge_sql(self):
         initial = self.register([self.original(A, verdict="changes_requested", findings=[

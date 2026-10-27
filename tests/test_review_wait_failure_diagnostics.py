@@ -25,6 +25,32 @@ PRIVATE = "PRIVATE_PROVIDER_BODY C:/private/token secret=value " * 200
 
 
 class ExchangeDiagnosticsTests(unittest.TestCase):
+    def test_cleanup_reasons_survive_exception_result_and_start_projection(self):
+        reasons = ("review_continuation_effect_unknown", "review_continuation_worker_exit_unknown",
+                   "review_continuation_cleanup_required", "review_continuation_conflict")
+        for reason in (*reasons, PRIVATE):
+            expected = reason if reason in reasons else "unavailable"
+            for source in ("exception", "result", "start"):
+                with self.subTest(reason=expected, source=source):
+                    diagnostic = CallDiagnostics(stage="request_read", retained_effects="present_unresolved")
+                    if source == "exception":
+                        diagnostic.capture(error=DiagnosticError(reason))
+                    elif source == "result":
+                        diagnostic.capture(result={"stage": "request_read", "reason": reason})
+                    else:
+                        diagnostic.capture_start({"state": {"reason": reason}})
+                    result = diagnostic.failure({"ok": False, "error": "review_wait_unavailable"})
+                    value = result["diagnostic"]
+                    self.assertEqual(value["reason"], "start_unavailable"
+                                     if source == "start" and reason == PRIVATE else expected)
+                    self.assertEqual(value["stage"], "request_read")
+                    self.assertEqual(value["retained_effects"], "present_unresolved")
+                    self.assertEqual(value["recovery"], "inspect_existing")
+                    self.assertEqual(value["host_mutation"], "not_dispatched")
+                    self.assertEqual(value["cleanup"], "not_attempted")
+                    self.assertLessEqual(len(json.dumps(value).encode("utf-8")), 2048)
+                    self.assertNotIn("PRIVATE_PROVIDER_BODY", json.dumps(result))
+
     def test_exact_exchange_facts_survive_bootstrap_and_later_timer_cleanup(self):
         from task_governance_tool.review_wait_runtime.review_wait_server import _bootstrap_failure
         for termination in ('confirmed', 'unresolved', 'not_attempted'):

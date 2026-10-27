@@ -2563,6 +2563,17 @@ A failed fresh inventory read leaves the
 current state uninspected; it does not settle an earlier observed unknown
 effect or remove the need to inspect that effect.
 
+Old-wait admission preserves `review_continuation_effect_unknown` for unsettled
+timer/send effects, `review_continuation_worker_exit_unknown` for missing actual
+worker-exit proof, and `review_continuation_cleanup_required` for a known request
+that still requires cleanup. These fixed reasons survive diagnostic projection;
+they do not authorize cleanup, replacement or replay. A non-settled fresh cleanup
+proof invalidates an earlier absence/settled observation in new-generation
+admission, continuation renewal and obsolete-round retirement alike. Previously
+confirmed cleanup remains reported separately; it cannot certify worker exit or
+settle a later unknown observation. This improves diagnosis, not operational
+recovery or evidence of restored automatic completion.
+
 Preparation and start failures retain their original safe stage/reason through
 the normal entry point, including an allowlisted failure reason carried by a
 successful direct-state summary whose activation failed. Unresolved cleanup or

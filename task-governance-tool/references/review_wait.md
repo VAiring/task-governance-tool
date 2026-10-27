@@ -164,6 +164,12 @@ this call; `retained_effects` describes admitted saved-state observations;
 not establish review PASS, message receipt or Task completion. Unresolved
 cleanup takes priority when choosing the next action without erasing the original
 failure. A general host tool error is not proof of permission denial.
+Old-wait reasons distinguish `review_continuation_effect_unknown` (timer/send
+effects unconfirmed), `review_continuation_worker_exit_unknown` (actual worker
+exit unconfirmed), and `review_continuation_cleanup_required` (known request
+still needs cleanup). Preserve these distinctions and any previously confirmed
+operation; a later failed proof is not settled. None authorizes replay or a new
+wait. Diagnosing the reason does not establish operational recovery.
 When supplied, `diagnostic.host_failure` names the fixed host operation, its
 communication reason and its own helper-process termination result. Report
 these separately: confirmed termination does not repair failed communication,

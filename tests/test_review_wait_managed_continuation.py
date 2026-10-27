@@ -216,6 +216,82 @@ class ManagedContinuationTests(unittest.TestCase):
         self.assertEqual(self.effects, [])
         self.assertEqual(self.journal.read_admission(), before)
 
+    def test_cleanup_rejection_diagnostics_preserve_each_public_admission_boundary(self):
+        cases = ("generation", "renewal", "retirement")
+        reasons = ("review_continuation_effect_unknown", "review_continuation_worker_exit_unknown",
+                   "review_continuation_cleanup_required", "review_continuation_conflict")
+        for case in cases:
+            fixture = ManagedContinuationTests()
+            fixture.setUp()
+            try:
+                fixture.prepared()
+                if case != "retirement":
+                    self.assertEqual(fixture.call()["status"], "waiting")
+                    self.assertTrue(fixture.call("stop")["ok"])
+                if case == "renewal":
+                    fixture.now += timedelta(minutes=10)
+                    fixture.current_parent = ChildTurn(fixtures.PARENT, fixtures.NEW_TURN, "inProgress", "active")
+                    metadata = {"threadId": fixtures.PARENT, "turnId": fixtures.NEW_TURN}
+                else:
+                    fixture.basis = replace(fixture.basis, target_generation=fixture.basis.target_generation + 1)
+                    metadata = fixtures.META
+                before = fixture.journal.read_admission()
+                effects = list(fixture.effects)
+                method = "observe_generation_cleanup" if case == "generation" else "observe_latest_cleanup"
+                for reason in (*reasons, "private unapproved diagnostic"):
+                    with self.subTest(case=case, reason=reason), mock.patch(
+                            "task_governance_tool.review_wait_runtime.continuation_cleanup_repository." + method,
+                            return_value=SimpleNamespace(state="unknown", reason=reason)):
+                        result = fixture.call(metadata=metadata)
+                    self.assertFalse(result["ok"], result)
+                    value = result["diagnostic"]
+                    self.assertEqual(value["reason"], reason if reason in reasons else "unavailable")
+                    self.assertEqual(value["stage"], "cleanup" if case == "renewal" else "request_read")
+                    self.assertEqual(value["retained_effects"], "not_inspected")
+                    self.assertEqual(value["recovery"], "inspect_existing")
+                    self.assertEqual(value["local_state"], "may_have_changed")
+                    self.assertEqual(value["host_mutation"], "not_dispatched")
+                    self.assertEqual(value["cleanup"], "confirmed" if case == "renewal" else "not_attempted")
+                    self.assertEqual(fixture.effects, effects)
+                    self.assertEqual(fixture.journal.read_admission(), before)
+                    self.assertNotIn("private unapproved diagnostic", str(result))
+            finally:
+                fixture.doCleanups()
+
+    def test_latest_cleanup_typed_read_failure_invalidates_prior_settlement(self):
+        from task_governance_tool.review_wait_runtime.review_wait_repository import RepositoryError
+        for case in ("renewal", "retirement"):
+            fixture = ManagedContinuationTests()
+            fixture.setUp()
+            try:
+                fixture.prepared()
+                if case == "renewal":
+                    self.assertEqual(fixture.call()["status"], "waiting")
+                    self.assertTrue(fixture.call("stop")["ok"])
+                    fixture.current_parent = ChildTurn(fixtures.PARENT, fixtures.NEW_TURN, "inProgress", "active")
+                    metadata = {"threadId": fixtures.PARENT, "turnId": fixtures.NEW_TURN}
+                else:
+                    fixture.basis = replace(fixture.basis, target_generation=fixture.basis.target_generation + 1)
+                    metadata = fixtures.META
+                before, effects = fixture.journal.read_admission(), list(fixture.effects)
+                for code in ("state_unreadable", "writer_busy"):
+                    with self.subTest(case=case, code=code), mock.patch.object(
+                            RequestRepository, "read", side_effect=RepositoryError(code)) as read:
+                        result = fixture.call(metadata=metadata)
+                        self.assertFalse(result["ok"], result)
+                        self.assertEqual(read.call_count, 1)
+                        value = result["diagnostic"]
+                        self.assertEqual(value["reason"], code)
+                        self.assertEqual(value["stage"], "cleanup" if case == "renewal" else "request_read")
+                        self.assertEqual(value["retained_effects"], "not_inspected")
+                        self.assertEqual(value["recovery"], "inspect_existing")
+                        self.assertEqual(value["host_mutation"], "not_dispatched")
+                        self.assertEqual(value["cleanup"], "confirmed" if case == "renewal" else "not_attempted")
+                    self.assertEqual(fixture.effects, effects)
+                    self.assertEqual(fixture.journal.read_admission(), before)
+            finally:
+                fixture.doCleanups()
+
     def test_unknown_native_historical_binding_blocks_fresh_wait(self):
         self.prepared()
         from task_governance_tool.review_wait_runtime.failure_diagnostics import DiagnosticError

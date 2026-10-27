@@ -1959,7 +1959,16 @@ call-local projection; it reuses the existing typed bootstrap/host classifiers.
 `project_server` separates a valid disabled policy from policy-read failure,
 retains fixed project-admission reasons, and invokes that projection before its
 unknown fallback. It never derives a diagnostic
-code from arbitrary exception text. Successful readiness and the nine control
+code from arbitrary exception text. The fixed cleanup reasons produced by
+`continuation_cleanup_repository` cross `DiagnosticError`, result capture and
+the final failure projection without collapsing to `unavailable`. Both latest-
+cleanup proof consumers in `managed_wait` guard the supplemental read and proof
+with `reading_retained`, so a read exception cannot reuse earlier observations.
+They also invalidate earlier retained-state observations when the proof is not
+settled, as generation-change admission does. Separately confirmed cleanup facts
+remain available even when the new retained-state observation fails.
+This changes call-local diagnosis only; journal writes and host-effect ordering
+remain unchanged. Successful readiness and the nine control
 inputs remain unchanged.
 
 At a rejected answer-hook caller mismatch only, `project_server`

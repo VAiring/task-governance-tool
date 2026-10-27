@@ -33,6 +33,8 @@ REASONS = _BOOTSTRAP_REASONS | HOST_BOUNDARY_REASONS | DIRECT_REASONS | PROJECT_
     "state_already_exists", "task_binding_changed", "heartbeat_not_admitted",
     "observer_cleanup_unknown", "direct_probe_unavailable", "direct_probe_selected",
     "review_continuation_conflict", "review_continuation_basis_changed",
+    "review_continuation_effect_unknown", "review_continuation_worker_exit_unknown",
+    "review_continuation_cleanup_required",
 })
 
 

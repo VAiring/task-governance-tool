@@ -448,11 +448,13 @@ class ManagedWait:
                     self.owner._wait_round_current(binding, continued)
             if historical is not None and (previous is None or previous.basis_digest != digest):
                 from .continuation_cleanup_repository import observe_latest_cleanup
-                _, cleaned = repository.read()
-                session = None if cleaned is None else self.owner.sessions.get(cleaned.automation_id)
-                proof = observe_latest_cleanup(paths, metadata["threadId"], task_id, sequence, cleaned,
-                    owner=None if session is None else session.direct)
+                with diagnostic.reading_retained():
+                    _, cleaned = repository.read()
+                    session = None if cleaned is None else self.owner.sessions.get(cleaned.automation_id)
+                    proof = observe_latest_cleanup(paths, metadata["threadId"], task_id, sequence, cleaned,
+                        owner=None if session is None else session.direct)
                 if proof.state != "settled":
+                    diagnostic.invalidate_record()
                     raise DiagnosticError(proof.reason)
                 if historical.phase == "prepared":
                     repository.publish_without_wait(lease, historical)
@@ -472,9 +474,11 @@ class ManagedWait:
                     or previous.parent_turn == current_turn):
                     return self._failure("review_continuation_conflict")
                 from .continuation_cleanup_repository import observe_latest_cleanup
-                _, cleaned = repository.read()
-                proof = observe_latest_cleanup(paths, metadata["threadId"], task_id, sequence, cleaned)
+                with diagnostic.reading_retained():
+                    _, cleaned = repository.read()
+                    proof = observe_latest_cleanup(paths, metadata["threadId"], task_id, sequence, cleaned)
                 if proof.state != "settled":
+                    diagnostic.invalidate_record()
                     raise DiagnosticError(proof.reason)
             elif continued is not None and continued.phase != "prepared":
                 return self._failure("review_continuation_conflict")

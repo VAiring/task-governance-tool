@@ -103,6 +103,8 @@ class TaskOwnershipInstallTests(unittest.TestCase):
         self.assertEqual(saved_plan, plan.read_bytes())
 
     def test_public_setup_upgrade_preserves_old_tasks_cycles_and_backup(self):
+        from tests.m14_test_support import pin_pre_incremental_viewer
+        restore_viewer = pin_pre_incremental_viewer(self.install.skill_root)
         # Pin only this physical fixture's predecessor runtime. The candidate
         # upgrade then runs through the unpatched child-process public CLI.
         storage_path = self.install.skill_root / "scripts" / "task_governance_tool" / "storage.py"
@@ -141,6 +143,7 @@ class TaskOwnershipInstallTests(unittest.TestCase):
             before = snapshot(connection)
         self.assertTrue(before["completion_evidence_bundles"])
         storage_path.write_text(candidate, encoding="utf-8", newline="\n")
+        restore_viewer()
         refresh_test_manifest(self.install.skill_root)
         state_before = self.install.state_snapshot()
         preview = self.invoke("setup", "--read-only", caller=UNKNOWN)["data"]

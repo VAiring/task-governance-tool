@@ -78,12 +78,11 @@ never alters the meaning of a preserved cycle.
 
 ## Operation-Local Admission
 
-Viewer's approved replacement is conditional on the
-[incremental activation gate](viewer-design.md#incremental-execution-boundaries).
-Its [tracking storage](viewer-design.md#incremental-tracking-storage) is derived
-display state, not an authoritative validation cache. Until integration, the
-current Viewer admission below remains active; Setup/diagnosis/recovery and
-non-Viewer operations retain their existing gates.
+Viewer's [incremental protocol](viewer-design.md#incremental-cache-and-publication)
+uses selected-Task capture and fresh structural effect guards. Its
+[tracking storage](viewer-design.md#incremental-tracking-storage) is derived
+display state, not an authoritative validation cache. Setup/diagnosis/recovery
+and non-Viewer operations retain their existing gates.
 
 Ordinary Task registration, start/state/metadata/checkpoint operations and
 normal list/current/next/context/show/effort reads validate the current schema,
@@ -149,23 +148,23 @@ admission proof nor authority to mutate Task state.
 Maintenance eligibility reads use the structural boundary and validated policy,
 generation and managed-backup metadata. Disabled, current and not-due paths do
 not audit Task histories. Such observations never certify an artifact: actual
-whole-project capture/publication retains global validation at its existing
+Evidence whole-project capture/publication retains global validation at its existing
 locked effect boundaries. Routine backup has the separately bounded
 [asynchronous admission](#asynchronous-backup-admission) below; Setup and
 recovery backup retain complete source validation.
-Current Viewer capture composes that global admission with its complete
-snapshot validation: global session bindings already validated by the full
-Evidence Ledger are not scanned again, while Runner, collected-source,
-judgment, ownership, retained-note and project metadata checks remain required.
-This private same-read composition is not an operation-local source certificate;
-older-schema reads and separate publication/outcome transactions keep their own
-admission, as specified by the [Viewer owner](viewer-design.md#snapshot-and-publication).
+Incremental Viewer capture validates changed Tasks and their consumed relations
+in one snapshot, without a global Evidence Ledger/history audit. Cache bytes
+receive independent display-only validation. Fresh guards and metadata writers
+repeat structural, binding, identity, opt-in and generation checks in their own
+transactions. Explicit full snapshot readers and older-source compatibility
+retain composed global admission under the
+[Viewer owner](viewer-design.md#snapshot-and-publication).
 Failed/deferred backup outcome-only writes also use structural admission and
 the consumed maintenance metadata, repeated under the writer. They compare the
 observed success generation, outcome basis and complete generation metadata
 inventory before updating, as specified by
 [same-process maintenance](setup-state-specification.md#same-process-maintenance).
-Setup, doctor, migration/reentry, recovery and actual whole-project publication
+Setup, doctor, migration/reentry, recovery and whole-project Evidence publication
 retain complete applicable validation. The approved remaining work is owned
 by [operation admission correction](operation-admission-plan.md).
 
@@ -715,7 +714,8 @@ Existing rows, IDs, sealed bytes and earlier schema definitions remain exact.
 The [tracking contract](viewer-design.md#incremental-tracking-storage) owns
 the column, capacity, identity, invalidation and transaction rules. New state
 has a fresh epoch and no accepted cache/HTML tuples. The original rendered
-counter and HTML survive; this foundation does not activate cache publication.
+counter and HTML survive migration; matching cache/HTML publication is governed
+by the separate [Viewer protocol](viewer-design.md#incremental-cache-and-publication).
 
 The owned schema has 52 tables, 52 explicit indexes and 107 triggers.
 Only explicit Setup migrates or rotates a restored private candidate's epoch;

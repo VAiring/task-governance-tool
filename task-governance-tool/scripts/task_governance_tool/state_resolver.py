@@ -140,6 +140,10 @@ class CanonicalStatePaths:
         return self.state_root / "diagnostics" / "sqlite"
 
     @property
+    def viewer_projection(self) -> Path:
+        return self.fixed_root / "viewer" / "task-projection.json"
+
+    @property
     def debug_logs(self) -> Path:
         """Separately enabled daily diagnostics, outside recoverable state."""
         return self.state_root / "diagnostics" / "logger"
@@ -444,7 +448,7 @@ def backup_runtime_target(skill_root: Path, *, repo: Path, project_id: str,
         db_path=paths.database, explicit_db=False,
         binding_path_hash=binding_path_hash, binding_generation=binding_generation,
         skill_root=paths.skill_root, backups_path=paths.backups,
-        viewer_path=paths.viewer, canonical_fixed=True,
+        viewer_path=paths.viewer, viewer_projection_path=paths.viewer_projection, canonical_fixed=True,
     )
 
 
@@ -1359,6 +1363,8 @@ def _database_target(
         skill_root=skill_root,
         backups_path=backups_path,
         viewer_path=viewer_path,
+        viewer_projection_path=(paths.viewer_projection if paths is not None
+                                else artifact_root / "viewer" / "task-projection.json"),
         canonical_fixed=(paths is not None),
         usage_database=paths.usage_database if paths is not None else artifact_root / "taskgov-usage.sqlite",
         usage_root=paths.usage_root if paths is not None else artifact_root / "usage",
@@ -1867,9 +1873,9 @@ def _inspect_viewer_directory(directory: Path) -> list[str]:
     except OSError as exc:
         raise _ResolverFailure("project_state_unreadable") from exc
     for entry in entries:
-        if entry.name == "task-viewer.html":
+        if entry.name in {"task-viewer.html", "task-projection.json"}:
             _stamp(entry)
-            recognized.append("viewer/task-viewer.html")
+            recognized.append("viewer/" + entry.name)
         elif entry.name == "taskgov-viewer.lock":
             _stamp(entry)
             recognized.append("viewer/taskgov-viewer.lock")

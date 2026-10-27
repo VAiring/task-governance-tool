@@ -2857,11 +2857,12 @@ Bundle to validate. Existing single-Task history reads use the same validator.
 
 ### Public History Projection
 
-The conditional [incremental Viewer design](viewer-design.md#incremental-cache-and-publication)
-must establish selected Bundle/history validation before using the batch
-projection without its existing global-admission prerequisite. Activation is
-owned by its integration gate; native completion, Evidence and ordinary history
-readers retain their own validation and never consume the display cache.
+The [incremental Viewer design](viewer-design.md#incremental-cache-and-publication)
+uses its selected repository to validate all own Bundle/history relations in
+bounded chunks before retaining the newest display window. It does not borrow
+the old batch reader's upstream global-admission assumption. Native completion,
+Evidence and ordinary history readers retain their own validation and never
+consume the display cache.
 
 `completion_history_repository.py` owns latest-cycle, single-Task and batch
 history retrieval and metadata queries. It uses the caller's connection and
@@ -2869,7 +2870,7 @@ the existing storage-owned cycle/Receipt checks and shared Evidence validation
 repository. The latter owns Bundle validation/acquisition; shared types and
 completion writes remain in storage.
 The single-Task reader retains its selected Bundle-history validation, while
-the Viewer batch reader retains its upstream global-snapshot validation
+the retained full-Viewer batch reader retains its upstream global-snapshot validation
 assumption. These paths do not acquire a connection or start a transaction.
 
 `task show` reads total, incomplete-legacy aggregate, and newest-first rows in
@@ -2909,8 +2910,15 @@ and checkpoint summaries. A rejection maps to the fixed
 `completion_history_inconsistent` error and never exposes the offending field
 or value; `task show` and Viewer use this same formatter.
 
-Viewer batch history is grouped/windowed for at most 500 selected Tasks and 10
-cycles each, not one query per cycle. Snapshot v4 uses the identical wrapper.
+The full-capture Viewer batch history is grouped/windowed for at most 500
+selected Tasks and their newest 10 cycles each, not one query per cycle.
+Its batch admission may compare current verification because each supplied
+Task window includes its actual latest cycle. The incremental reader instead
+streams every selected Task's own cycle in bounded chunks: historical Receipt
+links are validated per chunk, and current verification is compared once with
+the actual latest cycle after the stream, only for a done Task. A historical
+chunk's last cycle is never treated as current. Both use the same historical
+Receipt validator and latest-cycle comparison. Snapshot v4 uses the identical wrapper.
 Source schemas v5-v14 synthesize empty/incomplete history; v15-v22 use stored
 rows. Sources v17-v22 validate linked Receipt ownership, basis, target, and
 pass/full qualification; v19-v22 also validate and discard Bundle linkage, and

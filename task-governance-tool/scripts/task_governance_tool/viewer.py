@@ -7,7 +7,7 @@ import json
 import os
 import sqlite3
 import stat
-import tempfile
+import secrets
 from contextlib import nullcontext, suppress
 from dataclasses import dataclass
 from pathlib import Path
@@ -486,38 +486,36 @@ def write_viewer_html(
     *,
     replace_guard: Callable[[], ContextManager[None]] | None = None,
 ) -> bool:
+    from task_governance_tool.viewer_projection_cache import artifact_present, require_same_artifact
+    from task_governance_tool.state_paths import create_exclusive_durable_file, unlink_validated_file
     temporary_path: Path | None = None
-    descriptor: int | None = None
+    prepared = None
     try:
-        target.path.parent.mkdir(parents=True, exist_ok=True)
         validate_default_output_parent(target.path, target.state_root)
+        target.path.parent.mkdir(parents=True, exist_ok=True)
         validate_existing_output(target.path)
         validate_output_database_separation(target.path, target.database_path)
-        descriptor, temporary_name = tempfile.mkstemp(
-            prefix=".task-viewer-",
-            suffix=".tmp",
-            dir=target.path.parent,
-        )
-        temporary_path = Path(temporary_name)
-        with os.fdopen(descriptor, "w", encoding="utf-8", newline="\n") as stream:
-            descriptor = None
-            stream.write(html)
-            stream.flush()
-            os.fsync(stream.fileno())
+        artifact_present(target)
+        temporary_path = target.path.with_name(".task-viewer-" + secrets.token_hex(4) + ".tmp")
+        # This owner cleans its own partial file if write/fsync fails, using
+        # object identity rather than deleting a possibly replaced path.
+        prepared = create_exclusive_durable_file(temporary_path, html.encode("utf-8"),
+            root=target.state_root, max_bytes=MAX_VIEWER_ARTIFACT_BYTES)
+        temporary_target = ViewerOutputTarget(temporary_path, target.database_path, target.state_root)
         validate_default_output_parent(target.path, target.state_root)
         validate_existing_output(target.path)
         validate_output_database_separation(target.path, target.database_path)
         replaced = target.path.exists()
         with replace_guard() if replace_guard is not None else nullcontext():
+            artifact_present(target)
+            require_same_artifact(temporary_target, prepared)
             os.replace(temporary_path, target.path)
         temporary_path = None
         return replaced
     except OSError as exc:
         raise ViewerError("output_write_failed", "viewer output could not be written") from exc
     finally:
-        if descriptor is not None:
-            with suppress(OSError):
-                os.close(descriptor)
-        if temporary_path is not None:
-            with suppress(OSError):
-                temporary_path.unlink()
+        if temporary_path is not None and prepared is not None:
+            with suppress(Exception):
+                require_same_artifact(temporary_target, prepared)
+                unlink_validated_file(prepared, root=target.state_root)

@@ -1183,22 +1183,22 @@ already successful command into an error.
 
 ### Post-Commit Coordinator
 
-The conditional [incremental Viewer protocol](viewer-design.md#incremental-cache-and-publication)
-replaces only Viewer capture/guard/outcome admission after its integration gate.
+The [incremental Viewer protocol](viewer-design.md#incremental-cache-and-publication)
+owns Viewer capture/guard/outcome admission.
 The [tracking foundation](viewer-design.md#incremental-tracking-storage)
 requires an epoch reset in formal private restore/publication before canonical
 publication, preserving the exact source comparison before derived-state
-normalization. Storage alone does not change the active coordinator below;
-Evidence and backup remain outside that replacement.
+normalization. Evidence and backup remain outside the Viewer replacement.
 
 Eligibility snapshots use structural admission and validated policy/generation
-metadata, without whole-project Task-history validation. Evidence and Viewer
-repeat eligibility under their artifact locks and validate the complete source
-in that same snapshot before capturing a due artifact. Viewer composes shared
-admission with its snapshot validation under the
-[Viewer responsibility boundary](viewer-design.md#snapshot-and-publication),
-without a second global ownership/note/session-binding scan. Explicit force repair
-still captures and validates a current artifact. The retained synchronous backup primitive's initial policy
+metadata, without whole-project Task-history validation. Evidence repeats
+eligibility under its artifact lock and validates its complete source.
+Viewer repeats eligibility under its lock, reads changed Task projections in one
+snapshot and rebuilds all display Tasks when cache reuse is invalid. Its
+[guards and result writers](viewer-design.md#incremental-cache-and-publication)
+are fresh structural transactions without global history audits. Explicit Setup
+also validates cache bytes and repairs missing, corrupt or unmatched cache even
+when HTML remains valid. The retained synchronous backup primitive's initial policy
 and generation inventory read alone is local; its cheap crash-residue comparison
 does not certify artifact contents. An explicitly admitted backup attempt retains
 the global locked resolver/repository checks and complete source, copied-file

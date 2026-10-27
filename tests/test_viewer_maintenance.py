@@ -394,7 +394,9 @@ class ViewerMaintenanceTests(unittest.TestCase):
                     observed_at=FIXED_TIME,
                 )
 
-            self.assertEqual(result.code, "succeeded")
+            # Approved incremental publication step 7: exhausted bounded
+            # opportunities leave pending work and report the existing warning.
+            self.assertEqual(result.code, "failed")
             self.assertEqual(result.renders, 2)
             self.assertEqual(writer.call_count, 2)
             loader.assert_called_once_with(None)
@@ -404,7 +406,7 @@ class ViewerMaintenanceTests(unittest.TestCase):
                 state.source_generation,
                 state.rendered_generation + 1,
             )
-            self.assertEqual(state.last_outcome_code, "succeeded")
+            self.assertEqual(state.last_outcome_code, "failed")
 
     def test_follow_up_success_supersedes_later_started_contention(self):
         with tempfile.TemporaryDirectory() as tmp:

@@ -451,6 +451,7 @@ class DatabaseTarget:
     skill_root: Path | None = field(default=None, repr=False, compare=False)
     backups_path: Path | None = field(default=None, repr=False, compare=False)
     viewer_path: Path | None = field(default=None, repr=False, compare=False)
+    viewer_projection_path: Path | None = field(default=None, repr=False, compare=False)
     canonical_fixed: bool = False
     usage_database: Path | None = field(default=None, repr=False, compare=False)
     usage_root: Path | None = field(default=None, repr=False, compare=False)
@@ -493,6 +494,10 @@ class DatabaseTarget:
         return self.viewer_path or (
             self.db_path.parent / "viewer" / "task-viewer.html"
         )
+
+    @property
+    def resolved_viewer_projection_path(self) -> Path:
+        return self.viewer_projection_path or self.resolved_viewer_path.with_name("task-projection.json")
 
     @property
     def resolved_evidence_root(self) -> Path:
@@ -604,6 +609,7 @@ class UnboundDatabaseTarget:
     skill_root: Path | None = field(default=None, repr=False, compare=False)
     backups_path: Path | None = field(default=None, repr=False, compare=False)
     viewer_path: Path | None = field(default=None, repr=False, compare=False)
+    viewer_projection_path: Path | None = field(default=None, repr=False, compare=False)
     canonical_fixed: bool = False
     evidence_root: Path | None = field(default=None, repr=False, compare=False)
     evidence_index: Path | None = field(default=None, repr=False, compare=False)
@@ -6696,12 +6702,78 @@ def _validate_cycle_receipt_projection(
         raise completion_history_inconsistent()
 
 
+def _validate_current_completion_verification(task, cycle: CompletionCycle) -> None:
+    """Compare current verification only with the Task's actual latest cycle."""
+    if (str(task["status"]) == "done" and cycle.verification_basis_version == 1
+            and not _completion_cycle_matches_exact_verification(cycle, task["verification"])):
+        raise completion_history_inconsistent()
+
+
 def _validate_cycle_receipts_batch(
     connection: sqlite3.Connection,
     *,
     project_id: str,
     cycles: tuple[CompletionCycle, ...],
 ) -> None:
+    """Admit histories whose supplied window includes every Task's latest cycle.
+
+    Arbitrary historical chunks use _validate_cycle_receipt_links_batch and
+    compare their actual latest cycle once, after the complete stream is read.
+    """
+    _validate_cycle_receipt_links_batch(connection, project_id=project_id, cycles=cycles)
+    latest_by_task: dict[str, CompletionCycle] = {}
+    for cycle in cycles:
+        latest = latest_by_task.get(cycle.task_id)
+        if (
+            latest is None
+            or cycle.saved_cycle_ordinal > latest.saved_cycle_ordinal
+        ):
+            latest_by_task[cycle.task_id] = cycle
+    exact_basis = {
+        task_id: cycle
+        for task_id, cycle in latest_by_task.items()
+        if cycle.verification_basis_version == 1
+    }
+    rows_by_task: dict[str, sqlite3.Row] = {}
+    task_ids = tuple(sorted(exact_basis))
+    for offset in range(
+        0,
+        len(task_ids),
+        COMPLETION_RECEIPT_VALIDATION_CHUNK_SIZE,
+    ):
+        chunk = task_ids[
+            offset : offset + COMPLETION_RECEIPT_VALIDATION_CHUNK_SIZE
+        ]
+        placeholders = ", ".join("?" for _ in chunk)
+        task_rows = connection.execute(
+            f"""
+            SELECT task_id, status, verification
+              FROM tasks
+             WHERE project_id = ?
+               AND task_id IN ({placeholders})
+             ORDER BY task_id COLLATE BINARY
+            """,
+            (project_id, *chunk),
+        ).fetchall()
+        rows_by_task.update(
+            {str(row["task_id"]): row for row in task_rows}
+        )
+    if len(rows_by_task) != len(exact_basis):
+        raise completion_history_inconsistent()
+    for task_id, cycle in exact_basis.items():
+        row = rows_by_task.get(task_id)
+        if row is None:
+            raise completion_history_inconsistent()
+        _validate_current_completion_verification(row, cycle)
+
+
+def _validate_cycle_receipt_links_batch(
+    connection: sqlite3.Connection,
+    *,
+    project_id: str,
+    cycles: tuple[CompletionCycle, ...],
+) -> None:
+    """Validate each supplied historical cycle; no newest-cycle assumption."""
     for cycle in cycles:
         if cycle.gate_basis.version == 2:
             _validate_continuation_cycle_receipts(connection, cycle)
@@ -6804,57 +6876,6 @@ def _validate_cycle_receipts_batch(
                 receipt,
                 validate_complete_receipt=False,
             )
-
-    latest_by_task: dict[str, CompletionCycle] = {}
-    for cycle in cycles:
-        latest = latest_by_task.get(cycle.task_id)
-        if (
-            latest is None
-            or cycle.saved_cycle_ordinal > latest.saved_cycle_ordinal
-        ):
-            latest_by_task[cycle.task_id] = cycle
-    exact_basis = {
-        task_id: cycle
-        for task_id, cycle in latest_by_task.items()
-        if cycle.verification_basis_version == 1
-    }
-    rows_by_task: dict[str, sqlite3.Row] = {}
-    task_ids = tuple(sorted(exact_basis))
-    for offset in range(
-        0,
-        len(task_ids),
-        COMPLETION_RECEIPT_VALIDATION_CHUNK_SIZE,
-    ):
-        chunk = task_ids[
-            offset : offset + COMPLETION_RECEIPT_VALIDATION_CHUNK_SIZE
-        ]
-        placeholders = ", ".join("?" for _ in chunk)
-        task_rows = connection.execute(
-            f"""
-            SELECT task_id, status, verification
-              FROM tasks
-             WHERE project_id = ?
-               AND task_id IN ({placeholders})
-             ORDER BY task_id COLLATE BINARY
-            """,
-            (project_id, *chunk),
-        ).fetchall()
-        rows_by_task.update(
-            {str(row["task_id"]): row for row in task_rows}
-        )
-    if len(rows_by_task) != len(exact_basis):
-        raise completion_history_inconsistent()
-    for task_id, cycle in exact_basis.items():
-        row = rows_by_task.get(task_id)
-        if row is None:
-            raise completion_history_inconsistent()
-        if str(row["status"]) == "done" and not (
-            _completion_cycle_matches_exact_verification(
-                cycle,
-                row["verification"],
-            )
-        ):
-            raise completion_history_inconsistent()
 
     native_cycles = tuple(
         cycle for cycle in cycles if cycle.gate_basis.version == 1
@@ -13323,6 +13344,7 @@ def initialize_uuid_database(
         skill_root=target.skill_root,
         backups_path=target.backups_path,
         viewer_path=target.viewer_path,
+        viewer_projection_path=target.viewer_projection_path,
         canonical_fixed=target.canonical_fixed,
     )
     try:

@@ -18,10 +18,11 @@ atomically replaces; failure preserves last good.
 
 ## Snapshot v4
 
-The following is the active full-capture contract. The approved
-[incremental projection contract](#conditional-incremental-projection) below
-remains conditional until its integration gate; a design or tracking-schema
-change alone does not activate it.
+The public v4 shape below is shared by the current
+[incremental projection](#conditional-incremental-projection) and the retained
+full-capture reader. Complete-source admission described below belongs to that
+full reader for explicit inspection and compatible older sources; routine
+schema-34 maintenance uses the selected-Task boundary below.
 
 Snapshot v4 accepts source schemas v5-v34. One query-only transaction validates
 schema/project/binding, reads generation, validates the complete source-aware
@@ -75,10 +76,10 @@ text-only DOM APIs.
 Schema v13+ increments source generation on Viewer-relevant Task, checkpoint,
 or review events, not handoff-only/read/failure/replay/no-op/config/
 maintenance. The Viewer stage skips before opt-in, takes zero-wait lock,
-and repeats its metadata eligibility check before complete source validation.
+and repeats its metadata eligibility check before the selected source capture.
 Disabled/current decisions use structural and maintenance metadata admission
-without auditing all Task histories. An eligible capture still validates the
-complete source in that same snapshot. The stage
+without auditing all Task histories. An eligible incremental capture validates
+its changed Tasks and consumed relations in that same snapshot. The stage
 renders only when due, records rendered generation shortly, rechecks once, and
 never publishes an older capture over newer. Doctor reports stored facts only;
 browser reload never observes SQLite directly.
@@ -87,7 +88,7 @@ advanced in the same business transaction as the corresponding event.
 Schema 34 also records the affected Task for event-free Verification Receipt
 and continuation changes in their owned transaction, according to the
 [change inventory](viewer-design.md#incremental-change-inventory). This tracking
-foundation does not activate incremental capture or cache publication.
+foundation supplies the revision inventory for incremental publication.
 
 The offline `file://` UI shows project/time/status totals, search and
 status/kind/lane/priority/tag filters, deterministic Task order, terminal
@@ -95,12 +96,13 @@ history, details, review/completion/history, and recent events. It is responsive
 and keyboard/label/focus/contrast accessible and has no write controls,
 network/API/analytics/telemetry/server/direct SQLite/watcher/launch/storage.
 
-## Conditional Incremental Projection
+<a id="conditional-incremental-projection"></a>
 
-This approved replacement concerns Viewer maintenance only. Activation requires
-the three sequential [execution units and gates](viewer-design.md#incremental-execution-boundaries).
-Until the last unit passes, Snapshot v4 above and the existing full renderer
-remain active. No new CLI, service, timer, browser communication, configuration
+## Incremental Projection
+
+This current implementation concerns Viewer maintenance only. Its
+[execution boundary](viewer-design.md#incremental-execution-boundaries)
+retains the accepted scope and gates. No new CLI, service, timer, browser communication, configuration
 permission or completion evidence is introduced.
 
 For a source with the implemented change-tracking schema, the first publication
@@ -175,8 +177,8 @@ Primary-command success and the existing fixed warnings remain independent.
 Supported sources v5-v33 retain their full-capture compatibility path. They
 cannot consume the new cache or receive tracking writes; ordinary commands do
 not migrate them. Explicit Setup owns migration, restoration and rebind.
-The storage-foundation unit must preserve the old Viewer until the integration
-unit activates this contract and synchronizes the coupled current owners.
+The full-capture reader remains available for those compatibility and explicit
+inspection responsibilities; routine schema-34 publication uses this contract.
 
 ## Optional Visibility-Aware Reload
 

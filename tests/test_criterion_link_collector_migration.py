@@ -427,11 +427,13 @@ class PublicCriterionLinkCollectorSetupTests(unittest.TestCase):
         return storage._selected_table_projection_snapshot(connection, names)
 
     def test_public_setup_migrates_populated30_and_recovers30_and_current_backups(self):
+        from tests.m14_test_support import pin_pre_incremental_viewer
         from task_governance_tool import backup
         from task_governance_tool.viewer import build_viewer_snapshot
         temporary = tempfile.TemporaryDirectory(prefix="taskgov-public-collector-setup-")
         self.addCleanup(temporary.cleanup)
         self.install = make_physical_install(Path(temporary.name))
+        restore_viewer = pin_pre_incremental_viewer(self.install.skill_root)
         self.enterContext(mock.patch.dict(os.environ,
             {"CODEX_THREAD_ID": "00000000-0000-4000-8000-000000000001"}))
         storage_path = self.install.skill_root / "scripts/task_governance_tool/storage.py"
@@ -471,6 +473,7 @@ class PublicCriterionLinkCollectorSetupTests(unittest.TestCase):
             self.assertEqual(connection.execute("SELECT COUNT(*) FROM review_receipt_provenance_v2").fetchone()[0], 2)
             self.assertEqual(connection.execute("SELECT current_contract_revision FROM tasks WHERE task_id=?", (active,)).fetchone()[0], 1)
         storage_path.write_text(current, encoding="utf-8", newline="\n")
+        restore_viewer()
         refresh_test_manifest(self.install.skill_root)
         state = self.install.state_snapshot()
         preview = self.cli("setup", "--read-only")

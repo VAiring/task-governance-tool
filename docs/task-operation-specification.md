@@ -1329,10 +1329,10 @@ round trips, not internal command counts or the runtime Git boundary.
 
 <a id="stored-task-read-and-privacy-contract"></a>
 
-The approved [incremental Viewer contract](viewer-specification.md#conditional-incremental-projection)
-will replace only Viewer's all-Task selection below after its integration gate.
-It retains this complete consumed-row/privacy boundary; other consumers are
-unchanged. Until that gate the existing full Viewer selection remains active.
+The [incremental Viewer contract](viewer-specification.md#conditional-incremental-projection)
+selects changed Tasks during routine maintenance and all display Tasks during
+rebuild. Both retain this complete consumed-row/privacy boundary; explicit
+full inspection and other consumers are unchanged.
 
 Every Task-loading operation reads the source-schema capability once and
 validates each complete loaded Task row through one shared row/batch validator
@@ -1363,7 +1363,7 @@ Task rows and validate only that selected batch before filtering or projection;
 they add no unrelated whole-table rescan. `task show`, Review Packet basis,
 checkpoint, handoff, Effort Advisory, completion/review/verification lifecycle,
 and metadata-only writes validate their selected Task row before dependent
-content or mutation. Doctor, Viewer capture, setup, migration/reentry, and
+content or mutation. Doctor, explicit full Viewer inspection, setup, migration/reentry, and
 managed recovery load every Task row without a project filter and validate the
 complete batch, including project ownership. A caller that
 already holds a validated Task row passes it to dependent review/history

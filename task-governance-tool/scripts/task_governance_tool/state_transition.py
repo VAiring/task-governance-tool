@@ -72,6 +72,7 @@ _STAGE_OWNER_PATTERN = re.compile(r"^\.current-stage-([0-9a-f]{32})\.owner$")
 _RESTORE_TEMP_PATTERN = re.compile(r"^\.taskgov-restore-[a-z0-9_]{8}\.tmp$")
 _BACKUP_TEMP_PATTERN = re.compile(r"^\.taskgov-backup-[a-z0-9_]{8}\.tmp$")
 _VIEWER_TEMP_PATTERN = re.compile(r"^\.task-viewer-[a-z0-9_]{8}\.tmp$")
+_VIEWER_CACHE_TEMP_PATTERN = re.compile(r"^\.task-projection-[a-z0-9_]{8}\.tmp$")
 _BACKUP_BASENAME_PATTERN = re.compile(
     r"^taskgov-backup-v1_\d{8}T\d{6}Z_"
     r"[0-9a-f]{32}_r(?:[1-9]|1[0-9]|20)\.sqlite$"
@@ -359,6 +360,7 @@ def _valid_stage_file_name(relative_name: str) -> tuple[str, bool]:
         "taskgov.sqlite-journal",
         "backups/taskgov-backup.lock",
         "viewer/task-viewer.html",
+        "viewer/task-projection.json",
         "viewer/taskgov-viewer.lock",
     }:
         return "", False
@@ -374,6 +376,8 @@ def _valid_stage_file_name(relative_name: str) -> tuple[str, bool]:
         basename = relative_name.removeprefix("viewer/")
         if _VIEWER_TEMP_PATTERN.fullmatch(basename):
             return "viewer", False
+        if _VIEWER_CACHE_TEMP_PATTERN.fullmatch(basename):
+            return "viewer_cache", False
     evidence_prefix = f"{EVIDENCE_DIRECTORY_NAME}/"
     if relative_name.startswith(evidence_prefix):
         evidence_name = relative_name.removeprefix(evidence_prefix)
@@ -499,6 +503,8 @@ def _inspect_stage_tree(
             allowed_size = EVIDENCE_INDEX_MAX_BYTES
         elif evidence_kind in {"bundle", "bundle_temporary"}:
             allowed_size = EVIDENCE_BUNDLE_MAX_BYTES
+        elif relative_name == "viewer/task-projection.json" or temporary_class == "viewer_cache":
+            allowed_size = min(max_file_bytes, 64 * 1024 * 1024)
         else:
             allowed_size = max_file_bytes
         files.append(

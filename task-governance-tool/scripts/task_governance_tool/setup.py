@@ -374,6 +374,15 @@ def _viewer_status(
     )
     if artifact_status == "current" and not maintenance_viewer_succeeded:
         return "repair_required"
+    if artifact_status == "current" and current_snapshot.get("source_schema_version") == 34:
+        # Explicit Setup checks the disposable cache too. A current HTML file
+        # alone must not hide missing/corrupt bytes or an orphan cache tuple.
+        from .viewer_metadata_repository import read_projection_basis
+        from .viewer_projection_cache import cache_output, load_candidate, matches
+        basis = read_projection_basis(target)
+        candidate = load_candidate(cache_output(target))
+        if not matches(candidate, header=basis.header(), state=basis.state):
+            return "repair_required"
     return artifact_status
 
 
@@ -588,6 +597,7 @@ def _unbound_target(resolution: ProjectStateResolution) -> UnboundDatabaseTarget
         skill_root=resolution.paths.skill_root,
         backups_path=resolution.paths.backups,
         viewer_path=resolution.paths.viewer,
+        viewer_projection_path=resolution.paths.viewer_projection,
         canonical_fixed=True,
     )
 
@@ -637,6 +647,7 @@ def _bound_target_at(
         skill_root=resolution.paths.skill_root,
         backups_path=backups_path,
         viewer_path=viewer_path,
+        viewer_projection_path=viewer_path.with_name("task-projection.json"),
         canonical_fixed=canonical_fixed,
     )
 
@@ -669,6 +680,7 @@ def _stored_target_at(
         skill_root=resolution.paths.skill_root,
         backups_path=backups_path,
         viewer_path=viewer_path,
+        viewer_projection_path=viewer_path.with_name("task-projection.json"),
         canonical_fixed=canonical_fixed,
     )
 
@@ -2165,6 +2177,7 @@ def _run_setup_from_inspection(
                     skill_root=target.skill_root,
                     backups_path=target.backups_path,
                     viewer_path=target.viewer_path,
+                    viewer_projection_path=target.viewer_projection_path,
                     canonical_fixed=False,
                 )
             )

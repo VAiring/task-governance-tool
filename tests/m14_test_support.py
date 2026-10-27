@@ -197,6 +197,24 @@ def _manifest_core_paths(skill_root: Path) -> list[Path]:
     return sorted(paths, key=lambda item: item.as_posix())
 
 
+def pin_pre_incremental_viewer(skill_root: Path):
+    """Return a restore callback for a disposable schema <=33 runtime.
+
+    Lowering SCHEMA_VERSION alone cannot recreate the old Viewer after its
+    schema-34 integration. Keep the predecessor's real publisher for fixture
+    creation; restore the unmodified candidate before testing its upgrade.
+    The caller refreshes the manifest together with its schema-version pin.
+    """
+    path = skill_root / "scripts/task_governance_tool/viewer_maintenance.py"
+    candidate = path.read_bytes()
+    path.write_bytes((ROOT / "tests/fixtures/pre_incremental_viewer_maintenance.py").read_bytes())
+
+    def restore():
+        path.write_bytes(candidate)
+
+    return restore
+
+
 def refresh_test_manifest(skill_root: Path) -> None:
     manifest_path = skill_root / MANIFEST_NAME
     source = json.loads(manifest_path.read_text(encoding="utf-8"))

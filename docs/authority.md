@@ -38,12 +38,12 @@ links locate its detail. The machine registry validates the same authority graph
 - [Viewer product behavior](viewer-specification.md)
 - [Viewer implementation structure](viewer-design.md)
 
-## Conditional Incremental Viewer Design
+## Incremental Viewer Execution Boundary
 
-The approved [incremental Viewer contract](viewer-specification.md#conditional-incremental-projection)
-and [three-unit execution boundary](viewer-design.md#incremental-execution-boundaries)
-are conditional sections within those owners. They do not activate the new
-capture/publication behavior before the integration gate.
+The current [incremental Viewer contract](viewer-specification.md#conditional-incremental-projection)
+and retained [three-unit execution boundary](viewer-design.md#incremental-execution-boundaries)
+belong to those owners. The execution anchors retain accepted scope and gates;
+live status and evidence remain in the public CLI.
 
 ## Runner Plan Authoring Detail Authority
 

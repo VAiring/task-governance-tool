@@ -1081,9 +1081,7 @@ See the packaged [installation procedure](../task-governance-tool/references/usa
 ### Post-Commit Maintenance
 
 The [incremental Viewer contract](viewer-specification.md#conditional-incremental-projection)
-is an approved conditional replacement for Viewer capture/publication only.
-Its [integration gate](viewer-design.md#incremental-execution-boundaries) must
-finish before it replaces the current rules below. It grants no live Setup,
+governs current Viewer capture/publication only. It grants no live Setup,
 configuration or recovery permission and does not change Evidence or backup.
 
 Maintenance is permanently enabled by successful setup; there is no disable
@@ -1096,7 +1094,8 @@ may retry already-due Evidence. Read-only, failed, replayed, no-op,
 setup configuration, and maintenance-internal operations trigger nothing.
 Eligibility checks validate structural state and the consumed maintenance
 metadata without traversing all Task histories when disabled, current or not
-due. Actual whole-project projection retains complete source validation;
+due. Evidence projection retains complete source validation. Viewer uses its
+selected-Task capture, checked display cache and fresh structural effect guards;
 asynchronous backup validates its consistent private copy as specified below.
 Metadata observed before a lock never authorizes publication.
 The Runner path retains exactly the one existing target-set maintenance opportunity

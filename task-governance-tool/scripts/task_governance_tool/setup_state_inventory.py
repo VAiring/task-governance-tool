@@ -40,6 +40,7 @@ _LOCKS = {
     "evidence/taskgov-evidence.lock",
     "verification-runner/taskgov-verification-runner.lock",
 }
+_VIEWER_CACHE_TEMP = re.compile(r"\.task-projection-[a-z0-9_]{8}\.tmp\Z")
 
 
 @dataclass(frozen=True)
@@ -105,6 +106,7 @@ def inspect_inventory(
 
     def ordinary_entries(path: Path, domain: str) -> None:
         temporary_count = 0
+        cache_temporary_count = 0
         backup_count = 0
         for entry in sorted(path.iterdir(), key=lambda p: p.name):
             name = entry.name
@@ -118,6 +120,13 @@ def inspect_inventory(
                 file(entry, extra_maximum)
             elif domain == "viewer" and name == "task-viewer.html":
                 file(entry, extra_maximum)
+            elif domain == "viewer" and name == "task-projection.json":
+                file(entry, 64 * 1024 * 1024)
+            elif domain == "viewer" and _VIEWER_CACHE_TEMP.fullmatch(name):
+                cache_temporary_count += 1
+                if cache_temporary_count > 1:
+                    raise SeparationError()
+                file(entry, 64 * 1024 * 1024)
             elif _TEMPS[domain].fullmatch(name):
                 temporary_count += 1
                 if temporary_count > 1:

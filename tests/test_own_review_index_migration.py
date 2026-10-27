@@ -24,9 +24,12 @@ class PublicOwnReviewIndexSetupTests(unittest.TestCase):
     business = public_fixture.PublicCriterionLinkCollectorSetupTests.business
 
     def test_public_populated32_preview_migration_backup_and_current_reentry(self):
+        from tests.m14_test_support import pin_pre_incremental_viewer
         from task_governance_tool.viewer import build_viewer_snapshot
         temporary = self.enterContext(tempfile.TemporaryDirectory(prefix="taskgov-index-setup-"))
         self.install = make_physical_install(Path(temporary))
+        # Both sides of this exact historical boundary predate the new cache.
+        pin_pre_incremental_viewer(self.install.skill_root)
         self.enterContext(mock.patch.dict(os.environ,
             {"CODEX_THREAD_ID": "00000000-0000-4000-8000-000000000001"}))
         source = self.install.skill_root / "scripts/task_governance_tool/storage.py"

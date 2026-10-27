@@ -418,6 +418,8 @@ LANE_MODULES: dict[str, tuple[str, ...]] = {
         "test_verification_results",
         "test_viewer_capture_admission",
         "test_viewer_config",
+        "test_viewer_incremental",
+        "test_viewer_incremental_scale",
         "test_viewer_maintenance",
         "test_viewer_projection_storage",
         "test_viewer_renderer",

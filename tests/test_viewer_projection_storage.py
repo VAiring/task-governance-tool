@@ -340,10 +340,11 @@ class PublicViewerProjectionSetupTests(unittest.TestCase):
     business = _public.business
 
     def test_public33_upgrade_two_restores_and_readonly_reentry(self):
-        from tests.m14_test_support import make_physical_install, refresh_test_manifest
+        from tests.m14_test_support import make_physical_install, refresh_test_manifest, pin_pre_incremental_viewer
         from task_governance_tool import backup
         root = Path(self.enterContext(tempfile.TemporaryDirectory()))
         self.install = make_physical_install(root)
+        restore_viewer = pin_pre_incremental_viewer(self.install.skill_root)
         self.enterContext(mock.patch.dict(os.environ, {"CODEX_THREAD_ID": "00000000-0000-4000-8000-000000000001"}))
         source = self.install.skill_root / "scripts/task_governance_tool/storage.py"
         current = source.read_text(encoding="utf-8")
@@ -355,6 +356,7 @@ class PublicViewerProjectionSetupTests(unittest.TestCase):
         with closing(storage.connect_readonly(self.install.db_path)) as c:
             business = self.business(c)
         source.write_text(current, encoding="utf-8")
+        restore_viewer()
         refresh_test_manifest(self.install.skill_root)
         before = self.install.state_snapshot()
         preview = self.cli("setup", "--read-only")

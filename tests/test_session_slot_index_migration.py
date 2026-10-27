@@ -80,9 +80,11 @@ class PublicSessionSlotIndexSetupTests(unittest.TestCase):
     business = public_fixture.PublicCriterionLinkCollectorSetupTests.business
 
     def test_public_populated31_preview_migration_backup_and_current_reentry(self):
+        from tests.m14_test_support import pin_pre_incremental_viewer
         from task_governance_tool.viewer import build_viewer_snapshot
         temporary = self.enterContext(tempfile.TemporaryDirectory(prefix="taskgov-index-setup-"))
         self.install = make_physical_install(Path(temporary))
+        restore_viewer = pin_pre_incremental_viewer(self.install.skill_root)
         self.enterContext(mock.patch.dict(os.environ,
             {"CODEX_THREAD_ID": "00000000-0000-4000-8000-000000000001"}))
         source = self.install.skill_root / "scripts/task_governance_tool/storage.py"
@@ -105,6 +107,7 @@ class PublicSessionSlotIndexSetupTests(unittest.TestCase):
             project = connection.execute("SELECT project_id FROM tasks").fetchone()[0]
             _, artifacts = _bundle_artifacts(connection, project)
         source.write_text(current, encoding="utf-8", newline="\n")
+        restore_viewer()
         refresh_test_manifest(self.install.skill_root)
         snapshot = self.install.state_snapshot()
         preview = self.cli("setup", "--read-only")

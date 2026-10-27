@@ -1002,6 +1002,7 @@ def restore_managed_backup(
             skill_root=target.skill_root,
             backups_path=target.backups_path,
             viewer_path=target.viewer_path,
+            viewer_projection_path=target.viewer_projection_path,
             canonical_fixed=False,
         )
         _prepare_recovered_repository(

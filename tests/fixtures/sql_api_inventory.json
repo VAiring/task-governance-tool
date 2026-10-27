@@ -555,8 +555,8 @@
     },
     "viewer_metadata_repository.py": {
       "attributes": {
-        "execute": 4,
-        "fetchone": 1
+        "execute": 13,
+        "fetchone": 2
       },
       "kind": "observed_connection"
     },
@@ -564,6 +564,15 @@
       "attributes": {
         "execute": 15,
         "fetchone": 5
+      },
+      "kind": "observed_connection"
+    },
+    "viewer_task_projection_repository.py": {
+      "attributes": {
+        "execute": 7,
+        "fetchall": 2,
+        "fetchmany": 1,
+        "fetchone": 2
       },
       "kind": "observed_connection"
     }

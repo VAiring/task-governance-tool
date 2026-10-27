@@ -502,8 +502,9 @@ preserving acquisition guards, legacy overlaps and all sealed source identities.
 Schema 33 adds [own-review lookup indexes](database-specification.md#schema-v33-own-review-lookup)
 and bounded query selection while retaining complete own-history validation.
 Schema 34 adds the [Viewer tracking foundation](database-specification.md#schema-v34-viewer-tracking-foundation).
-The full Viewer remains active; incremental capture/publication is conditional
-on its separate integration gate.
+Current Viewer maintenance uses
+[incremental capture/publication](viewer-specification.md#conditional-incremental-projection);
+the full-capture reader remains for explicit inspection and older sources.
 
 ### Authority Snapshot, Whole-Field Criteria, And References
 

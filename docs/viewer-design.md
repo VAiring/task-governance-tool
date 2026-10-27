@@ -12,14 +12,15 @@ existing owners.
 
 ## Snapshot And Publication
 
-This section describes the active full-capture implementation. The approved
-[incremental design](#conditional-incremental-design) is conditional on the
-integration gate and does not change the running renderer by itself.
+Current schema-34 maintenance uses the
+[incremental protocol](#incremental-cache-and-publication). This section
+documents the retained full-capture reader and common v4 rendering/path
+boundaries used by explicit inspection and compatible older sources.
 
 `viewer_metadata_repository.py` owns the maintenance read/seed and publication
-and attempt-outcome records, using storage-owned admission and the existing
-writer transactions. Snapshot capture/proofs, rendering, policy, locking, and
-file publication remain with their current owners.
+and attempt-outcome records. Incremental effects use the fresh structural
+guard/writer protocol below. The full snapshot reader retains complete source
+admission; its validation does not certify a later publication transaction.
 
 The Viewer is a replaceable projection, never authority:
 
@@ -28,23 +29,20 @@ committed Viewer-relevant event
   -> source generation
   -> post-commit coordinator
   -> zero-wait Viewer lock
-  -> one compatible query-only snapshot
+  -> one query-only selected capture and checked display cache
   -> snapshot v4 + captured generation
   -> base64 UTF-8 JSON in bundled template
   -> atomic task-viewer.html replacement
-  -> short rendered-generation update
+  -> short matching cache/HTML generation update
 ```
 
 Setup invokes the same canonical renderer directly. There is no public Viewer
 command, output choice, browser launch, server, or browser-to-SQLite path.
 
-`_capture` first opens a structurally admitted metadata snapshot. Disabled or
-current routine state returns without whole-project semantic validation.
-After the artifact lock, the fresh capture repeats eligibility; only a due
-capture or enabled force repair enters the snapshot builder's composed complete
-admission before projecting snapshot v4. Publication guards and outcome writers
-retain global admission. Metadata eligibility never supplies a reusable source
-proof or relaxes the generation/opt-out checks at replacement.
+`build_viewer_snapshot` retains composed complete admission for explicit full
+inspection and compatibility. Routine `_capture` uses the selected repository
+and independently checked cache under the protocol below. Metadata eligibility
+never supplies a reusable source proof or relaxes generation/opt-out checks.
 
 For a current source, `storage._validate_snapshot_database_state` composes the
 following responsibilities within that single query-only call chain:
@@ -140,9 +138,11 @@ one snapshot, closes SQLite, renders/replaces, then conditionally records the
 captured generation without lowering a newer value. One recheck permits one
 follow-up; later churn remains due.
 
-## Conditional Incremental Design
+<a id="conditional-incremental-design"></a>
 
-This is the implementation owner of the approved
+## Incremental Design
+
+This is the implementation owner of the current
 [incremental behavior](viewer-specification.md#conditional-incremental-projection).
 It uses a latest-change row per Task, a project invalidation boundary and one
 sanitized display file. It is not a general change-log engine. The public
@@ -315,8 +315,35 @@ the following sequence, at most twice per opportunity:
    admission; the new selected path must instead validate the selected Tasks'
    Bundle/history relations explicitly, using the single-Task boundary or its
    equivalent selected batch. It must not silently reuse the old assumption.
-   Reuse already-validated material only within this snapshot; no validator
-   object survives it. Unrelated ownership, raw-note and unregistered-control
+   `viewer_task_projection_repository.py` owns that selected read. Its Finding
+   query enumerates the closed status/severity domains to seek the existing
+   compound index by Receipt; same-snapshot schema and physical CHECK admission
+   prevents those predicates from hiding invalid domain values. All own
+   judgment rows are checked even when no continuation is present. Own cycles
+   are validated in bounded chunks before retaining their newest display window.
+   Event ownership is checked in both directions: all selected-Task events and
+   the identities of their referenced cycles, plus all incoming links to each
+   selected cycle. These indexed reads include links older than the displayed
+   ten events and do not validate another Task's cycle evidence.
+   Each chunk validates historical Receipt/Bundle links without interpreting its
+   last cycle as current. After the complete ordered stream, only the actual
+   latest cycle is compared with a done Task's current verification requirement.
+   Reopened Tasks retain historical validation without that current comparison.
+   `viewer_display_validation.py` validates generated bytes without SQL.
+   Text checks retain each source field's privacy policy, including the distinct
+   title and manual-diagnostic quotation rules and stricter evidence fields.
+   It shares exact-field/text privacy and timestamp predicates within a publication
+   attempt, including cache read and re-encoding. Successful pure privacy
+   checks additionally use a process-local LRU of at most 16,384 strings, each
+   at most 1,000 characters, keyed by source field, exact text and predicate callable.
+   The attempt-local privacy memo uses the same key, so approval in one field
+   cannot certify identical text in another field.
+   Rejected/private values, longer strings, DB admission and source-evidence
+   results never enter that memo. It is not serialized; cold and warm process
+   costs remain distinct measurements. Field limits, shapes, ownership,
+   ordering, capacity and independent metadata/hash checks still run.
+   Source-validation material is reused only within its read snapshot; no
+   database validator survives it. Unrelated ownership, raw-note and unregistered-control
    inventories are not a new prerequisite for a display projection.
 4. Merge changed rows into the checked cache array; recompute ordering/counts,
    build the unchanged public v4 snapshot and render complete HTML. Validate
@@ -361,7 +388,7 @@ Normal capture, guard and outcome must not call the full Evidence Ledger or
 global Task-history validators. Full rebuild means rebuilding every display
 Task and its consumed relations, not validating unrelated hidden state. Legacy
 v5-v33 captures keep their original full admission and never accept this cache.
-The foundation unit can add tracking while continuing that original renderer.
+The retained full-capture reader is independent of cache reuse.
 
 | Interruption or inconsistency | Next eligible action |
 |---|---|
@@ -389,7 +416,8 @@ and authority-transition rules; completion does not itself delete this plan.
 | Storage, `tg_task_38d52d3b2d1c6244` | Ordered schema migration, typed repository, complete transactional notification, indexed range, epoch/invalidation in formal restore/rebind; preserve existing renderer. Depends on Contract. | Temp DB initialization/migration/reentry/preservation/rollback, real mutation-family coverage, concurrent updates, recovery/old-source compatibility, manifest/docs and two independent Tier 2 PASS reviews. |
 | Integration, `tg_task_ddfb963bb4aa3912` | Selected Task capture, bounded sanitized cache, guarded publication and metadata, failure recovery, whole-HTML rendering and the performance checks below. Depends on Storage. | Full/delta equality, integration/fault injection/privacy/performance/compatibility, manifest/docs and two independent Tier 2 PASS reviews, then synchronize active owners to enable the new route. |
 
-Storage alone does not activate the conditional read/publication contract.
+The integration revision activates the read/publication contract together with
+its synchronized owners; storage alone supplies only tracking.
 Setup against live state, config/hook changes and external operations retain
 their separate permission boundaries. Handoff registration, Evidence
 publication and logger optimization are outside these units.

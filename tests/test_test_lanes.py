@@ -143,6 +143,10 @@ class TestLanePolicyTests(unittest.TestCase):
             dict(inventory.plan.module_owners)["test_backup_performance"],
             "release",
         )
+        self.assertEqual(
+            dict(inventory.plan.module_owners)["test_review_wait_failure_boundaries"],
+            "integration",
+        )
         self.assertEqual(DETERMINISTIC_PERFORMANCE_TEST_IDS, expected_functional)
         self.assertEqual(
             MANUAL_TIMING_QUALIFICATION_TEST_IDS,

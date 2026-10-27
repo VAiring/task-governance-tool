@@ -473,6 +473,13 @@ atomically; readers cannot supply independent public metadata as proof.
 
 ## Migration Sequence
 
+The approved next Viewer tracking migration and its derived-state normalization
+are specified by [incremental tracking storage](viewer-design.md#incremental-tracking-storage).
+They remain conditional under the [execution gate](viewer-design.md#incremental-execution-boundaries);
+this design does not change the current supported schema or migration sequence.
+Its storage unit must synchronize the source-version dispatch, exact owned
+objects, fixtures and release contracts without altering sealed old evidence.
+
 `schema_preservation.py` owns the read-only predecessor snapshot and comparison
 used by migrations 29, 30, 31, 32 and 33. Each caller fixes its exact allowed object
 changes before the delta. The helper captures all predecessor tables, typed

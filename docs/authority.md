@@ -38,6 +38,13 @@ links locate its detail. The machine registry validates the same authority graph
 - [Viewer product behavior](viewer-specification.md)
 - [Viewer implementation structure](viewer-design.md)
 
+## Conditional Incremental Viewer Design
+
+The approved [incremental Viewer contract](viewer-specification.md#conditional-incremental-projection)
+and [three-unit execution boundary](viewer-design.md#incremental-execution-boundaries)
+are conditional sections within those owners. They do not activate the new
+capture/publication behavior before the integration gate.
+
 ## Runner Plan Authoring Detail Authority
 
 - [Runner Plan authoring behavior](runner-plan-authoring-specification.md)

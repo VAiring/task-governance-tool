@@ -2857,6 +2857,12 @@ Bundle to validate. Existing single-Task history reads use the same validator.
 
 ### Public History Projection
 
+The conditional [incremental Viewer design](viewer-design.md#incremental-cache-and-publication)
+must establish selected Bundle/history validation before using the batch
+projection without its existing global-admission prerequisite. Activation is
+owned by its integration gate; native completion, Evidence and ordinary history
+readers retain their own validation and never consume the display cache.
+
 `completion_history_repository.py` owns latest-cycle, single-Task and batch
 history retrieval and metadata queries. It uses the caller's connection and
 the existing storage-owned cycle/Receipt checks and shared Evidence validation

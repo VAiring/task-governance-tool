@@ -1176,6 +1176,14 @@ already successful command into an error.
 
 ### Post-Commit Coordinator
 
+The conditional [incremental Viewer protocol](viewer-design.md#incremental-cache-and-publication)
+replaces only Viewer capture/guard/outcome admission after its integration gate.
+The [tracking foundation](viewer-design.md#incremental-tracking-storage)
+requires an epoch reset in formal private restore/publication before canonical
+publication, preserving the exact source comparison before derived-state
+normalization. Storage alone does not change the active coordinator below;
+Evidence and backup remain outside that replacement.
+
 Eligibility snapshots use structural admission and validated policy/generation
 metadata, without whole-project Task-history validation. Evidence and Viewer
 repeat eligibility under their artifact locks and validate the complete source

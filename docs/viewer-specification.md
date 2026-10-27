@@ -18,6 +18,11 @@ atomically replaces; failure preserves last good.
 
 ## Snapshot v4
 
+The following is the active full-capture contract. The approved
+[incremental projection contract](#conditional-incremental-projection) below
+remains conditional until its integration gate; a design or tracking-schema
+change alone does not activate it.
+
 Snapshot v4 accepts source schemas v5-v33. One query-only transaction validates
 schema/project/binding, reads generation, validates the complete source-aware
 Task batch through the stored-row and Contract-relationship boundary, and
@@ -85,6 +90,89 @@ status/kind/lane/priority/tag filters, deterministic Task order, terminal
 history, details, review/completion/history, and recent events. It is responsive
 and keyboard/label/focus/contrast accessible and has no write controls,
 network/API/analytics/telemetry/server/direct SQLite/watcher/launch/storage.
+
+## Conditional Incremental Projection
+
+This approved replacement concerns Viewer maintenance only. Activation requires
+the three sequential [execution units and gates](viewer-design.md#incremental-execution-boundaries).
+Until the last unit passes, Snapshot v4 above and the existing full renderer
+remain active. No new CLI, service, timer, browser communication, configuration
+permission or completion evidence is introduced.
+
+For a source with the implemented change-tracking schema, the first publication
+and a required rebuild construct every Task's sanitized display projection.
+Ordinary due updates read and semantically validate only changed Tasks and the
+related records needed by those Tasks. Unchanged Task projections are reused;
+they are not rejoined to their historical Receipts, Bundles, originals or other
+evidence. All Task display bytes may be checked and the whole HTML is still
+rendered. These costs are distinct from a database-wide semantic audit.
+
+Each selected Task retains stored-value/privacy, Contract-parent, review-target,
+Receipt/Finding/provenance, continuation-head and completion-history checks for
+the data consumed. Foreign or ambiguous relationships fail closed. Selection
+never admits another Task's evidence merely because it is linked. The current
+display allow-lists, recent-ten ordering, status counts, Task ordering and
+completion-history meaning remain unchanged; no cache internals enter snapshot
+v4 or HTML. The cache is never a proof for Task, review, completion or Evidence
+operations. Database-wide diagnosis, migration and recovery retain their own
+complete validation.
+
+The [change inventory](viewer-design.md#incremental-change-inventory) is the
+required notification boundary. Changes are recorded in the business
+transaction, including changes that do not update `tasks.updated_at`.
+Rollback leaves neither the change nor its notification. Repeated changes may
+coalesce per Task without consuming a later change. Project-wide invalidation
+is explicit; an unknown affected set is never interpreted as no change.
+Unmodified source records changed outside supported writers are not guaranteed
+to be detected by the next routine refresh. This is a display-cache guarantee,
+not a reduction in authoritative operation gates or explicit diagnosis.
+
+The one fixed cache is `.taskgov/current/viewer/task-projection.json`, derived
+through the [shared fixed resolver](setup-state-design.md#fixed-state-resolver)
+beside its canonical HTML, not reconstructed from the project path by feature
+code. It is a replaceable generated artifact excluded from source/release
+material. Only already
+authorized Viewer maintenance/Setup may publish it under the existing physical
+path and zero-wait lock rules. It stores the sanitized Task display projection
+and bounded machine metadata, not original evidence, Contract prose, paths,
+notes, ownership sessions or logs. Cache format/projection version, project,
+binding, database incarnation and physical identity, application generation,
+structure, byte capacity and SHA-256 must match the independently saved
+metadata before reuse. Size or mtime alone is never integrity evidence.
+The [format and publication protocol](viewer-design.md#incremental-cache-and-publication)
+defines exact comparisons and the distinction between applied and published
+generations. The cache and HTML each have a 64 MiB byte cap; exceeding either
+fails publication without truncating Tasks or silently dropping fields.
+
+Missing, corrupt, mismatched, incompatible or invalidated cache requires a full
+display rebuild from a fresh admitted source. Unsupported or invalid source
+state still fails; a cache is never a fallback around it. Formal restoration
+rotates the database incarnation before publication, even when the restored
+project and numeric generation equal an earlier database. Rebind, migration,
+projection-version change and supported replacement invalidate reuse. Arbitrary
+unsupported in-place database edits need not be detected immediately.
+
+Disabled/current checks remain metadata-only, with bounded fixed-path presence
+checks; they do not open historical evidence or hash all display bytes. Missing
+artifacts are due. Cache integrity is checked when reuse is attempted or by
+explicit Setup repair, not on every unchanged read. Each attempt retains the
+zero-wait lock and at most two captures/renders. Stale captures cannot overwrite
+a newer publication or clear later changes. Pre-replacement failure preserves
+the last good HTML; a crash after a complete atomic replacement can leave the
+new valid HTML with older metadata and must be reconciled conservatively on the
+next opportunity. Cache acceptance atomically clears the HTML publication tuple
+and its rendered-generation counter, including when the numeric source
+generation is unchanged. Only a successful matching HTML publication restores
+that tuple. Explicit force repair first invalidates both derived tuples under
+the Viewer lock so interruption remains due. These metadata invalidations never
+remove the last-good HTML file. Failure/outcome recording does not make a generation current.
+Primary-command success and the existing fixed warnings remain independent.
+
+Supported sources v5-v33 retain their full-capture compatibility path. They
+cannot consume the new cache or receive tracking writes; ordinary commands do
+not migrate them. Explicit Setup owns migration, restoration and rebind.
+The storage-foundation unit must preserve the old Viewer until the integration
+unit activates this contract and synchronizes the coupled current owners.
 
 ## Optional Visibility-Aware Reload
 

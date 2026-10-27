@@ -1080,6 +1080,12 @@ See the packaged [installation procedure](../task-governance-tool/references/usa
 
 ### Post-Commit Maintenance
 
+The [incremental Viewer contract](viewer-specification.md#conditional-incremental-projection)
+is an approved conditional replacement for Viewer capture/publication only.
+Its [integration gate](viewer-design.md#incremental-execution-boundaries) must
+finish before it replaces the current rules below. It grants no live Setup,
+configuration or recovery permission and does not change Evidence or backup.
+
 Maintenance is permanently enabled by successful setup; there is no disable
 surface. Every successful state-changed business mutation commits and closes
 SQLite before bounded same-process Evidence and Viewer maintenance. Any such

@@ -78,6 +78,13 @@ never alters the meaning of a preserved cycle.
 
 ## Operation-Local Admission
 
+Viewer's approved replacement is conditional on the
+[incremental activation gate](viewer-design.md#incremental-execution-boundaries).
+Its [tracking storage](viewer-design.md#incremental-tracking-storage) is derived
+display state, not an authoritative validation cache. Until integration, the
+current Viewer admission below remains active; Setup/diagnosis/recovery and
+non-Viewer operations retain their existing gates.
+
 Ordinary Task registration, start/state/metadata/checkpoint operations and
 normal list/current/next/context/show/effort reads validate the current schema,
 owned objects, migration history, project identity/binding and maintenance

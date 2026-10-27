@@ -1329,6 +1329,11 @@ round trips, not internal command counts or the runtime Git boundary.
 
 <a id="stored-task-read-and-privacy-contract"></a>
 
+The approved [incremental Viewer contract](viewer-specification.md#conditional-incremental-projection)
+will replace only Viewer's all-Task selection below after its integration gate.
+It retains this complete consumed-row/privacy boundary; other consumers are
+unchanged. Until that gate the existing full Viewer selection remains active.
+
 Every Task-loading operation reads the source-schema capability once and
 validates each complete loaded Task row through one shared row/batch validator
 before public allow-listing, compact-field omission, filtering, derived-state

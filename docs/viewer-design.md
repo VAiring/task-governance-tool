@@ -12,6 +12,10 @@ existing owners.
 
 ## Snapshot And Publication
 
+This section describes the active full-capture implementation. The approved
+[incremental design](#conditional-incremental-design) is conditional on the
+integration gate and does not change the running renderer by itself.
+
 `viewer_metadata_repository.py` owns the maintenance read/seed and publication
 and attempt-outcome records, using storage-owned admission and the existing
 writer transactions. Snapshot capture/proofs, rendering, policy, locking, and
@@ -135,6 +139,288 @@ and rendered null. Under the lock, publication captures generation and rows in
 one snapshot, closes SQLite, renders/replaces, then conditionally records the
 captured generation without lowering a newer value. One recheck permits one
 follow-up; later churn remains due.
+
+## Conditional Incremental Design
+
+This is the implementation owner of the approved
+[incremental behavior](viewer-specification.md#conditional-incremental-projection).
+It uses a latest-change row per Task, a project invalidation boundary and one
+sanitized display file. It is not a general change-log engine. The public
+snapshot remains v4. All repository calls below are internal, use the fixed
+resolver, and never infer permission from cached state.
+
+### Incremental Change Inventory
+
+The following inventory maps current writers/read dependencies to the required
+tracking boundary. The storage unit must cover every row, including paths that
+do not emit a Task event. An event is a notification, not a timestamp heuristic.
+
+| Change / current owner | Affected display set and notification |
+|---|---|
+| Task add/edit, status, priority/lane/order, verification declaration, target, completion projection and reopen (`tasks.py`, `reviews.py`) | Own Task. The existing `task_events` insertion advances the source and records that Task in the same transaction. Reordering/counts are recomputed from cached display rows, not by marking unrelated Tasks. |
+| Contract create/revise, checkpoint and retained-note event (`contracts.py`, `checkpoints.py`, `tasks.py`) | Own Task via the event, even when its main row timestamp is unchanged. Contract/note/checkpoint content stays excluded. |
+| Review Receipt, Finding add/resolve/reassessment (`reviews.py`) | Receipt's own Task via its event; parent and foreign-identity validation remains required. |
+| Verification Receipt and its Reference (`verification_receipts.py`, `verification_receipt_repository.py`) | Own Task through an explicit locked repository mark, because this path has no Task event. Conservative reprojecting is permitted even where v4 currently discards the result; no synthetic event is added. |
+| Continuation prepare/retire/register, successor judgment, explicit reassessment link (`review_continuation_repository.py`) | Bound Task through the same locked mark when no encompassing Task event covers the mutation. A valid non-PASS head also changes effective review state. |
+| Collected-review registration, source/provenance/criterion links (`review_answer_registration.py`, `review_answer_repository.py`) | Every registered Task through the enclosing registration transaction; no reliance on host notification or successful Hook delivery. Unregistered transport/capture/control writes alone are not display state. |
+| Completion cycle, Bundle, event-cycle link and reopen compatibility cycle (`tasks.py`, `storage.py`) | Own Task through the completion/reopen transaction's event, after all coupled writes; frozen older cycles remain unchanged. |
+| Authority/criterion/manifest/Reference, Runner verification and session binding records consumed by display readers | Their supported publication is part of the owning target/Receipt/registration/completion transaction above. Pure intent/control/observation/ownership activity is excluded. A new writer publishing a consumed relation must mark its owner before commit; it cannot depend on `updated_at`. |
+| Supported update affecting several Tasks | Mark the complete distinct affected ID set in the same transaction. Resolve relationship owners by indexed keys; no semantic sweep of all Tasks to discover them. If the set cannot be bounded from owned relations, invalidate the whole display. |
+| Project display/binding changes (`project_binding_repository.py`), migration, formal restore or fixed-state publication (`setup.py`, `backup.py`) | Whole-project invalidation with the identity rules below; binding/display are not Task events. |
+| Template/projection format change; explicit Viewer repair or reload-policy selection | Force the appropriate rebuild/render through Setup or the version check on a due opportunity. No config watcher or automatic settings write. |
+| Handoff record/withdraw, Effort, usage collection, backup/Evidence metadata, wait timers, unregistered review transport, read/error/replay/no-op | No display invalidation or new coordinator call. They are not sources of v4 display fields. Existing due-Evidence/backup opportunities remain unchanged. |
+
+The existing event trigger is extended, not accompanied by a second event
+counter. A non-event writer calls the same repository operation inside its
+already-owned transaction. Multiple notifications in a transaction may advance
+the generation more than once; only monotonicity and complete coverage matter.
+Exact replay/no-op does not mark. Overflow or missing tracking parents aborts
+the business transaction. No write follows commit just to deliver notification.
+The storage tests must exercise each mutation family above through its real
+repository/service, including multi-Task and rollback cases. A new writer or
+new displayed field must extend this inventory and its coverage test.
+
+### Incremental Tracking Storage
+
+The next ordered core migration (v34 from the current v33) is owned by a dedicated
+`schema_viewer_projection.py`; `viewer_projection_repository.py` owns its reads
+and writes. It adds two relations without changing business IDs or saved
+evidence. Exact DDL/fingerprints, typed row validation, preservation and migration
+history follow the [database migration owner](database-design.md#migration-sequence).
+
+* `viewer_task_revisions`: `(project_id, task_id)` primary key with Task/project
+  parent checks, and `source_generation` as a strict nonnegative SQLite INTEGER.
+  An index `(project_id, source_generation, task_id)` supports the changed-ID
+  range. One upsert retains the greatest revision for each Task; no event log
+  is copied and no consumed row is deleted. Existing Tasks are seeded at the
+  migration's current source generation while invalidation requires a rebuild.
+* `viewer_projection_state`: one project parent row, `database_epoch` as 32
+  lowercase hexadecimal characters from a fresh random 128-bit value,
+  `invalidated_generation`, and nullable coherent cache/publication tuples.
+  The cache tuple is `(cache_generation, cache_format_version,
+  projection_version, cache_sha256, cache_bytes)`; the HTML tuple is
+  `(html_generation, html_sha256, html_bytes)`. Hashes are lowercase SHA-256
+  hex; byte counts are strict positive INTEGERs up to 64 MiB. Each tuple is
+  wholly null or wholly present. Versions begin at integer 1. All generations
+  are strict INTEGERs in `0..source_generation`, never Boolean/coerced text.
+  `html_generation` mirrors existing `rendered_generation` on the new route,
+  atomically in the same metadata transaction; null HTML tuple means not yet
+  published for the accepted cache by that route, not corrupt legacy HTML.
+  Accepting a cache clears the entire HTML tuple and `rendered_generation`
+  atomically, even if C, its digest or its version equal their previous values.
+  Successful HTML publication restores them only against that exact accepted
+  cache tuple. This permits same-generation rebuilds without treating an old
+  HTML publication as proof that the new publication finished.
+
+Let S be the current existing Viewer source generation, I the invalidation
+generation, C the accepted cache generation, and R the accepted HTML generation.
+Changed IDs are `project_id = P AND source_generation > C AND
+source_generation <= S`, ordered by generation/ID using the index. C below I
+requires rebuilding all display Tasks. A missing cache tuple also requires a
+rebuild. Queries return IDs/revisions only; capture of their source rows occurs
+in the same read snapshot as S/I. A missing Task for a recorded ID fails closed:
+hard Task deletion is not a supported writer, and this design introduces none.
+No delta reader scans all events or all Tasks as a correctness shortcut.
+
+Every mark advances `viewer_maintenance_state.source_generation` and upserts
+the affected rows in the same transaction. Global invalidation advances S and
+sets I to it; it does not update every Task revision. Generation overflow is a
+closed failure. Cache application records only the captured C; it neither
+resets S/I nor deletes revisions. Thus a newer revision committed while a
+capture is being rendered remains selected by the next range query. Normally
+R <= C <= S when the tuples are present; a failed/unacknowledged replacement can leave file and metadata
+generations different and follows the recovery matrix below.
+
+Initialization/migration creates a new epoch and null cache/HTML tuples, without
+rewriting the existing last-good HTML or business history. Formal managed-backup
+restore and legacy/fixed-state publication rotate the epoch and null these
+tuples in the private candidate before its canonical publication. Compare the
+copy to the selected recovery source before this narrowly allowed derived-state
+normalization, then revalidate the normalized candidate; never weaken backup
+selection or alter the source backup. The normalized recovery observation must
+explicitly allow only this derived-state delta in addition to its existing
+repository normalization. Reentry after canonical publication sees the rotated
+epoch; it does not rotate repeatedly or replay restore. Restoring an old schema
+gets a fresh epoch on explicit migration. Confirmed rebind invalidates in the
+same binding writer; fresh capture must match the new binding generation/hash.
+These changes are part of the approved Setup operation, never ordinary implicit
+repair. Physical DB replacement also invalidates a saved cache by file identity;
+in-place unsupported edits with identical epoch are outside the guarantee.
+
+### Incremental Cache And Publication
+
+`viewer_projection_cache.py` owns the bounded file codec and physical target
+checks, not SQL admission. The shared resolver supplies its canonical path
+beside the resolved Viewer HTML under `<fixed-root>/viewer`; `DatabaseTarget`
+carries it, and injected test targets use that same name beneath their database
+parent. The integration unit extends the exact managed-artifact inventory for
+this one cache and its sibling temporary grammar. Cache, HTML and temporaries
+share the existing canonical Viewer lock; no `.taskgov/viewer` sibling or second
+artifact root is introduced. The cache is strict UTF-8 JSON with no duplicate,
+unknown or missing keys. Its exact top-level keys are `cache_format_version`,
+`projection_version`, `project_id`, `binding_generation`, `binding_path_hash`,
+`database_epoch`, `database_file_identity`, `source_schema_version`,
+`applied_generation`, and `tasks`. Identity contains only integer `device` and
+`inode` from the regular opened database file (Windows file identity through
+the same physical-file helper), not a path or mtime. Binding hash uses the
+existing canonical-path hash. `tasks` is the complete deterministic ordered v4
+Task array including its current allow-listed events/review/history. Counts
+and project display name are assembled afresh from this array and current
+project metadata; generation/identity/header fields never enter the public v4
+snapshot. Exact nested keys, types, privacy and field capacities are validated
+from the display schema, without database joins or evidence parsing. Duplicate
+Task IDs and an incorrect sort order fail cache validation.
+
+The whole file is bounded at 64 MiB before allocation/parse, and its canonical
+bytes and SHA-256 are compared to the DB cache tuple. Header identity, versions,
+generation and source schema must equal the admitted metadata/physical file.
+Noncanonical bytes are invalid. A cache digest proves only matching generated
+bytes, not freshness of arbitrary source files or protection against an attacker
+rewriting both DB and cache. No stamp, previous private transaction proof or
+caller-supplied validation flag substitutes for these checks.
+
+`viewer_maintenance.py` retains the single zero-wait Viewer artifact lock for
+the following sequence, at most twice per opportunity:
+
+1. Perform cheap structural/maintenance eligibility and fixed-file presence
+   checks. Disabled/current exits read no cache body or historical evidence.
+   Repeat eligibility after locking. Unsafe paths fail; missing files are due.
+   On the new route, current additionally requires complete compatible cache
+   and HTML tuples, C = R = S, C >= I, and no failed/deferred outcome or force
+   request. The legacy rendered counter alone is insufficient. Epoch-reset
+   null tuples therefore remain due even if that counter still equals S.
+   For explicit force repair, a fresh short structural writer under this lock
+   first clears both cache/HTML tuples and `rendered_generation`, preserving
+   the files, business revisions, S/I and last-success time. Force repair thus
+   performs a full display rebuild and remains due after process termination,
+   even before cache replacement. An unknown outcome of this metadata write
+   is not replayed; a later opportunity reads its actual committed state.
+   Perform this force invalidation once at attempt entry, never again during
+   the one permitted follow-up capture.
+   When due, load/hash/validate any candidate cache under the artifact lock,
+   outside SQLite, before opening the capture snapshot below. Invalid candidate
+   bytes request a rebuild; they never authorize writes to an unsafe path.
+2. Pin regular DB identity before opening and again within one query-only
+   snapshot. Admit schema/history/project/binding/policy and tracking metadata;
+   read S/I/cache tuple there. A usable cache plus C >= I selects only changed
+   IDs. Otherwise select all Tasks for one full display rebuild. Obtain and
+   validate all affected display rows and their needed relations in this same
+   snapshot. Close it before serialization, hashing or file publication.
+3. Reuse current stored-Task/Contract, own-review and completion-history
+   readers, adding selected-ID forms where needed. In particular the current
+   `_read_viewer_review_evidence` global orphan/Finding stream is not the delta
+   reader. Selected reads must use indexes, reject foreign related evidence,
+   and retain complete relevant own history even beyond the displayed ten.
+   The existing batch completion-history reader assumes upstream global Bundle
+   admission; the new selected path must instead validate the selected Tasks'
+   Bundle/history relations explicitly, using the single-Task boundary or its
+   equivalent selected batch. It must not silently reuse the old assumption.
+   Reuse already-validated material only within this snapshot; no validator
+   object survives it. Unrelated ownership, raw-note and unregistered-control
+   inventories are not a new prerequisite for a display projection.
+4. Merge changed rows into the checked cache array; recompute ordering/counts,
+   build the unchanged public v4 snapshot and render complete HTML. Validate
+   all capacities before publishing either file. Protect cache parents,
+   targets, links/reparse points, hard links, DB aliases and sibling temporary
+   files like the canonical HTML; do not follow or delete an unsafe cache.
+5. Flush/close a unique cache temporary and atomically replace the fixed cache
+   under a fresh short structural/metadata guard. Its own read transaction
+   rechecks physical DB identity, epoch, binding, opt-in, S/I and versions
+   against the captured basis and rejects drift. Record the cache tuple C/hash/
+   length and clear the entire HTML tuple plus `rendered_generation` atomically
+   in a short writer with the same identity/version/invalidation checks;
+   S may now be greater than captured S, but C never exceeds S or regresses an
+   accepted cache. This invalidates publication even at unchanged S, for a
+   projection/format upgrade, same-byte rebuild or presentation-only repair.
+   It does not delete the old HTML file or reset its last-success time.
+   Hash/readback is outside the DB writer while the artifact
+   lock remains held; pin the checked regular file and recheck its identity
+   under the writer. This is not a stamp-only content check and no full-file
+   hashing occurs while holding the DB writer. No business revision is consumed
+   or removed.
+6. Publish the prepared HTML with the same kind of fresh guard, checking the
+   captured source generation is still current and no newer HTML was accepted.
+   The guard's short read transaction covers replacement; ordinary supported
+   DB writes cannot commit through it. Record R/hash/length and the existing
+   rendered-generation/success fields in one short writer, with identity,
+   binding, epoch, I, versions, the exact accepted cache tuple and nonregression
+   checks repeated under lock. A complete HTML tuple may exist only for its
+   accepted cache; clearing it in step 5 is invalidation, not a publication of
+   an older generation. Cache acceptance alone cannot restore R.
+   A newer S committed after replacement is allowed and remains due; a changed
+   epoch/binding/invalidation or newer accepted publication rejects the result.
+7. Recheck once for remaining due work. Churn or failure after the bounded
+   opportunity leaves due state and the existing warning. Failure/deferred
+   metadata writes use their own structural admission and observed identity/
+   generation tuple; stale outcomes cannot overwrite a later success. They
+   never perform historical audits or certify C/R.
+
+Structural admission retains existing physical/foreign-key/schema checks; this
+change does not turn their cost into a promise of constant total DB work.
+Normal capture, guard and outcome must not call the full Evidence Ledger or
+global Task-history validators. Full rebuild means rebuilding every display
+Task and its consumed relations, not validating unrelated hidden state. Legacy
+v5-v33 captures keep their original full admission and never accept this cache.
+The foundation unit can add tracking while continuing that original renderer.
+
+| Interruption or inconsistency | Next eligible action |
+|---|---|
+| No cache, invalid bytes/hash/header/capacity, incompatible format/projection, DB identity/epoch/binding mismatch, or C < I | Full display rebuild from admitted current DB; do not fall back to stale display bytes as evidence. Preserve last-good HTML if rebuild fails. |
+| Crash before cache replacement | Ordinary work retains its previous accepted artifacts/tuples and pending revisions; a version mismatch remains due. Force repair retains the old files but its durably cleared tuples require a full rebuild. |
+| Cache replaced, cache metadata commit absent/unknown | File/tuple mismatch requires rebuild; never adopt an orphan file solely from its own header. |
+| Accepted cache, HTML replacement fails or process exits | R is null because cache acceptance cleared it, even when C = S equals the former R. Next attempt may reuse matching C and render without re-fetching unchanged evidence. |
+| HTML replaced, result metadata commit absent/unknown | Valid new HTML may remain; next opportunity regenerates/replaces under normal guards and records the result. No rollback to older HTML and no inferred success from file presence. |
+| New Task change after capture or cache application | Reject a stale replacement before publication; next capture reads revisions above accepted C. If change follows successful HTML replacement, R < S retains due work. |
+| Rebind/restore/invalidation between stages | Guards reject old basis, tuples remain due/unusable; next opportunity rebuilds. Never match only numeric project/generation. |
+| Cache or HTML externally removed while metadata says current | Cheap presence check makes it due; cache loss rebuilds, HTML-only loss may render from validated cache. No browser-triggered repair. |
+| Content changed while still present and metadata current | No immediate audit promise; next reuse/Setup verifies actual bytes. Explicit diagnosis keeps its existing separate DB responsibility. |
+
+### Incremental Execution Boundaries
+
+This bounded three-unit sequence is already registered in lane
+`viewer-incremental`; live status/evidence belongs only to the public CLI.
+These anchors own its accepted work until all units finish or are explicitly
+superseded. Removal/retirement still requires the repository's authorization
+and authority-transition rules; completion does not itself delete this plan.
+
+| Unit / Task | Scope and handoff | Gate |
+|---|---|---|
+| Contract, `tg_task_5237c19d313b8a4c` | This conditional behavior/design, mutation inventory, storage/publication/recovery contracts and acceptance matrix; no runtime or live Setup change. | Document contract check, coupled-owner/code-route consistency and two independent Tier 2 PASS reviews. |
+| Storage, `tg_task_38d52d3b2d1c6244` | Ordered schema migration, typed repository, complete transactional notification, indexed range, epoch/invalidation in formal restore/rebind; preserve existing renderer. Depends on Contract. | Temp DB initialization/migration/reentry/preservation/rollback, real mutation-family coverage, concurrent updates, recovery/old-source compatibility, manifest/docs and two independent Tier 2 PASS reviews. |
+| Integration, `tg_task_ddfb963bb4aa3912` | Selected Task capture, bounded sanitized cache, guarded publication and metadata, failure recovery, whole-HTML rendering and the performance checks below. Depends on Storage. | Full/delta equality, integration/fault injection/privacy/performance/compatibility, manifest/docs and two independent Tier 2 PASS reviews, then synchronize active owners to enable the new route. |
+
+Storage alone does not activate the conditional read/publication contract.
+Setup against live state, config/hook changes and external operations retain
+their separate permission boundaries. Handoff registration, Evidence
+publication and logger optimization are outside these units.
+
+The acceptance suite for Storage/Integration must exercise:
+
+| Case | Required observable result |
+|---|---|
+| First build, empty project, every mutation family, several updates to one Task, several Tasks | Exact v4 projection/HTML equality to a freshly constructed display snapshot for the same generation/time; no missing Task, duplicate, count/order drift or new field. |
+| Current/disabled/no-op/read-only; storage-only installation | No historical SQL/body hashing/cache write in cheap exits; no implicit migration or feature activation; old Viewer still works. |
+| Updated-at unchanged; equal timestamps; rollback; mutation failure | Real revisions detect committed changes; rollback/failure leaves neither notification nor phantom display state. |
+| Cache loss/corruption, invalid field/privacy/type/size/hash/version and path alias/link | Closed reuse; safe rebuild or fixed failure with good HTML retained; no unsafe file deletion, private-content diagnostic or truncation. |
+| Crash at each file/metadata boundary, writer busy, lock contention, new commit between every stage | Matrix above; no future revision removed, older-over-newer publish, false current result or replay of unknown effects. |
+| Unchanged S with a projection/format upgrade, same-byte cache rebuild, forced repair or template/reload-policy change | Stop before/after forced invalidation, cache replacement, cache acceptance, HTML replacement and outcome commit. The old HTML must never satisfy current after accepted cache invalidation; force interruption remains due even before cache replacement. Only matching HTML outcome restores current. |
+| Same project/S restored twice, DB replacement, migration, confirmed A-B-A rebind | Fresh epoch/identity or binding invalidates the old cache, even if numeric generation repeats; old source rows/evidence stay intact. |
+| Supported source v5-v33 and future/invalid source | Original compatibility and explicit migration rules retained; future/corrupt source fails, never masked by cache. |
+
+For performance, create isolated identical 100-Task and 1,000-Task fixtures with
+the same changed Task and evidence, then independently increase only unchanged
+Tasks' deep review/completion histories. After a full baseline, update one Task
+and compare SQL selected IDs/rows, query plans and semantic-validator calls.
+Unchanged historical evidence reads/validations must remain zero at both sizes;
+changed-task evidence work must not grow with unrelated history. Require index
+range plans for revision extraction and selected parent/child queries. Check
+Task add/edit/review/completion/checkpoint/reopen paths, not just a private
+helper. Full rebuild, full cache-byte verification, full HTML rendering and
+structural integrity checks are separate measured work, not disguised as
+constant-time operations. Keep existing timing/functional budgets unchanged.
+Measure log OFF and ON separately under identical conditions, recording actual
+schema/Skill/runtime, SQL counts, lock/read/write lifetimes and inclusive spans;
+do not sum nested elapsed times or claim missing sampled SQL was measured.
 
 ## Presentation Profile
 

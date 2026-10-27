@@ -190,6 +190,9 @@ Caller declarations do not prove actual model/Skill use or review truth.
    [Effort observation](#optional-effort-advisory) at the verification/review boundary.
 5. [Choose the completion route](#choose-the-completion-route) **before the first
    preparation**, then [set the exact review target](#set-the-review-target).
+   Replace `<review-directory>` using the
+   [handoff path rules](cli_contracts.md#handoff-path-and-validation): choose a
+   project-authorized, unused, Git-ignored physical directory, not a default path.
    Use the shared-file operation selected there in the target and Receipt
    examples below; [direct transport](#direct-review-transport) owns its alternative
    calls and response fields. Never run both preparations for one operation.
@@ -209,7 +212,7 @@ Caller declarations do not prove actual model/Skill use or review truth.
    duration, coverage, and the returned generation:
 
    ```powershell
-   python .agents/skills/task-governance-tool/scripts/review_handoff.py prepare-finalization --repo . --directory reviews/g1 receipt <task-id> --result <pass|fail|timeout> --duration-ms <milliseconds> --scope-coverage <full|partial> --expected-target-generation <generation>
+   python .agents/skills/task-governance-tool/scripts/review_handoff.py prepare-finalization --repo . --directory <review-directory> receipt <task-id> --result <pass|fail|timeout> --duration-ms <milliseconds> --scope-coverage <full|partial> --expected-target-generation <generation>
    ```
 
    `full` describes the whole Task verification expectation, not merely success.
@@ -571,7 +574,9 @@ not a second target/Receipt write or silent route switch.
 ### Set The Review Target
 
 Use the operation from the [route already chosen](#choose-the-completion-route)
-in these examples.
+in these examples. Replace `<review-directory>` with the project's permitted
+unused ignored physical area under the
+[handoff path rules and excluded roots](cli_contracts.md#handoff-path-and-validation).
 Only after the exact material is ready, stage precisely the intended Git files
 through the project's approved Git workflow. Confirm that staging itself
 succeeded before capturing the staged candidate. When the specific files and
@@ -582,7 +587,7 @@ run these in one caller tool invocation (a disposable PowerShell process):
 $ErrorActionPreference = 'Stop'
 git add -- <intended-project-paths>
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-python .agents/skills/task-governance-tool/scripts/review_handoff.py prepare-finalization --repo . --directory reviews/g1 target <task-id> --kind git_snapshot
+python .agents/skills/task-governance-tool/scripts/review_handoff.py prepare-finalization --repo . --directory <review-directory> target <task-id> --kind git_snapshot
 exit $LASTEXITCODE
 ```
 
@@ -590,7 +595,7 @@ On a POSIX shell, use the same ordering with success-only chaining:
 
 ```sh
 git add -- <intended-project-paths> &&
-python3 .agents/skills/task-governance-tool/scripts/review_handoff.py prepare-finalization --repo . --directory reviews/g1 target <task-id> --kind git_snapshot
+python3 .agents/skills/task-governance-tool/scripts/review_handoff.py prepare-finalization --repo . --directory <review-directory> target <task-id> --kind git_snapshot
 ```
 
 This is caller composition, not a taskgov Git operation or permission grant.
@@ -612,9 +617,9 @@ existing public state before deciding which tail remains, never blindly set
 another target. See [bound preparation recovery](cli_contracts.md#review-prepare).
 
 This shared-file form invokes the existing target command once, captures its
-complete response before display and prepares the handoff only if ready. Choose
-an authorized unused ignored directory; no separate mkdir or path-check call is
-needed. A Receipt-required target creates no directory, so the later Receipt
+complete response before display and prepares the handoff only if ready. No
+separate mkdir or path-check call is needed. A Receipt-required target creates
+no directory, so the later Receipt
 form uses the same name. Once created, do not reuse it for another generation.
 For direct complete-byte transport instead, use the
 [direct route](#direct-review-transport); do not run both forms.
@@ -809,7 +814,9 @@ their successor judgment and [explicitly linked Finding
 resolution](cli_contracts.md#finding-resolution) using its returned Receipt ID.
 
 Invoke `review_handoff.py continue --repo <project> --task-id <original Task>
---target-generation <retained generation> --directory <unused ignored directory>`
+--target-generation <retained generation> --directory <review-directory>`
+selected as a new unused area under the same
+[handoff path rules](cli_contracts.md#handoff-path-and-validation),
 with closed UTF-8 stdin: `{"version":1,"reviewers":[{"session_id":"<actual UUID>",
 "action":"supplement","prior_receipt_id":null,"reason":"<bounded sanitized reason>"}]}`.
 Select only needed actual reviewers; reassessment uses `action=reassess` and

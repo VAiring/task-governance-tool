@@ -2299,6 +2299,15 @@ preserve originals/residue without overwriting or blindly repeating writes.
 
 #### Handoff Path And Validation
 
+Choose a project-authorized, unused physical directory covered by the project's
+effective Git ignore. `<review-directory>` and `<recovery-directory>` in the
+examples are placeholders for that choice, not literal paths or defaults.
+A name such as `reviews/g1` is usable only when that project's permission and
+ignore rules already allow it. The excluded roots below are never alternatives.
+Subsequent read/save/submit examples use the already prepared directory;
+preparation recovery selects a new unused `<recovery-directory>`.
+Use returned Packet/result paths and continuation commands unchanged.
+
 All Packet/result paths must be untracked, Git-ignored `.json` files within the
 explicit project and physical directories. Only prepare creates its explicitly
 named missing ignored directory chain and `packet.json`, after a ready source
@@ -2324,13 +2333,14 @@ JSON nor a saved file transfers approval. Independent reviews do not use it.
 Before the first Packet-producing call, [choose the completion route](task_workflow.md#choose-the-completion-route).
 Authorized supported snapshot completion uses `prepare-finalization`; the
 parent-managed route uses `prepare` in place of that operation in both examples.
-Use `--directory <unused-ignored-directory>` with project-relative `/` spelling
-and the Task ID selected by `task context`:
+Use `--directory <review-directory>` with project-relative `/` spelling after
+applying the [path rules above](#handoff-path-and-validation), and the Task ID
+selected by `task context`:
 
 ```powershell
-python .agents/skills/task-governance-tool/scripts/review_handoff.py prepare-finalization --repo . --directory reviews/g1 target <task-id> --kind git_snapshot
+python .agents/skills/task-governance-tool/scripts/review_handoff.py prepare-finalization --repo . --directory <review-directory> target <task-id> --kind git_snapshot
 # Only after required verification, using the generation from the prior result:
-python .agents/skills/task-governance-tool/scripts/review_handoff.py prepare-finalization --repo . --directory reviews/g1 receipt <task-id> --result pass --duration-ms <milliseconds> --scope-coverage full --expected-target-generation <generation>
+python .agents/skills/task-governance-tool/scripts/review_handoff.py prepare-finalization --repo . --directory <review-directory> receipt <task-id> --result pass --duration-ms <milliseconds> --scope-coverage full --expected-target-generation <generation>
 ```
 
 Target accepts the existing kind/revision options; Receipt also accepts the
@@ -2541,7 +2551,7 @@ preparation does not generate this legacy command. For that existing supervisor
 context only, use the original project's retained Packet path:
 
 ```powershell
-python .agents/skills/task-governance-tool/scripts/review_handoff.py wait-ended --repo . --packet reviews/g1/packet.json
+python .agents/skills/task-governance-tool/scripts/review_handoff.py wait-ended --repo . --packet <review-directory>/packet.json
 ```
 
 Alternatively, `--from-stdin` accepts the unchanged complete UTF-8 Packet and
@@ -2571,7 +2581,7 @@ writes. Independent reviewer requests and duties remain unchanged.
 #### Read Review Packet
 
 Assigned independent reviewers use the fixed read command embedded in the request, whose shape is
-`review_handoff.py read --repo . --packet reviews/packet.json`.
+`review_handoff.py read --repo . --packet <review-directory>/packet.json`.
 This replaces the raw Packet read, not an extra query. It always returns the
 independent-reviewer display after full saved-Packet validation. Removing the
 role selector does not require recreating existing Packets or repeating reviews.
@@ -2674,7 +2684,7 @@ needed, supply only the actual completed JSON on UTF-8 stdin, not UTF-16 or BOM:
 $OutputEncoding = [Console]::InputEncoding = [System.Text.UTF8Encoding]::new($false)
 @'
 <complete original version-1 result JSON>
-'@ | python .agents/skills/task-governance-tool/scripts/review_handoff.py save --repo . --packet reviews/packet.json --output reviews/review-a.json
+'@ | python .agents/skills/task-governance-tool/scripts/review_handoff.py save --repo . --packet <review-directory>/packet.json --output <review-directory>/review-a.json
 ```
 
 Save accepts one complete object document with one Receipt. Existing format,
@@ -2703,7 +2713,7 @@ It owns saved-handoff confirmation; no separate save-report or original read is
 required before this operation:
 
 ```powershell
-python .agents/skills/task-governance-tool/scripts/review_handoff.py submit --repo . --packet reviews/packet.json reviews/review-a.json reviews/review-b.json
+python .agents/skills/task-governance-tool/scripts/review_handoff.py submit --repo . --packet <review-directory>/packet.json <review-directory>/review-a.json <review-directory>/review-b.json
 ```
 
 Submit accepts 1-8 paths, preserves complete original bytes, and adds only array
@@ -2719,15 +2729,17 @@ Use those for judgment; the all-ended notification alone proves none of them.
 
 ### Recover Review Handoff
 
-Only for preparation recovery, choose ONE binding form and a new unused area:
+Only for preparation recovery, choose ONE binding form and a new unused area
+for `<recovery-directory>` under the
+[same path rules and excluded roots](#handoff-path-and-validation):
 
 Keep the preparation operation chosen before the source write. The examples
 use `prepare` for parent-managed registration; substitute `prepare-finalization`
 for an integrated intent. Recovery never authorizes a different route or Git action.
 
 ```powershell
-python .agents/skills/task-governance-tool/scripts/review_handoff.py prepare --repo . --directory reviews/recovery recover <task-id> --expected-binding <binding>
-python .agents/skills/task-governance-tool/scripts/review_handoff.py prepare --repo . --directory reviews/recovery recover <task-id> --verification-receipt-id <recorded-id>
+python .agents/skills/task-governance-tool/scripts/review_handoff.py prepare --repo . --directory <recovery-directory> recover <task-id> --expected-binding <binding>
+python .agents/skills/task-governance-tool/scripts/review_handoff.py prepare --repo . --directory <recovery-directory> recover <task-id> --verification-receipt-id <recorded-id>
 ```
 
 Keep the shared [path/validation boundary](#handoff-path-and-validation).

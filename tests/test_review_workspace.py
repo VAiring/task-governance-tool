@@ -1,6 +1,7 @@
 """Reviewer-selected checks use exact restored files, never rebuilt bodies."""
 
 import json
+import copy
 import base64
 import os
 import re
@@ -8,6 +9,8 @@ import subprocess
 import sys
 import unittest
 import uuid
+from contextlib import ExitStack, contextmanager, redirect_stdout
+from io import StringIO
 from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
@@ -15,6 +18,7 @@ from unittest import mock
 from tests import test_review_handoff_preparation as fixtures
 from task_governance_tool import review_handoff_transport as handoff_transport
 from task_governance_tool import review_workspace as workspace
+from task_governance_tool import review_workspace_caller as caller
 from task_governance_tool import review_handoff as handoff
 
 
@@ -111,6 +115,24 @@ class ReviewerWorkspaceTests(fixtures.PreparationFixture):
         args = SimpleNamespace(**{**vars(args), "workspace_operation": "cleanup"})
         return workspace.operate(self.root, args)
 
+    def retained_commands(self, args):
+        """Previously issued pairs retain their original closed CLI format."""
+        common = ["--repo=" + str(self.root), "--packet=" + args.packet,
+                  "--packet-sha256=" + args.packet_sha256, "--workspace-id=" + args.workspace_id,
+                  "--workspace-location=" + args.workspace_location]
+        return {action + "_command": fixtures.preparation._shell(
+            [sys.executable, "-B", str(self.helper), "workspace", action, *common])
+            for action in ("prepare", "cleanup")}
+
+    def run_template(self, guidance, *, argv=None, timeout=20, ended=True, environment=None):
+        code = guidance["caller_code"].replace("selected_argv = []", "selected_argv = " + repr(
+            argv or [sys.executable, "-B", "-m", "unittest", "-v"]))
+        code = code.replace("selected_timeout_seconds = None", "selected_timeout_seconds = " + repr(timeout))
+        code = code.replace("normal_return_confirms_all_processes_ended = False",
+                            "normal_return_confirms_all_processes_ended = " + repr(ended))
+        return subprocess.run([sys.executable, "-I", "-S", "-B", "-"],
+            input=code.encode("utf-8"), capture_output=True, timeout=45, env=environment)
+
     def test_exact_snapshot_six_checks_exclude_ambient_and_cleanup_test_outputs(self):
         args = self.prepared()
         (self.root / "counter.py").write_text("raise RuntimeError('ambient')", encoding="utf-8")
@@ -167,30 +189,34 @@ class ReviewerWorkspaceTests(fixtures.PreparationFixture):
         self.assertEqual(details.returncode, 0, details.stdout or details.stderr)
         detailed = json.loads(details.stdout)
         guidance = detailed["review_material"]["verification_workspace"]
-        self.assertEqual(set(guidance), {"status", "prepare_command", "cleanup_command", "instructions"})
-        self.assertEqual(guidance["status"], "available")
+        self.assertEqual(set(guidance), {"status", "caller_language", "caller_code", "instructions"})
+        self.assertEqual(guidance["status"], "template_ready")
         for key in ("task", "contract", "review_target", "result_template", "result_instructions"):
             self.assertEqual(normal[key], detailed[key])
         self.assertEqual(normal["verification_evidence"]["source_kind"],
                          detailed["verification_evidence"]["source_kind"])
         self.assertEqual(fixtures.file_snapshot(self.workspace_temp), temporary_before)
         self.assertEqual(fixtures.file_snapshot(self.root), before)
-        result = self.material_read(guidance["prepare_command"])
-        try:
-            self.assertEqual(result.returncode, 0, result.stdout or result.stderr)
-            self.assertEqual(json.loads(result.stdout)["status"], "ready")
-        finally:
-            cleaned = self.material_read(guidance["cleanup_command"])
-        self.assertEqual(cleaned.returncode, 0, cleaned.stdout or cleaned.stderr)
+        result = self.run_template(guidance)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        rows = [json.loads(line) for line in result.stdout.splitlines()]
+        self.assertIn("workspace_cleanup_command", rows[0])
+        self.assertEqual(rows[1]["workspace_preparation"]["status"], "ready")
+        self.assertEqual(rows[1]["workspace_preparation"]["verification_status"], "not_run")
+        self.assertEqual(rows[2], {"verification_returncode": 0})
+        self.assertEqual(rows[3]["workspace_cleanup"]["status"], "absent")
+        self.assertIn(b"Ran 6 tests", result.stderr)
         self.assertEqual(fixtures.file_snapshot(self.root), before)
         self.assertEqual(fixtures.file_snapshot(self.workspace_temp), temporary_before)
 
-    def test_normal_notice_does_not_probe_temp_or_allocate_handle(self):
+    def test_both_guidance_views_do_not_probe_temp_or_allocate_handle(self):
         with mock.patch.object(workspace, "_temporary_parent", side_effect=AssertionError("unused temp probe")), \
-             mock.patch.object(workspace.uuid, "uuid4", side_effect=AssertionError("unused handle")):
+             mock.patch.object(caller.uuid, "uuid4", side_effect=AssertionError("unused handle")):
             notice = workspace.workspace_guidance(self.root, "reviews/packet.json", b"unused")
+            detailed = workspace.workspace_guidance(self.root, "reviews/packet.json", b"unused", details=True)
         self.assertEqual(set(notice), {"status", "instructions"})
         self.assertEqual(notice["status"], "optional")
+        self.assertEqual(detailed["status"], "template_ready")
 
     def test_saved_location_generated_commands_survive_temp_changes(self):
         args = self.prepared()
@@ -214,13 +240,11 @@ class ReviewerWorkspaceTests(fixtures.PreparationFixture):
         first_before, other_before = fixtures.file_snapshot(self.workspace_temp), fixtures.file_snapshot(alternate)
         for label, read_env, prepare_env, cleanup_env, expected_parent in cases:
             with self.subTest(case=label):
-                read = subprocess.run([sys.executable, "-I", "-S", str(self.helper), "read",
-                    "--repo", str(self.root), "--packet", args.packet, "--material-details"],
-                    env=read_env, capture_output=True, timeout=30)
-                self.assertEqual(read.returncode, 0, read.stdout + read.stderr)
-                guidance = json.loads(read.stdout)["review_material"]["verification_workspace"]
-                self.assertEqual(guidance["status"], "available")
-                identity = re.search(r"--workspace-id=([0-9a-f]{32})", guidance["prepare_command"]).group(1)
+                with mock.patch.dict(os.environ, read_env):
+                    retained = SimpleNamespace(**{**vars(args), "workspace_id": uuid.uuid4().hex})
+                    self.bind_location(retained)
+                guidance = self.retained_commands(retained)
+                identity = retained.workspace_id
                 root = expected_parent / ("taskgov-review-" + identity)
                 # Cleanup before creation proves absence at the saved location,
                 # even though the current selector names another valid parent.
@@ -253,11 +277,13 @@ class ReviewerWorkspaceTests(fixtures.PreparationFixture):
             missing = self.cleanup(args)
             self.assertFalse(missing["ok"])
             self.assertEqual(missing["cleanup_status"], "unknown")
+            self.assertEqual(missing["diagnostic"], {"stage": "location", "reason": "parent_missing"})
             self.workspace_temp.mkdir()
             try:
                 replaced = self.cleanup(args)
                 self.assertEqual(replaced["code"], "review_workspace_temp_changed")
                 self.assertEqual(replaced["cleanup_status"], "unknown")
+                self.assertEqual(replaced["diagnostic"], {"stage": "location", "reason": "parent_changed"})
                 self.assertEqual(list(self.workspace_temp.iterdir()), [])
             finally:
                 self.workspace_temp.rmdir()
@@ -272,6 +298,7 @@ class ReviewerWorkspaceTests(fixtures.PreparationFixture):
         with mock.patch.object(workspace, "inspect_physical_directory", side_effect=denied):
             rejected = self.cleanup(args)
             self.assertEqual(rejected["cleanup_status"], "unknown")
+            self.assertEqual(rejected["diagnostic"], {"stage": "location", "reason": "parent_inaccessible"})
             self.assertNotIn("private fixture diagnostic", json.dumps(rejected))
         self.assertEqual(self.cleanup(args)["status"], "absent")
 
@@ -386,16 +413,12 @@ class ReviewerWorkspaceTests(fixtures.PreparationFixture):
     def test_details_keep_cleanup_handle_after_unobserved_prepare_output(self):
         args = self.prepared()
         before = fixtures.file_snapshot(self.workspace_temp)
-        normal = self.invoke("read", "--repo", str(self.root), "--packet", args.packet)
-        command = json.loads(normal.stdout)["review_material"]["recovery_command"]
-        details = self.material_read(command)
-        self.assertEqual(details.returncode, 0, details.stdout)
-        guidance = json.loads(details.stdout)["review_material"]["verification_workspace"]
-        cleanup_command = guidance["cleanup_command"]
+        copy = caller.Workspace(self.root, args.packet, args.packet_sha256)
+        cleanup_command = copy.cleanup_command
+        self.assertIsNotNone(cleanup_command)
         try:
-            # Deliberately discard prepare output: cleanup uses only the
-            # command delivered before preparation, not a returned handle.
-            self.material_read(guidance["prepare_command"])
+            # Lost output does not require another prepare or new binding.
+            copy.prepare()
             self.assertEqual(len(list(self.workspace_temp.glob("taskgov-review-*/target"))), 1)
         finally:
             cleaned = self.material_read(cleanup_command, environment={**os.environ, "TMPDIR": str(self.root)})
@@ -448,8 +471,14 @@ class ReviewerWorkspaceTests(fixtures.PreparationFixture):
         material = json.loads(read.stdout)["review_material"]
         self.assertEqual(material["status"], "git_objects_verified")
         self.assertIn("collect_command", material)
-        self.assertEqual(material["verification_workspace"]["status"], "unavailable")
+        self.assertEqual(material["verification_workspace"]["status"], "template_ready")
         self.assertNotIn("prepare_command", material["verification_workspace"])
+        failed = self.run_template(material["verification_workspace"], environment={**os.environ, "TMPDIR": str(self.root)})
+        rows = [json.loads(line) for line in failed.stdout.splitlines()]
+        self.assertEqual(rows[1]["workspace_preparation"]["diagnostic"],
+                         {"stage": "selection", "reason": "parent_unavailable"})
+        self.assertEqual(len(rows), 2)
+        self.assertNotIn(b"Ran 6 tests", failed.stderr)
         self.assertEqual(fixtures.file_snapshot(self.root), before)
 
     def test_host_temp_alias_uses_physical_destination_and_retarget_is_rejected(self):
@@ -465,7 +494,7 @@ class ReviewerWorkspaceTests(fixtures.PreparationFixture):
             read = self.invoke("read", "--repo", str(self.root), "--packet", args.packet, "--material-details")
             result = workspace.operate(self.root, args)
             self.assertEqual(read.returncode, 0, read.stdout)
-            self.assertEqual(json.loads(read.stdout)["review_material"]["verification_workspace"]["status"], "available")
+            self.assertEqual(json.loads(read.stdout)["review_material"]["verification_workspace"]["status"], "template_ready")
             self.assertTrue(result["ok"], result)
             self.assertEqual(Path(result["working_directory"]).parent.parent, self.workspace_temp)
             changed_parent = self.root.parent / "other-temp"
@@ -554,6 +583,7 @@ class ReviewerWorkspaceTests(fixtures.PreparationFixture):
         try:
             self.assertFalse(result["ok"])
             self.assertEqual(result["cleanup_status"], "retained")
+            self.assertEqual(result["diagnostic"], {"stage": "identity", "reason": "identity_unconfirmed"})
             self.assertTrue(root.is_dir())
             self.assertEqual(list(root.iterdir()), [])
         finally:
@@ -573,6 +603,113 @@ class ReviewerWorkspaceTests(fixtures.PreparationFixture):
             rejected = workspace.operate(self.root, args)
         self.assertFalse(rejected["ok"])
         self.assertEqual(rejected["cleanup_status"], "not_started")
+        self.assertEqual(rejected["diagnostic"], {"stage": "live_before", "reason": "public_response_incomplete"})
+
+    def test_structurally_incomplete_public_packets_are_classified_before_and_after_restore(self):
+        original = self.prepared()
+        packet = json.loads((self.root / original.packet).read_bytes())
+        envelope = {"ok": True, "command": "review.prepare", "project_id": None,
+                    "data": packet, "warnings": [], "errors": []}
+        valid = json.dumps(envelope).encode()
+        missing_title = copy.deepcopy(packet)
+        del missing_title["task"]["title"]
+        invalid_context = {**packet, "review_session_context": {}}
+        invalid_evidence = {**packet, "verification_evidence": {}}
+        for phase in ("live_before", "live_after"):
+            for label, data in (("empty", {}), ("nested_missing", missing_title),
+                                ("context", invalid_context), ("evidence", invalid_evidence)):
+                with self.subTest(phase=phase, case=label):
+                    args = SimpleNamespace(**{**vars(original), "workspace_id": uuid.uuid4().hex})
+                    self.bind_location(args)
+                    invalid = json.dumps({**envelope, "data": data}).encode()
+                    responses = [(0, invalid)] if phase == "live_before" else [(0, valid), (0, invalid)]
+                    with mock.patch.object(fixtures.preparation, "_capture", side_effect=responses):
+                        refused = workspace.operate(self.root, args)
+                    self.assertEqual(refused["code"], "handoff_response_invalid")
+                    self.assertEqual(refused["diagnostic"], {"stage": phase, "reason": "public_response_incomplete"})
+                    self.assertEqual(refused["cleanup_status"], "not_started" if phase == "live_before" else "absent")
+                    self.assertFalse((self.workspace_temp / ("taskgov-review-" + args.workspace_id)).exists())
+
+    def test_live_public_errors_and_valid_different_identity_are_not_malformed(self):
+        args = self.prepared()
+        packet = json.loads((self.root / args.packet).read_bytes())
+        envelope = {"ok": False, "command": "review.prepare", "project_id": None, "data": {},
+                    "warnings": [], "errors": [{"code": "writer_busy", "message": "State unavailable."}]}
+        with mock.patch.object(fixtures.preparation, "_capture", return_value=(2, json.dumps(envelope).encode())):
+            failed = workspace.operate(self.root, args)
+        self.assertEqual(failed["code"], "writer_busy")
+        self.assertEqual(failed["diagnostic"], {"stage": "live_before", "reason": "unavailable"})
+        different = copy.deepcopy(packet)
+        other = "tg_task_" + "a" * 16
+        different["task"]["task_id"] = different["result_template"]["task_id"] = other
+        envelope.update(ok=True, data=different, errors=[])
+        with mock.patch.object(fixtures.preparation, "_capture", return_value=(0, json.dumps(envelope).encode())):
+            failed = workspace.operate(self.root, args)
+        self.assertEqual(failed["code"], "review_target_mismatch")
+        self.assertNotEqual(failed["diagnostic"]["reason"], "public_response_incomplete")
+
+    def test_direct_caller_sanitizes_known_dependency_errors_in_prepare_and_cleanup(self):
+        args = self.prepared()
+        selected = caller.Workspace(self.root, args.packet, args.packet_sha256)
+        private = "private-command-argument"
+        with mock.patch.object(handoff_transport.subprocess, "run",
+                               side_effect=subprocess.TimeoutExpired([private], 2)):
+            failed = selected.prepare()
+            cleaned = selected.cleanup(processes_ended=True)
+        self.assertEqual(failed["diagnostic"], {"stage": "packet", "reason": "unavailable"})
+        self.assertEqual(failed["cleanup_status"], "not_started")
+        self.assertEqual(cleaned["cleanup_status"], "unknown")
+        self.assertNotIn(private, json.dumps([failed, cleaned]))
+        # Direct input/domain validation also used to rely on the CLI wrapper.
+        from task_governance_tool.reviews import ReviewEvidenceError
+        with mock.patch.object(workspace, "_packet", side_effect=ReviewEvidenceError("invalid_review_evidence", private)):
+            domain = workspace.operate(self.root, args)
+        self.assertFalse(domain["ok"])
+        self.assertNotIn(private, json.dumps(domain))
+
+    def test_generated_template_sanitizes_preparation_timeout_without_running_verification(self):
+        args = self.prepared()
+        read = self.invoke("read", "--repo", str(self.root), "--packet", args.packet, "--material-details")
+        self.assertEqual(read.returncode, 0, read.stdout + read.stderr)
+        guidance = json.loads(read.stdout)["review_material"]["verification_workspace"]
+        injected = """from task_governance_tool import review_handoff_transport as fault_boundary
+def injected_timeout(*args, **kwargs):
+    raise subprocess.TimeoutExpired(['private-timeout-argv'], 2)
+fault_boundary.require_ignored = injected_timeout
+"""
+        guidance["caller_code"] = guidance["caller_code"].replace("copy = Workspace(", injected + "copy = Workspace(")
+        result = self.run_template(guidance)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        rows = [json.loads(line) for line in result.stdout.splitlines()]
+        self.assertEqual(len(rows), 2)
+        self.assertEqual(rows[1]["workspace_preparation"]["diagnostic"], {"stage": "packet", "reason": "unavailable"})
+        self.assertNotIn(b"private-timeout-argv", result.stdout + result.stderr)
+        self.assertNotIn(b"Traceback", result.stderr)
+        self.assertNotIn(b"Ran 6 tests", result.stderr)
+
+    def test_preparation_interruption_retains_owned_root_without_automatic_cleanup(self):
+        args = self.prepared()
+        from task_governance_tool import verification_runner_git as material
+        with mock.patch.object(material, "materialize_runner_target", side_effect=KeyboardInterrupt):
+            failed = workspace.operate(self.root, args)
+        self.assertEqual(failed["code"], "review_workspace_interrupted")
+        self.assertEqual(failed["cleanup_status"], "retained")
+        self.assertTrue((self.workspace_temp / ("taskgov-review-" + args.workspace_id)).is_dir())
+        self.assertEqual(self.cleanup(args)["status"], "absent")
+
+    def test_interruption_inside_failure_cleanup_is_sanitized_without_another_attempt(self):
+        args = self.prepared()
+        selected = caller.Workspace(self.root, args.packet, args.packet_sha256)
+        from task_governance_tool import verification_runner_git as material
+        with mock.patch.object(material, "materialize_runner_target", side_effect=ValueError("private restoration error")), \
+             mock.patch.object(workspace, "_remove", side_effect=KeyboardInterrupt) as remove:
+            failed = selected.prepare()
+        remove.assert_called_once()
+        self.assertEqual(failed["code"], "review_workspace_interrupted")
+        self.assertEqual(failed["diagnostic"], {"stage": "cleanup", "reason": "unavailable"})
+        self.assertEqual(failed["cleanup_status"], "retained")
+        self.assertNotIn("private", json.dumps(failed))
+        self.assertEqual(selected.cleanup(processes_ended=True)["status"], "absent")
 
     def test_cleanup_uses_retained_binding_after_live_generation_advances(self):
         args = self.prepared()
@@ -610,8 +747,8 @@ class ReviewerWorkspaceTests(fixtures.PreparationFixture):
             self.assertIsNone(rejected["workspace_id"])
             self.assertNotIn(identity, json.dumps(rejected))
         with mock.patch.dict(os.environ, {"TMPDIR": str(self.root)}):
-            self.assertEqual(workspace.workspace_guidance(
-                self.root, args.packet, raw, details=True)["code"], "review_workspace_temp_unavailable")
+            copy = caller.Workspace(self.root, args.packet, args.packet_sha256)
+            self.assertEqual(copy.prepare()["code"], "review_workspace_temp_unavailable")
 
     def test_public_rejection_never_echoes_invalid_identity_even_before_location_check(self):
         args = self.prepared()
@@ -655,6 +792,178 @@ class ReviewerWorkspaceTests(fixtures.PreparationFixture):
                            cwd=target, capture_output=True, timeout=0.1)
         self.assertEqual(result["verification_status"], "not_run")
         self.assertEqual(self.cleanup(args)["status"], "absent")
+
+    def test_caller_selects_in_execution_invocation_not_detailed_read(self):
+        args = self.prepared(commit=True)
+        old = self.workspace_temp / "old-host-call"
+        old.mkdir()
+        with mock.patch.dict(os.environ, {"TMPDIR": str(old)}):
+            read = self.invoke("read", "--repo", str(self.root), "--packet", args.packet, "--material-details")
+        guidance = json.loads(read.stdout)["review_material"]["verification_workspace"]
+        old.rmdir()
+        result = self.run_template(guidance)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        rows = [json.loads(line) for line in result.stdout.splitlines()]
+        self.assertEqual(rows[1]["workspace_preparation"]["status"], "ready")
+        self.assertEqual(rows[1]["workspace_preparation"]["review_target"]["kind"], "git_commit")
+        self.assertEqual(rows[-1]["workspace_cleanup"]["status"], "absent")
+        self.assertIn(b"Ran 6 tests", result.stderr)
+
+    def test_source_self_host_template_uses_its_explicit_repository(self):
+        from tests.m14_test_support import make_source_self_host
+        self.install = make_source_self_host(self.root.parent / "self-host 日本語's")
+        self.root = self.install.project_root
+        self.helper = self.install.skill_root / "scripts/review_handoff.py"
+        invoke_cli = self.cli
+        self.cli = lambda *values: invoke_cli(*values, "--repo", str(self.root))
+        self.git("init", "--quiet")
+        (self.root / ".gitignore").write_text("/.taskgov/\n/reviews/\n", encoding="utf-8")
+        self.cli("setup")
+        args = self.prepared()
+        read = self.invoke("read", "--repo", str(self.root), "--packet", args.packet, "--material-details")
+        self.assertEqual(read.returncode, 0, read.stdout + read.stderr)
+        guidance = json.loads(read.stdout)["review_material"]["verification_workspace"]
+        result = self.run_template(guidance)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        rows = [json.loads(line) for line in result.stdout.splitlines()]
+        self.assertEqual(rows[1]["workspace_preparation"]["status"], "ready")
+        self.assertEqual(rows[2], {"verification_returncode": 0})
+        self.assertEqual(rows[3]["workspace_cleanup"]["status"], "absent")
+        self.assertIn(b"Ran 6 tests", result.stderr)
+
+    def test_old_split_binding_missing_parent_has_fixed_reason_no_reselection(self):
+        args = self.prepared()
+        old = self.workspace_temp / "old-bound-parent"
+        old.mkdir()
+        args.workspace_location = workspace._location_binding(self.root, old, args.packet_sha256, args.workspace_id)
+        old.rmdir()
+        before = fixtures.file_snapshot(self.workspace_temp)
+        with mock.patch.object(workspace, "_temporary_parent", side_effect=AssertionError("no reselection")):
+            refused = workspace.operate(self.root, args)
+        self.assertEqual(refused["diagnostic"], {"stage": "location", "reason": "parent_missing"})
+        self.assertEqual(refused["cleanup_status"], "not_started")
+        self.assertFalse(old.exists())
+        self.assertEqual(fixtures.file_snapshot(self.workspace_temp), before)
+
+    def test_creation_denial_and_race_are_distinct_without_absence_claim(self):
+        args = self.prepared()
+        root = self.workspace_temp / ("taskgov-review-" + args.workspace_id)
+        original = Path.mkdir
+        for reason in ("creation_denied", "creation_conflict"):
+            def create(path, *values, **options):
+                if path == root:
+                    if reason == "creation_conflict":
+                        original(path, *values, **options)
+                        raise FileExistsError("private race exception")
+                    raise PermissionError("private denial exception")
+                return original(path, *values, **options)
+            with self.subTest(reason=reason), mock.patch.object(Path, "mkdir", create):
+                refused = workspace.operate(self.root, args)
+            self.assertEqual(refused["diagnostic"], {"stage": "creation", "reason": reason})
+            self.assertEqual(refused["cleanup_status"], "not_started")
+            self.assertNotIn("private", json.dumps(refused))
+            self.assertNotIn(str(root), json.dumps(refused))
+            if reason == "creation_conflict":
+                self.assertTrue(root.is_dir())
+                # The injected race belongs to this fixture, not the helper.
+                self.assertEqual(list(root.iterdir()), [])
+                root.rmdir()
+            else:
+                self.assertFalse(root.exists())
+
+    def test_caller_retains_while_process_live_and_does_not_repeat_preparation(self):
+        args = self.prepared()
+        copy = caller.Workspace(self.root, args.packet, args.packet_sha256)
+        result = copy.prepare()
+        self.assertTrue(result["ok"], result)
+        target = Path(result["working_directory"])
+        process = subprocess.Popen([sys.executable, "-B", "-c", "import time; time.sleep(30)"], cwd=target)
+        try:
+            with mock.patch.object(workspace, "operate", side_effect=AssertionError("no operation")):
+                refused = copy.cleanup(processes_ended=False)
+                self.assertEqual(refused["diagnostic"], {"stage": "caller", "reason": "process_end_unconfirmed"})
+                self.assertEqual(refused["cleanup_status"], "retained")
+                repeated = copy.prepare()
+                self.assertEqual(repeated["diagnostic"]["reason"], "preparation_already_attempted")
+            self.assertIsNone(process.poll())
+            self.assertTrue(target.is_dir())
+        finally:
+            # This fixture launched a known single Python process, no children.
+            process.terminate()
+            process.wait(timeout=10)
+        self.assertEqual(copy.cleanup(processes_ended=True)["status"], "absent")
+
+    def test_template_failure_timeout_and_unknown_lifetime_never_infer_pass(self):
+        args = self.prepared()
+        read = self.invoke("read", "--repo", str(self.root), "--packet", args.packet, "--material-details")
+        self.assertEqual(read.returncode, 0, read.stdout + read.stderr)
+        guidance = json.loads(read.stdout)["review_material"]["verification_workspace"]
+        for label, argv, timeout, ended in (
+            ("failed", [sys.executable, "-B", "-c", "raise SystemExit(7)"], 20, True),
+            ("timeout", [sys.executable, "-B", "-c", "import time; time.sleep(5)"], 0.1, True),
+            ("unknown", [sys.executable, "-B", "-c", "pass"], 20, False),
+        ):
+            with self.subTest(case=label):
+                result = self.run_template(guidance, argv=argv, timeout=timeout, ended=ended)
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                rows = [json.loads(line) for line in result.stdout.splitlines()]
+                ready = rows[1]["workspace_preparation"]
+                self.assertTrue(ready["ok"], ready)
+                self.assertEqual(ready["verification_status"], "not_run")
+                if label == "failed":
+                    self.assertEqual(rows[2], {"verification_returncode": 7})
+                    self.assertEqual(rows[3]["workspace_cleanup"]["status"], "absent")
+                else:
+                    self.assertEqual(rows[2], {"verification_status": "timeout"} if label == "timeout"
+                                     else {"verification_returncode": 0})
+                    self.assertEqual(rows[3]["workspace_cleanup"]["diagnostic"]["reason"], "process_end_unconfirmed")
+                    self.assertTrue(Path(ready["working_directory"]).is_dir())
+                    # This fixture's command is known to have no descendants;
+                    # subprocess.run has joined/terminated its only process.
+                    cleaned = self.material_read(rows[0]["workspace_cleanup_command"])
+                    self.assertEqual(json.loads(cleaned.stdout)["status"], "absent")
+
+    def test_lost_verification_output_does_not_change_preparation_or_cleanup_meaning(self):
+        args = self.prepared()
+        copy = caller.Workspace(self.root, args.packet, args.packet_sha256)
+        ready = copy.prepare()
+        # The result is deliberately not used as review/verification evidence.
+        subprocess.run([sys.executable, "-B", "-c", "raise SystemExit(9)"],
+            cwd=ready["working_directory"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=10)
+        self.assertEqual(ready["verification_status"], "not_run")
+        self.assertEqual(copy.cleanup(processes_ended=True)["status"], "absent")
+
+    def test_caller_preserves_unknown_cleanup_until_original_parent_is_restored(self):
+        args = self.prepared()
+        copy = caller.Workspace(self.root, args.packet, args.packet_sha256)
+        self.assertTrue(copy.prepare()["ok"])
+        moved = self.workspace_temp.with_name("owned-caller-parent")
+        self.workspace_temp.rename(moved)
+        try:
+            result = copy.cleanup(processes_ended=True)
+            self.assertEqual(result["cleanup_status"], "unknown")
+            self.assertEqual(result["diagnostic"], {"stage": "location", "reason": "parent_missing"})
+            self.assertEqual(copy.cleanup(processes_ended=False)["cleanup_status"], "unknown")
+        finally:
+            moved.rename(self.workspace_temp)
+        self.assertEqual(copy.cleanup(processes_ended=True)["status"], "absent")
+
+    def test_template_launch_error_retains_without_raw_exception(self):
+        args = self.prepared()
+        read = self.invoke("read", "--repo", str(self.root), "--packet", args.packet, "--material-details")
+        self.assertEqual(read.returncode, 0, read.stdout + read.stderr)
+        guidance = json.loads(read.stdout)["review_material"]["verification_workspace"]
+        command = str(self.root / "private-command-not-found")
+        result = self.run_template(guidance, argv=[command])
+        rows = [json.loads(line) for line in result.stdout.splitlines()]
+        self.assertTrue(rows[1]["workspace_preparation"]["ok"], rows)
+        self.assertEqual(rows[2], {"verification_status": "unavailable"})
+        self.assertEqual(rows[3]["workspace_cleanup"]["diagnostic"]["reason"], "process_end_unconfirmed")
+        self.assertNotIn(command.encode(), result.stdout + result.stderr)
+        self.assertNotIn(b"Traceback", result.stderr)
+        # The nonexistent executable never launched a process in this fixture.
+        cleaned = self.material_read(rows[0]["workspace_cleanup_command"])
+        self.assertEqual(json.loads(cleaned.stdout)["status"], "absent")
 
     def test_existing_workspace_never_reused_and_owner_mismatch_retained(self):
         args = self.prepared()
@@ -702,6 +1011,65 @@ class ReviewerWorkspaceTests(fixtures.PreparationFixture):
         finally:
             link.unlink()
         self.assertEqual(self.cleanup(args)["status"], "absent")
+
+
+class WorkspaceCallerBoundaryTests(unittest.TestCase):
+    @contextmanager
+    def interrupted_construction(self, boundary):
+        sites = (
+            ("identity", caller.uuid, "uuid4", SimpleNamespace(hex="b" * 32)),
+            ("parent", workspace, "_temporary_parent", Path.cwd()),
+            ("binding", workspace, "_location_binding", "fixture-binding"),
+            ("command", fixtures.preparation, "_shell", "fixture-cleanup"),
+        )
+        with ExitStack() as stack:
+            observed = {}
+            for name, owner, attribute, value in sites:
+                observed[name] = stack.enter_context(mock.patch.object(owner, attribute,
+                    return_value=value, side_effect=KeyboardInterrupt("private-selection-error")
+                    if name == boundary else None))
+            operation = stack.enter_context(mock.patch.object(workspace, "operate",
+                side_effect=AssertionError("no preparation or cleanup after interrupted selection")))
+            yield observed, operation
+
+    def assert_interrupted(self, result, boundary):
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["code"], "review_workspace_interrupted")
+        self.assertEqual(result["diagnostic"], {"stage": "selection", "reason": "unavailable"})
+        self.assertEqual(result["cleanup_status"], "unknown")
+        self.assertEqual(result["workspace_id"], None if boundary == "identity" else "b" * 32)
+        self.assertNotIn("private-selection-error", json.dumps(result))
+
+    def test_construction_interruption_publishes_no_handle_or_effects(self):
+        for boundary in ("identity", "parent", "binding", "command"):
+            with self.subTest(boundary=boundary), self.interrupted_construction(boundary) as (observed, operation):
+                selected = caller.Workspace(Path.cwd(), "unused-packet.json", "a" * 64)
+                result = selected.prepare()
+                self.assert_interrupted(result, boundary)
+                self.assertIsNone(selected.args)
+                self.assertIsNone(selected.cleanup_command)
+                self.assertEqual(selected.cleanup(processes_ended=True), result)
+                self.assertEqual(selected.cleanup(processes_ended=False)["cleanup_status"], "unknown")
+                self.assertEqual(selected.prepare()["diagnostic"]["reason"], "preparation_already_attempted")
+                observed[boundary].assert_called_once()
+                operation.assert_not_called()
+
+    def test_generated_template_sanitizes_every_selection_boundary(self):
+        code = caller.caller_template(Path.cwd(), "unused-packet.json", "a" * 64)
+        code = code.replace("selected_argv = []", "selected_argv = ['must-not-run']")
+        for boundary in ("identity", "parent", "binding", "command"):
+            output = StringIO()
+            with self.subTest(boundary=boundary), self.interrupted_construction(boundary) as (observed, operation), \
+                 mock.patch.object(subprocess, "run", side_effect=AssertionError("no verifier")) as verifier, \
+                 mock.patch.object(sys, "path", list(sys.path)), redirect_stdout(output):
+                exec(compile(code, "<generated-workspace-caller>", "exec"), {"__name__": "__main__"})
+                rows = [json.loads(line) for line in output.getvalue().splitlines()]
+                self.assertEqual(len(rows), 2)
+                self.assertEqual(rows[0], {"workspace_cleanup_command": None})
+                self.assert_interrupted(rows[1]["workspace_preparation"], boundary)
+                observed[boundary].assert_called_once()
+                operation.assert_not_called()
+                verifier.assert_not_called()
 
 
 if __name__ == "__main__":

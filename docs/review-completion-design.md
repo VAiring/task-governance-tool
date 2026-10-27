@@ -438,8 +438,10 @@ ranges, including a diff changed by configuration. The specification owns limits
 one response. Overflow routes to separately validated context, material and
 verification sections, without mutating the Packet. Stable content hashes bind
 their ranges; verification observation time is outside its section digest.
-Workspace guidance must fit whole because its prepare/cleanup pair has a fresh
-handle. Paged context is original JSON text, never a summary.
+Workspace guidance remains one bounded response so the complete caller template
+is available before invocation. Reading allocates no handle; construction in the
+execution invocation retains the exact cleanup command. Paged context is
+original JSON text, never a summary.
 
 `review_material_reads.py` owns fixed individual/list operations. Full object
 IDs and path validation remain closed. Dependency/directory use
@@ -1015,13 +1017,37 @@ separate from review transport and Runner execution. The helper parser admits
 filesystem access. The default Git read adds only a short `status=optional`
 workspace notice routing to its existing `recovery_command`. It does not inspect
 the temporary selector or allocate an ID. The same `--material-details` read
-passes `details=True` to `workspace_guidance`, which checks availability and
-returns the complete literal prepare/cleanup pair and lifecycle guidance before
-any effect. Both views omit workspace guidance for records-only and opaque
+passes `details=True` to `workspace_guidance`, which returns `template_ready`,
+`caller_language=python`, literal `caller_code` and instructions. Neither read
+selects a parent or allocates a handle. `review_workspace_caller.py` builds the
+fixed Python caller template and supplies `Workspace`, a local lifecycle object.
+Both views omit workspace guidance for records-only and opaque
 targets; neither creates anything or changes normal read/collect/save steps.
 `validate_live_packet` shares the
 existing complete saved/current public-Packet comparison between read and the
 two preparation boundaries; it adds no direct storage access.
+
+The template runs in one host invocation. Its caller supplies the already
+selected existing argv/timeout and evidence-based normal-return process-end
+condition; empty argv fails before selection. `Workspace` construction selects
+the OS temporary parent once and allocates its UUID/location binding and literal
+cleanup command before creation. The caller prints that command first, calls
+`prepare()` once and runs ordinary `subprocess.run` only after ready. The helper
+normalizes construction-time interruption across identity allocation, parent
+selection, binding and cleanup-command formatting to `review_workspace_interrupted`
+with `selection/unavailable` and unknown cleanup state. It publishes no partial
+arguments or cleanup command and performs no preparation, verification, cleanup
+or reselection after that interruption. It does not accept/execute argv,
+callbacks or commands. In `finally`, the template
+calls `cleanup(processes_ended=...)`; only literal True permits the existing
+owned cleanup. Normal return can establish that value only under the caller's
+known all-processes-joined condition. Timeout/interruption/launch error leaves
+False; direct-child termination never proves descendant exit. Unconfirmed cleanup
+returns `review_workspace_caller_refused` without filesystem access. Repeated
+prepare on one object is refused even after failure. No automatic retry,
+reselection, persistent handle or process supervision is introduced. A later
+explicit recovery uses the retained exact cleanup command after inspection and
+all-process-end confirmation. Whole-call/output loss remains an unknown outcome.
 
 Workspace preparation binds raw Packet SHA-256 and a preallocated UUID hex
 handle. It rejects nested Git coordinates, reuses `verification_runner_git`
@@ -1041,7 +1067,8 @@ canonical unpadded URL-safe base64 encoding of sorted compact ASCII JSON.
 Its closed version-one object has `version`, `parent`, `parent_identity`
 (`device`, `inode` nonnegative integers), `repo_sha256`, `packet_sha256` and
 `workspace_id`. Version is integer one, not boolean. The parent is the exact
-absolute normalized physical path admitted at guidance time. Decoding rejects
+absolute normalized physical path admitted in the execution invocation (or by a
+previously issued pair). Decoding rejects
 noncanonical encoding, extra/duplicate fields, mixed legacy arguments and
 binding mismatch before effects. This descriptor retains context; it does not
 authenticate a caller or grant arbitrary filesystem authority.
@@ -1072,11 +1099,39 @@ physical identity check; a root without proven identity is never auto-cleaned.
 Cleanup starts unknown until it can inspect the exact root; an early Packet,
 location or access failure does not assert existing residue. Prepare starts
 not_started. Confirmed root absence remains a successful absent result.
+not_started does not establish absence/retry safety: a mkdir race may leave a
+root created by someone else. `review_workspace_diagnostics.py` maps fixed stage
+boundaries and typed exceptions (or one direct OS cause retained by HandoffError
+or StatePathError) to the closed stage/reason pairs in the specification. It does
+not parse exception strings or expose paths, raw CLI/verification output or
+rejected values. `live_before` and `live_after` preserve incomplete public JSON
+as `public_response_incomplete`; restoration and identity remain separate.
+The original error's diagnostic survives ordinary best-effort cleanup failure;
+cleanup outcome is reported separately. Interruption inside that recovery is
+caught at the nested boundary: interrupted code, cleanup stage, retained state,
+and no second cleanup attempt. Old location/digest CLI formats and no-fallback behavior
+remain unchanged. Missing parents are never recreated or selected again.
+`operate` is also the direct caller's sanitization boundary: it catches the known
+input/domain, OS and subprocess failures formerly handled by the CLI wrapper,
+without exposing exception text or command arguments. KeyboardInterrupt returns
+a fixed interrupted code with retained/unknown state and skips automatic cleanup.
+`validate_live_packet` normalizes known envelope/Packet structural validation
+errors to `handoff_response_invalid`, including nested context errors. It validates
+structure before comparing Task identity, preserving a valid different identity
+as `review_target_mismatch` and a valid public error as its original code. Other
+saved-Packet readers keep their existing validation; no malformed response is
+repaired or accepted.
 Portable fixtures supply their own physical temp parent and separately exercise
 OS aliases, changed selections and unsafe destinations. Original save/submit and finalization are
 unchanged. Tests cover exact index/commit restoration, the representative six
 checks, ambient exclusion, binding drift, unavailable/incomplete material,
 failure/timeout cleanup, lost output, quoted paths and records-only rejection.
+Additional cases cover read-versus-execution lifetime, missing/inaccessible or
+replaced parents, creation denial/race, incomplete public replies, post-create
+identity failure, live processes, refusal without effects and explicit recovery.
+Normal-permission host qualification compares actual separate tool invocations
+with the same-invocation template; elevated tests or subprocesses within one
+shell are not a substitute for that host-lifetime observation.
 
 ### Integrated Review Finalization
 

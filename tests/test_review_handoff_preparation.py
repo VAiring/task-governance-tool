@@ -1406,7 +1406,22 @@ class ReviewerMaterialTests(PreparationFixture):
             self.assertEqual(unsupported.exception.code, "review_workspace_nested_git_unsupported")
             read = invoke("read", "--packet", packet, "--material-details")
             self.assertEqual(read.returncode, 0, read.stdout)
-            material = json.loads(read.stdout)["review_material"]
+            view = json.loads(read.stdout)
+            if view.get("status") == "partial":
+                # Optional workspace guidance may push this nested-path read
+                # over the delivery bound. Recover its exact material section
+                # and complete change list instead of assuming one response.
+                material = json.loads(self.material_document(view["material_command"]))
+                changes = self.material_read(material["changes_command"], decode_text=False)
+                self.assertEqual(changes.returncode, 0, changes.stdout)
+                page = json.loads(changes.stdout)
+                self.assertEqual(page["status"], "list")
+                self.assertEqual((page["start"], page["total"], page["remaining"]), (0, 3, 0))
+                self.assertIsNone(page["next_command"])
+                self.assertEqual(page["packet_sha256"], hashlib.sha256((project / packet).read_bytes()).hexdigest())
+                material["changes"] = page["entries"]
+            else:
+                material = view["review_material"]
             self.assertEqual({(row["kind"], row["old_path"], row["new_path"]) for row in material["changes"]},
                              {("modify", "source.py", "source.py"), ("delete", "remove.py", None),
                               ("rename", "old.py", "new.py")})

@@ -1282,6 +1282,9 @@ all its existing Contract fields and omit only that new field from the current
 comparison; keep the saved bytes and display absent, without reconstruction.
 A present reference must match exactly. A stale Contract/generation, mismatched
 index, missing objects, unavailable state or incomplete response returns no view.
+Malformed public envelope/Packet structures, including nested context/value
+validation, report `handoff_response_invalid`. A structurally valid different
+Task retains `review_target_mismatch`; valid public errors keep their own code.
 It writes nothing and creates no second Packet. Saved-protocol
 lookup additionally reads only the admitted structural preparation/collection
 records; it never upgrades a legacy request. Its display is compact
@@ -1363,8 +1366,9 @@ the already excluded parent receipt command; current verification evidence is
 separate from that static context. Its observation time is not part of a paged
 content digest. Each section read repeats complete Packet, target and public
 live-context validation. Packet SHA-256 and section/content digests reject mixed
-or changed pages. Workspace prepare/cleanup guidance is one bounded response,
-never split across changing workspace handles. All required context and result
+or changed pages. Workspace caller guidance is one bounded response, supplying
+the complete template before invocation without allocating a handle during the
+read. All required context and result
 rules must be received before judgment/save; a navigation response is not them.
 
 The first read provides `collect_command`, `changes_command` and an explicit
@@ -1611,16 +1615,40 @@ For Git material, the ordinary reviewer read supplies
 `review_material.recovery_command`. It does not allocate a workspace handle,
 inspect temporary-location availability, or return prepare/cleanup commands and
 lifecycle guidance. `optional` describes the capability, not admitted availability.
-The same validated read with `--material-details` supplies the complete existing
-workspace guidance: `status=available`, literal `prepare_command`,
-`cleanup_command` and instructions, or the existing `unavailable` diagnostic.
+The same validated read with `--material-details` supplies complete workspace
+guidance: `status=template_ready`, `caller_language=python`, literal `caller_code`
+and `instructions`. The code is a fixed caller template, not an executed script.
+Neither view selects a temporary parent, probes its availability or allocates a
+workspace handle. `template_ready` means instructions are supplied, not that
+preparation or verification succeeded. The detailed response no longer issues
+a location-bound prepare/cleanup pair whose parent may expire before use.
 This detail read revalidates the complete saved Packet and live target/context
-before returning any commands. It is conditional on needed retrieval or workspace
+before returning the template. It is conditional on needed retrieval or workspace
 use, never a prerequisite for ordinary read/collect/save. Reading remains write-free.
 No parent selection, extra argument, environment registration, mandatory test
 or additional completion gate is introduced. Both ordinary and detailed
 records-only reads omit this capability; opaque targets also omit it.
 Records-only invocation rejects both workspace operations.
+
+The caller runs location selection, preparation, its independently selected
+already-authorized verification, process-end confirmation and cleanup in **one
+host/tool invocation**. The template leaves only the selected existing argv,
+timeout and known process-lifetime condition for the caller to supply; it does
+not reconstruct project files or choose verification. An empty argv exits before
+selection. Its `Workspace` support selects once and retains a cleanup command
+before creation; the template prints that command before calling prepare.
+The support never launches a command, callback, Runner or background process.
+Verification is ordinary caller code and runs only after `ok=true,status=ready`.
+Normal return permits cleanup only when the caller has evidence that this
+command joins **all** processes using the copy, including on nonzero return.
+A direct child exit alone is insufficient. Timeout, interruption, launch error
+or unconfirmed descendants leaves process-end confirmation false, so the support
+refuses cleanup without filesystem effects. After separate inspection confirms
+every process ended, the retained exact cleanup command remains usable.
+This is no new process guarantee, mandatory verification or permission grant.
+Splitting the old location-bound pair over host invocations remains unsupported
+when that host removes its temporary parent between invocations; a stable parent
+still works. Two subprocesses within one host invocation do not test that issue.
 
 `workspace prepare|cleanup` requires explicit `--repo`, saved `--packet`, its
 `--packet-sha256`, a generated 32-lowercase-hex `--workspace-id` and generated
@@ -1635,10 +1663,12 @@ original strict comparison against the current selector. They cannot recover
 an old path from a digest, search for copies, or silently upgrade the binding.
 Both forms together are invalid. A legacy mismatch reports an unconfirmed
 location, not proof that residue exists or is absent.
-The ID is
-allocated with both commands in the detailed read response before any effect,
-so a lost prepare response
-does not lose the cleanup handle. Prepare is exclusive, never replayed into an
+The caller allocates the ID and exact cleanup handle inside the execution
+invocation before any creation effect, so a lost prepare response within that
+invocation does not require another prepare. Previously issued pairs retain
+their exact binding semantics. Loss of the whole invocation or its output may
+also lose observation of the handle/outcome; it never proves absence or permits
+blind replay, relocation or global discovery. Prepare is exclusive, never replayed into an
 existing workspace. It validates the complete unchanged Packet, live Task,
 Contract and target generation, then the complete fixed Git material before
 creation. It reuses the Runner's bounded material preflight, blob/hash and exact
@@ -1685,9 +1715,11 @@ state that may have advanced since preparation. Foreign/replaced ownership,
 links, excessive inventory, timeout or IO uncertainty after observing an
 existing copy returns failure with `cleanup_status=retained`. Failure before
 its presence can be established returns `cleanup_status=unknown`. Preparation
-before creation remains `not_started`; confirmed cleanup or absence is `absent`.
+before successful creation remains `not_started`; confirmed cleanup or absence is `absent`.
 These distinguish attempted effects and observed presence, not speculative
-residue inferred from a failed command. Callers inspect rather than
+residue inferred from a failed command. In particular, `not_started` does not
+prove the root is absent or retry safe: a concurrent creator may win after the
+absence check and before mkdir. Callers inspect rather than
 delete an uncertain tree or blindly prepare again. A failed preparation tries
 the same bounded cleanup only for its own newly created root. Process termination
 or lost acknowledgement may leave residue recoverable by the retained cleanup
@@ -1699,12 +1731,44 @@ otherwise `workspace_id` is null, never the rejected value. A created root whose
 physical identity could not be established is reported retained and is not
 automatically removed.
 
-This removes model-written source/test reconstruction and Git retrieval code.
-An existing tool invocation can combine preparation and an already-authorized
-check only after checking ready; otherwise preparation and execution remain
-separate responses. Cleanup still requires an observed ended process. These
-are response-count conditions, not measured token/time savings; the six-test
-representative fixture establishes functional equivalence only.
+Failures add a closed `diagnostic={stage,reason}` alongside existing codes and
+cleanup state. Stages are `selection`, `packet`, `location`, `live_before`,
+`material`, `creation`, `identity`, `restoration`, `live_after`, `cleanup`, and
+`caller`. The following pairs are recognized; every other operation failure
+uses `reason=unavailable` at its observed stage:
+
+- `selection|location`: `parent_missing`, `parent_inaccessible`, `parent_changed`,
+  `invalid_binding`, or `parent_unavailable`.
+- `live_before|live_after`: `public_response_incomplete` for malformed/incomplete
+  public response structure, or `binding_changed` for a changed Packet/context.
+- `creation`: `creation_denied`, `creation_conflict`, or `parent_missing`.
+- `identity`: `identity_unconfirmed` after creation or restoration.
+- `caller`: `process_end_unconfirmed` or `preparation_already_attempted`.
+
+These labels describe observed boundaries, not a diagnosis of all historical
+failures. No path, exception text, raw public response, verification output or
+secret enters them. The direct lifecycle caller retains sanitized handling of
+known domain/input, OS and subprocess failures, including Git-ignore timeout;
+it does not rely on the CLI's outer exception wrapper. Interruption returns
+`review_workspace_interrupted`, keeps an observed copy retained (otherwise
+unknown), and attempts no cleanup on an uncertain interrupted operation.
+This includes caller construction: interrupted identity allocation, parent
+selection, binding or cleanup-command formatting returns `selection/unavailable`
+with unknown cleanup state, no partial cleanup command and no preparation,
+verification, cleanup or reselection.
+If interruption occurs inside best-effort cleanup after an earlier preparation
+failure, it returns that interrupted code with `stage=cleanup`, retained state
+and no further cleanup attempt; it never escapes as a traceback.
+The shared live-Packet read normalizes malformed envelope or Packet structures,
+including nested context/value validation, to `handoff_response_invalid` before
+workspace classification. A valid public error or complete-but-different Task/
+Packet remains distinct from a malformed response. Parent failure does not authorize recreation, reselection,
+environment/ACL changes or elevation. The support refuses repeated prepare on
+the same instance, including after failure; it is not a retry engine. Cleanup
+uncertainty retains its original meaning and requires inspection before a
+later explicit cleanup. No persistent workspace, locator, execution ledger,
+network action or new public executor is added. The six-test representative
+fixture establishes functional equivalence only, not token/time savings.
 
 ### Integrated Review Finalization
 

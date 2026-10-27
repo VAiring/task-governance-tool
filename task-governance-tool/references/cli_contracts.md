@@ -2592,6 +2592,9 @@ Within this replacement read, the helper reuses existing Git target capture and
 one read-only public `review prepare`, comparing saved Task/Contract/target and
 path metadata. Mismatch, unavailable state or incomplete response fails without
 a display; no second reviewer check/show, state write or target reset is added.
+Malformed public envelope/Packet structures, including nested context/value
+validation, report `handoff_response_invalid`. A valid different Task retains
+`review_target_mismatch`; a valid public error keeps its original code.
 `context_check=matched_at_read` is an observation, not a future guarantee.
 `verification_evidence` is refreshed from that same current public read, with
 fixed `verification_guidance` explaining its source and limits. Older saved
@@ -2659,16 +2662,32 @@ No blob, patch, dependency list or reading ledger is saved.
 Sanitized public `warnings` remain visible. Save/submit validation is unchanged.
 For ordinary Git reads, `verification_workspace` is only a short optional notice.
 When already-authorized independent verification needs files, the same
-`recovery_command` supplies complete workspace instructions and a bound
-prepare/cleanup command pair before preparation has any effect. Keep that pair
-for cleanup even if preparation output is lost. Availability is checked by the
-detailed read; normal read does not allocate a handle or inspect the temporary
-location. Records-only and opaque-target reads omit this capability in both views.
+`recovery_command` supplies `status=template_ready`, `caller_language=python`,
+literal `caller_code` and `instructions`. Neither read selects/probes temporary
+storage or allocates a handle. The fixed caller template selects, prepares, runs
+the reviewer's already-authorized check and cleans up in one host/tool invocation.
+The support only prepares/cleans; it never executes a verifier. The caller emits
+the exact cleanup command before creation and runs verification only after ready.
+Cleanup requires confirmation that all using processes ended; timeout or a direct
+child's exit alone does not prove that. Unconfirmed cleanup retains the copy for
+inspection. Whole-call/output loss remains unknown, not permission for replay.
+Records-only and opaque-target reads omit this capability in both views.
 New generated workspace commands retain their physical location across TEMP
 changes; use their location binding unchanged. Missing/inaccessible original
 locations fail without relocation. `cleanup_status=unknown` means presence
 could not be established, not confirmed residue. Older digest-only commands
 still require their original temporary selection and never search for copies.
+Failure responses add closed `diagnostic.stage` and `diagnostic.reason` labels:
+selection/location distinguishes missing, inaccessible, changed or otherwise
+unavailable parents and invalid bindings; live-before/after distinguishes
+incomplete public response and changed binding; creation distinguishes denial,
+conflict and missing parent; identity reports unconfirmed identity. Caller refusal
+reports unconfirmed process end or already-attempted preparation. Other observed
+packet/material/restoration/cleanup failures use `unavailable` at that stage.
+`not_started` does not establish absence or retry safety (including mkdir races).
+Missing parents, access refusal, incomplete public JSON, creation conflicts and
+post-create identity uncertainty never authorize relocation, parent recreation,
+permission changes or automatic replay. No path or exception text enters labels.
 The display is compact UTF-8 JSON plus LF, independent of the shell code page.
 The generated request/output supplies the procedure without another guide read;
 the [reviewer procedure](task_workflow.md#independent-reviewer) remains fallback

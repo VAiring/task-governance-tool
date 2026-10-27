@@ -1185,20 +1185,31 @@ Delivery status and exit zero never prove review coverage or PASS.
 This is not a replacement Packet or future freshness guarantee.
 When independently selected, already-authorized verification needs files, the
 ordinary Git view's short `verification_workspace` notice directs you to the
-existing `recovery_command`. Only when needed, that detailed read checks
-availability and supplies complete literal prepare and cleanup operations
-together, before any effect. This is not a normal read/collect/save prerequisite.
+existing `recovery_command`. Only when needed, that detailed read supplies
+`template_ready`, `caller_language=python` and a fixed `caller_code` template.
+It does not yet select/probe temporary storage or prove workspace availability.
+Run the template in one host/tool invocation: selection, preparation, your
+already-selected verification and cleanup. Supply the existing argv/timeout and
+its known all-processes-ended condition; do not rebuild lifecycle shell code or
+split a host-scoped temporary parent across calls. This is not a normal
+read/collect/save prerequisite.
 Prepare restores the fixed target; it never executes
 code. Run the existing approved check only after ready, in its returned working
 directory, and inspect your own actual results. Do not reconstruct source or
 tests, substitute another reviewer's PASS, or treat failure/timeout/incomplete
-output as success. This copy is not a security sandbox. Keep the cleanup command
-until all its processes end, including failed/timed-out checks, then use it.
+output as success. This copy is not a security sandbox. The template emits the
+exact cleanup command before creation. Keep it until all its processes end,
+including failed/timed-out checks, then use it. A child exit alone does not prove
+descendant exit. Timeout/interruption or unknown process lifetime retains the copy
+for inspection; the helper never supervises or terminates verification processes.
 Lost preparation output is recovered through that retained cleanup handle;
 uncertain cleanup requires inspection, not blind preparation or deletion.
 The generated location stays fixed across temporary-environment changes. Keep
-both commands unchanged; do not substitute a destination or change permissions
-to force admission. An unknown cleanup state does not prove residue exists.
+the retained cleanup binding unchanged; do not substitute a destination or change permissions
+to force admission. An unknown cleanup state does not prove residue exists;
+not_started does not prove absence or safe retry. Read the closed diagnostic
+stage/reason and inspect the actual limitation before recovery. Missing parents
+are never recreated or reselected. Loss of whole-call output remains unknown.
 Unsupported material retains the existing retrieval route. This option adds no
 parent choice, mandatory test or completion gate and is absent in records-only
 mode. It does not enable Runner, configure a Plan or grant execution trust.

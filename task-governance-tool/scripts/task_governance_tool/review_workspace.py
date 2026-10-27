@@ -13,13 +13,14 @@ import json
 import os
 import re
 import stat
-import sys
+import subprocess
 import time
-import uuid
 from dataclasses import asdict
 from pathlib import Path
 
 from task_governance_tool import review_handoff_transport as files
+from task_governance_tool.reviews import ReviewEvidenceError
+from task_governance_tool.task_values import TaskValidationError
 from task_governance_tool.state_paths import (
     StatePathError, ValidatedFile, create_exclusive_durable_file,
     create_physical_directory_exclusive, inspect_physical_directory,
@@ -36,42 +37,36 @@ LOCATION_LIMIT = 8192
 
 
 def workspace_guidance(repo, packet_path, raw, *, details=False):
-    """Defer optional lifecycle instructions and handle allocation until needed."""
+    """Return a caller template; select temporary storage only when it runs."""
     if not details:
         return {"status": "optional", "instructions": (
             "Only when independently selected, already-authorized verification needs files, use "
             "review_material.recovery_command for complete workspace preparation and cleanup details. "
-            "Availability is checked there; this option grants no execution permission and adds no required test or review gate."
+            "Run its caller template in one host invocation; this option grants no execution permission and adds no required test or review gate."
         )}
-    from task_governance_tool.review_handoff_preparation import _shell
-    identity = uuid.uuid4().hex
-    try:
-        parent = _temporary_parent(repo)
-        location = _location_binding(repo, parent, hashlib.sha256(raw).hexdigest(), identity)
-    except (files.HandoffError, StatePathError, OSError):
-        return {"status": "unavailable", "code": "review_workspace_temp_unavailable",
-                "instructions": "Optional verification workspace unavailable; retain existing material retrieval and execution permissions."}
-    entry = Path(__file__).parent.parent / "review_handoff.py"
-    common = ["--repo=" + str(repo), "--packet=" + packet_path,
-              "--packet-sha256=" + hashlib.sha256(raw).hexdigest(),
-              "--workspace-id=" + identity, "--workspace-location=" + location]
+    from task_governance_tool.review_workspace_caller import caller_template
     return {
-        "status": "available",
-        "prepare_command": _shell([sys.executable, "-B", str(entry), "workspace", "prepare", *common]),
-        "cleanup_command": _shell([sys.executable, "-B", str(entry), "workspace", "cleanup", *common]),
+        "status": "template_ready", "caller_language": "python",
+        "caller_code": caller_template(repo, packet_path, hashlib.sha256(raw).hexdigest()),
         "instructions": (
             "Optional: when your independently selected, already-authorized verification needs files, "
-            "prepare once and run the existing approved command in returned working_directory; do not "
+            "use this Python caller template in ONE host invocation, including location selection, preparation, "
+            "your verification and cleanup. Supply only your selected existing argv/timeout and its known "
+            "process-lifetime condition; the helper never executes verification. Do not split selection and "
+            "preparation across tool calls: a host-scoped temporary parent may disappear between them. Do not "
             "reconstruct source/tests or Git-fetch scripts. Prepare restores the complete fixed target "
             "without executing it, installing dependencies or granting trust. Read project rules first. "
             "This is disposable material, not a security sandbox. Inspect your own actual result; ready, "
             "another reviewer's PASS, missing/incomplete output, failure or timeout is not your PASS. "
-            "Keep these commands until all processes using the workspace have ended, then cleanup, including "
-            "after failure/timeout. Their saved physical location stays fixed across temporary-environment changes. Do not edit "
+            "The template prints the retained cleanup command before creation. Keep it until all processes "
+            "using the workspace have ended. A direct child exit alone is not proof about descendants; "
+            "timeout, interruption or unknown process lifetime retains the copy for inspected recovery. "
+            "Its saved physical location stays fixed across temporary-environment changes. Do not edit "
             "the generated location or substitute a destination. A missing or inaccessible original parent "
             "is a limitation, never permission to relocate. "
             "Lost prepare output: use the retained cleanup command, never replay "
-            "prepare blindly. Cleanup uncertainty requires inspection; do not delete an uncertain tree. "
+            "prepare blindly. Lost whole invocation/cleanup output leaves an unknown outcome. "
+            "not_started does not prove absence or safe retry. Cleanup uncertainty requires inspection; do not delete an uncertain tree. "
             "No mandatory test, new review gate, or parent argument is introduced."
         ),
     }
@@ -101,8 +96,8 @@ def _temporary_parent(repo):
         # subsequent operations use the validated physical path, never alias
         # traversal; a retargeted alias must still match the retained digest.
         parent = Path(configured).resolve(strict=True)
-    except (OSError, RuntimeError):
-        files.fail("review_workspace_temp_unavailable")
+    except (OSError, RuntimeError) as exc:
+        raise files.HandoffError("review_workspace_temp_unavailable") from exc
     _validate_parent(repo, parent)
     return parent
 
@@ -328,12 +323,15 @@ def operate(repo, args):
     created = None
     parent = root = None
     cleanup_status = "unknown" if args.workspace_operation == "cleanup" else "not_started"
+    stage = "packet"
     try:
         path, raw, packet = _packet(repo, args.packet, args.packet_sha256)
+        stage = "location"
         selected_parent, root = _location(repo, args.workspace_id, getattr(args, "temp_root_sha256", None),
             location=getattr(args, "workspace_location", None), packet_digest=args.packet_sha256)
         parent = selected_parent.path
         if args.workspace_operation == "cleanup":
+            stage = "cleanup"
             if not path_lexically_exists(root):
                 if _validate_parent(repo, parent) != selected_parent:
                     files.fail("review_workspace_temp_changed")
@@ -346,28 +344,37 @@ def operate(repo, args):
                 files.fail("review_workspace_owner_mismatch")
             _remove(directory, parent, marker, selected_parent=selected_parent)
             return {"ok": True, "status": "absent", "workspace_id": args.workspace_id}
+        stage = "creation"
         if path_lexically_exists(root):
             cleanup_status = "retained"
             files.fail("review_workspace_exists")
+        stage = "live_before"
         validate_live_packet(repo, path, raw, packet)
+        stage = "material"
         observed = _observation(repo, packet)
         material = preflight_runner_material(repo, observed)
+        stage = "location"
         parents = files.observe_parents(root)
         files.check_parents(parents)
         if inspect_physical_directory(parent) != selected_parent:
             files.fail("review_workspace_temp_changed")
         # New private root only; never rewrite permissions of existing paths.
+        stage = "creation"
         root.mkdir() if os.name == "nt" else root.mkdir(mode=0o700)
         cleanup_status = "retained"
+        stage = "identity"
         created = inspect_physical_directory(root, root=parent)
         files.check_parents(parents)
         marker = json.dumps(_owner(repo, packet, args.packet_sha256, args.workspace_id, created),
                             separators=(",", ":")).encode("utf-8")
         create_exclusive_durable_file(root / MARKER, marker, root=parent, max_bytes=MARKER_LIMIT)
+        stage = "restoration"
         target = create_physical_directory_exclusive(root / "target", root=parent)
         restored = materialize_runner_target(repo, material, target.path)
         _executable_modes(target.path, observed.entries)
+        stage = "live_after"
         validate_live_packet(repo, path, raw, packet)
+        stage = "identity"
         files.check_parents(parents)
         _check_root(created, parent)
         actual_marker, _ = read_physical_file_bounded(root / MARKER, root=parent, max_bytes=MARKER_LIMIT)
@@ -381,15 +388,28 @@ def operate(repo, args):
                 "review_target": packet["review_target"], "material": asdict(restored),
                 "verification_status": "not_run", "cleanup_status": "required"}
     except (files.HandoffError, StatePathError, VerificationRunnerGitError,
-            GitSnapshotError, OSError, ValueError, KeyError, TypeError) as exc:
-        code = exc.code if isinstance(exc, (files.HandoffError, VerificationRunnerGitError, GitSnapshotError)) else "review_workspace_unavailable"
-        if created is not None:
+            GitSnapshotError, ReviewEvidenceError, TaskValidationError,
+            OSError, ValueError, KeyError, TypeError, RecursionError,
+            subprocess.SubprocessError, KeyboardInterrupt) as exc:
+        code = exc.code if isinstance(exc, (files.HandoffError, VerificationRunnerGitError,
+            GitSnapshotError, ReviewEvidenceError, TaskValidationError)) else "review_workspace_unavailable"
+        from task_governance_tool.review_workspace_diagnostics import diagnostic
+        failure = diagnostic(stage, exc)
+        if isinstance(exc, KeyboardInterrupt):
+            code = "review_workspace_interrupted"
+            cleanup_status = "retained" if cleanup_status == "retained" else "unknown"
+        elif created is not None:
             try:
                 _remove(created, parent, selected_parent=selected_parent)
                 cleanup_status = "absent"
+            except KeyboardInterrupt as interrupted:
+                code = "review_workspace_interrupted"
+                failure = diagnostic("cleanup", interrupted)
+                cleanup_status = "retained"
             except (files.HandoffError, StatePathError, OSError, ValueError):
                 cleanup_status = "retained"
         return {"ok": False, "status": "unavailable", "code": code,
                 "workspace_id": (args.workspace_id if re.fullmatch(r"[0-9a-f]{32}", args.workspace_id) else None),
                 "cleanup_status": cleanup_status,
+                "diagnostic": failure,
                 "message": "No verification result. Recover the reported binding/material or inspect retained workspace before another preparation; use retained cleanup only after its processes end."}

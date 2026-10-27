@@ -416,10 +416,23 @@ def validate_live_packet(repo, path, raw, packet, *, records_only=False):
     if records_only:
         command = [sys.executable, "-I", "-S", "-B", str(entry), "--records-only", *command[3:]]
     code, response = _capture(command, None, lambda: None)
-    current = _envelope(response, code, "review.prepare")
+    try:
+        current = _envelope(response, code, "review.prepare")
+    except (files.HandoffError, ReviewEvidenceError, TaskValidationError,
+            ValueError, TypeError, KeyError, RecursionError):
+        files.fail("handoff_response_invalid")
     if not current["ok"]:
         files.fail(current["errors"][0]["code"])
-    _packet(current["data"], packet["task"]["task_id"])
+    try:
+        # Separate public-response structure from identity comparison. Some
+        # complete-Packet validators use domain/input errors for malformed
+        # nested members; never let these escape the direct workspace caller.
+        _packet(current["data"], None)
+    except (files.HandoffError, ReviewEvidenceError, TaskValidationError,
+            ValueError, TypeError, KeyError, RecursionError):
+        files.fail("handoff_response_invalid")
+    if current["data"]["task"]["task_id"] != packet["task"]["task_id"]:
+        files.fail("review_target_mismatch")
     for key in ("task", "contract", "review_target", "changed_paths_available", "changed_paths",
                 "changed_paths_total", "changed_paths_truncated"):
         compared = current["data"][key]

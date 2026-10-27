@@ -149,10 +149,10 @@
     },
     "review_continuation_repository.py": {
       "attributes": {
-        "execute": 31,
+        "execute": 38,
         "fetchall": 4,
         "fetchmany": 1,
-        "fetchone": 14
+        "fetchone": 16
       },
       "kind": "observed_connection"
     },
@@ -213,6 +213,13 @@
       "attributes": {
         "execute": 3,
         "fetchone": 3
+      },
+      "kind": "observed_connection"
+    },
+    "review_wait_control_observation.py": {
+      "attributes": {
+        "execute": 1,
+        "fetchall": 1
       },
       "kind": "observed_connection"
     },
@@ -405,6 +412,13 @@
         "execute": 13,
         "fetchall": 2,
         "fetchone": 3
+      },
+      "kind": "observed_connection"
+    },
+    "task_show_projection.py": {
+      "attributes": {
+        "execute": 4,
+        "fetchone": 2
       },
       "kind": "observed_connection"
     },

@@ -2,6 +2,17 @@
 
 This inventories attribute access as well as calls, so bound-method aliases
 cannot disappear from the map. It is not a general Python type/dataflow proof.
+
+Connection ownership behind the refreshed application entries:
+- review_continuation_repository borrows the caller's connection; native and
+  collected registration reach it through storage.connect_initialized, and
+  read-only preparation uses storage.connect_initialized_readonly.
+- review_wait_control_observation opens sqlite_connection.connect_readonly.
+- task_show_projection borrows CLI read_task_detail's initialized Task read,
+  or task-context's retained connection from that same shared read boundary.
+Those storage openers delegate to sqlite_connection, then connect_traced and
+its default observed cursor. Injected test connections and logging suppression
+retain their existing exceptions; an inventory entry does not enable logging.
 """
 import ast
 import json

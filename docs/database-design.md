@@ -238,7 +238,7 @@ the object inventory, schema fingerprints and all compatible read consumers.
 
 `completion_evidence_bundles.continuation_basis_json` is nullable TEXT with
 valid JSON and a 16,777,216 UTF-8 byte bound. It is null for formats one/two and
-non-null for source-schema-29 format three or source-schema-30/31/32/33 format four
+non-null for source-schema-29 format three or source-schema-30/31/32/33/34 format four
 when a continuation graph exists. Format four without a continuation keeps it
 null. The existing immutable Bundle
 guards protect this column. It stores the closed sanitized continuation graph
@@ -258,7 +258,7 @@ validation across reads, and do not change the caller's transaction ownership.
 ## Collected Answer Value Schemas
 
 These are the current closed schemas introduced by schema 30 and retained by
-schema 33, the public writer
+schema 34, the public writer
 and Evidence; the [review owner](review-completion-specification.md#collected-review-answers)
 owns answer and operation behavior. Every listed key is mandatory, including
 nullable keys; objects admit no extras. JSON integers are exact signed-64-bit
@@ -473,15 +473,19 @@ atomically; readers cannot supply independent public metadata as proof.
 
 ## Migration Sequence
 
-The approved next Viewer tracking migration and its derived-state normalization
+The Viewer tracking migration and its derived-state normalization
 are specified by [incremental tracking storage](viewer-design.md#incremental-tracking-storage).
-They remain conditional under the [execution gate](viewer-design.md#incremental-execution-boundaries);
-this design does not change the current supported schema or migration sequence.
-Its storage unit must synchronize the source-version dispatch, exact owned
-objects, fixtures and release contracts without altering sealed old evidence.
+The storage foundation is schema 34; incremental capture and publication remain
+conditional under the [execution gate](viewer-design.md#incremental-execution-boundaries).
+`schema_viewer_projection.py` owns its exact DDL, ordered 33-to-34 delta and
+preservation checks. `viewer_projection_repository.py` owns typed metadata,
+same-writer marks/invalidation, indexed revision reads and private restore reset.
+The event trigger records its Task after advancing the existing source counter;
+Verification Receipt and no-event continuation writes mark in their caller's
+writer. Confirmed binding changes invalidate without scanning Tasks.
 
 `schema_preservation.py` owns the read-only predecessor snapshot and comparison
-used by migrations 29, 30, 31, 32 and 33. Each caller fixes its exact allowed object
+used by migrations 29, 30, 31, 32, 33 and 34. Each caller fixes its exact allowed object
 changes before the delta. The helper captures all predecessor tables, typed
 column/row-identity projections, unaffected objects and the complete
 `(rowid,version,name,applied_at)` migration history. It performs no DDL, marker
@@ -542,7 +546,7 @@ Receipt version two uses its separate relation; the former v1-only Receipt FK
 is replaced by exact union admission, without creating a v1 row for v2. Legacy
 v1 code rows and bytes remain unchanged. Read admission rejects orphan/multiple
 arms, invalid kind/version/source/target/digest matrices, missing Findings or
-normalization mismatches. Bundle 4 uses source 30, 31, 32 or 33 and the existing nullable
+normalization mismatches. Bundle 4 uses source 30, 31, 32, 33 or 34 and the existing nullable
 `continuation_basis_json` for graph 2; the coupled native-cycle guard requires
 null graph with ordinary gate basis one and a graph with continuation basis two.
 
@@ -618,6 +622,7 @@ Current sequential migrations are:
 | 31 | `criterion_link_collector`: collected producer on criterion links and native source-31 Bundle/cycle discriminators |
 | 32 | `session_slot_lookup_index`: non-unique combined actor/project lookup and native source-32 Bundle/cycle discriminators |
 | 33 | `own_review_lookup_indexes`: Task-local review history/dispatch lookup indexes and native source-33 Bundle/cycle discriminators |
+| 34 | `viewer_incremental_tracking`: Task revision/index, projection tuples/epoch and native source-34 Bundle/cycle discriminators |
 
 Every migration is ordered, idempotent on reentry, transactional, and
 rollback-tested. Reentry validates rather than synthesizing missing data.
@@ -630,10 +635,10 @@ checkpoint, maintenance, identity, and completion traces. The sole current
 exception is migration 20's Bundle-rebuild retirement of the
 unsupported attached residue defined below; it changes no other migration.
 
-The fixed-state setup migrator accepts complete source schemas v1-v32 and
-treats v33 as current. Legacy `state/projects` discovery is intentionally
+The fixed-state setup migrator accepts complete source schemas v1-v33 and
+treats v34 as current. Legacy `state/projects` discovery is intentionally
 narrower: v1-v13 plus the explicit schema-v14 legacy-layout transition.
-Viewer compatibility is independent and accepts source schemas v5-v33.
+Viewer compatibility is independent and accepts source schemas v5-v34.
 Incomplete history, a missing required object/row, a later marker, too-new
 state, unsupported layout, foreign identity, or corrupt integrity fails closed.
 
@@ -660,7 +665,7 @@ actor UUID, optional sanitized recovery reason and timestamp. `task_execution_cy
 links one exact native cycle to its unique execution; its insert guard checks the
 cycle's project/Task and immutable triggers prevent rewriting the relation.
 The shared ownership row validator also rejects missing links for native Bundle
-sources 24 through 33 in ordinary global and recovery admission. Earlier retained
+sources 24 through 34 in ordinary global and recovery admission. Earlier retained
 completion history remains valid without an invented execution/cycle link.
 No prompt, response body, environment, cost, session liveness or caller-specific
 flags are retained. This schema does not create the later numerical usage store
@@ -755,7 +760,7 @@ transaction, rollback and connection-flag restoration use the established
 migration protocol. Earlier migration code and fingerprints remain immutable.
 
 Current admission in `storage._validate_current_schema_contract` obtains one
-complete schema-33 owned result, passes it only through the synchronous
+complete current-schema owned result (33 or 34), passes it only through the synchronous
 Evidence schema checks and invalidates it on every exit. This closed read-only
 call chain performs no DDL or transaction transition. The private result also
 checks connection identity, transaction state and the schema cookie before

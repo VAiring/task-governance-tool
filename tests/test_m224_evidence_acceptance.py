@@ -1294,24 +1294,24 @@ class M224EvidenceAcceptanceTests(unittest.TestCase):
             )
             self.assertEqual(tree_snapshot(report_copy), before_report)
             self.assertEqual(index["format_version"], 3)
-            self.assertEqual(index["payload"]["source_schema_version"], 33)
-            self.assertEqual(primary_bundle["source_schema_version"], 33)
+            self.assertEqual(index["payload"]["source_schema_version"], 34)
+            self.assertEqual(primary_bundle["source_schema_version"], 34)
             self.assertEqual(primary_bundle["bundle_version"], 4)
             self.assertEqual(bundles[primary_task_id]["format_version"], 4)
             self.assertIsNone(primary_bundle["review_continuation_basis"])
             # Re-seal unsupported source versions so rejection cannot depend
-            # merely on a stale digest after this reader's schema-33 admission.
+            # merely on a stale digest after this reader's schema-34 admission.
             for changed_part in ("index", "bundle"):
                 with self.subTest(future_source=changed_part):
                     future_root = root / f"evidence-future-{changed_part}"
                     shutil.copytree(report_copy, future_root)
                     future_index = deepcopy(index)
                     if changed_part == "index":
-                        future_index["payload"]["source_schema_version"] = 34
+                        future_index["payload"]["source_schema_version"] = 35
                         reseal_evidence_tree(future_root, future_index)
                     else:
                         future_bundle = deepcopy(bundles[primary_task_id])
-                        future_bundle["payload"]["source_schema_version"] = 34
+                        future_bundle["payload"]["source_schema_version"] = 35
                         reseal_evidence_tree(future_root, future_index, future_bundle)
                     future_before = tree_snapshot(future_root)
                     with self.assertRaises(EvidenceReportError) as rejected:

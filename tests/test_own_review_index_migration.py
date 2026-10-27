@@ -30,7 +30,8 @@ class PublicOwnReviewIndexSetupTests(unittest.TestCase):
         self.enterContext(mock.patch.dict(os.environ,
             {"CODEX_THREAD_ID": "00000000-0000-4000-8000-000000000001"}))
         source = self.install.skill_root / "scripts/task_governance_tool/storage.py"
-        current = source.read_text(encoding="utf-8")
+        # This fixture preserves the exact historical 32-to-33 public boundary.
+        current = source.read_text(encoding="utf-8").replace("SCHEMA_VERSION = 34", "SCHEMA_VERSION = 33", 1)
         self.assertEqual(current.count("SCHEMA_VERSION = 33"), 1)
         source.write_text(current.replace("SCHEMA_VERSION = 33", "SCHEMA_VERSION = 32", 1),
             encoding="utf-8", newline="\n")
@@ -66,7 +67,7 @@ class PublicOwnReviewIndexSetupTests(unittest.TestCase):
                 if storage.current_schema_version(connection) == 32 and self.business(connection) == before:
                     preserved.append(path)
         self.assertTrue(preserved)
-        with closing(storage.connect_initialized_readonly(self.install.target)) as connection:
+        with candidate_runtime(33), closing(storage.connect_initialized_readonly(self.install.target)) as connection:
             self.assertEqual(self.business(connection), before)
             self.assertEqual(_bundle_artifacts(connection, project)[1], artifacts)
             self.assertEqual(build_viewer_snapshot(connection, self.install.target).snapshot["source_schema_version"], 33)

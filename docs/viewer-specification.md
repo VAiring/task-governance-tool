@@ -23,7 +23,7 @@ The following is the active full-capture contract. The approved
 remains conditional until its integration gate; a design or tracking-schema
 change alone does not activate it.
 
-Snapshot v4 accepts source schemas v5-v33. One query-only transaction validates
+Snapshot v4 accepts source schemas v5-v34. One query-only transaction validates
 schema/project/binding, reads generation, validates the complete source-aware
 Task batch through the stored-row and Contract-relationship boundary, and
 assembles rows; rendering and
@@ -39,13 +39,13 @@ Older source schemas retain independent compatible admission.
 It contains version/UTC `generated_at`, project ID/display, source schema,
 seven status counts, explicit Task allow-list, newest at most 10 sanitized
 events/review receipts/findings, and the exact completion-history projection. Sources
-v5-v14 synthesize zero cycles with `legacy_history_incomplete=true`; v15-v33
+v5-v14 synthesize zero cycles with `legacy_history_incomplete=true`; v15-v34
 read stored history in query batches of at most 500 Task IDs. For sources
-v17-v33, the batch reader validates version-1 completion-cycle Verification
+v17-v34, the batch reader validates version-1 completion-cycle Verification
 Receipt links; v18+ additionally validates subject, provenance, manifest, and
-Reference relations, while v19-v33 validate and discard the Bundle
-discriminator. Sources v20-v33 additionally validate the Bundle
-verification basis and Runner graph appropriate to the source schema; v21-v33
+Reference relations, while v19-v34 validate and discard the Bundle
+discriminator. Sources v20-v34 additionally validate the Bundle
+verification basis and Runner graph appropriate to the source schema; v21-v34
 validate the complete tagged union. These reads discard every Runner field without
 exposing it. Schema-23 declaration reasons are validated but not added to the
 Viewer projection or UI.
@@ -53,7 +53,7 @@ Source 29 also validates the sealed continuation graph when Bundle format three
 applies, and selects the same effective review heads as the native gates. Old
 judgments and Findings remain in durable/audit evidence; pagination never
 qualifies an incomplete graph or substitutes historical PASS as current PASS.
-Sources 30, 31, 32 and 33 additionally validate [collected v2 provenance, Bundle 4/index 3
+Sources 30, 31, 32, 33 and 34 additionally validate [collected v2 provenance, Bundle 4/index 3
 and graph 2](evidence-specification.md#collected-answer-evidence), including
 typed source/capture relations and the shared effective unable blocker.
 Preserved old Bundle formats retain their exact validators. No original body,
@@ -84,6 +84,10 @@ never publishes an older capture over newer. Doctor reports stored facts only;
 browser reload never observes SQLite directly.
 The owning state is `viewer_maintenance_state`; its source generation is
 advanced in the same business transaction as the corresponding event.
+Schema 34 also records the affected Task for event-free Verification Receipt
+and continuation changes in their owned transaction, according to the
+[change inventory](viewer-design.md#incremental-change-inventory). This tracking
+foundation does not activate incremental capture or cache publication.
 
 The offline `file://` UI shows project/time/status totals, search and
 status/kind/lane/priority/tag filters, deterministic Task order, terminal

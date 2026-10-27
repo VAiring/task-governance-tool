@@ -644,4 +644,6 @@ def insert_verification_receipt_locked(
     persisted = _validate_verification_receipt_row(dict(stored))
     if persisted != row:
         raise invalid_verification_evidence()
+    from .viewer_projection_repository import mark_tasks_locked
+    mark_tasks_locked(connection, project_id, (task_id,))
     return persisted

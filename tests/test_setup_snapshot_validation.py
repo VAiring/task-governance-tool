@@ -14,7 +14,7 @@ from tests import verification_receipt_test_support as reviews
 from tests.review_answer_fixture_support import attach_existing
 from task_governance_tool import storage, state_resolver, doctor, cli
 from task_governance_tool import stored_task_validation, task_ownership
-from task_governance_tool import schema_own_review_indexes as schema
+from task_governance_tool import schema_viewer_projection as schema
 from task_governance_tool import schema_task_event_notes as notes
 
 

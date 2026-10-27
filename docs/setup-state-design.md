@@ -468,17 +468,24 @@ structural head. It then calls the storage-owned exact Task-verification
 validator with that candidate's source schema. The validator returns normally
 or raises a sanitized internal privacy/capacity rejection; every other storage
 failure remains structural and set-fatal. The current implementation accepts
-at most 500 characters through schema v17 and 1,000 at schema v18-v33. The source
+at most 500 characters through schema v17 and 1,000 at schema v18-v34. The source
 schema is selected before migration or recovery publication; no recovery-only
 limit or migration laundering exists.
 
-For schemas 29, 30, 31, 32 and 33, both resolver discovery and managed-backup selection
+For schemas 29, 30, 31, 32, 33 and 34, both resolver discovery and managed-backup selection
 dispatch to their version's validator: `schema_review_continuation`,
 `schema_review_answers`, `schema_criterion_link_collector` or
-`schema_session_slot_index` or `schema_own_review_indexes`, respectively,
+`schema_session_slot_index`, `schema_own_review_indexes` or `schema_viewer_projection`, respectively,
 with `validate_storage(recovery=True)`.
 Each validator finishes Bundle and continuation graph checks before returning a deferred
 Task-verification rejection; a local rejection cannot hide structural damage.
+
+For schema 34, the source observation also retains typed Viewer tracking state.
+After source comparison, private restore normalization advances its source and
+invalidation generations once, rotates the database epoch and clears both
+derived publication tuples. The normalized expected observation permits only
+that delta; the original backup and business rows remain unchanged. Publication
+then revalidates the candidate. Ordinary reentry never repeats this rotation.
 
 The structural phase also validates each candidate as the immutable
 pre-publication repository snapshot for its ordered physical prefix. One
@@ -611,7 +618,7 @@ tgr1.<unpadded-base64url-canonical-json>.<sha256>
 Its exact payload binds version 1, project ID/scheme, current binding
 generation, distinct old/new 64-hex hashes, source layout, source schema, issue
 time, and expiry exactly 900 seconds later. A fixed-current source may be
-schema v1-v33; `legacy_projects_v1` is capped at the explicit v14 transition,
+schema v1-v34; `legacy_projects_v1` is capped at the explicit v14 transition,
 while ordinary legacy discovery remains v1-v13 plus that v14 shape. Canonical JSON uses
 sorted keys, compact separators, UTF-8, and `ensure_ascii=True`; the checksum
 is SHA-256 over ASCII `tgr1.<payload>` and is compared with
@@ -1240,7 +1247,7 @@ retention, success metadata and generations are preserved. Doctor observes
 their stored state plus the separately timed worker observation; it does not
 schedule, recover or launch work.
 
-Only completion-cycle insertion increments Evidence source generation in its business transaction; a later changed mutation may retry an already-due projection without a third outcome flag. Viewer-relevant mutations increment source generation through `task_events` in the same transaction. Viewer refresh renders and rechecks once at most; setup uses direct Evidence/Viewer stages and does not re-enter the coordinator.
+Only completion-cycle insertion increments Evidence source generation in its business transaction; a later changed mutation may retry an already-due projection without a third outcome flag. Viewer-relevant mutations increment source generation through `task_events` in the same transaction. Schema 34 also marks event-free Verification Receipt and continuation changes through the locked tracking repository; neither path adds a post-commit notification write. Viewer refresh renders and rechecks once at most; setup uses direct Evidence/Viewer stages and does not re-enter the coordinator.
 
 Only fixed warnings are added after a successful primary command:
 

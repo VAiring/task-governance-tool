@@ -17,6 +17,7 @@ from dataclasses import dataclass, field, replace
 from datetime import datetime
 from pathlib import Path
 from typing import Literal
+from .viewer_projection_repository import ProjectionState
 
 from task_governance_tool.strict_path import resolve_strict_path
 
@@ -250,6 +251,7 @@ class ManagedBackupObservation:
     stored_project: StoredProjectObservation = field(repr=False)
     generation_rows: tuple[MigrationBackupMetadata, ...] = field(repr=False)
     maintenance_pointer: MigrationBackupMetadata | None = field(repr=False)
+    viewer_projection: ProjectionState | None = field(default=None, repr=False)
 
 
 @dataclass(frozen=True)
@@ -382,6 +384,7 @@ class _DatabaseObservation:
     maintenance_pointer: MigrationBackupMetadata | None
     stamp: _FileStamp = field(repr=False)
     recovery_content_valid: bool = True
+    viewer_projection: ProjectionState | None = field(default=None, repr=False)
     doctor_state: DoctorStorageState | None = field(default=None, repr=False)
     read_connection: sqlite3.Connection | None = field(
         default=None,
@@ -1470,9 +1473,16 @@ def _inspect_database(
                 stored.project_id,
                 version,
             )
+            viewer_projection = None
+            if version >= 34:
+                from .viewer_projection_repository import read_state
+                viewer_projection = read_state(connection, stored.project_id)
             if classify_recovery_content:
                 try:
-                    if version == 33:
+                    if version == 34:
+                        from task_governance_tool.schema_viewer_projection import validate_storage
+                        validate_storage(connection, recovery=True)
+                    elif version == 33:
                         from task_governance_tool.schema_own_review_indexes import validate_storage
                         validate_storage(connection, recovery=True)
                     elif version == 32:
@@ -1602,6 +1612,7 @@ def _inspect_database(
             doctor_state=doctor_state,
             stamp=after,
             recovery_content_valid=recovery_content_valid,
+            viewer_projection=viewer_projection,
             read_connection=retained_connection,
         )
 
@@ -1776,6 +1787,7 @@ class _BackupCandidate:
             stored_project=self.stored_project,
             generation_rows=self._database.generation_rows,
             maintenance_pointer=self._database.maintenance_pointer,
+            viewer_projection=self._database.viewer_projection,
         )
 
 
@@ -2160,6 +2172,7 @@ def recovery_database_matches_observation(
         observed.stored_project == expected.stored_project
         and observed.generation_rows == expected.generation_rows
         and observed.maintenance_pointer == expected.maintenance_pointer
+        and observed.viewer_projection == expected.viewer_projection
         and observed.recovery_content_valid
         == expected.recovery_content_valid
     )

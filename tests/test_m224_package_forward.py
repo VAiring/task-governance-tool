@@ -392,7 +392,7 @@ class M224PackageForwardTests(unittest.TestCase):
                     connection.execute(
                         "SELECT MAX(version) FROM schema_migrations"
                     ).fetchone()[0],
-                    33,
+                    34,
                 )
                 self.assertEqual(
                     connection.execute(
@@ -484,7 +484,7 @@ class M224PackageForwardTests(unittest.TestCase):
             index_bytes = index_path.read_bytes()
             index = json.loads(index_bytes)
             self.assertEqual(index["format_version"], 3)
-            self.assertEqual(index["payload"]["source_schema_version"], 33)
+            self.assertEqual(index["payload"]["source_schema_version"], 34)
             self.assertEqual(index["payload"]["bundle_count"], 0)
             self.assertEqual(index["payload"]["legacy_count"], 1)
             self.assertEqual(

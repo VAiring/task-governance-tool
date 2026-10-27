@@ -274,6 +274,9 @@ def _prepare_candidate(resolution, record, source, plan, accepted):
         copy_inventory(retained, paths.candidate, skip_database=False)
         target = _target_at(source, paths.candidate / "taskgov.sqlite")
         reconcile_private_migration_repository(target)
+        if not plan.migrate and record.source_schema_version >= 34:
+            from .viewer_projection_repository import reset_restored_database
+            reset_restored_database(target)
         if plan.migrate:
             try:
                 backup = publish_setup_backup(target, plan.publication_retention)

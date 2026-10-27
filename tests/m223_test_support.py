@@ -196,11 +196,12 @@ def remove_v24_ownership_for_test(connection: sqlite3.Connection) -> None:
     from task_governance_tool import schema_criterion_link_collector as collector
     from task_governance_tool import schema_session_slot_index as slot_index
     from task_governance_tool import schema_own_review_indexes as review_indexes
+    from task_governance_tool import schema_viewer_projection as viewer_tracking
     version = storage.current_schema_version(connection)
-    if version not in (24, 25, 26, 27, 28, 29, 30, 31, 32, 33):
+    if version not in (24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34):
         return
     connection.commit()
-    (review_indexes if version == 33 else slot_index if version == 32 else collector if version == 31 else answers if version == 30 else continuation if version == 29 else notes if version == 28 else reacquisition if version == 27 else slot if version == 26 else reviewer if version == 25 else ownership).validate_storage(connection)
+    (viewer_tracking if version == 34 else review_indexes if version == 33 else slot_index if version == 32 else collector if version == 31 else answers if version == 30 else continuation if version == 29 else notes if version == 28 else reacquisition if version == 27 else slot if version == 26 else reviewer if version == 25 else ownership).validate_storage(connection)
     if (any(connection.execute(f"SELECT 1 FROM {table} LIMIT 1").fetchone()
             for table in ("task_executions", "task_owner_transitions", "task_execution_cycles"))
         or connection.execute("SELECT 1 FROM task_ownership WHERE generation != 0 LIMIT 1").fetchone()
@@ -224,6 +225,18 @@ def remove_v24_ownership_for_test(connection: sqlite3.Connection) -> None:
     connection.execute("PRAGMA legacy_alter_table=ON")
     try:
         connection.execute("BEGIN IMMEDIATE")
+        if version >= 34:
+            connection.execute("DROP TRIGGER trg_task_events_viewer_generation")
+            connection.execute("DROP TRIGGER trg_viewer_task_revisions_no_delete")
+            connection.execute("DROP TRIGGER trg_viewer_projection_state_no_delete")
+            connection.execute("DROP TABLE viewer_task_revisions")
+            connection.execute("DROP TABLE viewer_projection_state")
+            connection.execute("""CREATE TRIGGER trg_task_events_viewer_generation
+                AFTER INSERT ON task_events BEGIN
+                UPDATE viewer_maintenance_state SET source_generation = source_generation + 1
+                WHERE project_id = NEW.project_id AND source_generation < 9223372036854775807;
+                SELECT CASE WHEN changes() != 1
+                THEN RAISE(ABORT, 'Viewer generation state is unavailable') END; END""")
         if version >= 30:
             _remove_collected_answer_shape_for_test(connection)
         if version >= 29:
@@ -248,7 +261,7 @@ def remove_v24_ownership_for_test(connection: sqlite3.Connection) -> None:
         for sql in statements:
             if storage._schema20_statement_identity(sql)[0] != "table":
                 connection.execute(sql)
-        connection.execute("DELETE FROM schema_migrations WHERE version IN (24, 25, 26, 27, 28, 29, 30, 31, 32, 33)")
+        connection.execute("DELETE FROM schema_migrations WHERE version IN (24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34)")
         declaration.validate_storage(connection)
         connection.commit()
     except Exception:

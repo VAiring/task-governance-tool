@@ -39,7 +39,7 @@ def observe_directories():
 class ReviewFixtureTests(unittest.TestCase):
     def test_declared_schema_and_contract_are_captured_before_review_target(self):
         before = runtime_versions()
-        for version in (29, 30, 31, 32, 33):
+        for version in (29, 30, 31, 32, 33, 34):
             for contract in (None, CONTRACT):
                 with self.subTest(schema=version, contract=contract is not None):
                     with support.review_fixture(schema_version=version, contract=contract) as fixture:
@@ -119,7 +119,7 @@ class ReviewFixtureTests(unittest.TestCase):
     def test_invalid_preconditions_fail_without_acquiring_state(self):
         with mock.patch.object(support.tempfile, "TemporaryDirectory",
                 side_effect=AssertionError("invalid input acquired temporary state")):
-            for version in (28, 34, True, "30"):
+            for version in (28, 35, True, "30"):
                 with self.subTest(version=version), self.assertRaises(ValueError):
                     with support.review_fixture(schema_version=version, contract=None):
                         self.fail("invalid schema accepted")

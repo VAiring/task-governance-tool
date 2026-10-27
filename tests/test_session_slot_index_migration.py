@@ -87,8 +87,8 @@ class PublicSessionSlotIndexSetupTests(unittest.TestCase):
             {"CODEX_THREAD_ID": "00000000-0000-4000-8000-000000000001"}))
         source = self.install.skill_root / "scripts/task_governance_tool/storage.py"
         current = source.read_text(encoding="utf-8")
-        self.assertEqual(current.count("SCHEMA_VERSION = 33"), 1)
-        source.write_text(current.replace("SCHEMA_VERSION = 33", "SCHEMA_VERSION = 31", 1),
+        self.assertEqual(current.count("SCHEMA_VERSION = 34"), 1)
+        source.write_text(current.replace("SCHEMA_VERSION = 34", "SCHEMA_VERSION = 31", 1),
             encoding="utf-8", newline="\n")
         refresh_test_manifest(self.install.skill_root)
         self.assertEqual(self.cli("setup")["schema_to"], 31)
@@ -108,7 +108,7 @@ class PublicSessionSlotIndexSetupTests(unittest.TestCase):
         refresh_test_manifest(self.install.skill_root)
         snapshot = self.install.state_snapshot()
         preview = self.cli("setup", "--read-only")
-        self.assertEqual((preview["schema_from"], preview["schema_to"]), (31, 33))
+        self.assertEqual((preview["schema_from"], preview["schema_to"]), (31, 34))
         self.assertEqual(preview["completed_writes"], [])
         self.assertEqual(self.install.state_snapshot(), snapshot)
         applied = self.cli("setup")
@@ -125,9 +125,9 @@ class PublicSessionSlotIndexSetupTests(unittest.TestCase):
         with closing(storage.connect_initialized_readonly(self.install.target)) as connection:
             self.assertEqual(self.business(connection), before)
             self.assertEqual(_bundle_artifacts(connection, project)[1], artifacts)
-            self.assertEqual(build_viewer_snapshot(connection, self.install.target).snapshot["source_schema_version"], 33)
+            self.assertEqual(build_viewer_snapshot(connection, self.install.target).snapshot["source_schema_version"], 34)
         index = json.loads(self.install.target.resolved_evidence_index.read_bytes())
-        self.assertEqual(index["payload"]["source_schema_version"], 33)
+        self.assertEqual(index["payload"]["source_schema_version"], 34)
         self.assertTrue(self.install.viewer_path.is_file())
         snapshot = self.install.state_snapshot()
         self.cli("doctor")

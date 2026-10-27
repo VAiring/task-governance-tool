@@ -387,7 +387,10 @@ def _validate_publication_source(
         # same snapshot. Keep common structure, binding and project metadata
         # here without running that audit twice.
         validate_current_database(connection, target, operation_local=True)
-    if version == 33:
+    if version == 34:
+        from task_governance_tool.schema_viewer_projection import validate_storage
+        validate_storage(connection, _privacy_success_cache=privacy_success_cache)
+    elif version == 33:
         from task_governance_tool.schema_own_review_indexes import validate_storage
         validate_storage(connection, _privacy_success_cache=privacy_success_cache)
     elif version == 32:
@@ -448,7 +451,10 @@ def _recovery_content_valid(
     privacy_success_cache: set[tuple[str, str, str]] | None = None,
 ) -> bool:
     try:
-        if version == 33:
+        if version == 34:
+            from task_governance_tool.schema_viewer_projection import validate_storage
+            validate_storage(connection, recovery=True, _privacy_success_cache=privacy_success_cache)
+        elif version == 33:
             from task_governance_tool.schema_own_review_indexes import validate_storage
             validate_storage(connection, recovery=True, _privacy_success_cache=privacy_success_cache)
         elif version == 32:
@@ -884,8 +890,26 @@ def _prepare_recovered_repository(
 def _normalized_recovery_observation(
     candidate: ManagedBackupRecoveryCandidate,
     expected: "ManagedBackupObservation",
+    *, viewer_projection=None,
 ) -> "ManagedBackupObservation":
     version = candidate.schema_version
+    original = expected.viewer_projection
+    if version >= 34:
+        if original is None or viewer_projection is None or viewer_projection.database_epoch == original.database_epoch:
+            raise _restore_failure()
+        # Permit only the documented incarnation/reset delta, not arbitrary
+        # metadata returned by the private candidate writer.
+        normalized_projection = replace(original,
+            database_epoch=viewer_projection.database_epoch,
+            source_generation=original.source_generation + 1,
+            invalidated_generation=original.source_generation + 1,
+            cache_generation=None, cache_format_version=None, projection_version=None,
+            cache_sha256=None, cache_bytes=None,
+            html_generation=None, html_sha256=None, html_bytes=None)
+        if viewer_projection != normalized_projection:
+            raise _restore_failure()
+    elif original is not None or viewer_projection is not None:
+        raise _restore_failure()
     if version >= 11:
         rows = tuple(item.metadata for item in candidate.inventory)
         pointer = rows[-1]
@@ -899,6 +923,7 @@ def _normalized_recovery_observation(
         expected,
         generation_rows=rows,
         maintenance_pointer=pointer,
+        viewer_projection=viewer_projection,
     )
 
 
@@ -988,6 +1013,12 @@ def restore_managed_backup(
                 else None
             ),
         )
+        # Only the checked private copy changes incarnation, after comparison
+        # with the immutable selected source and before canonical publication.
+        projection = None
+        if source_version >= 34:
+            from .viewer_projection_repository import reset_restored_database
+            projection = reset_restored_database(temporary_target)
         if expected_recovery is not None:
             from task_governance_tool.state_resolver import (
                 recovery_database_matches_observation,
@@ -998,6 +1029,7 @@ def restore_managed_backup(
                 _normalized_recovery_observation(
                     candidate,
                     expected_recovery.selected,
+                    viewer_projection=projection,
                 ),
             ):
                 raise _restore_failure()

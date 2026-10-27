@@ -367,6 +367,14 @@
       },
       "kind": "observed_connection"
     },
+    "schema_viewer_projection.py": {
+      "attributes": {
+        "execute": 31,
+        "fetchall": 2,
+        "fetchone": 10
+      },
+      "kind": "observed_connection"
+    },
     "selection.py": {
       "attributes": {
         "execute": 1,
@@ -390,7 +398,7 @@
     },
     "storage.py": {
       "attributes": {
-        "execute": 426,
+        "execute": 427,
         "executescript": 2,
         "fetchall": 108,
         "fetchmany": 2,
@@ -549,6 +557,13 @@
       "attributes": {
         "execute": 4,
         "fetchone": 1
+      },
+      "kind": "observed_connection"
+    },
+    "viewer_projection_repository.py": {
+      "attributes": {
+        "execute": 15,
+        "fetchone": 5
       },
       "kind": "observed_connection"
     }

@@ -411,6 +411,7 @@ class CriterionLinkCollectorMigrationTests(unittest.TestCase):
 class PublicCriterionLinkCollectorSetupTests(unittest.TestCase):
     def cli(self, *arguments):
         result = self.install.run(*arguments, "--json")
+        self.assertTrue(result.stdout, (result.returncode, result.stderr))
         value = json.loads(result.stdout)
         self.assertEqual(result.returncode, 0, value)
         return value["data"]
@@ -435,10 +436,10 @@ class PublicCriterionLinkCollectorSetupTests(unittest.TestCase):
             {"CODEX_THREAD_ID": "00000000-0000-4000-8000-000000000001"}))
         storage_path = self.install.skill_root / "scripts/task_governance_tool/storage.py"
         current = storage_path.read_text(encoding="utf-8")
-        self.assertEqual(current.count("SCHEMA_VERSION = 33"), 1)
+        self.assertEqual(current.count("SCHEMA_VERSION = 34"), 1)
         # Pin only the disposable predecessor binary. Actual upgrade/recovery
         # below use the restored, unpatched physical package and public CLI.
-        storage_path.write_text(current.replace("SCHEMA_VERSION = 33", "SCHEMA_VERSION = 30", 1),
+        storage_path.write_text(current.replace("SCHEMA_VERSION = 34", "SCHEMA_VERSION = 30", 1),
             encoding="utf-8", newline="\n")
         refresh_test_manifest(self.install.skill_root)
         self.assertEqual(self.cli("setup")["schema_to"], 30)
@@ -473,11 +474,11 @@ class PublicCriterionLinkCollectorSetupTests(unittest.TestCase):
         refresh_test_manifest(self.install.skill_root)
         state = self.install.state_snapshot()
         preview = self.cli("setup", "--read-only")
-        self.assertEqual((preview["schema_from"], preview["schema_to"]), (30, 33))
+        self.assertEqual((preview["schema_from"], preview["schema_to"]), (30, 34))
         self.assertEqual(preview["completed_writes"], [])
         self.assertEqual(self.install.state_snapshot(), state)
         migrated = self.cli("setup")
-        self.assertEqual((migrated["schema_from"], migrated["schema_to"]), (30, 33))
+        self.assertEqual((migrated["schema_from"], migrated["schema_to"]), (30, 34))
         self.assertEqual(migrated["completed_writes"], ["migration_backup", "database_migrate",
             "evidence_projection_publish", "viewer_publish"])
         paths = tuple((self.install.fixed_root / "backups").glob("taskgov-backup-v1_*.sqlite"))
@@ -494,12 +495,12 @@ class PublicCriterionLinkCollectorSetupTests(unittest.TestCase):
 
         def assert_preserved_current():
             with closing(storage.connect_initialized_readonly(self.install.target)) as connection:
-                self.assertEqual(storage.current_schema_version(connection), 33)
+                self.assertEqual(storage.current_schema_version(connection), 34)
                 self.assertEqual(self.business(connection), before)
                 _, preserved = _bundle_artifacts(connection, fixture.basis["project_id"])
                 self.assertEqual(preserved, bundles)
                 snapshot = build_viewer_snapshot(connection, self.install.target).snapshot
-                self.assertEqual(snapshot["source_schema_version"], 33)
+                self.assertEqual(snapshot["source_schema_version"], 34)
                 self.assertEqual(len(snapshot["tasks"]), 2)
             self.assertTrue(self.install.viewer_path.is_file())
             state = self.install.state_snapshot()
@@ -511,10 +512,10 @@ class PublicCriterionLinkCollectorSetupTests(unittest.TestCase):
         self.install.db_path.unlink()
         missing = self.install.state_snapshot()
         preview = self.cli("setup", "--read-only")
-        self.assertEqual((preview["schema_from"], preview["schema_to"]), (30, 33))
+        self.assertEqual((preview["schema_from"], preview["schema_to"]), (30, 34))
         self.assertEqual(self.install.state_snapshot(), missing)
         recovered = self.cli("setup")
-        self.assertEqual((recovered["schema_from"], recovered["schema_to"]), (30, 33))
+        self.assertEqual((recovered["schema_from"], recovered["schema_to"]), (30, 34))
         self.assertEqual(recovered["completed_writes"], ["database_restore", "migration_backup",
             "database_migrate", "evidence_projection_publish", "viewer_publish"])
         assert_preserved_current()
@@ -522,7 +523,7 @@ class PublicCriterionLinkCollectorSetupTests(unittest.TestCase):
             backup.publish_setup_backup(self.install.target, 3)
         self.install.db_path.unlink()
         recovered = self.cli("setup")
-        self.assertEqual((recovered["schema_from"], recovered["schema_to"]), (33, 33))
+        self.assertEqual((recovered["schema_from"], recovered["schema_to"]), (34, 34))
         self.assertEqual(recovered["completed_writes"], ["database_restore", "evidence_projection_publish", "viewer_publish"])
         assert_preserved_current()
 

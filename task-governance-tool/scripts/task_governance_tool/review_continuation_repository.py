@@ -667,6 +667,8 @@ VALUES (?,?,?,?,?,?,?,?,?,?,?,'preparing',?)""", (continuation, basis["project_i
         from .review_answer_repository import capture_collected_locked
         for capture, metadata in sorted(collected, key=lambda pair: pair[0]["session_id"]):
             capture_collected_locked(connection, capture=capture, metadata=metadata)
+    from .viewer_projection_repository import mark_tasks_locked
+    mark_tasks_locked(connection, basis["project_id"], (basis["task_id"],))
     return next(row for row in read_continuations(connection, project_id=basis["project_id"], task_id=basis["task_id"])
                 if row.continuation_id == continuation)
 
@@ -681,6 +683,8 @@ def advance_prepared_locked(connection: sqlite3.Connection, record: Continuation
         raise validation_error("review_continuation_conflict", "review continuation changed")
     if current.state == "preparing":
         connection.execute("UPDATE review_continuations SET state='prepared' WHERE continuation_id=?", (current.continuation_id,))
+        from .viewer_projection_repository import mark_tasks_locked
+        mark_tasks_locked(connection, record.basis["project_id"], (record.basis["task_id"],))
     return next(row for row in read_continuations(connection, project_id=record.basis["project_id"], task_id=record.basis["task_id"])
                 if row.continuation_id == current.continuation_id)
 
@@ -713,8 +717,11 @@ def advance_registered_locked(connection: sqlite3.Connection, record: Continuati
     from .storage import utc_now
     _writer(connection)
     # SQL admits only a complete result set; the outer batch owns atomicity.
-    connection.execute("UPDATE review_continuations SET state='registered',registered_at=? WHERE continuation_id=? AND state='prepared'",
+    changed = connection.execute("UPDATE review_continuations SET state='registered',registered_at=? WHERE continuation_id=? AND state='prepared'",
                        (utc_now(), record.continuation_id))
+    if changed.rowcount:
+        from .viewer_projection_repository import mark_tasks_locked
+        mark_tasks_locked(connection, record.basis["project_id"], (record.basis["task_id"],))
 
 
 def resolution_digest(*, finding_id: str, successor_id: str, continuation_id: str,

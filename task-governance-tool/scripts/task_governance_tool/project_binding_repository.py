@@ -695,17 +695,15 @@ def compare_and_swap_project_binding(
                     "injected project binding failure",
                 )
 
-            cursor = connection.execute(
-                """
-                UPDATE viewer_maintenance_state
-                   SET source_generation = source_generation + 1
-                 WHERE project_id = ?
-                   AND source_generation < ?
-                """,
-                (project_id, SQLITE_INT64_MAX),
-            )
-            if cursor.rowcount != 1:
-                raise _unreadable_project_state()
+            from .viewer_projection_repository import available, invalidate_locked
+            if available(connection):
+                invalidate_locked(connection, project_id)
+            else:
+                cursor = connection.execute(
+                    "UPDATE viewer_maintenance_state SET source_generation=source_generation+1 "
+                    "WHERE project_id=? AND source_generation<?", (project_id, SQLITE_INT64_MAX))
+                if cursor.rowcount != 1:
+                    raise _unreadable_project_state()
             if fail_stage == "after_viewer":
                 raise StorageError(
                     "internal_error",

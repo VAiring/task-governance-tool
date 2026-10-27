@@ -8,7 +8,7 @@ from types import SimpleNamespace
 import unittest
 from unittest import mock
 
-from task_governance_tool import storage as s, schema_own_review_indexes as schema
+from task_governance_tool import storage as s, schema_viewer_projection as schema
 from task_governance_tool.tasks import add_task
 from tests.test_routine_backup import make_target
 from tests.review_answer_fixture_support import review_fixture

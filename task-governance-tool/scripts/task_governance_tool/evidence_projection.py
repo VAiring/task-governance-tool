@@ -406,49 +406,53 @@ def _escape_string(value: str) -> bytes:
 
 def canonical_json_bytes(value: Any) -> bytes:
     """Return exact integer-only canonical JSON bytes without a trailing LF."""
+    from task_governance_tool.debug_log import aggregate
+    with aggregate(canonical_json_bytes, unit='bytes') as measurement:
 
-    active: set[int] = set()
+        active: set[int] = set()
 
-    def encode(item: Any) -> bytes:
-        if item is None:
-            return b"null"
-        if type(item) is bool:
-            return b"true" if item else b"false"
-        if type(item) is int:
-            return str(item).encode("ascii")
-        if type(item) is str:
-            return _escape_string(item)
-        if type(item) is list:
-            identity = id(item)
-            if identity in active:
-                raise _inconsistent()
-            active.add(identity)
-            try:
-                return (
-                    b"["
-                    + b",".join(encode(value) for value in item)
-                    + b"]"
-                )
-            finally:
-                active.remove(identity)
-        if type(item) is dict:
-            identity = id(item)
-            if identity in active:
-                raise _inconsistent()
-            active.add(identity)
-            try:
-                if any(type(key) is not str for key in item):
+        def encode(item: Any) -> bytes:
+            if item is None:
+                return b"null"
+            if type(item) is bool:
+                return b"true" if item else b"false"
+            if type(item) is int:
+                return str(item).encode("ascii")
+            if type(item) is str:
+                return _escape_string(item)
+            if type(item) is list:
+                identity = id(item)
+                if identity in active:
                     raise _inconsistent()
-                parts = (
-                    _escape_string(key) + b":" + encode(item[key])
-                    for key in sorted(item)
-                )
-                return b"{" + b",".join(parts) + b"}"
-            finally:
-                active.remove(identity)
-        raise _inconsistent()
+                active.add(identity)
+                try:
+                    return (
+                        b"["
+                        + b",".join(encode(value) for value in item)
+                        + b"]"
+                    )
+                finally:
+                    active.remove(identity)
+            if type(item) is dict:
+                identity = id(item)
+                if identity in active:
+                    raise _inconsistent()
+                active.add(identity)
+                try:
+                    if any(type(key) is not str for key in item):
+                        raise _inconsistent()
+                    parts = (
+                        _escape_string(key) + b":" + encode(item[key])
+                        for key in sorted(item)
+                    )
+                    return b"{" + b",".join(parts) + b"}"
+                finally:
+                    active.remove(identity)
+            raise _inconsistent()
 
-    return encode(value)
+        encoded = encode(value)
+        measurement.count(len(encoded))
+        return encoded
 
 
 def canonical_json_document_bytes(value: Any) -> bytes:

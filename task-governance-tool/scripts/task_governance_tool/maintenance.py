@@ -62,50 +62,53 @@ def run_post_commit_maintenance(
     observed_at: str | None = None,
 ) -> list[dict[str, str]]:
     """Run projections, then publish one service-owned backup opportunity."""
-    if not outcome.state_changed:
-        return []
-    timestamp = observed_at or utc_now()
-    warnings: list[dict[str, str]] = []
-    try:
-        evidence = run_routine_evidence_projection(
-            target,
-            observed_at=timestamp,
-        )
-    except Exception:
-        evidence_code = "failed"
-    else:
-        evidence_code = evidence.code
-    if evidence_code in EVIDENCE_WARNING_MESSAGES:
-        warnings.append(
-            {
-                "code": f"evidence_projection_{evidence_code}",
-                "message": EVIDENCE_WARNING_MESSAGES[evidence_code],
-            }
-        )
-    if outcome.viewer_relevant:
+    from task_governance_tool.debug_log import aggregate
+    with aggregate(run_post_commit_maintenance, unit='items') as measurement:
+        if not outcome.state_changed:
+            measurement.mark('unchanged')
+            return []
+        timestamp = observed_at or utc_now()
+        warnings: list[dict[str, str]] = []
         try:
-            viewer = run_routine_viewer_refresh(
+            evidence = run_routine_evidence_projection(
                 target,
                 observed_at=timestamp,
             )
         except Exception:
-            viewer_code = "failed"
+            evidence_code = "failed"
         else:
-            viewer_code = viewer.code
-        if viewer_code in VIEWER_WARNING_MESSAGES:
+            evidence_code = evidence.code
+        if evidence_code in EVIDENCE_WARNING_MESSAGES:
             warnings.append(
                 {
-                    "code": f"viewer_refresh_{viewer_code}",
-                    "message": VIEWER_WARNING_MESSAGES[viewer_code],
+                    "code": f"evidence_projection_{evidence_code}",
+                    "message": EVIDENCE_WARNING_MESSAGES[evidence_code],
                 }
             )
-    try:
-        backup_code = _request_due_backup(target, timestamp)
-    except Exception:
-        backup_code = "failed"
-    if backup_code == "unknown":
-        backup_code = "deferred"
-    if backup_code in BACKUP_REQUEST_WARNING_MESSAGES:
-        warnings.append({"code": f"backup_request_{backup_code}",
-                         "message": BACKUP_REQUEST_WARNING_MESSAGES[backup_code]})
-    return warnings
+        if outcome.viewer_relevant:
+            try:
+                viewer = run_routine_viewer_refresh(
+                    target,
+                    observed_at=timestamp,
+                )
+            except Exception:
+                viewer_code = "failed"
+            else:
+                viewer_code = viewer.code
+            if viewer_code in VIEWER_WARNING_MESSAGES:
+                warnings.append(
+                    {
+                        "code": f"viewer_refresh_{viewer_code}",
+                        "message": VIEWER_WARNING_MESSAGES[viewer_code],
+                    }
+                )
+        try:
+            backup_code = _request_due_backup(target, timestamp)
+        except Exception:
+            backup_code = "failed"
+        if backup_code == "unknown":
+            backup_code = "deferred"
+        if backup_code in BACKUP_REQUEST_WARNING_MESSAGES:
+            warnings.append({"code": f"backup_request_{backup_code}",
+                             "message": BACKUP_REQUEST_WARNING_MESSAGES[backup_code]})
+        return warnings

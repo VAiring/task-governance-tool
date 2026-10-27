@@ -16,7 +16,7 @@ from . import debug_log_values as projection
 from . import sqlite_diagnostics as sqlite
 from .debug_log_sink import admit
 from .sqlite_sql_trace import Metrics, RESERVED_EVENTS
-from .debug_log_metrics import Aggregates, ItemCount, RESERVED_EVENTS as PERFORMANCE_EVENTS
+from .debug_log_metrics import Aggregates, ItemCount, STATES, RESERVED_EVENTS as PERFORMANCE_EVENTS
 
 MAX_EVENTS = 256
 MAX_BUFFER_BYTES = 512 * 1024
@@ -277,27 +277,40 @@ class aggregate:
         ...
         work.count(processed)  # no result iteration or query by the logger
     """
-    def __init__(self, function):
+    def __init__(self, function, *, unit='items'):
         self.function = function
+        self.unit, self.states = unit, None
         self.session = self.group = self.token = self.started = self.counts = None
 
     def __enter__(self):
         self.session = _current.get()
         if self.session is None:
             self.function = None
+            self.unit = None
             return self
         try:
             self.counts = ItemCount()
-            self.group = self.session.performance.begin(self.function)
+            self.states = set()
+            self.group = self.session.performance.begin(self.function, self.unit)
             self.token = _measurement.set(self.group['measurement_id'] if self.group else None)
             self.started = time.perf_counter_ns()
         except BaseException:
             self._failed_observation()
         finally:
             self.function = None
+            self.unit = None
         return self
 
     count = span.count
+
+    def mark(self, state):
+        """Count a closed code-owned decision once per measured call."""
+        try:
+            if (self.states is not None and _current.get() is self.session
+                    and type(state) is str and len(state) <= 32 and state in STATES):
+                self.states.add(state)
+        except BaseException:
+            pass
 
     def _failed_observation(self):
         try:
@@ -316,7 +329,8 @@ class aggregate:
                 duration = None
                 self._failed_observation()
             outcome = 'succeeded' if error is None else 'failed' if issubclass(type(error), Exception) else 'cancelled'
-            self.session.performance.end(self.group, duration, outcome, self.counts or ItemCount())
+            self.session.performance.end(self.group, duration, outcome, self.counts or ItemCount(),
+                                         self.states or ())
         except BaseException:
             self._failed_observation()
         finally:

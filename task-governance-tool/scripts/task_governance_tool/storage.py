@@ -11860,15 +11860,20 @@ def _fetch_bounded_projection_rows(
     *,
     maximum: int | None = None,
 ) -> list[sqlite3.Row]:
-    rows: list[sqlite3.Row] = []
-    while True:
-        batch = cursor.fetchmany(EVIDENCE_PROJECTION_BATCH_SIZE)
-        if not batch:
-            break
-        rows.extend(batch)
-        if maximum is not None and len(rows) > maximum:
-            raise evidence_ledger_inconsistent()
-    return rows
+    from task_governance_tool.debug_log import aggregate
+    with aggregate(_fetch_bounded_projection_rows, unit='items') as measurement:
+        rows: list[sqlite3.Row] = []
+        measurement.count(0)
+        while True:
+            batch = cursor.fetchmany(EVIDENCE_PROJECTION_BATCH_SIZE)
+            if not batch:
+                break
+            rows.extend(batch)
+            measurement.count(len(batch))
+            if maximum is not None and len(rows) > maximum:
+                measurement.mark('limit')
+                raise evidence_ledger_inconsistent()
+        return rows
 
 
 
@@ -11876,122 +11881,124 @@ def _fetch_bounded_projection_rows(
 def _validate_current_schema_contract(
     connection: sqlite3.Connection,
 ) -> int:
-    version = current_schema_version(connection)
-    if version != SCHEMA_VERSION:
-        raise StorageError(
-            "migration_required",
-            (
-                f"database schema version {version} does not match supported "
-                f"version {SCHEMA_VERSION}; run setup to migrate"
-            ),
-        )
-
-    if missing_migration_versions(connection, version):
-        raise _unreadable_project_state()
-
-    if version == 33:
-        from task_governance_tool.schema_own_review_indexes import MIGRATION_NAME
-        marker = connection.execute("SELECT name FROM schema_migrations WHERE version = 33").fetchone()
-        if marker is None or marker["name"] != MIGRATION_NAME:
-            raise _unreadable_project_state()
-        owned_contract = _Schema33OwnedValidation(connection)
-        try:
-            return _validate_current_evidence_schema_contracts(
-                connection, version, _owned_contract=owned_contract,
+    from task_governance_tool.debug_log import aggregate
+    with aggregate(_validate_current_schema_contract, unit='items') as measurement:
+        version = current_schema_version(connection)
+        if version != SCHEMA_VERSION:
+            raise StorageError(
+                "migration_required",
+                (
+                    f"database schema version {version} does not match supported "
+                    f"version {SCHEMA_VERSION}; run setup to migrate"
+                ),
             )
-        finally:
-            owned_contract.close()
-    elif version == 32:
-        from task_governance_tool.schema_session_slot_index import validate_owned_contract, MIGRATION_NAME
-        marker = connection.execute("SELECT name FROM schema_migrations WHERE version = 32").fetchone()
-        if marker is None or marker["name"] != MIGRATION_NAME:
+
+        if missing_migration_versions(connection, version):
             raise _unreadable_project_state()
-        validate_owned_contract(connection)
-    elif version == 31:
-        from task_governance_tool.schema_criterion_link_collector import validate_owned_contract, MIGRATION_NAME
-        marker = connection.execute("SELECT name FROM schema_migrations WHERE version = 31").fetchone()
-        if marker is None or marker["name"] != MIGRATION_NAME:
-            raise _unreadable_project_state()
-        validate_owned_contract(connection)
-    elif version == 30:
-        from task_governance_tool.schema_review_answers import validate_owned_contract, MIGRATION_NAME
-        marker = connection.execute("SELECT name FROM schema_migrations WHERE version = 30").fetchone()
-        if marker is None or marker["name"] != MIGRATION_NAME:
-            raise _unreadable_project_state()
-        validate_owned_contract(connection)
-    elif version == 29:
-        from task_governance_tool.schema_review_continuation import validate_owned_contract, MIGRATION_NAME
-        marker = connection.execute("SELECT name FROM schema_migrations WHERE version = 29").fetchone()
-        if marker is None or marker["name"] != MIGRATION_NAME:
-            raise _unreadable_project_state()
-        validate_owned_contract(connection)
-    elif version == 28:
-        from task_governance_tool.schema_task_event_notes import validate_owned_contract, MIGRATION_NAME
-        marker = connection.execute("SELECT name FROM schema_migrations WHERE version = 28").fetchone()
-        if marker is None or marker["name"] != MIGRATION_NAME:
-            raise _unreadable_project_state()
-        validate_owned_contract(connection)
-    elif version == 27:
-        from task_governance_tool.schema_session_slot_reacquisition import validate_owned_contract, MIGRATION_NAME
-        marker = connection.execute("SELECT name FROM schema_migrations WHERE version = 27").fetchone()
-        if marker is None or marker["name"] != MIGRATION_NAME:
-            raise _unreadable_project_state()
-        validate_owned_contract(connection)
-    elif version == 26:
-        from task_governance_tool.schema_session_slot import validate_owned_contract, MIGRATION_NAME
-        marker = connection.execute("SELECT name FROM schema_migrations WHERE version = 26").fetchone()
-        if marker is None or marker["name"] != MIGRATION_NAME:
-            raise _unreadable_project_state()
-        validate_owned_contract(connection)
-    elif version == 25:
-        from task_governance_tool.schema_review_sessions import validate_owned_contract, MIGRATION_NAME
-        marker = connection.execute("SELECT name FROM schema_migrations WHERE version = 25").fetchone()
-        if marker is None or marker["name"] != MIGRATION_NAME:
-            raise _unreadable_project_state()
-        validate_owned_contract(connection)
-    elif version == 24:
-        from task_governance_tool.schema_task_ownership import validate_owned_contract, MIGRATION_NAME
-        marker = connection.execute("SELECT name FROM schema_migrations WHERE version = 24").fetchone()
-        if marker is None or marker["name"] != MIGRATION_NAME:
-            raise _unreadable_project_state()
-        validate_owned_contract(connection)
-    elif version == 23:
-        from task_governance_tool.schema_verification_declaration import validate_owned_contract, MIGRATION_NAME
-        marker = connection.execute("SELECT name FROM schema_migrations WHERE version = 23").fetchone()
-        if marker is None or marker["name"] != MIGRATION_NAME:
-            raise _unreadable_project_state()
-        validate_owned_contract(connection)
-    elif version == PRIVATE_SCHEMA22_VERSION:
-        marker = connection.execute(
-            "SELECT name FROM schema_migrations WHERE version = 22"
-        ).fetchone()
-        if (
-            marker is None
-            or str(marker["name"]) != PRIVATE_SCHEMA22_MIGRATION_NAME
-            or connection.execute(
-                "SELECT 1 FROM schema_migrations WHERE version > 22 LIMIT 1"
+
+        if version == 33:
+            from task_governance_tool.schema_own_review_indexes import MIGRATION_NAME
+            marker = connection.execute("SELECT name FROM schema_migrations WHERE version = 33").fetchone()
+            if marker is None or marker["name"] != MIGRATION_NAME:
+                raise _unreadable_project_state()
+            owned_contract = _Schema33OwnedValidation(connection)
+            try:
+                return _validate_current_evidence_schema_contracts(
+                    connection, version, _owned_contract=owned_contract,
+                )
+            finally:
+                owned_contract.close()
+        elif version == 32:
+            from task_governance_tool.schema_session_slot_index import validate_owned_contract, MIGRATION_NAME
+            marker = connection.execute("SELECT name FROM schema_migrations WHERE version = 32").fetchone()
+            if marker is None or marker["name"] != MIGRATION_NAME:
+                raise _unreadable_project_state()
+            validate_owned_contract(connection)
+        elif version == 31:
+            from task_governance_tool.schema_criterion_link_collector import validate_owned_contract, MIGRATION_NAME
+            marker = connection.execute("SELECT name FROM schema_migrations WHERE version = 31").fetchone()
+            if marker is None or marker["name"] != MIGRATION_NAME:
+                raise _unreadable_project_state()
+            validate_owned_contract(connection)
+        elif version == 30:
+            from task_governance_tool.schema_review_answers import validate_owned_contract, MIGRATION_NAME
+            marker = connection.execute("SELECT name FROM schema_migrations WHERE version = 30").fetchone()
+            if marker is None or marker["name"] != MIGRATION_NAME:
+                raise _unreadable_project_state()
+            validate_owned_contract(connection)
+        elif version == 29:
+            from task_governance_tool.schema_review_continuation import validate_owned_contract, MIGRATION_NAME
+            marker = connection.execute("SELECT name FROM schema_migrations WHERE version = 29").fetchone()
+            if marker is None or marker["name"] != MIGRATION_NAME:
+                raise _unreadable_project_state()
+            validate_owned_contract(connection)
+        elif version == 28:
+            from task_governance_tool.schema_task_event_notes import validate_owned_contract, MIGRATION_NAME
+            marker = connection.execute("SELECT name FROM schema_migrations WHERE version = 28").fetchone()
+            if marker is None or marker["name"] != MIGRATION_NAME:
+                raise _unreadable_project_state()
+            validate_owned_contract(connection)
+        elif version == 27:
+            from task_governance_tool.schema_session_slot_reacquisition import validate_owned_contract, MIGRATION_NAME
+            marker = connection.execute("SELECT name FROM schema_migrations WHERE version = 27").fetchone()
+            if marker is None or marker["name"] != MIGRATION_NAME:
+                raise _unreadable_project_state()
+            validate_owned_contract(connection)
+        elif version == 26:
+            from task_governance_tool.schema_session_slot import validate_owned_contract, MIGRATION_NAME
+            marker = connection.execute("SELECT name FROM schema_migrations WHERE version = 26").fetchone()
+            if marker is None or marker["name"] != MIGRATION_NAME:
+                raise _unreadable_project_state()
+            validate_owned_contract(connection)
+        elif version == 25:
+            from task_governance_tool.schema_review_sessions import validate_owned_contract, MIGRATION_NAME
+            marker = connection.execute("SELECT name FROM schema_migrations WHERE version = 25").fetchone()
+            if marker is None or marker["name"] != MIGRATION_NAME:
+                raise _unreadable_project_state()
+            validate_owned_contract(connection)
+        elif version == 24:
+            from task_governance_tool.schema_task_ownership import validate_owned_contract, MIGRATION_NAME
+            marker = connection.execute("SELECT name FROM schema_migrations WHERE version = 24").fetchone()
+            if marker is None or marker["name"] != MIGRATION_NAME:
+                raise _unreadable_project_state()
+            validate_owned_contract(connection)
+        elif version == 23:
+            from task_governance_tool.schema_verification_declaration import validate_owned_contract, MIGRATION_NAME
+            marker = connection.execute("SELECT name FROM schema_migrations WHERE version = 23").fetchone()
+            if marker is None or marker["name"] != MIGRATION_NAME:
+                raise _unreadable_project_state()
+            validate_owned_contract(connection)
+        elif version == PRIVATE_SCHEMA22_VERSION:
+            marker = connection.execute(
+                "SELECT name FROM schema_migrations WHERE version = 22"
             ).fetchone()
-            is not None
-        ):
-            raise _unreadable_project_state()
-        _validate_schema22_owned_contract(connection)
-    elif version == PRIVATE_SCHEMA21_VERSION:
-        marker = connection.execute(
-            "SELECT name FROM schema_migrations WHERE version = 21"
-        ).fetchone()
-        if (
-            marker is None
-            or str(marker["name"]) != PRIVATE_SCHEMA21_MIGRATION_NAME
-            or connection.execute(
-                "SELECT 1 FROM schema_migrations WHERE version > 21 LIMIT 1"
+            if (
+                marker is None
+                or str(marker["name"]) != PRIVATE_SCHEMA22_MIGRATION_NAME
+                or connection.execute(
+                    "SELECT 1 FROM schema_migrations WHERE version > 22 LIMIT 1"
+                ).fetchone()
+                is not None
+            ):
+                raise _unreadable_project_state()
+            _validate_schema22_owned_contract(connection)
+        elif version == PRIVATE_SCHEMA21_VERSION:
+            marker = connection.execute(
+                "SELECT name FROM schema_migrations WHERE version = 21"
             ).fetchone()
-            is not None
-        ):
+            if (
+                marker is None
+                or str(marker["name"]) != PRIVATE_SCHEMA21_MIGRATION_NAME
+                or connection.execute(
+                    "SELECT 1 FROM schema_migrations WHERE version > 21 LIMIT 1"
+                ).fetchone()
+                is not None
+            ):
+                raise _unreadable_project_state()
+            _validate_schema21_owned_contract(connection)
+        elif schema_objects_inconsistent_with_version(connection, version):
             raise _unreadable_project_state()
-        _validate_schema21_owned_contract(connection)
-    elif schema_objects_inconsistent_with_version(connection, version):
-        raise _unreadable_project_state()
-    return _validate_current_evidence_schema_contracts(connection, version)
+        return _validate_current_evidence_schema_contracts(connection, version)
 
 
 def _validate_current_evidence_schema_contracts(
@@ -12021,21 +12028,24 @@ def _validate_current_schema_structure(
     operation_local: bool = False,
 ) -> int:
     """Validate admitted rows, with completion's explicit review-only scope."""
+    from task_governance_tool.debug_log import aggregate
+    with aggregate(_validate_current_schema_structure, unit='items') as measurement:
+        measurement.mark('local' if operation_local else 'full_scan')
 
-    version = _validate_current_schema_contract(connection)
-    if not operation_local and version == PRIVATE_SCHEMA20_VERSION:
-        validate_current_schema20_admitted_rows(connection)
-    elif not operation_local and version in {23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, PRIVATE_SCHEMA21_VERSION, PRIVATE_SCHEMA22_VERSION}:
-        validate_current_schema21_admitted_rows(connection)
-    if not operation_local and version in {24, 25, 26, 27, 28, 29, 30, 31, 32, 33}:
-        from task_governance_tool.task_ownership import validate_storage_rows
-        validate_storage_rows(connection)
-    if not operation_local or review_task is not None:
-        _validate_review_storage_rows(connection, version, review_task=review_task)
-    if not operation_local and version in {28, 29, 30, 31, 32, 33}:
-        from task_governance_tool.schema_task_event_notes import validate_note_rows
-        validate_note_rows(connection)
-    return version
+        version = _validate_current_schema_contract(connection)
+        if not operation_local and version == PRIVATE_SCHEMA20_VERSION:
+            validate_current_schema20_admitted_rows(connection)
+        elif not operation_local and version in {23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, PRIVATE_SCHEMA21_VERSION, PRIVATE_SCHEMA22_VERSION}:
+            validate_current_schema21_admitted_rows(connection)
+        if not operation_local and version in {24, 25, 26, 27, 28, 29, 30, 31, 32, 33}:
+            from task_governance_tool.task_ownership import validate_storage_rows
+            validate_storage_rows(connection)
+        if not operation_local or review_task is not None:
+            _validate_review_storage_rows(connection, version, review_task=review_task)
+        if not operation_local and version in {28, 29, 30, 31, 32, 33}:
+            from task_governance_tool.schema_task_event_notes import validate_note_rows
+            validate_note_rows(connection)
+        return version
 
 
 def _validate_review_storage_rows(connection, version, *, review_task=None) -> None:

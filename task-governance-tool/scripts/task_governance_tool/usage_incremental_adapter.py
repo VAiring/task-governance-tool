@@ -76,109 +76,116 @@ def scan(source, state, models, *, file_id="", goal=None, project_id=None,
     so continuing append cannot keep moving its finish line. Private fields
     influence neither retained values nor digests (record boundaries do).
     """
-    try:
-        _, before = inspect_physical_file(source.path, root=source.allowed_root)
-        identity = f"{before.device}:{before.inode}"
-        if file_id and (file_id != identity or before.size < max(state.offset, state.drain, goal or 0)):
-            raise UsageError("source_replaced")
-        with source.path.open("rb") as stream:
-            expected_stat = (before.device, before.inode, before.size, before.modified_ns)
-            stat = lambda: tuple(getattr(os.fstat(stream.fileno()), field)
-                                 for field in ("st_dev", "st_ino", "st_size", "st_mtime_ns"))
-            if stat() != expected_stat:
-                raise UsageError("source_changed")
-            first = stream.readline(MAX_LINE + 1)
-            if len(first) > MAX_LINE or not first.endswith(b"\n"):
-                raise UsageError("source_unreadable")
-            header = _json(first)
-            provider = _header(header, source)
-            tracker = None
-            if response_context is not None:
-                from task_governance_tool.usage_response_adapter import ResponseTracker, VERSION, BRACKET_VERSIONS
-                tracker = ResponseTracker(source.thread_id, provider, response_context,
-                                          allow_bracket=header["payload"].get("cli_version") in BRACKET_VERSIONS)
-            bytes_read = len(first)
-            if state.offset:
-                if provider != state.provider or len(first) > state.offset:
-                    raise UsageError("source_replaced")
-            else:
-                version = ["codex-incremental-v1", ADAPTER_VERSION, source.thread_id, provider]
-                if tracker is not None:
-                    version.extend([VERSION, tracker.allow_bracket])
-                state = ScanState(len(first), chain("", version), provider, source.thread_id)
-            stream.seek(state.drain or state.offset)
-            limit = before.size if goal is None else goal
-            responses, attribution, gaps = [], [], set()
-            modern, legacy = set(), set()
-            count = 0
-            # A drain at EOF still belongs to an unfinished oversized line.
-            # No loop iteration follows until more bytes arrive, including on
-            # an idle or zero-record-budget reentry.
-            pending = "partial_tail" if state.drain and stream.tell() >= limit else "none"
-            while stream.tell() < limit:
-                if count >= max_records or (bytes_read >= max_bytes and count) or monotonic() >= deadline:
-                    pending = "more_records"
-                    break
-                projected = ()
-                code = None
-                record_start = state.offset
-                if state.drain:
-                    raw = stream.readline(min(65536, limit - stream.tell()))
+    from task_governance_tool.debug_log import aggregate
+    with aggregate(scan, unit='bytes') as measurement:
+        measurement.count(0)
+        try:
+            _, before = inspect_physical_file(source.path, root=source.allowed_root)
+            identity = f"{before.device}:{before.inode}"
+            if file_id and (file_id != identity or before.size < max(state.offset, state.drain, goal or 0)):
+                raise UsageError("source_replaced")
+            with source.path.open("rb") as stream:
+                expected_stat = (before.device, before.inode, before.size, before.modified_ns)
+                stat = lambda: tuple(getattr(os.fstat(stream.fileno()), field)
+                                     for field in ("st_dev", "st_ino", "st_size", "st_mtime_ns"))
+                if stat() != expected_stat:
+                    raise UsageError("source_changed")
+                first = stream.readline(MAX_LINE + 1)
+                measurement.count(len(first))
+                if len(first) > MAX_LINE or not first.endswith(b"\n"):
+                    raise UsageError("source_unreadable")
+                header = _json(first)
+                provider = _header(header, source)
+                tracker = None
+                if response_context is not None:
+                    from task_governance_tool.usage_response_adapter import ResponseTracker, VERSION, BRACKET_VERSIONS
+                    tracker = ResponseTracker(source.thread_id, provider, response_context,
+                                              allow_bracket=header["payload"].get("cli_version") in BRACKET_VERSIONS)
+                bytes_read = len(first)
+                if state.offset:
+                    if provider != state.provider or len(first) > state.offset:
+                        raise UsageError("source_replaced")
                 else:
-                    raw = stream.readline(min(MAX_LINE + 1, limit - stream.tell()))
-                bytes_read += len(raw)
-                if state.drain or len(raw) > MAX_LINE:
-                    if not raw.endswith(b"\n"):
-                        state = replace(state, drain=stream.tell())
-                        pending = "partial_tail" if stream.tell() == before.size else "more_records"
-                        if bytes_read >= max_bytes:
-                            break
-                        continue
-                    marker, response, code = ("record_too_large",), None, "record_too_large"
-                elif not raw.endswith(b"\n"):
-                    pending = "partial_tail"
-                    break
-                else:
-                    try:
-                        decoded = _json(raw)
-                        marker, response = _projection(decoded, source.thread_id, provider, models)
-                        if state.owner == source.thread_id:
-                            projected = project_record(decoded, source.thread_id, project_id=project_id) if (
-                                tracker is None or decoded.get("type") == "event_msg") else ()
-                            if tracker is not None:
-                                projected += tracker.consume(decoded, record_start, response, project_id)
-                    except (UsageError, TypeError):
-                        marker, response, code = ("invalid_record",), None, "invalid_record"
-                if tracker is not None and (code or state.owner != source.thread_id
-                        or marker == ("inherited",)
-                        or (isinstance(marker, tuple) and marker[0] == "session" and marker[1] != source.thread_id)):
-                    tracker.interrupt_relation()
-                owner, turn = state.owner, state.turn
-                if isinstance(marker, tuple) and marker[0] == "session":
-                    owner, turn = marker[1], None
-                elif isinstance(marker, tuple) and marker[0] == "turn":
-                    turn = marker[1]
-                elif marker == ("legacy",) and owner == source.thread_id:
-                    legacy.add(turn or "")
-                if response is not None:
-                    responses.append(response)
-                    modern.add(response.turn_id)
-                    if response.model is None:
-                        gaps.add("model_unknown")
-                if code:
-                    gaps.add(code)
-                attribution.extend(projected)
-                boundary = stream.tell()
-                state = ScanState(boundary, chain(state.prefix, [boundary, marker,
-                                  [asdict(item) for item in projected]]), provider, owner, turn)
-                count += 1
-            if stat() != expected_stat:
+                    version = ["codex-incremental-v1", ADAPTER_VERSION, source.thread_id, provider]
+                    if tracker is not None:
+                        version.extend([VERSION, tracker.allow_bracket])
+                    state = ScanState(len(first), chain("", version), provider, source.thread_id)
+                stream.seek(state.drain or state.offset)
+                limit = before.size if goal is None else goal
+                responses, attribution, gaps = [], [], set()
+                modern, legacy = set(), set()
+                count = 0
+                # A drain at EOF still belongs to an unfinished oversized line.
+                # No loop iteration follows until more bytes arrive, including on
+                # an idle or zero-record-budget reentry.
+                pending = "partial_tail" if state.drain and stream.tell() >= limit else "none"
+                while stream.tell() < limit:
+                    if count >= max_records or (bytes_read >= max_bytes and count) or monotonic() >= deadline:
+                        measurement.mark('limit' if count >= max_records or (bytes_read >= max_bytes and count) else 'deadline')
+                        pending = "more_records"
+                        break
+                    projected = ()
+                    code = None
+                    record_start = state.offset
+                    if state.drain:
+                        raw = stream.readline(min(65536, limit - stream.tell()))
+                    else:
+                        raw = stream.readline(min(MAX_LINE + 1, limit - stream.tell()))
+                    bytes_read += len(raw)
+                    measurement.count(len(raw))
+                    if state.drain or len(raw) > MAX_LINE:
+                        if not raw.endswith(b"\n"):
+                            state = replace(state, drain=stream.tell())
+                            pending = "partial_tail" if stream.tell() == before.size else "more_records"
+                            if bytes_read >= max_bytes:
+                                measurement.mark('limit')
+                                break
+                            continue
+                        marker, response, code = ("record_too_large",), None, "record_too_large"
+                    elif not raw.endswith(b"\n"):
+                        pending = "partial_tail"
+                        break
+                    else:
+                        try:
+                            decoded = _json(raw)
+                            marker, response = _projection(decoded, source.thread_id, provider, models)
+                            if state.owner == source.thread_id:
+                                projected = project_record(decoded, source.thread_id, project_id=project_id) if (
+                                    tracker is None or decoded.get("type") == "event_msg") else ()
+                                if tracker is not None:
+                                    projected += tracker.consume(decoded, record_start, response, project_id)
+                        except (UsageError, TypeError):
+                            marker, response, code = ("invalid_record",), None, "invalid_record"
+                    if tracker is not None and (code or state.owner != source.thread_id
+                            or marker == ("inherited",)
+                            or (isinstance(marker, tuple) and marker[0] == "session" and marker[1] != source.thread_id)):
+                        tracker.interrupt_relation()
+                    owner, turn = state.owner, state.turn
+                    if isinstance(marker, tuple) and marker[0] == "session":
+                        owner, turn = marker[1], None
+                    elif isinstance(marker, tuple) and marker[0] == "turn":
+                        turn = marker[1]
+                    elif marker == ("legacy",) and owner == source.thread_id:
+                        legacy.add(turn or "")
+                    if response is not None:
+                        responses.append(response)
+                        modern.add(response.turn_id)
+                        if response.model is None:
+                            gaps.add("model_unknown")
+                    if code:
+                        gaps.add(code)
+                    attribution.extend(projected)
+                    boundary = stream.tell()
+                    state = ScanState(boundary, chain(state.prefix, [boundary, marker,
+                                      [asdict(item) for item in projected]]), provider, owner, turn)
+                    count += 1
+                if stat() != expected_stat:
+                    raise UsageError("source_changed")
+            _, after = inspect_physical_file(source.path, root=source.allowed_root)
+            if after != before:
                 raise UsageError("source_changed")
-        _, after = inspect_physical_file(source.path, root=source.allowed_root)
-        if after != before:
-            raise UsageError("source_changed")
-        return Scan(state, identity, tuple(responses), tuple(attribution), tuple(sorted(gaps)),
-                    pending, dict(models), frozenset(modern), frozenset(legacy), bytes_read, count,
-                    tracker.state if tracker is not None else None)
-    except (OSError, StatePathError):
-        raise UsageError("source_unreadable") from None
+            return Scan(state, identity, tuple(responses), tuple(attribution), tuple(sorted(gaps)),
+                        pending, dict(models), frozenset(modern), frozenset(legacy), bytes_read, count,
+                        tracker.state if tracker is not None else None)
+        except (OSError, StatePathError):
+            raise UsageError("source_unreadable") from None

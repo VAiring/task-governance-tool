@@ -111,96 +111,100 @@ def run_git_stream(
     message: str = "Git snapshot data could not be read safely",
 ) -> GitStreamIdentity:
     """Consume stdout incrementally with a fixed timeout and no stderr retention."""
+    from task_governance_tool.debug_log import aggregate
+    with aggregate(run_git_stream, unit='bytes') as measurement:
 
-    try:
-        process = subprocess.Popen(
-            [*safe_git_command(repo), *arguments],
-            stdin=subprocess.DEVNULL,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.DEVNULL,
-            bufsize=0,
-            env=safe_git_environment(),
-        )
-    except OSError as exc:
-        raise snapshot_error(code, message, field) from exc
-
-    digest = hashlib.sha256()
-    byte_count = 0
-    reader_errors: list[Exception] = []
-
-    def read_stdout() -> None:
-        nonlocal byte_count
         try:
-            assert process.stdout is not None
-            while True:
-                chunk = process.stdout.read(GIT_STREAM_CHUNK_SIZE)
-                if not chunk:
-                    break
-                byte_count += len(chunk)
-                digest.update(chunk)
-                consume(chunk)
-        except Exception as exc:  # Propagated on the calling thread below.
-            reader_errors.append(exc)
+            process = subprocess.Popen(
+                [*safe_git_command(repo), *arguments],
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL,
+                bufsize=0,
+                env=safe_git_environment(),
+            )
+        except OSError as exc:
+            raise snapshot_error(code, message, field) from exc
+
+        digest = hashlib.sha256()
+        byte_count = 0
+        reader_errors: list[Exception] = []
+
+        def read_stdout() -> None:
+            nonlocal byte_count
+            try:
+                assert process.stdout is not None
+                while True:
+                    chunk = process.stdout.read(GIT_STREAM_CHUNK_SIZE)
+                    if not chunk:
+                        break
+                    byte_count += len(chunk)
+                    digest.update(chunk)
+                    consume(chunk)
+            except Exception as exc:  # Propagated on the calling thread below.
+                reader_errors.append(exc)
+                try:
+                    process.kill()
+                except OSError:
+                    pass
+
+        reader = threading.Thread(
+            target=read_stdout,
+            name="taskgov-git-stdout",
+            daemon=True,
+        )
+        reader.start()
+        timed_out = False
+        cleanup_incomplete = False
+        try:
+            returncode = process.wait(timeout=GIT_COMMAND_TIMEOUT_SECONDS)
+        except subprocess.TimeoutExpired:
+            timed_out = True
+            measurement.mark('deadline')
             try:
                 process.kill()
             except OSError:
                 pass
-
-    reader = threading.Thread(
-        target=read_stdout,
-        name="taskgov-git-stdout",
-        daemon=True,
-    )
-    reader.start()
-    timed_out = False
-    cleanup_incomplete = False
-    try:
-        returncode = process.wait(timeout=GIT_COMMAND_TIMEOUT_SECONDS)
-    except subprocess.TimeoutExpired:
-        timed_out = True
-        try:
-            process.kill()
-        except OSError:
-            pass
-        try:
-            returncode = process.wait(timeout=GIT_TERMINATION_GRACE_SECONDS)
+            try:
+                returncode = process.wait(timeout=GIT_TERMINATION_GRACE_SECONDS)
+            except (OSError, subprocess.SubprocessError):
+                cleanup_incomplete = True
+                returncode = -1
         except (OSError, subprocess.SubprocessError):
             cleanup_incomplete = True
             returncode = -1
-    except (OSError, subprocess.SubprocessError):
-        cleanup_incomplete = True
-        returncode = -1
-        try:
-            process.kill()
-        except OSError:
-            pass
-    finally:
-        reader.join(timeout=GIT_TERMINATION_GRACE_SECONDS)
-        if reader.is_alive():
-            cleanup_incomplete = True
-            if process.stdout is not None:
+            try:
+                process.kill()
+            except OSError:
+                pass
+        finally:
+            reader.join(timeout=GIT_TERMINATION_GRACE_SECONDS)
+            if reader.is_alive():
+                cleanup_incomplete = True
+                if process.stdout is not None:
+                    try:
+                        process.stdout.close()
+                    except (OSError, ValueError):
+                        pass
+                reader.join(timeout=GIT_TERMINATION_GRACE_SECONDS)
+            elif process.stdout is not None:
                 try:
                     process.stdout.close()
                 except (OSError, ValueError):
-                    pass
-            reader.join(timeout=GIT_TERMINATION_GRACE_SECONDS)
-        elif process.stdout is not None:
-            try:
-                process.stdout.close()
-            except (OSError, ValueError):
-                cleanup_incomplete = True
+                    cleanup_incomplete = True
 
-    if reader_errors:
-        reader_error = reader_errors[0]
-        if not isinstance(reader_error, (OSError, ValueError)):
-            raise reader_error
-        cleanup_incomplete = True
-    if cleanup_incomplete or reader.is_alive() or timed_out or returncode != 0:
-        raise snapshot_error(code, message, field)
-    return GitStreamIdentity(
-        byte_count=byte_count,
-        digest="sha256:" + digest.hexdigest(),
-    )
+        if reader_errors:
+            reader_error = reader_errors[0]
+            if not isinstance(reader_error, (OSError, ValueError)):
+                raise reader_error
+            cleanup_incomplete = True
+        if cleanup_incomplete or reader.is_alive() or timed_out or returncode != 0:
+            raise snapshot_error(code, message, field)
+        measurement.count(byte_count)
+        return GitStreamIdentity(
+            byte_count=byte_count,
+            digest="sha256:" + digest.hexdigest(),
+        )
 
 
 def run_git_bytes(

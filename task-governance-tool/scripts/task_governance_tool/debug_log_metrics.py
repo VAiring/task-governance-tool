@@ -6,6 +6,9 @@ from .debug_log_values import code_location
 MAX_GROUPS = 32
 MAX_COUNT = 2**63 - 1
 RESERVED_EVENTS = MAX_GROUPS + 1
+COUNT_UNITS = frozenset({'items', 'bytes'})
+STATES = frozenset({'local', 'full_scan', 'reused', 'revalidated', 'unchanged',
+                    'contended', 'deadline', 'limit', 'skipped', 'published', 'failed'})
 
 
 class ItemCount:
@@ -48,20 +51,21 @@ class Aggregates:
         self.saturated |= total > MAX_COUNT
         setattr(self, key, min(total, MAX_COUNT))
 
-    def begin(self, function):
+    def begin(self, function, unit='items'):
         if self.closed:
             return None
         self.bump('started')
+        unit = unit if type(unit) is str and len(unit) <= 16 and unit in COUNT_UNITS else 'unknown'
         code = function.__code__ if type(function) is FunctionType else None
-        cached = self.methods.get(id(code))
+        cached = self.methods.get((id(code), unit))
         if cached is not None:
             return cached[1]
         location = code_location(code) if code is not None else {}
         if location:
             location['line'] = function.__code__.co_firstlineno
-            key = (location['module'], location['function'], location['line'])
+            key = (location['module'], location['function'], location['line'], unit)
         else:
-            key, location = ('other',), {'function': 'other'}
+            key, location = ('other', unit), {'function': 'other'}
             self.bump('unknown')
         group = self.groups.get(key)
         if group is None:
@@ -69,22 +73,26 @@ class Aggregates:
                 self.bump('omitted')
                 return None
             group = {'measurement_id': len(self.groups) + 1, 'method': location,
+                     'count_unit': unit, 'states': {},
                      'calls': 0, 'measured_calls': 0, 'total_ns': 0, 'max_ns': 0,
                      'item_count': 0, 'supplied_count_calls': 0, 'counted_calls': 0, 'unknown_count_calls': 0,
                      'failed_calls': 0, 'cancelled_calls': 0}
             self.groups[key] = group
         if code is not None and location.get('module') and len(self.methods) < MAX_GROUPS:
             # Keep the code alive against id reuse, never the function/arguments.
-            self.methods[id(code)] = (code, group)
+            self.methods[id(code), unit] = (code, group)
         return group
 
-    def end(self, group, duration, outcome, counts):
+    def end(self, group, duration, outcome, counts, states=()):
         if self.closed:
             return
         self.bump('finished')
         if group is None or self.mode == 'errors' and outcome == 'succeeded':
             return
         self.add(group, 'calls', 1)
+        for state in states:
+            group['states'].setdefault(state, 0)
+            self.add(group['states'], state, 1)
         if type(duration) is int and duration >= 0:
             self.add(group, 'measured_calls', 1)
             self.add(group, 'total_ns', duration)

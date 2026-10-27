@@ -650,50 +650,54 @@ def validate_stored_task_rows(
     The private authority seed is copied, shape-checked, and consumed only by
     this call's ordinary field-bound privacy cache.
     """
+    from task_governance_tool.debug_log import aggregate
+    with aggregate(validate_stored_task_rows, unit='items') as measurement:
 
-    if type(expected_project_id) is not str or not expected_project_id:
-        raise _stored_task_unreadable()
-    capabilities = stored_task_schema_capabilities(source_schema_version)
-    privacy_success_cache = _stored_task_privacy_success_cache(
-        _prevalidated_privacy_successes
-    )
-    rejection: str | None = None
-    rejected_task_ids: set[str] = set()
-    for row in rows:
-        row_rejection = _validate_stored_task_row(
-            row,
-            capabilities=capabilities,
-            expected_project_id=expected_project_id,
-            privacy_success_cache=privacy_success_cache,
-        )
-        if row_rejection == "privacy":
-            rejection = "privacy"
-        elif row_rejection == "capacity" and rejection is None:
-            rejection = "capacity"
-        if row_rejection is not None:
-            rejected_task_ids.add(str(row["task_id"]))
-    current_contract_rows: dict[str, sqlite3.Row | None] = {}
-    if capabilities.has_contract_revision:
-        if connection is None:
+        if type(expected_project_id) is not str or not expected_project_id:
             raise _stored_task_unreadable()
-        current_contract_rows = _validate_stored_contract_relationships(
-            connection,
-            rows,
-            expected_project_id=expected_project_id,
-            privacy_success_cache=privacy_success_cache,
+        capabilities = stored_task_schema_capabilities(source_schema_version)
+        privacy_success_cache = _stored_task_privacy_success_cache(
+            _prevalidated_privacy_successes
         )
-    if rejection is not None and not verification_rejection_is_local:
-        raise _stored_task_unreadable()
-    if source_schema_version >= 24:
-        from task_governance_tool.task_ownership import read_bases
-        if connection is None:
+        rejection: str | None = None
+        rejected_task_ids: set[str] = set()
+        measurement.count(0)
+        for row in rows:
+            measurement.count(1)
+            row_rejection = _validate_stored_task_row(
+                row,
+                capabilities=capabilities,
+                expected_project_id=expected_project_id,
+                privacy_success_cache=privacy_success_cache,
+            )
+            if row_rejection == "privacy":
+                rejection = "privacy"
+            elif row_rejection == "capacity" and rejection is None:
+                rejection = "capacity"
+            if row_rejection is not None:
+                rejected_task_ids.add(str(row["task_id"]))
+        current_contract_rows: dict[str, sqlite3.Row | None] = {}
+        if capabilities.has_contract_revision:
+            if connection is None:
+                raise _stored_task_unreadable()
+            current_contract_rows = _validate_stored_contract_relationships(
+                connection,
+                rows,
+                expected_project_id=expected_project_id,
+                privacy_success_cache=privacy_success_cache,
+            )
+        if rejection is not None and not verification_rejection_is_local:
             raise _stored_task_unreadable()
-        read_bases(connection, project_id=expected_project_id, task_ids=[row["task_id"] for row in rows])
-    return StoredTaskValidationResult(
-        verification_rejection=rejection,
-        verification_rejected_task_ids=frozenset(rejected_task_ids),
-        current_contract_rows=current_contract_rows,
-    )
+        if source_schema_version >= 24:
+            from task_governance_tool.task_ownership import read_bases
+            if connection is None:
+                raise _stored_task_unreadable()
+            read_bases(connection, project_id=expected_project_id, task_ids=[row["task_id"] for row in rows])
+        return StoredTaskValidationResult(
+            verification_rejection=rejection,
+            verification_rejected_task_ids=frozenset(rejected_task_ids),
+            current_contract_rows=current_contract_rows,
+        )
 
 
 def validate_current_stored_task_rows(

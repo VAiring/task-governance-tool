@@ -13,44 +13,51 @@ from task_governance_tool.usage_repository import _response
 
 
 def project_changed(repository, core, connection, previous, *, read=None):
-    geometry = repository.attribution(core, numerical_connection=connection, geometry_only=True)
-    dirty = {tuple(row) for row in connection.execute("SELECT thread_id,turn_id FROM usage_dirty_turns")}
-    cached = {row["component_id"]: dict(row) for row in connection.execute("SELECT * FROM usage_component_basis")}
-    snapshots = {item["snapshot_id"]: item for item in previous}
-    components, bases = [], {}
-    computed = 0
-    for shape in geometry["components"]:
-        repository.check_budget()
-        identity = digest(shape["executions"])
-        basis = digest([shape, bool(geometry["unresolved_operations"])])
-        bases[identity] = basis
-        stored = cached.get(identity)
-        snapshot = snapshots.get(stored["snapshot_id"]) if stored else None
-        turns = {tuple(turn) for turn in shape["turns"]}
-        if (stored and stored["basis"] == basis and snapshot
-                and snapshot["executions"] == shape["executions"] and not dirty.intersection(turns)):
-            components.append({**shape, "response_keys": (repository.members(connection, snapshot["snapshot_id"])
-                                                          if read is None else read.members[snapshot["snapshot_id"]]),
-                               "models": snapshot["models"], "diagnostics": snapshot["gaps"]})
-            continue
-        computed += 1
-        rows = connection.execute(
-            "SELECT response.*,conflict.response_id AS conflicting FROM usage_responses response "
-            "JOIN json_each(?) turn ON response.thread_id=json_extract(turn.value,'$[0]') "
-            "AND response.turn_id=json_extract(turn.value,'$[1]') LEFT JOIN usage_conflicts conflict "
-            "ON response.provider=conflict.provider AND response.response_id=conflict.response_id",
-            (encode(sorted(turns)).decode(),)).fetchall()
-        good = [_response(row) for row in rows if row["conflicting"] is None]
-        gaps = set(shape["diagnostics"]) - {"usage_pending"}
-        if any(row["conflicting"] is not None for row in rows):
-            gaps.add("response_conflict")
-        if turns - {(row.thread_id, row.turn_id) for row in good}:
-            gaps.add("usage_pending")
-        components.append({**shape, "response_keys": sorted((row.provider, row.response_id) for row in good),
-                           "models": _models(good), "diagnostics": sorted(gaps)})
-    # Test-only work counters are not persisted or emitted to the model hook.
-    repository.last_projection_work = {"components_aggregated": computed, "components_selected": len(components)}
-    return {"components": components, "unresolved_operations": geometry["unresolved_operations"], "bases": bases}
+    from task_governance_tool.debug_log import aggregate
+    with aggregate(project_changed, unit='items') as measurement:
+        measurement.count(0)
+        measurement.mark('full_scan')
+        geometry = repository.attribution(core, numerical_connection=connection, geometry_only=True)
+        dirty = {tuple(row) for row in connection.execute("SELECT thread_id,turn_id FROM usage_dirty_turns")}
+        cached = {row["component_id"]: dict(row) for row in connection.execute("SELECT * FROM usage_component_basis")}
+        snapshots = {item["snapshot_id"]: item for item in previous}
+        components, bases = [], {}
+        computed = 0
+        for shape in geometry["components"]:
+            repository.check_budget()
+            identity = digest(shape["executions"])
+            basis = digest([shape, bool(geometry["unresolved_operations"])])
+            bases[identity] = basis
+            stored = cached.get(identity)
+            snapshot = snapshots.get(stored["snapshot_id"]) if stored else None
+            turns = {tuple(turn) for turn in shape["turns"]}
+            if (stored and stored["basis"] == basis and snapshot
+                    and snapshot["executions"] == shape["executions"] and not dirty.intersection(turns)):
+                components.append({**shape, "response_keys": (repository.members(connection, snapshot["snapshot_id"])
+                                                              if read is None else read.members[snapshot["snapshot_id"]]),
+                                   "models": snapshot["models"], "diagnostics": snapshot["gaps"]})
+                measurement.mark('reused')
+                continue
+            computed += 1
+            measurement.count(1)
+            measurement.mark('revalidated')
+            rows = connection.execute(
+                "SELECT response.*,conflict.response_id AS conflicting FROM usage_responses response "
+                "JOIN json_each(?) turn ON response.thread_id=json_extract(turn.value,'$[0]') "
+                "AND response.turn_id=json_extract(turn.value,'$[1]') LEFT JOIN usage_conflicts conflict "
+                "ON response.provider=conflict.provider AND response.response_id=conflict.response_id",
+                (encode(sorted(turns)).decode(),)).fetchall()
+            good = [_response(row) for row in rows if row["conflicting"] is None]
+            gaps = set(shape["diagnostics"]) - {"usage_pending"}
+            if any(row["conflicting"] is not None for row in rows):
+                gaps.add("response_conflict")
+            if turns - {(row.thread_id, row.turn_id) for row in good}:
+                gaps.add("usage_pending")
+            components.append({**shape, "response_keys": sorted((row.provider, row.response_id) for row in good),
+                               "models": _models(good), "diagnostics": sorted(gaps)})
+        # Test-only work counters are not persisted or emitted to the model hook.
+        repository.last_projection_work = {"components_aggregated": computed, "components_selected": len(components)}
+        return {"components": components, "unresolved_operations": geometry["unresolved_operations"], "bases": bases}
 
 
 def adopt(connection, projected, adopted):

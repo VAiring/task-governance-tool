@@ -922,15 +922,18 @@ configured project/package, never inheriting a mutable request collector.
 Other individual diagnostic components keep their own scope.
 
 `debug_log_metrics.py` owns bounded operation-local method aggregates and item
-counts; `debug_log.py` exposes `aggregate(function)` and `span(...).count(n)`
+counts; `debug_log.py` exposes `aggregate(function, unit="items")`, its closed
+decision-state `mark(state)` and `span(...).count(n)`
 through the existing admitted scope. Callers supply already-known counts without
 result traversal or extra SQL. Aggregates keep code-owned method identity, call
 counts, total/maximum inclusive time, item counts and explicit coverage; they
 emit once per retained method at operation exit, not once per iteration.
 The [performance design](logger-design.md#performance) owns the limits and
 unknown/saturated meanings. Whole-operation OFF/ON comparison includes admission,
-instrumentation, final aggregation and sink I/O. Adding instrumentation throughout
-ordinary processing remains separate from this common API.
+instrumentation, final aggregation and sink I/O. The
+[processing inventory](logger-design.md#processing-inventory) owns the coarse
+sites, count meanings and small loops included in their parent measurements.
+No decorator, process-wide tracing or extra validation query is introduced.
 
 For [SQLite diagnostics](specification.md#sqlite-transaction-diagnostics),
 `sqlite_diagnostics.py` admits the physical project/package and the fixed

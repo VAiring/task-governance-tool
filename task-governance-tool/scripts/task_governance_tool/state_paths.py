@@ -257,15 +257,19 @@ def _open_no_follow(path: Path, flags: int, mode: int | None = None) -> int:
 
 
 def _write_all(descriptor: int, data: bytes) -> None:
-    offset = 0
-    while offset < len(data):
-        try:
-            written = os.write(descriptor, data[offset:])
-        except OSError as exc:
-            raise _failure() from exc
-        if written <= 0:
-            raise _failure()
-        offset += written
+    from task_governance_tool.debug_log import aggregate
+    with aggregate(_write_all, unit='bytes') as measurement:
+        measurement.count(0)
+        offset = 0
+        while offset < len(data):
+            try:
+                written = os.write(descriptor, data[offset:])
+            except OSError as exc:
+                raise _failure() from exc
+            if written <= 0:
+                raise _failure()
+            offset += written
+            measurement.count(written)
 
 
 def _same_file_identity(path: Path, identity: FileIdentity) -> bool:
@@ -382,48 +386,52 @@ def hash_physical_file(
     max_bytes: int | None = None,
 ) -> ValidatedFile:
     """Hash one physical file through a no-follow descriptor and revalidate it."""
+    from task_governance_tool.debug_log import aggregate
+    with aggregate(hash_physical_file, unit='bytes') as measurement:
+        measurement.count(0)
 
-    _, before = inspect_physical_file(path, root=root, max_bytes=max_bytes)
-    if expected_size is not None and (
-        isinstance(expected_size, bool)
-        or not isinstance(expected_size, int)
-        or expected_size < 0
-        or before.size != expected_size
-    ):
-        raise _failure()
-    descriptor: int | None = None
-    digest = hashlib.sha256()
-    observed = 0
-    try:
-        descriptor = _open_no_follow(path, os.O_RDONLY)
-        opened = os.fstat(descriptor)
-        if _file_identity(opened) != before:
+        _, before = inspect_physical_file(path, root=root, max_bytes=max_bytes)
+        if expected_size is not None and (
+            isinstance(expected_size, bool)
+            or not isinstance(expected_size, int)
+            or expected_size < 0
+            or before.size != expected_size
+        ):
             raise _failure()
-        while True:
-            try:
-                chunk = os.read(descriptor, _COPY_CHUNK_BYTES)
-            except OSError as exc:
-                raise _failure() from exc
-            if not chunk:
-                break
-            observed += len(chunk)
-            if observed > before.size:
+        descriptor: int | None = None
+        digest = hashlib.sha256()
+        observed = 0
+        try:
+            descriptor = _open_no_follow(path, os.O_RDONLY)
+            opened = os.fstat(descriptor)
+            if _file_identity(opened) != before:
                 raise _failure()
-            digest.update(chunk)
-        after_open = _file_identity(os.fstat(descriptor))
-        if observed != before.size or after_open != before:
+            while True:
+                try:
+                    chunk = os.read(descriptor, _COPY_CHUNK_BYTES)
+                except OSError as exc:
+                    raise _failure() from exc
+                if not chunk:
+                    break
+                observed += len(chunk)
+                measurement.count(len(chunk))
+                if observed > before.size:
+                    raise _failure()
+                digest.update(chunk)
+            after_open = _file_identity(os.fstat(descriptor))
+            if observed != before.size or after_open != before:
+                raise _failure()
+        finally:
+            if descriptor is not None:
+                with suppress(OSError):
+                    os.close(descriptor)
+        if not _same_file_identity(path, before):
             raise _failure()
-    finally:
-        if descriptor is not None:
-            with suppress(OSError):
-                os.close(descriptor)
-    if not _same_file_identity(path, before):
-        raise _failure()
-    return ValidatedFile(
-        path=Path(path),
-        identity=before,
-        sha256=digest.hexdigest(),
-    )
+        return ValidatedFile(
+            path=Path(path),
+            identity=before,
+            sha256=digest.hexdigest(),
+        )
 
 
 def read_physical_file_bounded(
@@ -433,46 +441,51 @@ def read_physical_file_bounded(
     max_bytes: int,
 ) -> tuple[bytes, ValidatedFile]:
     """Read one small physical file exactly and revalidate its directory entry."""
+    from task_governance_tool.debug_log import aggregate
+    with aggregate(read_physical_file_bounded, unit='bytes') as measurement:
+        measurement.count(0)
 
-    _, before = inspect_physical_file(path, root=root, max_bytes=max_bytes)
-    descriptor: int | None = None
-    chunks: list[bytes] = []
-    observed = 0
-    try:
-        descriptor = _open_no_follow(path, os.O_RDONLY)
-        if _file_identity(os.fstat(descriptor)) != before:
-            raise _failure()
-        while True:
-            try:
-                chunk = os.read(
-                    descriptor,
-                    min(_COPY_CHUNK_BYTES, max_bytes + 1 - observed),
-                )
-            except OSError as exc:
-                raise _failure() from exc
-            if not chunk:
-                break
-            observed += len(chunk)
-            if observed > max_bytes or observed > before.size:
+        _, before = inspect_physical_file(path, root=root, max_bytes=max_bytes)
+        descriptor: int | None = None
+        chunks: list[bytes] = []
+        observed = 0
+        try:
+            descriptor = _open_no_follow(path, os.O_RDONLY)
+            if _file_identity(os.fstat(descriptor)) != before:
                 raise _failure()
-            chunks.append(chunk)
-        if observed != before.size or _file_identity(os.fstat(descriptor)) != before:
+            while True:
+                try:
+                    chunk = os.read(
+                        descriptor,
+                        min(_COPY_CHUNK_BYTES, max_bytes + 1 - observed),
+                    )
+                except OSError as exc:
+                    raise _failure() from exc
+                if not chunk:
+                    break
+                observed += len(chunk)
+                measurement.count(len(chunk))
+                if observed > max_bytes or observed > before.size:
+                    measurement.mark('limit')
+                    raise _failure()
+                chunks.append(chunk)
+            if observed != before.size or _file_identity(os.fstat(descriptor)) != before:
+                raise _failure()
+        finally:
+            if descriptor is not None:
+                with suppress(OSError):
+                    os.close(descriptor)
+        if not _same_file_identity(path, before):
             raise _failure()
-    finally:
-        if descriptor is not None:
-            with suppress(OSError):
-                os.close(descriptor)
-    if not _same_file_identity(path, before):
-        raise _failure()
-    data = b"".join(chunks)
-    return (
-        data,
-        ValidatedFile(
-            path=Path(path),
-            identity=before,
-            sha256=hashlib.sha256(data).hexdigest(),
-        ),
-    )
+        data = b"".join(chunks)
+        return (
+            data,
+            ValidatedFile(
+                path=Path(path),
+                identity=before,
+                sha256=hashlib.sha256(data).hexdigest(),
+            ),
+        )
 
 
 def copy_physical_file_exclusive(

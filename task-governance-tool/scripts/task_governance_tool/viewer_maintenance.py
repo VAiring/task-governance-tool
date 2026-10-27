@@ -123,124 +123,135 @@ def _refresh(
     observed_at: str,
     skill_root: Path | None,
 ) -> ViewerRefreshResult:
-    observed_at = validate_utc_timestamp(
-        observed_at,
-        field="Viewer maintenance observation time",
-    )
-    renders = 0
-    try:
-        first = _capture(
-            target,
-            force=force,
-            generated_at=observed_at,
-            include_snapshot=False,
+    from task_governance_tool.debug_log import aggregate
+    with aggregate(_refresh, unit='items') as measurement:
+        measurement.count(0)
+        observed_at = validate_utc_timestamp(
+            observed_at,
+            field="Viewer maintenance observation time",
         )
-        if not first.maintenance.enabled:
-            return ViewerRefreshResult(code="not_opted_in", renders=0)
-        if not force and not first.viewer.due:
-            return ViewerRefreshResult(code="current", renders=0)
-
-        refresh_interval_seconds = load_viewer_refresh_interval(skill_root)
-        output = resolve_canonical_viewer_output_target(target)
-        _prepare_lock(output)
-        lock_path = output.path.parent / VIEWER_LOCK_FILENAME
-        with zero_wait_artifact_lock(lock_path):
-            capture = _capture(
+        renders = 0
+        try:
+            first = _capture(
                 target,
                 force=force,
                 generated_at=observed_at,
+                include_snapshot=False,
             )
-            for attempt in range(MAX_RENDERS_PER_ATTEMPT):
-                if (
-                    not capture.maintenance.enabled
-                    or capture.snapshot is None
-                ):
-                    return ViewerRefreshResult(
-                        code=(
-                            "not_opted_in"
-                            if not capture.maintenance.enabled
-                            else "current"
-                        ),
-                        renders=renders,
-                    )
-                if attempt:
-                    capture = _capture(
-                        target,
-                        force=False,
-                        generated_at=observed_at,
-                    )
+            if not first.maintenance.enabled:
+                measurement.mark('skipped')
+                return ViewerRefreshResult(code="not_opted_in", renders=0)
+            if not force and not first.viewer.due:
+                measurement.mark('unchanged')
+                return ViewerRefreshResult(code="current", renders=0)
+
+            refresh_interval_seconds = load_viewer_refresh_interval(skill_root)
+            output = resolve_canonical_viewer_output_target(target)
+            _prepare_lock(output)
+            lock_path = output.path.parent / VIEWER_LOCK_FILENAME
+            with zero_wait_artifact_lock(lock_path):
+                capture = _capture(
+                    target,
+                    force=force,
+                    generated_at=observed_at,
+                )
+                for attempt in range(MAX_RENDERS_PER_ATTEMPT):
                     if (
                         not capture.maintenance.enabled
                         or capture.snapshot is None
                     ):
+                        return ViewerRefreshResult(
+                            code=(
+                                "not_opted_in"
+                                if not capture.maintenance.enabled
+                                else "current"
+                            ),
+                            renders=renders,
+                        )
+                    if attempt:
+                        capture = _capture(
+                            target,
+                            force=False,
+                            generated_at=observed_at,
+                        )
+                        if (
+                            not capture.maintenance.enabled
+                            or capture.snapshot is None
+                        ):
+                            break
+                    snapshot = capture.snapshot
+                    if snapshot is None:
                         break
-                snapshot = capture.snapshot
-                if snapshot is None:
-                    break
-                rendered = render_viewer_html(
-                    snapshot.snapshot,
-                    refresh_interval_seconds=refresh_interval_seconds,
-                )
-                @contextmanager
-                def replace_guard():
-                    with closing(
-                        connect_initialized_readonly(target)
-                    ) as guard:
-                        current_maintenance = read_project_maintenance(
-                            guard,
-                            target.project.project_id,
-                        )
-                        current_viewer = read_viewer_maintenance(
-                            guard,
-                            target.project.project_id,
-                        )
-                        if (
-                            current_maintenance is None
-                            or current_viewer is None
-                        ):
-                            raise RuntimeError(
-                                "Viewer maintenance state is unavailable"
+                    rendered = render_viewer_html(
+                        snapshot.snapshot,
+                        refresh_interval_seconds=refresh_interval_seconds,
+                    )
+                    @contextmanager
+                    def replace_guard():
+                        with closing(
+                            connect_initialized_readonly(target)
+                        ) as guard:
+                            current_maintenance = read_project_maintenance(
+                                guard,
+                                target.project.project_id,
                             )
-                        if not current_maintenance.enabled:
-                            raise _ViewerOptedOut()
-                        if (
-                            current_viewer.source_generation
-                            != capture.viewer.source_generation
-                        ):
-                            raise _ViewerSourceChanged()
-                        yield
+                            current_viewer = read_viewer_maintenance(
+                                guard,
+                                target.project.project_id,
+                            )
+                            if (
+                                current_maintenance is None
+                                or current_viewer is None
+                            ):
+                                raise RuntimeError(
+                                    "Viewer maintenance state is unavailable"
+                                )
+                            if not current_maintenance.enabled:
+                                raise _ViewerOptedOut()
+                            if (
+                                current_viewer.source_generation
+                                != capture.viewer.source_generation
+                            ):
+                                raise _ViewerSourceChanged()
+                            yield
 
-                try:
-                    write_viewer_html(
-                        output,
-                        rendered,
-                        replace_guard=replace_guard,
-                    )
-                except _ViewerOptedOut:
-                    return ViewerRefreshResult(
-                        code="not_opted_in",
-                        renders=renders,
-                    )
-                except _ViewerSourceChanged:
-                    if attempt + 1 >= MAX_RENDERS_PER_ATTEMPT:
-                        raise RuntimeError(
-                            "Viewer source changed during publication"
+                    try:
+                        write_viewer_html(
+                            output,
+                            rendered,
+                            replace_guard=replace_guard,
                         )
-                    continue
-                record_viewer_publication(
-                    target,
-                    source_generation=capture.viewer.source_generation,
-                    published_at=utc_now(),
-                )
-                renders += 1
-    except ArtifactLockError as exc:
-        code = "deferred" if exc.contended else "failed"
-        _record_failure(target, code=code, occurred_at=observed_at)
-        return ViewerRefreshResult(code=code, renders=renders)
-    except Exception:
-        _record_failure(target, code="failed", occurred_at=observed_at)
-        return ViewerRefreshResult(code="failed", renders=renders)
-    return ViewerRefreshResult(code="succeeded", renders=renders)
+                    except _ViewerOptedOut:
+                        return ViewerRefreshResult(
+                            code="not_opted_in",
+                            renders=renders,
+                        )
+                    except _ViewerSourceChanged:
+                        measurement.mark('revalidated')
+                        if attempt + 1 >= MAX_RENDERS_PER_ATTEMPT:
+                            measurement.mark('limit')
+                            raise RuntimeError(
+                                "Viewer source changed during publication"
+                            )
+                        continue
+                    record_viewer_publication(
+                        target,
+                        source_generation=capture.viewer.source_generation,
+                        published_at=utc_now(),
+                    )
+                    renders += 1
+                    measurement.count(1)
+                    measurement.mark('published')
+        except ArtifactLockError as exc:
+            measurement.mark('contended' if exc.contended else 'failed')
+            code = "deferred" if exc.contended else "failed"
+            _record_failure(target, code=code, occurred_at=observed_at)
+            return ViewerRefreshResult(code=code, renders=renders)
+        except Exception:
+            measurement.mark('failed')
+            _record_failure(target, code="failed", occurred_at=observed_at)
+            return ViewerRefreshResult(code="failed", renders=renders)
+        return ViewerRefreshResult(code="succeeded", renders=renders)
 
 
 def run_routine_viewer_refresh(

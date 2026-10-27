@@ -61,30 +61,36 @@ def emit_result(
     json_output: bool,
     max_json_bytes: int | None = None,
 ) -> int:
-    if json_output:
-        if max_json_bytes is not None:
-            result = fit_bounded_json_result(
-                result,
-                max_bytes=max_json_bytes,
+    from task_governance_tool.debug_log import aggregate
+    with aggregate(emit_result, unit='bytes') as measurement:
+        if json_output:
+            if max_json_bytes is not None:
+                result = fit_bounded_json_result(
+                    result,
+                    max_bytes=max_json_bytes,
+                )
+            rendered = json.dumps(
+                result.to_json_object(),
+                ensure_ascii=False,
+                separators=(",", ":"),
+                sort_keys=result.command != "review.prepare",
             )
-        rendered = json.dumps(
-            result.to_json_object(),
-            ensure_ascii=False,
-            separators=(",", ":"),
-            sort_keys=result.command != "review.prepare",
-        )
-        if hasattr(sys.stdout, "buffer"):
-            sys.stdout.buffer.write((rendered + "\n").encode("utf-8"))
-        else:
-            print(rendered)
-    elif result.text:
-        if result.command == "review.prepare" and hasattr(sys.stdout, "buffer"):
-            sys.stdout.buffer.write((result.text + "\n").encode("utf-8"))
-        else:
-            print(result.text)
-    elif result.errors:
-        print(result.errors[0]["message"], file=sys.stderr)
-    return result.exit_code
+            if hasattr(sys.stdout, "buffer"):
+                encoded = (rendered + "\n").encode("utf-8")
+                measurement.count(len(encoded))
+                sys.stdout.buffer.write(encoded)
+            else:
+                print(rendered)
+        elif result.text:
+            if result.command == "review.prepare" and hasattr(sys.stdout, "buffer"):
+                encoded = (result.text + "\n").encode("utf-8")
+                measurement.count(len(encoded))
+                sys.stdout.buffer.write(encoded)
+            else:
+                print(result.text)
+        elif result.errors:
+            print(result.errors[0]["message"], file=sys.stderr)
+        return result.exit_code
 
 
 def serialized_json_size(result: CommandResult, data: dict[str, Any]) -> int:

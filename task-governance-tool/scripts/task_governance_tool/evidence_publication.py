@@ -454,108 +454,120 @@ def _publish_evidence_projection(
     force: bool,
     observed_at: str,
 ) -> EvidenceProjectionRefreshResult:
-    observed_at = validate_utc_timestamp(
-        observed_at,
-        field="Evidence projection observation time",
-    )
-    publications = 0
-    captured_generation = 0
-    try:
-        first = _capture(target, include_basis=False)
-        captured_generation = first.state.source_generation
-        if not first.maintenance.enabled:
-            return EvidenceProjectionRefreshResult("not_opted_in", 0)
-        if not force and not first.state.due:
-            return EvidenceProjectionRefreshResult("current", 0)
+    from task_governance_tool.debug_log import aggregate
+    with aggregate(_publish_evidence_projection, unit='items') as measurement:
+        measurement.count(0)
+        observed_at = validate_utc_timestamp(
+            observed_at,
+            field="Evidence projection observation time",
+        )
+        publications = 0
+        captured_generation = 0
+        try:
+            first = _capture(target, include_basis=False)
+            captured_generation = first.state.source_generation
+            if not first.maintenance.enabled:
+                measurement.mark('skipped')
+                return EvidenceProjectionRefreshResult("not_opted_in", 0)
+            if not force and not first.state.due:
+                measurement.mark('unchanged')
+                return EvidenceProjectionRefreshResult("current", 0)
 
-        _prepare_output_directories(target)
-        _, _, _, _, lock_path = _fixed_output_paths(target)
-        with zero_wait_artifact_lock(lock_path):
-            capture = _capture(target, include_basis=True, only_when_due=not force)
-            for attempt in range(MAX_PUBLICATIONS_PER_ATTEMPT):
-                if attempt:
-                    capture = _capture(target, include_basis=True, only_when_due=not force)
-                captured_generation = capture.state.source_generation
-                if not capture.maintenance.enabled:
-                    return EvidenceProjectionRefreshResult(
-                        "not_opted_in",
-                        publications,
-                    )
-                if (
-                    not force
-                    and not capture.state.due
-                ):
-                    return EvidenceProjectionRefreshResult(
-                        "succeeded" if publications else "current", publications,
-                    )
-                if capture.rendered is None:
-                    raise _inconsistent()
-                rendered = capture.rendered
-                for bundle_id, artifact in rendered.bundles:
-                    _publish_immutable_bundle(
+            _prepare_output_directories(target)
+            _, _, _, _, lock_path = _fixed_output_paths(target)
+            with zero_wait_artifact_lock(lock_path):
+                capture = _capture(target, include_basis=True, only_when_due=not force)
+                for attempt in range(MAX_PUBLICATIONS_PER_ATTEMPT):
+                    if attempt:
+                        capture = _capture(target, include_basis=True, only_when_due=not force)
+                    captured_generation = capture.state.source_generation
+                    if not capture.maintenance.enabled:
+                        return EvidenceProjectionRefreshResult(
+                            "not_opted_in",
+                            publications,
+                        )
+                    if (
+                        not force
+                        and not capture.state.due
+                    ):
+                        return EvidenceProjectionRefreshResult(
+                            "succeeded" if publications else "current", publications,
+                        )
+                    if capture.rendered is None:
+                        raise _inconsistent()
+                    rendered = capture.rendered
+                    for bundle_id, artifact in rendered.bundles:
+                        _publish_immutable_bundle(
+                            target,
+                            bundle_id,
+                            artifact,
+                            replace_existing=force,
+                        )
+                        del artifact
+                    try:
+                        _replace_index(
+                            target,
+                            rendered.index,
+                            captured_generation=rendered.source_generation,
+                            replace_existing_unbounded=force,
+                        )
+                    except _EvidenceSourceChanged:
+                        measurement.mark('revalidated')
+                        if attempt + 1 >= MAX_PUBLICATIONS_PER_ATTEMPT:
+                            measurement.mark('limit')
+                            raise RuntimeError(
+                                "Evidence source changed during publication"
+                            )
+                        # Release the previous generation before building another.
+                        del rendered, capture
+                        continue
+                    except _EvidenceOptedOut:
+                        return EvidenceProjectionRefreshResult(
+                            "not_opted_in",
+                            publications,
+                        )
+
+                    state = record_evidence_projection_outcome(
                         target,
-                        bundle_id,
-                        artifact,
-                        replace_existing=force,
-                    )
-                    del artifact
-                try:
-                    _replace_index(
-                        target,
-                        rendered.index,
                         captured_generation=rendered.source_generation,
-                        replace_existing_unbounded=force,
+                        outcome_code="succeeded",
+                        recorded_at=utc_now(),
+                        index_digest=rendered.index.index_digest,
                     )
-                except _EvidenceSourceChanged:
+                    publications += 1
+                    measurement.count(1)
+                    measurement.mark('published')
+                    if state.source_generation == rendered.source_generation:
+                        return EvidenceProjectionRefreshResult(
+                            "succeeded",
+                            publications,
+                        )
                     if attempt + 1 >= MAX_PUBLICATIONS_PER_ATTEMPT:
+                        measurement.mark('limit')
                         raise RuntimeError(
                             "Evidence source changed during publication"
                         )
-                    # Release the previous generation before building another.
                     del rendered, capture
-                    continue
-                except _EvidenceOptedOut:
-                    return EvidenceProjectionRefreshResult(
-                        "not_opted_in",
-                        publications,
-                    )
-
-                state = record_evidence_projection_outcome(
-                    target,
-                    captured_generation=rendered.source_generation,
-                    outcome_code="succeeded",
-                    recorded_at=utc_now(),
-                    index_digest=rendered.index.index_digest,
-                )
-                publications += 1
-                if state.source_generation == rendered.source_generation:
-                    return EvidenceProjectionRefreshResult(
-                        "succeeded",
-                        publications,
-                    )
-                if attempt + 1 >= MAX_PUBLICATIONS_PER_ATTEMPT:
-                    raise RuntimeError(
-                        "Evidence source changed during publication"
-                    )
-                del rendered, capture
-    except ArtifactLockError as exc:
-        code = "deferred" if exc.contended else "failed"
-        _record_failure(
-            target,
-            generation=captured_generation,
-            code=code,
-            occurred_at=observed_at,
-        )
-        return EvidenceProjectionRefreshResult(code, publications)
-    except Exception:
-        _record_failure(
-            target,
-            generation=captured_generation,
-            code="failed",
-            occurred_at=observed_at,
-        )
-        return EvidenceProjectionRefreshResult("failed", publications)
-    return EvidenceProjectionRefreshResult("succeeded", publications)
+        except ArtifactLockError as exc:
+            measurement.mark('contended' if exc.contended else 'failed')
+            code = "deferred" if exc.contended else "failed"
+            _record_failure(
+                target,
+                generation=captured_generation,
+                code=code,
+                occurred_at=observed_at,
+            )
+            return EvidenceProjectionRefreshResult(code, publications)
+        except Exception:
+            measurement.mark('failed')
+            _record_failure(
+                target,
+                generation=captured_generation,
+                code="failed",
+                occurred_at=observed_at,
+            )
+            return EvidenceProjectionRefreshResult("failed", publications)
+        return EvidenceProjectionRefreshResult("succeeded", publications)
 
 
 def run_routine_evidence_projection(

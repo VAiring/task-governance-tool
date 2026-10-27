@@ -105,80 +105,83 @@ def build_viewer_snapshot(
     generated_at: str | None = None,
 ) -> ViewerSnapshotResult:
     """Build snapshot version 4 from one validated SQLite read transaction."""
-    try:
-        validation = validate_snapshot_database_for_viewer(connection, target)
-        source_schema_version = validation.source_schema_version
-        if validation.validated_task_batch is None:
-            task_result = list_tasks_for_viewer(
-                connection,
-                target.project,
-                event_limit=VIEWER_EVENT_LIMIT,
-                source_schema_version=source_schema_version,
-            )
-        else:
-            task_result = _list_tasks_for_validated_viewer_snapshot(
-                connection,
-                target.project,
-                validation.validated_task_batch,
-                event_limit=VIEWER_EVENT_LIMIT,
-                source_schema_version=source_schema_version,
-            )
-        if source_schema_version < VIEWER_HISTORY_SCHEMA_VERSION:
-            legacy_history = format_completion_history(
-                CompletionHistory(
-                    total=0,
-                    legacy_history_incomplete=True,
-                    cycles=(),
+    from task_governance_tool.debug_log import aggregate
+    with aggregate(build_viewer_snapshot, unit='items') as measurement:
+        try:
+            validation = validate_snapshot_database_for_viewer(connection, target)
+            source_schema_version = validation.source_schema_version
+            if validation.validated_task_batch is None:
+                task_result = list_tasks_for_viewer(
+                    connection,
+                    target.project,
+                    event_limit=VIEWER_EVENT_LIMIT,
+                    source_schema_version=source_schema_version,
                 )
-            )
-            for task in task_result.tasks:
-                task["completion_history"] = {
-                    **legacy_history,
-                    "cycles": list(legacy_history["cycles"]),
-                }
-        else:
-            task_ids = tuple(str(task["task_id"]) for task in task_result.tasks)
-            histories = _read_viewer_completion_histories(
-                connection,
-                project_id=target.project.project_id,
-                task_ids=task_ids,
-            )
-            for task in task_result.tasks:
-                task_id = str(task["task_id"])
-                task["completion_history"] = format_completion_history(
-                    histories[task_id]
+            else:
+                task_result = _list_tasks_for_validated_viewer_snapshot(
+                    connection,
+                    target.project,
+                    validation.validated_task_batch,
+                    event_limit=VIEWER_EVENT_LIMIT,
+                    source_schema_version=source_schema_version,
                 )
-    except StorageError:
-        raise
-    except sqlite3.Error as exc:
-        raise operational_sqlite_error(
-            exc,
-            fallback_message="could not read viewer snapshot",
-        ) from exc
-    timestamp = generated_at or utc_now()
-    counts = {"total": len(task_result.tasks)}
-    counts.update(
-        {
-            status: sum(1 for task in task_result.tasks if task["status"] == status)
-            for status in STATUSES
+            if source_schema_version < VIEWER_HISTORY_SCHEMA_VERSION:
+                legacy_history = format_completion_history(
+                    CompletionHistory(
+                        total=0,
+                        legacy_history_incomplete=True,
+                        cycles=(),
+                    )
+                )
+                for task in task_result.tasks:
+                    task["completion_history"] = {
+                        **legacy_history,
+                        "cycles": list(legacy_history["cycles"]),
+                    }
+            else:
+                task_ids = tuple(str(task["task_id"]) for task in task_result.tasks)
+                histories = _read_viewer_completion_histories(
+                    connection,
+                    project_id=target.project.project_id,
+                    task_ids=task_ids,
+                )
+                for task in task_result.tasks:
+                    task_id = str(task["task_id"])
+                    task["completion_history"] = format_completion_history(
+                        histories[task_id]
+                    )
+        except StorageError:
+            raise
+        except sqlite3.Error as exc:
+            raise operational_sqlite_error(
+                exc,
+                fallback_message="could not read viewer snapshot",
+            ) from exc
+        timestamp = generated_at or utc_now()
+        counts = {"total": len(task_result.tasks)}
+        measurement.count(counts['total'])
+        counts.update(
+            {
+                status: sum(1 for task in task_result.tasks if task["status"] == status)
+                for status in STATUSES
+            }
+        )
+        snapshot = {
+            "snapshot_version": SNAPSHOT_VERSION,
+            "generated_at": timestamp,
+            "project": {
+                "project_id": target.project.project_id,
+                "display_name": target.project.display_name,
+            },
+            "source_schema_version": source_schema_version,
+            "counts": counts,
+            "tasks": task_result.tasks,
         }
-    )
-    snapshot = {
-        "snapshot_version": SNAPSHOT_VERSION,
-        "generated_at": timestamp,
-        "project": {
-            "project_id": target.project.project_id,
-            "display_name": target.project.display_name,
-        },
-        "source_schema_version": source_schema_version,
-        "counts": counts,
-        "tasks": task_result.tasks,
-    }
-    return ViewerSnapshotResult(
-        snapshot=snapshot,
-        task_count=len(task_result.tasks),
-        event_count=task_result.event_count,
-    )
+        return ViewerSnapshotResult(
+            snapshot=snapshot,
+            task_count=len(task_result.tasks),
+            event_count=task_result.event_count,
+        )
 
 
 def viewer_template_path(skill_root: Path | None = None) -> Path:
@@ -337,23 +340,28 @@ def render_viewer_html(
     template_path: Path | None = None,
     refresh_interval_seconds: int = VIEWER_REFRESH_DISABLED_SECONDS,
 ) -> str:
-    source_path = template_path or viewer_template_path()
-    try:
-        template = source_path.read_text(encoding="utf-8")
-    except (OSError, UnicodeError) as exc:
-        raise ViewerError("internal_error", "viewer template could not be read") from exc
+    from task_governance_tool.debug_log import aggregate
+    with aggregate(render_viewer_html, unit='bytes') as measurement:
+        source_path = template_path or viewer_template_path()
+        try:
+            template = source_path.read_text(encoding="utf-8")
+        except (OSError, UnicodeError) as exc:
+            raise ViewerError("internal_error", "viewer template could not be read") from exc
 
-    prepared = _prepare_template(
-        template,
-        refresh_interval_seconds=refresh_interval_seconds,
-    )
-    rendered = prepared.replace(TEMPLATE_PLACEHOLDER, encode_snapshot(snapshot))
-    if len(rendered.encode("utf-8")) > MAX_VIEWER_ARTIFACT_BYTES:
-        raise ViewerError(
-            "internal_error",
-            "viewer artifact exceeds the supported size",
+        prepared = _prepare_template(
+            template,
+            refresh_interval_seconds=refresh_interval_seconds,
         )
-    return rendered
+        rendered = prepared.replace(TEMPLATE_PLACEHOLDER, encode_snapshot(snapshot))
+        rendered_size = len(rendered.encode("utf-8"))
+        measurement.count(rendered_size)
+        if rendered_size > MAX_VIEWER_ARTIFACT_BYTES:
+            measurement.mark('limit')
+            raise ViewerError(
+                "internal_error",
+                "viewer artifact exceeds the supported size",
+            )
+        return rendered
 
 
 def path_key(path: Path) -> str:

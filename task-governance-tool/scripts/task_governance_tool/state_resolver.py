@@ -504,38 +504,41 @@ def resolve_project_state(
     deadline: float | None = None,
 ) -> ProjectStateResolution:
     """Admit activated state or report setup work without exposing old targets."""
+    from task_governance_tool.debug_log import aggregate
+    with aggregate(resolve_project_state, unit='items') as measurement:
+        measurement.mark('local' if operation_local else 'full_scan')
 
-    review_task_id = None if include_doctor_state else review_task_id
-    operation_local = False if include_doctor_state else operation_local
-    reusable = (validation_reuse if retain_read_connection and not include_doctor_state
-                and (review_task_id is None or operation_local) else None)
-    if reusable is not None and operation_local:
-        # Local admission keeps only the existing physical identity pin. It
-        # never consumes or publishes a certificate of global validation.
-        reusable._validated = None
-    if validation_reuse is not None and reusable is None:
-        validation_reuse.clear()
-    try:
-        resolution = _resolve_separated_state(
-            skill_root=skill_root,
-            repo=repo,
-            setup_mode=False,
-            include_doctor_state=include_doctor_state,
-            retain_read_connection=retain_read_connection,
-            validation_reuse=reusable,
-            review_task_id=review_task_id,
-            operation_local=operation_local,
-            deadline=deadline,
-        )
-    except BaseException:
-        if validation_reuse is not None:
+        review_task_id = None if include_doctor_state else review_task_id
+        operation_local = False if include_doctor_state else operation_local
+        reusable = (validation_reuse if retain_read_connection and not include_doctor_state
+                    and (review_task_id is None or operation_local) else None)
+        if reusable is not None and operation_local:
+            # Local admission keeps only the existing physical identity pin. It
+            # never consumes or publishes a certificate of global validation.
+            reusable._validated = None
+        if validation_reuse is not None and reusable is None:
             validation_reuse.clear()
-        raise
-    if validation_reuse is not None and (
-            resolution.error_code is not None or resolution.binding != "matching"
-            or resolution.target is None or resolution.read_connection is None):
-        validation_reuse.clear()
-    return resolution
+        try:
+            resolution = _resolve_separated_state(
+                skill_root=skill_root,
+                repo=repo,
+                setup_mode=False,
+                include_doctor_state=include_doctor_state,
+                retain_read_connection=retain_read_connection,
+                validation_reuse=reusable,
+                review_task_id=review_task_id,
+                operation_local=operation_local,
+                deadline=deadline,
+            )
+        except BaseException:
+            if validation_reuse is not None:
+                validation_reuse.clear()
+            raise
+        if validation_reuse is not None and (
+                resolution.error_code is not None or resolution.binding != "matching"
+                or resolution.target is None or resolution.read_connection is None):
+            validation_reuse.clear()
+        return resolution
 
 
 def resolve_setup_project_state(
@@ -1372,231 +1375,235 @@ def _inspect_database(
     operation_local: bool = False,
     deadline: float | None = None,
 ) -> _DatabaseObservation:
-    before = _stamp(path)
-    connection: sqlite3.Connection | None = None
-    recovery_content_valid = True
-    fingerprint: ValidatedFile | None = None
-    try:
-        if deadline is None:
-            connection = connect_readonly(path)
-        else:
-            from time import monotonic
-            if monotonic() >= deadline:
-                raise _ResolverFailure("project_state_unreadable")
-            connection = connect_readonly(path, timeout=0.05)
-            connection.set_progress_handler(lambda: int(monotonic() >= deadline), 1000)
-        # This schema read acquires the snapshot's SQLite read lock; deferred
-        # BEGIN alone would not protect the exact physical bytes below from an
-        # ordinary rollback-journal writer committing during the observation.
-        version = current_schema_version(connection)
-        if version > SCHEMA_VERSION:
-            raise _ResolverFailure("schema_too_new")
-        if (
-            version < 1
-            or missing_migration_versions(connection, version)
-            or not table_exists(connection, "project_meta")
-        ):
-            raise _ResolverFailure("project_state_unreadable")
-        if (
-            version < SCHEMA_VERSION
-            and schema_objects_inconsistent_with_version(connection, version)
-        ):
-            raise _ResolverFailure("project_state_unreadable")
-        reuse_validated = False
-        if validation_reuse is not None and version == SCHEMA_VERSION:
-            if (not connection.in_transaction
-                    or connection.execute("PRAGMA query_only").fetchone()[0] != 1):
-                raise _ResolverFailure("project_state_unreadable")
-            validation_reuse._check_identity(before)
-            if _PHYSICAL_HASH_REUSE_SUPPORTED and not operation_local:
-                fingerprint = hash_physical_file(path, root=path.parent)
-                reuse_validated = validation_reuse._matches(fingerprint)
-        if not reuse_validated:
-            quick = [
-                str(row[0])
-                for row in connection.execute("PRAGMA quick_check").fetchall()
-            ]
-            if quick != ["ok"] or connection.execute(
-                "PRAGMA foreign_key_check"
-            ).fetchall():
-                raise _ResolverFailure("project_state_unreadable")
-
-        if version >= 14:
-            stored = _read_bound_project(connection, version)
-            if version == SCHEMA_VERSION and not reuse_validated:
-                validate_current_database_structure(
-                    connection,
-                    stored.project_id,
-                    review_task_id=review_task_id,
-                    # Recovery's exact-schema audit below runs on this very
-                    # connection/snapshot. Do not duplicate its row traversal.
-                    # A matching current Doctor read below performs the exact
-                    # global audit on this connection, including these rows.
-                    operation_local=(operation_local or classify_recovery_content or (
-                        doctor_current_root is not None
-                        and stored.canonical_path_hash == doctor_current_root.canonical_path_hash
-                    )),
-                )
-            elif version != SCHEMA_VERSION and read_viewer_maintenance(
-                connection,
-                stored.project_id,
-            ) is None:
-                raise _ResolverFailure("project_state_unreadable")
-        else:
-            stored = _read_legacy_project(connection, version)
+    from task_governance_tool.debug_log import aggregate
+    with aggregate(_inspect_database, unit='bytes') as measurement:
+        before = _stamp(path)
+        measurement.count(before.size)
+        connection: sqlite3.Connection | None = None
+        recovery_content_valid = True
+        fingerprint: ValidatedFile | None = None
+        try:
+            if deadline is None:
+                connection = connect_readonly(path)
+            else:
+                from time import monotonic
+                if monotonic() >= deadline:
+                    raise _ResolverFailure("project_state_unreadable")
+                connection = connect_readonly(path, timeout=0.05)
+                connection.set_progress_handler(lambda: int(monotonic() >= deadline), 1000)
+            # This schema read acquires the snapshot's SQLite read lock; deferred
+            # BEGIN alone would not protect the exact physical bytes below from an
+            # ordinary rollback-journal writer committing during the observation.
+            version = current_schema_version(connection)
+            if version > SCHEMA_VERSION:
+                raise _ResolverFailure("schema_too_new")
             if (
-                version >= 13
-                and read_viewer_maintenance(
-                    connection,
-                    stored.project_id,
-                )
-                is None
+                version < 1
+                or missing_migration_versions(connection, version)
+                or not table_exists(connection, "project_meta")
             ):
                 raise _ResolverFailure("project_state_unreadable")
-        generations = _read_generation_rows(
-            connection,
-            stored.project_id,
-            version,
-        )
-        pointer = _read_maintenance_pointer(
-            connection,
-            stored.project_id,
-            version,
-        )
-        if classify_recovery_content:
-            try:
-                if version == 33:
-                    from task_governance_tool.schema_own_review_indexes import validate_storage
-                    validate_storage(connection, recovery=True)
-                elif version == 32:
-                    from task_governance_tool.schema_session_slot_index import validate_storage
-                    validate_storage(connection, recovery=True)
-                elif version == 31:
-                    from task_governance_tool.schema_criterion_link_collector import validate_storage
-                    validate_storage(connection, recovery=True)
-                elif version == 30:
-                    from task_governance_tool.schema_review_answers import validate_storage
-                    validate_storage(connection, recovery=True)
-                elif version == 29:
-                    from task_governance_tool.schema_review_continuation import validate_storage
-                    validate_storage(connection, recovery=True)
-                elif version == 28:
-                    from task_governance_tool.schema_task_event_notes import validate_storage
-                    validate_storage(connection, recovery=True)
-                elif version == 27:
-                    from task_governance_tool.schema_session_slot_reacquisition import validate_storage
-                    validate_storage(connection, recovery=True)
-                elif version == 26:
-                    from task_governance_tool.schema_session_slot import validate_storage
-                    validate_storage(connection, recovery=True)
-                elif version == 25:
-                    from task_governance_tool.schema_review_sessions import validate_storage
-                    validate_storage(connection, recovery=True)
-                elif version == 24:
-                    from task_governance_tool.schema_task_ownership import validate_storage
-                    validate_storage(connection, recovery=True)
-                elif version == 23:
-                    from task_governance_tool.schema_verification_declaration import validate_storage
-                    validate_storage(connection, recovery=True)
-                elif version == 22:
-                    validate_schema22_storage_for_recovery(connection)
-                elif version == 21:
-                    validate_schema21_storage_for_recovery(connection)
-                elif version == 20:
-                    validate_schema20_storage_for_recovery(connection)
-                elif version in {18, 19}:
-                    validate_schema18_19_storage_for_recovery(connection)
-                else:
-                    validate_stored_task_verification(
+            if (
+                version < SCHEMA_VERSION
+                and schema_objects_inconsistent_with_version(connection, version)
+            ):
+                raise _ResolverFailure("project_state_unreadable")
+            reuse_validated = False
+            if validation_reuse is not None and version == SCHEMA_VERSION:
+                if (not connection.in_transaction
+                        or connection.execute("PRAGMA query_only").fetchone()[0] != 1):
+                    raise _ResolverFailure("project_state_unreadable")
+                validation_reuse._check_identity(before)
+                if _PHYSICAL_HASH_REUSE_SUPPORTED and not operation_local:
+                    fingerprint = hash_physical_file(path, root=path.parent)
+                    reuse_validated = validation_reuse._matches(fingerprint)
+            measurement.mark('reused' if reuse_validated else 'revalidated')
+            if not reuse_validated:
+                quick = [
+                    str(row[0])
+                    for row in connection.execute("PRAGMA quick_check").fetchall()
+                ]
+                if quick != ["ok"] or connection.execute(
+                    "PRAGMA foreign_key_check"
+                ).fetchall():
+                    raise _ResolverFailure("project_state_unreadable")
+
+            if version >= 14:
+                stored = _read_bound_project(connection, version)
+                if version == SCHEMA_VERSION and not reuse_validated:
+                    validate_current_database_structure(
                         connection,
-                        version,
+                        stored.project_id,
+                        review_task_id=review_task_id,
+                        # Recovery's exact-schema audit below runs on this very
+                        # connection/snapshot. Do not duplicate its row traversal.
+                        # A matching current Doctor read below performs the exact
+                        # global audit on this connection, including these rows.
+                        operation_local=(operation_local or classify_recovery_content or (
+                            doctor_current_root is not None
+                            and stored.canonical_path_hash == doctor_current_root.canonical_path_hash
+                        )),
+                    )
+                elif version != SCHEMA_VERSION and read_viewer_maintenance(
+                    connection,
+                    stored.project_id,
+                ) is None:
+                    raise _ResolverFailure("project_state_unreadable")
+            else:
+                stored = _read_legacy_project(connection, version)
+                if (
+                    version >= 13
+                    and read_viewer_maintenance(
+                        connection,
                         stored.project_id,
                     )
-            except StoredTaskVerificationError:
-                recovery_content_valid = False
-        validation_root = consumer_current_root or doctor_current_root
-        if version == SCHEMA_VERSION and validation_root is not None:
-            validate_current_database_binding(
+                    is None
+                ):
+                    raise _ResolverFailure("project_state_unreadable")
+            generations = _read_generation_rows(
                 connection,
-                _database_target(
-                    stored,
-                    validation_root,
-                    path,
-                    explicit_db=False,
-                ),
+                stored.project_id,
+                version,
             )
-        doctor_state = None
+            pointer = _read_maintenance_pointer(
+                connection,
+                stored.project_id,
+                version,
+            )
+            if classify_recovery_content:
+                try:
+                    if version == 33:
+                        from task_governance_tool.schema_own_review_indexes import validate_storage
+                        validate_storage(connection, recovery=True)
+                    elif version == 32:
+                        from task_governance_tool.schema_session_slot_index import validate_storage
+                        validate_storage(connection, recovery=True)
+                    elif version == 31:
+                        from task_governance_tool.schema_criterion_link_collector import validate_storage
+                        validate_storage(connection, recovery=True)
+                    elif version == 30:
+                        from task_governance_tool.schema_review_answers import validate_storage
+                        validate_storage(connection, recovery=True)
+                    elif version == 29:
+                        from task_governance_tool.schema_review_continuation import validate_storage
+                        validate_storage(connection, recovery=True)
+                    elif version == 28:
+                        from task_governance_tool.schema_task_event_notes import validate_storage
+                        validate_storage(connection, recovery=True)
+                    elif version == 27:
+                        from task_governance_tool.schema_session_slot_reacquisition import validate_storage
+                        validate_storage(connection, recovery=True)
+                    elif version == 26:
+                        from task_governance_tool.schema_session_slot import validate_storage
+                        validate_storage(connection, recovery=True)
+                    elif version == 25:
+                        from task_governance_tool.schema_review_sessions import validate_storage
+                        validate_storage(connection, recovery=True)
+                    elif version == 24:
+                        from task_governance_tool.schema_task_ownership import validate_storage
+                        validate_storage(connection, recovery=True)
+                    elif version == 23:
+                        from task_governance_tool.schema_verification_declaration import validate_storage
+                        validate_storage(connection, recovery=True)
+                    elif version == 22:
+                        validate_schema22_storage_for_recovery(connection)
+                    elif version == 21:
+                        validate_schema21_storage_for_recovery(connection)
+                    elif version == 20:
+                        validate_schema20_storage_for_recovery(connection)
+                    elif version in {18, 19}:
+                        validate_schema18_19_storage_for_recovery(connection)
+                    else:
+                        validate_stored_task_verification(
+                            connection,
+                            version,
+                            stored.project_id,
+                        )
+                except StoredTaskVerificationError:
+                    recovery_content_valid = False
+            validation_root = consumer_current_root or doctor_current_root
+            if version == SCHEMA_VERSION and validation_root is not None:
+                validate_current_database_binding(
+                    connection,
+                    _database_target(
+                        stored,
+                        validation_root,
+                        path,
+                        explicit_db=False,
+                    ),
+                )
+            doctor_state = None
+            if (
+                doctor_current_root is not None
+                and version == SCHEMA_VERSION
+                and stored.canonical_path_hash
+                == doctor_current_root.canonical_path_hash
+            ):
+                doctor_state = read_doctor_state(
+                    connection,
+                    _database_target(
+                        stored,
+                        doctor_current_root,
+                        path,
+                        explicit_db=False,
+                    ),
+                )
+        except _ResolverFailure:
+            if connection is not None:
+                connection.close()
+            raise
+        except StatePathError as exc:
+            if connection is not None:
+                connection.close()
+            raise _ResolverFailure("project_state_unreadable") from exc
+        except StorageError as exc:
+            if connection is not None:
+                connection.close()
+            raise _ResolverFailure(_storage_error_code(exc)) from exc
+        except sqlite3.Error as exc:
+            if connection is not None:
+                connection.close()
+            raise _ResolverFailure(
+                "database_busy"
+                if is_sqlite_busy_or_locked(exc)
+                else "project_state_unreadable"
+            ) from exc
+        except Exception:
+            if connection is not None:
+                connection.close()
+            raise
+        try:
+            after = _stamp(path)
+        except Exception:
+            connection.close()
+            raise
         if (
-            doctor_current_root is not None
-            and version == SCHEMA_VERSION
-            and stored.canonical_path_hash
-            == doctor_current_root.canonical_path_hash
-        ):
-            doctor_state = read_doctor_state(
-                connection,
-                _database_target(
-                    stored,
-                    doctor_current_root,
-                    path,
-                    explicit_db=False,
-                ),
+            (before.device, before.inode) != (after.device, after.inode)
+            or (not mutable and after != before)
+            or fingerprint is not None and (
+                after.device, after.inode, after.size, after.modified_ns
+            ) != (
+                fingerprint.identity.device, fingerprint.identity.inode,
+                fingerprint.identity.size, fingerprint.identity.modified_ns
             )
-    except _ResolverFailure:
-        if connection is not None:
+        ):
             connection.close()
-        raise
-    except StatePathError as exc:
-        if connection is not None:
+            raise _ResolverFailure("project_state_unreadable")
+        keep_connection = retain_connection and version == SCHEMA_VERSION
+        retained_connection = connection if keep_connection else None
+        if not keep_connection:
             connection.close()
-        raise _ResolverFailure("project_state_unreadable") from exc
-    except StorageError as exc:
-        if connection is not None:
-            connection.close()
-        raise _ResolverFailure(_storage_error_code(exc)) from exc
-    except sqlite3.Error as exc:
-        if connection is not None:
-            connection.close()
-        raise _ResolverFailure(
-            "database_busy"
-            if is_sqlite_busy_or_locked(exc)
-            else "project_state_unreadable"
-        ) from exc
-    except Exception:
-        if connection is not None:
-            connection.close()
-        raise
-    try:
-        after = _stamp(path)
-    except Exception:
-        connection.close()
-        raise
-    if (
-        (before.device, before.inode) != (after.device, after.inode)
-        or (not mutable and after != before)
-        or fingerprint is not None and (
-            after.device, after.inode, after.size, after.modified_ns
-        ) != (
-            fingerprint.identity.device, fingerprint.identity.inode,
-            fingerprint.identity.size, fingerprint.identity.modified_ns
+        if validation_reuse is not None and version == SCHEMA_VERSION:
+            validation_reuse._record_success(after, fingerprint)
+        return _DatabaseObservation(
+            stored_project=stored,
+            generation_rows=generations,
+            maintenance_pointer=pointer,
+            doctor_state=doctor_state,
+            stamp=after,
+            recovery_content_valid=recovery_content_valid,
+            read_connection=retained_connection,
         )
-    ):
-        connection.close()
-        raise _ResolverFailure("project_state_unreadable")
-    keep_connection = retain_connection and version == SCHEMA_VERSION
-    retained_connection = connection if keep_connection else None
-    if not keep_connection:
-        connection.close()
-    if validation_reuse is not None and version == SCHEMA_VERSION:
-        validation_reuse._record_success(after, fingerprint)
-    return _DatabaseObservation(
-        stored_project=stored,
-        generation_rows=generations,
-        maintenance_pointer=pointer,
-        doctor_state=doctor_state,
-        stamp=after,
-        recovery_content_valid=recovery_content_valid,
-        read_connection=retained_connection,
-    )
 
 
 def _read_legacy_project(

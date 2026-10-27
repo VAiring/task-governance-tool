@@ -175,6 +175,7 @@ def _inventory(repository, target, roots, project, hint, work):
 
 def collect_located(repository, target, payload, roots, project, thread, deadline, *, limit, current_limit, clock):
     """No stage resets the deadline; failed discovery cannot discard direct work."""
+    from task_governance_tool.debug_log import aggregate
     work = IngestWork(repository, (), thread, deadline, limit=limit, current_limit=current_limit, clock=clock)
     hint = None
     try:
@@ -182,7 +183,8 @@ def collect_located(repository, target, payload, roots, project, thread, deadlin
         # Sub-deadlines are carved out of, never added to, the event allowance.
         metadata_deadline = min(deadline, clock() + min(1.0, max(0, deadline - clock()) / 4))
         repository.deadline = metadata_deadline
-        hint = _capture(repository, target, payload, roots, Path(project), thread, metadata_deadline)
+        with aggregate(_capture):
+            hint = _capture(repository, target, payload, roots, Path(project), thread, metadata_deadline)
     except UsageError as error:
         work.gaps.add(error.code)
     finally:
@@ -190,18 +192,21 @@ def collect_located(repository, target, payload, roots, project, thread, deadlin
     try:
         pending_deadline = min(deadline, clock() + min(1.0, max(0, deadline - clock()) / 4))
         repository.deadline = pending_deadline
-        _pending(repository, target, roots, pending_deadline, clock, work.gaps)
+        with aggregate(_pending):
+            _pending(repository, target, roots, pending_deadline, clock, work.gaps)
     except UsageError as error:
         work.gaps.add(error.code)
     finally:
         repository.deadline = deadline
     try:
         # Reserve source slots for inventory while serving known locations first.
-        _direct(repository, roots, Path(project), hint, work, max(1, limit - 4))
+        with aggregate(_direct):
+            _direct(repository, roots, Path(project), hint, work, max(1, limit - 4))
     except UsageError as error:
         work.gaps.add(error.code)
     try:
-        _inventory(repository, target, roots, Path(project), hint, work)
+        with aggregate(_inventory):
+            _inventory(repository, target, roots, Path(project), hint, work)
     except UsageError as error:
         work.gaps.add(error.code)
     return len(work.successful), work.gaps

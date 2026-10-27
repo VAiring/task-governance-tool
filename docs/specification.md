@@ -1149,9 +1149,13 @@ at operation exit, without per-iteration detail. Ordinary method ends may
 also report counts. An unspecified count or missing timing remains unknown;
 an explicitly known zero remains zero. Counting adds no SQL or result rescan.
 Code-owned method identity and generated operation-local measurement IDs
-associate ordinary processing with SQL. This foundation does not add measurement
-sites throughout ordinary processing. Bounds, partial coverage and the small
-API are owned by the [performance design](logger-design.md#performance).
+associate ordinary processing with SQL. Coarse measurement sites cover state
+resolution, validation, command work, maintenance and response generation.
+Already-known byte counts and closed decision states distinguish data volume,
+reuse, full processing, contention and work limits without retaining input text.
+Bounds, partial coverage, the small API and the selected processing inventory
+are owned by the [performance design](logger-design.md#performance) and
+[measurement inventory](logger-design.md#processing-inventory).
 
 Protected events are buffered until operation exit and all tracked connections
 close, with at most 256 events, 512 KiB per buffer and 16 KiB per event.

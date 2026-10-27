@@ -120,7 +120,15 @@ def process_batch(batch):
 変換せず、件数が不確かであることを残す。未指定はnull、明示した0は0。
 無効時にも同じ呼出しを使え、件数の投影・計測・保存は行わない。
 件数のために結果を再走査したりSQLを追加したりしない。
-通常処理への計測箇所の追加は、この基盤を使う各Taskが所有する。
+`aggregate(function, unit="bytes")` は同じ `item_count` をバイト数として扱う。
+既定の `count_unit` は `items`。この2種類以外は変換せず `unknown` とし、
+集計キーに単位を含めて異なる単位を加算しない。自由な単位名は保存しない。
+`work.mark(state)` はコード内の固定分岐を1呼出し・1種類につき最大1回数える。
+種類は `local / full_scan / reused / revalidated / unchanged / contended /
+deadline / limit / skipped / published / failed` のみ。未知値は無視する。
+集計の `states` は観測した種類と呼出し数の辞書であり、全分岐の網羅や成功判定ではない。
+1呼出しに複数種類が付き得るので、合計を呼出し回数と解釈しない。
+無効時は状態集合も作らず、自由文・引数・ファイル名を分岐名にしない。
 
 <a id="performance"></a>
 
@@ -133,7 +141,7 @@ summaryのbuffer_instrumentation_nsは保護済みレコード構築・JSON化�
 OFF/ONの呼出し全体を比較する。SQLite計測負荷は既存collector値を別記する。
 
 aggregateは本体のinclusive時間を計測し、operation終了時にコード位置ごとの
-`performance.aggregate` を出す。module/function/定義行で区別し、operation内だけで
+`performance.aggregate` を出す。module/function/定義行/件数単位で区別し、operation内だけで
 有効なmeasurement_idを振る。同名でも異なる位置は別集計。位置不明はotherにまとめ、
 summaryに示す。複雑な親子集計木や反復ごとの詳細は作らない。
 既知コード位置は操作内で最大32件だけ再利用し、反復ごとの位置投影を避ける。
@@ -148,6 +156,49 @@ operation終了時に出す。開始・終了数、集計省略、位置不明�
 出さない。summaryのpartialと各集計の実測・件数カバレッジを併せて判断する。
 このAPI自身の集計・最終出力・保存を含む費用は、admissionからscope終了後までを
 囲んだOFF/ON比較で測る。bufferやSQLの内部負荷だけを総追加負荷としない。
+
+<a id="processing-inventory"></a>
+
+### 通常処理の計測箇所と集約範囲
+
+CLIは `main`、業務dispatch、COMMIT後の `apply_post_commit_maintenance` をspanで
+区別する。usageは `collect_event` が入口spanを持つ。引数は既存のdispatch投影だけで、
+追加した計測箇所は引数を渡さない。以下のaggregateは操作末尾に各1行を出す。
+呼出し回数・累積時間・最大時間と件数を併せ、単発の遅延・反復増加・量の増加を判断する。
+
+| 所有module・処理 | 件数の意味と含む処理 |
+|---|---|
+| state_resolver.resolve_project_state / _inspect_database | 解決全体とDB検査。後者は既存statのDBサイズ（読んだバイト数ではない）。local/full_scan、検証再利用/再検証を区別 |
+| storage._validate_current_schema_contract / _validate_current_schema_structure | スキーマ照合・各構造validatorの親。local/full_scanを区別。件数不明はnull |
+| storage._fetch_bounded_projection_rows | 実際に取得した行。既存batch loopで加算し、上限拒否を表示 |
+| stored_task_validation.validate_stored_task_rows | 検証を試みたTask行。scalar/privacy/Contractの小ループを親に含める |
+| state_paths.read_physical_file_bounded / hash_physical_file / _write_all | 実際に読んだ／書いたバイト。既存chunk/short-write loopで加算 |
+| git_snapshot.run_git_stream | Git subprocess・読取・待機。成功時の取得バイト、既存timeout分岐。出力内容・argvは保存しない |
+| artifact_lock._acquire（呼出し境界） | 待機しないartifact lock取得の時間・競合。取得後の保持時間ではない |
+| evidence_projection.canonical_json_bytes | 正規JSON構築の時間と生成バイト。再帰encoderを1回の親計測に含める |
+| evidence_publication._publish_evidence_projection | 全体のcapture・Bundle/index公開・再検証。成功公開回数、不要/無効/競合/失敗/上限 |
+| viewer.build_viewer_snapshot / render_viewer_html | スナップショットのTask数、既存エンコードで分かるHTMLバイト。各Taskの履歴・Finding集約を親に含める |
+| viewer_maintenance._refresh | capture・render・公開・再検証。成功公開回数、不要/無効/競合/失敗/上限 |
+| maintenance.run_post_commit_maintenance | Evidence/Viewerと既存backup要求を含む後処理全体。無変更分岐 |
+| cli_output.emit_result | 応答構築・JSON縮約・出力。既存binary出力のバイト数。text-only fallbackの件数はnull |
+| usage_locator_collection._capture / _pending / _direct / _inventory（呼出し境界） | 各候補選択・locator処理の小ループを集約。件数はnull、下記の走査・試行数と併読 |
+| usage_sources.locate_slice | 列挙したdirectory entry数。再開ordinalまでの読み飛ばしも含む。期限/件数上限 |
+| usage_ingest_work.IngestWork.run | 既存allowanceを使ったsource試行数。audit/ingestは同じ試行に含む。再検証/再利用/期限/上限 |
+| usage_incremental_adapter.scan | header・通常行・oversize drainで読んだバイト。JSON解析・ハッシュ鎖更新を含む。期限/上限 |
+| usage_incremental_projection.project_changed | 再集計したcomponent数。全体の構造選択、再利用、再計算を区別。各responseの小ループを親に含める |
+
+これは全関数・全loopのトレースではない。上表の親に含まれる小処理へ別イベントを
+追加しない。sourceがない・未実行の処理は出ない。失敗時は既知の途中件数だけの場合が
+あり、呼出し結果と併読する。errorsでは例外が外へ伝播した集計だけが対象となり、
+内部で処理済みの失敗マークだけでは成功scopeを保存対象に変えない。
+SQLは開始時のspan/measurement対応を使う。親子時間はinclusiveで合算しない。
+入口admission、logger自身の保存I/O、別workerの時間はこの一覧のCLI時間外であり、
+操作全体のOFF/ON比較で費用を確認する。既存の非同期backupにはこの変更で新しい
+起動・監視・retryを加えない。拒否されたadmissionとread-onlyは既存どおり保存しない。
+
+`test_debug_log_processing` は実Task・usageの1/30/300件、ファイル反復、列挙再開、
+公開不要・競合、閉じた単位/分岐とOFF/ON同一性を検証する。`test_debug_log_entry` と
+既存のadoption/SQL/maintenanceテストが公開応答・接続終了・保存境界を補う。
 
 <a id="sql-measurements"></a>
 

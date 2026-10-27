@@ -3104,7 +3104,7 @@ def main(
                 "invalid_argument",
                 "review target set requires --revision unless --kind is git_snapshot",
             )
-        from task_governance_tool.debug_log import operation_scope
+        from task_governance_tool.debug_log import operation_scope, span
         # Explicit inspection remains entirely write-free, even with logging
         # enabled. Other admitted calls flush only after handlers/maintenance
         # have unwound their connections; no argument values enter the label.
@@ -3112,11 +3112,12 @@ def main(
                            entrypoint=cli_script_path(), operation=command_name(args),
                            repo_explicit=hasattr(args, "repo"),
                            read_only=args.command == "doctor" or bool(getattr(args, "read_only", False)))
-        with diagnostics:
+        with diagnostics, span(main):
             context = make_context(args, target_override=_target_override)
             result = handle_command(context)
             if _maintenance_enabled:
-                result = apply_post_commit_maintenance(context, result)
+                with span(apply_post_commit_maintenance):
+                    result = apply_post_commit_maintenance(context, result)
             try:
                 exit_code = emit_result(
                     result,

@@ -149,12 +149,15 @@ def zero_wait_artifact_lock(path: Path, *, require_single_link: bool = False) ->
         if details.st_size == 0:
             os.write(descriptor, b"\0")
             os.fsync(descriptor)
-        try:
-            _acquire(descriptor)
-        except OSError as exc:
-            if exc.errno in {EACCES, EAGAIN, EDEADLK}:
-                raise ArtifactLockError(contended=True) from exc
-            raise
+        from task_governance_tool.debug_log import aggregate
+        with aggregate(_acquire) as measurement:
+            try:
+                _acquire(descriptor)
+            except OSError as exc:
+                if exc.errno in {EACCES, EAGAIN, EDEADLK}:
+                    measurement.mark('contended')
+                    raise ArtifactLockError(contended=True) from exc
+                raise
         locked = True
         os.lseek(descriptor, 0, os.SEEK_SET)
         lock_bytes = os.read(descriptor, 1)

@@ -202,6 +202,7 @@ class ManagedWait:
             diagnostic.observe_record(None)
         self.owner._wait_round_current(binding, continued)
         answer_binding = getattr(self.owner, "_bind_answers", None)
+        initial_binding_failure = None
         if callable(answer_binding):
             try:
                 # This explicit wait continues the current dispatch flow. A
@@ -222,6 +223,8 @@ class ManagedWait:
                 diagnostic.answer_collection = {"collected": [], "unavailable": [
                     {"failure": error.failure if isinstance(error, AnswerError) else
                      {"class": "collection_unavailable", "field": None, "reason": "incomplete"}}]}
+                if isinstance(error, AnswerError) and error.failure["reason"] == "initial_binding_interacted":
+                    initial_binding_failure = diagnostic.answer_collection
         pairs = []
         tracking = {}
         tracking_reader = getattr(self.owner, "_answer_tracking", None)
@@ -247,7 +250,7 @@ class ManagedWait:
                 if not tracked["frozen"]:
                     collected = self.owner._collect_answers(binding, host, (reviewer,), diagnostic=diagnostic)
                     if collected is not None:
-                        diagnostic.answer_collection = collected
+                        diagnostic.answer_collection = initial_binding_failure or collected
                     tracked = tracking_reader(binding, tuple(reviewers))[reviewer]
                 pairs.append((reviewer, expected[reviewer]))
                 ready = tracked["frozen"] and tracked["terminal"] == "completed"
@@ -270,10 +273,11 @@ class ManagedWait:
             try:
                 collected = self.owner._collect_answers(binding, host, tuple(reviewers), diagnostic=diagnostic)
                 if collected is not None:
-                    diagnostic.answer_collection = collected
+                    diagnostic.answer_collection = initial_binding_failure or collected
             except Exception as error:
                 from task_governance_tool.review_answer import AnswerError
-                diagnostic.answer_collection = {"collected": [], "unavailable": [
+                # A derived unbound-source error must not erase the observed cause.
+                diagnostic.answer_collection = initial_binding_failure or {"collected": [], "unavailable": [
                     {"failure": error.failure if isinstance(error, AnswerError) else
                      {"class": "collection_unavailable", "field": None, "reason": "incomplete"}}]}
         return reader, binding, tuple(sorted(pairs)), host, ended, finalizer, continued, historical, tuple(reviewers)

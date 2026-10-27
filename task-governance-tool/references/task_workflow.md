@@ -684,9 +684,14 @@ Use this procedure only when the issued handoff names `review-answer-v1`.
 Send each generated request unchanged to a new dedicated independent reviewer
 and retain actual returned IDs in the prepared slot order. Before adding another
 request to those children, use the selected normal wait; it establishes their
-fixed source bindings. With waiting OFF, unavailable or parent-managed, call
+fixed source bindings. Pass actual returned `/root/...` handles directly to
+`review_wait_wait`; do not contact reviewers to obtain UUIDs. Wait readiness is
+separate from collection success; retain its bounded collection failures.
+With waiting OFF, unavailable or parent-managed, call
 `review_answer_collect` once with the original `task_id` and ordered
-`reviewer_ids` while still in the dispatching turn. This binds the same sources
+canonical reviewer UUIDs already available from dispatch while still in the
+dispatching turn. This separate tool does not accept `/root/...` handles; do
+not obtain missing identity by messaging the reviewer. This binds the same sources
 and attempts collection without a worker or timer. It may report unfinished
 slots; that is not review failure or Task completion. Do not invent hook events.
 

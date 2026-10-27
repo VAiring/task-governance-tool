@@ -40,6 +40,18 @@ def record_fixture():
         correction=None, registration=dict(state="not_started", submission_digest=None, receipt_id=None))
 
 class ValueTests(unittest.TestCase):
+    def test_initial_interaction_failure_preserves_closed_class_and_field(self):
+        record = record_fixture()
+        failure = {"class": "binding_mismatch", "field": None,
+                   "reason": "initial_binding_interacted"}
+        record["attempts"][0]["failure"] = failure
+        self.assertEqual(v.validate_record(record)["attempts"][0]["failure"], failure)
+        for changed in ({"class": "collection_unavailable"}, {"field": "summary"}):
+            invalid = copy.deepcopy(record)
+            invalid["attempts"][0]["failure"].update(changed)
+            with self.subTest(changed=changed), self.assertRaises(AnswerError):
+                v.validate_record(invalid)
+
     def test_metadata_raw_ranges_and_detachment(self):
         metadata, answer = metadata_fixture()
         result = v.validate_metadata(metadata, answer.raw)

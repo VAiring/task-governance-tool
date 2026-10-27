@@ -77,6 +77,20 @@ class PreparationFixture(unittest.TestCase):
 
 
 class ReviewRequestLayoutTests(unittest.TestCase):
+    def test_initial_parent_guidance_uses_returned_handles_before_extra_contact(self):
+        from task_governance_tool.review_wait_runtime.project_server import ProjectReviewWaitSession
+        args = SimpleNamespace(directory="reviews/reading", reviewers=2,
+                               records_only=False, task_id="tg_task_0123456789abcdef")
+        with mock.patch("task_governance_tool.setup_feature_config.read_choices", return_value=(None, {})):
+            generated = preparation._requests(Path.cwd(), args, "reviews/reading/packet.json", collected=True)
+        instructions = generated["answer_collection"]["instructions"]
+        wait = next(tool for tool in ProjectReviewWaitSession.catalogue() if tool["name"] == "review_wait_wait")
+        for text in (instructions, wait["description"]):
+            for required in ("actual returned /root/...", "prepared slot order", "before any extra",
+                             "initial_binding_interacted", "answer_collection.unavailable"):
+                self.assertIn(required, text)
+        self.assertIn("canonical reviewer UUIDs only, not /root/... handles", instructions)
+
     def test_both_answer_protocols_request_all_diffs_and_only_needed_context(self):
         for collected in (False, True):
             args = SimpleNamespace(directory="reviews/reading", reviewers=1,

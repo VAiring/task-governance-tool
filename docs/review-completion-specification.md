@@ -605,6 +605,27 @@ the child's exact sole own turn is still checked independently.
 The durable binding precedes answer admission. A
 restart without the necessary pre-binding context cannot infer it from one page.
 
+Initial parent guidance uses the actual returned `/root/...` handles in prepared
+slot order with `review_wait_wait`, before any additional reviewer message or
+ending the dispatching turn. It requires no child UUID query or manual UUID
+transcription. The separate workerless `review_answer_collect` keeps its
+canonical-UUID-only input; handles are not admitted there. Missing identity
+does not authorize contacting a reviewer before binding.
+
+An otherwise unambiguous initial dispatch with validated same-child `interacted`
+activity fails as `{class:"binding_mismatch",field:null,
+reason:"initial_binding_interacted"}`. This fixed reason identifies observed
+additional contact before initial binding only. Ambiguous/duplicate dispatches,
+identity faults, incomplete activity, other competing activity and unknown
+send effects remain rejected without inferring that cause; no message text is interpreted
+or exposed. Single and multi binding use the same classification without an
+additional host read. Parent collection and wait responses preserve this
+failure, including under `answer_collection.unavailable` when waiting starts
+successfully. It also survives later collection failures when the reviewers
+have already ended. Wait readiness never establishes successful answer collection.
+The reason changes no binding admission, continuation, deadline or fallback
+timer behavior and authorizes no recovery effect.
+
 Fresh collection rechecks the current preparation and issued continuation at
 each admission boundary, including after a host observation and before original
 publication. An unchanged execution basis or old Packet alone cannot admit a

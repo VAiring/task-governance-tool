@@ -170,6 +170,37 @@ class HostTests(unittest.TestCase):
             with self.subTest(mutate=mutate), self.assertRaises(AnswerError):
                 self.host.bind_dispatch("dispatch-1", self.child, creation_context=True)
 
+    def test_initial_interaction_reason_requires_unambiguous_complete_same_child_activity(self):
+        for single in (False, True):
+            for fault in (None, "duplicate_start", "wrong_child", "duplicate_id", "clipped", "other_kind"):
+                with self.subTest(single=single, fault=fault):
+                    pages = self.bind_pages()
+                    items = pages[0]["turns"][0]["items"]
+                    interaction = dict(type="subAgentActivity", id="interaction-1",
+                                       kind="interacted", agentThreadId=self.child,
+                                       text="private message must not appear")
+                    items.append(interaction)
+                    if fault == "duplicate_start": items.append(dict(self.started, id="dispatch-2"))
+                    elif fault == "wrong_child": interaction.update(agentThreadId=self.parent, id="dispatch-1")
+                    elif fault == "duplicate_id": interaction["id"] = "dispatch-1"
+                    elif fault == "clipped": interaction["truncated"] = True
+                    elif fault == "other_kind": items.append(dict(interaction, id="other", kind="unknown"))
+                    self.public.reset_mock()
+                    self.public._json_call.side_effect = pages
+                    with self.assertRaises(AnswerError) as raised:
+                        if single:
+                            self.host.bind_dispatch("dispatch-1", self.child, creation_context=True)
+                        else:
+                            self.host.bind_reviewers((self.child,), creation_context=True)
+                    failure = raised.exception.failure
+                    if fault is None:
+                        self.assertEqual(failure, dict(**{"class": "binding_mismatch"},
+                            field=None, reason="initial_binding_interacted"))
+                    else:
+                        self.assertNotEqual(failure["reason"], "initial_binding_interacted")
+                    self.assertNotIn("private", json.dumps(failure))
+                    self.public._json_call.assert_called_once()
+
     def test_bound_retrieval_selects_saved_turn_even_when_newer_turn_exists(self):
         self.public._json_call.return_value = page(self.child, 2,
             turn(TURN2, items=[dict(self.final, id="unrelated", text="unrelated")]), turn(TURN1, items=[self.final]))

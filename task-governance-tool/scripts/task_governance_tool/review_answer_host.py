@@ -93,8 +93,9 @@ def _dispatch_activity(items, child, expected_dispatch=None):
                        or expected_dispatch is not None and item.get("id") == expected_dispatch)]
     starts = [item for item in activities if item.get("kind") == "started"]
     completions = [item for item in activities if item.get("kind") == "completed"]
+    interactions = [item for item in activities if item.get("kind") == "interacted"]
     if (len(starts) != 1 or len(completions) > 1
-            or len(activities) != len(starts) + len(completions)):
+            or len(activities) != len(starts) + len(completions) + len(interactions)):
         _fail("conflict", "binding_mismatch")
     for item in activities:
         _content_complete(item)
@@ -106,6 +107,10 @@ def _dispatch_activity(items, child, expected_dispatch=None):
     dispatch = starts[0]["id"]
     if expected_dispatch is not None and dispatch != expected_dispatch:
         _fail("conflict", "binding_mismatch")
+    if interactions:
+        # Only validated same-child activity identifies this particular cause.
+        # Unknown sends, ambiguous dispatches and identity faults stay generic.
+        _fail("initial_binding_interacted", "binding_mismatch")
     return dispatch
 
 

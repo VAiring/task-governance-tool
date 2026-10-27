@@ -342,8 +342,10 @@ def _failure(value):
         return
     require(value["class"] in ("format_invalid", "privacy_rejected", "capacity_exceeded", "collection_unavailable", "binding_mismatch", "save_unknown", "registration_unknown", "review_unable", "review_changes_requested"))
     require(value["field"] is None or value["field"] in ("verdict", "summary", "findings", "findings[].severity", "findings[].summary", "checks", "checks[]", "limitations", "limitations[]"))
-    require(value["reason"] in ("shape", "type", "choice", "unicode", "duplicate", "bound", "privacy", "missing", "incomplete", "identity", "conflict", "effect_unknown", "observer_unavailable", "transport_unavailable"))
+    require(value["reason"] in ("shape", "type", "choice", "unicode", "duplicate", "bound", "privacy", "missing", "incomplete", "identity", "conflict", "effect_unknown", "observer_unavailable", "transport_unavailable", "initial_binding_interacted"))
     require((value["class"] == "privacy_rejected") == (value["reason"] == "privacy"))
+    if value["reason"] == "initial_binding_interacted":
+        require(value["class"] == "binding_mismatch" and value["field"] is None)
 
 def validate_record(value):
     tracked = type(value) is dict and value.get("version") == 2

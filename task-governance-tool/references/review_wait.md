@@ -84,11 +84,18 @@ name and schema; no routine lookup or confirmation is needed.
    whose outcome is unknown.
 2. Call `review_wait_wait(task_id, reviewer_ids)` once with that original Task
    and the actual returned `/root/...` handles (canonical UUIDs also work).
+   Keep prepared slot order and bind before any extra message to the reviewers.
+   Use the returned handles directly; do not ask reviewers for UUIDs or manually
+   transcribe them for this normal wait.
    Supply no automation/probe IDs, prompt, schedule or destination.
 3. Delegate waiting and end this turn on
    `ok=true,status=waiting,parent_may_end=true` only.
    The service owns waiting and same-parent notification. Readiness is not Task
-   completion; failed calls use the linked failure procedure for ordinary turn
+   completion or successful answer collection. Preserve any
+   `answer_collection.unavailable` failure: `binding_mismatch` with reason
+   `initial_binding_interacted` means the host observed additional contact before
+   initial binding. Other binding failures do not establish that cause.
+   Failed calls use the linked failure procedure for ordinary turn
    ending after reporting a limitation.
 4. Report a received integrated body directly when it matches the original
    Task/target generation, has `status=completed`, successful stages, actual

@@ -533,6 +533,18 @@ own the exact closed basis/binding/source/metadata/capture types; the
 path-free v2 provenance and frozen public graph validation. Conditional design
 material retains Task acceptance only and supplies no missing runtime rule.
 
+`review_answer_host._dispatch_activity` is shared by single and multi initial
+binding. It validates activity completeness, IDs, unique dispatch and child
+identity before distinguishing `initial_binding_interacted` from other
+`binding_mismatch` reasons. Only a positively observed same-child interaction
+selects that fixed reason, with null field. The shared failure validator admits
+only that class/field combination. Existing parent collection and managed-wait
+failure forwarding retain it without new host calls or timer changes. The wait
+preflight keeps this initial rejection ahead of subsequent unbound-source
+failures, including the all-reviewers-ended collection path. Parent
+preparation, MCP wait description and Skill guidance use returned handles before
+extra contact; workerless collection retains its separate UUID-only contract.
+
 `review_answer.py` owns pure bounded UTF-8/JSON decoding and exact original/
 payload byte ranges. `DecodedAnswer` retains complete bytes, all five sanitized
 fields, offsets/length and separate original/payload digests. `AnswerError`

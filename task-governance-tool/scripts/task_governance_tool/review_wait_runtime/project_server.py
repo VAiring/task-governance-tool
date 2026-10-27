@@ -153,6 +153,13 @@ class ProjectReviewWaitSession:
 
     @staticmethod
     def catalogue():
+        initial_wait_guidance = (
+            "Immediately after dispatch, pass the actual returned /root/... handles in prepared slot order, "
+            "before any extra reviewer message. No reviewer UUID query or manual transcription is needed. "
+            "Wait readiness does not prove answer collection succeeded: retain answer_collection.unavailable. "
+            "binding_mismatch with reason initial_binding_interacted identifies observed additional contact "
+            "before initial binding; other binding failures do not prove that cause. "
+        )
         descriptions = {
             "answer_collect": "Explicitly enabled answer collection, independent of waiting. Hook arm accepts typed event identity hints only. Parent arm accepts the original Task and ordered actual child UUIDs. New tracking requests bind a fresh dedicated child once, then observe its latest complete final until the first valid completed answer is frozen. Invalid format remains unadopted; valid negative/unable results also freeze. For a newly prepared continuation, call with action=arm BEFORE sending its follow-up: the existing dedicated reviewer must have ended its prior turn, which becomes the excluded baseline. Repeating arm reuses that baseline, never resends. Old issued requests retain exact-turn recovery. Only the parent arm may reconcile an interrupted publication against its saved intent, exact path and full bytes. Returns bounded facts without answer bodies. No correction sends, workers, timers, registration or completion. Unknown sends never authorize replay or prove delivery; use the existing parent recovery.",
             "wait": "Wait for the original Task and actual returned reviewers using the authorized connected service. Creates and starts its same-parent timer; delegate waiting and end the turn on ok=true,status=waiting,parent_may_end=true. On failure, report the limitation and recovery condition before ordinary turn end; no automatic resumption is promised. A matching prepare-finalization intent runs fixed registration, gates, local commit and completion before notification; otherwise it notifies review end only. A received body matching the original Task/target generation with status=completed, successful stages, actual Task done and sufficient reporting facts without unresolved contradiction or action permits direct reporting without another guide read, routine query or replay. Include all Findings (also low/resolved), warnings, limitations and not_recorded work; these alone do not exclude success. Labels (including delivery.source_body=complete), correlation, ok=true, review end/PASS and send acceptance alone prove neither completion nor unseen content. Follow references/review_wait.md#normal-wait for waiting; other results, including incomplete, unknown, failed, conflicting or action-requiring reports, use references/task_workflow.md#continue-after-reviews. No separate ACK or routine status call; next-Task authority reads and existing gates still apply.",
@@ -165,7 +172,8 @@ class ProjectReviewWaitSession:
             "direct_cancel": "Compatibility/recovery only: cancel an earlier wait and clean up known-ACTIVE state; never retry unknown effects. Normal cancellation uses review_wait_stop.",
             "direct_ack": "Compatibility only: acknowledge an earlier wait in a genuinely new turn of this same parent, without review evidence. Normal waiting records receipt automatically.",
         }
-        return [{"name": "review_answer_collect" if operation == "answer_collect" else "review_wait_" + operation, "description": descriptions[operation],
+        return [{"name": "review_answer_collect" if operation == "answer_collect" else "review_wait_" + operation,
+                 "description": (initial_wait_guidance if operation == "wait" else "") + descriptions[operation],
                  "inputSchema": {"type": "object", "properties": fields,
                                  **({"oneOf": [{"type": "object", "properties": {key: fields[key] for key in shape},
                                      "required": sorted(shape), "additionalProperties": False}

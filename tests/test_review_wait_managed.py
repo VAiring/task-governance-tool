@@ -1221,6 +1221,7 @@ class ManagedTrackingAdmissionTests(unittest.TestCase):
         self.completed = False
         self.answer_text = None
         self.binding_unavailable = False
+        self.binding_interacted = False
         self.answer_reads = []
         self.worker_cycle = threading.Event()
         original_factory = flow.factory
@@ -1255,6 +1256,9 @@ class ManagedTrackingAdmissionTests(unittest.TestCase):
         items = ([dict(type="subAgentActivity", id="dispatch-" + str(index),
                        kind="started", agentThreadId=reviewer)
                   for index, reviewer in enumerate(self.reviewers)] if child == self.parent else [])
+        if child == self.parent and self.binding_interacted:
+            items.append(dict(type="subAgentActivity", id="interaction", kind="interacted",
+                              agentThreadId=self.reviewers[0], text="private contact"))
         if child != self.parent and self.completed and self.answer_text is not None:
             items = [dict(type="agentMessage", id="invalid-final", phase="final_answer", text=self.answer_text)]
         status = "completed" if child != self.parent and self.completed else "inProgress"
@@ -1300,6 +1304,66 @@ class ManagedTrackingAdmissionTests(unittest.TestCase):
         # Repeated real tracking lookup remains optional for a validated unbound
         # initial source, but still traverses native and issued-basis admission.
         self.assertEqual(self.flow.session._answer_tracking(self.flow.basis, self.reviewers), {})
+
+    def test_initial_interaction_reason_survives_wait_without_disabling_timer(self):
+        self.issued_collection()
+        self.binding_interacted = True
+        result = self.wait()
+        self.assert_waiting(result)
+        failure = result["answer_collection"]["unavailable"][0]["failure"]
+        self.assertEqual(failure, {"class": "binding_mismatch", "field": None,
+                                  "reason": "initial_binding_interacted"})
+        self.assertNotIn("private contact", json.dumps(result))
+        self.assertTrue(all(row["binding"] is None for row in self.selection.service().repository.read()))
+        self.assertEqual(self.answer_reads.count((self.parent, 1)), 1)
+
+    def test_initial_interaction_reason_survives_already_ended_reviewers(self):
+        self.issued_collection()
+        self.binding_interacted = self.completed = True
+        with mock.patch.object(self.flow.session, "_collect_answers",
+                               wraps=self.flow.session._collect_answers) as collect:
+            result = self.wait()
+        self.assertTrue(result["ok"], result)
+        self.assertEqual(result["status"], "reviews_ended")
+        self.assertFalse(result["parent_may_end"])
+        self.assertEqual(self.flow.effects, [])
+        collect.assert_called_once()
+        self.assertEqual(result["answer_collection"], {"collected": [], "unavailable": [
+            {"failure": {"class": "binding_mismatch", "field": None,
+                         "reason": "initial_binding_interacted"}}]})
+        self.assertNotIn("private contact", json.dumps(result))
+        self.assertTrue(all(row["binding"] is None for row in self.selection.service().repository.read()))
+        self.assertEqual(self.answer_reads, [(self.parent, 1)])
+
+    def test_workerless_initial_interaction_keeps_the_same_failure_without_timer(self):
+        self.issued_collection()
+        self.binding_interacted = True
+        from task_governance_tool.review_wait_runtime.review_wait_server import _call
+        response = _call(dict(name="review_answer_collect", arguments=dict(task_id=self.task,
+            reviewer_ids=list(self.reviewers)), _meta=self.metadata), self.flow.session)
+        result = json.loads(response["content"][0]["text"])
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["failure"], {"class": "binding_mismatch", "field": None,
+                                           "reason": "initial_binding_interacted"})
+        self.assertEqual(self.flow.effects, [])
+        self.assertEqual(self.answer_reads, [(self.parent, 1)])
+
+    def test_normal_wait_binds_actual_handles_without_child_identity_query(self):
+        self.issued_collection()
+        original = self.flow.session.managed_host_factory
+        def factory(**kwargs):
+            host = original(**kwargs)
+            host.resolve_reviewer_ids = lambda: self.reviewers
+            return host
+        self.flow.session.managed_host_factory = factory
+        from task_governance_tool.review_wait_runtime.review_wait_server import _call
+        response = _call(dict(name="review_wait_wait", arguments=dict(task_id=self.task,
+            reviewer_ids=["/root/reviewer_a", "/root/reviewer_b"]), _meta=self.metadata), self.flow.session)
+        result = json.loads(response["content"][0]["text"])
+        self.assert_waiting(result)
+        self.assertEqual([row["binding"]["reviewer_session_id"]
+                          for row in self.selection.service().repository.read()], list(self.reviewers))
+        self.assertEqual(self.answer_reads.count((self.parent, 1)), 1)
 
     def test_already_running_correction_turn_uses_saved_tracking_boundary(self):
         self.issued_collection()

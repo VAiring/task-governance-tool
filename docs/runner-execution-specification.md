@@ -208,7 +208,14 @@ destination must be an already owned,
 physical, empty private target directory with no reparse traversal. Creation is
 exclusive, every streamed blob is verified against its Git object ID, and a
 bounded post-write inventory must equal the admitted entry set exactly. No byte
-is copied back. Existing shell-free, no-lazy-fetch Git plumbing may be used only
+is copied back. Within one materialization only, bounded retention of validated
+immutable Git blob bytes may avoid repeated Git reads for different paths.
+Each output remains an independent exclusive file with its own identity, size
+and Git hash checks; all expanded bytes still count toward the target limit.
+Retention exhaustion falls back to streaming rather than rejecting otherwise
+valid material. No retained bytes or validation proof cross calls or targets;
+target recapture and failure cleanup requirements remain unchanged.
+Existing shell-free, no-lazy-fetch Git plumbing may be used only
 for read-only target/object observation; no plan entrypoint, verification
 command, hook, or target code is launched during target planning or materialization.
 

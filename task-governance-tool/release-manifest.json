@@ -238,7 +238,7 @@
     "scripts/task_governance_tool/verification_receipts.py": "sha256:25a004dfbadaac746ac5c66a1ee851408e4abb3086203c20df049ffde95fc69a",
     "scripts/task_governance_tool/verification_results.py": "sha256:5441d99658cc92f37a01527f503474d7fd0fe37c1ccacc813026372a82d77e54",
     "scripts/task_governance_tool/verification_runner.py": "sha256:685a1314c70c599e6b277301a08e14bc99b4f5bbb04ce74d555eb1c0c1b4a858",
-    "scripts/task_governance_tool/verification_runner_git.py": "sha256:ddb6acb1352151018ab7358f79aa48ba1c74e843d793b612b2feff26a0443e48",
+    "scripts/task_governance_tool/verification_runner_git.py": "sha256:32e37762a944dc3297773705c0b5e2c4b17803f1393c9c40542fff9b1f7cf65a",
     "scripts/task_governance_tool/verification_runner_lifecycle.py": "sha256:5c8601891514438c4ffa48ca7c91ca9b49b16421bc931d0e9c4c9a427893a521",
     "scripts/task_governance_tool/verification_runner_plan.py": "sha256:56d875863b65167e26004faa14a633d9146797446064121e902b996c476ea74d",
     "scripts/task_governance_tool/verification_runner_plan_authoring.py": "sha256:a4d11e626f44a62a32477841c7356db0aadad21431c910690e4682f0fa1181e5",

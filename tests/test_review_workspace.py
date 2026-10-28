@@ -76,7 +76,7 @@ class ReviewerWorkspaceTests(fixtures.PreparationFixture):
         patch.start()
         self.addCleanup(patch.stop)
 
-    def prepared(self, *, commit=False):
+    def prepared(self, *, commit=False, duplicate=False):
         self.committed_fixture()
         (self.root / "counter.py").write_text("raise RuntimeError('old')\n", encoding="utf-8")
         (self.root / "test_counter.py").write_text(SIX_TESTS, encoding="utf-8")
@@ -85,6 +85,9 @@ class ReviewerWorkspaceTests(fixtures.PreparationFixture):
         self.git("commit", "--quiet", "-m", "Six unchanged checks")
         (self.root / "counter.py").write_text(COUNTER, encoding="utf-8")
         self.git("-c", "core.autocrlf=false", "add", "--", "counter.py")
+        if duplicate:
+            (self.root / "counter-copy.py").write_text(COUNTER, encoding="utf-8")
+            self.git("-c", "core.autocrlf=false", "add", "--", "counter-copy.py")
         options = ["--kind", "git_snapshot"]
         if commit:
             self.git("commit", "--quiet", "-m", "Fixed counter")
@@ -569,6 +572,27 @@ class ReviewerWorkspaceTests(fixtures.PreparationFixture):
         self.assertFalse(result["ok"])
         self.assertEqual(result["cleanup_status"], "absent")
         self.assertNotIn("working_directory", result)
+
+    def test_reused_blob_failure_cleans_real_partial_materialization(self):
+        args = self.prepared(duplicate=True)
+        from task_governance_tool import verification_runner_git as material
+        write = material._stream_blob_to_file
+        reused = []
+
+        def fail_after_reuse(*values, **kwargs):
+            result = write(*values, **kwargs)
+            if kwargs.get("cached_blob") is not None:
+                reused.append(values[2].relative_posix_path)
+                raise material.VerificationRunnerGitError("materialization_failed")
+            return result
+
+        with mock.patch.object(material, "_stream_blob_to_file", side_effect=fail_after_reuse):
+            result = workspace.operate(self.root, args)
+        self.assertEqual(len(reused), 1)
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["cleanup_status"], "absent")
+        self.assertNotIn("working_directory", result)
+        self.assertFalse((self.workspace_temp / ("taskgov-review-" + args.workspace_id)).exists())
 
     def test_created_root_with_unknown_identity_is_reported_retained(self):
         args = self.prepared()

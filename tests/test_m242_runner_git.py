@@ -724,6 +724,163 @@ class RunnerGitTests(unittest.TestCase):
             self.assertTrue((destination / "unexpected.txt").is_file())
             self.assertEqual((repo / "only.txt").read_bytes(), b"bytes\n")
 
+    def test_repeated_blobs_reduce_real_git_reads_and_outputs_stay_independent(self):
+        for count in (1, 8, 64):
+            with self.subTest(count=count), tempfile.TemporaryDirectory() as temporary:
+                repo = self.make_repo(temporary)
+                payload = b"immutable Git bytes\n" * 4096
+                files = {f"file-{i:03}.txt": payload for i in range(count)}
+                target = self.seed_commit(repo, files)
+                _, material = self.prepare_commit_material(repo, target)
+                real_stream = git_module.run_git_stream
+                reads = []
+
+                def observed_stream(*args, **kwargs):
+                    result = real_stream(*args, **kwargs)
+                    reads.append(result.byte_count)
+                    return result
+
+                for attempt in range(2):
+                    destination = Path(temporary) / f"private-{attempt}"
+                    destination.mkdir()
+                    with mock.patch.object(git_module, "run_git_stream", side_effect=observed_stream):
+                        output = materialize_runner_target(repo, material, destination)
+                    self.assertEqual(reads, [len(payload)] * (attempt + 1))
+                    self.assertEqual(output.total_bytes, len(payload) * count)
+                    identities = set()
+                    for name in files:
+                        path = destination / name
+                        self.assertEqual(path.read_bytes(), payload)
+                        identities.add((path.stat().st_dev, path.stat().st_ino))
+                    self.assertEqual(len(identities), count)
+                    (destination / "file-000.txt").write_bytes(b"changed output")
+                    for name in list(files)[1:]:
+                        self.assertEqual((destination / name).read_bytes(), payload)
+
+    def test_unique_blobs_do_not_capture_and_read_each_real_object(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            repo = self.make_repo(temporary)
+            files = {f"file-{i}.txt": bytes([i]) * 13 for i in range(8)}
+            target = self.seed_commit(repo, files)
+            _, material = self.prepare_commit_material(repo, target)
+            destination = Path(temporary) / "private"
+            destination.mkdir()
+            with mock.patch.object(git_module, "run_git_stream", wraps=git_module.run_git_stream) as reads, \
+                 mock.patch.object(git_module, "_stream_blob_to_file", wraps=git_module._stream_blob_to_file) as writes:
+                materialize_runner_target(repo, material, destination)
+            self.assertEqual(reads.call_count, len(files))
+            self.assertTrue(all(not call.kwargs for call in writes.call_args_list))
+            self.assertEqual({p.name: p.read_bytes() for p in destination.iterdir()}, files)
+
+    def test_byte_and_entry_exhaustion_fall_back_without_changing_outputs(self):
+        for byte_limit, entry_limit, expected_reads in ((3, 1, 3), (2, 256, 4), (8, 0, 4), (8, 256, 2)):
+            with self.subTest(byte_limit=byte_limit, entry_limit=entry_limit), tempfile.TemporaryDirectory() as temporary:
+                repo = self.make_repo(temporary)
+                files = {"a1": b"aaa", "b1": b"bbb", "c2": b"aaa", "d2": b"bbb"}
+                target = self.seed_commit(repo, files)
+                _, material = self.prepare_commit_material(repo, target)
+                destination = Path(temporary) / "private"
+                destination.mkdir()
+                with mock.patch.object(git_module, "_BLOB_CACHE_BYTE_LIMIT", byte_limit), \
+                     mock.patch.object(git_module, "_BLOB_CACHE_ENTRY_LIMIT", entry_limit), \
+                     mock.patch.object(git_module, "run_git_stream", wraps=git_module.run_git_stream) as reads:
+                    result = materialize_runner_target(repo, material, destination)
+                self.assertEqual(reads.call_count, expected_reads)
+                self.assertEqual(result.total_bytes, 12)
+                self.assertEqual({p.name: p.read_bytes() for p in destination.iterdir()}, files)
+
+    def test_empty_blob_is_reused_with_zero_payload_budget(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            repo = self.make_repo(temporary)
+            target = self.seed_commit(repo, {"empty-a": b"", "empty-b": b""})
+            _, material = self.prepare_commit_material(repo, target)
+            destination = Path(temporary) / "private"
+            destination.mkdir()
+            with mock.patch.object(git_module, "_BLOB_CACHE_BYTE_LIMIT", 0), \
+                 mock.patch.object(git_module, "run_git_stream", wraps=git_module.run_git_stream) as reads:
+                result = materialize_runner_target(repo, material, destination)
+            self.assertEqual(reads.call_count, 1)
+            self.assertEqual(result.total_bytes, 0)
+            self.assertEqual((destination / "empty-b").read_bytes(), b"")
+
+    def test_retention_budget_is_released_after_last_use(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            repo = self.make_repo(temporary)
+            files = {"a1": b"aaa", "a2": b"aaa", "b1": b"bbb", "b2": b"bbb"}
+            target = self.seed_commit(repo, files)
+            _, material = self.prepare_commit_material(repo, target)
+            destination = Path(temporary) / "private"
+            destination.mkdir()
+            with mock.patch.object(git_module, "_BLOB_CACHE_BYTE_LIMIT", 3), \
+                 mock.patch.object(git_module, "_BLOB_CACHE_ENTRY_LIMIT", 1), \
+                 mock.patch.object(git_module, "run_git_stream", wraps=git_module.run_git_stream) as reads:
+                materialize_runner_target(repo, material, destination)
+            self.assertEqual(reads.call_count, 2)
+            self.assertEqual({p.name: p.read_bytes() for p in destination.iterdir()}, files)
+
+    def test_corrupt_source_never_becomes_reusable_and_next_call_recovers(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            repo = self.make_repo(temporary)
+            target = self.seed_commit(repo, {"a": b"good", "b": b"good"})
+            _, material = self.prepare_commit_material(repo, target)
+            destination = Path(temporary) / "broken"
+            destination.mkdir()
+            real_stream = git_module.run_git_stream
+
+            def corrupt(repo, arguments, consume, **kwargs):
+                return real_stream(repo, arguments, lambda chunk: consume(b"x" * len(chunk)), **kwargs)
+
+            with mock.patch.object(git_module, "run_git_stream", side_effect=corrupt):
+                self.assert_git_error(lambda: materialize_runner_target(repo, material, destination),
+                                      "target_stale", TARGET_STALE_MESSAGE)
+            self.assertFalse((destination / "b").exists())
+            recovered = Path(temporary) / "recovered"
+            recovered.mkdir()
+            with mock.patch.object(git_module, "run_git_stream", wraps=real_stream) as reads:
+                materialize_runner_target(repo, material, recovered)
+            self.assertEqual(reads.call_count, 1)
+            self.assertEqual((recovered / "b").read_bytes(), b"good")
+
+    def test_reused_blob_still_rejects_output_tamper_and_final_target_drift(self):
+        for tamper in ("output", "target"):
+            with self.subTest(tamper=tamper), tempfile.TemporaryDirectory() as temporary:
+                repo = self.make_repo(temporary)
+                self.seed_commit(repo, {"a": b"good", "b": b"good"})
+                material = preflight_runner_material(repo, observe_staged_runner_target(repo))
+                destination = Path(temporary) / "private"
+                destination.mkdir()
+                real_write = git_module._stream_blob_to_file
+
+                def write_then_tamper(*args, **kwargs):
+                    result = real_write(*args, **kwargs)
+                    if kwargs.get("cached_blob") is not None:
+                        if tamper == "output":
+                            (destination / "a").write_bytes(b"evil")
+                        else:
+                            (repo / "a").write_bytes(b"new target")
+                            git(repo, "add", "a")
+                    return result
+
+                with mock.patch.object(git_module, "_stream_blob_to_file", side_effect=write_then_tamper):
+                    self.assert_git_error(lambda: materialize_runner_target(repo, material, destination),
+                                          "materialization_failed" if tamper == "output" else "target_stale",
+                                          MATERIALIZATION_ERROR_MESSAGE if tamper == "output" else TARGET_STALE_MESSAGE)
+
+    def test_cached_source_still_checks_size_and_git_hash(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            destination = Path(temporary).resolve() / "private"
+            destination.mkdir()
+            expected = b"good"
+            oid = hashlib.sha1(b"blob 4\0" + expected).hexdigest()
+            for i, invalid in enumerate((b"evil", b"short", b"")):
+                entry = RunnerTargetEntry(f"file-{i}", "100644", oid)
+                with mock.patch.object(git_module, "run_git_stream") as reads:
+                    self.assert_git_error(
+                        lambda: git_module._stream_blob_to_file(destination, destination, entry, 4,
+                                                               "sha1", cached_blob=invalid),
+                        "target_stale", TARGET_STALE_MESSAGE)
+                reads.assert_not_called()
+
     def test_size_tamper_is_rejected_before_opening_a_file_descriptor(self):
         with tempfile.TemporaryDirectory() as temporary:
             destination = Path(temporary).resolve() / "private"

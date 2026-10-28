@@ -135,13 +135,28 @@ destination root), depth-64, and 512-MiB target bounds, and repeats target
 capture before returning. It never reads or identifies a plan.
 Materialization accepts only that preflight value and an existing
 empty physical destination. It creates derived directories and regular files
-exclusively, streams each blob with the established bounded Git reader,
+exclusively, reads each blob with the established bounded Git reader,
 recomputes the Git object ID including its blob header, and performs a bounded
 no-follow inventory/hash comparison against the complete admitted set. A final
 target recapture must still match. It never reads working-tree file content,
 extracts an archive, follows a link/reparse, replaces an entry, copies back, or
 launches target code. Failure leaves cleanup acceptance to the separate
 `lifecycle` owner.
+
+One materialization may retain validated immutable blob bytes for later paths
+with the same object ID. The local cache retains at most 8 MiB of payload and
+256 entries, only for objects still needed again; each entry expires after its
+last use and the cache never crosses a call or target boundary. Capture is
+admitted against the remaining byte and entry budgets before reading. Its
+bounded chunk list is joined once after source and output verification; that
+conversion can transiently hold one additional captured blob (at most 8 MiB),
+in addition to the retained payload and bounded stream/write buffers. Exhausted
+budgets or oversized blobs use ordinary streaming without changing admission.
+Every reused byte sequence is written into a separately exclusively created
+file in bounded chunks, with the same per-file size, Git hash and identity
+checks and complete post-write inventory. There are no hardlinks or shared
+mutable outputs. Final target recapture and caller-owned failure cleanup remain
+mandatory, including for the optional reviewer workspace consumer.
 
 The parent-created canonical attempt target may be beneath the governed
 repository because both the ordinary project-scoped package and the self-host

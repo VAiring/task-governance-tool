@@ -12,6 +12,7 @@ import re
 import stat
 import subprocess
 import unicodedata
+from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable
@@ -75,6 +76,9 @@ _BATCH_OUTPUT_BYTE_LIMIT = TARGET_FILE_LIMIT * (64 + len(" blob ") + 20 + 1)
 _GIT_OBSERVATION_CONFIG = ("-c", "core.fsmonitor=false")
 _GIT_RECORD_BYTE_LIMIT = ARTIFACT_PATH_BYTE_LIMIT + 80
 _COPY_CHUNK_BYTES = 64 * 1024
+# Per materialization only; exhausting either limit falls back to streaming.
+_BLOB_CACHE_BYTE_LIMIT = 8 * 1024 * 1024
+_BLOB_CACHE_ENTRY_LIMIT = 256
 
 
 @dataclass
@@ -800,7 +804,10 @@ def _stream_blob_to_file(
     entry: RunnerTargetEntry,
     expected_size: int,
     object_format: str,
-) -> None:
+    *,
+    cached_blob: bytes | None = None,
+    capture_limit: int | None = None,
+) -> bytes | None:
     path = _relative_path(destination, entry.relative_posix_path)
     try:
         require_contained(path, destination)
@@ -825,6 +832,13 @@ def _stream_blob_to_file(
     hasher = _git_hasher(object_format)
     hasher.update(f"blob {expected_size}\0".encode("ascii"))
     opened_identity: tuple[int, int, int] | None = None
+    captured: list[bytes] | None = None
+    if (
+        cached_blob is None
+        and capture_limit is not None
+        and expected_size <= capture_limit
+    ):
+        captured = []
     try:
         opened = os.fstat(descriptor)
         if _is_reparse(opened) or not stat.S_ISREG(opened.st_mode):
@@ -838,23 +852,31 @@ def _stream_blob_to_file(
             _write_all(descriptor, chunk)
             hasher.update(chunk)
             observed_size += len(chunk)
+            if captured is not None:
+                captured.append(chunk)
 
-        stream_identity = run_git_stream(
-            repo,
-            [
-                *_GIT_OBSERVATION_CONFIG,
-                "cat-file",
-                "blob",
-                entry.object_id,
-            ],
-            consume,
-            code="target_stale",
-            field="target",
-            message=TARGET_STALE_MESSAGE,
-        )
+        if cached_blob is None:
+            stream_identity = run_git_stream(
+                repo,
+                [
+                    *_GIT_OBSERVATION_CONFIG,
+                    "cat-file",
+                    "blob",
+                    entry.object_id,
+                ],
+                consume,
+                code="target_stale",
+                field="target",
+                message=TARGET_STALE_MESSAGE,
+            )
+            source_byte_count = stream_identity.byte_count
+        else:
+            for offset in range(0, len(cached_blob), _COPY_CHUNK_BYTES):
+                consume(cached_blob[offset:offset + _COPY_CHUNK_BYTES])
+            source_byte_count = len(cached_blob)
         if (
             observed_size != expected_size
-            or stream_identity.byte_count != expected_size
+            or source_byte_count != expected_size
             or hasher.hexdigest() != entry.object_id
         ):
             raise _stale()
@@ -891,6 +913,8 @@ def _stream_blob_to_file(
         or (identity.device, identity.inode) != opened_identity[:2]
     ):
         raise _materialization_error()
+    # Publish immutable bytes only after both source and output checks pass.
+    return b"".join(captured) if captured is not None else None
 
 
 def _hash_materialized_file(
@@ -1082,14 +1106,34 @@ def materialize_runner_target(
             )
 
         object_sizes = dict(material.object_sizes)
+        remaining = Counter(entry.object_id for entry in material.target.entries)
+        cached: dict[str, bytes] = {}
+        retained_bytes = 0
         for entry in material.target.entries:
-            _stream_blob_to_file(
-                repo,
-                destination,
-                entry,
-                object_sizes[entry.object_id],
-                material.target.object_format,
+            object_id = entry.object_id
+            size = object_sizes[object_id]
+            arguments = (
+                repo, destination, entry, size, material.target.object_format
             )
+            if object_id in cached:
+                _stream_blob_to_file(*arguments, cached_blob=cached[object_id])
+            elif (
+                remaining[object_id] > 1
+                and len(cached) < _BLOB_CACHE_ENTRY_LIMIT
+                and size <= _BLOB_CACHE_BYTE_LIMIT - retained_bytes
+            ):
+                captured = _stream_blob_to_file(
+                    *arguments, capture_limit=_BLOB_CACHE_BYTE_LIMIT - retained_bytes
+                )
+                if captured is not None:
+                    cached[object_id] = captured
+                    retained_bytes += len(captured)
+                del captured
+            else:
+                _stream_blob_to_file(*arguments)
+            remaining[object_id] -= 1
+            if remaining[object_id] == 0 and object_id in cached:
+                retained_bytes -= len(cached.pop(object_id))
 
         entry_count, directory_count, total_bytes = _inventory_materialized_target(
             destination,

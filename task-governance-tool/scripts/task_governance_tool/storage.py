@@ -4976,11 +4976,16 @@ def validate_current_schema21_admitted_rows(
         raise _unreadable_project_state() from exc
 
 
-def validate_schema21_storage(
+def validate_schema21_storage(connection, *, _privacy_success_cache=None) -> None:
+    _validate_schema21_storage_with_task_rows(
+        connection, _privacy_success_cache=_privacy_success_cache)
+
+
+def _validate_schema21_storage_with_task_rows(
     connection: sqlite3.Connection,
     *,
     _privacy_success_cache: set[tuple[str, str, str]] | None = None,
-) -> None:
+) -> tuple[sqlite3.Row, ...]:
     """Validate the exact schema-v21 storage and closed tagged graph."""
 
     marker = connection.execute(
@@ -4998,18 +5003,24 @@ def validate_schema21_storage(
     ):
         raise _unreadable_project_state()
     _validate_schema21_owned_contract(connection)
-    _validate_schema21_admitted_rows(
+    task_rows = _validate_schema21_admitted_rows(
         connection,
         _privacy_success_cache=_privacy_success_cache,
     )
     _schema20_integrity_checks(connection)
+    return task_rows
 
 
-def validate_schema22_storage(
+def validate_schema22_storage(connection, *, _privacy_success_cache=None) -> None:
+    _validate_schema22_storage_with_task_rows(
+        connection, _privacy_success_cache=_privacy_success_cache)
+
+
+def _validate_schema22_storage_with_task_rows(
     connection: sqlite3.Connection,
     *,
     _privacy_success_cache: set[tuple[str, str, str]] | None = None,
-) -> None:
+) -> tuple[sqlite3.Row, ...]:
     """Validate explicit v22 storage with unchanged retained Evidence semantics."""
 
     marker = connection.execute(
@@ -5027,11 +5038,12 @@ def validate_schema22_storage(
     ):
         raise _unreadable_project_state()
     _validate_schema22_owned_contract(connection)
-    _validate_schema21_admitted_rows(
+    task_rows = _validate_schema21_admitted_rows(
         connection,
         _privacy_success_cache=_privacy_success_cache,
     )
     _schema20_integrity_checks(connection)
+    return task_rows
 
 
 def validate_schema21_storage_for_recovery(
@@ -12881,12 +12893,12 @@ def read_setup_state(
         if version == PRIVATE_SCHEMA20_VERSION:
             validate_current_schema20_admitted_rows(connection)
         elif version == PRIVATE_SCHEMA21_VERSION:
-            validate_schema21_storage(connection)
+            validated_task_rows = _validate_schema21_storage_with_task_rows(connection)
         elif version == PRIVATE_SCHEMA22_VERSION:
-            validate_schema22_storage(connection)
+            validated_task_rows = _validate_schema22_storage_with_task_rows(connection)
         elif version == 23:
-            from task_governance_tool.schema_verification_declaration import validate_storage
-            validate_storage(connection)
+            from task_governance_tool.schema_verification_declaration import _validate_storage_with_task_rows
+            validated_task_rows = _validate_storage_with_task_rows(connection)
         elif version == 34:
             from task_governance_tool.schema_viewer_projection import _validate_storage_with_task_rows
             validated_task_rows = _validate_storage_with_task_rows(connection)
@@ -12894,32 +12906,32 @@ def read_setup_state(
             from task_governance_tool.schema_own_review_indexes import _validate_storage_with_task_rows
             validated_task_rows = _validate_storage_with_task_rows(connection)
         elif version == 32:
-            from task_governance_tool.schema_session_slot_index import validate_storage
-            validate_storage(connection)
+            from task_governance_tool.schema_session_slot_index import _validate_storage_with_task_rows
+            validated_task_rows = _validate_storage_with_task_rows(connection)
         elif version == 31:
-            from task_governance_tool.schema_criterion_link_collector import validate_storage
-            validate_storage(connection)
+            from task_governance_tool.schema_criterion_link_collector import _validate_storage_with_task_rows
+            validated_task_rows = _validate_storage_with_task_rows(connection)
         elif version == 30:
-            from task_governance_tool.schema_review_answers import validate_storage
-            validate_storage(connection)
+            from task_governance_tool.schema_review_answers import _validate_storage_with_task_rows
+            validated_task_rows = _validate_storage_with_task_rows(connection)
         elif version == 29:
-            from task_governance_tool.schema_review_continuation import validate_storage
-            validate_storage(connection)
+            from task_governance_tool.schema_review_continuation import _validate_storage_with_task_rows
+            validated_task_rows = _validate_storage_with_task_rows(connection)
         elif version == 28:
-            from task_governance_tool.schema_task_event_notes import validate_storage
-            validate_storage(connection)
+            from task_governance_tool.schema_task_event_notes import _validate_storage_with_task_rows
+            validated_task_rows = _validate_storage_with_task_rows(connection)
         elif version == 27:
-            from task_governance_tool.schema_session_slot_reacquisition import validate_storage
-            validate_storage(connection)
+            from task_governance_tool.schema_session_slot_reacquisition import _validate_storage_with_task_rows
+            validated_task_rows = _validate_storage_with_task_rows(connection)
         elif version == 26:
-            from task_governance_tool.schema_session_slot import validate_storage
-            validate_storage(connection)
+            from task_governance_tool.schema_session_slot import _validate_storage_with_task_rows
+            validated_task_rows = _validate_storage_with_task_rows(connection)
         elif version == 25:
-            from task_governance_tool.schema_review_sessions import validate_storage
-            validate_storage(connection)
+            from task_governance_tool.schema_review_sessions import _validate_storage_with_task_rows
+            validated_task_rows = _validate_storage_with_task_rows(connection)
         elif version == 24:
-            from task_governance_tool.schema_task_ownership import validate_storage
-            validate_storage(connection)
+            from task_governance_tool.schema_task_ownership import _validate_storage_with_task_rows
+            validated_task_rows = _validate_storage_with_task_rows(connection)
         from task_governance_tool.stored_task_validation import validate_stored_task_rows
 
         if validated_task_rows is None:

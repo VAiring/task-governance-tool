@@ -216,6 +216,11 @@ def migrate(connection):
 
 
 def validate_storage(connection, *, recovery=False, _privacy_success_cache=None):
+    _validate_storage_with_task_rows(connection, recovery=recovery,
+        _privacy_success_cache=_privacy_success_cache)
+
+
+def _validate_storage_with_task_rows(connection, *, recovery=False, _privacy_success_cache=None):
     from . import storage as s
     from .review_answer_repository import validate_storage_rows
     marker = connection.execute("SELECT name FROM schema_migrations WHERE version=30").fetchone()
@@ -223,6 +228,7 @@ def validate_storage(connection, *, recovery=False, _privacy_success_cache=None)
         raise s._unreadable_project_state()
     validate_owned_contract(connection)
     rejection=None
+    task_rows = None
     if recovery:
         try:
             s.validate_evidence_ledger_storage_for_recovery(connection,_privacy_success_cache=_privacy_success_cache)
@@ -231,7 +237,7 @@ def validate_storage(connection, *, recovery=False, _privacy_success_cache=None)
         s._validated_verification_runner_references(connection)
         s.validate_completion_cycle_storage(connection)
     else:
-        s._validate_schema21_admitted_rows(connection, _privacy_success_cache=_privacy_success_cache)
+        task_rows = s._validate_schema21_admitted_rows(connection, _privacy_success_cache=_privacy_success_cache)
     from .schema_task_event_notes import validate_note_rows
     from .task_ownership import validate_storage_rows as ownership
     from .review_session_repository import read_bindings
@@ -244,3 +250,4 @@ def validate_storage(connection, *, recovery=False, _privacy_success_cache=None)
     s._schema20_integrity_checks(connection)
     if rejection is not None:
         raise rejection
+    return task_rows

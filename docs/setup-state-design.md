@@ -835,6 +835,15 @@ to the Setup reader, which checks the target project association without
 reloading or revalidating those Tasks or repeating cycle/ledger validation.
 The batch is consumed inside this read call; it is not an exported certificate,
 an input bypass, or a cache across connections, snapshots or Setup stages.
+The same composition applies to supported schema21 through schema32 readers:
+their private exact-schema entries return the admitted batch only after all
+version-specific row, ownership, privacy and physical checks finish. Their
+standalone public validators still return no proof, and recovery retains its
+existing exception and no-batch behavior. An empty admitted batch is consumed
+as empty, not treated as a request to fetch again. Schema20 and earlier paths
+have no such returned admitted batch and retain their existing reads. Current
+schema33/34 sharing is unchanged. Only the target project association is checked
+by the consuming Setup reader; the historical version's validation is not rerun.
 Standalone Setup, Doctor and schema-validation entries still perform their
 full applicable validation. Older-schema and recovery paths retain their
 existing validation and classification. On a

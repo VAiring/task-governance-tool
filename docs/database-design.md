@@ -126,6 +126,10 @@ Doctor/Setup physical-check sharing is confined to the owning read call's
 [query-only scope](setup-state-design.md#doctor). It preserves independent quick,
 full-integrity and FK outcomes; a private savepoint guards transaction identity
 before reuse. No writer, later snapshot or standalone validator inherits it.
+Setup's supported schema21–32 exact validators also lend their complete Task
+batch to the immediate reader after all version-specific validation succeeds;
+the [Setup reader composition](setup-state-design.md#doctor) owns its lifetime.
+This neither changes migration/recovery admission nor exports a reusable proof.
 Handoff selection covers resolver admission, retained read connections and
 both record/withdraw writer entries. The existing source Task/Contract and
 ownership checks remain in the outbox repository; record retries acquire a

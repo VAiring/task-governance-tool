@@ -74,14 +74,20 @@ def validate_owned_contract(connection: sqlite3.Connection) -> None:
         raise s._unreadable_project_state()
 
 
-def validate_storage(connection: sqlite3.Connection, *, recovery: bool = False,
-                     _privacy_success_cache=None) -> None:
+def validate_storage(connection, *, recovery=False, _privacy_success_cache=None):
+    _validate_storage_with_task_rows(connection, recovery=recovery,
+        _privacy_success_cache=_privacy_success_cache)
+
+
+def _validate_storage_with_task_rows(connection: sqlite3.Connection, *, recovery: bool = False,
+                     _privacy_success_cache=None):
     from task_governance_tool import storage as s
     marker = connection.execute("SELECT name FROM schema_migrations WHERE version = 23").fetchone()
     if (s.current_schema_version(connection) != VERSION or s.missing_migration_versions(connection, VERSION)
         or marker is None or marker["name"] != MIGRATION_NAME):
         raise s._unreadable_project_state()
     validate_owned_contract(connection)
+    task_rows = None
     if recovery:
         rejection = None
         try:
@@ -94,8 +100,9 @@ def validate_storage(connection: sqlite3.Connection, *, recovery: bool = False,
         if rejection is not None:
             raise rejection
     else:
-        s._validate_schema21_admitted_rows(connection, _privacy_success_cache=_privacy_success_cache)
+        task_rows = s._validate_schema21_admitted_rows(connection, _privacy_success_cache=_privacy_success_cache)
         s._schema20_integrity_checks(connection)
+    return task_rows
 
 
 def migrate(connection: sqlite3.Connection) -> bool:

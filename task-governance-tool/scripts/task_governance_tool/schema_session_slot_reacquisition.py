@@ -64,8 +64,13 @@ def validate_owned_contract(connection: sqlite3.Connection) -> None:
         raise s._unreadable_project_state()
 
 
-def validate_storage(connection: sqlite3.Connection, *, recovery: bool = False,
-                     _privacy_success_cache=None) -> None:
+def validate_storage(connection, *, recovery=False, _privacy_success_cache=None):
+    _validate_storage_with_task_rows(connection, recovery=recovery,
+        _privacy_success_cache=_privacy_success_cache)
+
+
+def _validate_storage_with_task_rows(connection: sqlite3.Connection, *, recovery: bool = False,
+                     _privacy_success_cache=None):
     from task_governance_tool import storage as s
     from task_governance_tool.task_ownership import validate_storage_rows
     from task_governance_tool.review_session_repository import read_bindings
@@ -75,6 +80,7 @@ def validate_storage(connection: sqlite3.Connection, *, recovery: bool = False,
         raise s._unreadable_project_state()
     validate_owned_contract(connection)
     rejection = None
+    task_rows = None
     if recovery:
         try:
             s.validate_evidence_ledger_storage_for_recovery(connection, _privacy_success_cache=_privacy_success_cache)
@@ -83,12 +89,13 @@ def validate_storage(connection: sqlite3.Connection, *, recovery: bool = False,
         s._validated_verification_runner_references(connection)
         s.validate_completion_cycle_storage(connection)
     else:
-        s._validate_schema21_admitted_rows(connection, _privacy_success_cache=_privacy_success_cache)
+        task_rows = s._validate_schema21_admitted_rows(connection, _privacy_success_cache=_privacy_success_cache)
     validate_storage_rows(connection)
     read_bindings(connection)
     s._schema20_integrity_checks(connection)
     if rejection is not None:
         raise rejection
+    return task_rows
 
 
 def migrate(connection: sqlite3.Connection) -> bool:

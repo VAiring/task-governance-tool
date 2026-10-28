@@ -279,5 +279,86 @@ class SetupSnapshotValidationTests(unittest.TestCase):
                         self.assertEqual(statements.count("PRAGMA " + check), 1, (version, check))
 
 
+class LegacySetupTaskBatchTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        from tests.test_review_session_migration import candidate_runtime
+        from tests.verification_receipt_test_support import initialize, add_task, target_for
+        cls.directory = tempfile.TemporaryDirectory()
+        cls.addClassCleanup(cls.directory.cleanup)
+        cls.sources = {}
+        for version in range(21, 33):
+            root = Path(cls.directory.name) / str(version)
+            root.mkdir()
+            with candidate_runtime(version):
+                repo, db = initialize(root)
+                empty = db.read_bytes()
+                for index in range(2):
+                    add_task(db, repo, title=f"Legacy Task {index}", status="ready")
+            cls.sources[version] = (target_for(db, repo), empty, db.read_bytes())
+
+    def test_each_legacy_batch_is_consumed_once_including_empty(self):
+        original = stored_task_validation.validate_stored_task_rows
+        for version, (target, empty, populated) in self.sources.items():
+            for data, count in ((empty, 0), (populated, 2)):
+                target.db_path.write_bytes(data)
+                for repeat in range(2):
+                    with self.subTest(version=version, count=count, repeat=repeat), \
+                         closing(storage.connect_readonly(target.db_path)) as connection, \
+                         mock.patch.object(stored_task_validation, "validate_stored_task_rows", wraps=original) as checked:
+                        statements = []
+                        connection.set_trace_callback(statements.append)
+                        result = storage.read_setup_state(connection, target)
+                        self.assertEqual(result.schema_version, version)
+                        self.assertTrue(result.needs_migration)
+                        self.assertEqual(checked.call_count, 1)
+                        self.assertEqual(len(checked.call_args.args[0]), count)
+                        self.assertEqual(sum(sql.strip() == "SELECT * FROM tasks ORDER BY task_id" for sql in statements), 1)
+                self.assertEqual(target.db_path.read_bytes(), data)
+
+    def test_legacy_consumed_task_and_contract_corruption_still_reject(self):
+        for version, (target, _, populated) in self.sources.items():
+            for assignment in ("title='Authorization: Bearer synthetic-private-value'",
+                               "current_contract_revision=current_contract_revision+1"):
+                with self.subTest(version=version, fault=assignment):
+                    target.db_path.write_bytes(populated)
+                    with closing(storage.connect(target.db_path)) as connection:
+                        connection.execute("UPDATE tasks SET " + assignment)
+                        connection.commit()
+                    before = target.db_path.read_bytes()
+                    with closing(storage.connect_readonly(target.db_path)) as connection:
+                        with self.assertRaises(storage.StorageError):
+                            storage.read_setup_state(connection, target)
+                    self.assertEqual(target.db_path.read_bytes(), before)
+
+    def test_standalone_validators_return_no_batch_and_revalidate(self):
+        import importlib
+        modules = {23:"schema_verification_declaration",24:"schema_task_ownership",
+            25:"schema_review_sessions",26:"schema_session_slot",27:"schema_session_slot_reacquisition",
+            28:"schema_task_event_notes",29:"schema_review_continuation",30:"schema_review_answers",
+            31:"schema_criterion_link_collector",32:"schema_session_slot_index"}
+        original = stored_task_validation.validate_stored_task_rows
+        for version, (target, _, populated) in self.sources.items():
+            target.db_path.write_bytes(populated)
+            validator = (getattr(storage, f"validate_schema{version}_storage") if version < 23 else
+                importlib.import_module("task_governance_tool." + modules[version]).validate_storage)
+            with self.subTest(version=version), closing(storage.connect_readonly(target.db_path)) as connection, \
+                 mock.patch.object(stored_task_validation, "validate_stored_task_rows", wraps=original) as checked:
+                self.assertIsNone(validator(connection))
+                self.assertIsNone(validator(connection))
+                self.assertEqual(checked.call_count, 2)
+
+    def test_foreign_project_target_never_consumes_the_admitted_batch(self):
+        from dataclasses import replace
+        for version, (target, _, populated) in self.sources.items():
+            target.db_path.write_bytes(populated)
+            foreign = replace(target, project=replace(target.project,
+                project_id="tg_project_" + "f" * 32))
+            with self.subTest(version=version), closing(storage.connect_readonly(target.db_path)) as connection:
+                with self.assertRaises(storage.StorageError):
+                    storage.read_setup_state(connection, foreign)
+            self.assertEqual(target.db_path.read_bytes(), populated)
+
+
 if __name__ == "__main__":
     unittest.main()

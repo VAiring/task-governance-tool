@@ -149,6 +149,28 @@ def serve(stdin: BinaryIO, stdout: BinaryIO, service) -> int:
         stdout.write(protocol._encode(message))
         stdout.flush()
 
+    close_reason = "eof"
+
+    def failure(reason, error):
+        nonlocal close_reason
+        if close_reason == "eof":
+            close_reason = reason
+        try:
+            record = getattr(service, "record_transport_failure", None)
+            if callable(record):
+                record(reason, error)
+        except BaseException:
+            pass  # Diagnostics never replace the protocol/transport outcome.
+
+    def error_reply(request_id, code, reason, error):
+        try:
+            reply(request_id, code=code)
+        except BaseException:
+            # A rejected request normally continues. Retain its cause only if
+            # reporting that rejection now ends the transport as well.
+            failure(reason, error)
+            raise
+
     try:
         while True:
             line = stdin.readline(protocol.MAX_MESSAGE_BYTES + 1)
@@ -158,7 +180,8 @@ def serve(stdin: BinaryIO, stdout: BinaryIO, service) -> int:
                 if len(line) > protocol.MAX_MESSAGE_BYTES or not line.endswith(b"\n"):
                     raise protocol.RelayError()
                 request = protocol.strict_json_loads(line)
-            except protocol.RelayError:
+            except protocol.RelayError as error:
+                failure("protocol_error", error)
                 reply(None, code=-32700)
                 exit_code = 1
                 break
@@ -204,19 +227,22 @@ def serve(stdin: BinaryIO, stdout: BinaryIO, service) -> int:
             elif method == "tools/call":
                 try:
                     result = _call(params, service)
-                except protocol.RelayError:
-                    reply(request_id, code=-32602)
-                except Exception:
-                    reply(request_id, code=-32603)
+                except protocol.RelayError as error:
+                    error_reply(request_id, -32602, "protocol_error", error)
+                except Exception as error:
+                    error_reply(request_id, -32603, "request_error", error)
                 else:
                     reply(request_id, result=result)
             else:
                 reply(request_id, code=-32601)
-    except (Exception, KeyboardInterrupt):
+    except (Exception, KeyboardInterrupt) as error:
+        failure("cancelled" if isinstance(error, KeyboardInterrupt) else "transport_error", error)
         exit_code = 1
     finally:
         try:
-            if service.close() != {"ok": True}:
+            close = getattr(service, "close_for_transport", None)
+            result = close(close_reason) if callable(close) else service.close()
+            if result != {"ok": True}:
                 exit_code = 1
         except Exception:
             exit_code = 1
@@ -375,12 +401,15 @@ class ReviewWaitSession:
             return _bootstrap_failure(stage, exc)
 
     def close(self):
+        from task_governance_tool.review_wait_runtime import worker_diagnostics as diagnostics
+        from task_governance_tool.review_wait_runtime.worker_diagnostics import Stage, Outcome
         self.closed = True
         results = []
         for component in (self.direct, self.service):
             try:
                 results.append({"ok": True} if component is None else component.close())
-            except Exception:
+            except Exception as error:
+                diagnostics.event(Stage.CLEANUP, Outcome.FAILED, reason="cleanup_failed", error=error)
                 results.append({"ok": False})
         return ({"ok": True} if all(result == {"ok": True} for result in results)
                 else {"ok": False, "error": "observer_cleanup_unknown"})

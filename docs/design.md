@@ -925,6 +925,17 @@ requests enter finite scopes; workers create independent scopes from the
 configured project/package, never inheriting a mutable request collector.
 Other individual diagnostic components keep their own scope.
 
+Long review waits use [bounded checkpoints](logger-design.md#wait-checkpoints)
+inside that same common scope. The runtime's `worker_diagnostics` projects closed
+typed transitions, causes and already-known identities; `debug_log.Session`
+owns separate finite important/detail buffers and safe intermediate publication.
+SQL and method aggregates keep their operation identity and are sealed only at
+exit. Checkpoints require all connections closed, admission, thread ownership
+and no suppression; they add no connection, query, timer or retry. An outer join
+reuses the exact admitted owned worker/probe to record both actual termination
+and a separate failed/successful evidence save. Diagnostic observations are
+never operational proof. Service transport cleanup and worker return stay distinct.
+
 `debug_log_metrics.py` owns bounded operation-local method aggregates and item
 counts; `debug_log.py` exposes `aggregate(function, unit="items")`, its closed
 decision-state `mark(state)` and `span(...).count(n)`
@@ -951,7 +962,8 @@ not enter a diagnostic scope. A direct worker's original deadline bounds its
 scope; legacy observation flushes before the next blocking wait. The join observer
 scopes only its exact worker/binding-confirmation operation, not the join wait.
 The collector accepts sanitized closed fields, never SQL or exception
-objects, and defers file I/O until operation exit after connection cleanup.
+objects, and defers file I/O until connection cleanup; ordinary scopes publish at
+exit, while admitted long waits may use the bounded intermediate checkpoints.
 
 Shared connection factories select `sqlite_transaction_trace.py` only when a
 collector is active. Disabled connections retain the ordinary sqlite3 factory.

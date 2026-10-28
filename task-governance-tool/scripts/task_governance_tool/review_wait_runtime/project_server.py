@@ -731,7 +731,32 @@ class ProjectReviewWaitSession:
         except Exception:
             raise
 
-    def close(self):
+    def close_for_transport(self, reason):
+        return self.close(reason=reason)
+
+    def record_transport_failure(self, reason, error):
+        """Project the terminal cause now, before reply/cleanup can fail.
+
+        Only existing owned workers admit these short scopes; no new state read,
+        raw exception buffer, service-lifetime collector or background action.
+        """
+        from . import worker_diagnostics as diagnostics
+        from .worker_diagnostics import Stage, Outcome
+        for session in self.sessions.values():
+            try:
+                direct = getattr(session, "direct", None)
+                if direct is None:
+                    continue
+                with self._worker_scope(operation="review_wait_cleanup"):
+                    direct._bind_diagnostics()
+                    direct._admit_owned_diagnostics(direct._worker)
+                    diagnostics.event(Stage.TRANSPORT, Outcome.FAILED, reason=reason, error=error)
+            except BaseException:
+                pass
+
+    def close(self, *, reason="requested"):
+        from . import worker_diagnostics as diagnostics
+        from .worker_diagnostics import Stage, Outcome
         self.closed = True
         if self.backup_observer is not None:
             try:
@@ -745,7 +770,22 @@ class ProjectReviewWaitSession:
                 # Its existing exact owned-worker checks admit publication;
                 # a read-only-only session has no such proof and emits nothing.
                 with self._worker_scope(operation="review_wait_cleanup"):
-                    succeeded = session.close() == {"ok": True} and succeeded
+                    try:
+                        direct = getattr(session, "direct", None)
+                        if direct is not None:
+                            direct._bind_diagnostics()
+                            direct._admit_owned_diagnostics(direct._worker)
+                    except BaseException:
+                        pass
+                    diagnostics.event(Stage.SERVICE_EXIT, Outcome.ATTEMPT, reason=reason)
+                    try:
+                        closed = session.close() == {"ok": True}
+                    except BaseException as error:
+                        diagnostics.event(Stage.CLEANUP, Outcome.FAILED, reason="cleanup_failed", error=error)
+                        diagnostics.event(Stage.SERVICE_EXIT, Outcome.FAILED, reason=reason)
+                        raise
+                    diagnostics.event(Stage.SERVICE_EXIT, Outcome.RETURNED if closed else Outcome.UNKNOWN, reason=reason)
+                    succeeded = closed and succeeded
             except Exception:
                 succeeded = False
         return {"ok": True} if succeeded else {"ok": False, "error": "observer_cleanup_unknown"}

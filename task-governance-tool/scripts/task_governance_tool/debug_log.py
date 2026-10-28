@@ -21,6 +21,9 @@ from .debug_log_metrics import Aggregates, ItemCount, STATES, RESERVED_EVENTS as
 MAX_EVENTS = 256
 MAX_BUFFER_BYTES = 512 * 1024
 MAX_EVENT_BYTES = 16 * 1024
+WAIT_EVENTS = 64
+WAIT_BYTES = 128 * 1024
+WAIT_FLUSHES = 64
 _current = ContextVar("debug_log", default=None)
 _span = ContextVar("debug_log_span", default=None)
 _measurement = ContextVar("debug_log_measurement", default=None)
@@ -42,6 +45,15 @@ class Session:
         self.size = 0
         self.dropped = {}
         self.instrumentation_ns = 0
+        self.wait_identity = None
+        self.important = []
+        self.important_size = 0
+        self.wait_seen = set()
+        self.wait_polls = 0
+        self.wait_started = time.monotonic_ns()
+        self.checkpoints = 0
+        self.last_checkpoint = None
+        self.previous_checkpoint = "not_attempted"
         self.collector = sqlite.Collector(sink.directory, sink.root, "transactions", operation=operation,
             marker=sink.marker, directory_identity=sink.identity, record_sink=self.db_event)
         self.collector.operation_id = self.invocation_id
@@ -56,7 +68,7 @@ class Session:
     def drop(self, reason):
         self.dropped[reason] = self.dropped.get(reason, 0) + 1
 
-    def emit(self, kind, details, *, failed=False, moment=None, reserved=False):
+    def emit(self, kind, details, *, failed=False, moment=None, reserved=False, important=False):
         """Internal protected-record entry, not an arbitrary public message API."""
         started = time.perf_counter_ns()
         try:
@@ -74,12 +86,28 @@ class Session:
             if len(data) > MAX_EVENT_BYTES:
                 self.drop("event_limit")
                 return
+            if important:
+                # Separate finite transition/failure budgets. SQL/detail pressure
+                # cannot evict these events; preserve the first caught failures.
+                same_kind = sum(item[2] == failed for item in self.important)
+                if (same_kind >= (16 if failed else 48)
+                        or self.important_size + len(data) > WAIT_BYTES):
+                    self.drop("important_limit")
+                    return
+                self.important.append((event["log_date"], data, failed))
+                self.important_size += len(data)
+                return
             # Reserve the final summary's event slot as part of the same
             # operation budget, including when the detail buffer overflowed.
-            limit = MAX_EVENTS if kind == "diagnostic.summary" else MAX_EVENTS - 1
-            if kind != "diagnostic.summary" and not reserved:
+            summary = kind in {"diagnostic.summary", "wait.checkpoint"}
+            limit = MAX_EVENTS if summary else MAX_EVENTS - 1
+            byte_limit = MAX_BUFFER_BYTES
+            if self.wait_identity is not None:
+                limit -= WAIT_EVENTS
+                byte_limit -= WAIT_BYTES
+            if not summary and not reserved:
                 limit -= RESERVED_EVENTS + PERFORMANCE_EVENTS
-            while len(self.events) >= limit or self.size + len(data) > MAX_BUFFER_BYTES:
+            while len(self.events) >= limit or self.size + len(data) > byte_limit:
                 if not failed or not self.events:
                     self.drop("buffer_limit")
                     return
@@ -98,6 +126,73 @@ class Session:
         moment = {key: record.pop(key) for key in ("observed_at", "log_date", "utc_offset")}
         self.emit("db.transaction", record, failed=record["outcome"] in {"failed", "cancelled"}, moment=moment)
 
+    def bind_wait(self, identity):
+        """Internal entry: identity is already reduced by worker_diagnostics."""
+        # A managed renewal stops one probe and starts another in one request.
+        # Buffered events already own their identity; only future events change.
+        # Budgets and aggregates stay invocation-local across these bindings.
+        self.wait_identity = identity
+        while (len(self.events) > MAX_EVENTS - WAIT_EVENTS - 1
+               or self.size > MAX_BUFFER_BYTES - WAIT_BYTES):
+            self.size -= len(self.events.pop()[1])
+            self.drop("buffer_limit")
+
+    def checkpoint(self, *, urgent=False, final=False):
+        """Bounded intermediate publication, only outside all DB lifetimes.
+
+        No sealing/resetting SQL or method aggregates: their IDs and lifetime
+        remain operation-local. Failed batches are discarded, never replayed.
+        """
+        if self.wait_identity is None:
+            return
+        now = time.monotonic_ns()
+        if not final and self.checkpoints >= WAIT_FLUSHES:
+            self.drop("checkpoint_limit")
+            return
+        if (not final and not urgent and self.last_checkpoint is not None
+                and now - self.last_checkpoint < 60_000_000_000):
+            return
+        if (sqlite.suppressed() or threading.get_ident() != self.collector.thread_id
+                or not self.validated or self.collector._open or self.collector._untracked):
+            return
+        if not self.events and not self.important and not final:
+            return
+        self.checkpoints += 1
+        self.last_checkpoint = now
+        failed = (bool(self.dropped) or any(item[2] for item in self.events)
+                  or any(item[2] for item in self.important))
+        self.emit("wait.checkpoint", {**self.wait_identity,
+            "checkpoint": self.checkpoints, "previous": self.previous_checkpoint,
+            "scope_returned": final, "aggregate_scope": "invocation", "polls": self.wait_polls,
+            "elapsed_ns": min(max(0, now - self.wait_started), 2**63 - 1),
+            "dropped": self.dropped.copy(), "coverage": "partial",
+            "buffer_instrumentation_ns": self.instrumentation_ns,
+            "sqlite_instrumentation_ns": self.collector.instrumentation_ns,
+            "connections_registered": self.collector.connections_registered,
+            "db_records_dropped": self.collector.records_dropped,
+            "worker_exit": "unknown"}, failed=failed, reserved=True)
+        batches = {}
+        for day, data, _ in [*self.important, *self.events]:
+            batches.setdefault(day, bytearray()).extend(data)
+        # Clear before sink entry: even a raised/partial append is never replayed.
+        self.events.clear()
+        self.important.clear()
+        self.size = self.important_size = 0
+        outcomes = []
+        for day, data in batches.items():
+            try:
+                result = self.sink.write(day, bytes(data))
+            except BaseException:
+                result = "unavailable"
+            if type(result) is not str or result not in {
+                    "written", "contended", "disabled", "invalid", "capacity", "changed", "unavailable"}:
+                result = "unavailable"
+            outcomes.append(result)
+            if result != "written":
+                self.drop(result)
+        self.previous_checkpoint = ("written" if outcomes and all(v == "written" for v in outcomes)
+                                    else "unknown")
+
     def finish(self):
         if sqlite.suppressed() or threading.get_ident() != self.collector.thread_id:
             self.collector.mark_untracked()
@@ -107,6 +202,10 @@ class Session:
         self.collector.sealed = True
         if not allowed:
             self.events.clear()
+            self.important.clear()
+            return
+        if self.wait_identity is not None:
+            self.checkpoint(final=True)
             return
         batches = {}
         for day, data, _ in self.events:

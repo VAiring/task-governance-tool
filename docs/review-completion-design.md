@@ -2357,9 +2357,16 @@ completion with unknown receipt, no resend and no added normal-path LLM operatio
 Optional [common diagnostics](logger-design.md#connection-inventory) use one
 MCP request or bounded worker scope, never the resident service lifetime.
 The configured project passes a fresh scope factory to direct/legacy workers.
-Each reuses its existing basis admission; termination confirmation reuses its
-exact saved worker/binding check. Inspection and explicit checks stay no-write.
+Each reuses its existing basis admission; termination diagnostics reuse the exact
+admitted owned worker/probe, separately reporting the saved worker/binding check.
+Inspection and explicit checks stay no-write.
 Operational connections retain their native isolation and timeout settings.
+The common [wait checkpoint contract](logger-design.md#wait-checkpoints) owns
+typed events, important-event budgets and intermediate persistence outside all
+tracked connections. Managed and legacy direct workers use the same projection;
+service EOF/cancellation cleanup is a separate event, never worker-exit proof.
+The existing deadlines, effect guards, sends, timers and public responses remain
+unchanged, including when diagnostic output fails or is disabled.
 
 `worker_observation` owns the shared version-one projection. Managed inspection
 reads the latest request sequence and exact controller/direct siblings, checks

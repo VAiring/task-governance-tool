@@ -23,6 +23,8 @@ from task_governance_tool.review_wait_runtime.review_wait_basis import BasisErro
 from task_governance_tool.review_wait_runtime.review_wait_repository import ReviewWaitRepository, RepositoryError, ObservationBusy
 from task_governance_tool.review_wait_runtime.review_wait_direct_repository import DirectRecord, DirectRepository, DIRECT_REASONS, instant, marker_exists
 from task_governance_tool.review_wait_runtime.review_wait_runtime import reservation
+from . import worker_diagnostics as diagnostics
+from .worker_diagnostics import Stage, Outcome
 
 
 class DirectError(ValueError):
@@ -77,6 +79,24 @@ class DirectProbe:
         self._host = None
         self._closed = False
         self._diagnostic_scope = diagnostic_scope or nullcontext
+        self._diagnostic_identity = None
+
+    def _bind_diagnostics(self):
+        if self._diagnostic_identity is not None:
+            diagnostics.bind(*self._diagnostic_identity)
+
+    def _admit_owned_diagnostics(self, worker, record=None):
+        try:
+            owned = (self._owned_probe_id, self._owned_worker_id)
+            if (worker is not None and worker is self._worker and worker.ident is not None
+                    and self._owned_probe_id is not None and self._diagnostic_identity is not None
+                    and self._diagnostic_identity[2:] == owned
+                    and (record is None or (record.probe_id, record.worker_id) == owned)):
+                from task_governance_tool.debug_log import _current, allow_output
+                if _current.get() is not None:
+                    allow_output()  # Do not broaden the SQLite-only opt-in.
+        except BaseException:
+            pass
 
     def blocks_timer(self) -> bool:
         return marker_exists(self.wait.path)
@@ -93,9 +113,14 @@ class DirectProbe:
         return now >= datetime.fromisoformat(record.deadline) or time.monotonic() >= monotonic_deadline
 
     def _halt_wait(self, record, monotonic_deadline):
-        if self._stop.is_set() or self.repository.read().status != "waiting":
+        if self._stop.is_set():
+            diagnostics.event(Stage.CONTROL_END, Outcome.CANCELLED, reason="cancel_requested")
+            return True
+        if self.repository.read().status != "waiting":
+            diagnostics.event(Stage.CONTROL_END, Outcome.RETURNED, reason="state_changed")
             return True
         if self._expired(record, monotonic_deadline):
+            diagnostics.event(Stage.CONTROL_END, Outcome.DEADLINE, reason="deadline")
             self.repository.update(record.probe_id, status="expired")
             return True
         return False
@@ -216,17 +241,28 @@ class DirectProbe:
                                   instant(now), instant(now + timedelta(seconds=duration)),
                                   worker_id=str(uuid4()) if delete_timer else None, **extras)
             self.repository.create_record(record)
+            self._diagnostic_identity = (controller.binding.task_id, controller.binding.wait_id,
+                                         record.probe_id, record.worker_id)
+            self._bind_diagnostics()
             self._owned_probe_id = record.probe_id
             self._owned_worker_id = record.worker_id
             self._host = host
             if delete_timer:
+                timer_confirmed = False
                 try:
+                    diagnostics.event(Stage.TIMER_ARM, Outcome.ATTEMPT)
+                    diagnostics.checkpoint(urgent=True)
                     after = host.update_heartbeat(before, "arm", rrule=record.timer_rule)
                     if (reservation(after) != replace(controller.reservation, status="ACTIVE", rule=record.timer_rule)
                             or after.updated_at < before.updated_at):
                         raise DirectError("heartbeat_update_unknown")
+                    timer_confirmed = True
+                    diagnostics.event(Stage.TIMER_ARM, Outcome.CONFIRMED)
                     record = self.repository.update(record.probe_id, timer_phase="active", timer_updated_at=after.updated_at)
                 except Exception as error:
+                    diagnostics.event(Stage.TIMER_SAVE if timer_confirmed else Stage.TIMER_ARM,
+                        Outcome.FAILED if timer_confirmed else Outcome.UNKNOWN,
+                        reason="arm_save_failed" if timer_confirmed else _reason(error), error=error)
                     self.repository.update(record.probe_id, status="suppressed", timer_phase="unknown", reason=_reason(error))
                     failure = host_failure(error)
                     read = read_failure(error)
@@ -235,7 +271,8 @@ class DirectProbe:
         self._worker = threading.Thread(target=self._run_scoped, args=(host, record, time.monotonic() + duration), name="review-direct-probe", daemon=False)
         try:
             self._worker.start()
-        except Exception:
+        except Exception as error:
+            diagnostics.event(Stage.WORKER, Outcome.FAILED, reason="worker_unavailable", error=error)
             self.repository.update(record.probe_id, status="abandoned")
             self._cleanup(host)
             raise DirectError("worker_unavailable") from None
@@ -249,7 +286,8 @@ class DirectProbe:
             name="review-worker-termination", daemon=True)
         try:
             self._termination_observer.start()
-        except Exception:
+        except Exception as error:
+            diagnostics.event(Stage.JOIN, Outcome.UNKNOWN, reason="observer_start_failed", error=error)
             self._worker_stop_persistence = "failed"
         return self._summary()
 
@@ -257,16 +295,33 @@ class DirectProbe:
         try:
             if worker.ident is None or record.worker_id is None:
                 return
-            worker.join(timeout)
-            if worker.is_alive():
-                return
+            try:
+                worker.join(timeout)
+            except Exception as error:
+                with self._diagnostic_scope():
+                    self._bind_diagnostics()
+                    self._admit_owned_diagnostics(worker, record)
+                    diagnostics.event(Stage.JOIN, Outcome.FAILED, reason="join_failed", error=error)
+                raise
             with self._diagnostic_scope():
-                self.repository.confirm_worker_stopped(record.probe_id, record.worker_id,
-                                                       record.binding_digest, instant(self._now()))
-                # This exact saved worker/binding check is the existing
-                # termination operation's authority; never add a Task DB read.
+                self._bind_diagnostics()
                 from task_governance_tool.debug_log import allow_output
+                # Reuse admission of this exact started, owned worker. A
+                # failed exit-proof save must remain diagnosable as failure.
+                self._admit_owned_diagnostics(worker, record)
+                if worker.is_alive():
+                    diagnostics.event(Stage.JOIN, Outcome.UNKNOWN, reason="join_timeout")
+                    return
+                diagnostics.event(Stage.JOIN, Outcome.CONFIRMED, reason="thread_join")
+                diagnostics.checkpoint(urgent=True)
+                try:
+                    self.repository.confirm_worker_stopped(record.probe_id, record.worker_id,
+                                                           record.binding_digest, instant(self._now()))
+                except Exception as error:
+                    diagnostics.event(Stage.EXIT_SAVE, Outcome.FAILED, reason="save_failed", error=error)
+                    raise
                 allow_output()
+                diagnostics.event(Stage.EXIT_SAVE, Outcome.CONFIRMED, reason="thread_join")
             self._worker_stop_persistence = "confirmed"
         except Exception:
             self._worker_stop_persistence = "failed"
@@ -280,32 +335,45 @@ class DirectProbe:
                     # Acquire cancellation state once for this ordinary tick.
                     # Host reads use in-memory guards; effects re-read below.
                     if self.repository.read_observation().status != "waiting":
+                        diagnostics.event(Stage.CONTROL_END, Outcome.RETURNED, reason="state_changed")
                         return
                     controller = self.wait.read_observation().controller
                     if binding_digest(controller) != record.binding_digest:
                         raise DirectError("wait_changed")
                     self._prepare_observation(controller)
+                    diagnostics.checkpoint(poll=True)
                     parent = host.read_parent()
                     self._parent_ready(parent, controller, record, require_idle=False)
                     all_ended = self._observe_progress(host, controller, parent, record, monotonic_deadline)
+                    if all_ended:
+                        diagnostics.event(Stage.OBSERVATION, Outcome.ENDED, reason="all_reviewers_ended")
                     if self._halt_observation(record, monotonic_deadline):
                         return
                 except ObservationBusy:
+                    diagnostics.event(Stage.OBSERVATION, Outcome.BUSY, reason="observation_busy")
                     # Defer only an effect-free read, never a transaction/effect.
                     if self._expired(record, monotonic_deadline):
                         self._halt_wait(record, monotonic_deadline)
                         return
                     if self._stop.wait(self._cycle):
+                        diagnostics.event(Stage.CONTROL_END, Outcome.CANCELLED, reason="cancel_requested")
                         return
                     continue
                 if all_ended and _terminal(parent) and parent.thread_status == "idle":
                     if self._halt_wait(record, monotonic_deadline):
                         return
                     if self._dispatch(host, record, monotonic_deadline) is not False:
+                        # Returning also covers a final cancellation/deadline
+                        # guard. Only the notification event describes sending.
+                        diagnostics.event(Stage.CONTROL_END, Outcome.RETURNED, reason="returned")
                         return
                 if self._stop.wait(self._cycle):
+                    diagnostics.event(Stage.CONTROL_END, Outcome.CANCELLED, reason="cancel_requested")
                     return
         except Exception as error:
+            diagnostics.event(Stage.FAILURE, Outcome.FAILED, reason=_reason(error), error=error)
+            diagnostics.event(Stage.CONTROL_END, Outcome.FAILED, reason=_reason(error))
+            diagnostics.checkpoint(urgent=True)
             self._retain_read_failure(error, record)
             try:
                 if self._on_failure(host, record, error, monotonic_deadline):
@@ -315,17 +383,25 @@ class DirectProbe:
                     self.repository.update(record.probe_id, status="suppressed", reason=_reason(error))
                 elif current.status == "dispatching":
                     self.repository.update(record.probe_id, status="unknown", reason=_reason(error))
-            except Exception:
+            except Exception as error:
+                diagnostics.event(Stage.FAILURE, Outcome.UNKNOWN, reason=_reason(error), error=error)
                 pass  # Durable dispatching remains unknown; never retry.
         finally:
+            if self._stop.is_set():
+                diagnostics.event(Stage.CONTROL_END, Outcome.CANCELLED, reason="cancel_requested")
             try:
+                diagnostics.event(Stage.CLEANUP, Outcome.ATTEMPT)
+                diagnostics.checkpoint(urgent=True)
                 self._cleanup(host)
-            except Exception:
+                diagnostics.event(Stage.CLEANUP, Outcome.RETURNED)
+            except Exception as error:
+                diagnostics.event(Stage.CLEANUP, Outcome.FAILED, reason="cleanup_failed", error=error)
                 pass  # The retained active/pending phase exposes unresolved cleanup.
 
     def _halt_observation(self, record, monotonic_deadline):
         """Check in-memory controls between reads, never reuse them for effects."""
         if self._stop.is_set():
+            diagnostics.event(Stage.CONTROL_END, Outcome.CANCELLED, reason="cancel_requested")
             return True
         if self._expired(record, monotonic_deadline):
             # Expiry is a state transition, with the original status/lease
@@ -353,9 +429,20 @@ class DirectProbe:
 
     def _run_scoped(self, host, record, monotonic_deadline):
         # One explicitly deadline-bounded worker, never the resident server.
-        # Admission remains its existing fresh binding reads inside _run.
+        # Reuse this exact admitted start before early cancellation/read failure;
+        # existing fresh binding reads inside _run still govern all effects.
         with self._diagnostic_scope():
-            return self._run(host, record, monotonic_deadline)
+            self._bind_diagnostics()
+            self._admit_owned_diagnostics(self._worker, record)
+            diagnostics.event(Stage.WORKER, Outcome.STARTED)
+            try:
+                return self._run(host, record, monotonic_deadline)
+            except BaseException as error:
+                diagnostics.event(Stage.FAILURE, Outcome.FAILED, reason="unhandled_exception", error=error)
+                raise
+            finally:
+                # Control flow returning is explicitly not actual thread exit.
+                diagnostics.event(Stage.WORKER, Outcome.RETURNED, reason="returned")
 
     def _retain_read_failure(self, error, record):
         """Legacy waits do not retain process-local purpose diagnostics."""
@@ -395,7 +482,8 @@ class DirectProbe:
                 reviewer_observer(observation)
         try:
             child = host.read_child(expected.reviewer_id)
-        except Exception:
+        except Exception as error:
+            diagnostics.event(Stage.FAILURE, Outcome.FAILED, reason=_reason(error), error=error)
             observe((expected.reviewer_id, expected.turn_id, "unknown"))
             raise
         exact = self._record_reviewer_observation(expected, child)
@@ -460,11 +548,19 @@ class DirectProbe:
                     return False
                 self.repository.update(record.probe_id, timer_phase="deleting")
                 try:
+                    diagnostics.event(Stage.TIMER_DELETE, Outcome.ATTEMPT)
+                    diagnostics.checkpoint(urgent=True)
                     host.delete_heartbeat(observed)
                 except Exception as error:
+                    diagnostics.event(Stage.TIMER_DELETE, Outcome.UNKNOWN, reason=_reason(error), error=error)
                     self.repository.update(record.probe_id, timer_phase="unknown")
                     raise DirectError(_reason(error)) from None
-                self.repository.update(record.probe_id, timer_phase="deleted")
+                diagnostics.event(Stage.TIMER_DELETE, Outcome.CONFIRMED)
+                try:
+                    self.repository.update(record.probe_id, timer_phase="deleted")
+                except Exception as error:
+                    diagnostics.event(Stage.TIMER_SAVE, Outcome.FAILED, reason="delete_save_failed", error=error)
+                    raise
             if not self._idle_and_ended(host, controller, record, monotonic_deadline):
                 return False
             self._before_send(host, controller, record, monotonic_deadline)
@@ -482,8 +578,10 @@ class DirectProbe:
                 return False
             self._prepared(controller)
             if self._stop.is_set():
+                diagnostics.event(Stage.CONTROL_END, Outcome.CANCELLED, reason="cancel_requested")
                 return
             if self._expired(record, monotonic_deadline):
+                diagnostics.event(Stage.CONTROL_END, Outcome.DEADLINE, reason="deadline")
                 self.repository.update(record.probe_id, status="expired")
                 return
             # Transient receipt fence belongs to this single attempt. Restart
@@ -494,15 +592,20 @@ class DirectProbe:
             # never ran. Keep the wait lease until the single call settles.
             reason = None
             try:
+                diagnostics.event(Stage.NOTIFICATION, Outcome.ATTEMPT)
+                diagnostics.checkpoint(urgent=True)
                 outcome = host.send_direct_probe(record.probe_id)
             except Exception as error:
+                diagnostics.event(Stage.NOTIFICATION, Outcome.UNKNOWN, reason=_reason(error), error=error)
                 outcome = "unknown"
                 reason = _reason(error)
             if type(outcome) is not str or outcome not in {"accepted", "rejected", "unknown"}:
                 outcome = "unknown"
             if reason is None and outcome != "accepted":
                 reason = "send_" + outcome
+            diagnostics.event(Stage.NOTIFICATION, Outcome(outcome), reason=reason)
             self.repository.update(record.probe_id, status=outcome, reason=reason)
+            diagnostics.checkpoint(urgent=True)
 
     def _before_send(self, host, controller, record, monotonic_deadline):
         """Legacy waiting has no Task/result effects at this extension point."""
@@ -532,22 +635,39 @@ class DirectProbe:
             # Cleanup retains original identity even after the Task basis changes.
             before = self._heartbeat(host, controller, current, cleanup=True)
             self.repository.update(current.probe_id, timer_phase="pausing")
+            timer_confirmed = False
             try:
+                diagnostics.event(Stage.TIMER_PAUSE, Outcome.ATTEMPT)
+                diagnostics.checkpoint(urgent=True)
                 after = host.update_heartbeat(before, "pause")
                 if (reservation(after) != replace(reservation(before), status="PAUSED")
                         or after.updated_at < before.updated_at):
                     raise DirectError("heartbeat_update_unknown")
+                timer_confirmed = True
+                diagnostics.event(Stage.TIMER_PAUSE, Outcome.CONFIRMED)
                 self.repository.update(current.probe_id, timer_phase="paused", timer_updated_at=after.updated_at)
-            except Exception:
+            except Exception as error:
+                diagnostics.event(Stage.TIMER_SAVE if timer_confirmed else Stage.TIMER_PAUSE,
+                    Outcome.FAILED if timer_confirmed else Outcome.UNKNOWN,
+                    reason="pause_save_failed" if timer_confirmed else _reason(error), error=error)
                 self.repository.update(current.probe_id, timer_phase="unknown")
                 raise DirectError("timer_cleanup_unknown") from None
 
     def _stop_worker(self, status, *, owned_only=False):
+        self._bind_diagnostics()
         self._stop.set()
         worker = self._worker
+        # A timeout or join exception can precede every existing cleanup read.
+        # The immutable start identity admits only this already-owned worker.
+        self._admit_owned_diagnostics(worker)
         if worker is not None and worker.is_alive():
-            worker.join(self._join)
+            try:
+                worker.join(self._join)
+            except Exception as error:
+                diagnostics.event(Stage.JOIN, Outcome.FAILED, reason="join_failed", error=error)
+                raise
         if worker is not None and worker.is_alive():
+            diagnostics.event(Stage.JOIN, Outcome.UNKNOWN, reason="join_timeout")
             return {"ok": False, "error": "observer_cleanup_unknown"}
         if worker is not None and worker.ident is not None and self.repository.exists():
             record = self.repository.read()
@@ -570,11 +690,15 @@ class DirectProbe:
 
     def close(self):
         with self._request:
+            self._bind_diagnostics()
+            diagnostics.event(Stage.CLEANUP, Outcome.ATTEMPT)
             self._closed = True
             try:
                 result = self._stop_worker("abandoned", owned_only=True)
                 if result["ok"] and self._owned_probe_id is not None:
                     self._cleanup(self._host)
+                diagnostics.event(Stage.CLEANUP, Outcome.RETURNED if result["ok"] else Outcome.UNKNOWN)
                 return result
-            except Exception:
+            except Exception as error:
+                diagnostics.event(Stage.CLEANUP, Outcome.FAILED, reason="cleanup_failed", error=error)
                 return {"ok": False, "error": "observer_cleanup_unknown"}

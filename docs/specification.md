@@ -1161,8 +1161,14 @@ Bounds, partial coverage, the small API and the selected processing inventory
 are owned by the [performance design](logger-design.md#performance) and
 [measurement inventory](logger-design.md#processing-inventory).
 
-Protected events are buffered until operation exit and all tracked connections
-close, with at most 256 events, 512 KiB per buffer and 16 KiB per event.
+Protected events are normally buffered until operation exit and all tracked
+connections close, with at most 256 events, 512 KiB per buffer and 16 KiB per event.
+Long review waits may publish bounded intermediate batches at existing safe
+boundaries after every tracked connection closes. Important typed transitions
+and caught failures have a separate finite reservation within these same limits,
+so SQL detail pressure cannot evict them. Unchanged polls produce bounded counts,
+not per-poll output. The [wait checkpoint contract](logger-design.md#wait-checkpoints)
+owns cadence, independent budgets, correlation and explicit incomplete coverage.
 Unknown connection cleanup suppresses output. At exit, events are appended to
 UTF-8 JSONL `taskgov-debug.log.YYYY-MM-DD`, using each event's local occurrence
 date, UTC timestamp and offset, including delayed events across midnight.
@@ -1184,7 +1190,9 @@ external or undeletable files. The exact rules are in the
 [daily-file design](logger-design.md#daily-files).
 Logging failures, deletion failure, capacity or contention drop diagnostics and
 preserve the primary outcome. Missing logs do not prove absence or success;
-crashes may lose the whole operation. Logs are excluded from source/release
+crashes may lose unsaved records, including termination; already published wait
+batches remain diagnostic observations, never proof of a successful exit.
+Logs are excluded from source/release
 and core backup/recovery inventories. Neither logs nor summary counters prove
 a verification, review or completion gate.
 

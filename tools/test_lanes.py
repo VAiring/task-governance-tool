@@ -361,6 +361,7 @@ LANE_MODULES: dict[str, tuple[str, ...]] = {
         "test_review_wait_generation_switch",
         "test_review_wait_handoff",
         "test_review_wait_host",
+        "test_review_wait_logging",
         "test_review_wait_managed",
         "test_review_wait_managed_continuation",
         "test_review_wait_mcp_relay",

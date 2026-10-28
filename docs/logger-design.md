@@ -39,7 +39,8 @@ errorsは成功引数を展開しない。書込直前も物理パス・マー�
 
 ## 情報量
 
-1操作で最大256イベント、保護済みバッファ512 KiB、1イベント16 KiB（LF込み）。
+通常の1操作で最大256イベント、保護済みバッファ512 KiB、1イベント16 KiB（LF込み）。
+長いレビュー待機だけは[途中保存](#wait-checkpoints)単位で同じ上限を適用する。
 超過時は通常詳細を省略し、失敗イベントを優先する。引数除去後もイベント上限を
 超えればそのイベントを破棄する。JSONを途中切断しない。保存可能なら末尾summaryに
 理由別破棄件数を記録するが、summary自体も失われ得る。
@@ -290,6 +291,7 @@ savepoint、scriptの意味は[SQLite diagnostics](specification.md#sqlite-trans
 driver呼出し、busy timeout、リトライ、公開エラーを変えない。
 
 簡潔さとI/O負荷の抑制のため、一般イベントも操作末尾まで有限バッファに置く。
+長いレビュー待機の閉じた安全境界だけは[途中保存](#wait-checkpoints)を利用する。
 全登録connectionのcloseを確認できなければ未保存分を破棄する。接続前の開始も
 ハング・クラッシュ時には失われ得る。発生日付ごとにまとめて書き、DB接続中の
 ファイルI/Oやイベントごとのignore subprocessを追加しない。
@@ -331,12 +333,12 @@ transaction専用sinkへ重複して追加しない。
 | review_handoff.py main | helper process/thread、1操作だけ。子CLIは独立scope | review_handoff_scope.resolve成功。子processとoperation IDを混同しない |
 | review_handoff wait-ended（互換入口） | helper process/thread、1宣言だけ | usage_lifecycle._targetの既存成功を再利用。通常ループへの追加ではない |
 | ProjectReviewWaitSession.handle | 常駐MCPの1要求だけ | _location/既存basis reader/handoff resolveの成功 |
-| DirectProbe worker（Managed含む） | 専用thread、元のdeadlineで有限の1worker | 既存のfresh current_binding、location、handoff resolve。新しいDB検査は追加しない |
+| DirectProbe worker（Managed含む） | 専用thread、元のdeadlineで有限の1worker。安全境界で有限の途中保存 | 同一のadmission済み起動identityと所有threadの照合、既存のfresh current_binding、location、handoff resolve。新しいDB検査は追加しない |
 | ReviewWaitObserver | 専用thread、次のblocking waitまでの1観測cycle | そのcycleの既存basis確認。fresh admissionがないidle cycleは保存しない |
-| worker終了確認 | join後の独立した短いthread scope | 既存confirm_worker_stoppedのexact worker/binding照合成功 |
+| worker終了確認 | join後、またはjoin失敗時の独立した短いthread scope | admission済みの同一所有worker/probeの照合を再利用。保存失敗も記録する。旧所有情報を別workerへ転用しない |
 | async_backup.worker_main | 独立child process、1回のbackup attemptだけ | managed-backup lock下の既存read_controlと起動basis照合成功。追加DB確認なし。GO前EOF・拒否basisでは保存しない |
 | ProjectReviewWaitSession.start_backup_observer / backup launch | 既存MCPの起動admission1回、または新要求の有限launchごとの独立maintenance scope | 既存read_service_target/read_control成功を再利用。idleの10秒周期にはscopeもDB読取も追加しない |
-| ProjectReviewWaitSession.close（EOF・取消を含む） | 呼出しthread、既存sessionごとの有限cleanup scope | 既存の所有probe/worker照合。新規DB確認なし。読取だけのsessionや照合未成立では保存しない |
+| ProjectReviewWaitSession.record_transport_failure / close（EOF・取消を含む） | 呼出しthread、終了原因の捕捉と既存sessionごとの有限cleanup scope | 同一のadmission済み起動identityと所有threadの照合をjoin前から再利用し、終了原因・timeout・join例外も保存する。新規DB確認なし。読取だけのsessionや照合未成立では保存しない |
 
 workerにはproject/packageだけを渡すscope factoryを明示配線する。ContextVarや
 可変collectorを親から共有しない。終了したcollectorはsealし、遅延closeから再開しない。
@@ -359,6 +361,73 @@ SQLの先頭・制御語間コメントを有限範囲で読み飛ばし、範�
 active→activeだけでは再開始としない。autocommit=Falseのnative commit/rollback/with
 だけが再開始を保証し、autocommit=Trueのno-opやSQLの部分rollbackはIDを維持する。
 summaryは登録接続数とDB/一般イベントの欠落数を持つが、summary自体も失われ得る。
+
+<a id="wait-checkpoints"></a>
+
+### レビュー待機の重要イベントと途中保存
+
+`review_wait_runtime.worker_diagnostics` は共通loggerへ渡す型付きStage/Outcomeと
+閉じたreasonの投影だけを所有する。独立したlogger・保存先・設定・スレッドは持たない。
+既存処理が取得済みのTask、生成wait ID（待機試行）、probe UUID、worker UUIDを検証して
+記録する。不明な値はnullとし、実行元metadata・応答・任意文字列は展開しない。
+共通のinvocation_id/pid/thread_idにより要求・worker・外側join・service cleanupを結ぶ。
+旧版workerにUUIDがなければnullのまま、probeで対応し、終了証拠を補わない。
+
+開始、レビュー終了観測、timer arm/delete/pauseの試行と結果、通知試行と
+accepted/rejected/unknown、receipt観測と打切り理由、制御終了、cleanup、外側join、
+終了証拠の保存結果を区別する。serviceのEOF/transport error/取消/requested cleanupは
+`service_exit`であり、workerの終了でもOS process exitの確認でもない。
+内部で処理済みの例外も、その境界で既存の安全な例外投影と閉じた原因を残す。
+観測結果保存やfallbackなど、さらに失敗し得る処理を呼ぶ前に最初の捕捉原因を投影する。
+timerの確認済みhost結果はローカル状態の保存前に記録し、保存失敗は`timer_save`で分ける。
+保存が失敗した場合の業務上のunknownや再送禁止は変えない。
+serviceの終了を伴うprotocol/transport/request失敗は、応答やcleanupに先立ち既存の
+同一所有workerでadmissionした短いscopeの`transport`へ投影する。終了理由は最初の原因を
+保ち、二次の通信失敗とcleanup失敗は別イベントにする。raw例外の保留バッファや常駐scopeは
+作らず、未所有・読取専用・OFFでは保存しない。追加のDB読取は行わない。
+通知結果と状態保存、receipt観測とreceipt保存の失敗は別の事実。最初の原因を後続の
+cleanupで上書きしない。`worker/returned`や`scope_returned`は制御が戻った意味に限定し、
+実際の終了は外側の`join/confirmed`と、別の`exit_save`結果で読む。
+送信前guardによる取消・期限切れはその理由を保持し、dispatch関数からのreturnだけを
+送信済みと扱わない。同一所有workerの起動時admissionを早期終了・cleanupにも再利用するが、
+効果直前のfresh確認や読取専用抑止を省略・緩和しない。
+
+同じ待機identityとstage/outcome/reasonは操作中に1度だけ、組合せは操作全体で最大128件。
+同じ要求内の待機更新では以後のイベントだけを新identityへ切り替え、保存待ちの旧イベントを
+付け替えず、別probeの同じ遷移も抑止しない。予算・欠落数・保存連番は切替でリセットしない。
+変化しない反復は63bitで飽和するpoll数とelapsed_nsだけをcheckpointへ集約する。
+checkpointのidentityは保存時の文脈であり、`aggregate_scope=invocation` が示すpoll数・
+経過時間・計測値・欠落数は、同一要求中の更新を含む操作全体の集計である。反復ごとのイベント、
+自由なラベル、全メソッドの計測を追加しない。
+既存256イベント/512 KiBの内側から重要イベント64枠/128 KiBを分離する。
+内訳は通常遷移48枠、失敗16枠で、SQL・通常詳細がこの枠を消費・追放することはない。
+重要枠超過は新しい記録を落として最初の原因を保持し、important_limitを残す。
+残る192枠/384 KiBでも既存SQL97枠・処理集計33枠・summary1枠の予約を維持する。
+待機scopeではwait.checkpointがそのsummary枠を使い、正常詳細が上限に達しても補足情報を残す。
+上限の一律拡大は行わない。bind前の一般詳細が予約分を使っていれば有限に削減して
+buffer_limitへ数える。errorsでは成功遷移を出さない既存方針を維持する。
+
+checkpointは全登録接続のclose、未追跡接続なし、同一thread、既存admission成立、
+read-only抑止なしを確認した場合だけ、既存日別sinkへまとめて1回試行する。
+DB接続中なら延期し、ログのための接続・再読取・SQL・transactionは増やさない。
+通常観測境界では初回と前回保存試行から60秒以上経過したときだけ保存する。
+timer/sendの効果境界、最初の失敗・cleanup前、外側join確認では早い保存を要求できる。
+1scopeは途中保存最大64回と終了時1回。定期flushタイマー、待機thread、再試行はない。
+SQL/処理集計は終了まで同じ有限collectorに保持し、途中保存でseal/resetしない。
+接続・SQL・measurement IDの相関とoperation全体の集計意味は変えない。
+
+各batchは既存の安全な日別追記を使い、未保存分を先に取り外す。
+途中失敗・部分writeを再送しない。後続checkpointは連番、前回written/unknown、
+理由別欠落数、partial coverageを持つ。容量・競合・無効化・I/O失敗でも本処理は変えない。
+errorsでも失敗を含むbatchのcheckpoint補足情報を保存し、成功遷移は引き続き抑止する。
+末尾の保存結果をその同じ末尾で証明することはできず、summaryも失われ得る。
+途中保存済み行は後のprocess強制終了で取り消さないが、未保存の終了行の欠落を正常終了と
+解釈しない。電源断時の永続性保証は既存sinkと同じ。ログは診断だけであり、Task完了・
+worker終了・効果確定・復旧許可の正本ではない。
+
+`test_review_wait_logging` は長い待機、SQL飽和、秘密投影、OFF/errors/read-only、
+保存障害、並行scope、隔離子process終了、managed/legacy・receipt・join・EOFを検証する。
+既存logger/SQLite/待機回帰と併せ、OFF/ONの結果、効果回数、読取回数、費用を比較する。
 
 <a id="exceptions-and-masking"></a>
 

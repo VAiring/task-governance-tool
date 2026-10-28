@@ -8,6 +8,8 @@ from .review_wait_direct import DirectProbe, DirectError, _terminal, _reason, bi
 from .review_wait_repository import RepositoryError
 from .request_repository import ParentDispatchRepository
 from .review_wait_host import read_failure, host_failure
+from . import worker_diagnostics as diagnostics
+from .worker_diagnostics import Stage, Outcome
 
 
 class ManagedDirectProbe(DirectProbe):
@@ -73,7 +75,8 @@ class ManagedDirectProbe(DirectProbe):
             return
         try:
             observed = self.observation_factory(controller)
-        except Exception:
+        except Exception as error:
+            diagnostics.event(Stage.OBSERVATION, Outcome.UNKNOWN, reason=_reason(error), error=error)
             from .worker_observation import observation
             from .review_wait_direct_repository import instant
             from datetime import datetime, timezone
@@ -94,7 +97,8 @@ class ManagedDirectProbe(DirectProbe):
         if self.runtime_observer is not None:
             try:
                 observed["runtime"] = self.runtime_observer()
-            except Exception:
+            except Exception as error:
+                diagnostics.event(Stage.OBSERVATION, Outcome.UNKNOWN, reason=_reason(error), error=error)
                 observed["runtime"] = {"comparison": "unknown"}
         host.set_wait_observation(record.probe_id, observed)
 
@@ -140,10 +144,12 @@ class ManagedDirectProbe(DirectProbe):
             try:
                 self.occurrence_guard(controller)
             except Exception as error:
+                diagnostics.event(Stage.OBSERVATION, Outcome.UNKNOWN, reason=_reason(error), error=error)
                 raise DirectError(getattr(error, "reason", None) or _reason(error)) from None
         try:
             super()._prepared(controller)
-        except Exception:
+        except Exception as error:
+            diagnostics.event(Stage.OBSERVATION, Outcome.UNKNOWN, reason=_reason(error), error=error)
             # A bound integrated wait can report stale ownership/target or its
             # own legitimate completion to the original parent. This fallback
             # authorizes observation/delivery only; Finalizer still rejects any
@@ -177,6 +183,7 @@ class ManagedDirectProbe(DirectProbe):
                 self._polling_sources = self.polling_factory(
                     controller, collect=not self._saved_results_ready)
             except WaitBasisError as error:
+                diagnostics.event(Stage.OBSERVATION, Outcome.UNKNOWN, reason=_reason(error), error=error)
                 if error.code != "wait_basis_inactive":
                     raise
                 # Completion can release ownership after the readiness read.
@@ -234,7 +241,8 @@ class ManagedDirectProbe(DirectProbe):
                 continue
             try:
                 child = host.read_child(expected.reviewer_id)
-            except Exception:
+            except Exception as error:
+                diagnostics.event(Stage.FAILURE, Outcome.FAILED, reason=_reason(error), error=error)
                 self._observe_reviewer(controller, (expected.reviewer_id, expected.turn_id, "unknown"),
                     effect_guard=lambda: not self._halt_wait(record, monotonic_deadline))
                 raise
@@ -364,6 +372,7 @@ class ManagedDirectProbe(DirectProbe):
                 if finalizer.saved_results_ready():
                     return ()  # Saved native judgments precede incidental chat activity.
             except FinalizationError as error:
+                diagnostics.event(Stage.OBSERVATION, Outcome.UNKNOWN, reason=_reason(error), error=error)
                 if error.code not in {"review_target_mismatch", "task_ownership_changed"}:
                     raise
                 # Changed Task state cannot reuse judgments. Observe the bound
@@ -417,11 +426,19 @@ class ManagedDirectProbe(DirectProbe):
                             return False
                         self.repository.update(record.probe_id, timer_phase="deleting")
                         try:
+                            diagnostics.event(Stage.TIMER_DELETE, Outcome.ATTEMPT, reason="failure_notification")
+                            diagnostics.checkpoint(urgent=True)
                             host.delete_heartbeat(before)
-                        except Exception:
+                        except Exception as error:
+                            diagnostics.event(Stage.TIMER_DELETE, Outcome.UNKNOWN, reason=_reason(error), error=error)
                             self.repository.update(record.probe_id, timer_phase="unknown")
                             return False
-                        current = self.repository.update(record.probe_id, timer_phase="deleted")
+                        diagnostics.event(Stage.TIMER_DELETE, Outcome.CONFIRMED)
+                        try:
+                            current = self.repository.update(record.probe_id, timer_phase="deleted")
+                        except Exception as error:
+                            diagnostics.event(Stage.TIMER_SAVE, Outcome.FAILED, reason="delete_save_failed", error=error)
+                            raise
                     occurrence = self.occurrence_guard(controller) if self.occurrence_guard is not None else None
                     host.set_wait_failure(record.probe_id, controller.binding, reason,
                         continuation_id=getattr(occurrence, "continuation_id", None),
@@ -433,14 +450,20 @@ class ManagedDirectProbe(DirectProbe):
                     self._send_parent_turn = parent.turn_id
                     self.repository.update(record.probe_id, status="dispatching", reason=reason)
                     try:
+                        diagnostics.event(Stage.NOTIFICATION, Outcome.ATTEMPT, reason="failure_notification")
+                        diagnostics.checkpoint(urgent=True)
                         outcome = host.send_direct_probe(record.probe_id)
-                    except Exception:
+                    except Exception as error:
+                        diagnostics.event(Stage.NOTIFICATION, Outcome.UNKNOWN, reason=_reason(error), error=error)
                         outcome = "unknown"
                     if outcome not in {"accepted", "rejected", "unknown"}:
                         outcome = "unknown"
+                    diagnostics.event(Stage.NOTIFICATION, Outcome(outcome), reason="failure_notification")
                     self.repository.update(record.probe_id, status=outcome, reason=reason)
+                    diagnostics.checkpoint(urgent=True)
                     return True
-        except Exception:
+        except Exception as error:
+            diagnostics.event(Stage.FAILURE, Outcome.FAILED, reason=_reason(error), error=error)
             return False  # Durable dispatching remains unknown, never replayed.
 
     def _before_send(self, host, controller, record, monotonic_deadline):
@@ -465,7 +488,8 @@ class ManagedDirectProbe(DirectProbe):
             self._answers_collected = True
             try:
                 self.answer_collector(host, controller)
-            except Exception:
+            except Exception as error:
+                diagnostics.event(Stage.COLLECTION, Outcome.FAILED, reason="collection_failed", error=error)
                 # The existing finalizer reports missing/unknown originals;
                 # manual end notification leaves recovery with the parent.
                 pass
@@ -493,22 +517,37 @@ class ManagedDirectProbe(DirectProbe):
         # Sending remains one-shot. Only observation follows its settlement;
         # unknown transport outcome can coexist with an independently seen event.
         deadline = min(monotonic_deadline, time.monotonic() + 120)
+        failure_reason = "read_failed"
         try:
             while not self._stop.is_set() and time.monotonic() < deadline:
                 if self._expired(record, monotonic_deadline):
+                    diagnostics.event(Stage.RECEIPT_END, Outcome.DEADLINE, reason="deadline")
                     return
                 current = self.repository.read()
                 if current.status not in {"accepted", "unknown"} or current.acknowledged_turn is not None:
+                    diagnostics.event(Stage.RECEIPT_END, Outcome.CONFIRMED if current.acknowledged_turn is not None
+                        else Outcome.SKIPPED, reason="receipt_already_seen" if current.acknowledged_turn is not None
+                        else "receipt_not_eligible")
                     return
+                diagnostics.event(Stage.RECEIPT, Outcome.ATTEMPT)
+                diagnostics.checkpoint(poll=True)
                 turn = host.observe_receipt(record.probe_id, self._send_parent_turn, deadline=deadline)
                 if turn is not None:
+                    diagnostics.event(Stage.RECEIPT, Outcome.CONFIRMED, reason="receipt_seen")
+                    failure_reason = "receipt_save_failed"
                     self.repository.update(record.probe_id, acknowledged_turn=turn)
                     finalizer = getattr(self, "_receipt_finalizer", None)
                     if finalizer is not None:
+                        failure_reason = "receipt_record_failed"
                         finalizer.record_notification_receipt(turn)
+                    diagnostics.event(Stage.RECEIPT_END, Outcome.CONFIRMED, reason="receipt_seen")
                     return
                 if self._stop.wait(self._cycle):
+                    diagnostics.event(Stage.RECEIPT_END, Outcome.CANCELLED, reason="cancel_requested")
                     return
+            diagnostics.event(Stage.RECEIPT_END, Outcome.CANCELLED if self._stop.is_set() else Outcome.DEADLINE,
+                              reason="cancel_requested" if self._stop.is_set() else "deadline")
         except Exception as error:
+            diagnostics.event(Stage.RECEIPT_END, Outcome.UNKNOWN, reason=failure_reason, error=error)
             self._retain_read_failure(error, record)
             return  # Accepted stays accepted; an unavailable read is not receipt.

@@ -2445,6 +2445,13 @@ adds persistent diagnosis, inferred helper termination or a routine caller read.
 
 #### Review Wait Worker Observations
 
+Separately opted-in [common wait diagnostics](logger-design.md#wait-checkpoints)
+retain typed transitions and caught causes with bounded intermediate publication.
+They distinguish service cleanup, worker control-flow return, outer join and
+exit-evidence persistence. These logs never supply the operational observation
+or completion/recovery proof below; missing terminal records remain unknown.
+Logging adds no host/DB observation, wait policy, retry, effect or public field.
+
 Optional inspect, explicit stop and the one-shot managed return notification
 share `observation` version 1 (notification report: `wait_observation`, or a fixed
 labelled JSON line for review-only delivery). `observed_at` is UTC snapshot time,

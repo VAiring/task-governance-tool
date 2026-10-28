@@ -47,7 +47,7 @@
     "scripts/task_governance_tool/completion_workflow.py": "sha256:25fd20c9c3fead5eb1e1c7df53f01567e09de19de56dabaa18876ac8770a30c3",
     "scripts/task_governance_tool/contract_content.py": "sha256:16a95b6f6b995fa9c2a9f29eac909848e3d39d5c8c64a589f09c390149373001",
     "scripts/task_governance_tool/contracts.py": "sha256:222bc52c767dfee48b802f96c7d08862aa656ce92cec3161b15fd58a605e9ce4",
-    "scripts/task_governance_tool/debug_log.py": "sha256:10485378c4405b9977a50c456276bbbabd109c85941e25d95cfcaa2496f9b1f9",
+    "scripts/task_governance_tool/debug_log.py": "sha256:4b4df0a0c12bb4336b90cde35904bde9d3337ab15ea0143ea6b525998502efb3",
     "scripts/task_governance_tool/debug_log_metrics.py": "sha256:ffb94fea4dba10afcb01758d57ec5235209a77894ae50383b087a5a9677fc721",
     "scripts/task_governance_tool/debug_log_sink.py": "sha256:57a76b6131c9ba6b7b2da98e91df1db6dbb339d3f9771a007db3ac1a3f7e0330",
     "scripts/task_governance_tool/debug_log_values.py": "sha256:9e876248c5294dfcd6538928eb2cd4d4f7cc7fb8446aa1f5c25db4981a9fbebb",

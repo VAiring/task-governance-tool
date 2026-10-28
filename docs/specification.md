@@ -1176,7 +1176,18 @@ later transactions cannot replace the first failure's boundaries or identity;
 missing boundaries and unknown contenders remain explicit, also in errors mode.
 The [wait checkpoint contract](logger-design.md#wait-checkpoints)
 owns cadence, independent budgets, correlation and explicit incomplete coverage.
-Unknown connection cleanup suppresses output. At exit, events are appended to
+Unknown connection cleanup suppresses output. Only the owning thread may
+publish. Cross-thread use of a common logger
+scope or its span/aggregate handles invalidates its unsaved observations, even
+after execution returns to the owner; already published checkpoints are not
+retracted. Same-thread nesting and independent per-thread scopes remain valid.
+Ended handles/scopes cannot resume collection. Final summaries and checkpoints
+remain eligible after context restoration and SQLite collector sealing under
+the same ownership, admission and suppression guards. Rejected scope entry still
+suppresses its borrowing context without consuming the owner's cleanup. Recheck
+publication after aggregate finalization and before each remaining daily batch
+or final summary; detected invalidation discards the unsaved remainder.
+Events are appended to
 UTF-8 JSONL `taskgov-debug.log.YYYY-MM-DD`, using each event's local occurrence
 date, UTC timestamp and offset, including delayed events across midnight.
 One zero-wait thread/OS lock protects each daily batch, including bounded old-log

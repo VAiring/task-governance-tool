@@ -925,6 +925,21 @@ requests enter finite scopes; workers create independent scopes from the
 configured project/package, never inheriting a mutable request collector.
 Other individual diagnostic components keep their own scope.
 
+The common Session checks ownership before general API observation, mutable
+handle updates, scope reuse and output admission. A foreign-thread or suppressed
+borrow marks its collector untracked so owner-thread finalization cannot publish
+the unsaved batch. Live handles additionally require their current, unsealed
+scope and reject use after their own exit. Session publication uses a separate
+lifetime guard: context restoration and SQLite sealing do not prohibit its
+legitimate final summary/checkpoint, but completed Session output cannot restart.
+Rejected scope entry owns context-local suppression and cleanup separately from
+the original scope's stack. Context-token validation precedes that cleanup so a
+copied context cannot consume it. Publication rechecks eligibility after aggregate
+finalization and before each daily batch or summary dispatch, including checkpoints.
+Final publication temporarily detaches the restored ambient logger so the
+sink's instrumented file reads cannot borrow a caller or copied parent scope.
+No lock, wait, database query or change to the measured operation is added.
+
 Long review waits use [bounded checkpoints](logger-design.md#wait-checkpoints)
 inside that same common scope. The runtime's `worker_diagnostics` projects closed
 typed transitions, causes and already-known identities; `debug_log.Session`

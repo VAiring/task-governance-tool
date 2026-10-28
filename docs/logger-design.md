@@ -342,7 +342,19 @@ transaction専用sinkへ重複して追加しない。
 
 workerにはproject/packageだけを渡すscope factoryを明示配線する。ContextVarや
 可変collectorを親から共有しない。終了したcollectorはsealし、遅延closeから再開しない。
-同一collectorを別threadで使った場合も保存を抑止する。
+一般span・aggregateの開始/終了・count/mark、例外記録、session再利用と保存許可でも
+所有threadを確認する。同一collectorの別thread利用は未追跡として固定し、元threadへ
+戻っても当該scopeの未保存分を公開しない。借用handleのread-only内利用も同様に扱う。
+span/aggregate handleは一度だけ開始し、再入場前に元の所有者を検査する。
+進行中handleへの再入場は当該scopeを未追跡にし、終了済みhandleは新しい計測を始めない。
+終了済みscopeも再開しない。scopeの別threadからの終了は元threadのcontext復元を奪わない。
+拒否されたscopeへの入場も、借用側のcontextで一般・SQLite観測を抑止し、終了時に戻す。
+この復元は元所有者のstackと分離し、コピーされたcontextから元の復元を消費しない。
+同一threadのnested scope（同じscope管理objectの入れ子も含む）と
+各threadの独立scopeは維持する。最終出力はContextVar復元後・SQLite collectorのseal後にも
+所有threadと抑止状態を確認して許可するが、既存checkpointの保存済み行は撤回しない。
+集計終了後と日別batch・末尾summaryの各dispatch直前に保存条件を再確認する。
+途中で共有違反を検知した場合は残る未保存分を破棄し、保存済みbatchを再送しない。
 既存connection/cursorの再利用でも、SQL・fetch/iteration・close・transaction経路で
 現在の抑止状態とthread所有者を確認する。別threadやread-only抑止中の利用は、
 nativeが成功したか拒否したかにかかわらず元のcollectorを未追跡にし、後からの公開を防ぐ。
@@ -467,7 +479,8 @@ worker終了・効果確定・復旧許可の正本ではない。
 ## 例外と保護
 
 例外詳細はrecord_exceptionで明示記録する。未処理例外はスコープ入口で1回記録する。
-spanはfailed/cancelledの終了だけを記録する。メッセージは種類にかかわらず省略する。
+debugのspanは成功終了も記録し、errorsのspanだけがfailed/cancelledの終了に限定する。
+例外メッセージは種類にかかわらず省略する。
 初期基盤は既知builtin例外種別とパッケージ内の最大20フレームのmodule/function/行番号
 に限定する。走査は64フレームまで。原因例外・source行・locals・任意属性は展開しない。
 tracebackとSQLite数値エラーは組込みの例外領域から取得し、サブクラスのpropertyを実行しない。

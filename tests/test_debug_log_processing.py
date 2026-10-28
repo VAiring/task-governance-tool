@@ -108,9 +108,9 @@ class ProcessingLogTests(unittest.TestCase):
                         results.append((list_tasks(connection, target.project, limit=size),
                                         build_viewer_snapshot(connection, target,
                                             generated_at=viewer_fixture.FIXED_TIME)))
-                    # Viewer owns a random savepoint name; compare every SQL call
+                    # Task and Viewer reads own random savepoint names; compare every SQL call
                     # including its order while normalizing only that nonce.
-                    queries.append([re.sub(r'\b(taskgov_(?:viewer_batch|review_material)_)[0-9a-f]+\b',
+                    queries.append([re.sub(r'\b(taskgov_(?:viewer_batch|review_material|selected)_)[0-9a-f]+\b',
                                            r'\1NONCE', sql) for sql in statements])
                 self.assertEqual(results[0], results[1])
                 self.assertEqual(queries[0], queries[1])

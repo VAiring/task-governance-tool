@@ -1,8 +1,11 @@
 """Bounded general measurements and their real SQLite/native boundaries."""
-from contextlib import closing
+from contextlib import ExitStack, closing
+from contextvars import copy_context
+from datetime import date, timedelta
 from pathlib import Path
 from types import FunctionType
 import unittest
+import threading
 from unittest import mock
 import weakref
 
@@ -32,6 +35,445 @@ class DebugLogMetricsTests(unittest.TestCase):
 
     def events(self, kind):
         return [row for row in self.records() if row['event'] == kind]
+
+    def thread_call(self, function, *, copied=True):
+        context = copy_context() if copied else None
+        result, errors = [], []
+        def worker():
+            try:
+                result.append(context.run(function) if context is not None else function())
+            except BaseException as error:
+                errors.append(error)
+        thread = threading.Thread(target=worker)
+        thread.start()
+        thread.join(timeout=10)
+        self.assertFalse(thread.is_alive())
+        if errors:
+            raise errors[0]
+        return result[0]
+
+    def test_copied_context_general_entries_invalidate_owner_publication(self):
+        function = source_function()
+        def measured(factory):
+            with factory(function) as work:
+                work.count(7)
+            return 23
+        for mode in ('debug', 'errors'):
+            self.configure(mode)
+            for operation in ('span', 'aggregate', 'exception', 'emit', 'reuse', 'admission', 'checkpoint'):
+                with self.subTest(mode=mode, operation=operation):
+                    with self.scope() as session:
+                        # Include an owner failure so errors mode also has a
+                        # saved candidate, independent of the foreign action.
+                        log.record_exception(ValueError(SECRET))
+                        def body():
+                            if operation in ('span', 'aggregate'):
+                                return measured(getattr(log, operation))
+                            if operation == 'exception':
+                                log.record_exception(ValueError(SECRET))
+                            elif operation == 'emit':
+                                session.emit('method.end', {'outcome': 'failed'}, failed=True)
+                            elif operation == 'reuse':
+                                with self.scope() as reused:
+                                    self.assertIsNone(reused)
+                            elif operation == 'checkpoint':
+                                session.checkpoint(urgent=True)
+                            else:
+                                session.validated = session.collector.validated = False
+                                log.allow_output()
+                                self.assertFalse(session.validated)
+                                self.assertFalse(session.collector.validated)
+                            return 23
+                        with mock.patch.object(values, 'arguments', side_effect=AssertionError('foreign projection')):
+                            self.assertEqual(self.thread_call(body), 23)
+                        self.assertTrue(session.collector._untracked)
+                    self.assertEqual(self.records(), [])
+
+    def test_borrowed_handle_mutations_and_exit_invalidate_without_context_copy(self):
+        self.configure()
+        for factory in (log.span, log.aggregate):
+            for action in ('count', 'exit', *(['mark'] if factory is log.aggregate else [])):
+                with self.subTest(factory=factory.__name__, action=action):
+                    with self.scope() as session:
+                        with factory(source_function()) as work:
+                            work.count(2)
+                            def body():
+                                if action == 'exit':
+                                    self.assertFalse(work.__exit__(None, None, None))
+                                elif action == 'mark':
+                                    work.mark('published')
+                                else:
+                                    work.count(19)
+                                return 41
+                            self.assertEqual(self.thread_call(body, copied=False), 41)
+                            self.assertEqual(work.counts.value, 2)
+                            self.assertFalse(getattr(work, 'states', None))
+                        self.assertIsNone(log._span.get())
+                        self.assertIsNone(log._measurement.get())
+                        self.assertTrue(session.collector._untracked)
+                    self.assertEqual(self.records(), [])
+
+    def test_borrowed_handle_in_read_only_scope_discards_unsaved_parent(self):
+        self.configure()
+        for factory in (log.span, log.aggregate):
+            with self.scope() as session:
+                with factory(source_function()) as work:
+                    work.count(2)
+                    with self.scope(read_only=True):
+                        work.count(19)
+                    self.assertEqual(work.counts.value, 2)
+                self.assertTrue(session.collector._untracked)
+            self.assertEqual(self.records(), [])
+
+    def test_nested_and_independent_thread_scopes_keep_legitimate_final_output(self):
+        self.configure()
+        def body():
+            with self.scope(independent=True) as session:
+                with log.aggregate(source_function()) as work:
+                    work.count(3)
+                return session.invocation_id
+        with self.scope() as session:
+            with self.scope() as nested:
+                self.assertIs(nested, session)
+                with log.span(source_function()) as work:
+                    work.count(2)
+            child = self.thread_call(body)
+            self.assertFalse(session.collector._untracked)
+            self.assertIs(log._current.get(), session)
+        records = self.records()
+        self.assertEqual({row['invocation_id'] for row in records}, {child, session.invocation_id})
+        self.assertEqual(len(self.events('diagnostic.summary')), 2)
+        self.assertEqual(self.events('method.end')[0]['item_count'], 2)
+        self.assertEqual(self.events('performance.aggregate')[0]['item_count'], 3)
+
+    def test_ended_handles_and_restored_old_context_do_not_restart_collection(self):
+        self.configure()
+        for factory in (log.span, log.aggregate):
+            with self.scope() as session:
+                with factory(source_function()) as work:
+                    work.count(2)
+                work.count(19)
+                if factory is log.aggregate:
+                    work.mark('published')
+                work.__exit__(None, None, None)
+                self.assertEqual(work.counts.value, 2)
+                self.assertFalse(getattr(work, 'states', None))
+                context = copy_context()
+            before = self.records()
+            def late():
+                with factory(source_function()) as late_work:
+                    late_work.count(100)
+                log.record_exception(ValueError(SECRET))
+                log.allow_output()
+                with self.scope() as reused:
+                    self.assertIsNone(reused)
+                session.emit('method.end', {'outcome': 'failed'}, failed=True)
+                session.checkpoint(final=True)
+                session.finish()
+            context.run(late)
+            self.assertEqual(self.records(), before)
+            self.assertEqual(session.events, [])
+            self.assertEqual(session.performance.groups, {})
+
+    def test_checkpoint_survives_later_sharing_violation_but_final_batch_does_not(self):
+        from task_governance_tool.review_wait_runtime import worker_diagnostics as wait
+        self.configure()
+        with self.scope() as session:
+            wait.bind(task_id='tg_task_0123456789abcdef')
+            with log.span(source_function()):
+                pass
+            session.checkpoint(urgent=True)
+            before = self.records()
+            self.assertTrue(before)
+            log.record_exception(ValueError(SECRET))
+            self.thread_call(lambda: log.record_exception(ValueError(SECRET)))
+        self.assertEqual(self.records(), before)
+        self.assertEqual(session.events, [])
+        self.assertEqual(session.important, [])
+
+    def test_shared_logger_does_not_change_native_calls_rollback_close_or_exception(self):
+        import sqlite3
+        baselines = []
+        for mode in ('off', 'debug', 'errors', 'read_only'):
+            with self.subTest(mode=mode):
+                if mode != 'off':
+                    self.configure('errors' if mode == 'errors' else 'debug')
+                calls = []
+                original = ValueError(SECRET)
+                native_connect = sqlite3.connect
+                with mock.patch.object(sqlite3, 'connect', wraps=native_connect) as opened:
+                    with self.scope(read_only=mode == 'read_only'):
+                        with closing(connect_traced(':memory:')) as connection:
+                            connection.set_trace_callback(lambda statement: calls.append(statement))
+                            connection.execute('CREATE TABLE items(value)')
+                            with self.assertRaises(ValueError) as caught:
+                                with connection, log.aggregate(source_function()) as work:
+                                    connection.execute('INSERT INTO items VALUES (7)')
+                                    self.thread_call(lambda: work.count(1))
+                                    raise original
+                            self.assertIs(caught.exception, original)
+                            self.assertEqual(connection.execute('SELECT * FROM items').fetchall(), [])
+                    self.assertEqual(opened.call_count, 1)
+                with self.assertRaises(sqlite3.ProgrammingError):
+                    connection.execute('SELECT 1')
+                baselines.append(calls)
+                self.assertEqual(self.records(), [])
+        self.assertTrue(all(calls == baselines[0] for calls in baselines))
+
+    def test_ended_handle_reentry_keeps_original_binding_and_balanced_events(self):
+        self.configure()
+        for factory in (log.span, log.aggregate):
+            with self.subTest(factory=factory.__name__):
+                with self.scope() as session:
+                    handle = factory(source_function())
+                    with handle:
+                        handle.count(2)
+                    before = (len(session.events), session.performance.started, session.performance.finished)
+                    with handle:
+                        handle.count(19)
+                    self.assertIs(handle.session, session)
+                    self.assertEqual(before, (len(session.events), session.performance.started,
+                                              session.performance.finished))
+                    self.assertEqual(handle.counts.value, 2)
+                    self.assertFalse(session.collector._untracked)
+                with self.scope() as later:
+                    with handle:
+                        handle.count(23)
+                    self.assertIs(handle.session, session)
+                    self.assertEqual(later.performance.started, 0)
+                    self.assertEqual(later.events, [])
+        self.assertEqual(len(self.events('method.start')), 1)
+        self.assertEqual(len(self.events('method.end')), 1)
+        summary = self.events('performance.summary')[0]
+        self.assertEqual((summary['started_calls'], summary['finished_calls']), (1, 1))
+
+    def test_active_handle_reentry_keeps_owner_with_and_without_copied_context(self):
+        self.configure()
+        for factory in (log.span, log.aggregate):
+            for copied in (False, True):
+                with self.subTest(factory=factory.__name__, copied=copied):
+                    with self.scope() as session:
+                        with factory(source_function()) as handle:
+                            handle.count(2)
+                            token = handle.token
+                            def borrowed():
+                                with handle:
+                                    handle.count(19)
+                                return 41
+                            self.assertEqual(self.thread_call(borrowed, copied=copied), 41)
+                            self.assertIs(handle.session, session)
+                            self.assertIs(handle.token, token)
+                            self.assertEqual(handle.counts.value, 2)
+                            self.assertTrue(session.collector._untracked)
+                        self.assertIsNone(log._span.get())
+                        self.assertIsNone(log._measurement.get())
+                    self.assertEqual(self.records(), [])
+
+    def test_active_same_thread_handle_reentry_discards_ambiguous_observations(self):
+        self.configure()
+        for factory in (log.span, log.aggregate):
+            with self.scope() as session:
+                with factory(source_function()) as handle:
+                    with handle:
+                        handle.count(1)
+                self.assertTrue(session.collector._untracked)
+                self.assertIsNone(log._span.get())
+                self.assertIsNone(log._measurement.get())
+            self.assertEqual(self.records(), [])
+
+    def test_off_handle_cannot_be_reentered_to_start_an_enabled_observation(self):
+        handles = [log.span(source_function()), log.aggregate(source_function())]
+        for handle in handles:
+            with handle:
+                handle.count(1)
+        self.configure()
+        with self.scope() as session:
+            for handle in handles:
+                with handle:
+                    handle.count(19)
+                self.assertIsNone(handle.session)
+            self.assertEqual(session.events, [])
+            self.assertEqual(session.performance.started, 0)
+
+    def test_scope_reentry_and_exit_on_foreign_thread_preserve_owner_cleanup(self):
+        self.configure()
+        for action in ('enter', 'exit'):
+            for nested in (False, True):
+                with self.subTest(action=action, nested=nested):
+                    with self.scope() as session:
+                        scope = self.scope() if nested else None
+                        if scope is None:
+                            # Use the actual outer object in the non-borrowed arm.
+                            scope = self.scope(independent=True)
+                        with scope as bound:
+                            log.record_exception(ValueError(SECRET))
+                            def borrowed():
+                                if action == 'enter':
+                                    with scope as rejected:
+                                        self.assertIsNone(rejected)
+                                else:
+                                    self.assertFalse(scope.__exit__(None, None, None))
+                            self.thread_call(borrowed, copied=False)
+                            self.assertIs(log._current.get(), bound)
+                            self.assertFalse(scope.closed)
+                            self.assertTrue(bound.collector._untracked)
+                        self.assertIs(log._current.get(), session)
+                    self.assertIsNone(log._current.get())
+        self.assertFalse(self.events('exception'))
+
+    def test_scope_object_nesting_preserves_readonly_and_ended_scope_stays_ended(self):
+        self.configure()
+        for read_only in (False, True):
+            scope = self.scope(read_only=read_only)
+            with scope as session:
+                with scope as nested:
+                    self.assertIs(nested, session)
+                self.assertIs(log._current.get(), session)
+                with log.span(source_function()):
+                    pass
+            before = self.records()
+            with scope as ended:
+                self.assertIsNone(ended)
+                self.assertIsNone(log._current.get())
+            self.assertEqual(self.records(), before)
+            with self.scope() as parent:
+                with scope as ended:
+                    self.assertIsNone(ended)
+                    with log.span(source_function()):
+                        pass
+                self.assertIs(log._current.get(), parent)
+                self.assertEqual(parent.events, [])
+                self.assertFalse(parent.collector._untracked)
+        self.assertEqual(len(self.events('method.end')), 1)
+
+    def test_rejected_foreign_scope_suppresses_worker_and_preserves_both_cleanups(self):
+        self.configure()
+        for read_only in (False, True):
+            for ended in (False, True):
+                with self.subTest(read_only=read_only, ended=ended):
+                    scope = self.scope(read_only=read_only)
+                    owner = scope.__enter__()
+                    if ended:
+                        scope.__exit__(None, None, None)
+                    def worker():
+                        with self.scope(independent=True) as session:
+                            self.assertIsNotNone(session)
+                            with log.span(source_function()):
+                                pass
+                            with scope as rejected:
+                                self.assertIsNone(rejected)
+                                self.assertIsNone(log._current.get())
+                                self.assertTrue(log.sqlite.suppressed())
+                                with scope:
+                                    with log.span(source_function()):
+                                        pass
+                                # Neither a copied context on this thread nor
+                                # another thread may consume this entry's stack.
+                                copy_context().run(scope.__exit__, None, None, None)
+                                self.thread_call(lambda: scope.__exit__(None, None, None))
+                                self.assertIsNone(log._current.get())
+                                self.assertTrue(log.sqlite.suppressed())
+                                error = ValueError(SECRET)
+                                with self.assertRaises(ValueError) as caught:
+                                    with scope, log.aggregate(source_function()):
+                                        raise error
+                                self.assertIs(caught.exception, error)
+                            self.assertIs(log._current.get(), session)
+                            self.assertFalse(log.sqlite.suppressed())
+                            self.assertFalse(session.collector._untracked)
+                            with log.span(source_function()):
+                                pass
+                            return session.invocation_id
+                    invocation = self.thread_call(worker, copied=False)
+                    if not ended:
+                        self.assertEqual(scope.depth, 1)
+                        self.assertIs(log._current.get(), owner)
+                        self.assertEqual(log.sqlite.suppressed(), read_only)
+                        scope.__exit__(None, None, None)
+                    self.assertIsNone(log._current.get())
+                    self.assertFalse(log.sqlite.suppressed())
+                    rows = [row for row in self.records() if row['invocation_id'] == invocation]
+                    self.assertEqual(sum(row['event'] == 'method.end' for row in rows), 2)
+                    self.assertFalse(any(row['event'] in ('exception', 'performance.aggregate') for row in rows))
+
+    def test_invalidation_during_aggregate_finalization_drops_existing_buffer(self):
+        for mode in ('debug', 'errors'):
+            self.configure(mode)
+            for component in ('sql_metrics', 'performance'):
+                with self.subTest(mode=mode, component=component), ExitStack() as patches:
+                    with self.scope() as session:
+                        log.record_exception(ValueError(SECRET))
+                        context = copy_context()
+                        aggregate = (session.collector.sql_metrics if component == 'sql_metrics'
+                                     else session.performance)
+                        finish = aggregate.finish
+                        def interleave(*, publish):
+                            self.thread_call(lambda: context.run(
+                                log.record_exception, ValueError(SECRET)), copied=False)
+                            finish(publish=publish)
+                        patches.enter_context(mock.patch.object(aggregate, 'finish', side_effect=interleave))
+                        self.assertTrue(session.events)
+                    self.assertTrue(session.closed)
+                    self.assertTrue(session.collector._untracked)
+                    self.assertEqual(self.records(), [])
+
+    def test_invalidation_between_daily_batches_keeps_only_dispatched_batch(self):
+        from task_governance_tool.review_wait_runtime import worker_diagnostics as wait
+        self.configure()
+        for checkpoint in (False, True):
+            with self.subTest(checkpoint=checkpoint), ExitStack() as patches:
+                with self.scope() as session:
+                    if checkpoint:
+                        wait.bind(task_id='tg_task_0123456789abcdef')
+                    for day in (date.today() - timedelta(days=1), date.today()):
+                        moment = {**log._moment(), 'log_date': day.isoformat()}
+                        with mock.patch.object(log, '_moment', return_value=moment):
+                            log.record_exception(ValueError(SECRET))
+                    context = copy_context()
+                    write = session.sink.write
+                    writes = []
+                    def interleave(day, data):
+                        writes.append(day)
+                        result = write(day, data)
+                        self.assertEqual(result, 'written')
+                        self.thread_call(lambda: context.run(
+                            log.record_exception, ValueError(SECRET)), copied=False)
+                        return result
+                    patches.enter_context(mock.patch.object(session.sink, 'write', side_effect=interleave))
+                    if checkpoint:
+                        session.checkpoint(urgent=True)
+                        self.assertEqual(session.previous_checkpoint, 'unknown')
+                self.assertEqual(len(writes), 1)
+                rows = [row for row in self.records() if row['invocation_id'] == session.invocation_id]
+                self.assertTrue(rows)
+                self.assertEqual({row['log_date'] for row in rows}, {writes[0]})
+                self.assertFalse(any(row['event'] == 'diagnostic.summary' for row in rows))
+                self.assertEqual(session.events, [])
+                self.assertEqual(session.important, [])
+
+    def test_invalidation_after_summary_construction_prevents_its_dispatch(self):
+        from task_governance_tool.review_wait_runtime import worker_diagnostics as wait
+        self.configure()
+        for checkpoint in (False, True):
+            with self.subTest(checkpoint=checkpoint), ExitStack() as patches:
+                with self.scope() as session:
+                    if checkpoint:
+                        wait.bind(task_id='tg_task_0123456789abcdef')
+                    log.record_exception(ValueError(SECRET))
+                    context = copy_context()
+                    emit = session.emit
+                    summary = 'wait.checkpoint' if checkpoint else 'diagnostic.summary'
+                    def interleave(kind, details, **options):
+                        emit(kind, details, **options)
+                        if kind == summary:
+                            self.thread_call(lambda: context.run(
+                                log.record_exception, ValueError(SECRET)), copied=False)
+                    patches.enter_context(mock.patch.object(session, 'emit', side_effect=interleave))
+                    if checkpoint:
+                        session.checkpoint(urgent=True)
+                rows = [row for row in self.records() if row['invocation_id'] == session.invocation_id]
+                self.assertFalse(any(row['event'] == summary for row in rows))
+                self.assertEqual(bool(rows), not checkpoint)
 
     def test_repeated_bodies_have_exact_totals_and_no_per_call_events(self):
         self.configure()

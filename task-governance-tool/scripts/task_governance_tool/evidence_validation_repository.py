@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from task_governance_tool.evidence_projection import _RenderedProjection
+    from task_governance_tool.verification_runner_repository import _ValidatedRunnerGraph
 
 
 def _validate_selected_completion_bundle_history(
@@ -376,6 +377,7 @@ def _validate_evidence_reference_storage(
     completion_cycle_ids: set[str] | None = None,
     selected_project_id: str | None = None,
     privacy_success_cache: set[tuple[str, str, str]] | None = None,
+    _validated_runner_references: tuple[_storage._ExpectedEvidenceReference, ...] | None = None,
 ) -> dict[tuple[str, str], _storage._ExpectedEvidenceReference]:
     """Rebuild every native source and require its one exact Reference."""
 
@@ -819,9 +821,11 @@ def _validate_evidence_reference_storage(
             )
 
         if not selection_mode:
-            for runner_reference in _validated_verification_runner_references(
-                connection
-            ):
+            runner_references = (
+                _validated_verification_runner_references(connection)
+                if _validated_runner_references is None else _validated_runner_references
+            )
+            for runner_reference in runner_references:
                 _register_expected_evidence_reference(
                     expected,
                     runner_reference,
@@ -1471,6 +1475,7 @@ def _validate_evidence_ledger_rows(
     *,
     verification_rejection_is_local: bool = False,
     privacy_success_cache: set[tuple[str, str, str]] | None = None,
+    _validated_runner_references: tuple[_storage._ExpectedEvidenceReference, ...] | None = None,
 ) -> tuple[sqlite3.Row, ...]:
     from task_governance_tool.evidence_repository import (
         _validate_artifact_manifest_storage,
@@ -1670,6 +1675,7 @@ def _validate_evidence_ledger_rows(
         manifests=manifests,
         manifests_by_target=manifests_by_target,
         snapshots=snapshots,
+        _validated_runner_references=_validated_runner_references,
     )
     if connection.execute("PRAGMA foreign_key_check").fetchone() is not None:
         raise evidence_ledger_inconsistent()
@@ -3773,6 +3779,16 @@ def capture_evidence_projection(
     *,
     project_id: str,
 ) -> _RenderedProjection:
+    """Standalone complete-source validation and rendering, without a proof input."""
+    return _capture_evidence_projection(connection, project_id=project_id)
+
+
+def _capture_evidence_projection(
+    connection: sqlite3.Connection,
+    *,
+    project_id: str,
+    _validated_runner_graph: _ValidatedRunnerGraph | None = None,
+) -> _RenderedProjection:
     """Validate the complete source and build publication bytes in this read.
 
     Rendering performs canonical record and whole-index validation once. Only
@@ -3783,10 +3799,20 @@ def capture_evidence_projection(
         EvidenceProjectionError, _render_projection,
     )
 
-    _validate_evidence_projection_source(connection, project_id=project_id)
+    _validate_evidence_projection_source(
+        connection, project_id=project_id,
+        _validated_runner_references=(
+            None if _validated_runner_graph is None else _validated_runner_graph.references
+        ),
+    )
     selected = None
     try:
-        for basis in _completion_evidence_projection_bases(connection):
+        for basis in _completion_evidence_projection_bases(
+            connection,
+            _validated_runner_generations=(
+                None if _validated_runner_graph is None else _validated_runner_graph.generations
+            ),
+        ):
             rendered = _render_projection(basis)
             if basis.project_id == project_id:
                 selected = rendered
@@ -3801,6 +3827,7 @@ def _validate_evidence_projection_source(
     connection: sqlite3.Connection,
     *,
     project_id: str,
+    _validated_runner_references: tuple[_storage._ExpectedEvidenceReference, ...] | None = None,
 ) -> None:
 
     from task_governance_tool.storage import (
@@ -3820,7 +3847,7 @@ def _validate_evidence_projection_source(
     }:
         raise evidence_ledger_inconsistent()
     _validate_evidence_ledger_schema_contract(connection)
-    _validate_evidence_ledger_rows(connection)
+    _validate_evidence_ledger_rows(connection, _validated_runner_references=_validated_runner_references)
     validate_completion_cycle_storage(connection)
 
 

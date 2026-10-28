@@ -16,7 +16,10 @@ from contextlib import closing
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from task_governance_tool.evidence_projection import _RenderedProjection
 
 from task_governance_tool.evidence_validation_repository import (
     _validate_selected_completion_bundle_history,
@@ -63,6 +66,7 @@ from task_governance_tool.verification_runner_repository import (
     _runner_sandbox_event_value,
     _validate_runner_timestamp,
     _validated_verification_runner_graph,
+    _ValidatedRunnerGraph,
     _validated_verification_runner_references,
     _verification_runner_value_dict,
     read_current_verification_runner_target_basis,
@@ -4897,11 +4901,11 @@ def _validate_schema21_admitted_rows(
 
 def validate_current_schema21_admitted_rows(
     connection: sqlite3.Connection,
-) -> None:
+) -> _ValidatedRunnerGraph:
     """Validate the schema-v21 Runner graph at the normal current boundary."""
 
     try:
-        _validated_verification_runner_references(connection)
+        return _ValidatedRunnerGraph(*_validated_verification_runner_graph(connection))
     except StorageError as exc:
         if exc.code == "database_busy":
             raise
@@ -12067,18 +12071,25 @@ def _validate_current_evidence_schema_contracts(
     return version
 
 
+@dataclass(frozen=True)
+class _CurrentSchemaAdmission:
+    version: int
+    runner_graph: _ValidatedRunnerGraph | None
+
+
 def _validate_current_schema_structure(
     connection: sqlite3.Connection,
     *,
     review_task: tuple[str, str] | None = None,
     operation_local: bool = False,
-) -> int:
+) -> _CurrentSchemaAdmission:
     """Validate admitted rows, with completion's explicit review-only scope."""
     from task_governance_tool.debug_log import aggregate
     with aggregate(_validate_current_schema_structure, unit='items') as measurement:
         measurement.mark('local' if operation_local else 'full_scan')
 
         version = _validate_current_schema_contract(connection)
+        runner_graph = None
         if version >= 34:
             from task_governance_tool.viewer_projection_repository import read_state, validate_all_rows
             if operation_local:
@@ -12089,7 +12100,7 @@ def _validate_current_schema_structure(
         if not operation_local and version == PRIVATE_SCHEMA20_VERSION:
             validate_current_schema20_admitted_rows(connection)
         elif not operation_local and version in {23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, PRIVATE_SCHEMA21_VERSION, PRIVATE_SCHEMA22_VERSION}:
-            validate_current_schema21_admitted_rows(connection)
+            runner_graph = validate_current_schema21_admitted_rows(connection)
         if not operation_local and version in {24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34}:
             from task_governance_tool.task_ownership import validate_storage_rows
             validate_storage_rows(connection)
@@ -12098,7 +12109,7 @@ def _validate_current_schema_structure(
         if not operation_local and version in {28, 29, 30, 31, 32, 33, 34}:
             from task_governance_tool.schema_task_event_notes import validate_note_rows
             validate_note_rows(connection)
-        return version
+        return _CurrentSchemaAdmission(version, runner_graph)
 
 
 def _validate_review_storage_rows(connection, version, *, review_task=None) -> None:
@@ -12166,12 +12177,12 @@ def validate_current_database_structure(
     operation_local: bool = False,
 ) -> int:
     """Require complete current-schema rows without checking a caller basis."""
-    version = _validate_current_schema_structure(
+    admitted = _validate_current_schema_structure(
         connection, review_task=(project_id, review_task_id) if review_task_id is not None else None,
         operation_local=operation_local,
     )
     _validate_current_project_rows(connection, project_id)
-    return version
+    return admitted.version
 
 
 def validate_current_database_binding(
@@ -12191,7 +12202,21 @@ def validate_current_database(
     operation_local: bool = False,
 ) -> int:
     """Require the supported schema and matching project without migrating."""
-    version = _validate_current_schema_structure(
+    return _admit_current_database(
+        connection, target, review_task_id=review_task_id,
+        operation_local=operation_local,
+    ).version
+
+
+def _admit_current_database(
+    connection: sqlite3.Connection,
+    target: DatabaseTarget,
+    *,
+    review_task_id: str | None = None,
+    operation_local: bool = False,
+) -> _CurrentSchemaAdmission:
+    """Retain admission values only for the immediate read-only composition."""
+    admitted = _validate_current_schema_structure(
         connection,
         review_task=(target.project.project_id, review_task_id) if review_task_id is not None else None,
         operation_local=operation_local,
@@ -12199,7 +12224,28 @@ def validate_current_database(
     binding = read_project_binding_state(connection)
     _validate_target_binding(binding, target)
     _validate_current_project_rows(connection, binding.project_id)
-    return version
+    return admitted
+
+
+def capture_current_evidence_projection(
+    connection: sqlite3.Connection,
+    target: DatabaseTarget,
+) -> _RenderedProjection:
+    """Fully admit and render one query-only snapshot without exporting proof."""
+    from task_governance_tool.evidence_validation_repository import (
+        _capture_evidence_projection,
+    )
+
+    if (
+        not connection.in_transaction
+        or connection.execute("PRAGMA query_only").fetchone()[0] != 1
+    ):
+        raise evidence_ledger_inconsistent()
+    admitted = _admit_current_database(connection, target)
+    return _capture_evidence_projection(
+        connection, project_id=target.project.project_id,
+        _validated_runner_graph=admitted.runner_graph,
+    )
 
 
 def _validate_current_task_read_database(

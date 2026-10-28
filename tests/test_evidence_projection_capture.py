@@ -8,7 +8,7 @@ import sqlite3
 import tempfile
 import unittest
 import weakref
-from contextlib import closing
+from contextlib import closing, contextmanager
 from pathlib import Path
 from unittest import mock
 
@@ -20,6 +20,7 @@ from task_governance_tool import evidence_projection as codec
 from task_governance_tool import evidence_publication as publication
 from task_governance_tool import evidence_validation_repository as repository
 from task_governance_tool import storage
+from task_governance_tool import verification_runner_repository as runner_repository
 from task_governance_tool.backup_metadata_repository import configure_project_maintenance
 
 
@@ -89,7 +90,7 @@ class EvidenceProjectionCaptureTests(unittest.TestCase):
             basis = repository.capture_evidence_projection_basis(
                 connection, project_id=target.project.project_id)
             expected = codec._render_projection(basis)
-        self.assertEqual({r.bundle.source_schema_version for r in basis.native_bundles}, {29, 33})
+        self.assertEqual({r.bundle.source_schema_version for r in basis.native_bundles}, {29, storage.SCHEMA_VERSION})
         self.assertEqual({r.bundle.bundle_version for r in basis.native_bundles}, {2, 4})
         del basis
         builder = codec.build_projection_bundle_artifact
@@ -110,10 +111,11 @@ class EvidenceProjectionCaptureTests(unittest.TestCase):
 
     def test_publication_releases_raw_basis_artifacts_and_reader_before_file_io(self):
         target = self.copy_target()
-        connections, bases, artifacts = [], [], []
+        connections, bases, artifacts, runner_graphs = [], [], [], []
         open_read = storage.connect_readonly
         capture_rows = repository._capture_evidence_projection_basis_rows
         build = codec.build_projection_bundle_artifact
+        admit_graph = storage.validate_current_schema21_admitted_rows
         physical = publication._temporary_file
         replace_file = publication._atomic_replace_temporary
         physical_calls, guarded = [], []
@@ -134,10 +136,16 @@ class EvidenceProjectionCaptureTests(unittest.TestCase):
             artifacts.append(weakref.ref(result))
             return result
 
+        def admitted_graph(*args):
+            result = admit_graph(*args)
+            runner_graphs.append(weakref.ref(result))
+            return result
+
         def write(*args, **kwargs):
             gc.collect()
             self.assertTrue(bases)
-            self.assertTrue(all(ref() is None for ref in bases + artifacts))
+            self.assertTrue(runner_graphs)
+            self.assertTrue(all(ref() is None for ref in bases + artifacts + runner_graphs))
             self.assert_closed(connections)
             physical_calls.append(kwargs["prefix"])
             return physical(*args, **kwargs)
@@ -152,6 +160,7 @@ class EvidenceProjectionCaptureTests(unittest.TestCase):
             return replace_file(*args, **kwargs)
 
         with mock.patch.object(storage, "connect_readonly", side_effect=opened), \
+             mock.patch.object(storage, "validate_current_schema21_admitted_rows", side_effect=admitted_graph), \
              mock.patch.object(repository, "_capture_evidence_projection_basis_rows", side_effect=rows), \
              mock.patch.object(codec, "build_projection_bundle_artifact", side_effect=built), \
              mock.patch.object(publication, "_temporary_file", side_effect=write), \
@@ -210,7 +219,7 @@ class EvidenceProjectionCaptureTests(unittest.TestCase):
                 self.assertEqual(publication.publish_setup_evidence_projection(target).code, "succeeded")
                 last_good = target.resolved_evidence_index.read_bytes()
                 _complete_fixture_task(target.project.canonical_repo, target.db_path, 3, large=False)
-                capture = publication.capture_evidence_projection
+                capture = publication.capture_current_evidence_projection
                 replace_index = publication._replace_index
                 retained, counts = [], []
                 attempts = []
@@ -233,7 +242,7 @@ class EvidenceProjectionCaptureTests(unittest.TestCase):
                             target.db_path, 3 + len(attempts), large=False)
                     return replace_index(*args, **kwargs)
 
-                with mock.patch.object(publication, "capture_evidence_projection", side_effect=captured), \
+                with mock.patch.object(publication, "capture_current_evidence_projection", side_effect=captured), \
                      mock.patch.object(publication, "_replace_index", side_effect=replace):
                     result = publication.run_routine_evidence_projection(target)
                 self.assertEqual(counts, [4, 5])
@@ -268,6 +277,182 @@ class EvidenceProjectionCaptureTests(unittest.TestCase):
             observed.reset_mock()
             self.assertEqual(publication.publish_setup_evidence_projection(target).code, "succeeded")
             self.assertEqual(observed.call_count, 3)
+
+
+class EvidenceRunnerCaptureReuseTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        from tests.test_m242_runner_service import RunnerServiceFixture
+        from tests.test_m243c_runner_gate import (
+            _add_runner_task, _complete_runner_pass, _launch, _persist_terminal,
+            _seed_review_receipts, _complete_with_matching_commit, selection, service,
+        )
+        from task_governance_tool.session_identity import capture_caller_identity
+        cls.directory = tempfile.TemporaryDirectory()
+        cls.addClassCleanup(cls.directory.cleanup)
+        fixture = RunnerServiceFixture(Path(cls.directory.name))
+        # Retain a superseded generation as well as two native Runner Bundles.
+        _, intent = _launch(fixture)
+        _persist_terminal(fixture, intent, branch="pass")
+        later = service._persist_launch_intent(fixture.target, fixture.prepared(),
+            caller=capture_caller_identity())
+        _persist_terminal(fixture, later, branch="pass")
+        _seed_review_receipts(fixture)
+        with mock.patch.object(selection, "_stored_runner_physical_basis_matches", return_value=True):
+            completed = _complete_with_matching_commit(fixture)
+        if completed.returncode:
+            raise AssertionError(completed.stdout)
+        fixture.task_id = _add_runner_task(fixture, title="Second capture Runner")
+        _complete_runner_pass(fixture)
+        cls.source = fixture.target
+        configure_project_maintenance(cls.source, requested_interval_minutes=None,
+            requested_generations=None, enabled_at="2026-10-28T00:00:00Z")
+
+    def copy_target(self):
+        directory = Path(self.enterContext(tempfile.TemporaryDirectory()))
+        db = directory / "state" / "taskgov.sqlite"
+        db.parent.mkdir()
+        shutil.copyfile(self.source.db_path, db)
+        return target_for(db, self.source.project.canonical_repo)
+
+    @contextmanager
+    def observe_graph(self):
+        original = runner_repository._validated_verification_runner_graph
+        scans = []
+        def traced(connection, **options):
+            queries = []
+            connection.set_trace_callback(queries.append)
+            try:
+                return original(connection, **options)
+            finally:
+                connection.set_trace_callback(None)
+                scans.extend(sql for sql in queries if sql.startswith((
+                    "SELECT * FROM verification_runner_resolutions ",
+                    "SELECT * FROM verification_runner_attempts ",
+                    "SELECT * FROM verification_runner_observations ",
+                    "SELECT * FROM verification_runner_sandbox_events ",
+                )))
+        with mock.patch.object(runner_repository, "_validated_verification_runner_graph",
+                side_effect=traced) as observed, \
+             mock.patch.object(storage, "_validated_verification_runner_graph", new=observed):
+            observed.graph_scans = scans
+            yield observed
+
+    def legacy_capture(self, target):
+        with closing(storage.connect_initialized_readonly(target, operation_local=True)) as connection:
+            storage.validate_current_database(connection, target)
+            return repository.capture_evidence_projection(connection, project_id=target.project.project_id)
+
+    def test_one_whole_graph_pass_matches_old_composition_with_multiple_generations(self):
+        target = self.copy_target()
+        before = target.db_path.read_bytes()
+        with self.observe_graph() as observed:
+            expected = self.legacy_capture(target)
+            self.assertEqual(observed.call_count, 3)
+            self.assertEqual(len(observed.graph_scans), 12)
+            observed.reset_mock()
+            observed.graph_scans.clear()
+            for _ in range(2):
+                result = publication._capture(target, include_basis=True).rendered
+                self.assertEqual(result, expected)
+                self.assertEqual(len(result.bundles), 2)
+            self.assertEqual(observed.call_count, 2)
+            self.assertEqual(len(observed.graph_scans), 8)
+            self.assertIsNot(observed.call_args_list[0].args[0], observed.call_args_list[1].args[0])
+        with closing(storage.connect_readonly(target.db_path)) as connection:
+            self.assertEqual(connection.execute("SELECT COUNT(*) FROM verification_runner_resolutions").fetchone()[0], 3)
+        self.assertEqual(target.db_path.read_bytes(), before)
+
+    def test_empty_graph_and_no_bundles_is_validated_once(self):
+        root = Path(self.enterContext(tempfile.TemporaryDirectory()))
+        repo, db = initialize(root)
+        target = target_for(db, repo)
+        configure_project_maintenance(target, requested_interval_minutes=None,
+            requested_generations=None, enabled_at="2026-10-28T00:00:00Z")
+        expected = self.legacy_capture(target)
+        with self.observe_graph() as observed:
+            result = publication._capture(target, include_basis=True).rendered
+            self.assertEqual(observed.call_count, 1)
+        self.assertEqual(result, expected)
+        self.assertEqual(result.bundles, ())
+
+    def test_standalone_entries_keep_their_own_full_validation(self):
+        target = self.copy_target()
+        operations = (
+            (lambda c: repository.capture_evidence_projection(c, project_id=target.project.project_id), 2),
+            (lambda c: repository.capture_evidence_projection_basis(c, project_id=target.project.project_id), 2),
+            (repository.validate_completion_evidence_bundle_storage, 1),
+            (lambda c: storage.validate_current_database(c, target), 1),
+        )
+        for operation, expected_count in operations:
+            with closing(storage.connect_initialized_readonly(target, operation_local=True)) as connection:
+                with self.observe_graph() as observed:
+                    operation(connection)
+                    self.assertEqual(observed.call_count, expected_count)
+        with closing(storage.connect(target.db_path)) as connection:
+            with self.assertRaises(storage.StorageError):
+                storage.capture_current_evidence_projection(connection, target)
+        with closing(storage.connect_readonly(target.db_path)) as connection:
+            connection.rollback()
+            with self.assertRaises(storage.StorageError):
+                storage.capture_current_evidence_projection(connection, target)
+
+    def corrupt(self, target, fault):
+        table, statement = {
+            "orphan": ("verification_runner_resolutions", "DELETE FROM verification_runner_resolutions WHERE rowid=(SELECT MIN(rowid) FROM verification_runner_resolutions)"),
+            "foreign": ("verification_runner_observations", "UPDATE verification_runner_observations SET task_id=(SELECT task_id FROM tasks WHERE task_id<>verification_runner_observations.task_id LIMIT 1) WHERE rowid=(SELECT MIN(rowid) FROM verification_runner_observations)"),
+            "generation": ("verification_runner_observations", "UPDATE verification_runner_observations SET target_generation=target_generation+100"),
+            "reference": ("evidence_references", "UPDATE evidence_references SET digest='sha256:' || printf('%064d',0) WHERE source_kind='runner_observation'"),
+            "bundle": ("completion_evidence_bundles", "UPDATE completion_evidence_bundles SET bundle_digest='sha256:' || printf('%064d',0) WHERE rowid=(SELECT MAX(rowid) FROM completion_evidence_bundles)"),
+        }[fault]
+        with closing(storage.connect(target.db_path)) as connection:
+            connection.execute("PRAGMA foreign_keys=OFF")
+            triggers = connection.execute("SELECT name,sql FROM sqlite_master WHERE type='trigger' AND tbl_name=?", (table,)).fetchall()
+            for row in triggers:
+                connection.execute('DROP TRIGGER "' + row["name"] + '"')
+            self.assertGreater(connection.execute(statement).rowcount, 0)
+            for row in triggers:
+                connection.execute(row["sql"])
+            connection.commit()
+
+    def test_fresh_capture_rejects_all_relationship_faults_like_old_composition(self):
+        for fault in ("orphan", "foreign", "generation", "reference", "bundle"):
+            with self.subTest(fault=fault):
+                target = self.copy_target()
+                publication._capture(target, include_basis=True)
+                self.corrupt(target, fault)
+                before = target.db_path.read_bytes()
+                with self.assertRaises(storage.StorageError) as old:
+                    self.legacy_capture(target)
+                with self.assertRaises(storage.StorageError) as new:
+                    publication._capture(target, include_basis=True)
+                self.assertEqual(new.exception.code, old.exception.code)
+                self.assertEqual(target.db_path.read_bytes(), before)
+
+    def test_publication_guard_revalidates_after_capture_and_reader_still_checks_bytes(self):
+        from tests.evidence_reader_oracle import EvidenceConsumerError, read_evidence_index, validate_evidence_source
+        target = self.copy_target()
+        self.assertEqual(publication.publish_setup_evidence_projection(target).code, "succeeded")
+        index = read_evidence_index(target.resolved_evidence_root)
+        self.assertEqual(len(index.entries), 2)
+        for entry in index.entries:
+            validate_evidence_source(index, entry)
+        before = target.resolved_evidence_index.read_bytes()
+        original = publication._replace_index
+
+        def corrupt_after_capture(*args, **kwargs):
+            self.corrupt(target, "reference")
+            return original(*args, **kwargs)
+
+        with mock.patch.object(publication, "_replace_index", side_effect=corrupt_after_capture):
+            self.assertEqual(publication.publish_setup_evidence_projection(target).code, "failed")
+        self.assertEqual(target.resolved_evidence_index.read_bytes(), before)
+        bundle_path = next(target.resolved_evidence_bundles.glob("*.json"))
+        bundle_path.write_bytes(bundle_path.read_bytes().replace(b'"format_version":4', b'"format_version":9', 1))
+        with self.assertRaises(EvidenceConsumerError):
+            altered = read_evidence_index(target.resolved_evidence_root)
+            for entry in altered.entries:
+                validate_evidence_source(altered, entry)
 
 
 if __name__ == "__main__":

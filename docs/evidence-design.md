@@ -85,8 +85,8 @@ the retired `derived_analysis` reservation from current schema v22.
   generation advance retain one caller-owned writer; the outer outcome entry
   keeps the initialized writer boundary. Viewer generation logic stays separate.
 - `evidence_publication.py` consumes `DatabaseTarget` and observation time,
-  captures complete publication documents through the Evidence validation
-  repository API and returns the existing refresh result or physical status.
+  captures complete publication documents through storage's admission/render
+  composition and returns the existing refresh result or physical status.
   It owns physical path checks,
   lock/temp/rename handling, Bundle-first/index-last publication, generation
   comparison and outcome-recording calls, last-good preservation, and setup repair.
@@ -322,6 +322,28 @@ No certificate is attached to a shared value type or carried into a fresh guard,
 writer, transaction or later capture. Native completion and the independent
 Reader retain their existing validation and value contracts.
 
+`capture_current_evidence_projection` composes full current admission with
+Evidence rendering in the caller's existing query-only transaction. Admission
+retains its complete Runner graph's expected References and generation map in
+a private typed result. The lexical composition passes the References to the
+Ledger validator and the generations to the Bundle relation validator, so the
+whole Runner graph is acquired and fully validated once in that capture.
+Empty graph results are real validated values, not a cache miss. All Ledger
+source/Reference comparisons, orphan/foreign and generation relationships,
+Bundle validation and whole-index construction still run. Existing admission
+error normalization remains at the same boundary.
+
+The composition accepts no caller-provided graph or validation flag and returns
+only the rendered documents. Standalone capture, raw basis and Bundle validators
+still acquire and validate their own Runner relations; native completion,
+independent Reader and the fresh publication guard are unchanged. No result is
+attached to a connection, persisted or carried to another capture. The complete
+expected-Reference tuple and generation map remain live until rendering ends,
+alongside the existing raw basis and documents; this is O(Runner graph size)
+retained data, not an O(1) memory promise. They are not part of the returned
+projection and do not survive into physical publication; a failed composition
+returns no projection, and recapture obtains fresh values.
+
 Retained publication memory still scales with all Bundle document bytes plus
 the complete index and its metadata. This is not streaming, spooling, an O(1)
 memory bound or a persistent cache. Capacity comparisons include acquisition of
@@ -339,7 +361,8 @@ capture, `_capture` reads maintenance and generation through structural
 admission. Routine disabled/current observations skip full-source validation
 and Bundle construction, including after lock acquisition or a bounded
 follow-up. A due capture, force repair or physical-status inspection validates
-the complete database in that same read snapshot before constructing a basis.
+the complete database through that same-snapshot admission/render composition
+before constructing a basis.
 The index-generation guard retains its global admission. Publication writes
 Bundles first, flushes
 and atomically replaces the index last, conditionally records the captured

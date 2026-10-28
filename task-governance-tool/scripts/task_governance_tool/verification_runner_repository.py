@@ -44,6 +44,14 @@ VERIFICATION_RUNNER_IDENTIFIER_PATTERN = re.compile(r"^[a-z0-9][a-z0-9._-]{0,63}
 
 
 @dataclass(frozen=True)
+class _ValidatedRunnerGraph:
+    """Call-local complete graph values, never a cross-snapshot certificate."""
+
+    references: tuple[_storage._ExpectedEvidenceReference, ...]
+    generations: dict[tuple[str, str, int], dict[str, Any]]
+
+
+@dataclass(frozen=True)
 class VerificationRunnerResolution:
     verification_runner_resolution_id: str
     project_id: str

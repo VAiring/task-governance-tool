@@ -398,11 +398,11 @@
     },
     "storage.py": {
       "attributes": {
-        "execute": 427,
+        "execute": 428,
         "executescript": 2,
         "fetchall": 108,
         "fetchmany": 2,
-        "fetchone": 134
+        "fetchone": 135
       },
       "kind": "observed_connection"
     },

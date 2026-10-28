@@ -206,37 +206,40 @@ class MaintenanceAdmissionTests(unittest.TestCase):
                     self.assert_global_rejects(target)
 
     def test_full_capture_audits_the_same_snapshot_before_building(self):
-        from task_governance_tool import evidence_publication as evidence
         from task_governance_tool import viewer
-
         target = self.make_fixture()
-        for service, builder, capture in (
-            (evidence, "capture_evidence_projection",
-                lambda: evidence._capture(target, include_basis=True, only_when_due=True)),
-            (viewer_maintenance_service, "build_viewer_snapshot",
-                lambda: viewer_maintenance_service._capture(target, force=False,
-                    generated_at="2026-07-27T00:00:00Z")),
-        ):
-            observed = []
-            audit_owner = viewer if service is viewer_maintenance_service else service
-            audit_name = "validate_snapshot_database_for_viewer" if service is viewer_maintenance_service else "validate_current_database"
-            original_audit = getattr(audit_owner, audit_name)
-            original_build = getattr(service, builder)
-            def audit(connection, current_target):
-                self.assertTrue(connection.in_transaction)
-                self.assertEqual(connection.execute("PRAGMA query_only").fetchone()[0], 1)
+        self.assert_capture_snapshot(viewer_maintenance_service, "build_viewer_snapshot",
+            viewer, "validate_snapshot_database_for_viewer",
+            lambda: viewer_maintenance_service._capture(target, force=False,
+                generated_at="2026-07-27T00:00:00Z"))
+
+    def test_evidence_full_capture_audits_the_same_snapshot_before_building(self):
+        from task_governance_tool import storage, evidence_publication as evidence
+        target = self.make_fixture()
+        self.assert_capture_snapshot(evidence, "capture_current_evidence_projection",
+            storage, "_admit_current_database",
+            lambda: evidence._capture(target, include_basis=True, only_when_due=True))
+
+    def assert_capture_snapshot(self, service, builder, audit_owner, audit_name, capture):
+        observed = []
+        original_audit = getattr(audit_owner, audit_name)
+        original_build = getattr(service, builder)
+        def audit(connection, current_target, **options):
+            self.assertTrue(connection.in_transaction)
+            self.assertEqual(connection.execute("PRAGMA query_only").fetchone()[0], 1)
+            if not options.get("operation_local", False):
                 observed.append(connection)
-                return original_audit(connection, current_target)
-            def build(connection, *args, **kwargs):
-                result = original_build(connection, *args, **kwargs)
-                self.assertEqual(observed, [connection])
-                return result
-            with mock.patch.object(audit_owner, audit_name, side_effect=audit), \
-                 mock.patch.object(service, builder, side_effect=build):
-                capture()
-            self.assertEqual(len(observed), 1)
-            with self.assertRaises(sqlite3.ProgrammingError):
-                observed[0].execute("SELECT 1")
+            return original_audit(connection, current_target, **options)
+        def build(connection, *args, **kwargs):
+            result = original_build(connection, *args, **kwargs)
+            self.assertEqual(observed, [connection])
+            return result
+        with mock.patch.object(audit_owner, audit_name, side_effect=audit), \
+             mock.patch.object(service, builder, side_effect=build):
+            capture()
+        self.assertEqual(len(observed), 1)
+        with self.assertRaises(sqlite3.ProgrammingError):
+            observed[0].execute("SELECT 1")
 
     def test_physical_status_inspection_still_audits_current_evidence(self):
         from task_governance_tool import evidence_publication as evidence

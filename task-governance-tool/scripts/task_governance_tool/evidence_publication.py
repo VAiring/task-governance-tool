@@ -47,11 +47,9 @@ from task_governance_tool.evidence_projection_metadata_repository import (
     read_evidence_projection_state,
     record_evidence_projection_outcome,
 )
-from task_governance_tool.evidence_validation_repository import (
-    capture_evidence_projection,
-)
 from task_governance_tool.storage import (
     DatabaseTarget,
+    capture_current_evidence_projection,
     connect_initialized_readonly,
     validate_current_database,
     utc_now,
@@ -108,11 +106,7 @@ def _capture(
         ):
             # Eligibility is not a publication proof. Audit the complete
             # source in this same snapshot before capturing any artifact.
-            validate_current_database(connection, target)
-            rendered = capture_evidence_projection(
-                connection,
-                project_id=project_id,
-            )
+            rendered = capture_current_evidence_projection(connection, target)
         if rendered is not None and (
             rendered.project_id != project_id
             or rendered.source_generation != state.source_generation

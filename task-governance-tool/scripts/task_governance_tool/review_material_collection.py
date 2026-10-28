@@ -136,11 +136,13 @@ def collect_material(repo, packet_path, packet_sha256, stream, *, start=0, selec
     total = len(entries) + len(selected)
     if start < 0 or start > total:
         files.fail("handoff_invalid_arguments")
+    stop = min(start + 20, total)
+    page_dependencies = selected[max(0, start - len(entries)):max(0, stop - len(entries))]
     after_leaves = {leaf.relative_posix_path: (leaf.mode, leaf.object_id) for leaf in observed.after_leaves}
     changed = {entry.new_path for entry in entries if entry.new_path is not None}
     changed_paths = {name for entry in entries for name in (entry.old_path, entry.new_path) if name is not None}
     revision = target["base_revision"] if target["kind"] == "git_snapshot" else target["value"]
-    unchanged = set(selected) - changed_paths
+    unchanged = set(page_dependencies) - changed_paths
     if unchanged:
         def dependency(entry):
             name = decode_artifact_path(entry.path)
@@ -153,7 +155,6 @@ def collect_material(repo, packet_path, packet_sha256, stream, *, start=0, selec
     bodies = _Bodies(repo)
     changes = []
     # Retain a bounded page of complete mappings before attempting any content.
-    stop = min(start + 20, total)
     for entry in entries[start:min(stop, len(entries))]:
         before = (bodies.source(entry.old_path, observed.comparison_base, "git_treeish", "before",
                                entry.before_mode, entry.before_object_id) if entry.old_path is not None else None)
@@ -162,7 +163,7 @@ def collect_material(repo, packet_path, packet_sha256, stream, *, start=0, selec
         changes.append({"ordinal": entry.ordinal, "kind": entry.kind,
                         "before": before, "after": after, "diff": _diff(bodies, before, after)})
     dependencies = []
-    for selected_path in selected[max(0, start - len(entries)):max(0, stop - len(entries))]:
+    for selected_path in page_dependencies:
         leaf = after_leaves.get(selected_path)
         if leaf is None:
             dependencies.append({"path": selected_path, "revision": target["value"],

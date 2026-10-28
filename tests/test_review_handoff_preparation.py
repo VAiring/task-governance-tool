@@ -2329,6 +2329,152 @@ class SharedPatchDeliveryTests(unittest.TestCase):
                 self.assertEqual(bodies.patch_remaining, total)
 
 
+class CollectionPageWorkTests(unittest.TestCase):
+    """Count extra lookup work separately from required fresh observation."""
+
+    def setUp(self):
+        from task_governance_tool import review_material_collection as collection
+        from task_governance_tool.artifact_manifest import ArtifactLeaf
+        self.collection = collection
+        self.leaf = ArtifactLeaf
+        self.target = {"kind": "git_snapshot", "value": "snapshot", "base_revision": "1" * 40}
+        self.observed = SimpleNamespace(before_leaves=(), after_leaves=(), comparison_base="1" * 40)
+        self.raw = b"fixed Packet bytes"
+        self.digest = hashlib.sha256(self.raw).hexdigest()
+        self.visited = []
+        self.tree_names = ["dep.txt", *(f"dep-{i:04}.txt" for i in range(999))]
+
+        def tree(repo, revision, *, object_id_length, consume_entry):
+            for name in self.tree_names:
+                self.visited.append(name)
+                consume_entry(SimpleNamespace(path=name.encode(), mode=b"100644", object_id=b"f" * 40))
+
+        def patched(target, name, **kwargs):
+            patch = mock.patch.object(target, name, **kwargs)
+            value = patch.start()
+            self.addCleanup(patch.stop)
+            return value
+
+        patched(collection.files, "checked_path", return_value=Path("unused-packet"))
+        self.packet_reads = patched(collection.files, "read_bounded", return_value=self.raw)
+        patched(collection.files, "decode_packet", return_value={"review_target": self.target})
+        self.observe = patched(preparation, "_observe_material", return_value=self.observed)
+        self.tree = patched(collection, "stream_tree_entries", side_effect=tree)
+        self.blobs = patched(collection, "run_git_stream", side_effect=lambda repo, args, consume: consume(b"body\n"))
+
+    def changes(self, count):
+        self.observed.after_leaves = tuple(
+            self.leaf(f"change-{i:03}.txt", "100644", f"{i + 1:040x}") for i in range(count)
+        )
+
+    def collect(self, paths, start=0, selection_sha256=None):
+        return self.collection.collect_material(
+            Path("unused-repo"), "packet.json", self.digest, io.BytesIO(encode(paths)),
+            start=start, selection_sha256=selection_sha256,
+        )
+
+    def test_change_only_pages_skip_extra_tree_but_keep_fresh_observation(self):
+        self.changes(40)
+        pages = []
+        for start, expected_visits in ((0, 0), (20, 0), (40, 1000), (41, 0)):
+            before_visits = len(self.visited)
+            before_observations = self.observe.call_count
+            before_reads = self.packet_reads.call_count
+            page = self.collect(["dep.txt", "dep.txt"], start)
+            self.assertEqual(len(self.visited) - before_visits, expected_visits)
+            self.assertEqual(self.observe.call_count - before_observations, 1)
+            self.assertEqual(self.packet_reads.call_count - before_reads, 2)
+            self.assertEqual((page["start"], page["total"]), (start, 41))
+            pages.append(page)
+        self.assertEqual([row["after"]["path"] for page in pages for row in page["changes"]],
+                         [f"change-{i:03}.txt" for i in range(40)])
+        self.assertEqual([row["ordinal"] for page in pages for row in page["changes"]], list(range(40)))
+        self.assertEqual([row["after"]["object_id"] for page in pages for row in page["changes"]],
+                         [f"{i + 1:040x}" for i in range(40)])
+        for page in pages:
+            self.assertTrue(all(body == {"status": "provided", "byte_count": 5, "text": "body\n"}
+                                for body in page["bodies"].values()))
+        self.assertEqual([row["path"] for page in pages for row in page["dependencies"]], ["dep.txt"])
+        self.assertEqual([page["next_start"] for page in pages], [20, 40, None, None])
+        self.assertEqual(pages[-1]["changes"], [])
+        self.assertEqual(pages[-1]["dependencies"], [])
+        self.assertEqual(len({page["selection_sha256"] for page in pages}), 1)
+
+    def test_empty_collection_and_out_of_range_offsets_keep_existing_rules(self):
+        page = self.collect([])
+        self.assertEqual((page["status"], page["total"], page["start"], page["end"]),
+                         ("complete", 0, 0, 0))
+        self.assertIsNone(page["next_start"])
+        self.assertEqual(self.observe.call_count, 1)
+        self.assertEqual(self.packet_reads.call_count, 2)
+        for start in (-1, 1):
+            with self.assertRaises(handoff_transport.HandoffError) as error:
+                self.collect([], start)
+            self.assertEqual(error.exception.code, "handoff_invalid_arguments")
+        self.tree.assert_not_called()
+        self.blobs.assert_not_called()
+
+    def test_boundary_and_dependency_only_pages_preserve_selection_order(self):
+        self.changes(19)
+        paths = ["dep.txt", *(f"dep-{i:04}.txt" for i in range(24))]
+        pages = [self.collect(paths, start) for start in (0, 20, 40)]
+        self.assertEqual([(len(page["changes"]), len(page["dependencies"])) for page in pages],
+                         [(19, 1), (0, 20), (0, 4)])
+        self.assertEqual([row["path"] for page in pages for row in page["dependencies"]], paths)
+        self.assertTrue(all(row["body_id"] == "f" * 40 and row["status"] == "provided"
+                            for page in pages for row in page["dependencies"]))
+        self.assertEqual(self.tree.call_count, 3)
+        # A different page/call repeats the lookup; no earlier proof is reused.
+        self.assertEqual(len(self.visited), 3000)
+        self.assertEqual([page["end"] for page in pages], [20, 40, 44])
+
+    def test_selected_changed_renamed_and_deleted_paths_do_not_scan_base_tree(self):
+        self.observed.before_leaves = (self.leaf("old.txt", "100644", "a" * 40),
+                                       self.leaf("deleted.txt", "100644", "b" * 40))
+        self.observed.after_leaves = (self.leaf("renamed.txt", "100644", "a" * 40),)
+        page = self.collect(["old.txt", "renamed.txt", "deleted.txt"])
+        self.tree.assert_not_called()
+        self.assertEqual([row["status"] for row in page["dependencies"]],
+                         ["absent_at_target", "provided", "absent_at_target"])
+        self.assertEqual({row["kind"] for row in page["changes"]}, {"rename", "delete"})
+
+    def test_unknown_dependency_and_fixed_revision_are_preserved(self):
+        for kind in ("git_snapshot", "git_commit"):
+            with self.subTest(kind=kind):
+                self.target.update(kind=kind, value="2" * 40,
+                                   base_revision="1" * 40 if kind == "git_snapshot" else "")
+                page = self.collect(["dep.txt", "missing.txt"])
+                self.assertEqual(self.tree.call_args.args[1],
+                                 "1" * 40 if kind == "git_snapshot" else "2" * 40)
+                self.assertEqual([row["status"] for row in page["dependencies"]],
+                                 ["provided", "absent_at_target"])
+
+    def test_whole_input_and_selection_are_validated_even_outside_page(self):
+        self.changes(40)
+        for paths in (["dep.txt", "../unsafe"], ["dep.txt", None], {"dep.txt": 1}):
+            with self.subTest(paths=paths), self.assertRaises(handoff_transport.HandoffError):
+                self.collect(paths)
+        with self.assertRaises(handoff_transport.HandoffError) as error:
+            self.collect(["dep.txt"], selection_sha256="0" * 64)
+        self.assertEqual(error.exception.code, "review_material_range_mismatch")
+        self.observe.assert_not_called()
+        self.tree.assert_not_called()
+        self.blobs.assert_not_called()
+
+    def test_packet_reread_and_fresh_target_failures_still_reject_change_only_page(self):
+        self.changes(40)
+        self.packet_reads.side_effect = [self.raw, self.raw + b"changed"]
+        with self.assertRaises(handoff_transport.HandoffError) as error:
+            self.collect(["dep.txt"])
+        self.assertEqual(error.exception.code, "handoff_file_changed")
+        self.packet_reads.side_effect = None
+        self.observe.side_effect = handoff_transport.HandoffError("review_target_mismatch")
+        with self.assertRaises(handoff_transport.HandoffError) as error:
+            self.collect(["dep.txt"])
+        self.assertEqual(error.exception.code, "review_target_mismatch")
+        self.tree.assert_not_called()
+
+
 class LegacyPacketPreparationTests(unittest.TestCase):
     def test_packet_rejects_legacy_done_contract_drift(self):
         from tests.test_m22_evidence_ledger_storage import initialize_v17_fixture, seed_v17_contract_constraints

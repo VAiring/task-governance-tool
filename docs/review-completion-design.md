@@ -458,6 +458,10 @@ selected-path JSON, shares `_observe_material`, and resolves unchanged paths
 through the project-scoped tree stream. Changed old/new paths suppress base
 lookup. Its combined sequence is changed entries followed by deduplicated
 dependencies; continuation binds the normalized selection digest and Packet.
+The bounded mapping slice is selected before additional dependency-tree lookup;
+only unchanged dependencies in that slice require the extra tree stream. Each
+call still validates the entire selected input, observes the fresh target and
+rechecks Packet bytes; no observation or dependency cache crosses pages.
 At most 20 complete mappings enter a page, then the page shrinks against actual
 serialized transport size. Final Packet bytes are rechecked.
 

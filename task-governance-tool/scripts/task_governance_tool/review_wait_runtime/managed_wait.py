@@ -148,6 +148,7 @@ class ManagedWait:
         return turn
 
     def _preflight(self, task_id, references, metadata, paths, diagnostic):
+        from . import worker_diagnostics as diagnostics
         diagnostic.stage = "executor_admission"
         actual_turn = executor_turn_id(metadata)
         diagnostic.stage = "basis_before"
@@ -178,7 +179,8 @@ class ManagedWait:
         diagnostic.stage = "request_read"
         request_path = paths.review_wait_request_store(metadata["threadId"], task_id)
         if path_lexically_exists(request_path):
-            _, previous, rounds = RequestRepository(request_path).read_admission()
+            sequence, previous, rounds = RequestRepository(request_path).read_admission()
+            diagnostics.bind_request(sequence=sequence)
             if rounds:
                 continued = rounds[-1]
                 if continued.wait_basis_digest != basis_digest(binding):
@@ -300,6 +302,21 @@ class ManagedWait:
                 "parent_may_end": True, "replayed": replayed}
 
     def _cleanup(self, repository, lease, record, task_id, metadata, paths, diagnostic):
+        from . import worker_diagnostics as diagnostics
+        from .worker_diagnostics import Outcome
+        try:
+            result = self._cleanup_observed(repository, lease, record, task_id, metadata, paths, diagnostic)
+        except BaseException as error:
+            diagnostics.request(diagnostic, error=error, outcome=Outcome.UNKNOWN, secondary=True)
+            raise
+        if not result:
+            diagnostics.request(diagnostic, error=DiagnosticError("cleanup_unresolved"),
+                outcome=Outcome.UNKNOWN, secondary=True)
+        return result
+
+    def _cleanup_observed(self, repository, lease, record, task_id, metadata, paths, diagnostic):
+        from . import worker_diagnostics as diagnostics
+        from .worker_diagnostics import Stage, Outcome
         diagnostic.stage = "cleanup"
         diagnostic.cleanup = "unresolved"
         diagnostic.observe_record(record)
@@ -336,6 +353,7 @@ class ManagedWait:
         diagnostic.local_state = "may_have_changed"
         repository.advance(lease, "closing")
         try:
+            deleted_here = False
             if direct is None or direct.timer_phase != "deleted":
                 host = self._host(metadata, task_id, record.automation_id, [r[0] for r in record.reviewers])
                 before = host.view_heartbeat(for_pause=True)
@@ -351,18 +369,32 @@ class ManagedWait:
                     # Before preparation only the fixed creation policy may own cleanup.
                     host.verify_created(before.rule)
                 diagnostic.host_mutation = "may_have_occurred"
-                host.delete_heartbeat(before, cleanup=True)
-            repository.advance(lease, "closed")
+                diagnostics.event(Stage.TIMER_DELETE, Outcome.ATTEMPT)
+                try:
+                    host.delete_heartbeat(before, cleanup=True)
+                except Exception as error:
+                    diagnostics.event(Stage.TIMER_DELETE, Outcome.UNKNOWN, reason="cleanup_failed", error=error)
+                    raise
+                deleted_here = True
+                diagnostics.event(Stage.TIMER_DELETE, Outcome.CONFIRMED)
+            try:
+                repository.advance(lease, "closed")
+            except Exception as error:
+                diagnostics.event(Stage.TIMER_SAVE, Outcome.FAILED,
+                    reason="delete_save_failed" if deleted_here else "request_save_failed", error=error)
+                raise
             diagnostic.cleanup = "confirmed"
             diagnostic.retained_effects = "settled"
             if diagnostic.host_mutation == "may_have_occurred":
                 diagnostic.host_mutation = "confirmed"
             return True
-        except Exception:
+        except Exception as error:
+            diagnostics.request(diagnostic, error=error, outcome=Outcome.UNKNOWN, secondary=True)
             repository.advance(lease, "unknown")
             return False
 
     def handle(self, operation, arguments, metadata, paths, diagnostic=None):
+        from . import worker_diagnostics as diagnostics
         diagnostic = diagnostic or CallDiagnostics()
         diagnostic.stage = "request_read"
         task_id = arguments["task_id"]
@@ -375,6 +407,7 @@ class ManagedWait:
             repository = RequestRepository(path)
             if operation == "inspect":
                 attempt, record = repository.read()
+                diagnostics.bind_request(sequence=attempt)
                 diagnostic.observe_record(record)
                 diagnostic.stage = "inspection"
                 result = {"ok": True, "task_id": task_id, "phase": None if record is None else record.phase}
@@ -394,6 +427,7 @@ class ManagedWait:
                 return result
             with diagnostic.retained_context(repository.serial()) as lease:
                 attempt, record = repository.read()
+                diagnostics.bind_request(sequence=attempt)
                 diagnostic.observe_record(record)
                 if record is not None and not self._cleanup(repository, lease, record, task_id, metadata, paths, diagnostic):
                     diagnostic.reason = "cleanup_unresolved"
@@ -413,6 +447,7 @@ class ManagedWait:
             diagnostic.stage = "request_read"
             diagnostic.invalidate_record()
             sequence, previous, rounds = repository.read_admission()
+            diagnostics.bind_request(sequence=sequence)
             if (rounds[-1] if rounds else None) != (continued or historical):
                 return self._failure("review_wait_binding_changed")
             if continued is not None:
@@ -493,8 +528,11 @@ class ManagedWait:
             self.owner._wait_round_current(binding, continued)
             diagnostic.stage = "request_write"
             diagnostic.invalidate_record()
+            diagnostics.bind(task_id)
+            diagnostics.bind_request(parent_id=metadata["threadId"])
             repository.append(lease, RequestRecord(digest, current_turn, pairs,
                 **({"continuation_id": continued.continuation_id, "continuation_sequence": continued.continuation_sequence} if continued else {})))
+            diagnostics.bind_request(sequence=sequence + 1)
             diagnostic.retained_effects = "present_unresolved"
             try:
                 diagnostic.stage = "create"
@@ -503,6 +541,7 @@ class ManagedWait:
                 diagnostic.host_mutation = "confirmed"
             except Exception as exc:
                 diagnostic.capture(error=exc)
+                diagnostics.request(diagnostic, error=exc)
                 repository.advance(lease, "unknown")
                 return self._failure("heartbeat_create_unknown")
             record = repository.advance(lease, "created", automation_id=automation)
@@ -553,6 +592,7 @@ class ManagedWait:
             except Exception as exc:
                 if diagnostic.reason is None:
                     diagnostic.capture(error=exc)
+                diagnostics.request(diagnostic, error=exc)
                 origin = diagnostic.stage, diagnostic.reason
                 record = repository.advance(lease, "failed")
                 try:

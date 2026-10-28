@@ -131,7 +131,8 @@ def allow_output():
 class Collector:
     """One operation's bounded, sanitized memory buffer; no hot-path file I/O."""
 
-    def __init__(self, directory, root, mode, *, operation, marker, directory_identity, record_sink=None):
+    def __init__(self, directory, root, mode, *, operation, marker, directory_identity, record_sink=None,
+                 closed_sink=None):
         self.directory = directory
         self.root = root
         self.mode = mode
@@ -153,6 +154,7 @@ class Collector:
         self._untracked = False
         self._failed = False
         self.record_sink = record_sink
+        self.closed_sink = closed_sink
         self.validated = False
         self.sealed = False
 
@@ -181,7 +183,11 @@ class Collector:
         try:
             started = time.monotonic_ns()
             if _integer(connection_id):
-                self._open.pop(connection_id, None)
+                removed = self._open.pop(connection_id, None)
+                if removed is not None and self.closed_sink is not None:
+                    # Native close observation, including its trailing end,
+                    # has returned. This callback performs no file I/O.
+                    self.closed_sink(connection_id)
             self.instrumentation_ns += time.monotonic_ns() - started
         except BaseException:
             self._untracked = True

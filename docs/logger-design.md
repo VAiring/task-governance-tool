@@ -373,6 +373,15 @@ summaryは登録接続数とDB/一般イベントの欠落数を持つが、summ
 共通のinvocation_id/pid/thread_idにより要求・worker・外側join・service cleanupを結ぶ。
 旧版workerにUUIDがなければnullのまま、probeで対応し、終了証拠を補わない。
 
+既存のproject admission後はworker生成前も`request`へ既存CallDiagnosticsの閉じた
+stage/reason、local_state/host_mutation/retained_effects/cleanupを投影する。
+取得済みの親UUID・Task・要求sequenceで旧試行を区別し、未取得のsequence・wait・workerは
+nullのままとする。旧試行のcleanup後、新要求の保存前に旧wait/probe/workerを外し、
+旧イベントはそのまま保持する。成功の返却形や公開エラーは変えず、診断用の再読取はしない。
+起動・準備失敗は後続のjournal保存やcleanupより先に記録し、二次cleanup失敗を別に残す。
+timer設定の既存読取はunsafe/invalid/changed/unavailableとtimezoneの固定理由を
+`timer_config`へ残す。本文・パス・設定値や追加の設定読取は保持・実行しない。
+
 開始、レビュー終了観測、timer arm/delete/pauseの試行と結果、通知試行と
 accepted/rejected/unknown、receipt観測と打切り理由、制御終了、cleanup、外側join、
 終了証拠の保存結果を区別する。serviceのEOF/transport error/取消/requested cleanupは
@@ -392,13 +401,24 @@ cleanupで上書きしない。`worker/returned`や`scope_returned`は制御が�
 送信済みと扱わない。同一所有workerの起動時admissionを早期終了・cleanupにも再利用するが、
 効果直前のfresh確認や読取専用抑止を省略・緩和しない。
 
-同じ待機identityとstage/outcome/reasonは操作中に1度だけ、組合せは操作全体で最大128件。
+同じ待機identity、stage/outcome/reasonと閉じた観測条件は操作中に1度だけ、組合せは操作全体で最大128件。
 同じ要求内の待機更新では以後のイベントだけを新identityへ切り替え、保存待ちの旧イベントを
 付け替えず、別probeの同じ遷移も抑止しない。予算・欠落数・保存連番は切替でリセットしない。
 変化しない反復は63bitで飽和するpoll数とelapsed_nsだけをcheckpointへ集約する。
 checkpointのidentityは保存時の文脈であり、`aggregate_scope=invocation` が示すpoll数・
 経過時間・計測値・欠落数は、同一要求中の更新を含む操作全体の集計である。反復ごとのイベント、
 自由なラベル、全メソッドの計測を追加しない。
+`readiness`は既存のhost終了観測と回答回収後の進行可否を分け、保存済み回答や再admissionを
+host終了の新規観測と扱わない。未観測はnull、観測元は閉じたラベルで残す。親turn/chat状態、
+親identityと元turnの一致、準備確認から戻った事実も区別する。reviewers_pending/
+answers_pending/readiness_unknown/parent_not_terminal/parent_not_idle/dispatch_candidateは
+その観測時の条件であり、後のdispatch許可ではない。managedで許される
+元turn不一致を失敗に変えない。最新の条件とそのidentityをcheckpointにも残すため、
+同じ条件へ戻った場合や遷移枠超過後も最終観測を読み取れる。期限切れはcontrol_endのまま、
+正常通知へ読み替えない。errorsでは失敗batchの補足としてのみ最新条件を保存する。
+親状態は子の処理前、host終了観測は回答候補の読取・回収前に有界保持する。後続の例外・
+取消でも取得済みの観測は失わず、未確認の進行可否はnullとする。observation/endedも実際の
+host終了観測だけから出し、進行可能という戻り値や空の観測対象集合から推定しない。
 既存256イベント/512 KiBの内側から重要イベント64枠/128 KiBを分離する。
 内訳は通常遷移48枠、失敗16枠で、SQL・通常詳細がこの枠を消費・追放することはない。
 重要枠超過は新しい記録を落として最初の原因を保持し、important_limitを残す。
@@ -406,6 +426,19 @@ checkpointのidentityは保存時の文脈であり、`aggregate_scope=invocatio
 待機scopeではwait.checkpointがそのsummary枠を使い、正常詳細が上限に達しても補足情報を残す。
 上限の一律拡大は行わない。bind前の一般詳細が予約分を使っていれば有限に削減して
 buffer_limitへ数える。errorsでは成功遷移を出さない既存方針を維持する。
+
+重要枠の128 KiB中16 KiBを、`debug_log_wait_sql`の取得済み接続文脈に予約する。
+最大8接続のopen、成功・観測済みbegin、最初の失敗とそのidentity、同じtransactionの
+観測済みend、closeだけを有限保持する。後のtransactionや失敗BEGINで開始終了を差し替えず、
+script等で寿命が不明になった境界はnullとする。Collectorのnative close通知は後続endの
+観測後に文脈を破棄する。失敗接続は最初の失敗時とこのclose通知時に`wait.db_failure`として
+既存の失敗16枠へ投影する。open失敗ではcloseを補わず解放する。通知はメモリ処理のみで、
+追加のnative callや保存は行わない。重要イベントのbyte上限は残る112 KiBである。
+これにより通常SQL詳細に押し出されても接続/transaction IDと既知の開始・終了を辿れる。
+errorsでもこの成功境界は失敗の文脈としてだけ保存する。観測できない開始・終了はnull、
+coverageはpartial、競合相手はunknownで、ロック所有者や他processを推定しない。
+文脈枠超過はdb_context_limitを残し、保持できなかった失敗は文脈nullで記録する。
+byte上限・重要枠超過・sink失敗・未確認closeの欠落規則は同じで、保存成功を推定しない。
 
 checkpointは全登録接続のclose、未追跡接続なし、同一thread、既存admission成立、
 read-only抑止なしを確認した場合だけ、既存日別sinkへまとめて1回試行する。

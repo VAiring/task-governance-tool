@@ -4,6 +4,7 @@ from dataclasses import replace
 from datetime import timedelta
 import io
 import json
+import sqlite3
 from pathlib import Path
 import subprocess
 import sys
@@ -36,6 +37,345 @@ class CheckpointTests(unittest.TestCase):
     configure = debug_fixture.DebugLogTests.configure
     scope = debug_fixture.DebugLogTests.scope
     records = debug_fixture.DebugLogTests.records
+
+    def test_sequential_active_transaction_close_releases_context_after_trailing_end(self):
+        self.configure()
+        with self.scope() as session:
+            diag.bind(*IDENTITY)
+            for index in range(12):
+                with closing(db.connect_existing(self.database)) as connection:
+                    connection.execute('BEGIN')
+                    if index == 11:
+                        with self.assertRaises(sqlite3.OperationalError):
+                            connection.execute('SELECT missing FROM items')
+                self.assertEqual(session.wait_sql.connections, {})
+                self.assertEqual(session.wait_sql.size, 0)
+            self.assertNotIn('db_context_limit', session.dropped)
+        rows = [r for r in self.records() if r['event'] == 'wait.db_failure']
+        self.assertEqual(len(rows), 2)
+        context = rows[-1]['context']
+        self.assertEqual(context['end']['end_reason'], 'close')
+        self.assertEqual(context['failure']['transaction_id'], context['end']['transaction_id'])
+
+    def test_first_failed_transaction_cannot_inherit_a_later_transaction_end(self):
+        self.configure()
+        with self.scope():
+            diag.bind(*IDENTITY)
+            with closing(db.connect_existing(self.database)) as connection:
+                connection.execute('BEGIN')
+                with self.assertRaises(sqlite3.OperationalError):
+                    connection.execute('SELECT missing FROM items')
+                connection.rollback()
+                connection.execute('BEGIN')
+                connection.execute('SELECT value FROM items').fetchall()
+                connection.commit()
+        last = [r for r in self.records() if r['event'] == 'wait.db_failure'][-1]['context']
+        self.assertEqual([last[key]['transaction_id'] for key in ('begin', 'failure', 'end')], [1, 1, 1])
+        self.assertEqual(last['end']['end_reason'], 'rollback')
+
+    def test_failed_open_releases_context_without_inventing_close(self):
+        self.configure()
+        with self.scope() as session:
+            diag.bind(*IDENTITY)
+            for _ in range(10):
+                with self.assertRaises(sqlite3.OperationalError):
+                    db.connect_existing(self.database.parent / 'absent.sqlite')
+                self.assertEqual(session.wait_sql.connections, {})
+                self.assertEqual(session.wait_sql.size, 0)
+            self.assertNotIn('db_context_limit', session.dropped)
+        failures = [r for r in self.records() if r['event'] == 'wait.db_failure']
+        self.assertEqual(len(failures), 10)
+        self.assertTrue(all(r['context']['close'] is None for r in failures))
+
+    def test_failed_nested_begin_keeps_actual_begin_and_failure_identity(self):
+        self.configure()
+        with self.scope():
+            diag.bind(*IDENTITY)
+            with closing(db.connect_existing(self.database)) as connection:
+                connection.execute('BEGIN')
+                with self.assertRaises(sqlite3.OperationalError):
+                    connection.execute('BEGIN')
+                diag.bind('tg_task_1111111111111111')
+                connection.rollback()
+        last = [r for r in self.records() if r['event'] == 'wait.db_failure'][-1]
+        self.assertEqual(last['task_id'], IDENTITY[0])
+        self.assertEqual(last['context']['begin']['outcome'], 'succeeded')
+        self.assertEqual(last['context']['failure']['outcome'], 'failed')
+        self.assertEqual(last['context']['end']['end_reason'], 'rollback')
+
+    def test_script_unknown_start_is_not_reconstructed_from_old_begin(self):
+        self.configure()
+        with self.scope():
+            diag.bind(*IDENTITY)
+            with closing(db.connect_existing(self.database)) as connection:
+                connection.execute('BEGIN')
+                with self.assertRaises(sqlite3.OperationalError):
+                    connection.executescript('BEGIN; SELECT missing FROM items;')
+                connection.rollback()
+        last = [r for r in self.records() if r['event'] == 'wait.db_failure'][-1]['context']
+        self.assertIsNone(last['begin'])
+        self.assertIsNone(last['end'])
+
+    def test_ended_reviewers_with_pending_answers_are_not_reported_as_running(self):
+        from tests.test_review_wait_polling import ManagedPollingTests
+        fixture = ManagedPollingTests()
+        fixture.setUp()
+        self.addCleanup(fixture.doCleanups)
+        for key, child in fixture.children.items():
+            fixture.children[key] = replace(child, status='completed', thread_status='idle')
+        self.configure()
+        with self.scope():
+            diag.bind(*IDENTITY)
+            diag.begin_observation(fixture.parent, terminal=True, parent_matches=True, turn_matches=True)
+            ready = fixture.observe_progress()
+            self.assertFalse(ready)
+        current = [r for r in self.records() if r.get('stage') == 'readiness'][-1]
+        self.assertEqual(current['reason'], 'answers_pending')
+        self.assertTrue(current['all_reviewers_ended'])
+        self.assertFalse(current['review_progress_ready'])
+        self.assertEqual(fixture.host.read_child.call_count, 2)
+        self.assertEqual(fixture.tracking_reader.call_count, 2)
+
+    def test_saved_answer_and_readmission_are_not_fresh_host_end_observations(self):
+        from tests.test_review_wait_polling import ManagedPollingTests
+        from task_governance_tool.review_answer_runtime import TrackingReadmissionRequired
+        self.configure()
+        for saved in (True, False):
+            with self.subTest(saved=saved):
+                fixture = ManagedPollingTests()
+                fixture.setUp()
+                self.addCleanup(fixture.doCleanups)
+                fixture.worker._saved_results_ready = saved
+                if not saved:
+                    fixture.tracking_reader.side_effect = TrackingReadmissionRequired()
+                with self.scope():
+                    diag.bind(*IDENTITY)
+                    diag.begin_observation(fixture.parent, terminal=True, parent_matches=True, turn_matches=True)
+                    ready = fixture.observe_progress()
+                    self.assertEqual(ready, saved)
+                current = [r for r in self.records() if r.get('stage') == 'readiness'][-1]
+                self.assertIsNone(current['all_reviewers_ended'])
+                self.assertEqual(current['reviewer_observation_source'],
+                                 'saved_results' if saved else 'readmission')
+                self.assertEqual(current['reason'], 'dispatch_candidate' if saved else 'readiness_unknown')
+                fixture.host.read_child.assert_not_called()
+
+    def test_saved_results_in_both_shared_loops_never_emit_host_end(self):
+        from tests.test_review_wait_polling import ManagedPollingTests
+        self.configure()
+        for polling in (True, False):
+            with self.subTest(polling=polling):
+                fixture = ManagedPollingTests()
+                fixture.setUp()
+                self.addCleanup(fixture.doCleanups)
+                if not polling:
+                    fixture.worker.polling_factory = None
+                finalizer = SimpleNamespace(saved_results_ready=lambda: True)
+                before = len(self.records())
+                with self.scope(), mock.patch.object(fixture.worker, '_finalizer', return_value=finalizer):
+                    diag.bind(*IDENTITY)
+                    fixture.run_polls(count=1)
+                rows = self.records()[before:]
+                latest = [r for r in rows if r['event'] == 'wait.checkpoint'][-1]['last_observation']
+                self.assertIsNone(latest['all_reviewers_ended'])
+                self.assertTrue(latest['review_progress_ready'])
+                self.assertEqual(latest['reviewer_observation_source'], 'saved_results' if polling else 'unavailable')
+                self.assertFalse(any(r.get('reason') == 'all_reviewers_ended' for r in rows))
+                fixture.host.read_child.assert_not_called()
+                fixture.dispatch.assert_called_once()
+
+    def test_shared_loop_retains_host_end_before_collection_outcomes(self):
+        from tests.test_review_wait_polling import ManagedPollingTests
+        self.configure()
+        for outcome in ('success', 'error', 'candidate_error', 'cancel', 'deadline'):
+            with self.subTest(outcome=outcome):
+                fixture = ManagedPollingTests()
+                fixture.setUp()
+                self.addCleanup(fixture.doCleanups)
+                for reviewer in fixture.reviewers:
+                    fixture.ended(reviewer.reviewer_id)
+                def collect(reviewer_id):
+                    if outcome == 'error':
+                        raise RuntimeError(SECRET)
+                    if outcome == 'cancel':
+                        fixture.worker._stop.set()
+                    elif outcome == 'deadline':
+                        fixture.clock.elapsed = 1201
+                    else:
+                        fixture.freeze(reviewer_id)
+                fixture.collect_action = collect
+                if outcome == 'candidate_error':
+                    fixture.polling_factory.return_value = (fixture.guard, fixture.tracking_reader,
+                        mock.Mock(side_effect=RuntimeError(SECRET)))
+                before = len(self.records())
+                with self.scope():
+                    diag.bind(*IDENTITY)
+                    fixture.run_polls(count=1)
+                rows = self.records()[before:]
+                latest = [r for r in rows if r['event'] == 'wait.checkpoint'][-1]['last_observation']
+                self.assertTrue(latest['all_reviewers_ended'])
+                self.assertEqual(latest['reviewer_observation_source'], 'host')
+                self.assertEqual(latest['parent_thread_state'], 'idle')
+                self.assertEqual(latest['review_progress_ready'], True if outcome == 'success' else None)
+                self.assertEqual(fixture.host.read_child.call_count, 2)
+                self.assertEqual(fixture.dispatch.call_count, 1 if outcome == 'success' else 0)
+                self.assertNotIn(SECRET, json.dumps(rows))
+
+    def test_shared_loops_keep_final_host_read_before_observation_save_fails(self):
+        from tests.test_review_wait_polling import ManagedPollingTests
+        self.configure()
+        for polling in (True, False):
+            with self.subTest(polling=polling):
+                fixture = ManagedPollingTests()
+                fixture.setUp()
+                self.addCleanup(fixture.doCleanups)
+                fixture.tracking.clear()
+                fixture.worker.answer_tracking = lambda controller: {}
+                if not polling:
+                    fixture.worker.polling_factory = None
+                for reviewer in fixture.reviewers:
+                    fixture.ended(reviewer.reviewer_id)
+                before = len(self.records())
+                with self.scope(), mock.patch.object(fixture.worker, '_observe_reviewer',
+                        side_effect=[True, RuntimeError(SECRET)]):
+                    diag.bind(*IDENTITY)
+                    fixture.run_polls(count=1)
+                rows = self.records()[before:]
+                latest = [r for r in rows if r['event'] == 'wait.checkpoint'][-1]['last_observation']
+                self.assertTrue(latest['all_reviewers_ended'])
+                self.assertIsNone(latest['review_progress_ready'])
+                self.assertEqual(latest['reviewer_observation_source'], 'host')
+                self.assertEqual(fixture.host.read_child.call_count, 2)
+                fixture.dispatch.assert_not_called()
+                self.assertNotIn(SECRET, json.dumps(rows))
+
+    def test_last_host_read_keeps_observation_before_cancel_or_deadline(self):
+        from tests.test_review_wait_polling import ManagedPollingTests
+        self.configure()
+        for polling in (True, False):
+            for outcome in ('cancel', 'deadline'):
+                for valid in (True, False):
+                    with self.subTest(polling=polling, outcome=outcome, valid=valid):
+                        fixture = ManagedPollingTests()
+                        fixture.setUp()
+                        self.addCleanup(fixture.doCleanups)
+                        if not polling:
+                            fixture.worker.polling_factory = None
+                            fixture.worker.answer_tracking = lambda controller: {}
+                        for reviewer in fixture.reviewers:
+                            fixture.ended(reviewer.reviewer_id)
+                        final_reviewer = fixture.reviewers[-1].reviewer_id
+                        original_read = fixture.host.read_child.side_effect
+                        def read(reviewer_id):
+                            child = original_read(reviewer_id)
+                            if reviewer_id == final_reviewer:
+                                if outcome == 'cancel':
+                                    fixture.worker._stop.set()
+                                else:
+                                    fixture.clock.elapsed = 1201
+                                if not valid:
+                                    child = replace(child, child_id=PARENT)
+                            return child
+                        fixture.host.read_child.side_effect = read
+                        before = len(self.records())
+                        with self.scope():
+                            diag.bind(*IDENTITY)
+                            fixture.run_polls(count=1)
+                        rows = self.records()[before:]
+                        latest = [r for r in rows if r['event'] == 'wait.checkpoint'][-1]['last_observation']
+                        self.assertEqual(latest['all_reviewers_ended'], True if valid else None)
+                        self.assertIsNone(latest['review_progress_ready'])
+                        self.assertEqual(fixture.host.read_child.call_count, 2)
+                        fixture.dispatch.assert_not_called()
+                        fixture.failure.assert_not_called()
+                        fixture.collector.assert_not_called()
+                        self.assertTrue(any(r.get('stage') == 'control_end' and
+                            r.get('outcome') == ('cancelled' if outcome == 'cancel' else 'deadline') for r in rows))
+
+    def test_failed_connection_context_survives_detail_pressure_and_closes(self):
+        self.configure('errors')
+        with self.scope() as session:
+            diag.bind(*IDENTITY)
+            with closing(db.connect_existing(self.database)) as connection:
+                connection.execute('PRAGMA foreign_keys=ON')
+                connection.executescript('CREATE TABLE p(id PRIMARY KEY); CREATE TABLE c(id REFERENCES p(id) DEFERRABLE INITIALLY DEFERRED);')
+                connection.execute('BEGIN')
+                connection.execute('INSERT INTO c VALUES (1)')
+                for _ in range(400):
+                    connection.execute('SELECT value FROM items').fetchall()
+                    session.emit('test.detail', {}, failed=True)
+                with self.assertRaises(sqlite3.IntegrityError):
+                    connection.commit()
+                connection.rollback()
+            self.assertEqual(session.wait_sql.size, 0)
+            self.assertLessEqual(session.size + session.important_size + session.wait_sql.size, log.MAX_BUFFER_BYTES)
+        contexts = [r for r in self.records() if r['event'] == 'wait.db_failure']
+        self.assertEqual(len(contexts), 2)
+        current = contexts[-1]
+        self.assertEqual(current['failure']['phase'], 'commit')
+        self.assertEqual(current['context']['open']['outcome'], 'succeeded')
+        self.assertEqual(current['context']['begin']['phase'], 'begin')
+        self.assertEqual(current['context']['end']['end_reason'], 'rollback')
+        self.assertEqual(current['context']['close']['outcome'], 'succeeded')
+        self.assertEqual(current['failure']['transaction_id'], current['context']['begin']['transaction_id'])
+        self.assertEqual((current['coverage'], current['contender']), ('partial', 'unknown'))
+
+    def test_database_context_capacity_and_missing_begin_remain_explicit(self):
+        self.configure()
+        with self.scope() as session:
+            diag.bind(*IDENTITY)
+            from contextlib import ExitStack
+            with ExitStack() as stack:
+                connections = [stack.enter_context(closing(db.connect_existing(self.database))) for _ in range(9)]
+                with self.assertRaises(sqlite3.OperationalError):
+                    connections[-1].execute('SELECT nonexistent FROM items')
+                self.assertEqual(len(session.wait_sql.connections), 8)
+                self.assertGreater(session.dropped['db_context_limit'], 0)
+        unknown = [r for r in self.records() if r['event'] == 'wait.db_failure' and r['context'] is None]
+        self.assertTrue(unknown)
+        self.assertEqual(unknown[0]['coverage'], 'partial')
+
+    def test_readiness_last_observation_survives_repeated_conditions_and_errors_mode(self):
+        self.configure('errors')
+        with self.scope() as session:
+            diag.bind(*IDENTITY)
+            for _ in range(500):
+                diag.begin_observation(ChildTurn(PARENT, TURN, 'completed', 'active'),
+                    terminal=False, parent_matches=True, turn_matches=False)
+                diag.progress(True, True, source='host')
+            self.assertEqual(len(session.wait_seen), 3)
+            diag.begin_observation(ChildTurn(PARENT, TURN, 'completed', 'systemError'),
+                terminal=True, parent_matches=True, turn_matches=False)
+            diag.progress(True, True, source='host')
+            diag.event(Stage.CONTROL_END, Outcome.DEADLINE, reason='deadline')
+        final = [r for r in self.records() if r['event'] == 'wait.checkpoint'][-1]
+        self.assertEqual(final['last_observation']['reason'], 'parent_not_idle')
+        self.assertFalse(final['last_observation']['original_turn_matches'])
+        self.assertEqual(final['last_observation']['task_id'], IDENTITY[0])
+        self.assertFalse(any(r.get('stage') == 'readiness' for r in self.records()))
+
+    def test_timer_config_read_reasons_do_not_change_public_error_or_call_count(self):
+        from task_governance_tool.review_wait_runtime import review_wait_host as host_module
+        host = object.__new__(host_module.PublicMcpHost)
+        host._automation_id = 'fixture'
+        host._timezone_reader = None
+        host._codex_home = self.root
+        host._parent_id = PARENT
+        host._timezone = 'UTC'
+        host._timezone_source = 'host_node_intl'
+        self.configure()
+        for code in ('automation_config_unsafe', 'automation_config_invalid',
+                     'automation_config_changed', 'automation_config_unavailable'):
+            error = HostAdapterError(code)
+            with self.scope(), mock.patch.object(host, '_call', return_value=()) as call, \
+                 mock.patch.object(host_module, '_read_config', side_effect=error) as read:
+                diag.bind(*IDENTITY)
+                with self.assertRaises(HostAdapterError) as raised:
+                    host.view_heartbeat()
+                self.assertIs(raised.exception, error)
+                self.assertEqual((call.call_count, read.call_count), (1, 1))
+        reasons = [r['reason'] for r in self.records() if r.get('stage') == 'timer_config']
+        self.assertEqual(len(set(reasons)), 4)
 
     def test_checkpoints_close_connections_first_and_keep_sql_identity(self):
         self.configure()
@@ -443,6 +783,55 @@ class WaitLogTests(unittest.TestCase):
         self.assertIn('deadline', [r['outcome'] for r in self.events(Stage.CONTROL_END)])
         self.assertEqual(self.status(), 'expired')
 
+    def test_reviewers_ended_busy_parent_expires_without_normal_notification(self):
+        self.enable_logs()
+        observed = threading.Event()
+        original = diag.progress
+        def ready(*args, **kwargs):
+            original(*args, **kwargs)
+            if args[0] is True and args[1] is True:
+                observed.set()
+        with mock.patch.object(diag, 'progress', side_effect=ready):
+            self.start()
+            self.host.turn = ChildTurn(CHILD, TURN, 'completed', 'idle')
+            self.assertTrue(observed.wait(5))
+            self.now += timedelta(seconds=1201)
+            self.joined()
+        checks = [r for r in self.rows if r['event'] == 'wait.checkpoint' and r.get('last_observation')]
+        self.assertEqual(checks[-1]['last_observation']['reason'], 'parent_not_terminal')
+        self.assertTrue(checks[-1]['last_observation']['all_reviewers_ended'])
+        self.assertEqual(self.host.sends, [])
+        self.assertEqual(self.status(), 'expired')
+
+    def test_worker_real_commit_failure_keeps_first_context_and_cleanup(self):
+        self.enable_logs()
+        registration = self.path.parent / 'registration.sqlite'
+        with closing(db.connect(registration)) as connection:
+            connection.execute('CREATE TABLE p(id PRIMARY KEY)')
+        # A real second connection holds a read lock. Its ownership is known
+        # only to this fixture and must never be inferred by the diagnostics.
+        reader = self.enterContext(closing(db.connect_existing(registration, timeout=0)))
+        reader.execute('BEGIN')
+        reader.execute('SELECT * FROM p').fetchall()
+        def register(*args):
+            with closing(db.connect_existing(registration, timeout=0)) as connection:
+                connection.execute('BEGIN')
+                connection.execute('INSERT INTO p VALUES (1)')
+                for _ in range(300):
+                    log._current.get().emit('test.detail', {}, failed=True)
+                connection.commit()
+        with mock.patch.object(self.direct, '_observe_progress', side_effect=register):
+            self.start()
+            self.joined()
+        failures = [r for r in self.rows if r['event'] == 'wait.db_failure']
+        self.assertTrue(any(r['failure']['phase'] == 'commit' for r in failures))
+        self.assertTrue(any(r['failure'].get('sqlite_errorcode') == sqlite3.SQLITE_BUSY for r in failures))
+        self.assertTrue(all(r['contender'] == 'unknown' for r in failures))
+        self.assertTrue(any(r['context'] and r['context']['close'] for r in failures))
+        self.assertTrue(self.events(Stage.FAILURE))
+        self.assertTrue(self.events(Stage.CLEANUP))
+        self.assertEqual(self.host.sends, [])
+
     def test_cancel_logs_end_without_claiming_thread_exit_in_target(self):
         self.enable_logs()
         result = self.start()
@@ -598,6 +987,128 @@ class ManagedLogTests(unittest.TestCase):
     call = managed_fixture.ManagedFlowTests.call
     until = managed_fixture.ManagedFlowTests.until
     ended = managed_fixture.ManagedFlowTests.ended
+
+    def test_failed_new_creation_cannot_reuse_previous_worker_identity(self):
+        rows = self.logging()
+        self.assertTrue(self.call()['ok'])
+        old = next(iter(self.session.sessions.values())).direct._diagnostic_identity
+        self.current_parent = ChildTurn(PARENT, NEW_TURN, 'inProgress', 'active')
+        self.fail_create = True
+        result = self.call(metadata={**managed_fixture.META, 'turnId': NEW_TURN})
+        self.assertFalse(result['ok'])
+        failures = [r for r in rows if r.get('stage') == 'request' and r.get('reason') == 'heartbeat_create_unknown']
+        self.assertTrue(failures)
+        for row in failures:
+            self.assertEqual(row['request_sequence'], 2)
+            self.assertEqual([row[key] for key in ('wait_id', 'probe_id', 'worker_id')], [None, None, None])
+        self.assertTrue(any(r.get('worker_id') == old[3] for r in rows))
+
+    def test_cleanup_delete_confirmation_survives_failed_journal_close(self):
+        from task_governance_tool.review_wait_runtime.request_repository import RequestRepository
+        rows = self.logging()
+        self.assertTrue(self.call()['ok'])
+        original = RequestRepository.advance
+        def fail_close(repository, lease, phase, **kwargs):
+            if phase == 'closed':
+                raise OSError(SECRET)
+            return original(repository, lease, phase, **kwargs)
+        with mock.patch.object(RequestRepository, 'advance', fail_close):
+            result = self.call('stop')
+        self.assertFalse(result['ok'])
+        self.assertEqual(self.effects.count('delete'), 1)
+        events = [r for r in rows if r.get('stage') in ('timer_delete', 'timer_save')]
+        self.assertEqual([(r['stage'], r['outcome']) for r in events],
+            [('timer_delete', 'attempt'), ('timer_delete', 'confirmed'), ('timer_save', 'failed')])
+        self.assertEqual(events[-1]['reason'], 'delete_save_failed')
+
+    def test_legacy_prepare_admitted_failure_has_task_but_no_fabricated_worker(self):
+        from task_governance_tool.review_wait_runtime.failure_diagnostics import DiagnosticError
+        rows = self.logging()
+        def location(**kwargs):
+            log.allow_output()
+            return self.paths
+        with mock.patch.object(self.session, '_location', side_effect=location), \
+             mock.patch.object(self.session, '_reader', side_effect=DiagnosticError('binding_mismatch')):
+            result = self.session.handle('prepare', {'task_id': managed_fixture.TASK,
+                'automation_id': 'fixture', 'reviewer_ids': [CHILD]}, managed_fixture.META)
+        self.assertFalse(result['ok'])
+        failures = [r for r in rows if r.get('stage') == 'request']
+        self.assertEqual(failures[-1]['reason'], 'binding_mismatch')
+        self.assertEqual(failures[-1]['boundary'], 'basis_before')
+        self.assertEqual(failures[-1]['task_id'], managed_fixture.TASK)
+        self.assertIsNone(failures[-1]['worker_id'])
+        self.assertIsNone(failures[-1]['request_sequence'])
+        self.assertEqual(self.effects, [])
+
+    def test_initial_host_failure_survives_journal_settlement_failure(self):
+        from task_governance_tool.review_wait_runtime.request_repository import RequestRepository
+        rows = self.logging()
+        self.fail_create = True
+        with mock.patch.object(RequestRepository, 'advance', side_effect=OSError(SECRET)):
+            result = self.call()
+        self.assertFalse(result['ok'])
+        failures = [r for r in rows if r.get('stage') == 'request']
+        self.assertEqual(failures[0]['reason'], 'heartbeat_create_unknown')
+        self.assertEqual(failures[0]['host_mutation'], 'may_have_occurred')
+        self.assertEqual(failures[0]['local_state'], 'may_have_changed')
+        self.assertEqual(result['diagnostic']['reason'], 'heartbeat_create_unknown')
+        self.assertEqual(self.effects, ['create'])
+        self.assertNotIn(SECRET, json.dumps(rows))
+
+    def test_preworker_failure_retains_old_attempt_and_protected_call_state(self):
+        from task_governance_tool.review_wait_runtime.request_repository import RequestRepository
+        rows = self.logging()
+        self.fail_create = True
+        original = RequestRepository.advance
+        def saturated(repository, *args, **kwargs):
+            session = log._current.get()
+            if session is not None:
+                for _ in range(400):
+                    session.emit('test.detail', {}, failed=True)
+            return original(repository, *args, **kwargs)
+        with mock.patch.object(RequestRepository, 'advance', saturated):
+            first = self.call()
+        self.assertFalse(first['ok'])
+        attempts = [r for r in rows if r.get('stage') == 'request']
+        self.assertTrue(attempts)
+        self.assertEqual(attempts[0]['boundary'], 'create')
+        self.assertEqual(attempts[0]['reason'], 'heartbeat_create_unknown')
+        self.assertEqual(attempts[0]['request_sequence'], 1)
+        self.assertEqual(attempts[0]['task_id'], managed_fixture.TASK)
+        self.assertEqual(attempts[0]['parent_id'], PARENT)
+        self.assertIsNone(attempts[0]['worker_id'])
+        self.assertEqual(attempts[0]['host_mutation'], 'may_have_occurred')
+        self.fail_create = False
+        self.current_parent = ChildTurn(PARENT, NEW_TURN, 'inProgress', 'active')
+        self.basis = replace(self.basis, target_generation=self.basis.target_generation + 1)
+        with mock.patch('task_governance_tool.review_wait_runtime.continuation_cleanup_repository.observe_generation_cleanup',
+                return_value=SimpleNamespace(state='unknown', reason='review_continuation_effect_unknown')):
+            second = self.call(metadata={**managed_fixture.META, 'turnId': NEW_TURN})
+        self.assertFalse(second['ok'])
+        retained = [r for r in rows if r.get('reason') == 'review_continuation_effect_unknown']
+        self.assertTrue(retained)
+        self.assertEqual(retained[-1]['request_sequence'], 1)
+        self.assertEqual(retained[-1]['retained_effects'], 'not_inspected')
+        self.assertEqual(self.effects, ['create'])
+
+    def test_primary_preparation_cause_survives_secondary_cleanup_failure(self):
+        from task_governance_tool.review_wait_runtime.failure_diagnostics import DiagnosticError
+        rows = self.logging()
+        factory = self.session.managed._host
+        def host(*args, **kwargs):
+            value = factory(*args, **kwargs)
+            value.verify_created = mock.Mock(side_effect=DiagnosticError('preparation_failed'))
+            value.delete_heartbeat = mock.Mock(side_effect=OSError(SECRET))
+            return value
+        with mock.patch.object(self.session.managed, '_host', side_effect=host):
+            result = self.call()
+        self.assertFalse(result['ok'])
+        events = [r for r in rows if r.get('stage') == 'request']
+        self.assertEqual(events[0]['reason'], 'preparation_failed')
+        self.assertTrue(any(r['cause'] == 'secondary' and r['boundary'] == 'cleanup' for r in events))
+        self.assertEqual(result['diagnostic']['reason'], 'preparation_failed')
+        self.assertEqual(result['diagnostic']['cleanup'], 'unresolved')
+        self.assertNotIn(SECRET, json.dumps(rows))
 
     def logging(self):
         rows = []

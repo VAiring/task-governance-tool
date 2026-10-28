@@ -219,8 +219,10 @@ class ManagedDirectProbe(DirectProbe):
             return super()._observe_progress(host, controller, parent, record, monotonic_deadline)
         from task_governance_tool.review_answer_runtime import TrackingReadmissionRequired
         if self._saved_results_ready:
+            diagnostics.progress(None, True, source="saved_results")
             return True  # Dispatch still validates the live native judgments.
         if self._polling_sources is None:
+            diagnostics.progress(None, False)
             return False
         _, tracking_reader, candidate_probe = self._polling_sources
         try:
@@ -230,14 +232,17 @@ class ManagedDirectProbe(DirectProbe):
             # guessed child/slot mapping. No effect has been attempted here.
             self._polling_sources = None
             self._progress_seen.clear()
+            diagnostics.progress(None, False, source="readmission")
             return False
         pending = []
         all_ended = True
-        for expected in controller.reviewers:
+        all_host_observed = True
+        for index, expected in enumerate(controller.reviewers):
             if self._halt_observation(record, monotonic_deadline):
                 return False
             tracked = tracking.get(expected.reviewer_id)
             if tracked is not None and self._completed_tracking(expected, tracked):
+                all_host_observed = False
                 continue
             try:
                 child = host.read_child(expected.reviewer_id)
@@ -247,10 +252,19 @@ class ManagedDirectProbe(DirectProbe):
                     effect_guard=lambda: not self._halt_wait(record, monotonic_deadline))
                 raise
             if tracked is None:
-                self._record_reviewer_observation(expected, child)
+                observed_valid = self._record_reviewer_observation(expected, child)
             else:
+                observed_valid = child.child_id == expected.reviewer_id
                 with self._observations_lock:
                     self._reviewer_observations.pop(expected.reviewer_id, None)
+            # Preserve this already-returned valid observation before the
+            # existing cancellation/deadline guard can end the tick. This
+            # diagnostic preview does not advance any business state.
+            if observed_valid:
+                observed_ended = all_ended and _terminal(child)
+                complete_host = all_host_observed and index + 1 == len(controller.reviewers)
+                diagnostics.progress(observed_ended if complete_host or not observed_ended else None, None,
+                                     source="host" if complete_host else "mixed")
             if self._halt_observation(record, monotonic_deadline):
                 return False
             if child.child_id != expected.reviewer_id or (tracked is None and child.turn_id != expected.turn_id):
@@ -276,6 +290,9 @@ class ManagedDirectProbe(DirectProbe):
             else:
                 self._progress_seen[expected.reviewer_id] = state
         parent_idle = _terminal(parent) and parent.thread_status == "idle"
+        observed_ended = all_ended if all_host_observed or not all_ended else None
+        observed_source = "host" if all_host_observed else "mixed"
+        diagnostics.progress(observed_ended, None, source=observed_source)
         collected = False
         for expected, child, state, changed in pending:
             if candidate_probe is None and not changed and not (all_ended and parent_idle):
@@ -291,6 +308,7 @@ class ManagedDirectProbe(DirectProbe):
             except TrackingReadmissionRequired:
                 self._polling_sources = None
                 self._progress_seen.clear()
+                diagnostics.progress(observed_ended, False, source="readmission")
                 return False
             if self._halt_observation(record, monotonic_deadline):
                 return False
@@ -313,20 +331,23 @@ class ManagedDirectProbe(DirectProbe):
             except TrackingReadmissionRequired:
                 self._polling_sources = None
                 self._progress_seen.clear()
+                diagnostics.progress(observed_ended, False, source="readmission")
                 return False
         if pending:
             all_ended = all_ended and all(
                 expected.reviewer_id in tracking
                 and self._completed_tracking(expected, tracking[expected.reviewer_id])
                 for expected, _, _, _ in pending)
+        diagnostics.progress(observed_ended, all_ended, source=observed_source)
         return all_ended
 
     def _read_reviewer(self, host, controller, expected, *, terminal=False, reviewer_observer=None,
-                       effect_guard=None):
+                       effect_guard=None, progress_observer=None):
         tracked = self._tracking(controller, expected)
         if tracked is None:
             return super()._read_reviewer(host, controller, expected, terminal=terminal,
-                                         reviewer_observer=reviewer_observer, effect_guard=effect_guard)
+                reviewer_observer=reviewer_observer, effect_guard=effect_guard,
+                progress_observer=progress_observer)
         if tracked["boundary_turn_id"] != expected.turn_id:
             raise DirectError("reviewer_turn_changed")
         if not tracked["frozen"] and self.tracked_answer_collector is not None:

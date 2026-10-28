@@ -1167,7 +1167,14 @@ Long review waits may publish bounded intermediate batches at existing safe
 boundaries after every tracked connection closes. Important typed transitions
 and caught failures have a separate finite reservation within these same limits,
 so SQL detail pressure cannot evict them. Unchanged polls produce bounded counts,
-not per-poll output. The [wait checkpoint contract](logger-design.md#wait-checkpoints)
+not per-poll output. Admitted pre-worker request failures preserve already-known
+request identity and closed effect diagnostics. Waiting retains the latest
+observed host termination and answer readiness separately from expiry,
+notification and actual exit. Failed SQLite connections may retain their bounded
+already-observed opening/transaction/closing context within the same important reservation;
+later transactions cannot replace the first failure's boundaries or identity;
+missing boundaries and unknown contenders remain explicit, also in errors mode.
+The [wait checkpoint contract](logger-design.md#wait-checkpoints)
 owns cadence, independent budgets, correlation and explicit incomplete coverage.
 Unknown connection cleanup suppresses output. At exit, events are appended to
 UTF-8 JSONL `taskgov-debug.log.YYYY-MM-DD`, using each event's local occurrence

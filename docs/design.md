@@ -935,6 +935,13 @@ and no suppression; they add no connection, query, timer or retry. An outer join
 reuses the exact admitted owned worker/probe to record both actual termination
 and a separate failed/successful evidence save. Diagnostic observations are
 never operational proof. Service transport cleanup and worker return stay distinct.
+The same reservation covers admitted pre-worker request diagnostics and the last
+observed readiness conditions. `debug_log_wait_sql` retains bounded protected
+connection context from the existing Collector sink for failures; it performs
+no query or native call and shares the wait byte budget. Collector's close
+callback releases context after trailing transaction observations, without I/O.
+Closed timer-config
+read reasons remain distinct without changing public failure classification.
 
 `debug_log_metrics.py` owns bounded operation-local method aggregates and item
 counts; `debug_log.py` exposes `aggregate(function, unit="items")`, its closed

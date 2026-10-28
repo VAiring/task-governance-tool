@@ -610,6 +610,8 @@ class ProjectReviewWaitSession:
             return self._handle_scoped(operation, arguments, metadata)
 
     def _handle_scoped(self, operation, arguments, metadata):
+        from . import worker_diagnostics as diagnostics
+        from .worker_diagnostics import Outcome
         diagnostic = CallDiagnostics()
         admitted = False
         try:
@@ -620,6 +622,8 @@ class ProjectReviewWaitSession:
             admitted = diagnostic.stage not in {"request", "executor_admission"}
         if result.get("ok") is not True and "diagnostic" not in result:
             result = diagnostic.failure(result)
+        diagnostics.request(diagnostic, result=result,
+            outcome=Outcome.RETURNED if result.get("ok") is True else Outcome.FAILED)
         if getattr(diagnostic, "answer_collection", None) is not None:
             result = {**result, "answer_collection": diagnostic.answer_collection}
         if operation == "inspect" and admitted and self.runtime_identity is not None:
@@ -692,12 +696,18 @@ class ProjectReviewWaitSession:
             if operation in {"wait", "inspect", "stop"}:
                 diagnostic.stage = "request"
                 validate_task_id(arguments["task_id"])
+                from . import worker_diagnostics as diagnostics
+                diagnostics.bind(arguments["task_id"])
+                diagnostics.bind_request(parent_id=actual["threadId"])
                 return self.managed.handle(operation, arguments, actual, paths, diagnostic)
             automation = arguments["automation_id"]
             path = paths.review_wait_store(automation)
             if operation == "prepare":
                 diagnostic.stage = "request"
                 task_id = validate_task_id(arguments["task_id"])
+                from . import worker_diagnostics as diagnostics
+                diagnostics.bind(task_id)
+                diagnostics.bind_request(parent_id=actual["threadId"])
                 # Validate live ownership before creating even an empty directory.
                 diagnostic.stage = "basis_before"
                 self._reader(self.config.repo, task_id, actual["threadId"], "prepare",
@@ -710,6 +720,9 @@ class ProjectReviewWaitSession:
             else:
                 diagnostic.stage = "request_read"
                 controller = ReviewWaitRepository.open_existing(path).read().controller
+                from . import worker_diagnostics as diagnostics
+                diagnostics.bind(controller.binding.task_id, controller.binding.wait_id)
+                diagnostics.bind_request(parent_id=actual["threadId"])
                 diagnostic.retained_effects = "present_unresolved"
                 if (controller.binding.parent_thread_id != actual["threadId"]
                         or controller.reservation.timer_id != automation):

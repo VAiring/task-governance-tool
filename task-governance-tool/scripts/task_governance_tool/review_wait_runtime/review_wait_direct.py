@@ -343,10 +343,11 @@ class DirectProbe:
                     self._prepare_observation(controller)
                     diagnostics.checkpoint(poll=True)
                     parent = host.read_parent()
+                    diagnostics.begin_observation(parent, terminal=_terminal(parent),
+                        parent_matches=parent.child_id == controller.binding.parent_thread_id,
+                        turn_matches=parent.turn_id == record.original_parent_turn)
                     self._parent_ready(parent, controller, record, require_idle=False)
                     all_ended = self._observe_progress(host, controller, parent, record, monotonic_deadline)
-                    if all_ended:
-                        diagnostics.event(Stage.OBSERVATION, Outcome.ENDED, reason="all_reviewers_ended")
                     if self._halt_observation(record, monotonic_deadline):
                         return
                 except ObservationBusy:
@@ -415,16 +416,37 @@ class DirectProbe:
 
     def _observe_progress(self, host, controller, parent, record, monotonic_deadline):
         all_ended = True
-        for expected in self._reviewers_to_observe(controller):
+        reviewers = self._reviewers_to_observe(controller)
+        observed_ended = True if reviewers else None
+        observed_count = 0
+        def observed(child):
+            nonlocal observed_ended, observed_count
+            observed_count += 1
+            if child is None:
+                if observed_ended is not False:
+                    observed_ended = None
+            elif not _terminal(child):
+                observed_ended = False
+            diagnostics.progress(observed_ended if observed_count == len(reviewers)
+                or observed_ended is False else None, None,
+                source="host" if observed_count == len(reviewers) else "mixed")
+        for expected in reviewers:
             if self._halt_observation(record, monotonic_deadline):
                 return False
             child = self._read_reviewer(host, controller, expected,
-                effect_guard=lambda: not self._halt_wait(record, monotonic_deadline))
+                effect_guard=lambda: not self._halt_wait(record, monotonic_deadline),
+                progress_observer=observed)
             if self._halt_observation(record, monotonic_deadline):
                 return False
             if not self._reviewer_matches(controller, expected, child):
                 raise DirectError("reviewer_turn_changed")
             all_ended = self._reviewer_ended(controller, expected, child) and all_ended
+        # A frozen answer returns no host observation. Empty or partial host
+        # reads cannot establish that every reviewer freshly ended.
+        diagnostics.progress(observed_ended if observed_count == len(reviewers)
+            or observed_ended is False else None, all_ended,
+            source="host" if observed_count and observed_count == len(reviewers)
+            else "mixed" if observed_count else "unavailable")
         return all_ended
 
     def _run_scoped(self, host, record, monotonic_deadline):
@@ -474,7 +496,7 @@ class DirectProbe:
         return True
 
     def _read_reviewer(self, host, controller, expected, *, terminal=False, reviewer_observer=None,
-                       effect_guard=None):
+                       effect_guard=None, progress_observer=None):
         def observe(observation):
             if reviewer_observer is None:
                 self._observe_reviewer(controller, observation, effect_guard=effect_guard)
@@ -487,6 +509,11 @@ class DirectProbe:
             observe((expected.reviewer_id, expected.turn_id, "unknown"))
             raise
         exact = self._record_reviewer_observation(expected, child)
+        if progress_observer is not None:
+            try:
+                progress_observer(child if exact else None)
+            except BaseException:
+                pass  # Diagnostic capture cannot change native observation.
         if exact and (_terminal(child) or child.status in {"failed", "interrupted"}):
             observe((expected.reviewer_id, expected.turn_id, child.status))
         elif not exact or terminal:

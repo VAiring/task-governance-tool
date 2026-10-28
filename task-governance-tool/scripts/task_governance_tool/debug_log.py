@@ -17,6 +17,7 @@ from . import sqlite_diagnostics as sqlite
 from .debug_log_sink import admit
 from .sqlite_sql_trace import Metrics, RESERVED_EVENTS
 from .debug_log_metrics import Aggregates, ItemCount, STATES, RESERVED_EVENTS as PERFORMANCE_EVENTS
+from .debug_log_wait_sql import WaitSqlContext, CONTEXT_BYTES
 
 MAX_EVENTS = 256
 MAX_BUFFER_BYTES = 512 * 1024
@@ -46,6 +47,10 @@ class Session:
         self.dropped = {}
         self.instrumentation_ns = 0
         self.wait_identity = None
+        self.wait_observation = None
+        self.wait_progress = None
+        self.wait_parent = None
+        self.wait_sql = None
         self.important = []
         self.important_size = 0
         self.wait_seen = set()
@@ -55,7 +60,8 @@ class Session:
         self.last_checkpoint = None
         self.previous_checkpoint = "not_attempted"
         self.collector = sqlite.Collector(sink.directory, sink.root, "transactions", operation=operation,
-            marker=sink.marker, directory_identity=sink.identity, record_sink=self.db_event)
+            marker=sink.marker, directory_identity=sink.identity, record_sink=self.db_event,
+            closed_sink=self.db_closed)
         self.collector.operation_id = self.invocation_id
         self.performance = Aggregates(self.mode, self.emit)
         self.collector.sql_metrics = Metrics(self.mode, self.emit, self.collector, context=self.sql_context)
@@ -91,7 +97,7 @@ class Session:
                 # cannot evict these events; preserve the first caught failures.
                 same_kind = sum(item[2] == failed for item in self.important)
                 if (same_kind >= (16 if failed else 48)
-                        or self.important_size + len(data) > WAIT_BYTES):
+                        or self.important_size + len(data) > WAIT_BYTES - CONTEXT_BYTES):
                     self.drop("important_limit")
                     return
                 self.important.append((event["log_date"], data, failed))
@@ -124,6 +130,8 @@ class Session:
     def db_event(self, record):
         # Collector has already reduced every field to closed labels/numbers.
         moment = {key: record.pop(key) for key in ("observed_at", "log_date", "utc_offset")}
+        if self.wait_sql is not None:
+            self.wait_sql.observe({**record, **moment}, self.wait_identity)
         self.emit("db.transaction", record, failed=record["outcome"] in {"failed", "cancelled"}, moment=moment)
 
     def bind_wait(self, identity):
@@ -132,10 +140,19 @@ class Session:
         # Buffered events already own their identity; only future events change.
         # Budgets and aggregates stay invocation-local across these bindings.
         self.wait_identity = identity
+        if self.wait_sql is None:
+            self.wait_sql = WaitSqlContext(self.emit, self.drop)
         while (len(self.events) > MAX_EVENTS - WAIT_EVENTS - 1
                or self.size > MAX_BUFFER_BYTES - WAIT_BYTES):
             self.size -= len(self.events.pop()[1])
             self.drop("buffer_limit")
+
+    def db_closed(self, connection_id):
+        if sqlite.suppressed() or threading.get_ident() != self.collector.thread_id:
+            self.collector.mark_untracked()
+            return
+        if self.wait_sql is not None:
+            self.wait_sql.closed(connection_id)
 
     def checkpoint(self, *, urgent=False, final=False):
         """Bounded intermediate publication, only outside all DB lifetimes.
@@ -170,6 +187,7 @@ class Session:
             "sqlite_instrumentation_ns": self.collector.instrumentation_ns,
             "connections_registered": self.collector.connections_registered,
             "db_records_dropped": self.collector.records_dropped,
+            "last_observation": self.wait_observation,
             "worker_exit": "unknown"}, failed=failed, reserved=True)
         batches = {}
         for day, data, _ in [*self.important, *self.events]:

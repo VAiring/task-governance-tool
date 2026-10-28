@@ -945,6 +945,19 @@ class PublicMcpHost:
         return parse_wait_threads(value, child_ids)
 
     def _view_config(self, *, for_pause: bool = False) -> _HeartbeatConfig:
+        # Logging uses only the fixed outcome of these existing reads. It never
+        # changes a public error, performs another read or admits an operation.
+        from . import worker_diagnostics as diagnostics
+        from .worker_diagnostics import Stage, Outcome
+        try:
+            return self._view_config_observed(for_pause=for_pause)
+        except Exception as error:
+            diagnostics.event(Stage.TIMER_CONFIG, Outcome.FAILED,
+                reason=error.code if type(error) is HostAdapterError else "automation_config_unavailable",
+                error=error)
+            raise
+
+    def _view_config_observed(self, *, for_pause: bool = False) -> _HeartbeatConfig:
         if type(for_pause) is not bool:
             _fail("invalid_host_configuration")
         self._call("automation_update", {"mode": "view", "id": self._automation_id})

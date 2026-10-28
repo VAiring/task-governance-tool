@@ -122,6 +122,10 @@ adapters opt into local admission through every read and locked write; explicit
 Runner Plan actions retain global admission throughout, including combined
 verification or Contract changes. This internal boolean is not an authority token or public option;
 neither local admission nor its snapshots may supply a global validation proof.
+Doctor/Setup physical-check sharing is confined to the owning read call's
+[query-only scope](setup-state-design.md#doctor). It preserves independent quick,
+full-integrity and FK outcomes; a private savepoint guards transaction identity
+before reuse. No writer, later snapshot or standalone validator inherits it.
 Handoff selection covers resolver admission, retained read connections and
 both record/withdraw writer entries. The existing source Task/Contract and
 ownership checks remain in the outbox repository; record retries acquire a

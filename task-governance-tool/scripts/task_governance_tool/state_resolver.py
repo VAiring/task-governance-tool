@@ -60,6 +60,8 @@ from task_governance_tool.storage import (
     ProjectIdentity,
     StorageError,
     StoredTaskVerificationError,
+    _physical_integrity_ok,
+    _reuse_read_integrity,
     canonicalize_repo,
     connect_readonly,
     current_schema_version,
@@ -1391,6 +1393,7 @@ def _database_target(
     )
 
 
+@_reuse_read_integrity(doctor_only=True)
 def _inspect_database(
     path: Path,
     *,
@@ -1455,13 +1458,8 @@ def _inspect_database(
                     reuse_validated = validation_reuse._matches(fingerprint)
             measurement.mark('reused' if reuse_validated else 'revalidated')
             if not reuse_validated:
-                quick = [
-                    str(row[0])
-                    for row in connection.execute("PRAGMA quick_check").fetchall()
-                ]
-                if quick != ["ok"] or connection.execute(
-                    "PRAGMA foreign_key_check"
-                ).fetchall():
+                if (not _physical_integrity_ok(connection, "quick_check")
+                        or not _physical_integrity_ok(connection, "foreign_key_check")):
                     raise _ResolverFailure("project_state_unreadable")
 
             if version >= 14:

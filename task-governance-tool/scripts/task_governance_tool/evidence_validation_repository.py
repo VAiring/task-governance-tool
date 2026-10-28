@@ -1677,7 +1677,7 @@ def _validate_evidence_ledger_rows(
         snapshots=snapshots,
         _validated_runner_references=_validated_runner_references,
     )
-    if connection.execute("PRAGMA foreign_key_check").fetchone() is not None:
+    if not _storage._physical_integrity_ok(connection, "foreign_key_check"):
         raise evidence_ledger_inconsistent()
     if task_validation.verification_rejection is not None:
         raise StoredTaskVerificationError(
@@ -2365,7 +2365,7 @@ def _validate_completion_evidence_bundle_rows(
         for project_id, cycle_count in cycle_counts.items()
     ):
         raise evidence_ledger_inconsistent()
-    if connection.execute("PRAGMA foreign_key_check").fetchone() is not None:
+    if not _storage._physical_integrity_ok(connection, "foreign_key_check"):
         raise evidence_ledger_inconsistent()
     return (
         _validated_runner_generations

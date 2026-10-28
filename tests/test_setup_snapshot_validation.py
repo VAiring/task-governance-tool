@@ -200,5 +200,84 @@ class SetupSnapshotValidationTests(unittest.TestCase):
         self.assertEqual(result.data["components"]["project_state"]["code"], "busy")
 
 
+    def test_doctor_physical_checks_run_once_and_each_new_call_rechecks(self):
+        original = storage.connect_readonly
+        statements = []
+        def opened(*args, **kwargs):
+            connection = original(*args, **kwargs)
+            connection.set_trace_callback(statements.append)
+            return connection
+        with mock.patch.object(state_resolver, "connect_readonly", side_effect=opened):
+            for expected in (1, 2):
+                self.assertTrue(self.run_doctor().ok)
+                for check in ("quick_check", "integrity_check", "foreign_key_check"):
+                    self.assertEqual(statements.count("PRAGMA " + check), expected, statements)
+
+    def test_standalone_setup_calls_do_not_share_successes(self):
+        with closing(storage.connect_readonly(self.target.db_path)) as connection:
+            statements = []
+            connection.set_trace_callback(statements.append)
+            for expected in (1, 2):
+                storage.read_setup_state(connection, self.target)
+                for check in ("quick_check", "integrity_check", "foreign_key_check"):
+                    self.assertEqual(statements.count("PRAGMA " + check), expected)
+
+    def test_quick_full_and_fk_failures_keep_doctor_unreadable(self):
+        original = storage._physical_integrity_ok
+        before = self.target.db_path.read_bytes()
+        for rejected in ("quick_check", "integrity_check", "foreign_key_check"):
+            def checked(connection, check):
+                return False if check == rejected else original(connection, check)
+            with self.subTest(check=rejected), mock.patch.object(storage, "_physical_integrity_ok", side_effect=checked), \
+                 mock.patch.object(state_resolver, "_physical_integrity_ok", side_effect=checked):
+                result = self.run_doctor()
+                self.assertFalse(result.ok)
+                self.assertEqual(result.data["components"]["project_state"]["code"], "unreadable")
+                self.assertEqual(self.target.db_path.read_bytes(), before)
+
+    def test_transaction_replacement_writes_and_other_connections_drop_successes(self):
+        with closing(sqlite3.connect(":memory:")) as connection, closing(sqlite3.connect(":memory:")) as other:
+            connection.execute("CREATE TABLE fixture(value INTEGER)")
+            connection.execute("BEGIN")
+            other.execute("BEGIN")
+            for current in (connection, other):
+                current.execute("PRAGMA query_only=ON")
+            statements = []
+            connection.set_trace_callback(statements.append)
+            @storage._reuse_read_integrity
+            def read():
+                self.assertTrue(storage._physical_integrity_ok(connection, "quick_check"))
+                self.assertTrue(storage._physical_integrity_ok(connection, "quick_check"))
+                self.assertTrue(storage._physical_integrity_ok(other, "quick_check"))
+                self.assertEqual(statements.count("PRAGMA quick_check"), 1)
+                connection.rollback()
+                connection.execute("BEGIN")
+                self.assertTrue(storage._physical_integrity_ok(connection, "quick_check"))
+                self.assertEqual(statements.count("PRAGMA quick_check"), 2)
+                connection.execute("PRAGMA query_only=OFF")
+                connection.execute("INSERT INTO fixture VALUES (1)")
+                connection.execute("PRAGMA query_only=ON")
+                self.assertTrue(storage._physical_integrity_ok(connection, "quick_check"))
+                self.assertEqual(statements.count("PRAGMA quick_check"), 3)
+            read()
+            self.assertIsNone(storage._read_integrity_scope.get())
+
+    def test_supported_schema_read_branches_keep_independent_physical_checks(self):
+        from tests.test_review_session_migration import candidate_runtime
+        from tests.verification_receipt_test_support import initialize, target_for
+        for version in range(21, 34):
+            with self.subTest(version=version), tempfile.TemporaryDirectory() as directory:
+                with candidate_runtime(version):
+                    repo, db = initialize(Path(directory))
+                target = target_for(db, repo)
+                with closing(storage.connect_readonly(db)) as connection:
+                    statements = []
+                    connection.set_trace_callback(statements.append)
+                    result = storage.read_setup_state(connection, target)
+                    self.assertEqual(result.schema_version, version)
+                    for check in ("quick_check", "integrity_check", "foreign_key_check"):
+                        self.assertEqual(statements.count("PRAGMA " + check), 1, (version, check))
+
+
 if __name__ == "__main__":
     unittest.main()

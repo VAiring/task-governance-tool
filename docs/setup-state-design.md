@@ -820,6 +820,16 @@ counts. For a matching current-schema Doctor observation, resolver admission
 checks structure and project metadata, then the exact-schema Setup reader owns
 the global Runner, ownership, review, note, cycle and ledger row audit on that
 same connection. It does not first repeat that row audit in the resolver.
+The matching Doctor resolver and its nested Setup reader share successful
+physical checks only inside a lexical query-only read scope. Quick, full
+integrity and FK are separate results: quick success never replaces the full
+integrity check. A private savepoint token, exact connection and write count
+guard each reuse; ending/replacing the transaction or intervening writes drops
+the successes. Failed checks are never retained. Scope exit releases its tokens
+and values, including when the owner already closed the connection. Standalone
+Setup/Doctor reads create fresh scopes; direct validators and non-Doctor resolver
+observations do not inherit an earlier call's checks. This is no persisted proof
+and does not alter diagnostics, recovery or migration gates.
 The exact-schema validator privately returns its complete validated Task batch
 to the Setup reader, which checks the target project association without
 reloading or revalidating those Tasks or repeating cycle/ledger validation.

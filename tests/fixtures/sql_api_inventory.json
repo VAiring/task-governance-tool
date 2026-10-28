@@ -77,10 +77,10 @@
     },
     "evidence_validation_repository.py": {
       "attributes": {
-        "execute": 47,
+        "execute": 45,
         "fetchall": 26,
         "fetchmany": 1,
-        "fetchone": 8
+        "fetchone": 6
       },
       "kind": "observed_connection"
     },
@@ -390,8 +390,8 @@
     },
     "state_resolver.py": {
       "attributes": {
-        "execute": 6,
-        "fetchall": 5,
+        "execute": 4,
+        "fetchall": 3,
         "fetchone": 1
       },
       "kind": "observed_connection"
@@ -400,9 +400,9 @@
       "attributes": {
         "execute": 428,
         "executescript": 2,
-        "fetchall": 108,
+        "fetchall": 107,
         "fetchmany": 2,
-        "fetchone": 135
+        "fetchone": 134
       },
       "kind": "observed_connection"
     },

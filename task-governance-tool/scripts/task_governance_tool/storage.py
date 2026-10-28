@@ -11,6 +11,8 @@ import sqlite3
 import threading
 import uuid
 import weakref
+from contextvars import ContextVar
+from functools import wraps
 from collections.abc import Callable, Iterable
 from contextlib import closing
 from dataclasses import dataclass, field
@@ -4446,16 +4448,78 @@ def _validate_schema20_owned_contract(connection: sqlite3.Connection) -> None:
         raise _unreadable_project_state()
 
 
+_read_integrity_scope = ContextVar("taskgov_read_integrity_scope", default=None)
+
+
+def _reuse_read_integrity(function=None, *, doctor_only=False):
+    """Own one lexical read's successes; nested readers join, never export it."""
+    if function is None:
+        return lambda selected: _reuse_read_integrity(selected, doctor_only=doctor_only)
+    @wraps(function)
+    def scoped(*args, **kwargs):
+        if doctor_only and kwargs.get("doctor_current_root") is None:
+            return function(*args, **kwargs)
+        if _read_integrity_scope.get() is not None:
+            return function(*args, **kwargs)
+        records = {}
+        token = _read_integrity_scope.set(records)
+        try:
+            return function(*args, **kwargs)
+        finally:
+            _read_integrity_scope.reset(token)
+            for connection, (name, _, _) in records.items():
+                try:
+                    connection.execute(f"RELEASE {name}")
+                except sqlite3.Error:
+                    pass  # The owning reader may already have closed.
+            records.clear()
+    return scoped
+
+
+def _physical_integrity_ok(connection: sqlite3.Connection, check: str) -> bool:
+    if check not in {"quick_check", "integrity_check", "foreign_key_check"}:
+        raise _unreadable_project_state()
+    records = _read_integrity_scope.get()
+    successes = None
+    if (records is not None and connection.in_transaction
+            and connection.execute("PRAGMA query_only").fetchone()[0] == 1):
+        previous = records.pop(connection, None)
+        if previous is not None:
+            name, changes, previous_successes = previous
+            try:
+                # A rollback/commit followed by BEGIN cannot keep this token.
+                connection.execute(f"RELEASE {name}")
+            except sqlite3.Error as exc:
+                if is_sqlite_busy_or_locked(exc):
+                    raise
+                previous_successes = set()
+            if changes != connection.total_changes:
+                previous_successes = set()
+            successes = previous_successes
+        else:
+            successes = set()
+        name = "taskgov_integrity_" + secrets.token_hex(8)
+        connection.execute(f"SAVEPOINT {name}")
+        records[connection] = (name, connection.total_changes, successes)
+        if check in successes:
+            return True
+    cursor = connection.execute("PRAGMA " + check)
+    if check == "foreign_key_check":
+        passed = cursor.fetchone() is None
+    else:
+        rows = cursor.fetchall()
+        passed = (len(rows) == 1 and str(rows[0][0]) == "ok"
+                  if check == "quick_check" else
+                  bool(rows) and all(str(row[0]) == "ok" for row in rows))
+    if passed and successes is not None:
+        successes.add(check)
+    return passed
+
+
 def _schema20_integrity_checks(connection: sqlite3.Connection) -> None:
-    if [
-        str(row[0]) for row in connection.execute("PRAGMA quick_check").fetchall()
-    ] != ["ok"]:
-        raise _unreadable_project_state()
-    integrity_rows = connection.execute("PRAGMA integrity_check").fetchall()
-    if not integrity_rows or any(str(row[0]) != "ok" for row in integrity_rows):
-        raise _unreadable_project_state()
-    if connection.execute("PRAGMA foreign_key_check").fetchone() is not None:
-        raise _unreadable_project_state()
+    for check in ("quick_check", "integrity_check", "foreign_key_check"):
+        if not _physical_integrity_ok(connection, check):
+            raise _unreadable_project_state()
 
 
 def _validate_schema20_admitted_rows(
@@ -7549,7 +7613,7 @@ def _validate_verification_receipt_rows(
                 != task_basis["review_target_base_revision"]
             ):
                 raise invalid_verification_evidence()
-    if connection.execute("PRAGMA foreign_key_check").fetchone() is not None:
+    if not _physical_integrity_ok(connection, "foreign_key_check"):
         raise invalid_verification_evidence()
 
 
@@ -7706,7 +7770,7 @@ def validate_completion_cycle_storage(
         ):
             raise completion_history_inconsistent()
 
-    if connection.execute("PRAGMA foreign_key_check").fetchone() is not None:
+    if not _physical_integrity_ok(connection, "foreign_key_check"):
         raise completion_history_inconsistent()
 
 
@@ -12761,6 +12825,7 @@ def count_tasks(connection: sqlite3.Connection, project_id: str) -> dict[str, in
     return counts
 
 
+@_reuse_read_integrity
 def read_setup_state(
     connection: sqlite3.Connection,
     target: DatabaseTarget,

@@ -6,6 +6,7 @@ from pathlib import Path
 import shutil
 import hashlib
 import os
+import sqlite3
 import tempfile
 import unittest
 from unittest import mock
@@ -20,6 +21,7 @@ from task_governance_tool.state_resolver import observe_current_root, resolve_se
 from task_governance_tool.state_separation import read_record
 from task_governance_tool.storage import (
     SCHEMA_VERSION,
+    StorageError,
     DatabaseTarget, UnboundDatabaseTarget, connect, connect_snapshot_readonly,
     current_schema_version,
     initialize_uuid_database, project_identity, ensure_project_meta,
@@ -259,6 +261,74 @@ class SetupStateSeparationTests(unittest.TestCase):
         self.assertEqual(resolved.project_id, target.project.project_id)
         self.assertTrue((self.new_root / ".state-separation" / "source" / "taskgov.sqlite").exists())
 
+    def test_backup_only_planning_uses_proof_for_fixed_and_legacy_sources(self):
+        from task_governance_tool import storage
+
+        for origin in ("fixed", "legacy"):
+            for read_only in (True, False):
+                with self.subTest(origin=origin, read_only=read_only), tempfile.TemporaryDirectory() as temporary:
+                    self.reset_install(temporary)
+                    target = self.old_current() if origin == "fixed" else self.old_legacy()
+                    publish_setup_backup(target, 3)
+                    target.db_path.unlink()
+                    artifact = next(target.resolved_backups_path.glob("*.sqlite"))
+                    original_bytes = artifact.read_bytes()
+                    before = file_snapshot(self.install.project_root)
+                    inspected = []
+                    original = storage.read_setup_state
+
+                    def inspect(connection, candidate):
+                        inspected.append(candidate.db_path)
+                        return original(connection, candidate)
+
+                    with mock.patch.object(storage, "read_setup_state", side_effect=inspect):
+                        result = self.run_setup(read_only=read_only)
+                    self.assertTrue(result.ok, (result.error_code, result.data))
+                    self.assertNotIn(artifact, inspected)
+                    self.assertEqual(artifact.read_bytes(), original_bytes)
+                    if read_only:
+                        self.assertEqual(file_snapshot(self.install.project_root), before)
+                    else:
+                        self.assertTrue(inspected, "copied candidate must retain Setup validation")
+                        self.assert_success(result)
+
+    def test_sealed_retry_preserves_backup_validation_records(self):
+        # Legacy pre-fence empty-destination recovery is a separately recorded
+        # baseline defect. Exercise both supported resume paths with records.
+        for origin, phase in (("fixed", "sealed"), ("legacy", "fenced")):
+            with self.subTest(origin=origin, phase=phase), tempfile.TemporaryDirectory() as temporary:
+                self.reset_install(temporary)
+                target = self.old_current() if origin == "fixed" else self.old_legacy()
+                publish_setup_backup(target, 3)
+                record = self.interrupt_separation(phase)
+                candidate = self.new_root / ".state-separation" / "candidate"
+                candidate_before = file_snapshot(candidate)
+                validation_names = {name for name in candidate_before if name.startswith('backups/validation/')}
+                self.assertTrue(validation_names)
+                before = file_snapshot(self.install.project_root)
+                preview = self.run_setup(read_only=True)
+                self.assertTrue(preview.ok, (preview.error_code, preview.data))
+                self.assertEqual(file_snapshot(self.install.project_root), before)
+                self.assertEqual(read_record(self.new_root).candidate_digest, record.candidate_digest)
+                self.assert_success(self.run_setup())
+                published = file_snapshot(self.new_root / 'current')
+                for name in validation_names:
+                    self.assertEqual(published[name], candidate_before[name])
+
+    def test_sealed_retry_rejects_changed_validation_record(self):
+        target = self.old_current()
+        publish_setup_backup(target, 3)
+        self.interrupt_separation("sealed")
+        candidate = self.new_root / ".state-separation" / "candidate"
+        record_path = next((candidate / 'backups' / 'validation').glob('tg_backup_*.json'))
+        record_path.write_bytes(b'changed sealed validation record')
+        before = file_snapshot(self.install.project_root)
+        for read_only in (True, False):
+            result = self.run_setup(read_only=read_only)
+            self.assertFalse(result.ok)
+            self.assertEqual(file_snapshot(self.install.project_root), before)
+        self.assertFalse((self.new_root / 'current').exists())
+
     def test_legacy_backup_only_source_recovers_without_deleting_generations(self):
         project = project_identity(self.install.project_root)
         database = self.old_root / "projects" / project.project_id / "taskgov.sqlite"
@@ -333,6 +403,60 @@ class SetupStateSeparationTests(unittest.TestCase):
                         skill_root=self.install.skill_root,
                     )
                     self.assertEqual(source_as_active.error_code, "project_state_unreadable")
+
+    def test_older_recovery_snapshot_does_not_relax_ordinary_reconciliation(self):
+        self.older_selected_backup_source("fixed")
+        original = separation.reconcile_private_migration_repository
+
+        def reconcile(target, *, recovery_snapshot=None):
+            before = file_snapshot(target.db_path.parent)
+            self.assertIsNotNone(recovery_snapshot)
+            with self.assertRaises(StorageError):
+                original(target)
+            self.assertEqual(file_snapshot(target.db_path.parent), before)
+            return original(target, recovery_snapshot=recovery_snapshot)
+
+        with mock.patch.object(separation, "reconcile_private_migration_repository",
+                               side_effect=reconcile):
+            self.assert_success(self.run_setup())
+
+    def test_older_recovery_requires_exact_planned_copy_and_candidate(self):
+        for fault in ("digest", "selected", "copy"):
+            with self.subTest(fault=fault), tempfile.TemporaryDirectory() as tmp:
+                self.reset_install(tmp)
+                target, rejected = self.older_selected_backup_source("legacy")
+                source_before = file_snapshot(target.db_path.parent)
+                original = separation.reconcile_private_migration_repository
+
+                def reconcile(candidate, *, recovery_snapshot=None):
+                    self.assertIsNotNone(recovery_snapshot)
+                    if fault == "digest":
+                        recovery_snapshot = replace(recovery_snapshot, content_sha256="0" * 64)
+                    elif fault == "selected":
+                        recovery_snapshot = replace(recovery_snapshot,
+                            recovery_content_valid=False)
+                    else:
+                        # Coherent metadata for a different copied snapshot is
+                        # still not the selected recovery snapshot.
+                        with closing(sqlite3.connect(candidate.db_path)) as connection:
+                            connection.execute("DELETE FROM managed_backup_generations")
+                            connection.execute("UPDATE project_maintenance SET "
+                                "latest_backup_generation_id=NULL, backup_last_success_at=NULL, "
+                                "applied_backup_generations=NULL")
+                            connection.commit()
+                    before = file_snapshot(candidate.db_path.parent)
+                    try:
+                        return original(candidate, recovery_snapshot=recovery_snapshot)
+                    finally:
+                        self.assertEqual(file_snapshot(candidate.db_path.parent), before)
+
+                with mock.patch.object(separation, "reconcile_private_migration_repository",
+                                       side_effect=reconcile):
+                    result = self.run_setup()
+                self.assertFalse(result.ok)
+                self.assertFalse((self.new_root / "current").exists())
+                after = file_snapshot(target.db_path.parent)
+                self.assertEqual({name: after[name] for name in source_before}, source_before)
 
     def test_fenced_retry_rejects_changed_retained_snapshot_before_database_observation(self):
         for layout in ("fixed", "legacy"):

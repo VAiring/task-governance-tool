@@ -197,6 +197,13 @@ short database capture/publication, and ordinary-command integration. Setup/stat
 and database owners retain the durable contracts. This plan does not activate
 an unreviewed runtime or change Setup/migration/recovery protection.
 
+## Conditional Backup Validation Reuse Plan
+
+[Backup validation reuse](backup-validation-reuse-plan.md) owns the approved
+three sequential stages within the existing backup inspection Task. Setup/state
+and database owners retain durable behavior and structure. The plan does not
+activate an unreviewed inspection cache or authorize live Setup or recovery.
+
 ## Delegated Repository Operating Guides
 
 - [Artifact authoring](artifact-authoring.md)
@@ -255,11 +262,11 @@ enforced meaning.
 
 ```json
 {
-  "schema": "taskgov-document-authority-v27",
+  "schema": "taskgov-document-authority-v28",
   "mandatory_start": ["AGENTS.md", "docs/authority.md", "live_task_contract"],
   "current": ["docs/specification.md", "docs/design.md", "plan.md", "docs/viewer-specification.md", "docs/viewer-design.md", "docs/runner-plan-authoring-specification.md", "docs/runner-plan-authoring-design.md", "docs/task-operation-specification.md", "docs/task-operation-design.md", "docs/runner-execution-specification.md", "docs/runner-execution-design.md", "docs/evidence-specification.md", "docs/evidence-design.md", "docs/review-completion-specification.md", "docs/review-completion-design.md", "docs/setup-state-specification.md", "docs/setup-state-design.md", "docs/database-specification.md", "docs/database-design.md"],
   "mixed_execution": [],
-  "conditional": ["docs/state-layout-separation-plan.md", "docs/verification-declaration-plan.md", "docs/session-usage-plan.md", "docs/review-finalization-plan.md", "docs/usage-response-attribution-design.md", "docs/review-continuation-plan.md", "docs/review-answer-collection-design.md", "docs/operation-admission-plan.md", "docs/logger-design.md", "docs/async-backup-plan.md"],
+  "conditional": ["docs/state-layout-separation-plan.md", "docs/verification-declaration-plan.md", "docs/session-usage-plan.md", "docs/review-finalization-plan.md", "docs/usage-response-attribution-design.md", "docs/review-continuation-plan.md", "docs/review-answer-collection-design.md", "docs/operation-admission-plan.md", "docs/logger-design.md", "docs/async-backup-plan.md", "docs/backup-validation-reuse-plan.md"],
   "history_index": "docs/history/README.md"
 }
 ```

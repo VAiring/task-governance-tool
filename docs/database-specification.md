@@ -209,6 +209,13 @@ live connection closes immediately after copying. The complete exact-schema
 structural, physical, foreign-key, relationship and privacy validation runs
 on the private copy before publication. Invalid contents are never published.
 The copy's metadata must match its captured project/binding/schema basis.
+Only after its complete inspection may the closed copy receive the bounded
+[immutable validation record](setup-state-specification.md#immutable-backup-validation-records).
+Retained immutable artifacts may reuse exactly certified internal checks after
+fresh content hashing; current physical, binding and inventory relations remain
+mandatory. The derived record is external to the hashed database and grants no
+generation, restore or pruning authority. It is not a core schema change or a
+cache for mutable live-database admission.
 
 Fresh publication guards and metadata writers repeat the live control
 boundary, including the pinned database-file instance and consumed backup

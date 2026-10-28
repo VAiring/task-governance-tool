@@ -659,7 +659,7 @@ class StateResolverTests(unittest.TestCase):
                 self.assertIsNone(consumer.error_code)
                 self.assertEqual(
                     setup.error_code,
-                    "project_state_unreadable",
+                    None if shape == "corrupt_backup" else "project_state_unreadable",
                 )
                 self.assertEqual(before, tree_snapshot(fixture.root))
 

@@ -12,7 +12,7 @@ from unittest import mock
 
 from tests.test_m17_recovery_hardening import _setup_current
 from tests.test_routine_backup import timestamp
-from task_governance_tool import backup, storage, setup, tasks
+from task_governance_tool import backup, storage, setup, tasks, state_resolver
 from task_governance_tool import backup_metadata_repository as metadata
 
 
@@ -131,20 +131,16 @@ class BackupCopyLifetimeTests(unittest.TestCase):
     def test_real_copied_database_corruption_is_rejected_before_publish(self):
         with tempfile.TemporaryDirectory() as directory:
             target = self.fixture(Path(directory))
-            original = backup._validate_publication_source
-            phases = []
-            def validate(connection, *args, **kwargs):
-                phases.append(connection)
-                if len(phases) == 2:
-                    self.assert_closed(phases[0])
-                    connection.execute("DELETE FROM schema_migrations WHERE version=1")
-                return original(connection, *args, **kwargs)
-            with mock.patch.object(backup, "_validate_publication_source", side_effect=validate):
+            from task_governance_tool import backup_validation
+            original = backup_validation.prepare_copy
+            def corrupt_copy(path, *args, **kwargs):
+                with closing(storage.connect_existing(path)) as changed:
+                    changed.execute("DELETE FROM schema_migrations WHERE version=1")
+                    changed.commit()
+                return original(path, *args, **kwargs)
+            with mock.patch.object(backup_validation, "prepare_copy", side_effect=corrupt_copy):
                 with self.assertRaises(storage.StorageError):
                     self.copy(target)
-            self.assertEqual(len(phases), 2)
-            for connection in phases:
-                self.assert_closed(connection)
             self.assertEqual(self.files(target), {})
             self.assert_no_temporary(target)
 
@@ -222,23 +218,22 @@ class BackupCopyLifetimeTests(unittest.TestCase):
             target = self.fixture(Path(directory))
             self.assertEqual(backup.run_routine_backup(target, observed_at=timestamp(0)).code, "succeeded")
             target.db_path.unlink()  # Only the isolated fixture's canonical DB.
-            real_open, real_validate = backup.connect_readonly, backup._validate_database
+            real_open, real_validate = state_resolver.connect_readonly, state_resolver.recovery_database_matches_observation
             readers, validations = [], []
             def open_source(path, *args, **kwargs):
                 connection = real_open(path, *args, **kwargs)
                 if Path(path).name.startswith("taskgov-backup-v1_"):
                     readers.append(connection)
                 return connection
-            def validate(connection, *args, **kwargs):
-                path = connection.execute("PRAGMA database_list").fetchone()[2]
+            def validate(path, *args, **kwargs):
                 if Path(path).name.startswith(".taskgov-restore-"):
                     self.assertTrue(readers)
                     for reader in readers:
                         self.assert_closed(reader)
                     validations.append(True)
-                return real_validate(connection, *args, **kwargs)
-            with mock.patch.object(backup, "connect_readonly", side_effect=open_source), \
-                 mock.patch.object(backup, "_validate_database", side_effect=validate):
+                return real_validate(path, *args, **kwargs)
+            with mock.patch.object(state_resolver, "connect_readonly", side_effect=open_source), \
+                 mock.patch.object(state_resolver, "recovery_database_matches_observation", side_effect=validate):
                 result = setup.run_setup(repo=str(target.project.canonical_repo), repo_explicit=True,
                     script_path=target.skill_root / "scripts/taskgov.py", read_only=False,
                     backup_interval_minutes=None, backup_generations=None)

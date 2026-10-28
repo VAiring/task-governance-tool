@@ -250,6 +250,7 @@ LANE_MODULES: dict[str, tuple[str, ...]] = {
         "test_backup_copy_lifetime",
         "test_backup_outcome",
         "test_backup_validation",
+        "test_backup_validation_reuse",
         "test_completion_cycle_activation",
         "test_completion_cycle_history",
         "test_completion_review_scope",

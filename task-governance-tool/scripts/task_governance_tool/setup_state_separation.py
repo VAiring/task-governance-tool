@@ -16,6 +16,7 @@ import uuid
 from task_governance_tool.artifact_lock import ArtifactLockError, zero_wait_artifact_lock
 from task_governance_tool.backup import (
     copy_database_snapshot, discover_managed_backup_metadata,
+    inspect_backup_setup_state,
     publish_setup_backup, reconcile_private_migration_repository,
 )
 from task_governance_tool.backup_metadata_repository import configure_project_maintenance
@@ -188,8 +189,13 @@ def _confirmation(source, target, token, *, read_only):
 def _plan(source, *, interval, generations):
     from task_governance_tool import setup as service
 
-    state = (inspect_setup_state(_target_at(source, _source_database(source)[0]))
-             if source is not None else service._empty_setup_state())
+    if source is None:
+        state = service._empty_setup_state()
+    else:
+        database, recovery = _source_database(source)
+        target = _target_at(source, database)
+        state = (inspect_backup_setup_state(target, recovery) if recovery is not None
+                 else inspect_setup_state(target))
     return service._build_plan(
         state, restore=False, legacy_publish=False, legacy_cleanup=False,
         rebind=bool(source and source.binding == "relocation_required"),
@@ -273,7 +279,7 @@ def _prepare_candidate(resolution, record, source, plan, accepted):
             raise SeparationError()
         copy_inventory(retained, paths.candidate, skip_database=False)
         target = _target_at(source, paths.candidate / "taskgov.sqlite")
-        reconcile_private_migration_repository(target)
+        reconcile_private_migration_repository(target, recovery_snapshot=_source_database(source)[1])
         if not plan.migrate and record.source_schema_version >= 34:
             from .viewer_projection_repository import reset_restored_database
             reset_restored_database(target)

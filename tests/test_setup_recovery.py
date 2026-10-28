@@ -583,6 +583,11 @@ class SetupManagedBackupRecoveryTests(unittest.TestCase):
                     self._two_generation_fixture(Path(tmp))
                 )
                 for candidate_path in (older_path, newer_path):
+                    # These intentionally reconstructed v17 artifacts model
+                    # legacy backups, which predate external validation records.
+                    from task_governance_tool.backup_validation import record_directory
+                    metadata = backup_service._parse_filename(candidate_path.name)
+                    (record_directory(candidate_path.parent) / (metadata.generation_id + '.json')).unlink()
                     with closing(sqlite3.connect(candidate_path)) as connection:
                         remove_v18_evidence_ledger_for_test(connection)
                 self._replace_newest_verification(newer_path, verification)
@@ -630,6 +635,9 @@ class SetupManagedBackupRecoveryTests(unittest.TestCase):
             install, backup_path = self._initialize_with_backed_up_task(
                 Path(tmp)
             )
+            from task_governance_tool.backup_validation import record_directory
+            metadata = backup_service._parse_filename(backup_path.name)
+            (record_directory(backup_path.parent) / (metadata.generation_id + '.json')).unlink()
             with closing(sqlite3.connect(backup_path)) as connection:
                 remove_v18_evidence_ledger_for_test(connection)
             sentinel = "token=must-not-appear-in-output"

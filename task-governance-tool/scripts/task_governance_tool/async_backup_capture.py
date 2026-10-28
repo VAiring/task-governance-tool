@@ -41,6 +41,9 @@ def _prune(target: DatabaseTarget, control: repository.BackupControl,
     if retention is None:
         raise repository.failure()
     by_id = {item.metadata.generation_id: item for item in artifacts}
+    if len(control.generations) > retention:
+        backup._require_retained_artifacts([by_id[item.generation_id]
+            for item in control.generations[-retention:]])
     for item in control.generations[:-retention]:
         artifact = by_id.get(item.generation_id)
         if artifact is None or artifact.metadata != item:
@@ -60,20 +63,28 @@ def _reconcile(target: DatabaseTarget, control: repository.BackupControl,
     # database is closed throughout discovery, validation and retention planning.
     directory = backup._directory(target, create=False)
     candidates = []
+    generation_ids = set()
     if directory.exists():
         for path in directory.iterdir():
             item = backup._parse_filename(path.name)
             if item is not None:
+                if item.generation_id in generation_ids:
+                    raise repository.failure()
+                generation_ids.add(item.generation_id)
                 candidates.append((path, item))
                 if len(candidates) > repository.MAX_GENERATIONS_WITH_RESIDUE:
                     raise repository.failure()
+    from .backup_validation import cleanup_orphans
+    cleanup_orphans(directory, project_id=target.project.project_id)
     artifacts = []
     for path, item in candidates:
         identity = backup._file_identity(path)
-        if (identity is not None and path.lstat().st_nlink == 1
-                and backup._valid_artifact(path, target, identity)):
-            artifacts.append(backup._Artifact(path, item, identity))
+        if identity is not None and path.lstat().st_nlink == 1:
+            observed = backup._artifact_observation(path, target, identity)
+            if observed is not None:
+                artifacts.append(backup._Artifact(path, item, identity, observed))
     artifacts.sort(key=lambda item: item.key)
+    backup._validate_artifact_relationships(target, artifacts)
     by_id = {item.metadata.generation_id: item for item in artifacts}
     if len(by_id) != len(artifacts):
         # Conflicting physical tuples do not invalidate an existing managed row.
@@ -103,11 +114,15 @@ def _reconcile(target: DatabaseTarget, control: repository.BackupControl,
     if file_only or pointer != wanted_pointer:
         # A verified file-only generation proves interrupted atomic publication.
         # Recheck its identity before inserting any recovery metadata.
-        for artifact in artifacts:
-            if backup._file_identity(artifact.path) != artifact.identity:
-                raise repository.failure()
+        backup._require_unchanged_artifacts(artifacts)
         control = repository.commit_inventory(target, control, expected, success=bool(file_only))
-    return _prune(target, control, artifacts), artifacts, True
+    control = _prune(target, control, artifacts)
+    # Publication in this attempt must use the post-prune set. Retain the
+    # existing observations for survivors; deleted generations are no longer
+    # candidates for the new copy's embedded repository relationships.
+    retained_ids = {item.generation_id for item in control.generations}
+    return control, [item for item in artifacts
+                     if item.metadata.generation_id in retained_ids], True
 
 
 def _marker_bytes(attempt_id: str, project_id: str) -> bytes:
@@ -229,7 +244,7 @@ or metadata effect; it is not replaced by a fresh observation of a different DB.
         validated_identity = backup._file_identity(temporary)
         if validated_identity is None or temporary.lstat().st_nlink != 1:
             raise repository.failure()
-        repository.validate_snapshot(temporary, target, control.schema_version)
+        # The full private-copy inspection below also prepares its reusable record.
         if (backup._file_identity(temporary) != validated_identity
                 or temporary.lstat().st_nlink != 1):
             raise repository.failure()
@@ -242,7 +257,17 @@ or metadata effect; it is not replaced by a fresh observation of a different DB.
             generation_id=generation_id,
         )
         final = directory / backup._filename(publication)
+        from .backup_validation import prepare_copy, publish, require_prepared_copy, require_published_record
+        prepared = prepare_copy(temporary, publication, project_id=target.project.project_id,
+            validator=lambda: repository.validate_snapshot(temporary, target, control.schema_version))
+        if prepared.record.schema != control.schema_version:
+            raise repository.failure()
+        published_record = publish(final, prepared)
         with repository.control_snapshot(target, expected=control):
+            # Admission can outlive the record publication. Certify the separate
+            # closed copy again at the actual file effect, not merely its stamp.
+            require_prepared_copy(prepared)
+            require_published_record(final, prepared, published_record)
             if (backup._directory_identity(directory) != directory_identity
                     or backup._directory_identity(scratch_root) != scratch_identity
                     or backup._file_identity(temporary) != validated_identity
@@ -251,14 +276,20 @@ or metadata effect; it is not replaced by a fresh observation of a different DB.
                 raise repository.failure()
             os.replace(temporary, final)
         temporary = None
+        require_published_record(final, prepared, published_record)
         published_at = publication.published_at
         control = repository.commit_inventory(
             target, control, (*control.generations, publication), success=True,
         )
+        require_published_record(final, prepared, published_record)
         identity = backup._file_identity(final)
         if identity is None:
             raise repository.failure()
-        artifacts.append(backup._Artifact(final, publication, identity))
+        observed = backup._artifact_observation(final, target, identity)
+        if observed is None or observed.content_sha256 != prepared.record.sha256:
+            raise repository.failure()
+        artifacts.append(backup._Artifact(final, publication, identity, observed))
+        backup._validate_artifact_relationships(target, artifacts)
         control = _prune(target, control, artifacts)
         return BackupResult("succeeded", generation_id, captured_at, published_at)
     except Exception:

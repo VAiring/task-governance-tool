@@ -16,6 +16,7 @@ from task_governance_tool.backup import (
     ManagedBackupRecoveryCandidate,
     copy_database_snapshot,
     discover_managed_backup_metadata,
+    inspect_backup_setup_state,
     managed_backup_lock,
     publish_setup_backup,
     reconcile_private_migration_repository,
@@ -1430,7 +1431,7 @@ def _publish_legacy(
                         raise _LegacySetupFailure("setup_restore_failed")
                     raise StateTransitionError()
                 _copy_legacy_artifacts(locked, stage_root=stage_root)
-                reconcile_private_migration_repository(stage_target)
+                reconcile_private_migration_repository(stage_target, recovery_snapshot=recovery_source)
 
                 backup_metadata: MigrationBackupMetadata | None = None
                 if plan.backup:
@@ -2124,13 +2125,16 @@ def _run_setup_from_inspection(
             )
 
     try:
-        state = (
-            inspect_setup_state(target)
-            if target is not None
-            else _empty_setup_state()
-        )
+        source_backup = None
+        if legacy_publish and not resolution.legacy_source.primary_present:
+            source_backup = next(item for item in resolution.legacy_source.managed_backups
+                                 if item.path == resolution.legacy_source.source_database)
+        state = (inspect_backup_setup_state(target, source_backup)
+                 if source_backup is not None else inspect_setup_state(target)
+                 if target is not None else _empty_setup_state())
         if (
             target is not None
+            and source_backup is None
             and state.schema_version == SCHEMA_VERSION
         ):
             with closing(
@@ -2167,20 +2171,7 @@ def _run_setup_from_inspection(
                     "setup_restore_failed",
                     SETUP_ERROR_MESSAGES["setup_restore_failed"],
                 )
-            planning_state = inspect_setup_state(
-                DatabaseTarget(
-                    project=target.project,
-                    db_path=recovery_candidate.path,
-                    explicit_db=target.explicit_db,
-                    binding_path_hash=target.binding_path_hash,
-                    binding_generation=target.binding_generation,
-                    skill_root=target.skill_root,
-                    backups_path=target.backups_path,
-                    viewer_path=target.viewer_path,
-                    viewer_projection_path=target.viewer_projection_path,
-                    canonical_fixed=False,
-                )
-            )
+            planning_state = inspect_backup_setup_state(target, resolution.fixed_recovery.selected)
         except Exception as exc:
             code, message = _storage_preflight_code(exc)
             return _preflight_failure(

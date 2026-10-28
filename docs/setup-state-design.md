@@ -332,6 +332,11 @@ Evidence, Viewer and backup locks. All are zero-wait. No SQLite writer spans
 copying, validation, projection rendering or directory publication. The
 domain-bounded inventory helper composes existing source validators; it does
 not enlarge the legacy staging cap or weaken their admission meanings.
+For `backups/validation`, it uses the backup record owner's closed bounded
+physical inventory, including `.pending.json`, and hashes those recognized
+files into the retained and candidate seals. Generic inventory copying preserves
+the directory and bytes; neither copying nor sealing enrolls a content proof.
+This applies to strict private inventories and recognized source domains alike.
 Initial inventory observation takes no lock: an OS-denied read of a held lock
 file is a source-read failure; contention detected during zero-wait acquisition
 is `database_busy`. Neither outcome authorizes source replacement.
@@ -461,11 +466,12 @@ The candidate validator checks:
 - at most one bounded regular temporary for each exact restore, backup, and
   Viewer/Evidence temporary-name grammar.
 
-Recovery classification is deliberately two-phase. The resolver opens every
-recognized candidate and completes the physical, SQLite, schema, identity,
-lineage, metadata, and whole-set checks above against the mechanically newest
-structural head. It then calls the storage-owned exact Task-verification
-validator with that candidate's source schema. The validator returns normally
+Recovery classification retains a structural/set phase and a content eligibility
+phase. The shared immutable-backup inspector observes each recognized candidate
+once, using the content-bound record below only for certified internal checks.
+Physical, identity, lineage, metadata and whole-set checks still run against the
+mechanically newest structural head. Without a reusable record it calls the
+storage-owned exact validator with that candidate's source schema. The validator returns normally
 or raises a sanitized internal privacy/capacity rejection; every other storage
 failure remains structural and set-fatal. The current implementation accepts
 at most 500 characters through schema v17 and 1,000 at schema v18-v34. The source
@@ -517,7 +523,7 @@ completes.
 
 Each internal managed-backup observation includes metadata, source schema,
 stored project/binding lineage, content eligibility, path, and the regular
-file's device/inode/size/mtime identity. Fixed and legacy backup-only
+file's device/inode/size/mtime identity and observed content digest. Fixed and legacy backup-only
 resolution retain the complete ordered observation set, select the newest
 content-eligible candidate at the current binding, and expose both the
 selection and full set to setup. Setup requires its recovery selector to match
@@ -532,9 +538,9 @@ but cannot be selected across a binding generation, including an A-to-B-to-A
 path history.
 
 Fixed recovery carries that immutable ordered inventory into the restore
-service. The service reclassifies the complete set at entry, before private
+service. The service checks the complete set at entry, before private
 repository normalization, and immediately before its no-replace canonical
-link; both deep resolver results must equal the planned observation and the
+link; both resolver results must equal the planned observation and the
 newest eligible member must still be the planned selection. Before
 normalization, the private SQLite copy must exactly retain the selected
 candidate's project/binding, source schema, generation rows, maintenance
@@ -548,14 +554,26 @@ identity, and resolves the complete legacy source again immediately before the
 no-replace stage rename. Any mismatch maps to `setup_restore_failed` and the
 private stage is removed without publishing fixed state.
 
-The shallow backup-service inventory refresh runs before each fixed deep
-resolver comparison. The publication-side deep comparison is the last
-source-set check before directory/canonical-destination guards and the
-no-replace link, so a weaker rescan cannot invalidate its conclusion. When a
-primary is present, ordinary reads keep primary precedence, but setup and
-staged validation still invoke the Task-verification classifier for every
-backup: local privacy/capacity results are ignored for selection, while a
-malformed stored value remains structural and set-fatal.
+The fixed resolver's complete comparison is the last source-set check before
+directory/canonical-destination guards and the no-replace link; a duplicate
+backup-service scan is unnecessary at that same boundary. Before private
+normalization, the backup-service inventory supplies the same content-aware
+classification. Legacy restoration retains its service inventory guard.
+Healthy matching canonical-primary Setup uses only physical backup inventory
+and the primary's generation/pointer envelope. It does not open or hash old
+backup contents. Relocation, legacy publication and missing-primary recovery
+still require complete candidate observations. In these content-dependent
+paths, local privacy/capacity rejections remain nonselectable and structural
+defects remain set-fatal; a record mismatch is structural, never a local rejection.
+
+Before private old-layout recovery reconciliation, an older selected copy can
+legitimately lack several newer generation rows. That entry carries its exact
+planned recovery observation: the complete copied backup set must still pass
+the recovery envelope, its newest eligible member must match the planned
+candidate and digest, and the independently inspected private database must
+match the selected snapshot. Only then may reconciliation import later rows.
+Ordinary primary reconciliation keeps its one-in-flight row/file envelope;
+subsequent reconciliation after normalization uses that ordinary envelope.
 
 The successful return from `restore_managed_backup` is the durable
 publication boundary because it occurs only after the canonical no-replace
@@ -943,26 +961,20 @@ protection:
 1. opens a rollback-journal source through the operational boundary;
 2. copies with `sqlite3.Connection.backup` to a fresh contained temporary and
    immediately closes the initial source connection;
-3. validates schema support, identity/binding, quick check, and foreign keys
-   in the private copy's independent read transaction;
-4. closes the copy, flushes it, and validates a freshly opened source;
+3. closes the copy, fingerprints its bytes, and completely validates it in an
+   independent schema-aware read transaction, then fingerprints again;
+4. flushes the copy, publishes its bounded validation record, and validates a
+   freshly opened source; a final fingerprint guards copy publication;
 5. atomically publishes a canonical generation with fixed
    publication-retention metadata; and
 6. returns only bounded generation/time metadata.
 
-Within one copy attempt, the source, temporary-copy, and immediate
-pre-publication source validations may reuse successful privacy checks keyed by
-the exact mode, field, and stored value. The attempt starts with an empty cache,
-never caches a rejection, and still repeats every schema, row, digest,
-relationship, identity, quick-check, foreign-key, and current-source validation
-at all three phases. In the retained synchronous helper only, after all three validations and
-the generation-row record succeed, a frozen copy of those exact successes may
-seed the immediately following post-publication reconciliation. Each retained
-artifact receives an independent mutable copy; artifact-local successes or
-rejections never flow back to the seed or another artifact. Every cache is
-cleared on success or failure. Pre-publication reconciliation, recovery,
-Viewer, setup and its reconciliation, ordinary discovery, and later backup
-attempts never receive that seed.
+Within one synchronous copy attempt, source, copied state and immediate
+pre-publication source validation may retain their exact mode/field/value
+privacy-success cache. It never caches rejection or replaces other checks.
+The closed private copy receives an independent full inspection. Retained artifact reuse now uses
+the content-bound record contract below, rather than the source's privacy cache.
+No artifact-local successes flow to another artifact or later mutable source.
 
 Each publication phase performs common structural/binding/maintenance admission
 and its exact-schema full row audit once in the same SQLite read transaction;
@@ -972,7 +984,8 @@ classification uses the same composition within its own snapshot, including
 when canonical artifact inspection invokes it. Initial structural/set
 inspection, reconciliation, source, copy and fresh pre-publication observations
 remain independent; no file validity is inferred from size, mtime, a successful
-earlier phase, or another closed snapshot.
+earlier phase, or another closed snapshot alone. A matching immutable record is
+the explicit content-bound exception; all uncached/current checks remain.
 
 `_copy` scopes its initial source with an `ExitStack`, closed immediately after
 the backup API returns and also on every earlier exception. Destination
@@ -1001,7 +1014,7 @@ Every setup/routine backup under the same zero-wait artifact lock reconciles
 at most the bounded file/row crash residue: import one valid file-only
 generation, remove an unusable row target without following an untrusted path,
 and complete file-before-row pruning using applied retention. Publication
-writes the file, then inserts its row and updates pointer/outcome/applied
+writes the derived validation record and file, then inserts its row and updates pointer/outcome/applied
 retention in one short transaction, then prunes file before row. Failure leaves
 the work due. Crash residue is bounded to the prior valid set plus one
 in-flight generation.
@@ -1017,6 +1030,80 @@ only after every other relation/privacy check; it cannot fall back to an older
 generation around a corrupt note or continuation graph. Source-28 migration
 backup remains validated under its exact predecessor contract before the
 explicit 29 migration.
+
+#### Immutable Backup Inspector
+
+`backup_validation.py` owns the closed record codec, bounded physical record
+inventory, private-copy certification, read-only artifact inspection and
+derived-record publication/cleanup. `state_resolver.py` owns the fixed
+`backups/validation` path and typed database/backup observations. Backup and
+asynchronous capture retain effect ownership; metadata repositories remain
+the only generation/pointer writers. The record is not a SQLite table and
+does not authorize a new public path or option.
+
+The [record contract](setup-state-specification.md#immutable-backup-validation-records)
+fixes format/rule versions, project/generation/schema/hash bindings, mode/scope,
+classification, size bounds and crash order. Current complete success is the
+only reusable classification. Changing a certified validation rule requires
+advancing the rule version; version/scope misses run the actual needed audit
+without read-path enrollment. A present damaged/mismatched record fails closed.
+
+The inspector pins the actual SQLite read snapshot before taking one no-follow
+content fingerprint and checking its record. Fresh schema/project/binding and
+repository metadata and that fingerprint belong to the same retained read lock.
+A certified record skips only schema/history/object/integrity/domain/privacy
+audit; fallback runs the audit in that snapshot. Same-file identity is required
+throughout. The hash descriptor is kept in an outer resource scope until after
+the SQLite reader closes, on success and every error path, avoiding POSIX
+process-lock cancellation. The record is reread before admitting the observation.
+It returns the digest with the typed observation so classification and selection
+do not hash or audit the same bytes again within that observation. SQLite copy
+output is separately inspected and hashed; it cannot inherit its source digest.
+No raw-file descriptor is closed against an actively held SQLite read lock on
+that same file. Private-stage recovery copies may consume the exact pinned
+artifact snapshot; source internal audits are not repeated. The copied output
+receives its independent validation after the source closes, and the final
+source continuity check uses the same proof-aware inspector. The separate closed
+private copy may be fingerprinted while a live-source publication guard is held.
+Both synchronous and asynchronous publication repeat this closed-copy check
+after fresh source/control admission, immediately before the file replacement.
+They also check the newly published record's exact bytes, binding and file
+identity; asynchronous publication checks it again after file and metadata
+publication. Before destructive retention, synchronous pruning, synchronous
+v11+ generation reconciliation and asynchronous pruning refresh the surviving
+artifacts' content and eligibility outside metadata writers. Discovery retains
+the complete typed observation, including content digest and project/binding,
+even for recordless artifacts. The effect-boundary refresh must equal that
+observation and physical identity; a different valid database is still drift.
+File-only generation imports use this same continuity check even when they
+will not prune; v10 pointer recovery has the same boundary.
+Before reconciliation imports or retention, the shared resolver validates the
+already inspected candidate observations against a fresh bounded read of the
+primary's identity, lineage and generation repository. Candidate prefix,
+pointer and cross-generation metadata checks are the same as recovery's;
+healthy-primary Setup remains shallow. The surviving set must itself retain
+an eligible candidate at its structural head's binding. These checks prevent
+discarding the last normal generation without repeating internal content audits.
+No heavy content audit or hash runs under a metadata writer.
+
+Setup recovery planning and backup-only old-layout cutover read policy through
+the same proof-aware artifact snapshot. They compare the selected observation's
+digest, physical identity and recovery relationships, then read the bound
+maintenance policy in that pinned snapshot without another internal content
+audit. Missing or obsolete records still require the inspector's real audit.
+Mutable primary, staged/normalized copy and post-restore Setup inspection keep
+their independent full validation; this planning projection is not a reusable
+mutable-database admission result.
+
+Record publication is under existing artifact ownership, through one durable
+`.pending.json` then atomic replacement to the absent generation record. It
+precedes backup publication; interruption cannot leave a new artifact appearing
+to be an old recordless generation. A bounded valid orphan grants no business
+authority and is removed only by a subsequent authorized backup. Generation
+uniqueness is checked before any reconciliation effect, including when one
+duplicate's record fails to match. Existing pruning removes the file before
+its metadata row and removes its validated derived record; crash residue is
+bounded. No diagnosis/preview writes records or performs cleanup.
 
 ### Asynchronous Backup Worker
 
@@ -1166,7 +1253,7 @@ history scan. The database owner's
 [admission exception](database-specification.md#asynchronous-backup-admission)
 does not authorize a public bypass or a cross-transaction validity cache.
 
-The routine reconciler checks generation-ID uniqueness across validated physical
+The routine reconciler checks generation-ID uniqueness across recognized physical
 artifacts before applying a metadata delta or pruning; its ID index must not
 silently collapse duplicates. Ambiguous duplicates fail without pruning files
 or discarding retained success rows;

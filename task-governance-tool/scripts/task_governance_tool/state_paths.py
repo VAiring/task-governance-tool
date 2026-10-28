@@ -12,7 +12,7 @@ import hashlib
 import os
 import re
 import stat
-from contextlib import suppress
+from contextlib import ExitStack, suppress
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Iterable
@@ -384,8 +384,13 @@ def hash_physical_file(
     root: Path,
     expected_size: int | None = None,
     max_bytes: int | None = None,
+    descriptor_scope: ExitStack | None = None,
 ) -> ValidatedFile:
-    """Hash one physical file through a no-follow descriptor and revalidate it."""
+    """Hash and revalidate; an explicit scope may defer close past a SQLite lock.
+
+    The caller must close its SQLite reader before closing descriptor_scope,
+    including on failure. This avoids POSIX process-lock cancellation.
+    """
     from task_governance_tool.debug_log import aggregate
     with aggregate(hash_physical_file, unit='bytes') as measurement:
         measurement.count(0)
@@ -422,7 +427,9 @@ def hash_physical_file(
             if observed != before.size or after_open != before:
                 raise _failure()
         finally:
-            if descriptor is not None:
+            if descriptor is not None and descriptor_scope is not None:
+                descriptor_scope.callback(os.close, descriptor)
+            elif descriptor is not None:
                 with suppress(OSError):
                     os.close(descriptor)
         if not _same_file_identity(path, before):

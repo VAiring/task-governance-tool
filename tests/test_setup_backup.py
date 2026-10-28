@@ -150,6 +150,8 @@ class SetupBackupTests(unittest.TestCase):
             initialize_database(invalid_fk)
             with closing(sqlite3.connect(invalid_fk.db_path)) as connection:
                 connection.execute("PRAGMA foreign_keys = OFF")
+                trigger = connection.execute("SELECT sql FROM sqlite_master WHERE name = 'trg_task_events_viewer_generation'").fetchone()[0]
+                connection.execute("DROP TRIGGER trg_task_events_viewer_generation")
                 connection.execute(
                     """
                     INSERT INTO task_events(
@@ -165,6 +167,7 @@ class SetupBackupTests(unittest.TestCase):
                         "2026-07-27T00:00:00Z",
                     ),
                 )
+                connection.execute(trigger)
                 connection.commit()
             with self.assertRaisesRegex(StorageError, "setup backup"):
                 publish_setup_backup(invalid_fk, 3)
@@ -183,7 +186,12 @@ class SetupBackupTests(unittest.TestCase):
                     publish(target, 3, 2)
 
             self.assertEqual(hashlib.sha256(target.db_path.read_bytes()).hexdigest(), before)
-            self.assertEqual(list(backup_directory(target).iterdir()), [])
+            self.assertEqual(canonical_files(target), [])
+            self.assertFalse(list(backup_directory(target).glob('.taskgov-backup-*')))
+            # Interrupted record publication may retain only bounded scratch;
+            # it never grants authority to a nonexistent generation.
+            from task_governance_tool.backup_validation import inventory
+            self.assertEqual(inventory(backup_directory(target)), ())
 
     def test_pre_v10_repeated_publications_are_pruned_to_applied_retention(self):
         with tempfile.TemporaryDirectory() as tmp:

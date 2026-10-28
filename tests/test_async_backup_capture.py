@@ -1,6 +1,6 @@
 """Real isolated copies, concurrent writes, retained generations and crashes."""
 
-from contextlib import closing
+from contextlib import closing, contextmanager
 from dataclasses import replace
 from pathlib import Path
 import os
@@ -48,6 +48,33 @@ class AsyncBackupCaptureTests(unittest.TestCase):
                 self.assertEqual(len(control.generations), 3)
                 self.assertEqual(len(self.files(target)), 3)
 
+    def test_due_after_prune_has_no_deleted_candidate_or_retry_loop(self):
+        from task_governance_tool import backup_metadata_repository as metadata_repository
+
+        for canonical in (False, True):
+            for file_only in (False, True):
+                with self.subTest(canonical=canonical, file_only=file_only):
+                    target = self.fixture(canonical=canonical)
+                    metadata_repository.configure_project_maintenance(
+                        target, requested_interval_minutes=30, requested_generations=1)
+                    with backup.managed_backup_lock(target):
+                        for index, minute in ((1, 0), (2, 30)):
+                            item = metadata(index, minute, 1)
+                            backup._copy(target, item)
+                            if index == 1 or not file_only:
+                                metadata_repository.record_managed_backup(target, item)
+                    result = self.run_backup(target, 60)
+                    self.assertEqual(result.code, "succeeded")
+                    control = repository.read_control(target)
+                    self.assertEqual(len(control.generations), 1)
+                    self.assertEqual(control.generations[0].generation_id, result.generation_id)
+                    self.assertEqual(len(self.files(target)), 1)
+                    self.assertEqual(control.maintenance.backup_last_outcome_code, "succeeded")
+                    self.assertEqual(self.run_backup(target, 61).code, "current")
+                    self.assertEqual(repository.read_control(target), control)
+                    self.assertEqual(self.run_backup(target, 90).code, "succeeded")
+                    self.assertEqual(len(self.files(target)), 1)
+
     def test_real_writer_completes_during_private_validation_and_is_not_in_copy(self):
         target = self.fixture()
         original = repository.validate_snapshot
@@ -83,10 +110,11 @@ class AsyncBackupCaptureTests(unittest.TestCase):
         real = repository.validate_snapshot
 
         def validate(*args):
-            real(*args)
+            version = real(*args)
             replacement = target.db_path.with_name("replacement.sqlite")
             shutil.copyfile(target.db_path, replacement)
             os.replace(replacement, target.db_path)
+            return version
 
         with mock.patch.object(repository, "validate_snapshot", side_effect=validate):
             self.assertEqual(self.run_backup(target).code, "failed")
@@ -123,12 +151,163 @@ class AsyncBackupCaptureTests(unittest.TestCase):
         real = repository.validate_snapshot
 
         def validate(path, *args):
-            real(path, *args)
+            version = real(path, *args)
             path.write_bytes(b"replaced after validation")
+            return version
 
         with mock.patch.object(repository, "validate_snapshot", side_effect=validate):
             self.assertEqual(self.run_backup(target, 30).code, "failed")
         self.assertEqual(self.files(target), original_files)
+
+    def test_post_record_drift_at_final_admission_preserves_last_good(self):
+        from task_governance_tool import backup_validation as validation
+        from task_governance_tool.backup_metadata_repository import configure_project_maintenance
+        for mode in ("bytes", "sidecar", "replacement"):
+            with self.subTest(mode=mode):
+                target = self.fixture()
+                configure_project_maintenance(target, requested_interval_minutes=30, requested_generations=1)
+                self.assertEqual(self.run_backup(target).code, "succeeded")
+                original_files = self.files(target)
+                before = repository.read_control(target)
+                original_guard = repository.control_snapshot
+                original_publish = validation.publish
+                armed = []
+                injected = []
+
+                def publish(path, prepared):
+                    result = original_publish(path, prepared)
+                    armed.append(prepared.fingerprint.path)
+                    return result
+
+                @contextmanager
+                def guard(*args, **kwargs):
+                    with original_guard(*args, **kwargs) as admitted:
+                        if armed:
+                            path = armed.pop()
+                            stamp = path.stat()
+                            if mode == "bytes":
+                                content = bytearray(path.read_bytes())
+                                content[-1] ^= 1
+                                path.write_bytes(content)
+                                os.utime(path, ns=(stamp.st_atime_ns, stamp.st_mtime_ns))
+                            elif mode == "sidecar":
+                                Path(str(path) + "-journal").write_bytes(b"")
+                            else:
+                                changed = path.with_name("replacement.sqlite")
+                                shutil.copyfile(path, changed)
+                                os.replace(changed, path)
+                            injected.append(mode)
+                        yield admitted
+
+                with mock.patch.object(validation, "publish", side_effect=publish), \
+                     mock.patch.object(repository, "control_snapshot", side_effect=guard):
+                    result = self.run_backup(target, 30)
+                self.assertEqual(injected, [mode])
+                self.assertEqual(result.code, "failed")
+                self.assertEqual(self.files(target), original_files)
+                self.assertEqual(repository.read_control(target).generations, before.generations)
+                self.assertEqual(self.run_backup(target, 31).code, "succeeded")
+                self.assertEqual(len(self.files(target)), 1)
+
+    def test_published_record_drift_never_prunes_last_good(self):
+        from task_governance_tool import backup_validation as validation
+        from task_governance_tool.backup_metadata_repository import configure_project_maintenance
+        for phase in ('record', 'file', 'metadata'):
+            for mode in ('corrupt', 'replacement', 'missing'):
+                with self.subTest(phase=phase, mode=mode):
+                    target = self.fixture()
+                    configure_project_maintenance(target, requested_interval_minutes=30, requested_generations=1)
+                    self.assertEqual(self.run_backup(target).code, 'succeeded')
+                    original_files = self.files(target)
+                    original_rows = repository.read_control(target).generations
+                    original_publish, original_replace = validation.publish, capture.os.replace
+                    original_commit = repository.commit_inventory
+                    published = []
+                    def drift():
+                        path = published[-1].path
+                        if mode == 'corrupt':
+                            path.write_bytes(b'{}\n')
+                        elif mode == 'missing':
+                            path.unlink()
+                        else:
+                            replacement = path.with_name('replacement.json')
+                            replacement.write_bytes(path.read_bytes())
+                            original_replace(replacement, path)
+                    def publish(*args):
+                        value = original_publish(*args)
+                        published.append(value)
+                        if phase == 'record':
+                            drift()
+                        return value
+                    def replace_file(source, destination):
+                        value = original_replace(source, destination)
+                        if phase == 'file' and str(destination).endswith('.sqlite') and published:
+                            drift()
+                        return value
+                    def commit(*args, **kwargs):
+                        value = original_commit(*args, **kwargs)
+                        if phase == 'metadata' and kwargs.get('success') and published:
+                            drift()
+                        return value
+                    with mock.patch.object(validation, 'publish', side_effect=publish), \
+                         mock.patch.object(capture.os, 'replace', side_effect=replace_file), \
+                         mock.patch.object(repository, 'commit_inventory', side_effect=commit):
+                        result = self.run_backup(target, 30)
+                    self.assertEqual(result.code, 'failed')
+                    current_files = self.files(target)
+                    for name, content in original_files.items():
+                        self.assertEqual(current_files[name], content)
+                    self.assertTrue(set(original_rows).issubset(repository.read_control(target).generations))
+
+    def test_reconciliation_content_drift_does_not_import_or_prune(self):
+        from task_governance_tool import state_resolver
+        from task_governance_tool.backup_metadata_repository import configure_project_maintenance
+        target = self.fixture()
+        configure_project_maintenance(target, requested_interval_minutes=30, requested_generations=1)
+        self.assertEqual(self.run_backup(target).code, 'succeeded')
+        before = repository.read_control(target)
+        old_files = self.files(target)
+        pending = metadata(2, 30, 1)
+        with backup.managed_backup_lock(target):
+            backup._copy(target, pending)
+        path = target.resolved_backups_path / backup._filename(pending)
+        original = state_resolver._inspect_database
+        def changed(candidate, **kwargs):
+            if candidate == path:
+                stamp = path.stat()
+                with closing(sqlite3.connect(path)) as connection:
+                    connection.execute('DELETE FROM schema_migrations WHERE version=1')
+                    connection.commit()
+                self.assertEqual(path.stat().st_size, stamp.st_size)
+                os.utime(path, ns=(stamp.st_atime_ns, stamp.st_mtime_ns))
+            return original(candidate, **kwargs)
+        with mock.patch.object(state_resolver, '_inspect_database', side_effect=changed):
+            self.assertEqual(self.run_backup(target, 31).code, 'failed')
+        self.assertEqual(repository.read_control(target).generations, before.generations)
+        for name, content in old_files.items():
+            self.assertEqual(self.files(target)[name], content)
+
+    def test_content_change_after_metadata_commit_preserves_last_good(self):
+        from task_governance_tool.backup_metadata_repository import configure_project_maintenance
+        target = self.fixture()
+        configure_project_maintenance(target, requested_interval_minutes=30, requested_generations=1)
+        self.assertEqual(self.run_backup(target).code, 'succeeded')
+        old_files = self.files(target)
+        original = repository.commit_inventory
+        def commit(*args, **kwargs):
+            value = original(*args, **kwargs)
+            if kwargs.get('success'):
+                path = target.resolved_backups_path / backup._filename(value.generations[-1])
+                stamp = path.stat()
+                data = bytearray(path.read_bytes())
+                data[-1] ^= 1
+                path.write_bytes(data)
+                os.utime(path, ns=(stamp.st_atime_ns, stamp.st_mtime_ns))
+            return value
+        with mock.patch.object(repository, 'commit_inventory', side_effect=commit):
+            self.assertEqual(self.run_backup(target, 30).code, 'failed')
+        for name, content in old_files.items():
+            self.assertEqual(self.files(target)[name], content)
 
     def test_copy_validation_callback_and_publish_failures_preserve_last_good(self):
         target = self.fixture()
@@ -282,12 +461,15 @@ class AsyncBackupCaptureTests(unittest.TestCase):
         target = self.fixture()
         with closing(storage.connect_existing(target.db_path)) as connection:
             connection.execute("PRAGMA foreign_keys=OFF")
+            trigger = connection.execute("SELECT sql FROM sqlite_master WHERE name = 'trg_task_events_viewer_generation'").fetchone()[0]
+            connection.execute("DROP TRIGGER trg_task_events_viewer_generation")
             connection.execute(
                 "INSERT INTO task_events(task_event_id, task_id, project_id, event_type, summary, created_at) "
                 "VALUES (?, ?, ?, ?, ?, ?)",
                 ("tg_event_" + "1" * 16, "tg_task_" + "2" * 16, target.project.project_id,
                  "note_added", "Isolated invalid relation", timestamp(0)),
             )
+            connection.execute(trigger)
             connection.commit()
         # Lightweight control admission deliberately does not certify Task rows.
         repository.read_control(target)
@@ -326,7 +508,7 @@ class AsyncBackupCaptureTests(unittest.TestCase):
         for index in range(repository.MAX_GENERATIONS_WITH_RESIDUE + 1):
             (target.resolved_backups_path / backup._filename(metadata(index, index, 3))).write_bytes(b"not inspected")
         before = self.files(target)
-        with mock.patch.object(backup, "_valid_artifact", side_effect=AssertionError("unbounded artifact audit")) as audit:
+        with mock.patch.object(backup, "_artifact_observation", side_effect=AssertionError("unbounded artifact audit")) as audit:
             self.assertEqual(self.run_backup(target).code, "failed")
         audit.assert_not_called()
         self.assertEqual(self.files(target), before)

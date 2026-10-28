@@ -15,6 +15,7 @@ from tests.m14_test_support import (
     remove_v18_evidence_ledger_for_test,
 )
 from tests.m214b_test_support import (
+    make_recordless_legacy_artifact,
     inject_primary_candidate_metadata_conflict,
     publish_generations,
     replace_maintenance_pointer,
@@ -174,6 +175,7 @@ class M214BLegacyRecoveryBoundaryTests(unittest.TestCase):
                 retention=2,
             )
             head = artifacts[-1]
+            make_recordless_legacy_artifact(head.path)
             replace_verification(head.path, "V10 newer task", "x" * 501)
             target.db_path.unlink()
             resolution = resolve_setup_project_state(
@@ -342,6 +344,7 @@ class M214BLegacyRecoveryBoundaryTests(unittest.TestCase):
             )[-1]
             with closing(sqlite3.connect(head.path)) as connection:
                 remove_v18_evidence_ledger_for_test(connection)
+            make_recordless_legacy_artifact(head.path)
             replace_verification(
                 head.path,
                 "Mixed-schema rejected head",

@@ -14,6 +14,7 @@ from tests.m14_test_support import (
 )
 from tests import setup_package_diagnostics
 from tests.m214b_test_support import (
+    make_recordless_legacy_artifact,
     inject_primary_candidate_metadata_conflict as _inject_primary_candidate_metadata_conflict,
     publish_generations as _publish_generations,
     replace_recovery_integer_storage as _replace_recovery_integer_storage,
@@ -48,12 +49,14 @@ from task_governance_tool.storage import (
 
 
 def _downgrade_candidate_to_v17(path: Path) -> None:
+    make_recordless_legacy_artifact(path)
     with closing(sqlite3.connect(path)) as connection:
         remove_v18_evidence_ledger_for_test(connection)
 
 
 def _downgrade_candidates_to_v18(artifacts) -> None:
     for artifact in artifacts:
+        make_recordless_legacy_artifact(artifact.path)
         with closing(sqlite3.connect(artifact.path)) as connection:
             remove_v19_bundle_storage_for_test(connection)
             if int(
@@ -161,7 +164,7 @@ class M214BRecoveryBoundaryTests(unittest.TestCase):
         with self.assertRaises(StorageError):
             validate_sqlite_integer_storage_class(True)
 
-    def test_fixed_primary_setup_rejects_structural_backup_task_value(self):
+    def test_fixed_primary_setup_ignores_unneeded_backup_task_value(self):
         with tempfile.TemporaryDirectory() as tmp:
             install, target, _ = _setup_current(Path(tmp))
             added = install.run(
@@ -189,14 +192,13 @@ class M214BRecoveryBoundaryTests(unittest.TestCase):
                 repo=str(install.project_root),
                 repo_explicit=True,
                 script_path=install.entrypoint,
-                read_only=False,
+                read_only=True,
                 backup_interval_minutes=None,
                 backup_generations=None,
             )
 
-            self.assertFalse(result.ok)
-            self.assertEqual(result.error_code, "project_state_unreadable")
-            self.assertEqual(result.data["planned_writes"], [])
+            self.assertTrue(result.ok, result)
+            self.assertIsNone(result.error_code)
             self.assertEqual(result.data["completed_writes"], [])
             self.assertEqual(install.state_snapshot(), before_managed_state)
             self.assertEqual(target.db_path.read_bytes(), primary_bytes)
@@ -494,7 +496,7 @@ class M214BRecoveryBoundaryTests(unittest.TestCase):
             restore.assert_not_called()
             self.assertFalse(target.db_path.exists())
 
-    def test_fixed_primary_rejects_candidate_metadata_conflict(self):
+    def test_fixed_primary_ignores_unneeded_embedded_candidate_metadata_conflict(self):
         with tempfile.TemporaryDirectory() as tmp:
             install, target, _ = _setup_current(Path(tmp))
             artifact = _publish_generations(
@@ -510,14 +512,13 @@ class M214BRecoveryBoundaryTests(unittest.TestCase):
                 repo=str(install.project_root),
                 repo_explicit=True,
                 script_path=install.entrypoint,
-                read_only=False,
+                read_only=True,
                 backup_interval_minutes=None,
                 backup_generations=None,
             )
 
-            self.assertFalse(result.ok)
-            self.assertEqual(result.error_code, "project_state_unreadable")
-            self.assertEqual(result.data["planned_writes"], [])
+            self.assertTrue(result.ok, result)
+            self.assertIsNone(result.error_code)
             self.assertEqual(result.data["completed_writes"], [])
             self.assertEqual(install.state_snapshot(), before_managed_state)
             self.assertEqual(target.db_path.read_bytes(), primary_bytes)
@@ -657,7 +658,7 @@ class M214BRecoveryBoundaryTests(unittest.TestCase):
             self.assertFalse(target.db_path.exists())
             self.assertEqual(_restore_temporaries(target), [])
 
-    def test_publication_inventory_precedes_final_deep_and_blocks_link(self):
+    def test_final_inventory_validation_follows_drift_and_blocks_link(self):
         with tempfile.TemporaryDirectory() as tmp:
             install, target, _ = _setup_current(Path(tmp))
             artifacts = _publish_generations(
@@ -774,13 +775,7 @@ class M214BRecoveryBoundaryTests(unittest.TestCase):
             self.assertTrue(drift_injected)
             self.assertIn("entry_deep", events)
             self.assertIn("post_prepare_drift", events)
-            self.assertIn("post_drift_shallow", events)
             self.assertIn("post_drift_deep", events)
-            last_shallow = max(
-                index
-                for index, event in enumerate(events)
-                if event == "post_drift_shallow"
-            )
             last_deep = max(
                 index
                 for index, event in enumerate(events)
@@ -788,9 +783,8 @@ class M214BRecoveryBoundaryTests(unittest.TestCase):
             )
             self.assertLess(
                 events.index("post_prepare_drift"),
-                last_shallow,
+                last_deep,
             )
-            self.assertLess(last_shallow, last_deep)
             self.assertEqual(last_deep, len(events) - 1)
             publish_link.assert_not_called()
             self.assertFalse(target.db_path.exists())

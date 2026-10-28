@@ -63,7 +63,7 @@ def measured_attempt(target, minute):
         for owner, name in ((backup, "_validate_canonical_artifact_set"),
                             (backup, "_reconcile_v11"), (backup, "_copy"),
                             (backup, "_validate_publication_source"),
-                            (backup, "_artifact_schema_version"),
+                            (backup, "_artifact_observation"),
                             (answers, "validate_storage_rows")):
             real = getattr(owner, name)
             def observed(*args, _real=real, _name=name, **kwargs):

@@ -221,11 +221,11 @@ def copy_snapshot(target: DatabaseTarget, destination: Path,
     return current, captured_at
 
 
-def validate_snapshot(path: Path, target: DatabaseTarget, schema_version: int) -> None:
+def validate_snapshot(path: Path, target: DatabaseTarget, schema_version: int) -> int:
     """The expensive whole-database audit runs with no live DB connection."""
     from task_governance_tool.backup import _validate_publication_source
     with closing(connect_readonly(path)) as connection:
-        _validate_publication_source(connection, target, schema_version)
+        return _validate_publication_source(connection, target, schema_version)
 
 
 def commit_inventory(target: DatabaseTarget, expected: BackupControl,

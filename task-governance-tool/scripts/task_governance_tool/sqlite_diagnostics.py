@@ -63,7 +63,7 @@ _ORIGINS = {
     "completion_workflow": {"check_completion_request", "execute_completion_request"},
     "verification_runner_plan_edit": {"_execute_task_edit", "_edit_without_action",
                                       "_edit_plan_only", "_edit_combined", "_read_task_preflight"},
-    "backup": {"_source_version", "_artifact_schema_version", "_discover_recovery_artifacts",
+    "backup": {"_source_version", "_artifact_observation", "_discover_recovery_artifacts",
                "restore_managed_backup", "copy_database_snapshot", "_reconcile_v10", "_copy"},
     "backup_metadata_repository": {"_connect_managed_backup_repository", "record_backup_attempt_outcome"},
     "async_backup_repository": {"control_snapshot", "copy_snapshot", "validate_snapshot", "commit_inventory"},

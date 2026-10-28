@@ -19,6 +19,7 @@ if TYPE_CHECKING:
     from task_governance_tool.state_resolver import (
         FixedRecoveryObservation,
         ManagedBackupObservation,
+        _DatabaseObservation,
     )
 
 from task_governance_tool.artifact_lock import (
@@ -46,6 +47,7 @@ from task_governance_tool.backup_metadata_repository import (
 from task_governance_tool.storage import (
     SCHEMA_VERSION,
     DatabaseTarget,
+    SetupStorageState,
     StorageError,
     StoredTaskVerificationError,
     configure_connection,
@@ -83,6 +85,7 @@ class _Artifact:
     path: Path
     metadata: MigrationBackupMetadata
     identity: tuple[int, int, int, int]
+    observation: _DatabaseObservation = field(repr=False)
 
     @property
     def key(self) -> tuple[str, str]:
@@ -98,6 +101,7 @@ class ManagedBackupRecoveryArtifact:
     schema_version: int
     content_valid: bool
     identity: tuple[int, int, int, int] = field(repr=False)
+    content_sha256: str | None = field(default=None, repr=False)
 
     @property
     def key(self) -> tuple[str, str]:
@@ -127,24 +131,6 @@ def _failure() -> StorageError:
 
 def _restore_failure() -> StorageError:
     return StorageError("setup_restore_failed", _RESTORE_FAILURE_MESSAGE)
-
-
-def _validated_privacy_success_seed(
-    seed: frozenset[tuple[str, str, str]] | None,
-) -> frozenset[tuple[str, str, str]] | None:
-    if seed is None:
-        return None
-    if type(seed) is not frozenset:
-        raise _failure()
-    for item in seed:
-        if (
-            type(item) is not tuple
-            or len(item) != 3
-            or any(type(value) is not str for value in item)
-            or item[0] not in {"ordinary", "legacy_m19_7_stored"}
-        ):
-            raise _failure()
-    return seed
 
 
 def _canonical_rollback_journal_present(target: DatabaseTarget) -> bool:
@@ -523,57 +509,30 @@ def _source_version(target: DatabaseTarget) -> int:
         return _validate_publication_source(connection, target)
 
 
-def _valid_artifact(
+def _artifact_observation(
     path: Path,
     target: DatabaseTarget,
     identity: tuple[int, int, int, int],
-    *,
-    _privacy_success_seed: frozenset[tuple[str, str, str]] | None = None,
-) -> bool:
-    return (
-        _artifact_schema_version(
-            path,
-            target,
-            identity,
-            _privacy_success_seed=_privacy_success_seed,
-        )
-        is not None
-    )
-
-
-def _artifact_schema_version(
-    path: Path,
-    target: DatabaseTarget,
-    identity: tuple[int, int, int, int],
-    *,
-    _privacy_success_seed: frozenset[tuple[str, str, str]] | None = None,
-) -> int | None:
-    privacy_success_cache = (
-        set(_privacy_success_seed) if _privacy_success_seed is not None else None
-    )
-    try:
-        with closing(connect_readonly(path)) as connection:
-            version = _validate_database(connection, target)
-            _recovery_content_valid(
-                connection,
-                version,
-                target,
-                privacy_success_cache=privacy_success_cache,
-            )
-        return version if _file_identity(path) == identity else None
-    except (OSError, sqlite3.Error, StorageError):
+) -> _DatabaseObservation | None:
+    from .backup_validation import inspect_artifact, read_record
+    metadata = _parse_filename(path.name)
+    if metadata is None:
         return None
-    finally:
-        if privacy_success_cache is not None:
-            privacy_success_cache.clear()
+    # A present record is a content claim: corruption/mismatch must never be
+    # hidden as an absent artifact and then reconciled into a new generation.
+    record = read_record(path, metadata)
+    try:
+        observed = inspect_artifact(path, metadata, project_id=target.project.project_id)
+        return observed if _file_identity(path) == identity else None
+    except (OSError, sqlite3.Error, StorageError):
+        if record is not None:
+            raise
+        return None
 
 
 def _discover(
     target: DatabaseTarget,
-    *,
-    _privacy_success_seed: frozenset[tuple[str, str, str]] | None = None,
 ) -> list[_Artifact]:
-    privacy_success_seed = _validated_privacy_success_seed(_privacy_success_seed)
     directory = _directory(target, create=False)
     if not directory.exists():
         return []
@@ -587,19 +546,16 @@ def _discover(
         metadata = _parse_filename(name)
         if metadata is None:
             continue
-        path = directory / name
-        identity = _file_identity(path)
-        if identity is None or not _valid_artifact(
-            path,
-            target,
-            identity,
-            _privacy_success_seed=privacy_success_seed,
-        ):
-            continue
         if metadata.generation_id in identities:
             raise _failure()
         identities.add(metadata.generation_id)
-        artifacts.append(_Artifact(path, metadata, identity))
+        path = directory / name
+        identity = _file_identity(path)
+        if identity is None:
+            continue
+        observed = _artifact_observation(path, target, identity)
+        if observed is not None:
+            artifacts.append(_Artifact(path, metadata, identity, observed))
     return sorted(artifacts, key=lambda artifact: artifact.key)
 
 
@@ -642,13 +598,10 @@ def _discover_recovery_artifacts(
             raise _restore_failure()
         content_valid = True
         try:
-            with closing(connect_readonly(path)) as connection:
-                version = _validate_database(connection, target)
-                content_valid = _recovery_content_valid(
-                    connection,
-                    version,
-                    target,
-                )
+            from .backup_validation import inspect_artifact
+            observed = inspect_artifact(path, metadata, project_id=target.project.project_id)
+            version = observed.stored_project.source_schema_version
+            content_valid = observed.recovery_content_valid
         except (OSError, sqlite3.Error, StorageError) as exc:
             raise _restore_failure() from exc
         if _file_identity(path) != identity:
@@ -660,6 +613,7 @@ def _discover_recovery_artifacts(
                 schema_version=version,
                 content_valid=content_valid,
                 identity=identity,
+                content_sha256=observed.content_sha256,
             )
         )
     return sorted(artifacts, key=lambda item: item.key)
@@ -707,6 +661,47 @@ def select_managed_backup_for_recovery(
         raise _restore_failure() from exc
 
 
+def inspect_backup_setup_state(
+    target: DatabaseTarget,
+    expected: "ManagedBackupObservation",
+) -> SetupStorageState:
+    """Read planning policy from the exact selected immutable source snapshot."""
+    from .backup_validation import artifact_snapshot
+    from .state_resolver import recovery_observation_matches
+    from .storage import validate_current_database_binding
+
+    if _parse_filename(expected.path.name) != expected.metadata:
+        raise _restore_failure()
+
+    with artifact_snapshot(expected.path, expected.metadata,
+                           project_id=target.project.project_id) as observed:
+        if (not expected.recovery_content_valid
+                or observed.stored_project.source_schema_version != expected.source_schema_version
+                or expected.content_sha256 is None
+                or observed.content_sha256 != expected.content_sha256
+                or _file_identity(expected.path) != expected.identity
+                or not recovery_observation_matches(observed, expected)):
+            raise _restore_failure()
+        connection = observed.read_connection
+        version = observed.stored_project.source_schema_version
+        if version >= 14:
+            validate_current_database_binding(connection, target)
+        maintenance = (read_project_maintenance(connection, target.project.project_id)
+                       if version >= 10 else None)
+        if version >= 10 and maintenance is None:
+            raise _restore_failure()
+        return SetupStorageState(
+            schema_version=version,
+            needs_initialize=False,
+            needs_migration=version < SCHEMA_VERSION,
+            maintenance_enabled=bool(maintenance is not None and maintenance.enabled),
+            backup_interval_minutes=(maintenance.backup_interval_minutes
+                                     if maintenance is not None else None),
+            backup_generations=(maintenance.backup_generations
+                                if maintenance is not None else None),
+        )
+
+
 def _require_recovery_inventory(
     target: DatabaseTarget,
     candidate: ManagedBackupRecoveryCandidate,
@@ -750,6 +745,7 @@ def recovery_candidate_matches_observation(
         and artifact.schema_version == observed.source_schema_version
         and artifact.content_valid == observed.recovery_content_valid
         and artifact.identity == observed.identity
+        and artifact.content_sha256 == observed.content_sha256
         for artifact, observed in zip(
             candidate.inventory,
             recovery.managed_backups,
@@ -818,10 +814,7 @@ def _prepare_recovered_repository(
         return
 
     migration_source = version < SCHEMA_VERSION
-    artifacts = [
-        _Artifact(item.path, item.metadata, item.identity)
-        for item in classified
-    ]
+    artifacts = classified
     artifact_by_id = {
         artifact.metadata.generation_id: artifact for artifact in artifacts
     }
@@ -944,7 +937,6 @@ def restore_managed_backup(
             or _canonical_rollback_journal_present(target)
         ):
             raise _restore_failure()
-        _require_recovery_inventory(target, candidate)
         if target.canonical_fixed:
             if expected_recovery is None:
                 raise _restore_failure()
@@ -953,6 +945,8 @@ def restore_managed_backup(
                 candidate,
                 expected_recovery,
             )
+        else:
+            _require_recovery_inventory(target, candidate)
         if _parse_filename(candidate.path.name) != candidate.metadata:
             raise _restore_failure()
 
@@ -968,30 +962,25 @@ def restore_managed_backup(
         descriptor = None
 
         with ExitStack() as source_scope:
-            source = source_scope.enter_context(closing(connect_readonly(candidate.path)))
-            source_version = _validate_database(
-                source,
-                target,
-                candidate.schema_version,
-            )
-            if not _recovery_content_valid(source, source_version, target):
+            from .backup_validation import artifact_snapshot
+            pinned = source_scope.enter_context(artifact_snapshot(candidate.path, candidate.metadata,
+                project_id=target.project.project_id))
+            selected = next(item for item in candidate.inventory if item.metadata == candidate.metadata)
+            source, source_version = pinned.read_connection, pinned.stored_project.source_schema_version
+            if (source_version != candidate.schema_version
+                    or _file_identity(candidate.path) != candidate.identity
+                    or pinned.content_sha256 != selected.content_sha256
+                    or not pinned.recovery_content_valid):
                 raise _restore_failure()
             with closing(
                 configure_connection(connect_traced(temporary, access="create", role="backup"))
             ) as destination:
                 source.backup(destination)
                 source_scope.close()
-                _validate_database(
-                    destination,
-                    target,
-                    source_version,
-                )
-                if not _recovery_content_valid(
-                    destination,
-                    source_version,
-                    target,
-                ):
-                    raise _restore_failure()
+                if expected_recovery is None:
+                    _validate_database(destination, target, source_version)
+                    if not _recovery_content_valid(destination, source_version, target):
+                        raise _restore_failure()
 
         temporary_target = DatabaseTarget(
             project=target.project,
@@ -1034,18 +1023,14 @@ def restore_managed_backup(
                 ),
             ):
                 raise _restore_failure()
-        with closing(connect_readonly(temporary)) as restored:
-            _validate_database(
-                restored,
-                target,
-                source_version,
-            )
-            if not _recovery_content_valid(restored, source_version, target):
-                raise _restore_failure()
+        else:
+            with closing(connect_readonly(temporary)) as restored:
+                _validate_database(restored, target, source_version)
+                if not _recovery_content_valid(restored, source_version, target):
+                    raise _restore_failure()
 
         with temporary.open("r+b") as stream:
             os.fsync(stream.fileno())
-        _require_recovery_inventory(target, candidate)
         if target.canonical_fixed:
             if expected_recovery is None:
                 raise _restore_failure()
@@ -1054,6 +1039,8 @@ def restore_managed_backup(
                 candidate,
                 expected_recovery,
             )
+        else:
+            _require_recovery_inventory(target, candidate)
         if (
             _directory_identity(parent) != parent_identity
             or _file_identity(temporary) is None
@@ -1111,25 +1098,35 @@ def copy_database_snapshot(
         ):
             raise _failure()
         recovery_database_matches_observation = None
+        source_observation = None
         if expected_recovery_observation is not None:
             from task_governance_tool.state_resolver import (
                 recovery_database_matches_observation,
             )
 
-            if not recovery_database_matches_observation(
-                source_path,
-                expected_recovery_observation,
-            ):
-                raise _failure()
         with ExitStack() as source_scope:
-            source = source_scope.enter_context(closing(connect_readonly(source_path)))
-            source_version = _validate_database(source, source_target)
-            if require_recovery_content_valid and not _recovery_content_valid(
-                source,
-                source_version,
-                source_target,
-            ):
-                raise _failure()
+            if expected_recovery_observation is not None:
+                from .backup_validation import artifact_snapshot
+                from .state_resolver import recovery_observation_matches
+                if _parse_filename(source_path.name) != expected_recovery_observation.metadata:
+                    raise _failure()
+                source_observation = source_scope.enter_context(artifact_snapshot(
+                    source_path, expected_recovery_observation.metadata,
+                    project_id=source_target.project.project_id))
+                if (not recovery_observation_matches(source_observation, expected_recovery_observation)
+                        or source_observation.content_sha256 != expected_recovery_observation.content_sha256
+                        or source_identity != expected_recovery_observation.identity
+                        or require_recovery_content_valid and not source_observation.recovery_content_valid):
+                    raise _failure()
+                source = source_observation.read_connection
+                source_version = source_observation.stored_project.source_schema_version
+            else:
+                source = source_scope.enter_context(closing(connect_readonly(source_path)))
+                source_version = _validate_database(source, source_target)
+                if require_recovery_content_valid and not _recovery_content_valid(
+                    source, source_version, source_target,
+                ):
+                    raise _failure()
             with closing(
                 configure_connection(connect_traced(destination, access="create", role="backup"))
             ) as copied:
@@ -1140,11 +1137,12 @@ def copy_database_snapshot(
                     destination_target,
                     source_version,
                 )
-                if require_recovery_content_valid and not _recovery_content_valid(
+                if (require_recovery_content_valid and expected_recovery_observation is None
+                        and not _recovery_content_valid(
                     copied,
                     source_version,
                     destination_target,
-                ):
+                )):
                     raise _failure()
         if (
             expected_recovery_observation is not None
@@ -1157,17 +1155,15 @@ def copy_database_snapshot(
             raise _failure()
         with destination.open("r+b") as stream:
             os.fsync(stream.fileno())
+        if source_observation is not None:
+            from .backup_validation import inspect_artifact
+            refreshed = inspect_artifact(source_path, expected_recovery_observation.metadata,
+                project_id=source_target.project.project_id)
+            if refreshed != replace(source_observation, read_connection=None):
+                raise _failure()
         if (
             _file_identity(source_path) != source_identity
             or _file_identity(destination) is None
-            or (
-                expected_recovery_observation is not None
-                and recovery_database_matches_observation is not None
-                and not recovery_database_matches_observation(
-                    source_path,
-                    expected_recovery_observation,
-                )
-            )
         ):
             raise _failure()
         return source_version
@@ -1182,7 +1178,9 @@ def copy_database_snapshot(
                     sidecar.unlink()
 
 
-def reconcile_private_migration_repository(target: DatabaseTarget) -> None:
+def reconcile_private_migration_repository(
+    target: DatabaseTarget, *, recovery_snapshot: "ManagedBackupObservation | None" = None,
+) -> None:
     """Converge only a validated private-stage backup repository."""
 
     version = _source_version(target)
@@ -1192,8 +1190,10 @@ def reconcile_private_migration_repository(target: DatabaseTarget) -> None:
                 target,
                 observed_at=utc_now(),
                 migration_source=version < SCHEMA_VERSION,
+                recovery_snapshot=recovery_snapshot,
             ):
                 return
+            recovery_snapshot = None
         raise _failure()
     if version == 10:
         _reconcile_v10(target)
@@ -1230,6 +1230,8 @@ def _delete(artifact: _Artifact) -> None:
         raise _failure()
     try:
         artifact.path.unlink()
+        from .backup_validation import remove_after_prune
+        remove_after_prune(artifact.path, artifact.metadata)
     except OSError as exc:
         raise _failure() from exc
 
@@ -1251,13 +1253,69 @@ def _prune(
     if retained not in keep:
         keep = [retained, *keep[-(retention - 1):]] if retention > 1 else [retained]
     keep_ids = {item.metadata.generation_id for item in keep}
+    if any(item.metadata.generation_id not in keep_ids for item in ordered):
+        _require_retained_artifacts(keep)
     for artifact in ordered:
         if artifact.metadata.generation_id not in keep_ids:
             _delete(artifact)
 
 
+def _validate_artifact_relationships(
+    target: DatabaseTarget, artifacts: list[_Artifact],
+    *, recovery_snapshot: "ManagedBackupObservation | None" = None,
+) -> None:
+    from .state_resolver import (
+        _BackupCandidate, _ResolverFailure, validate_backup_reconciliation,
+    )
+    try:
+        validate_backup_reconciliation(target, [
+            _BackupCandidate(item.metadata, item.path, item.observation)
+            for item in artifacts
+        ], recovery_snapshot=recovery_snapshot)
+    except _ResolverFailure as exc:
+        raise _failure() from exc
+
+
+def _require_unchanged_artifacts(artifacts: list[_Artifact]) -> None:
+    """Bind a file effect to the original content, even without a saved record."""
+    from .backup_validation import inspect_artifact
+    for artifact in artifacts:
+        observed = inspect_artifact(artifact.path, artifact.metadata,
+            project_id=artifact.observation.stored_project.project_id)
+        if (artifact.observation.content_sha256 is None
+                or observed != artifact.observation
+                or _file_identity(artifact.path) != artifact.identity):
+            raise _failure()
+
+
+def _require_retained_artifacts(artifacts: list[_Artifact]) -> None:
+    """Refresh the surviving recovery set before a destructive retention phase."""
+    from .state_resolver import (
+        _BackupCandidate, _ResolverFailure, _same_recovery_binding, _validate_backup_set,
+    )
+    ordered = sorted(artifacts, key=lambda item: item.key)
+    if not ordered:
+        raise _failure()
+    head = ordered[-1].observation
+    try:
+        _validate_backup_set([
+            _BackupCandidate(item.metadata, item.path, item.observation)
+            for item in ordered
+        ], head, primary_present=False)
+    except _ResolverFailure as exc:
+        raise _failure() from exc
+    _require_unchanged_artifacts(artifacts)
+    eligible = any(item.observation.recovery_content_valid
+        and _same_recovery_binding(item.observation.stored_project, head.stored_project)
+        for item in artifacts)
+    # Candidate-local rejection may coexist with an older valid fallback.
+    if not eligible:
+        raise _failure()
+
+
 def _reconcile_v10(target: DatabaseTarget) -> None:
     artifacts = _discover(target)
+    _validate_artifact_relationships(target, artifacts)
     with closing(connect_readonly(target.db_path)) as connection:
         _validate_database(connection, target, 10)
         state = read_project_maintenance(connection, target.project.project_id)
@@ -1295,6 +1353,7 @@ def _reconcile_v10(target: DatabaseTarget) -> None:
     newer = [artifact for artifact in artifacts if artifact.key > baseline]
     if newer:
         current = newer[-1]
+        _require_unchanged_artifacts(artifacts)
         record_setup_backup(target, current.metadata)
     elif current is None:
         if state.latest_backup_generation_id is not None:
@@ -1312,17 +1371,14 @@ def _reconcile_v11(
     *,
     observed_at: str,
     migration_source: bool = False,
-    _privacy_success_seed: frozenset[tuple[str, str, str]] | None = None,
+    recovery_snapshot: "ManagedBackupObservation | None" = None,
 ) -> bool:
     """Repair one bounded v11 generation set before any new publication."""
     timestamp = validate_utc_timestamp(
         observed_at,
         field="backup reconciliation time",
     )
-    artifacts = _discover(
-        target,
-        _privacy_success_seed=_privacy_success_seed,
-    )
+    artifacts = _discover(target)
     artifact_by_id = {
         artifact.metadata.generation_id: artifact for artifact in artifacts
     }
@@ -1330,6 +1386,7 @@ def _reconcile_v11(
         target,
         migration_source=migration_source,
     )
+    _validate_artifact_relationships(target, artifacts, recovery_snapshot=recovery_snapshot)
     row_ids = {
         metadata.generation_id for metadata in repository.generations
     }
@@ -1339,6 +1396,7 @@ def _reconcile_v11(
         if artifact.metadata.generation_id not in row_ids
     )
     if file_only:
+        _require_unchanged_artifacts(artifacts)
         import_managed_backup_generations(
             target,
             file_only,
@@ -1401,6 +1459,11 @@ def _reconcile_v11(
     }
     if latest_id is None or latest_id not in keep_ids:
         raise _failure()
+    if any(metadata.generation_id not in keep_ids for metadata in ordered):
+        _require_retained_artifacts([
+            artifact_by_id[metadata.generation_id]
+            for metadata in ordered if metadata.generation_id in keep_ids
+        ])
     for metadata in ordered:
         if metadata.generation_id in keep_ids:
             continue
@@ -1471,6 +1534,8 @@ def _copy(
         privacy_success_cache: set[tuple[str, str, str]] = set()
     succeeded = False
     try:
+        from .backup_validation import cleanup_orphans
+        cleanup_orphans(target.resolved_backups_path, project_id=target.project.project_id)
         with ExitStack() as source_scope:
             source = source_scope.enter_context(closing(connect_readonly(target.db_path)))
             source_version = _validate_publication_source(
@@ -1498,13 +1563,26 @@ def _copy(
                 # The copy now owns its snapshot; source validation is repeated
                 # on a fresh connection immediately before publication.
                 source_scope.close()
-                destination.execute("BEGIN")
-                _validate_publication_source(
-                    destination,
-                    target,
-                    source_version,
+        from .backup_validation import prepare_copy, publish, require_prepared_copy, require_published_record
+        def inspect_private_copy():
+            # Reuse the repository's complete publication admission on the
+            # actual closed copy, in its own independent read transaction.
+            with closing(connect_readonly(temporary)) as copied:
+                version = _validate_publication_source(
+                    copied, target, source_version,
                     privacy_success_cache=privacy_success_cache,
                 )
+                # Historical publication admission predates the Task-value
+                # recovery gate. It cannot certify complete recovery contents
+                # without that source-schema-specific check.
+                if version < 18 and not _recovery_content_valid(copied, version, target):
+                    raise _failure()
+                return version
+
+        prepared = prepare_copy(temporary, metadata, project_id=target.project.project_id,
+                                validator=inspect_private_copy)
+        if prepared.record.schema != source_version:
+            raise _failure()
 
         if (
             _directory_identity(directory) != directory_identity
@@ -1516,6 +1594,8 @@ def _copy(
             raise _failure()
         with temporary.open("r+b") as stream:
             os.fsync(stream.fileno())
+        # Hash/file I/O closes before reopening a SQLite source (POSIX locks).
+        published_record = publish(final, prepared)
         with closing(connect_readonly(target.db_path)) as current:
             _validate_publication_source(
                 current,
@@ -1523,8 +1603,15 @@ def _copy(
                 source_version,
                 privacy_success_cache=privacy_success_cache,
             )
+            # This hashes the separate closed copy, never the live SQLite file.
+            require_prepared_copy(prepared)
+            require_published_record(final, prepared, published_record)
+            if (_directory_identity(directory) != directory_identity
+                    or final.exists() or final.is_symlink()):
+                raise _failure()
             os.replace(temporary, final)
         temporary = None
+        require_published_record(final, prepared, published_record)
         succeeded = True
         return source_version
     except (OSError, sqlite3.Error) as exc:
@@ -1675,7 +1762,6 @@ def _run_locked_routine_backup(target: DatabaseTarget, timestamp: str) -> Routin
         record_managed_backup(target, metadata)
         if not _reconcile_v11(
             target, observed_at=timestamp,
-            _privacy_success_seed=frozenset(privacy_success_cache),
         ):
             raise _failure()
         return RoutineBackupResult(code="succeeded", attempted=True)
@@ -1705,6 +1791,7 @@ def publish_setup_backup(
         _reconcile_v10(target)
     else:
         existing = _discover(target)
+        _validate_artifact_relationships(target, existing)
         if (
             existing
             and len(existing)

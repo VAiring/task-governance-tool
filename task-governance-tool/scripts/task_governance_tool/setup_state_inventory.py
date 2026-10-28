@@ -118,6 +118,12 @@ def inspect_inventory(
                 if backup_count > 21:
                     raise SeparationError()
                 file(entry, extra_maximum)
+            elif domain == "backups" and name == "validation":
+                from .backup_validation import MAX_RECORD_BYTES, inventory
+                records = inventory(path, include_pending=True)
+                directory(entry)
+                for record in records:
+                    file(record, MAX_RECORD_BYTES)
             elif domain == "viewer" and name == "task-viewer.html":
                 file(entry, extra_maximum)
             elif domain == "viewer" and name == "task-projection.json":

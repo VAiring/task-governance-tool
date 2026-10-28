@@ -279,7 +279,12 @@ pruning and prepares a private candidate below `.taskgov/.state-separation/`.
 SQLite files are snapshotted with the backup API, not copied while open.
 Existing source schema/recovery normalization runs only on the private copy.
 All durable business records and valid managed backups and projections remain
-preserved. Runner graph validation is unchanged: pending intents or actual
+preserved. The bounded `backups/validation` domain, including its fixed pending
+publication file when present, is inventoried, copied and sealed with those
+backups. Its bytes are part of source/candidate continuity, not a new recovery
+authority. Unknown or unsafe entries inside this recognized domain are refused;
+retry cannot drop or replace its records to make a sealed candidate acceptable.
+Runner graph validation is unchanged: pending intents or actual
 attempt/quarantine trees stop cutover; migration never runs cleanup or invents
 cleanup success. A completed/restart-cleaned Runner graph already requires
 tree absence, and its rows and valid empty physical layout are preserved.
@@ -335,7 +340,10 @@ tamper-proof; existing structural, identity and evidence validation remains.
 Every recognized managed recovery candidate first passes physical-file, SQLite,
 schema/history/object, quick/foreign-key, project identity, binding lineage,
 filename/embedded metadata, generation repository, retention, and set-envelope
-validation. Only after the whole set passes may exact stored Task verification
+validation. Internal content checks may use the exact
+[immutable backup validation record](#immutable-backup-validation-records);
+physical, binding, inventory and selection checks remain current. Only after
+the whole set passes may exact stored Task verification
 be classified against that candidate's source schema, with privacy checked
 before capacity and without exposing or rewriting the value.
 
@@ -389,16 +397,20 @@ envelope; rejection changes selection only and never excuses a missing or
 mismatched generation relation. Classification and recovery do not rewrite a
 rejected artifact, although later already-authorized retention may prune
 managed generations normally. A present fixed primary remains authoritative:
-ordinary consumers do not fall back to a backup, while setup's deep inspection
-still scans every candidate and applies set-fatal hardening. A local
-privacy/capacity rejection does not invalidate an authoritative primary, but a
-malformed stored Task value does.
+ordinary consumers do not fall back to a backup. Healthy fixed-primary Setup
+checks the physical backup inventory and its filename/primary-ledger envelope,
+without opening or hashing unrelated old backup contents. An old artifact's
+content defect therefore does not block that Setup merely by existing. A backup
+needed for migration protection, reconciliation, legacy transfer or recovery is
+checked under that operation's content contract. Unsafe physical paths, sidecars
+and inconsistent current generation metadata remain errors.
 
 The private SQLite copy must still match the selected candidate's project,
 binding, embedded generation rows, maintenance pointer, source schema, and Task
-classification before repository normalization. Fixed recovery re-runs the
-same deep resolver at restore entry and immediately before no-replace canonical
-publication, and revalidates the normalized private copy's required schema
+classification before repository normalization. Fixed recovery refreshes the
+same complete inventory at restore entry and immediately before no-replace canonical
+publication, reusing content certification only for unchanged immutable inputs,
+and revalidates the normalized private copy's required schema
 objects and exact normalized repository state. Legacy backup-only recovery
 applies the same observation to the source and copied stage and re-runs the
 full source resolution immediately before publishing the private stage.
@@ -467,7 +479,9 @@ One shared resolver owns every production database/backup/Evidence/Viewer/lock t
 It derives only current hash/display from repo, then reads stored identity and
 binding. Every business writer revalidates ID/hash/generation under its short
 lock. An authoritative fixed primary is validated without gating ordinary
-business reads on backups or Viewer. Setup alone uses deep artifact validation.
+business reads on backups or Viewer. Setup selects physical or content inspection
+according to the artifact's role; recovery and old-layout transfer require the
+complete relevant inventory.
 
 Within a package-local migration source, with no fixed primary or eligible
 fixed recovery, the resolver inspects only direct physical children of
@@ -798,7 +812,9 @@ stage, enablement choice, error or durable completed prefix.
 The initial source connection is closed immediately after SQLite backup
 finishes, before independent validation of the private copy. Copy preparation
 does not retain that live reader. Initial-source, copied-database and fresh
-pre-publication-source validation remain separate and complete; the fresh
+pre-publication-source validation remain separate and complete; the private copy
+is inspected once after its SQLite connection closes and receives its own
+content certificate. The fresh
 source stays open through replacement under the artifact lock. Private-stage
 copy and generation restore use the same initial-source release boundary while
 preserving their existing identity/recovery observations and publication rules.
@@ -1264,6 +1280,92 @@ stage retention; a successful migration creates v10 state pointing to it.
 Migration v11 discovers all canonical valid retained same-project artifacts,
 seeds one row each, includes the current copy, and prunes to that copy's
 applied retention.
+
+#### Immutable Backup Validation Records
+
+The fixed `backups/validation/` directory contains at most 21 derived records,
+one per immutable managed generation, plus one bounded publication scratch
+file. Each record is at most 4,096 bytes. It remains available when the primary
+database is lost, and is never embedded in the file whose SHA-256 it records.
+No new core schema, public option, service, timer or normal Skill operation is
+introduced. Records are not Task Evidence or generation ownership.
+
+A full record certifies the final closed copy's schema/history/objects,
+quick/FK checks, domain rows and relations, privacy and recovery classification.
+It binds format and validation-rule versions, exact mode/scope, source schema,
+project and full generation tuple, byte count and SHA-256. A canonical envelope
+checksum detects record corruption; it is not authentication against a writer
+who can replace both database and record. Existing local filesystem trust and
+physical safety remain necessary. Structural-only records never certify full
+recovery eligibility.
+
+Only successful complete private-copy inspection may create a full record.
+Content fingerprints bracket that inspection. A final publication fingerprint
+must still match the same physical file instance; the source database and the
+SQLite-produced copy are never assumed byte-identical. Validation failure or
+drift publishes no success record for the changed content.
+
+Under the existing backup lock, publication writes the validated record through
+one fixed `.pending.json`, then publishes the immutable backup file, commits its
+generation/pointer, and performs existing retention. A record without its exact
+artifact is orphaned derived state, not restoration or pruning authority.
+The next authorized backup may remove a valid same-project orphan record only;
+it never removes an artifact or changes generation rows on that basis. A file
+published before its generation commit remains the existing bounded file-only
+reconciliation case and must pass content and current relationship checks.
+Record publication failure leaves the last normal generation intact. Scratch
+cleanup touches only the fixed bounded physical file, under artifact ownership.
+Malformed, foreign or unsafe final records are preserved and rejected when
+needed, never silently replaced. Pruning a separately authorized generation
+also removes its matching derived record; interrupted cleanup is bounded orphan
+state.
+
+A needed candidate is fingerprinted once per coherent content observation.
+The fingerprint and metadata observation are bound to the same SQLite read
+snapshot, with the hash descriptor closed only after the SQLite reader. A
+record read before admission is confirmed again before its result is used.
+An exact valid record permits skipping only its certified internal audit.
+Current physical paths and file identity, sidecars, thin schema/project/binding
+metadata, filename/generation tuple, inventory relationships, selected source
+and effect-boundary continuity are still checked. A same-byte replacement after
+planning remains drift. Records never authorize reselection under a fixed plan.
+Fresh effect-boundary observations may require a new hash; a redundant second
+classification within the same observation does not. Size/mtime alone are not
+content evidence.
+Published record bytes and physical identity must still match the prepared
+record at admission. Async file/metadata publication cannot turn later record
+corruption, disappearance or replacement into success. Before deleting older
+generations, retention confirms the surviving recovery artifacts again; failed
+confirmation preserves the old normal files and does not advertise success.
+That confirmation retains the admitted digest, project/binding, repository
+observation and physical identity even when no persistent record exists. A
+different internally valid database cannot replace the admitted contents.
+File-only generation import and v10 pointer recovery require this continuity
+even when retention will delete no file.
+Reconciliation also validates complete candidate lineage, embedded generation
+prefixes and pointers against current primary metadata before importing or
+pruning. The surviving set must retain an eligible generation at its structural
+head's binding; an eligible artifact at an older binding is not its fallback.
+
+Missing records and valid records with obsolete rules or insufficient scope
+fall back to actual inspection of that needed artifact. Read-only discovery,
+preview and diagnosis never create or refresh records. Hash, project, generation
+or schema mismatch, malformed records and failed inspection cannot be re-enrolled
+as known-good. Old backups are not rewritten or migrated en masse.
+Explicit full content audits perform the audit even with a matching record.
+Normal healthy-primary Setup has no old-backup content/hash dependency at all.
+
+Restore may reuse certified source contents, but separately checks destination
+compatibility, the actual copied state before normalization, and the normalized
+or migrated state before publication. Modified private copies never inherit the
+original's content certificate. Recovery selection, error precedence, last-good
+retention, no-replace publication and read-only/no-repair boundaries remain.
+
+Recovery planning, including backup-only transfer from an old layout, reads its
+policy from the selected, content-confirmed backup snapshot. It preserves fresh
+binding, maintenance and source-continuity checks without unconditionally
+repeating that source's certified internal audit. Planning and preview write
+no records; actual copied and normalized outputs retain independent validation.
 
 #### Projection And Performance Checks
 

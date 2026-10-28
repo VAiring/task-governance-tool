@@ -11,7 +11,7 @@
     },
     "backup.py": {
       "attributes": {
-        "execute": 4,
+        "execute": 3,
         "fetchall": 3
       },
       "kind": "observed_connection"

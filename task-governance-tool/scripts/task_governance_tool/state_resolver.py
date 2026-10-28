@@ -116,6 +116,11 @@ _KNOWN_RESOLVER_ERRORS = frozenset(
 )
 
 
+def backup_validation_path(backups: Path) -> Path:
+    """The fixed, derived record directory beneath a resolved backup root."""
+    return backups / "validation"
+
+
 @dataclass(frozen=True)
 class CanonicalStatePaths:
     """Generated paths with the physical Skill retained separately."""
@@ -152,6 +157,10 @@ class CanonicalStatePaths:
     def backup_runtime(self) -> Path:
         """Bounded operational state; never a recovery source."""
         return self.backups / "runtime"
+
+    @property
+    def backup_validation(self) -> Path:
+        return backup_validation_path(self.backups)
 
     @property
     def usage_database(self) -> Path:
@@ -256,6 +265,7 @@ class ManagedBackupObservation:
     generation_rows: tuple[MigrationBackupMetadata, ...] = field(repr=False)
     maintenance_pointer: MigrationBackupMetadata | None = field(repr=False)
     viewer_projection: ProjectionState | None = field(default=None, repr=False)
+    content_sha256: str | None = field(default=None, repr=False)
 
 
 @dataclass(frozen=True)
@@ -389,6 +399,7 @@ class _DatabaseObservation:
     stamp: _FileStamp = field(repr=False)
     recovery_content_valid: bool = True
     viewer_projection: ProjectionState | None = field(default=None, repr=False)
+    content_sha256: str | None = field(default=None, repr=False)
     doctor_state: DoctorStorageState | None = field(default=None, repr=False)
     read_connection: sqlite3.Connection | None = field(
         default=None,
@@ -553,7 +564,7 @@ def resolve_setup_project_state(
     skill_root: Path,
     repo: Path,
 ) -> ProjectStateResolution:
-    """Resolve setup state with deep validation of fixed artifacts."""
+    """Resolve Setup with role-appropriate primary/artifact validation."""
 
     return _resolve_separated_state(
         skill_root=skill_root,
@@ -604,7 +615,7 @@ def _resolve_separated_state(
         )
     except SeparationError as exc:
         return _error_resolution(paths, current_root, exc.code)
-    except (OSError, RuntimeError, ValueError):
+    except (OSError, RuntimeError, ValueError, StatePathError):
         return _error_resolution(paths, current_root, "project_state_unreadable")
 
     if transition.state in {"activated", "repair_barrier"}:
@@ -834,7 +845,7 @@ def _resolve_with_paths(
             if is_sqlite_busy_or_locked(exc)
             else "project_state_unreadable",
         )
-    except (OSError, RuntimeError, ValueError):
+    except (OSError, RuntimeError, ValueError, StatePathError):
         return _error_resolution(
             paths,
             current_root,
@@ -968,14 +979,26 @@ def _resolve_fixed(
                 database,
                 fixed_recovery=None,
             )
-        backups, recognized = _inspect_backup_directory(paths.backups)
+        # A healthy authoritative primary needs physical/envelope safety only.
+        # Recovery, relocation and old-layout publication still need contents.
+        shallow_backups = (paths.state_root.name == ".taskgov"
+            and database.stored_project.canonical_path_hash == current_root.canonical_path_hash
+            and not database.stored_project.legacy_cleanup_pending)
+        if shallow_backups:
+            backup_files, recognized = _backup_inventory(paths.backups)
+            backups = []
+            backup_stamps = tuple(item.stamp for item in backup_files)
+            _validate_primary_backup_inventory(backup_files, database)
+        else:
+            backups, recognized = _inspect_backup_directory(paths.backups)
+            backup_stamps = tuple(item._database.stamp for item in backups)
         recognized.extend(_inspect_viewer_directory(paths.viewer.parent))
         _inspect_evidence_directory(
             paths.evidence_root,
             owner_root=paths.fixed_root,
             database_stamps=(
                 database.stamp,
-                *(item._database.stamp for item in backups),
+                *backup_stamps,
             ),
             allow_oversized_repair=repair_evidence_artifacts,
         )
@@ -989,12 +1012,9 @@ def _resolve_fixed(
             recognized,
             source_size=source_size,
         )
-        _validate_backup_set(
-            backups,
-            database,
-            primary_present=True,
-        )
-        _classify_recovery_backups(backups)
+        if not shallow_backups:
+            _validate_backup_set(backups, database, primary_present=True)
+            _classify_recovery_backups(backups)
         return _fixed_resolution(
             paths,
             current_root,
@@ -1003,7 +1023,7 @@ def _resolve_fixed(
         )
 
     validate_operational_journal_state(paths.database)
-    backups, recognized = _inspect_backup_directory(paths.backups)
+    backups, recognized = _inspect_backup_directory(paths.backups, audit=include_doctor_state)
     recognized.extend(_inspect_viewer_directory(paths.viewer.parent))
     _inspect_evidence_directory(
         paths.evidence_root,
@@ -1383,6 +1403,7 @@ def _inspect_database(
     review_task_id: str | None = None,
     operation_local: bool = False,
     deadline: float | None = None,
+    content_proof=None,
 ) -> _DatabaseObservation:
     from task_governance_tool.debug_log import aggregate
     with aggregate(_inspect_database, unit='bytes') as measurement:
@@ -1404,20 +1425,26 @@ def _inspect_database(
             # BEGIN alone would not protect the exact physical bytes below from an
             # ordinary rollback-journal writer committing during the observation.
             version = current_schema_version(connection)
+            if content_proof is not None:
+                from .backup_validation import ValidationRecord
+                if (type(content_proof) is not ValidationRecord or not content_proof.reusable
+                        or content_proof.schema != version or mutable
+                        or validation_reuse is not None or not classify_recovery_content):
+                    raise _ResolverFailure("project_state_unreadable")
             if version > SCHEMA_VERSION:
                 raise _ResolverFailure("schema_too_new")
             if (
                 version < 1
-                or missing_migration_versions(connection, version)
+                or content_proof is None and missing_migration_versions(connection, version)
                 or not table_exists(connection, "project_meta")
             ):
                 raise _ResolverFailure("project_state_unreadable")
             if (
-                version < SCHEMA_VERSION
+                content_proof is None and version < SCHEMA_VERSION
                 and schema_objects_inconsistent_with_version(connection, version)
             ):
                 raise _ResolverFailure("project_state_unreadable")
-            reuse_validated = False
+            reuse_validated = content_proof is not None
             if validation_reuse is not None and version == SCHEMA_VERSION:
                 if (not connection.in_transaction
                         or connection.execute("PRAGMA query_only").fetchone()[0] != 1):
@@ -1469,6 +1496,8 @@ def _inspect_database(
                     is None
                 ):
                     raise _ResolverFailure("project_state_unreadable")
+            if content_proof is not None and stored.project_id != content_proof.project_id:
+                raise _ResolverFailure("project_state_unreadable")
             generations = _read_generation_rows(
                 connection,
                 stored.project_id,
@@ -1483,7 +1512,7 @@ def _inspect_database(
             if version >= 34:
                 from .viewer_projection_repository import read_state
                 viewer_projection = read_state(connection, stored.project_id)
-            if classify_recovery_content:
+            if classify_recovery_content and content_proof is None:
                 try:
                     if version == 34:
                         from task_governance_tool.schema_viewer_projection import validate_storage
@@ -1605,7 +1634,7 @@ def _inspect_database(
         ):
             connection.close()
             raise _ResolverFailure("project_state_unreadable")
-        keep_connection = retain_connection and version == SCHEMA_VERSION
+        keep_connection = retain_connection and (version == SCHEMA_VERSION or classify_recovery_content)
         retained_connection = connection if keep_connection else None
         if not keep_connection:
             connection.close()
@@ -1794,15 +1823,29 @@ class _BackupCandidate:
             generation_rows=self._database.generation_rows,
             maintenance_pointer=self._database.maintenance_pointer,
             viewer_projection=self._database.viewer_projection,
+            content_sha256=self._database.content_sha256,
         )
 
 
-def _inspect_backup_directory(
+@dataclass(frozen=True)
+class _BackupFile:
+    metadata: MigrationBackupMetadata
+    path: Path
+    stamp: _FileStamp
+
+    @property
+    def key(self):
+        return self.metadata.published_at, self.metadata.generation_id
+
+
+def _backup_inventory(
     directory: Path,
-) -> tuple[list[_BackupCandidate], list[str]]:
+) -> tuple[list[_BackupFile], list[str]]:
     if not _validate_optional_directory(directory):
         return [], []
-    candidates: list[_BackupCandidate] = []
+    from .backup_validation import inventory
+    inventory(directory)
+    candidates: list[_BackupFile] = []
     recognized: list[str] = []
     try:
         entries = sorted(directory.iterdir(), key=lambda item: item.name)
@@ -1822,14 +1865,10 @@ def _inspect_backup_directory(
         name = entry.name
         metadata = _parse_backup_filename(name)
         if metadata is not None:
-            _stamp(entry)
-            candidates.append(
-                _BackupCandidate(
-                    metadata=metadata,
-                    path=entry,
-                    _database=_inspect_database(entry),
-                )
-            )
+            stamp = _stamp(entry)
+            if entry.lstat().st_nlink != 1:
+                raise _ResolverFailure("project_state_unreadable")
+            candidates.append(_BackupFile(metadata, entry, stamp))
             recognized.append(f"backups/{name}")
             continue
         if name == "taskgov-backup.lock":
@@ -1842,6 +1881,40 @@ def _inspect_backup_directory(
     if len(generation_ids) != len(set(generation_ids)):
         raise _ResolverFailure("project_state_unreadable")
     candidates.sort(key=lambda item: item.key)
+    return candidates, recognized
+
+
+def _validate_primary_backup_inventory(files, database: _DatabaseObservation) -> None:
+    """Current primary metadata, not old artifact content, owns this envelope."""
+    physical = {item.metadata.generation_id: item.metadata for item in files}
+    rows = {item.generation_id: item for item in database.generation_rows}
+    for identity in physical.keys() & rows.keys():
+        if physical[identity] != rows[identity]:
+            raise _ResolverFailure("project_state_unreadable")
+    if database.stored_project.source_schema_version >= 11:
+        file_only, row_only = physical.keys() - rows.keys(), rows.keys() - physical.keys()
+        if (len(physical.keys() | rows.keys()) > MAX_MANAGED_BACKUP_ARTIFACTS
+                or len(file_only) > 1 or len(row_only) > 1 or file_only and row_only
+                or database.maintenance_pointer != (database.generation_rows[-1] if rows else None)):
+            raise _ResolverFailure("project_state_unreadable")
+    elif database.maintenance_pointer is not None:
+        pointer = database.maintenance_pointer
+        if pointer.generation_id in physical and physical[pointer.generation_id] != pointer:
+            raise _ResolverFailure("project_state_unreadable")
+        if pointer.generation_id not in physical and not any(
+                item.key > (pointer.published_at, pointer.generation_id) for item in files):
+            raise _ResolverFailure("project_state_unreadable")
+
+
+def _inspect_backup_directory(directory: Path, *, audit: bool = False) -> tuple[list[_BackupCandidate], list[str]]:
+    from .backup_validation import inspect_artifact
+    files, recognized = _backup_inventory(directory)
+    candidates = []
+    for item in files:
+        observed = inspect_artifact(item.path, item.metadata, audit=audit)
+        if observed.stamp != item.stamp:
+            raise _ResolverFailure("project_state_unreadable")
+        candidates.append(_BackupCandidate(item.metadata, item.path, observed))
     return candidates, recognized
 
 
@@ -2141,10 +2214,17 @@ def _validate_candidate_repository_snapshots(
 def _classify_recovery_backups(
     backups: list[_BackupCandidate],
 ) -> list[_BackupCandidate]:
-    """Classify content only after every structural/set check has passed."""
+    """Expose deferred content classification after complete set validation.
+
+    Discovery now obtains structural and content results in one snapshot. Local
+    privacy/capacity rejection remains deferred; a later structural fault wins.
+    """
 
     classified: list[_BackupCandidate] = []
     for candidate in backups:
+        if candidate._database.content_sha256 is not None:
+            classified.append(candidate)
+            continue
         database = _inspect_database(
             candidate.path,
             classify_recovery_content=True,
@@ -2174,6 +2254,11 @@ def recovery_database_matches_observation(
         )
     except _ResolverFailure:
         return False
+    return recovery_observation_matches(observed, expected)
+
+
+def recovery_observation_matches(observed: _DatabaseObservation, expected: ManagedBackupObservation) -> bool:
+    """Compare source-derived relationships; copies have their own byte identity."""
     return bool(
         observed.stored_project == expected.stored_project
         and observed.generation_rows == expected.generation_rows
@@ -2194,6 +2279,46 @@ def _same_recovery_binding(
         and candidate.canonical_path_hash == structural_head.canonical_path_hash
         and candidate.binding_lineage == structural_head.binding_lineage
     )
+
+
+def validate_backup_reconciliation(
+    target: DatabaseTarget, backups: list[_BackupCandidate],
+    *, recovery_snapshot: ManagedBackupObservation | None = None,
+) -> None:
+    """Check current primary/set relationships using already inspected artifacts.
+
+    This bounded metadata read is not a certificate of mutable business rows.
+    Callers retain their source admission, artifact lock and fresh effect guards.
+    """
+    if recovery_snapshot is not None:
+        # A private copy of an older selected backup legitimately lacks later
+        # generation rows. Admit that exact planned snapshot against the whole
+        # recovery set before importing rows; never relax ordinary primary rules.
+        if not backups or not recovery_snapshot.recovery_content_valid:
+            raise _ResolverFailure("project_state_unreadable")
+        head = backups[-1]._database
+        _validate_backup_set(backups, head, primary_present=False)
+        eligible = [item for item in backups if item._database.recovery_content_valid
+                    and _same_recovery_binding(item.stored_project, head.stored_project)]
+        if (not eligible or eligible[-1].metadata != recovery_snapshot.metadata
+                or recovery_snapshot.stored_project.project_id != target.project.project_id
+                or recovery_snapshot.content_sha256 is None
+                or eligible[-1]._database.content_sha256 != recovery_snapshot.content_sha256
+                or not recovery_observation_matches(eligible[-1]._database, recovery_snapshot)
+                or not recovery_database_matches_observation(target.db_path, recovery_snapshot)):
+            raise _ResolverFailure("project_state_unreadable")
+        return
+    with closing(connect_readonly(target.db_path)) as connection:
+        version = current_schema_version(connection)
+        stored = (_read_bound_project(connection, version) if version >= 14
+                  else _read_legacy_project(connection, version))
+        selected = _DatabaseObservation(stored,
+            _read_generation_rows(connection, stored.project_id, version),
+            _read_maintenance_pointer(connection, stored.project_id, version),
+            _stamp(target.db_path))
+    if stored.project_id != target.project.project_id:
+        raise _ResolverFailure("project_state_unreadable")
+    _validate_backup_set(backups, selected, primary_present=True)
 
 
 def _validate_backup_set(

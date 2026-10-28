@@ -9,6 +9,15 @@ from unittest import mock
 from task_governance_tool import backup as backup_service
 
 
+def make_recordless_legacy_artifact(path: Path) -> None:
+    """Model a historical backup created before external certification existed."""
+    from task_governance_tool.backup_validation import record_directory
+    item = backup_service._parse_filename(path.name)
+    if item is None:
+        raise AssertionError('legacy fixture needs a managed backup filename')
+    (record_directory(path.parent) / (item.generation_id + '.json')).unlink(missing_ok=True)
+
+
 def publish_generations(target, *timestamps: str, retention: int = 4):
     for timestamp in timestamps:
         with (

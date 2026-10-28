@@ -50,6 +50,7 @@ EXPECTED_CANONICAL_DOCS = (
     "docs/operation-admission-plan.md",
     "docs/logger-design.md",
     "docs/async-backup-plan.md",
+    "docs/backup-validation-reuse-plan.md",
     "docs/history/README.md",
 )
 EXPECTED_METRIC_DOCS = EXPECTED_CANONICAL_DOCS + (
@@ -256,9 +257,9 @@ class DocumentContractTests(unittest.TestCase):
         self.assertNotIn(secret, serialized)
         self.assertNotIn("Traceback", serialized)
 
-    def test_registry_v27_is_closed(self):
+    def test_registry_v28_is_closed(self):
         expected = {
-            "schema": "taskgov-document-authority-v27",
+            "schema": "taskgov-document-authority-v28",
             "mandatory_start": [
                 "AGENTS.md",
                 "docs/authority.md",
@@ -283,7 +284,7 @@ class DocumentContractTests(unittest.TestCase):
                 "docs/database-design.md",
             ],
             "mixed_execution": [],
-            "conditional": ["docs/state-layout-separation-plan.md", "docs/verification-declaration-plan.md", "docs/session-usage-plan.md", "docs/review-finalization-plan.md", "docs/usage-response-attribution-design.md", "docs/review-continuation-plan.md", "docs/review-answer-collection-design.md", "docs/operation-admission-plan.md", "docs/logger-design.md", "docs/async-backup-plan.md"],
+            "conditional": ["docs/state-layout-separation-plan.md", "docs/verification-declaration-plan.md", "docs/session-usage-plan.md", "docs/review-finalization-plan.md", "docs/usage-response-attribution-design.md", "docs/review-continuation-plan.md", "docs/review-answer-collection-design.md", "docs/operation-admission-plan.md", "docs/logger-design.md", "docs/async-backup-plan.md", "docs/backup-validation-reuse-plan.md"],
             "history_index": "docs/history/README.md",
         }
         with self.fixture() as root:
@@ -488,6 +489,11 @@ class DocumentContractTests(unittest.TestCase):
         self.assertEqual(
             contract.ROUTE_SECTIONS,
             (
+                (
+                    contract.AUTHORITY,
+                    "## Conditional Backup Validation Reuse Plan",
+                    ("backup-validation-reuse-plan.md",),
+                ),
                 (
                     contract.AUTHORITY,
                     "## Conditional Asynchronous Backup Plan",

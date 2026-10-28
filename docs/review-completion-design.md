@@ -1650,6 +1650,38 @@ assembly. Overflow retains its explicit incomplete-report behavior.
 
 ### Host-Owned Review Waiting
 
+`host_server_selection.AutoServer` is an immutable startup selector carrying
+the governed project root; explicit wrapper paths retain their original route.
+`project_server` parses `--server auto` without reading host files at startup
+or discovery. `ServiceConfig` preserves that selector across existing sessions.
+The shared `PublicMcpHost.from_environment` route also serves managed waits and
+the restricted reviewer self-reader. Automatic construction validates a current
+selection; each bounded exchange obtains its own fresh selection rather than
+mutating a shared command or caching an old version for a worker's lifetime.
+
+`host_server_selection` reads only the declared Codex-home configuration,
+applicable project/ancestor configuration and exact bundled catalogue,
+manifests, MCP definitions and two wrapper files. Metadata is bounded to
+262,144 bytes per file; each wrapper to 8,388,608 bytes. Physical/no-reparse
+checks, descriptor identity checks and content comparison reject unsupported
+paths and partial updates. Transient hashes include absent configuration layers;
+reselection after initialization/discovery detects changed selection inputs.
+The local filesystem is trusted against malicious concurrent replacement;
+these checks do not claim an atomic filesystem-to-process launch transaction.
+No raw configuration, wrapper, environment or discovery response is retained
+in Task state or diagnostics.
+
+Automatic exchanges use the inherited absolute Node executable, the exact
+selected cache entrypoint and no shell or manifest-provided command. They check
+the MCP server name, supported protocol and the requested tool's unique entry
+with an object input schema. They do not infer full future semantic compatibility.
+The extra `tools/list` exchange uses the existing 4 MiB read-frame/8 MiB drain
+bounds; initialization and mutation responses remain 256 KiB. Failures preserve
+the existing `host_call_failed` envelope with fixed boundary reasons
+`host_server_selection_unavailable`, `host_server_selection_changed` or
+`host_server_incompatible`, plus actual operation and cleanup facts. Construction
+failure retains `host_transport_unavailable`. No fallback or effect retry is added.
+
 The packaged `scripts/review_wait_server.py` runs `project_server` with only
 repository, public bundled MCP wrapper, Codex home and confirmed timezone.
 Its nine closed wait controls include the normal `wait`, optional `inspect/stop`
@@ -2288,8 +2320,9 @@ These paths may use the public history response transiently but do not return
 raw history to the caller/LLM or save it in Task state or diagnostics. Extracting
 fields after receipt does not bypass the transport's byte admission. Use a larger
 finite buffer for read-only responses rather than a streaming JSON extractor.
-The adopted `MAX_READ_RESPONSE_BYTES` is 4,194,304 bytes for `read_thread` and
-`wait_threads` responses only, including the outer frame's newline. Nested JSON
+The adopted `MAX_READ_RESPONSE_BYTES` is 4,194,304 bytes for `read_thread`,
+`wait_threads` and automatic wrapper `tools/list` discovery responses, including
+the outer frame's newline. Nested JSON
 uses the same byte ceiling, so admitted outer responses face no old 256 KiB inner
 cap. `_ChildSession` admits at most 8,388,608 stdout bytes for that whole owned
 exchange; stderr stays independently capped at 1,048,576 bytes and is discarded.
@@ -2298,7 +2331,11 @@ allocations are finite under those frame/count/stream bounds; this is a bounded
 buffer design, not constant-space streaming or a claim about empirical rarity.
 Initialization remains capped at 262,144 bytes even in a read exchange. All
 other operation responses, requests and notification-send frames retain their
-262,144-byte limit and 1,048,576-byte per-stream drain ceiling. This does not alter
+262,144-byte limit. Explicit-path non-read exchanges retain their 1,048,576-byte
+per-stream drain ceiling; automatic exchanges need the larger stdout ceiling
+for discovery even when the subsequent tool mutates state. Their mutation
+response still has the smaller frame limit, and stderr remains 1,048,576 bytes.
+This does not alter
 the development-only view relay or public incoming server admission.
 
 The existing per-call host deadline (default twenty seconds), sixteen-page scan

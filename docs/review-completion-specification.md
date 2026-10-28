@@ -1973,6 +1973,32 @@ current data is named, and no unknown effect is presented as successful.
 
 ### Host-Owned Review Waiting
 
+The project service accepts an explicitly configured absolute `--server`
+wrapper path or `--server auto`. Automatic selection is read-only and limited
+to the local `openai-bundled/codex-app-tools` layout under the supplied Codex
+home. It requires the user configuration to enable that plugin and select
+`<codex-home>/.tmp/bundled-marketplaces/openai-bundled`, with one exact local
+catalogue entry. The selected manifest's three-part numeric package version
+identifies the only eligible cache directory. Source/cache identity and wrapper
+bytes must agree; missing, linked, malformed, ambiguous or changed material is
+unavailable. No newest-version scan, old-version fallback, install or repair
+occurs. Project/ancestor plugin overrides may only enable the plugin and/or its
+`codex_app` server with boolean true; disabling or overriding other values is
+unsupported. Relevant profile or marketplace overrides also fail closed.
+This resolver does not replace Codex's effective policy
+or host permissions. An explicitly approved wrapper path remains available.
+
+Each automatic host exchange resolves afresh, then validates MCP initialization
+and discovery of the requested tool before dispatch. Selection must still match
+after discovery. No operation is replayed after an update or failed exchange.
+Discovery may use the existing bounded read capacity; mutation requests and
+results keep their existing smaller limits. Existing executor identity, effect
+journals and process-cleanup requirements apply unchanged. A source change
+between exchanges can therefore be adopted without restarting this service;
+this does not promise compatibility with a future host protocol or eliminate
+host/Node restart requirements. Selecting automatic mode or changing host
+settings still requires the existing explicit configuration authority.
+
 The existing project MCP service also hosts the separate
 [backup opportunity observer](setup-state-specification.md#asynchronous-backup).
 That observer does not depend on review-wait policy being on, reviewer activity

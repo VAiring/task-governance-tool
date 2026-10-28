@@ -123,6 +123,16 @@ class ProjectWaitTests(PreparationFixture):
         self.assertLessEqual(set(after) - set(before), presence)
         self.assertEqual(before, {name: value for name, value in after.items() if name in before})
 
+    def test_auto_entry_discovery_does_not_require_or_resolve_host_marketplace(self):
+        entry = self.install.skill_root / "scripts/review_wait_server.py"
+        result = subprocess.run([sys.executable, "-I", "-B", str(entry), "--repo", str(self.root),
+            "--server", "auto", "--codex-home", str(self.root / "absent-home"), "--timezone", "UTC"],
+            input=HELLO + READY + request("tools/list"), capture_output=True, cwd=self.root, timeout=10)
+        self.assertEqual(0, result.returncode, result.stderr)
+        tools = json.loads(result.stdout.splitlines()[-1])["result"]["tools"]
+        self.assertEqual(10, len(tools))
+        self.assertFalse((self.root / "absent-home").exists())
+
     def test_prepare_canonical_isolated_associations_and_duplicate_exclusion(self):
         core = self.paths.database.read_bytes()
         self.prepare_wait()

@@ -923,7 +923,8 @@ class HostBoundaryTests(unittest.TestCase):
 
     def test_exception_keeps_legacy_code_and_only_fixed_optional_diagnostics(self):
         expected = {"host_launch_failed", "host_initialize_failed", "host_response_unavailable",
-                    "host_cleanup_unknown", "host_tool_error", "host_response_invalid"}
+                    "host_cleanup_unknown", "host_tool_error", "host_response_invalid",
+                    "host_server_selection_unavailable", "host_server_selection_changed", "host_server_incompatible"}
         expected |= {"host_" + reason for reason in host.relay.RESPONSE_FAILURE_REASONS}
         self.assertEqual(host.HOST_BOUNDARY_REASONS, expected)
         self.assertIsInstance(host.HOST_BOUNDARY_REASONS, frozenset)

@@ -18,12 +18,21 @@ The project MCP configuration separately runs the physical installed
 ```text
 -B <physical-skill>/scripts/review_wait_server.py
 --repo <governed-project>
---server <installed-public-codex-app-tools-server.mjs>
+--server auto
 --codex-home <actual-Codex-home>
 --timezone <confirmed-host-IANA-timezone>
 ```
 
-Use the actual installed public wrapper. Review the destination
+`auto` follows the exact version selected by Codex's local bundled marketplace,
+so a removed versioned cache path does not require another configuration edit.
+It requires that supported physical layout and enabled user plugin setting.
+Project plugin/server enable-only settings are allowed; other relevant
+project/profile overrides, ambiguous or incomplete updates fail closed.
+It never chooses the newest directory or retries a host mutation. An explicitly
+approved absolute `server.mjs` path remains supported for other layouts.
+The first configuration change requires reloading the service; later wrapper
+selection is fresh per exchange. Host protocol/Node changes may still need a
+restart. Review the destination
 `<governed-project>/.codex/config.toml` and existing authorization before editing;
 preserve unrelated settings and allow the normal `review_wait_wait` tool.
 Inherit `CODEX_APP_TOOLS_PIPE_PATH`, `CODEX_MCP_NODE_PATH` and `CODEX_THREAD_ID`

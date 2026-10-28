@@ -21,6 +21,7 @@ from typing import Callable, Mapping, Sequence
 from uuid import UUID
 
 from task_governance_tool.review_wait_runtime import review_wait_mcp_relay as relay
+from .host_server_selection import AutoServer, select_server, validate_selection
 
 
 MAX_CONFIG_BYTES = 65_536
@@ -29,6 +30,7 @@ SHORTEN_RULE = "FREQ=MINUTELY;INTERVAL=1"
 HOST_BOUNDARY_REASONS = frozenset({
     "host_launch_failed", "host_initialize_failed", "host_response_unavailable",
     "host_cleanup_unknown", "host_tool_error", "host_response_invalid",
+    "host_server_selection_unavailable", "host_server_selection_changed", "host_server_incompatible",
 }) | frozenset("host_" + reason for reason in relay.RESPONSE_FAILURE_REASONS)
 HOST_OPERATIONS = frozenset({"read_thread", "wait_threads", "automation_update", "send_message_to_thread"})
 HOST_TERMINATION = frozenset({"not_attempted", "confirmed", "unresolved"})
@@ -579,6 +581,7 @@ class PublicMcpHost:
         self._timezone_reader = timezone_reader
         self._command, self._cwd = tuple(command), cwd
         self._timeout = timeout_seconds
+        self._auto_server = None
 
     @property
     def parent_thread_id(self) -> str:
@@ -593,9 +596,10 @@ class PublicMcpHost:
         return self._reviewers
 
     @classmethod
-    def from_environment(cls, *, server_path: Path, **kwargs) -> PublicMcpHost:
+    def from_environment(cls, *, server_path: Path | AutoServer, **kwargs) -> PublicMcpHost:
         try:
-            server = Path(server_path)
+            automatic = type(server_path) is AutoServer
+            server = (select_server(server_path, kwargs["codex_home"]).path if automatic else Path(server_path))
             node = Path(os.environ.get("CODEX_MCP_NODE_PATH", ""))
             if (not os.environ.get("CODEX_APP_TOOLS_PIPE_PATH", "").strip()
                     or not node.is_absolute() or not node.is_file()
@@ -603,8 +607,10 @@ class PublicMcpHost:
                 _fail("host_transport_unavailable")
             if "timezone_reader" in kwargs or kwargs.get("timezone_source") != "host_node_intl":
                 _fail("timezone_not_admitted")
-            return cls(command=[str(node), str(server)], cwd=server.parent,
+            host = cls(command=[str(node), str(server)], cwd=server.parent,
                        timezone_reader=_node_timezone_reader(node), **kwargs)
+            host._auto_server = server_path if automatic else None
+            return host
         except HostAdapterError:
             raise
         except Exception:
@@ -618,14 +624,20 @@ class PublicMcpHost:
         try:
             if name not in HOST_OPERATIONS:
                 _fail("unsupported_host_operation")
+            deadline = time.monotonic() + (timeout or self._timeout)
+            command, cwd, selected = self._command, self._cwd, None
+            if self._auto_server is not None:
+                boundary_reason = "host_server_selection_unavailable"
+                selected = select_server(self._auto_server, self._codex_home)
+                command, cwd = (self._command[0], str(selected.path)), selected.path.parent
+            boundary_reason = "host_launch_failed"
             # Construction may launch before failing; without a returned owned
             # session, do not assert that process/reader cleanup was unattempted.
             termination = "unresolved"
             read_only = name in {"read_thread", "wait_threads"}
-            child = relay._ChildSession(self._command, self._cwd,
-                                        time.monotonic() + (timeout or self._timeout), 1.0,
+            child = relay._ChildSession(command, cwd, deadline, 1.0,
                                         **({"response_bytes": relay.MAX_READ_RESPONSE_BYTES,
-                                            "stdout_bytes": relay.MAX_READ_DRAIN_BYTES} if read_only else {}))
+                                            "stdout_bytes": relay.MAX_READ_DRAIN_BYTES} if read_only or selected else {}))
             boundary_reason = "host_initialize_failed"
             child.send(relay._encode({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {
                 "protocolVersion": relay.PROTOCOL_VERSION, "capabilities": {},
@@ -637,9 +649,27 @@ class PublicMcpHost:
                     or not relay._valid_implementation(initialized.get("serverInfo"))):
                 _fail()
             child.send(relay._encode({"jsonrpc": "2.0", "method": "notifications/initialized"}))
+            if selected is not None:
+                boundary_reason = "host_server_incompatible"
+                if initialized["serverInfo"]["name"] != "codex-app-tools":
+                    _fail()
+                child.send(relay._encode({"jsonrpc": "2.0", "id": 3, "method": "tools/list", "params": {}}))
+                catalogue = child.result(3, max_bytes=relay.MAX_READ_RESPONSE_BYTES)
+                tools = catalogue.get("tools")
+                if (type(tools) is not list or catalogue.get("nextCursor") is not None
+                        or any(type(tool) is not dict or type(tool.get("name")) is not str for tool in tools)
+                        or len({tool["name"] for tool in tools}) != len(tools)):
+                    _fail()
+                matches = [tool for tool in tools if tool["name"] == name]
+                if (len(matches) != 1 or type(matches[0].get("inputSchema")) is not dict
+                        or matches[0]["inputSchema"].get("type") != "object"):
+                    _fail()
+                boundary_reason = "host_server_selection_changed"
+                validate_selection(self._auto_server, self._codex_home, selected)
             boundary_reason = "host_response_unavailable"
             child.send(self._tool_call_bytes(name, arguments))
-            result = child.result(2)
+            result = (child.result(2, max_bytes=relay.MAX_READ_RESPONSE_BYTES if read_only else relay.MAX_MESSAGE_BYTES)
+                      if selected else child.result(2))
             if (type(result) is not dict or type(result.get("isError")) is not bool
                     or type(result.get("content")) is not list
                     or (name != "send_message_to_thread" and not result["content"])
@@ -656,7 +686,7 @@ class PublicMcpHost:
             if (type(error) is relay.RelayError
                     and type(error.response_reason) is str
                     and error.response_reason in relay.RESPONSE_FAILURE_REASONS
-                    and (boundary_reason == "host_response_unavailable"
+                    and (boundary_reason in {"host_response_unavailable", "host_server_incompatible"}
                          or boundary_reason == "host_initialize_failed" and error.response_reason in {
                              "response_frame_limit", "response_drain_limit", "response_queue_limit"})):
                 boundary_reason = "host_" + error.response_reason

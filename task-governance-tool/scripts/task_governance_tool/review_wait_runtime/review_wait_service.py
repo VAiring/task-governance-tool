@@ -13,6 +13,7 @@ from datetime import datetime, timedelta, timezone
 import json
 import math
 from pathlib import Path
+from .host_server_selection import AutoServer
 import re
 from threading import RLock
 from typing import Callable
@@ -136,7 +137,7 @@ def ten_minute_appointment(clock, timezone_name: str) -> Appointment:
 @dataclass(frozen=True)
 class ServiceConfig:
     repository_path: Path
-    server_path: Path
+    server_path: Path | AutoServer
     codex_home: Path
     confirmed_timezone: str
     timezone_source: str
@@ -144,11 +145,13 @@ class ServiceConfig:
     def __post_init__(self) -> None:
         try:
             for name in ("repository_path", "server_path", "codex_home"):
+                if name == "server_path" and type(self.server_path) is AutoServer:
+                    continue
                 value = Path(getattr(self, name))
                 _require(value.is_absolute() and ".." not in value.parts and "\x00" not in str(value),
                          "invalid_configuration")
                 object.__setattr__(self, name, value)
-            _require(self.server_path.name == "server.mjs", "invalid_configuration")
+            _require(type(self.server_path) is AutoServer or self.server_path.name == "server.mjs", "invalid_configuration")
             _require(type(self.confirmed_timezone) is str and
                      bool(re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_/+.-]{0,127}", self.confirmed_timezone)),
                      "invalid_configuration")

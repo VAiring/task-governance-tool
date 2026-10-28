@@ -23,6 +23,7 @@ from .review_wait_host import PublicMcpHost, HostAdapterError, admit_executor_me
 from .review_wait_repository import ReviewWaitRepository
 from .review_wait_server import ReviewWaitSession, SessionConfig, serve
 from .review_wait_service import ServiceConfig
+from .host_server_selection import AutoServer
 from .managed_host import ManagedHost
 from .managed_direct import ManagedDirectProbe
 from .managed_wait import ManagedWait
@@ -70,7 +71,7 @@ class ProjectHost(PublicMcpHost):
 @dataclass(frozen=True)
 class ProjectConfig:
     repo: Path
-    server_path: Path
+    server_path: Path | AutoServer
     codex_home: Path
     timezone: str
 
@@ -83,8 +84,10 @@ class ProjectReviewWaitSession:
     def __init__(self, config, *, host_factory=None, basis_factory=None,
                  session_factory=None, clock=None, managed_host_factory=None, runtime_identity=None,
                  answer_read_host_factory=None):
-        if type(config) is not ProjectConfig or any(
-                not path.is_absolute() for path in (config.repo, config.server_path, config.codex_home)):
+        if (type(config) is not ProjectConfig or any(
+                not path.is_absolute() for path in (config.repo, config.codex_home))
+                or (type(config.server_path) is not AutoServer and not config.server_path.is_absolute())
+                or (type(config.server_path) is AutoServer and config.server_path.project_root != config.repo)):
             raise ValueError("invalid_configuration")
         self.config = config
         self.skill = Path(__file__).absolute().parents[3]
@@ -807,12 +810,13 @@ class ProjectReviewWaitSession:
 def main(argv=None, *, runtime_identity=None):
     parser = protocol._ArgumentParser(description=__doc__)
     parser.add_argument("--repo", required=True)
-    parser.add_argument("--server", required=True)
+    parser.add_argument("--server", required=True, help="Absolute server.mjs path, or auto for the exact bundled version")
     parser.add_argument("--codex-home", required=True)
     parser.add_argument("--timezone", required=True)
     try:
         args = parser.parse_args(argv)
-        config = ProjectConfig(Path(args.repo), Path(args.server), Path(args.codex_home), args.timezone)
+        server = AutoServer(Path(args.repo)) if args.server == "auto" else Path(args.server)
+        config = ProjectConfig(Path(args.repo), server, Path(args.codex_home), args.timezone)
         session = ProjectReviewWaitSession(config, runtime_identity=runtime_identity)
         session.start_backup_observer()
         return serve(sys.stdin.buffer, sys.stdout.buffer, session)

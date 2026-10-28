@@ -738,6 +738,10 @@ class M243BSchema21RecoveryTests(unittest.TestCase):
             candidate = backup_service.select_managed_backup_for_recovery(target)
             self.assertIsNotNone(candidate)
             backups_path = candidate.path.parent
+            # Establish the persistent advisory-lock artifact before comparing
+            # rejection effects. Lock-file existence is not a backup mutation.
+            with backup_service.managed_backup_lock(target):
+                pass
             before_names = tuple(
                 sorted(path.name for path in backups_path.iterdir())
             )

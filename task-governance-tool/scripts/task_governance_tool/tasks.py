@@ -389,7 +389,14 @@ def row_to_viewer_task(row: sqlite3.Row) -> dict[str, Any]:
 
 
 def row_to_internal_task(row: sqlite3.Row) -> dict[str, Any]:
-    return dict(row)
+    # Current/next batch queries append display metadata to tasks.*. Those
+    # values are not stored Task state and must not make a fresh Runner read
+    # appear different from the retained selected row.
+    display_fields = {
+        "total_matching", "latest_event_id", "latest_event_type",
+        "latest_event_summary", "latest_event_created_at",
+    }
+    return {key: row[key] for key in row.keys() if key not in display_fields}
 
 
 def row_to_event(

@@ -19,8 +19,17 @@ from task_governance_tool.review_wait_runtime.project_server import ProjectConfi
 
 class AsyncBackupIntegrationTests(unittest.TestCase):
     def setUp(self):
-        self.directory = Path(self.enterContext(tempfile.TemporaryDirectory()))
+        self.directory = Path(self.enterContext(tempfile.TemporaryDirectory())).resolve()
         self.install, self.target, _ = _setup_current(self.directory)
+
+    def test_setup_fixture_canonicalizes_root_before_service_admission(self):
+        fixture_root = self.directory / "aliased-fixture"
+        component = fixture_root / "component"
+        component.mkdir(parents=True)
+        install, target, _ = _setup_current(component / ".." / "new-fixture")
+        self.assertEqual(install.project_root, fixture_root.resolve() / "new-fixture" / "project")
+        admitted = repository.read_service_target(install.skill_root, repo=install.project_root)
+        self.assertEqual(admitted.db_path, target.db_path)
 
     def test_policy_request_does_not_repeat_schema_or_history_validation(self):
         statements = []

@@ -70,6 +70,14 @@ class TaskOwnershipInstallTests(unittest.TestCase):
             self.assertEqual(connection.execute("SELECT max(version) FROM schema_migrations").fetchone()[0], 34)
             self.assertEqual(connection.execute("SELECT count(*) FROM task_executions").fetchone()[0], 1)
         backups = tuple((self.install.fixed_root / "backups").glob("taskgov-backup-v1_*.sqlite"))
+        # Ordinary CLI mutations only request backup from an existing service.
+        # This fixture has none; exercise the isolated backup primitive to
+        # verify ownership/schema preservation without assuming synchronous CLI
+        # publication. Actual service/child dispatch is covered separately.
+        self.assertEqual(backups, ())
+        from task_governance_tool.backup import run_routine_backup
+        self.assertEqual(run_routine_backup(self.install.target).code, "succeeded")
+        backups = tuple((self.install.fixed_root / "backups").glob("taskgov-backup-v1_*.sqlite"))
         self.assertTrue(backups)
         for path in backups:
             with closing(sqlite3.connect(path)) as connection:

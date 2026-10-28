@@ -1120,7 +1120,9 @@ class SkillSelfContainmentTests(unittest.TestCase):
         normalized_skill = " ".join(skill_md.split())
         self.assertIn("canonical offline projection", normalized_skill)
         self.assertIn("bounded same-process", normalized_skill)
-        self.assertIn("no LLM command choice or background", normalized_skill)
+        self.assertIn("no LLM command choice, polling or completion condition", normalized_skill)
+        self.assertIn("without waiting for worker startup or completion", normalized_skill)
+        self.assertIn("Unavailable service defers that request", normalized_skill)
         for text in (skill_md, workflow, contracts, readme):
             self.assertNotIn("taskgov.py web export", text)
             self.assertNotIn("taskgov web export", text)
@@ -1923,7 +1925,7 @@ print(json.dumps(results, ensure_ascii=False))
         for field in ('32,768', '--user-approved-reviewer', 'Git-ignored', '.json'):
             self.assertIn(field, paths)
         _, save = self.linked_output(source, results, 'save-review-original')
-        self.assertIn('--output reviews/review-a.json', save)
+        self.assertIn('--output <review-directory>/review-a.json', save)
         _, recovery = self.linked_output(source, submit, 'recover-review-handoff')
         self.assertIn('registration_status=not_started|unknown', recovery)
 
@@ -2579,8 +2581,8 @@ print(json.dumps(results, ensure_ascii=False))
         operations = {
             "prepare-review-handoff": ("#### Prepare Review Handoff", "--expected-target-generation"),
             "record-review-wait-decision": ("#### Record Review Wait Decision", "wait-ended --repo ."),
-            "read-review-packet": ("#### Read Review Packet", "read --repo . --packet reviews/packet.json"),
-            "save-review-original": ("#### Save Review Original", "--output reviews/review-a.json"),
+            "read-review-packet": ("#### Read Review Packet", "read --repo . --packet <review-directory>/packet.json"),
+            "save-review-original": ("#### Save Review Original", "--output <review-directory>/review-a.json"),
             "submit-review-originals": ("#### Submit Review Originals", "submit --repo ."),
         }
         for fragment, (heading, operation_input) in operations.items():

@@ -122,7 +122,9 @@ def tearDownModule() -> None:
 
 def _physical_current21_install(root: Path, *, git_managed: bool = False):
     """Pin this copied package only; never change the public current runtime."""
+    from tests.m14_test_support import pin_pre_incremental_viewer
     install = make_physical_install(root, git_managed=git_managed)
+    pin_pre_incremental_viewer(install.skill_root)
     installed_storage = install.skill_root / "scripts" / "task_governance_tool" / "storage.py"
     source = installed_storage.read_text(encoding="utf-8")
     current_declaration = "SCHEMA_VERSION = 34"

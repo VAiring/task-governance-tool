@@ -337,7 +337,9 @@ class InstalledAnswerFinalizationTests(fixtures.PreparationFixture):
         self.assertEqual(len(response['data']['receipts']),2)
         self.assertEqual(response['warnings'],[{
             'code':'collection_registration_acknowledgement_unavailable',
-            'message':'Review results were recorded. Collection acknowledgement is unresolved; do not resubmit.'}])
+            'message':'Review results were recorded. Collection acknowledgement is unresolved; do not resubmit.'}, {
+            'code':'backup_request_deferred',
+            'message':'Backup request was deferred; task result is unchanged'}])
         self.assertNotIn(b'SENTINEL',completed.stdout+completed.stderr)
         state=self.collect('inspect')
         self.assertEqual([row['state'] for row in state['states']],['registered','registered'])

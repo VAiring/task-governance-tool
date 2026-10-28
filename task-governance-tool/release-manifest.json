@@ -203,7 +203,7 @@
     "scripts/task_governance_tool/task_registration.py": "sha256:6a931451cc9d6ab304e84dbc3c481a13c0c5ea3e77f2da6ae6632119cba8a574",
     "scripts/task_governance_tool/task_show_projection.py": "sha256:cbba5f63c7cee5bdc6c4a389d2d0dfc40727d2ec5c5a9b6e662cebd9dab2820e",
     "scripts/task_governance_tool/task_values.py": "sha256:acbbe3c5cc1032e027d595649fa471f47a3ec75a3ad79df8f8c4c57461e73ca1",
-    "scripts/task_governance_tool/tasks.py": "sha256:ec3855bec0a5ce9117bf2d1e6a09c9f567cd1c578368554dd079243a489a77f8",
+    "scripts/task_governance_tool/tasks.py": "sha256:641fc2e34bf54509e5c4ee9da4722a5c7efcdcd03ca3a4ea45ee116ebd54d2e4",
     "scripts/task_governance_tool/usage_adapter.py": "sha256:2f8ca9357e59efe02dc6ba8479bc658a00d870dcc9b7f01847956741b2367f86",
     "scripts/task_governance_tool/usage_attribution.py": "sha256:bfadc28ea986b5c551a480f41204c206101a92f37469eeeed04e56f6fd8e3dbe",
     "scripts/task_governance_tool/usage_attribution_repository.py": "sha256:ed2c5fd8e5c80f3ce767184748bac070623e764f04751f24d64664bab7ee57d5",

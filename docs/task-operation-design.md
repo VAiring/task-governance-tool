@@ -157,6 +157,8 @@ connection later enters a new transaction. The savepoint contains no write and
 is not an external token, persisted proof or cache. The projection also rejects
 a mismatched connection, Task, or project. A standalone detail reads and
 validates its own row. Marker-2
+compares only stored Task fields; current/next count and latest-event display
+columns are excluded from the internal Task projection. It
 discards the pre-physical row, rereads and validates on the new connection, and
 only then reuses that fresh row for projection. The Contract repository skips
 its redundant latest-revision aggregate only when the relationship was already

@@ -38,6 +38,9 @@ RELOCATION_CONFIRMED_AT = "2026-07-29T01:02:04Z"
 
 
 def _setup_current(root: Path):
+    # In-process entrypoints receive admitted physical paths, just like the CLI.
+    # macOS /var aliases and Windows short TEMP names must not enter that seam.
+    root = root.resolve()
     install = make_physical_install(root)
     result = setup_service.run_setup(
         repo=str(install.project_root),

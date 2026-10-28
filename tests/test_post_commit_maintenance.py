@@ -87,7 +87,7 @@ def add_contract_task(target, title: str = "Maintenance source") -> dict:
 
 
 class MaintenanceAdmissionTests(unittest.TestCase):
-    """Eligibility is local; a whole-project artifact still needs a global audit."""
+    """Eligibility is local; Evidence/backup audit globally, Viewer reads display."""
 
     def make_fixture(self, *, enabled=True, current=False):
         from tests.test_viewer_maintenance import make_target, add_viewer_event
@@ -144,31 +144,47 @@ class MaintenanceAdmissionTests(unittest.TestCase):
                         observed_at="2026-07-27T00:01:00Z").code, expected)
                 self.assertEqual(target.db_path.read_bytes(), before)
 
-    def test_due_or_forced_publication_still_rejects_global_history_fault(self):
+    def test_evidence_and_backup_reject_hidden_history_fault_without_blocking_viewer(self):
         from task_governance_tool import backup, evidence_publication as evidence
 
         target = self.make_fixture(current=True)
         index = target.resolved_evidence_index.read_bytes()
-        viewer = target.resolved_viewer_path.read_bytes()
         backups = sorted(path.name for path in target.resolved_backups_path.iterdir())
         self.corrupt_note(target)
         self.assertEqual(evidence.publish_setup_evidence_projection(target).code, "failed")
-        self.assertEqual(viewer_maintenance_service.publish_setup_viewer(target).code, "failed")
+        # Hidden note bodies are outside the incremental Viewer display contract.
+        self.assertEqual(viewer_maintenance_service.publish_setup_viewer(target).code, "succeeded")
         self.assertEqual(backup.run_routine_backup(target,
             observed_at="2026-07-27T00:31:00Z").code, "failed")
         self.assertEqual(target.resolved_evidence_index.read_bytes(), index)
-        self.assertEqual(target.resolved_viewer_path.read_bytes(), viewer)
+        self.assertTrue(target.resolved_viewer_path.is_file())
         self.assertEqual(sorted(path.name for path in target.resolved_backups_path.iterdir()), backups)
         self.assert_global_rejects(target)
 
-    def test_evidence_and_viewer_recheck_current_or_disabled_state_under_lock(self):
+    def test_viewer_rebuild_rejects_selected_display_fault_and_preserves_html(self):
+        from task_governance_tool.storage import StorageError
+        from task_governance_tool.tasks import read_internal_task
+        target = self.make_fixture(current=True)
+        original = target.resolved_viewer_path.read_bytes()
+        with closing(sqlite3.connect(target.db_path)) as connection:
+            connection.execute("PRAGMA ignore_check_constraints=ON")
+            changed = connection.execute("UPDATE tasks SET title=CAST(X'7469746c65' AS BLOB)")
+            self.assertEqual(changed.rowcount, 1)
+            task_id = connection.execute("SELECT task_id FROM tasks").fetchone()[0]
+            connection.commit()
+        self.assertEqual(viewer_maintenance_service.publish_setup_viewer(target).code, "failed")
+        self.assertEqual(target.resolved_viewer_path.read_bytes(), original)
+        with closing(connect_initialized_readonly(target)) as connection:
+            with self.assertRaises(StorageError):
+                read_internal_task(connection, target.project.project_id, task_id)
+
+    def test_evidence_rechecks_current_or_disabled_state_under_lock(self):
         from dataclasses import replace
         from task_governance_tool import evidence_publication as evidence
         from task_governance_tool import viewer
 
         for service, state_table, generation_field in (
             (evidence, "evidence_projection_state", "published_generation"),
-            (viewer_maintenance_service, "viewer_maintenance_state", "rendered_generation"),
         ):
             for disabled in (False, True):
                 with self.subTest(service=service.__name__, disabled=disabled):
@@ -205,13 +221,71 @@ class MaintenanceAdmissionTests(unittest.TestCase):
                     audit.assert_not_called()
                     self.assert_global_rejects(target)
 
-    def test_full_capture_audits_the_same_snapshot_before_building(self):
-        from task_governance_tool import viewer
+    def test_viewer_rechecks_current_or_disabled_state_under_lock(self):
+        from dataclasses import replace
+        from task_governance_tool import viewer_metadata_repository as metadata
+        for disabled in (False, True):
+            with self.subTest(disabled=disabled):
+                target = self.make_fixture()
+                service = viewer_maintenance_service
+                real_lock = service.zero_wait_artifact_lock
+                original_basis = metadata._basis
+
+                @contextmanager
+                def change_before_capture(path):
+                    if not disabled:
+                        # Another completed publication makes both real artifacts
+                        # and all current cache/HTML metadata current before lock.
+                        self.assertEqual(service.publish_setup_viewer(target).code, "succeeded")
+                    with real_lock(path):
+                        self.corrupt_note(target)
+                        if disabled:
+                            with mock.patch.object(metadata, "_basis", side_effect=lambda *args:
+                                    replace(original_basis(*args), enabled_at=None)):
+                                yield
+                        else:
+                            yield
+
+                # Avoid recursively intercepting the simulated earlier publisher.
+                entered = False
+                @contextmanager
+                def lock_once(path):
+                    nonlocal entered
+                    if entered:
+                        with real_lock(path):
+                            yield
+                        return
+                    entered = True
+                    with change_before_capture(path):
+                        yield
+
+                with mock.patch.object(service, "zero_wait_artifact_lock", side_effect=lock_once), \
+                     mock.patch.object(service, "read_task_projections", wraps=service.read_task_projections) as read:
+                    result = service.run_routine_viewer_refresh(target)
+                self.assertEqual(result.code, "not_opted_in" if disabled else "current")
+                self.assertEqual(read.call_count, 0 if disabled else 1)
+                self.assert_global_rejects(target)
+
+    def test_viewer_capture_validates_selected_rows_in_one_read_snapshot(self):
         target = self.make_fixture()
-        self.assert_capture_snapshot(viewer_maintenance_service, "build_viewer_snapshot",
-            viewer, "validate_snapshot_database_for_viewer",
-            lambda: viewer_maintenance_service._capture(target, force=False,
-                generated_at="2026-07-27T00:00:00Z"))
+        service = viewer_maintenance_service
+        readers = []
+        original = service.read_task_projections
+        def read(connection, *args, **kwargs):
+            self.assertTrue(connection.in_transaction)
+            self.assertEqual(connection.execute("PRAGMA query_only").fetchone()[0], 1)
+            readers.append(connection)
+            return original(connection, *args, **kwargs)
+        from task_governance_tool import storage
+        with mock.patch.object(service, "read_task_projections", side_effect=read), \
+             mock.patch.object(storage, "validate_current_schema21_admitted_rows",
+                 side_effect=AssertionError("Viewer must not audit unrelated histories")):
+            _basis, cache, snapshot = service._capture(target, None, "2026-07-27T00:00:00Z")
+        self.assertIsNotNone(cache)
+        self.assertEqual(snapshot.task_count, 1)
+        self.assertEqual(len(readers), 1)
+        with self.assertRaises(sqlite3.ProgrammingError):
+            readers[0].execute("SELECT 1")
 
     def test_evidence_full_capture_audits_the_same_snapshot_before_building(self):
         from task_governance_tool import storage, evidence_publication as evidence
@@ -422,6 +496,10 @@ class PostCommitMaintenanceTests(unittest.TestCase):
                     {
                         "code": "viewer_refresh_failed",
                         "message": VIEWER_WARNING_MESSAGES["failed"],
+                    },
+                    {
+                        "code": "backup_request_deferred",
+                        "message": "Backup request was deferred; task result is unchanged",
                     }
                 ],
             )
@@ -522,7 +600,7 @@ class PostCommitMaintenanceTests(unittest.TestCase):
                 ) as artifact_lock,
                 mock.patch.object(
                     viewer_maintenance_service,
-                    "build_viewer_snapshot",
+                    "read_task_projections",
                 ) as snapshot,
                 mock.patch.object(
                     viewer_maintenance_service,

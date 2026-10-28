@@ -156,7 +156,7 @@ class AsyncBackupProcessTests(unittest.TestCase):
     def setUp(self):
         temporary = tempfile.TemporaryDirectory()
         self.addCleanup(temporary.cleanup)
-        self.directory = Path(temporary.name)
+        self.directory = Path(temporary.name).resolve()
         self.install, self.target, _ = _setup_current(self.directory)
         self.entered = self.directory / "worker-entered"
         self.release = self.directory / "release-worker"

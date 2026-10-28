@@ -741,6 +741,9 @@ class M14IntegratedAcceptanceTests(unittest.TestCase):
                             "Evidence projection refresh was deferred; "
                             "task result is unchanged"
                         ),
+                    }, {
+                        "code": "backup_request_deferred",
+                        "message": "Backup request was deferred; task result is unchanged",
                     }],
                 )
                 self.assertEqual(index_path.read_bytes(), last_good_index)

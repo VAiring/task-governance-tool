@@ -336,6 +336,25 @@ class AsyncBackupServiceTests(unittest.TestCase):
 
 
 class AsyncBackupServiceOwnershipTests(unittest.TestCase):
+    @contextmanager
+    def serialized_opportunity_io(self, opportunity):
+        # These tests judge owner takeover, not zero-wait file-lock contention.
+        # Keep the fast test observer from racing publication; contention has
+        # its own explicit no-mutation coverage in test_async_backup_opportunity.
+        access = threading.Lock()
+        original_observe = opportunity.observe_opportunity
+
+        def observe(*args, **kwargs):
+            with access:
+                return original_observe(*args, **kwargs)
+
+        def request(target):
+            with access:
+                return opportunity.request_backup(target)
+
+        with mock.patch.object(opportunity, "observe_opportunity", side_effect=observe):
+            yield request
+
     def admission_gate(self):
         from task_governance_tool import async_backup_repository as repository
         allowed = threading.local()
@@ -480,7 +499,8 @@ with service_lease(target) as nonce:
             try:
                 self.assertEqual(ready.get(timeout=5), b"owned\r\n" if sys.platform == "win32" else b"owned\n")
                 self.assertEqual(opportunity.request_backup(target).code, "requested")
-                with mock.patch.object(opportunity, "activate_service", side_effect=track), \
+                with self.serialized_opportunity_io(opportunity) as request, \
+                        mock.patch.object(opportunity, "activate_service", side_effect=track), \
                         mock.patch("sqlite3.connect", side_effect=connect):
                     observer.start()
                     self.assertFalse(active.wait(.06))
@@ -493,7 +513,7 @@ with service_lease(target) as nonce:
                     # permission for the newly owning service to replay it.
                     time.sleep(.04)
                     launch.assert_not_called()
-                    self.assertEqual(opportunity.request_backup(target).code, "requested")
+                    self.assertEqual(request(target).code, "requested")
                     deadline = time.monotonic() + 3
                     while not launch.called and time.monotonic() < deadline:
                         time.sleep(.005)
@@ -534,13 +554,14 @@ with service_lease(target) as nonce:
                     time.sleep(.005)
                 self.assertTrue(predicate(), "real service lease transition timed out")
 
-            with mock.patch.object(opportunity, "activate_service", side_effect=track), \
+            with self.serialized_opportunity_io(opportunity) as request, \
+                    mock.patch.object(opportunity, "activate_service", side_effect=track), \
                     mock.patch("sqlite3.connect", side_effect=connect):
                 try:
                     first.start()
                     wait_for(lambda: len(activated) == 1)
                     second.start()
-                    self.assertEqual(opportunity.request_backup(target).code, "requested")
+                    self.assertEqual(request(target).code, "requested")
                     wait_for(lambda: first_launch.call_count == 1)
                     second_launch.assert_not_called()
                     self.assertTrue(first.close())
@@ -550,7 +571,7 @@ with service_lease(target) as nonce:
                     # a baseline rather than authorizing recovery on takeover.
                     time.sleep(.04)
                     second_launch.assert_not_called()
-                    self.assertEqual(opportunity.request_backup(target).code, "requested")
+                    self.assertEqual(request(target).code, "requested")
                     wait_for(lambda: second_launch.call_count == 1)
                     self.assertEqual(admissions, [target, target])
                 finally:

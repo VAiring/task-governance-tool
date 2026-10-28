@@ -73,7 +73,7 @@ class AsyncBackupRuntimeTests(unittest.TestCase):
     def setUp(self):
         temporary = tempfile.TemporaryDirectory()
         self.addCleanup(temporary.cleanup)
-        self.directory = Path(temporary.name)
+        self.directory = Path(temporary.name).resolve()
         self.install, self.target, _ = _setup_current(self.directory)
 
     def record(self, *, nonce="a" * 32, status="starting"):

@@ -468,6 +468,46 @@ const makeScenario = (options = {}) => {
   assert.deepEqual(scenario.state, unknown);
 }
 
+// Coordinates retain subpixel values; capture timestamps still require integers.
+for (const [x, y] of [[0, 0], [1.25, 2.75], [2147483647, 2147483647]]) {
+  const capture = makeScenario({ state: null, scrollX: x, scrollY: y });
+  capture.api.prepareReloadState();
+  capture.api.setDefaultFilterValues();
+  capture.api.saveAutoReloadState();
+  assert.equal(capture.calls.replaces.length, 1);
+  const saved = JSON.parse(JSON.stringify(capture.state));
+  assert.equal(saved.scroll_x, x);
+  assert.equal(saved.scroll_y, y);
+  const restored = makeScenario({ state: saved, autoRefreshEnabled: false });
+  restored.runStartup();
+  assert.deepEqual(restored.calls.replaces, [[null, ""]]);
+  assert.deepEqual(restored.calls.scrolls, [[x, y]]);
+  assert.equal(restored.history.length, 7);
+  assert.equal(restored.context.window.location.href, "file:///viewer.html");
+}
+
+for (const axis of ["x", "y"]) {
+  for (const value of [-0.25, NaN, Infinity, -Infinity, 2147483647.5]) {
+    const capture = makeScenario({
+      state: null,
+      [axis === "x" ? "scrollX" : "scrollY"]: value
+    });
+    capture.api.prepareReloadState();
+    capture.api.setDefaultFilterValues();
+    capture.api.reconcileAutoRefresh();
+    assert.equal(capture.calls.replaces.length, 0);
+    assert.equal(capture.state, null);
+    assert.equal(capture.calls.reloads, 1);
+    const restored = makeScenario({
+      state: ownedState({ [`scroll_${axis}`]: value }),
+      autoRefreshEnabled: false
+    });
+    restored.runStartup();
+    assert.deepEqual(restored.calls.replaces, [[null, ""]]);
+    assert.deepEqual(restored.calls.scrolls, [[0, 0]]);
+  }
+}
+
 const JSON_EXPANDED_TEXT = "\u0000".repeat(1024);
 const oversizedEnvelope = ownedState({
   lane: JSON_EXPANDED_TEXT,
@@ -497,6 +537,7 @@ const invalidCases = [
   ["future capture", { state: ownedState({ captured_at_ms: 100001 }) }],
   ["stale capture", { state: ownedState({ captured_at_ms: -200001 }) }],
   ["capture type", { state: ownedState({ captured_at_ms: "100000" }) }],
+  ["capture fractional", { state: ownedState({ captured_at_ms: 99999.5 }) }],
   [
     "capture unsafe integer",
     { state: ownedState({ captured_at_ms: Number.MAX_SAFE_INTEGER + 1 }) }

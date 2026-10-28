@@ -533,7 +533,8 @@ storage skips capture without preventing reload.
 Capture time is a nonnegative safe integer; status, kind, and priority are
 empty or current enums; lane and tag are each at most 1,024 UTF-8 bytes;
 selected Task ID is null or nonempty and at most 128 code points; coordinates are
-finite integers from 0 through 2,147,483,647; and focus is empty or exactly
+finite numbers, including fractions, from 0 through 2,147,483,647; and focus is
+empty or exactly
 `search-filter`, `status-filter`, `kind-filter`, `lane-filter`,
 `priority-filter`, `tag-filter`, `terminal-filter`, or `reset-filters`.
 

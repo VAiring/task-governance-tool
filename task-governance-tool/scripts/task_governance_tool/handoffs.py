@@ -357,29 +357,11 @@ def record_handoff(
                 ) from exc
             raise
 
-    task_row = read_internal_task(
-        connection,
-        project.project_id,
-        normalized_task_id,
-    )
-    if task_row is None:
+    from task_governance_tool.tasks import read_task_write_state
+    selected = read_task_write_state(connection, project.project_id, normalized_task_id, caller)
+    if selected is None:
         raise HandoffError("not_found", "source task was not found")
-    ownership = task_ownership.capture_basis(connection, project_id=project.project_id, task_id=normalized_task_id)
-    if ownership is not None:
-        task_ownership.require_mutation(connection, ownership, caller)
-
-    source_contract_revision = _stored_nonnegative_int(
-        task_row,
-        "current_contract_revision",
-    )
-    from task_governance_tool.contracts import read_current_contract
-
-    read_current_contract(
-        connection,
-        project_id=project.project_id,
-        task_id=normalized_task_id,
-        current_revision=source_contract_revision,
-    )
+    source_contract_revision = selected.contract["revision"]
     idempotency_key = _idempotency_key(
         project_id=project.project_id,
         source_task_id=normalized_task_id,
@@ -553,9 +535,8 @@ def withdraw_handoff(
     if existing is None:
         raise HandoffError("not_found", "handoff was not found")
     _validate_stored_handoff(existing)
-    ownership = task_ownership.capture_basis(connection, project_id=project.project_id, task_id=existing["source_task_id"])
-    if ownership is not None:
-        task_ownership.require_mutation(connection, ownership, caller)
+    task_ownership.capture_mutation_basis(connection, project_id=project.project_id,
+        task_id=existing["source_task_id"], caller=caller)
     if (
         str(existing["state"]) != "pending_handoff"
         or _stored_nonnegative_int(existing, "delivery_attempts") != 0

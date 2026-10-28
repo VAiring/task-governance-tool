@@ -277,6 +277,20 @@ general audit target. Recovery's verification-local result is evaluated only
 after relationship validation, so every relationship fault remains structural
 and set-fatal.
 
+Checkpoint and Handoff record compose selected Task validation, its already
+validated ownership basis and current Contract row within the existing writer.
+Only this write-free interval lends those facts: the private typed borrow is
+bound to the connection, exact project/Task set, write count and a nested
+savepoint. Scope exit revokes it; a transaction replacement, other Task or write
+rejects reuse. Contract content validation remains, while the checked pointer
+needs no new latest-revision query. Ownership policy still checks the actual
+caller in the fresh writer; public mutation helpers retain their fresh reread.
+Handoff withdrawal directly captures and authorizes one fresh ownership basis
+in its writer instead of rereading the same basis. List/current use the same
+selected validation results for their immediate caller-relative ownership
+projection, including bounded tag batches, without persisting caller flags.
+No preflight snapshot or borrow grants writer authority or survives a mutation.
+
 The shared single-Task fetch helper opens one short read transaction only when
 its caller has not already established a transaction. The Task row and its
 relationship rows therefore come from one SQLite snapshot even when another

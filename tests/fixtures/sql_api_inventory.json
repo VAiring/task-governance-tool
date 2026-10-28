@@ -408,7 +408,7 @@
     },
     "stored_task_validation.py": {
       "attributes": {
-        "execute": 4,
+        "execute": 9,
         "fetchall": 1,
         "fetchmany": 1,
         "fetchone": 1

@@ -117,7 +117,7 @@ def read_basis(connection: sqlite3.Connection, *, project_id: str, task_id: str)
 
 
 def project_tasks(connection: sqlite3.Connection, tasks: list[dict],
-                  caller: CallerIdentity) -> list[dict]:
+                  caller: CallerIdentity, *, _validated=None) -> list[dict]:
     """Attach per-invocation display only; never pass it to persisted Evidence."""
     from task_governance_tool.storage import current_schema_version
     if not tasks or current_schema_version(connection) < 24:
@@ -125,7 +125,9 @@ def project_tasks(connection: sqlite3.Connection, tasks: list[dict],
     project_id = tasks[0]["project_id"]
     if any(task["project_id"] != project_id for task in tasks):
         raise _unreadable()
-    bases = read_bases(connection, project_id=project_id, task_ids=[task["task_id"] for task in tasks])
+    bases = (read_bases(connection, project_id=project_id, task_ids=[task["task_id"] for task in tasks])
+        if _validated is None else _validated.ownership_many(
+            connection, project_id, [task["task_id"] for task in tasks]))
     return [{**task, "ownership": bases[task["task_id"]].projection(caller)} for task in tasks]
 
 
@@ -150,6 +152,11 @@ def _locked(connection: sqlite3.Connection, observed: OwnershipBasis) -> Ownersh
 def require_mutation(connection: sqlite3.Connection, observed: OwnershipBasis,
                      caller: CallerIdentity) -> OwnershipBasis:
     current = _locked(connection, observed)
+    return _require_mutation_basis(current, caller)
+
+
+def _require_mutation_basis(current: OwnershipBasis, caller: CallerIdentity) -> OwnershipBasis:
+    """Policy only; callers must obtain this basis in their current writer."""
     if current.state in ("owned", "completion_only"):
         actor = caller.require()
         if actor not in (current.owner_session_id, current.completion_session_id):
@@ -158,6 +165,14 @@ def require_mutation(connection: sqlite3.Connection, observed: OwnershipBasis,
         caller.require()
         raise validation_error("task_not_owned", "resume the task before changing it")
     return current
+
+
+def capture_mutation_basis(connection, *, project_id, task_id, caller):
+    """Read and authorize once inside an existing writer, with no borrow input."""
+    current = capture_basis(connection, project_id=project_id, task_id=task_id)
+    if current is not None and not connection.in_transaction:
+        raise RuntimeError("ownership mutation requires an existing writer")
+    return None if current is None else _require_mutation_basis(current, caller)
 
 
 def require_completion_owner(basis: OwnershipBasis, caller: CallerIdentity) -> None:

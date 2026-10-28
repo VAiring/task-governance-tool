@@ -10,8 +10,13 @@ from __future__ import annotations
 import json
 import re
 import sqlite3
+import secrets
+from contextlib import contextmanager
 from dataclasses import dataclass, field
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from task_governance_tool.task_ownership import OwnershipBasis
 
 from task_governance_tool.completion import (
     CompletionEvidenceError,
@@ -72,6 +77,7 @@ class StoredTaskValidationResult:
         repr=False,
         compare=False,
     )
+    ownership_bases: dict[str, OwnershipBasis] = field(default_factory=dict, repr=False, compare=False)
 
 
 _AUTHORITY_PRIVACY_REUSE_FIELDS = frozenset(
@@ -641,6 +647,7 @@ def validate_stored_task_rows(
     expected_project_id: str,
     verification_rejection_is_local: bool = False,
     _prevalidated_privacy_successes: frozenset[tuple[str, str]] | None = None,
+    _retain_ownership: bool = False,
 ) -> StoredTaskValidationResult:
     """Validate one loaded Task batch before projection or derived use.
 
@@ -688,15 +695,17 @@ def validate_stored_task_rows(
             )
         if rejection is not None and not verification_rejection_is_local:
             raise _stored_task_unreadable()
+        ownership_bases = {}
         if source_schema_version >= 24:
             from task_governance_tool.task_ownership import read_bases
             if connection is None:
                 raise _stored_task_unreadable()
-            read_bases(connection, project_id=expected_project_id, task_ids=[row["task_id"] for row in rows])
+            ownership_bases = read_bases(connection, project_id=expected_project_id, task_ids=[row["task_id"] for row in rows])
         return StoredTaskValidationResult(
             verification_rejection=rejection,
             verification_rejected_task_ids=frozenset(rejected_task_ids),
             current_contract_rows=current_contract_rows,
+            ownership_bases=ownership_bases if _retain_ownership else {},
         )
 
 
@@ -706,7 +715,8 @@ def validate_current_stored_task_rows(
     *,
     expected_project_id: str,
     source_schema_version: int | None = None,
-) -> None:
+    _retain_ownership: bool = False,
+) -> StoredTaskValidationResult:
     # A streaming caller may reuse its observed schema within this snapshot.
     version = (current_schema_version(connection) if source_schema_version is None
                else source_schema_version)
@@ -719,6 +729,7 @@ def validate_current_stored_task_rows(
             else SCHEMA_VERSION
         ),
         expected_project_id=expected_project_id,
+        _retain_ownership=_retain_ownership,
     )
     if version >= 18:
         try:
@@ -732,6 +743,81 @@ def validate_current_stored_task_rows(
             if exc.code == "database_busy":
                 raise
             raise _stored_task_unreadable() from exc
+    return validation
+
+
+@dataclass
+class _SelectedTaskFacts:
+    connection: sqlite3.Connection
+    validation: StoredTaskValidationResult
+    project_id: str
+    task_ids: frozenset[str]
+    token: str
+    changes: int
+    active: bool = True
+
+    def require_current(self, connection, project_id, task_id):
+        if (not self.active or connection is not self.connection
+                or project_id != self.project_id or task_id not in self.task_ids
+                or not connection.in_transaction or connection.total_changes != self.changes):
+            raise _stored_task_unreadable()
+        try:
+            connection.execute(f"RELEASE {self.token}")
+            connection.execute(f"SAVEPOINT {self.token}")
+        except sqlite3.Error as exc:
+            raise stored_task_sqlite_error(exc) from exc
+
+    def ownership(self, connection, project_id, task_id):
+        self.require_current(connection, project_id, task_id)
+        return self.validation.ownership_bases.get(task_id)
+
+    def ownership_many(self, connection, project_id, task_ids):
+        if not task_ids:
+            return {}
+        self.require_current(connection, project_id, task_ids[0])
+        if not set(task_ids) <= self.task_ids:
+            raise _stored_task_unreadable()
+        return {task_id: self.validation.ownership_bases[task_id] for task_id in task_ids}
+
+    def contract(self, connection, project_id, task):
+        task_id = task["task_id"]
+        self.require_current(connection, project_id, task_id)
+        from task_governance_tool.contracts import read_current_contract, _validate_stored_contract
+        revision = task["current_contract_revision"]
+        if revision == 0:
+            return read_current_contract(connection, project_id=project_id, task_id=task_id,
+                current_revision=revision, pointer_validated_in_snapshot=True)
+        row = self.validation.current_contract_rows.get(task_id)
+        if row is None:
+            raise _stored_task_unreadable()
+        return _validate_stored_contract(row, project_id=project_id, task_id=task_id, revision=revision)
+
+
+@contextmanager
+def _validated_task_facts(connection, rows, *, project_id, source_schema_version=None):
+    """Lend selected facts only inside this unchanged transaction/read interval."""
+    owns_read = not connection.in_transaction
+    token = "taskgov_selected_" + secrets.token_hex(8)
+    facts = None
+    if owns_read:
+        connection.execute("BEGIN")
+    connection.execute(f"SAVEPOINT {token}")
+    try:
+        validation = validate_current_stored_task_rows(connection, rows,
+            expected_project_id=project_id, source_schema_version=source_schema_version,
+            _retain_ownership=True)
+        facts = _SelectedTaskFacts(connection, validation, project_id,
+            frozenset(row["task_id"] for row in rows), token, connection.total_changes)
+        yield facts
+    finally:
+        if facts is not None:
+            facts.active = False
+        try:
+            connection.execute(f"RELEASE {token}")
+        except sqlite3.Error:
+            pass
+        if owns_read and connection.in_transaction:
+            connection.rollback()
 
 
 def fetch_validated_current_task_row(

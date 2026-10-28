@@ -401,6 +401,60 @@ class PublicHandoffAdmissionTests(unittest.TestCase):
         shown = self.invoke("handoff", "show", handoff["handoff_id"])["data"]["handoff"]
         self.assertEqual(shown, handoff)
 
+    def test_selected_operations_read_ownership_once_and_replay_keeps_source(self):
+        from task_governance_tool import task_ownership
+        original = task_ownership.read_bases
+        statements = []
+        def observed(connection, **options):
+            connection.set_trace_callback(statements.append)
+            return original(connection, **options)
+        operations = [("task", "list"), ("task", "current"),
+            ("task", "checkpoint", self.task_id, "--summary", "Selected summary", "--next-action", "Continue"),
+            ("task", "checkpoint", self.task_id, "--summary", "Selected summary", "--next-action", "Continue"),
+            ("handoff", "record", self.task_id, "--summary", "Selected follow-up"),
+            ("handoff", "record", self.task_id, "--summary", "Selected follow-up")]
+        with mock.patch.object(task_ownership, "read_bases", side_effect=observed):
+            for args in operations:
+                statements.clear()
+                self.invoke(*args)
+                reads = [sql for sql in statements if "FROM tasks AS task JOIN task_ownership AS ownership" in sql]
+                self.assertEqual(len(reads), 1, args)
+                if args[1] == "checkpoint":
+                    self.assertFalse(any("MAX(revision) AS max_revision" in sql for sql in statements))
+        before = self.source_rows()
+        self.invoke("handoff", "record", self.task_id, "--summary", "Selected follow-up")
+        self.assertEqual(self.source_rows(), before)
+
+    def test_selected_facts_reject_other_task_connection_writes_and_transaction_replacement(self):
+        from task_governance_tool.stored_task_validation import _validated_task_facts
+        from task_governance_tool import storage
+        target = self.install.target
+        for fault in ("task", "connection", "write", "transaction", "closed"):
+            with self.subTest(fault=fault), closing(storage.connect(target.db_path)) as connection:
+                connection.execute("BEGIN")
+                row = connection.execute("SELECT * FROM tasks WHERE task_id=?", (self.task_id,)).fetchone()
+                with _validated_task_facts(connection, [row], project_id=self.task["project_id"]) as facts:
+                    self.assertIsNotNone(facts.ownership(connection, self.task["project_id"], self.task_id))
+                    if fault == "task":
+                        with self.assertRaises(storage.StorageError):
+                            facts.ownership(connection, self.task["project_id"], "tg_task_other")
+                    elif fault == "connection":
+                        with closing(storage.connect(target.db_path)) as other:
+                            with self.assertRaises(storage.StorageError):
+                                facts.ownership(other, self.task["project_id"], self.task_id)
+                    elif fault == "write":
+                        connection.execute("UPDATE tasks SET title='Changed selected Task' WHERE task_id=?", (self.task_id,))
+                        with self.assertRaises(storage.StorageError):
+                            facts.ownership(connection, self.task["project_id"], self.task_id)
+                    elif fault == "transaction":
+                        connection.rollback()
+                        connection.execute("BEGIN")
+                        with self.assertRaises(storage.StorageError):
+                            facts.ownership(connection, self.task["project_id"], self.task_id)
+                with self.assertRaises(storage.StorageError):
+                    facts.ownership(connection, self.task["project_id"], self.task_id)
+                connection.rollback()
+
 
 if __name__ == "__main__":
     unittest.main()

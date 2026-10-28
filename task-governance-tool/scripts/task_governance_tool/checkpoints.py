@@ -253,24 +253,12 @@ def record_checkpoint(
     )
 
     begin_task_write(connection, database_target, operation_local=True)
-    task = read_internal_task(
-        connection,
-        project.project_id,
-        normalized_task_id,
-    )
-    if task is None:
+    from task_governance_tool.tasks import read_task_write_state
+    selected = read_task_write_state(connection, project.project_id,
+        normalized_task_id, caller, reject_done=True)
+    if selected is None:
         raise TaskRepositoryError("not_found", "task was not found")
-    reject_done_task_write(task)
-    ownership = task_ownership.capture_basis(connection, project_id=project.project_id, task_id=normalized_task_id)
-    if ownership is not None:
-        task_ownership.require_mutation(connection, ownership, caller)
-
-    contract = read_current_contract(
-        connection,
-        project_id=project.project_id,
-        task_id=normalized_task_id,
-        current_revision=task["current_contract_revision"],
-    )
+    contract = selected.contract
     contract_revision = int(contract["revision"])
     latest = connection.execute(
         """

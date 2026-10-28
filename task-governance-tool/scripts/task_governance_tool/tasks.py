@@ -81,6 +81,7 @@ from task_governance_tool.stored_task_validation import (
     stored_task_sqlite_error,
     validate_current_stored_task_rows,
     validate_stored_task_rows,
+    _validated_task_facts,
 )
 from task_governance_tool.task_values import (
     KINDS,
@@ -960,19 +961,19 @@ def list_tasks(
     source_schema_version = current_schema_version(connection) if requested_tag is not None else None
     try:
         for stored_rows in batches:
-            validate_current_stored_task_rows(
-                connection, stored_rows, expected_project_id=project.project_id,
-                source_schema_version=source_schema_version,
-            )
-            # Validate every candidate, including those after the output is full.
-            # Only matching output rows need a public projection or retention.
-            for row in stored_rows:
-                if len(rows) < row_limit and (requested_tag is None or task_matches_tag(row["tags"], requested_tag)):
-                    rows.append(row_to_task(row))
+            with _validated_task_facts(connection, stored_rows, project_id=project.project_id,
+                    source_schema_version=source_schema_version) as facts:
+                selected_rows = []
+                # Validate every candidate, including those after the output is full.
+                # Only matching output rows need a public projection or retention.
+                for row in stored_rows:
+                    if len(rows) + len(selected_rows) < row_limit and (requested_tag is None or task_matches_tag(row["tags"], requested_tag)):
+                        selected_rows.append(row_to_task(row))
+                rows.extend(task_ownership.project_tasks(connection, selected_rows, caller, _validated=facts))
     finally:
         if requested_tag is not None:
             batches.close()
-    tasks = task_ownership.project_tasks(connection, rows, caller)
+    tasks = rows
     return TaskListResult(tasks=tasks, count=len(tasks), limit=row_limit)
 
 
@@ -1571,42 +1572,38 @@ def list_current_tasks(
         """,
         parameters,
     )
-    validate_current_stored_task_rows(
-        connection,
-        rows,
-        expected_project_id=project.project_id,
-    )
-    tasks = []
-    from task_governance_tool.checkpoints import read_latest_checkpoint
+    with _validated_task_facts(connection, rows, project_id=project.project_id) as facts:
+        tasks = []
+        from task_governance_tool.checkpoints import read_latest_checkpoint
 
-    for row in rows:
-        task = row_to_task(row)
-        if row["latest_event_id"] is None:
-            task["latest_event"] = {}
-        else:
-            task["latest_event"] = row_to_event({
-                "task_event_id": row["latest_event_id"],
-                "task_id": task["task_id"],
-                "project_id": task["project_id"],
-                "event_type": row["latest_event_type"],
-                "summary": row["latest_event_summary"],
-                "created_at": row["latest_event_created_at"],
-            })
-        task["latest_checkpoint"] = read_latest_checkpoint(
-            connection,
-            project_id=project.project_id,
-            task_id=task["task_id"],
+        for row in rows:
+            task = row_to_task(row)
+            if row["latest_event_id"] is None:
+                task["latest_event"] = {}
+            else:
+                task["latest_event"] = row_to_event({
+                    "task_event_id": row["latest_event_id"],
+                    "task_id": task["task_id"],
+                    "project_id": task["project_id"],
+                    "event_type": row["latest_event_type"],
+                    "summary": row["latest_event_summary"],
+                    "created_at": row["latest_event_created_at"],
+                })
+            task["latest_checkpoint"] = read_latest_checkpoint(
+                connection,
+                project_id=project.project_id,
+                task_id=task["task_id"],
+            )
+            task["suggested_next_action"] = current_suggested_next_action(task)
+            tasks.append(task)
+        return CurrentTaskResult(
+            tasks=task_ownership.project_tasks(connection, tasks, caller, _validated=facts),
+            count=len(tasks),
+            total_matching=(int(rows[0]["total_matching"]) if rows else 0),
+            limit=row_limit,
+            statuses=result_statuses,
+            validated_rows=tuple(rows),
         )
-        task["suggested_next_action"] = current_suggested_next_action(task)
-        tasks.append(task)
-    return CurrentTaskResult(
-        tasks=task_ownership.project_tasks(connection, tasks, caller),
-        count=len(tasks),
-        total_matching=(int(rows[0]["total_matching"]) if rows else 0),
-        limit=row_limit,
-        statuses=result_statuses,
-        validated_rows=tuple(rows),
-    )
 
 
 def read_task(connection: sqlite3.Connection, project_id: str, task_id: str,
@@ -1631,16 +1628,55 @@ def read_internal_task(connection: sqlite3.Connection, project_id: str, task_id:
     return row_to_internal_task(row)
 
 
+@dataclass(frozen=True)
+class SelectedTaskWriteState:
+    task: dict[str, Any]
+    contract: dict[str, Any]
+    ownership: task_ownership.OwnershipBasis | None
+
+
+def read_task_write_state(connection, project_id, task_id, caller, *, reject_done=False):
+    """Acquire selected facts and authorize in this writer before any writes."""
+    from task_governance_tool.contracts import read_current_contract
+    if not connection.in_transaction:
+        task = read_internal_task(connection, project_id, task_id)
+        if task is None:
+            return None
+        if reject_done:
+            reject_done_task_write(task)
+        owner = task_ownership.capture_basis(connection, project_id=project_id, task_id=task_id)
+        if owner is not None:
+            task_ownership.require_mutation(connection, owner, caller)
+        contract = read_current_contract(connection, project_id=project_id, task_id=task_id,
+            current_revision=task["current_contract_revision"])
+        return SelectedTaskWriteState(task, contract, owner)
+    row = fetch_stored_task_row(connection,
+        "SELECT * FROM tasks WHERE project_id = ? AND task_id = ?", (project_id, task_id))
+    if row is None:
+        return None
+    with _validated_task_facts(connection, [row], project_id=project_id) as facts:
+        task = row_to_internal_task(row)
+        if reject_done:
+            reject_done_task_write(task)
+        owner = facts.ownership(connection, project_id, task_id)
+        if owner is not None:
+            task_ownership._require_mutation_basis(owner, caller)
+        contract = facts.contract(connection, project_id, task)
+        return SelectedTaskWriteState(task, contract, owner)
+
+
 def read_mutation_basis(connection: sqlite3.Connection, project_id: str, task_id: str):
     """Capture Task content and its owner generation in the same short snapshot."""
     owns_read = not connection.in_transaction
     try:
         if owns_read:
             connection.execute("BEGIN")
-        task = read_internal_task(connection, project_id, task_id)
-        owner = (task_ownership.capture_basis(connection, project_id=project_id, task_id=task_id)
-                 if task is not None else None)
-        return task, owner
+        row = fetch_stored_task_row(connection,
+            "SELECT * FROM tasks WHERE project_id = ? AND task_id = ?", (project_id, task_id))
+        if row is None:
+            return None, None
+        with _validated_task_facts(connection, [row], project_id=project_id) as facts:
+            return row_to_internal_task(row), facts.ownership(connection, project_id, task_id)
     finally:
         if owns_read and connection.in_transaction:
             connection.rollback()

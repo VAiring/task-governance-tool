@@ -350,6 +350,15 @@ memory bound or a persistent cache. Capacity comparisons include acquisition of
 the raw basis and canonical construction, not just post-capture rendering.
 One encoder owns the exact canonical JSON and array orders. There is no clock
 input, so same-basis repair is byte-identical.
+Mapping and normalized-payload admission use that encoder's validation-only
+walk: identical JSON type, cycle, key and Unicode checks without allocating
+container encodings. Bundle/index builders encode the normalized payload once,
+hash those bytes, and embed the same bytes into their closed canonical envelope.
+The scalar digest and format are tool-derived; payload bytes are never accepted
+from a caller. Standalone assembly and digest calls retain full input validation.
+No object-identity cache survives a call or bypasses normalization after mutation.
+Public artifact values retain their existing payload/bytes/envelope/document
+fields, while publication still reduces them to compact documents immediately.
 `evidence_projection` owns native Bundle format selection and the shared index
 format/domain selector. The completion writer stores the version from the
 validated Bundle plan instead of selecting it again. Structural validators and

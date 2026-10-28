@@ -130,5 +130,69 @@ class CanonicalJsonPureTests(unittest.TestCase):
             )
 
 
+class ArtifactEncodingReuseTests(unittest.TestCase):
+    def test_one_materialization_preserves_versions_and_closed_envelopes(self):
+        from unittest import mock
+        from task_governance_tool import evidence_projection as codec
+        from tests.test_m223_bundle_assembly_pure import sample_payload, reference_json_bytes
+        from tests.test_m23s_schema22_projection import _payload
+        for version in (19, 20, 21, 22, 29, 30, 31, 32, 33, 34):
+            bundle = sample_payload() if version == 19 else _payload("not_required", source_version=22)
+            bundle["source_schema_version"] = version
+            if version >= 30:
+                bundle["bundle_version"] = 4
+                bundle["review_continuation_basis"] = None
+            index = {"source_schema_version":version, "project_id":"project-fixture",
+                "projection_generation":0, "bundle_count":0, "legacy_count":0, "entries":[]}
+            for basis, builder, digest_name in ((bundle, codec.build_bundle_artifact, "bundle_digest"),
+                                               (index, codec.build_index_artifact, "index_digest")):
+                with self.subTest(version=version, builder=builder.__name__), mock.patch.object(
+                    codec, "canonical_json_bytes", wraps=codec.canonical_json_bytes) as encoded:
+                    artifact = builder(basis)
+                    self.assertEqual(encoded.call_count, 1)
+                    self.assertEqual(artifact.payload_bytes, reference_json_bytes(artifact.payload))
+                    self.assertEqual(artifact.document, reference_json_bytes(artifact.envelope)+b"\n")
+                    self.assertIs(artifact.envelope["payload"], artifact.payload)
+                    digest = getattr(codec, digest_name.replace("_digest", "_payload_digest"))(basis)
+                    self.assertEqual(getattr(artifact, digest_name), digest)
+
+    def test_validation_walk_rejects_same_values_without_container_encoding(self):
+        from task_governance_tool import evidence_projection as codec
+        cyclic = {}; cyclic["nested"] = cyclic
+        for invalid in (1.5, {1:"bad"}, {"x":"\ud800"}, cyclic, {"x":(1,)}):
+            for validate_only in (False, True):
+                with self.subTest(value=type(invalid).__name__, validate_only=validate_only):
+                    with self.assertRaises(codec.EvidenceProjectionError):
+                        codec._canonical_json_bytes(invalid, _validate_only=validate_only)
+
+    def test_large_payload_mutation_is_reencoded_and_document_limits_are_exact(self):
+        from unittest import mock
+        from task_governance_tool import evidence_projection as codec
+        from tests.test_m223_bundle_assembly_pure import sample_payload
+        for size in (8, 100000):
+            payload = sample_payload()
+            payload["task"]["description"] = "é/\n" * size
+            first = codec.build_bundle_artifact(payload)
+            payload["task"]["description"] += "changed"
+            second = codec.build_bundle_artifact(payload)
+            self.assertNotEqual(first.document, second.document)
+            self.assertNotEqual(first.bundle_digest, second.bundle_digest)
+            with mock.patch.object(codec, "BUNDLE_MAX_BYTES", len(second.document)):
+                self.assertEqual(codec.build_bundle_artifact(payload).document, second.document)
+            with mock.patch.object(codec, "BUNDLE_MAX_BYTES", len(second.document)-1):
+                with self.assertRaises(codec.EvidenceProjectionError):
+                    codec.build_bundle_artifact(payload)
+        index = {"source_schema_version":34,"project_id":"é/\n","projection_generation":0,
+                 "bundle_count":0,"legacy_count":0,"entries":[]}
+        first = codec.build_index_artifact(index)
+        with mock.patch.object(codec, "INDEX_MAX_BYTES", len(first.document)):
+            self.assertEqual(codec.build_index_artifact(index).document, first.document)
+        with mock.patch.object(codec, "INDEX_MAX_BYTES", len(first.document)-1):
+            with self.assertRaises(codec.EvidenceProjectionError):
+                codec.build_index_artifact(index)
+        index["project_id"] += "changed"
+        self.assertNotEqual(codec.build_index_artifact(index).document, first.document)
+
+
 if __name__ == "__main__":
     unittest.main()

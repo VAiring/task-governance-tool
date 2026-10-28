@@ -406,6 +406,11 @@ def _escape_string(value: str) -> bytes:
 
 def canonical_json_bytes(value: Any) -> bytes:
     """Return exact integer-only canonical JSON bytes without a trailing LF."""
+    return _canonical_json_bytes(value)
+
+
+def _canonical_json_bytes(value: Any, *, _validate_only: bool = False) -> bytes:
+    """Use one JSON walker for validation and materialization within a call."""
     from task_governance_tool.debug_log import aggregate
     with aggregate(canonical_json_bytes, unit='bytes') as measurement:
 
@@ -419,6 +424,9 @@ def canonical_json_bytes(value: Any) -> bytes:
             if type(item) is int:
                 return str(item).encode("ascii")
             if type(item) is str:
+                if _validate_only:
+                    _utf8(item)
+                    return b""
                 return _escape_string(item)
             if type(item) is list:
                 identity = id(item)
@@ -426,6 +434,10 @@ def canonical_json_bytes(value: Any) -> bytes:
                     raise _inconsistent()
                 active.add(identity)
                 try:
+                    if _validate_only:
+                        for value in item:
+                            encode(value)
+                        return b""
                     return (
                         b"["
                         + b",".join(encode(value) for value in item)
@@ -441,6 +453,11 @@ def canonical_json_bytes(value: Any) -> bytes:
                 try:
                     if any(type(key) is not str for key in item):
                         raise _inconsistent()
+                    if _validate_only:
+                        for key in sorted(item):
+                            _utf8(key)
+                            encode(item[key])
+                        return b""
                     parts = (
                         _escape_string(key) + b":" + encode(item[key])
                         for key in sorted(item)
@@ -504,7 +521,7 @@ def _mapping(
     copied = dict(value)
     if frozenset(copied) != keys:
         raise _inconsistent()
-    canonical_json_bytes(copied)
+    _canonical_json_bytes(copied, _validate_only=True)
     return copied
 
 
@@ -764,7 +781,7 @@ def _validate_bundle_payload(
             raise _inconsistent()
         provenance = item["review_provenance"]
         if provenance is not None:
-            canonical_json_bytes(provenance)
+            _canonical_json_bytes(provenance, _validate_only=True)
             if not isinstance(provenance, dict):
                 raise _inconsistent()
             if bundle_version == 4:
@@ -886,7 +903,7 @@ def _validate_bundle_payload(
         else:
             raise _inconsistent()
         payload["verification_basis"] = verification_basis
-    canonical_json_bytes(payload)
+    _canonical_json_bytes(payload, _validate_only=True)
     if bundle_version in (3,4) and payload["review_continuation_basis"] is not None:
         from .review_continuation_evidence import validate_graph
         graph=payload["review_continuation_basis"]
@@ -959,7 +976,11 @@ def build_bundle_artifact(
         "format_version": format_version,
         "payload": payload,
     }
-    document = canonical_json_document_bytes(envelope)
+    document = (
+        b'{"bundle_digest":"' + digest.encode("ascii")
+        + b'","format_version":' + str(format_version).encode("ascii")
+        + b',"payload":' + payload_bytes + b'}\n'
+    )
     if len(document) > BUNDLE_MAX_BYTES:
         raise _too_large()
     return BundleArtifact(
@@ -1553,7 +1574,7 @@ def assemble_index_payload(
     ):
         raise _inconsistent()
     payload["entries"] = entries
-    canonical_json_bytes(payload)
+    _canonical_json_bytes(payload, _validate_only=True)
     return payload
 
 
@@ -1578,7 +1599,11 @@ def build_index_artifact(
         "index_digest": digest,
         "payload": payload,
     }
-    document = canonical_json_document_bytes(envelope)
+    document = (
+        b'{"format_version":' + str(format_version).encode("ascii")
+        + b',"index_digest":"' + digest.encode("ascii")
+        + b'","payload":' + payload_bytes + b'}\n'
+    )
     if len(document) > INDEX_MAX_BYTES:
         raise EvidenceProjectionError(
             "evidence_projection_too_large",

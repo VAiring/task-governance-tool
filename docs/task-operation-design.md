@@ -513,6 +513,13 @@ summaries and all other checkpoint fields use the ordinary privacy path.
 the record transaction and its single fresh-transaction retry. Shared context,
 state resolution, retained-reader cleanup, and post-commit coordination remain
 in `cli.py`; `handoffs.py` retains the outbox domain operations below.
+Only these four public leaves select operation-local admission. Record's
+initial and retry connections and withdraw's immediate writer repeat structural
+admission under the lock. Record keeps selected Task/Contract validation and
+exact-replay checks; withdraw keeps selected ownership and delivery predicates.
+List/show keep their existing query-only snapshot and full stored-row validator,
+without traversing source Task histories. Default global consumers remain
+global; no validation result crosses these connections or transactions.
 
 Schema v7 owns `handoff_records` with source Task/current Contract revision,
 canonical idempotency key, optional explicit occurrence ID, bounded

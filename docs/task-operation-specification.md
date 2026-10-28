@@ -676,6 +676,17 @@ identifier does not imply a filesystem path.
 
 ### Handoff Outbox
 
+The four public outbox operations use
+[operation-local admission](database-specification.md#operation-local-admission).
+Record, including exact replay, validates its selected source Task and current
+Contract and requires fresh mutation authority. List/show validate every
+returned Handoff's full stored privacy/state matrix; displaying a retained
+source reference does not consume its Task review or Contract history.
+Withdraw validates the selected Handoff and its source's current ownership
+and mutation authority before checking delivery/claim restrictions. These
+operations do not certify unrelated Task histories. Structural, project,
+binding and physical/FK checks remain required, including fresh writer checks.
+
 For every discovery, classify once:
 
 1. Keep it in the Task when resolution is within accepted scope and current

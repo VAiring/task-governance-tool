@@ -92,6 +92,12 @@ Task's review, ownership-transition, retained-note or Runner history merely
 to enter an operation. The same boundary applies to completion and repeats
 under the existing writer lock. The public command surface is unchanged.
 
+Handoff record/list/show/withdraw use this structural admission as well.
+Their consumed-data and writer checks are defined by the
+[Handoff outbox](task-operation-specification.md#handoff-outbox); entering an
+outbox operation does not audit unrelated review, Runner, ownership-transition
+or note history. Physical/FK, schema/history and project/binding checks remain.
+
 Within one current schema admission, the complete owned-definition validation
 is shared by the Evidence ledger and Bundle schema checks. Their individual
 column, foreign-key and relationship checks remain required. Standalone schema

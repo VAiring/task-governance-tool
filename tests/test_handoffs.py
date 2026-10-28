@@ -391,7 +391,7 @@ class HandoffCommandTests(unittest.TestCase):
             )
 
             def open_validated(target, *, operation_local):
-                self.assertFalse(operation_local)
+                self.assertTrue(operation_local)
                 connection = connect_initialized_readonly(
                     target, operation_local=operation_local
                 )
@@ -974,10 +974,11 @@ class HandoffCommandTests(unittest.TestCase):
 
             attempts = 0
 
-            def fail_first_commit(target):
+            def fail_first_commit(target, *, operation_local):
                 nonlocal attempts
                 attempts += 1
-                connection = connect_initialized(target)
+                self.assertTrue(operation_local)
+                connection = connect_initialized(target, operation_local=operation_local)
                 if attempts == 1:
                     return CommitFailingConnection(connection)
                 return connection
@@ -992,8 +993,9 @@ class HandoffCommandTests(unittest.TestCase):
             self.assertTrue(recovered.data["local_record"]["created"])
             self.assertEqual(connect_mock.call_count, 2)
 
-            def always_fail_commit(target):
-                return CommitFailingConnection(connect_initialized(target))
+            def always_fail_commit(target, *, operation_local):
+                self.assertTrue(operation_local)
+                return CommitFailingConnection(connect_initialized(target, operation_local=operation_local))
 
             with mock.patch(
                 "task_governance_tool.cli_handoff.connect_initialized",

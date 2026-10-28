@@ -109,7 +109,7 @@ retain all generations and are acquired in existing validation chunks; linked
 predecessors and results must belong to the same Task/basis. Global callers omit
 the argument and retain whole-store review/orphan validation.
 
-Ordinary Task and review-service adapters mechanically select internal `operation_local=True`
+Ordinary Task, review-service and the four Handoff adapters select internal `operation_local=True`
 under [operation-local admission](database-specification.md#operation-local-admission).
 The resolver and each initialized connection/writer still validate the exact
 schema and project binding, but do not invoke whole-project Runner, ownership
@@ -122,6 +122,11 @@ adapters opt into local admission through every read and locked write; explicit
 Runner Plan actions retain global admission throughout, including combined
 verification or Contract changes. This internal boolean is not an authority token or public option;
 neither local admission nor its snapshots may supply a global validation proof.
+Handoff selection covers resolver admission, retained read connections and
+both record/withdraw writer entries. The existing source Task/Contract and
+ownership checks remain in the outbox repository; record retries acquire a
+fresh admitted connection and writer. Other Handoff consumers do not inherit
+this adapter choice.
 Reopen propagates that internal operation-local boundary to legacy-cycle
 insertion. The shared persistence helper retains cycle/Receipt validation,
 exact stored-row comparison and the Evidence source-generation update; its

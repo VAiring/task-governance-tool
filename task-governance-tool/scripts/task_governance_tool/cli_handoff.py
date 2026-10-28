@@ -84,8 +84,8 @@ def _handle_handoff_record(
     result = None
     for attempt in range(2):
         try:
-            with closing(connect_initialized(target)) as connection:
-                begin_initialized_write(connection, target)
+            with closing(connect_initialized(target, operation_local=True)) as connection:
+                begin_initialized_write(connection, target, operation_local=True)
                 result = record_handoff(
                     connection,
                     target.project,
@@ -258,8 +258,8 @@ def handle_handoff_command(context: CommandContext) -> CommandResult:
             )
     else:
         try:
-            with closing(connect_initialized(target)) as connection:
-                begin_initialized_write(connection, target)
+            with closing(connect_initialized(target, operation_local=True)) as connection:
+                begin_initialized_write(connection, target, operation_local=True)
                 result = withdraw_handoff(
                     connection,
                     target.project,

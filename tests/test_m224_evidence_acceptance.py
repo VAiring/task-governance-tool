@@ -15,6 +15,7 @@ from tests.m14_test_support import (
     make_physical_install,
     tree_snapshot,
 )
+from task_governance_tool.storage import SCHEMA_VERSION
 from tests.evidence_test_support import (
     refresh_inner_digests,
     v1_native_payload,
@@ -806,7 +807,7 @@ class M224ReportVersionTests(unittest.TestCase):
                             self.assertEqual(tree_snapshot(evidence), sealed)
 
     def test_current_and_retained_ordinary_formats_keep_report_and_bytes(self):
-        for source in range(19, 34):
+        for source in range(19, SCHEMA_VERSION + 1):
             bundle_format = 1 if source == 19 else 4 if source >= 30 else 2
             index_format = 1 if source == 19 else 3 if source >= 30 else 2
             with self.subTest(source=source), tempfile.TemporaryDirectory() as temporary:
@@ -833,7 +834,7 @@ class M224ReportVersionTests(unittest.TestCase):
                         "sha256:98d79472e8909bbe01285f52e59b94215023d27783ad08d3491284fad397a992")
                 # A new index may point to these exact old Bundle bytes.
                 index["format_version"] = 3
-                index["payload"]["source_schema_version"] = 33
+                index["payload"]["source_schema_version"] = SCHEMA_VERSION
                 for entry in index["payload"]["entries"]:
                     entry["bundle_format_version"] = (
                         bundle_format if entry["bundle_state"] == "native" else None
@@ -850,7 +851,7 @@ class M224ReportVersionTests(unittest.TestCase):
         cases = (
             # index source/format, Bundle source/format
             (19, 2, 19, 1), (29, 3, 29, 2), (30, 2, 29, 2), (31, 2, 29, 2),
-            (34, 3, 31, 4), (30, 3, 31, 4),
+            (SCHEMA_VERSION + 1, 3, 31, 4), (30, 3, 31, 4),
             (31, 3, 20, 1), (31, 3, 19, 2), (31, 3, 30, 2), (31, 3, 31, 2),
             (31, 3, 28, 3), (31, 3, 29, 3),  # v3 needs a real continuation.
             (31, 3, 29, 4), (31, 3, 32, 4),

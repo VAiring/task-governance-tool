@@ -27,6 +27,7 @@ from task_governance_tool.state_paths import (
     EVIDENCE_DIRECTORY_NAME,
     EVIDENCE_INDEX_FILENAME,
     EVIDENCE_INDEX_MAX_BYTES,
+    EVIDENCE_BASELINE_MAX_BYTES,
     EVIDENCE_LOCK_FILENAME,
     EVIDENCE_MAX_BUNDLE_FILES,
     StatePathError,
@@ -1985,7 +1986,7 @@ def _inspect_evidence_directory(
             continue
         file_paths.append(entry)
 
-    if len(file_paths) > EVIDENCE_MAX_BUNDLE_FILES + 4:
+    if len(file_paths) > EVIDENCE_MAX_BUNDLE_FILES + 6:
         raise _ResolverFailure("project_state_unreadable")
 
     bundle_count = 0
@@ -2007,7 +2008,7 @@ def _inspect_evidence_directory(
             bundle_count += 1
             if bundle_count > EVIDENCE_MAX_BUNDLE_FILES:
                 raise _ResolverFailure("project_state_unreadable")
-        elif kind in {"index_temporary", "bundle_temporary"}:
+        elif kind in {"index_temporary", "bundle_temporary", "baseline_temporary"}:
             if kind in temporary_kinds:
                 raise _ResolverFailure("project_state_unreadable")
             temporary_kinds.add(kind)
@@ -2019,12 +2020,14 @@ def _inspect_evidence_directory(
         maximum = (
             1
             if kind == "lock"
+            else EVIDENCE_BASELINE_MAX_BYTES
+            if kind in {"baseline", "baseline_temporary"}
             else EVIDENCE_INDEX_MAX_BYTES
             if kind in {"index", "index_temporary"}
             else EVIDENCE_BUNDLE_MAX_BYTES
         )
         if stamp.size > maximum and not (
-            allow_oversized_repair and kind in {"index", "bundle"}
+            allow_oversized_repair and kind in {"index", "bundle", "baseline"}
         ):
             raise _ResolverFailure("project_state_unreadable")
         recognized.append(

@@ -40,6 +40,7 @@ ORDINARY_FORMATS = {
     31: (4, 3),
     32: (4, 3),
     33: (4, 3),
+    34: (4, 3),
 }
 BUNDLE_DOMAINS = {
     1: b"taskgov-completion-evidence-bundle-v1\0",
@@ -186,13 +187,13 @@ class EvidenceFormatSelectionTests(unittest.TestCase):
         accepted = {(source, versions[0]) for source, versions in ORDINARY_FORMATS.items()} | {(29, 3)}
         invalid_payloads = [
             (source, version, _bundle_payload(source, version))
-            for source in range(18, 35) for version in BUNDLE_DOMAINS
+            for source in range(18, 36) for version in BUNDLE_DOMAINS
             if (source, version) not in accepted
         ]
         # Version three requires a real graph; version four requires the root,
         # including on ordinary completion. Old formats reject the added root.
         invalid_payloads.append((29, 3, _bundle_payload(29, 3)))
-        for source, version in ((20, 2), (29, 2), (30, 4), (31, 4), (32, 4), (33, 4)):
+        for source, version in ((20, 2), (29, 2), (30, 4), (31, 4), (32, 4), (33, 4), (34, 4)):
             payload = _bundle_payload(source, version)
             if version == 2:
                 payload["review_continuation_basis"] = None
@@ -221,7 +222,7 @@ class EvidenceFormatSelectionTests(unittest.TestCase):
     def test_invalid_index_sources_fields_versions_and_domains_remain_rejected(self):
         bundle = _bundle_envelope(_bundle_payload(31, 4), 4)
         valid = _index_payload(31, bundle, index_version=3)
-        for source in (18, 34, -1, None, True, False, "31", 31.0):
+        for source in (18, 35, -1, None, True, False, "31", 31.0):
             with self.subTest(invalid_source=source):
                 payload = {**valid, "source_schema_version": source}
                 for build in (projection.build_index_artifact, projection.index_payload_digest):

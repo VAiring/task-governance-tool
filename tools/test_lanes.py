@@ -262,6 +262,7 @@ LANE_MODULES: dict[str, tuple[str, ...]] = {
         "test_debug_log_metrics",
         "test_debug_log_processing",
         "test_doctor",
+        "test_evidence_incremental_publication",
         "test_evidence_projection_capture",
         "test_legacy_cleanup_pending",
         "test_live_read_consistency",

@@ -83,6 +83,11 @@ def _write_sized_file(path: Path, size: int) -> None:
 
 
 class EvidenceProjectionPublicationTests(unittest.TestCase):
+    def setUp(self):
+        # These primitive/order tests use deliberately non-JSON stub artifacts.
+        # Real baseline bytes and recovery are exercised by the incremental suite.
+        self.enterContext(mock.patch.object(projection, "_save_baseline"))
+
     def test_routine_orders_bundle_index_and_success_record(self):
         rendered = construction._RenderedProjection(
             project_id=PROJECT_ID,
@@ -629,6 +634,7 @@ class EvidenceProjectionPublicationTests(unittest.TestCase):
             )
             bundle_path.write_bytes(bundle.document)
             target.resolved_evidence_index.write_bytes(index.document)
+            (target.resolved_evidence_root / projection.BASELINE_FILENAME).write_bytes(b"baseline\n")
             rendered = construction._RenderedProjection(
                 project_id=PROJECT_ID,
                 source_generation=7,
@@ -650,6 +656,7 @@ class EvidenceProjectionPublicationTests(unittest.TestCase):
                     "_capture",
                     return_value=capture,
                 ),
+                mock.patch.object(projection, "admitted_baseline"),
             ):
                 self.assertEqual(
                     projection.inspect_canonical_evidence_status(target),
@@ -739,10 +746,11 @@ class EvidenceProjectionPublicationTests(unittest.TestCase):
             ),
             mock.patch.object(
                 projection,
-                "capture_evidence_projection",
+                "capture_current_evidence_projection",
                 return_value=rendered,
-            ),
-            mock.patch.object(projection, "validate_current_database") as validate,
+            ) as validate,
+            mock.patch.object(projection, "database_object", return_value=(1, 1)),
+            mock.patch.object(projection, "publication_identity"),
         ):
             captured = projection._capture(target, include_basis=True)
 

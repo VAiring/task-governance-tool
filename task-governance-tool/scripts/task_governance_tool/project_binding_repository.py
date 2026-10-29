@@ -53,6 +53,7 @@ CLEANUP_TEMP_ENTRY_PATTERNS = (
     re.compile(r"^viewer/\.task-viewer-[a-z0-9_]{8}\.tmp$"),
     re.compile(r"^viewer/\.task-projection-[a-z0-9_]{8}\.tmp$"),
     re.compile(r"^evidence/\.taskgov-evidence-index-[a-z0-9_]{8}\.tmp$"),
+    re.compile(r"^evidence/\.taskgov-evidence-baseline-[a-z0-9_]{8}\.tmp$"),
     re.compile(
         r"^evidence/bundles/\.taskgov-evidence-bundle-[a-z0-9_]{8}\.tmp$"
     ),
@@ -71,6 +72,7 @@ CLEANUP_FIXED_ENTRIES = {
     "viewer/task-projection.json",
     "viewer/taskgov-viewer.lock",
     "evidence/index.json",
+    "evidence/publication-baseline.json",
     "evidence/taskgov-evidence.lock",
 }
 

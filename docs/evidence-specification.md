@@ -314,10 +314,11 @@ does not permit a partial graph or change its canonical bytes or rejection rules
 
 ## Canonical Evidence Bundle And Index Formats
 
-The only generated paths are
+The published Evidence paths are
 `.taskgov/current/evidence/index.json` and
 `.taskgov/current/evidence/bundles/<completion-evidence-bundle-id>.json` beneath
-the governed project. There is no public command, custom path,
+the governed project. The fixed publication baseline described below is
+separate disposable control metadata. There is no public command, custom path,
 import, endpoint, watcher, background worker, or Viewer Evidence UI.
 
 Canonical JSON accepts only null, Boolean, string, integer, array, and object;
@@ -417,11 +418,15 @@ selects the new measurement shape. Native graph admission remains with the
 Runner owner, and standalone file consistency never establishes current
 execution or completion authority.
 
-Publication captures one coherent DB generation, validates all selected rows,
-and preserves complete source admission. Routine eligibility reads only
-structurally admitted maintenance/generation metadata; disabled or current
-state causes no Task-history audit. Eligibility is repeated under the artifact
-lock before full capture, and is not an artifact-validity proof. Publication
+Publication captures one coherent DB generation. Routine publication uses
+structural project/schema/binding admission, the complete thin cycle/Bundle
+identity-and-digest inventory, and semantic validation of only unpublished
+Bundles and their necessary references. It performs no global Task, review,
+ownership or Runner-history audit and reconstructs no published Bundle body.
+Selected validation retains structure, provenance, digest and size checks;
+published membership comes from the exact acknowledged index, never a row
+offset inferred from a count. Fresh effect guards recheck project, binding,
+physical DB instance, enabled policy and captured generation. Publication
 writes and flushes immutable Bundle files first, and atomically replaces the
 index last. The index is the filesystem commit point. Consumers ignore
 unreferenced files and reject wrong identity/version/project/digest. Taskgov
@@ -429,6 +434,29 @@ also compares index generation with canonical SQLite; a standalone consumer
 can prove only file self-consistency and declared generation. The index covers
 every cycle, has at most 100,000 entries and 67,108,864 UTF-8 bytes, and is
 never truncated. A Bundle is capped at 16,777,216 bytes.
+
+The fixed local `publication-baseline.json` retains the acknowledged index and
+its project/binding, DB file identity, schema and baseline format. This is
+disposable publication control, not an integrity certificate, qualifying
+Evidence or backup authority. Ordinary DB updates do not invalidate it; DB
+replacement, restore, relocation, schema/format change, missing or invalid
+baseline requires the existing explicit Setup repair. No routine fallback
+audits all history. First initialization and explicit repair establish the
+baseline only after complete source validation and successful publication.
+Existing installations without it use that same repair boundary; no CLI or
+normal LLM step is added. Unknown and unsafe files retain existing rejection.
+
+Under the Evidence lock, Bundle files precede index replacement, the conditional
+SQLite outcome follows, and the baseline is saved last. An index ahead of the
+SQLite acknowledgement is not adopted: its unacknowledged Bundle IDs are
+revalidated and publication resumes. If only baseline saving was interrupted,
+the exact index acknowledged by SQLite can restore it. Baselines ahead of
+SQLite, inconsistent membership, foreign identities or unsafe files fail closed.
+The existing two-capture limit, immutable bytes, last-good index and separation
+between Task success and maintenance outcome remain. Routine success does not
+assert that previously published bodies or unrelated database history were
+reaudited. Explicit Setup/physical inspection and independent Reader validation
+retain their full applicable checks.
 
 <a id="evidence-interpretation-and-retired-analyzer-boundary"></a>
 

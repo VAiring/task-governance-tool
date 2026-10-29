@@ -60,6 +60,13 @@
       },
       "kind": "observed_connection"
     },
+    "evidence_incremental_repository.py": {
+      "attributes": {
+        "execute": 3,
+        "fetchone": 2
+      },
+      "kind": "observed_connection"
+    },
     "evidence_projection_metadata_repository.py": {
       "attributes": {
         "execute": 7,

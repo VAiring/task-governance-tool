@@ -19,6 +19,7 @@ from tests.verification_receipt_test_support import (
 from task_governance_tool import evidence_projection as codec
 from task_governance_tool import evidence_publication as publication
 from task_governance_tool import evidence_validation_repository as repository
+from task_governance_tool import evidence_incremental_repository as incremental
 from task_governance_tool import storage
 from task_governance_tool import verification_runner_repository as runner_repository
 from task_governance_tool.backup_metadata_repository import configure_project_maintenance
@@ -165,10 +166,11 @@ class EvidenceProjectionCaptureTests(unittest.TestCase):
              mock.patch.object(codec, "build_projection_bundle_artifact", side_effect=built), \
              mock.patch.object(publication, "_temporary_file", side_effect=write), \
              mock.patch.object(publication, "_atomic_replace_temporary", side_effect=replace):
-            result = publication.run_routine_evidence_projection(target)
+            result = publication.publish_setup_evidence_projection(target)
         self.assertEqual(result.code, "succeeded")
-        self.assertEqual(len(physical_calls), 4)
-        self.assertEqual(physical_calls[-1], publication._INDEX_TEMP_PREFIX)
+        self.assertEqual(len(physical_calls), 5)
+        self.assertEqual(physical_calls[-2], publication._INDEX_TEMP_PREFIX)
+        self.assertEqual(physical_calls[-1], publication.BASELINE_TEMP_PREFIX)
         self.assertEqual(len(guarded), 1)
         self.assert_closed(connections)
         self.assertEqual(list(target.resolved_evidence_root.rglob("*.tmp")), [])
@@ -219,7 +221,7 @@ class EvidenceProjectionCaptureTests(unittest.TestCase):
                 self.assertEqual(publication.publish_setup_evidence_projection(target).code, "succeeded")
                 last_good = target.resolved_evidence_index.read_bytes()
                 _complete_fixture_task(target.project.canonical_repo, target.db_path, 3, large=False)
-                capture = publication.capture_current_evidence_projection
+                capture = incremental.capture_incremental_evidence_projection
                 replace_index = publication._replace_index
                 retained, counts = [], []
                 attempts = []
@@ -237,15 +239,15 @@ class EvidenceProjectionCaptureTests(unittest.TestCase):
                     attempts.append(kwargs["captured_generation"])
                     if repeat or len(attempts) == 1:
                         # A real source commit after the initial capture reader
-                        # closes. The fresh global guard must reject its index.
+                        # closes. The fresh control guard must reject its index.
                         _complete_fixture_task(target.project.canonical_repo,
                             target.db_path, 3 + len(attempts), large=False)
                     return replace_index(*args, **kwargs)
 
-                with mock.patch.object(publication, "capture_current_evidence_projection", side_effect=captured), \
+                with mock.patch.object(incremental, "capture_incremental_evidence_projection", side_effect=captured), \
                      mock.patch.object(publication, "_replace_index", side_effect=replace):
                     result = publication.run_routine_evidence_projection(target)
-                self.assertEqual(counts, [4, 5])
+                self.assertEqual(counts, [1, 2])
                 self.assertEqual(len(attempts), 2)
                 self.assertEqual(result.code, "failed" if repeat else "succeeded")
                 self.assertEqual(result.publications, 0 if repeat else 1)

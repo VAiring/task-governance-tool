@@ -182,14 +182,18 @@ baseline. Fresh effect admission remains mandatory
 regardless of the hints.
 
 Maintenance opens metadata-only eligibility snapshots with local admission.
-Evidence and Viewer captures read enabled/generation state first, then perform
-full current admission in the same snapshot only when a complete artifact
-basis is needed. Evidence's closed admission/render composition retains the
+Evidence and Viewer captures read enabled/generation state first. Routine
+Evidence capture uses structural admission, thin cycle/Bundle inventory and
+the unpublished Bundle closure; Viewer retains its selected-Task capture.
+Explicit full Evidence capture performs full current admission in the same
+snapshot. Its closed admission/render composition retains the
 validated Runner relationships for its immediate Ledger and Bundle consumers;
 [capture composition](evidence-design.md#provenance-evidence-ledger-and-bundle-structure)
 owns that call-local lifetime. Ordinary admission still returns only its version.
-Their publication guards and metadata writers remain globally
-admitted. The retained synchronous backup helper opts into local admission for
+Their publication guards and metadata writers freshly check structural,
+binding, physical-identity, opt-in and generation state. Evidence's writer
+also compares the previously acknowledged generation/digest before its bounded
+projection-row update. The retained synchronous backup helper opts into local admission for
 its initial policy and generation inventory read and failed/deferred
 outcome-only writes; its repository default, locked reconciliation, copy
 validation and publication remain global. No eligibility snapshot or

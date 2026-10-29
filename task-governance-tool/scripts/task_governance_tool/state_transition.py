@@ -29,6 +29,7 @@ from task_governance_tool.state_paths import (
     EVIDENCE_DIRECTORY_NAME,
     EVIDENCE_INDEX_FILENAME,
     EVIDENCE_INDEX_MAX_BYTES,
+    EVIDENCE_BASELINE_MAX_BYTES,
     StatePathError,
     ValidatedDirectory,
     ValidatedFile,
@@ -382,12 +383,14 @@ def _valid_stage_file_name(relative_name: str) -> tuple[str, bool]:
     if relative_name.startswith(evidence_prefix):
         evidence_name = relative_name.removeprefix(evidence_prefix)
         kind = evidence_relative_file_kind(evidence_name)
-        if kind in {"index", "lock", "bundle"}:
+        if kind in {"index", "lock", "bundle", "baseline"}:
             return "", False
         if kind == "index_temporary":
             return "evidence_index", False
         if kind == "bundle_temporary":
             return "evidence_bundle", False
+        if kind == "baseline_temporary":
+            return "evidence_baseline", False
     raise _failure()
 
 
@@ -501,6 +504,8 @@ def _inspect_stage_tree(
             allowed_size = min(max_file_bytes, 1)
         elif evidence_kind in {"index", "index_temporary"}:
             allowed_size = EVIDENCE_INDEX_MAX_BYTES
+        elif evidence_kind in {"baseline", "baseline_temporary"}:
+            allowed_size = EVIDENCE_BASELINE_MAX_BYTES
         elif evidence_kind in {"bundle", "bundle_temporary"}:
             allowed_size = EVIDENCE_BUNDLE_MAX_BYTES
         elif relative_name == "viewer/task-projection.json" or temporary_class == "viewer_cache":

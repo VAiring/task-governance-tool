@@ -56,6 +56,11 @@ from task_governance_tool.storage import (
     validate_utc_timestamp,
 )
 from task_governance_tool.no_replace import rename_no_replace
+from task_governance_tool.evidence_publication_baseline import (
+    BASELINE_FILENAME, BASELINE_MAX_BYTES, BASELINE_TEMP_PREFIX,
+    PublicationIdentity, admitted_baseline, baseline_document, database_object,
+    publication_identity,
+)
 
 
 MAX_PUBLICATIONS_PER_ATTEMPT = 2
@@ -75,6 +80,8 @@ class _ProjectionCapture:
     maintenance: ProjectMaintenanceState
     state: EvidenceProjectionState
     rendered: _RenderedProjection | None
+    identity: PublicationIdentity | None = None
+    acknowledged_index: _IndexDocument | None = None
 
 
 class _EvidenceSourceChanged(RuntimeError):
@@ -90,8 +97,19 @@ def _capture(
     *,
     include_basis: bool,
     only_when_due: bool = False,
+    incremental: bool = False,
 ) -> _ProjectionCapture:
     project_id = target.project.project_id
+    physical = database_object(target)
+    saved = current = None
+    if incremental:
+        _, root, index, _, _ = _fixed_output_paths(target)
+        saved, _ = _observe_replace_destination(target, root / BASELINE_FILENAME,
+            root=root, maximum=BASELINE_MAX_BYTES, allow_unbounded=False)
+        current, _ = _observe_replace_destination(target, index,
+            root=root, maximum=INDEX_MAX_BYTES, allow_unbounded=False)
+        if saved is None or current is None:
+            raise _inconsistent()
     with closing(connect_initialized_readonly(target, operation_local=True)) as connection:
         maintenance = read_project_maintenance(connection, project_id)
         state = read_evidence_projection_state(
@@ -100,13 +118,23 @@ def _capture(
         )
         if maintenance is None:
             raise _inconsistent()
+        identity = publication_identity(connection, target, physical)
+        acknowledged = (admitted_baseline(saved, identity, state, current)
+                        if incremental else None)
         rendered = None
         if include_basis and (
             not only_when_due or (maintenance.enabled and state.due)
         ):
-            # Eligibility is not a publication proof. Audit the complete
-            # source in this same snapshot before capturing any artifact.
-            rendered = capture_current_evidence_projection(connection, target)
+            if incremental:
+                from task_governance_tool.evidence_incremental_repository import (
+                    capture_incremental_evidence_projection,
+                )
+                rendered = capture_incremental_evidence_projection(connection,
+                    project_id=project_id, state=state, published=acknowledged.payload)
+            else:
+                rendered = capture_current_evidence_projection(connection, target)
+        if database_object(target) != physical:
+            raise _inconsistent()
         if rendered is not None and (
             rendered.project_id != project_id
             or rendered.source_generation != state.source_generation
@@ -116,6 +144,9 @@ def _capture(
             maintenance=maintenance,
             state=state,
             rendered=rendered,
+            identity=identity,
+            acknowledged_index=(_IndexDocument(acknowledged.document, acknowledged.index_digest)
+                                if acknowledged is not None else None),
         )
 
 
@@ -372,9 +403,15 @@ def _generation_guard(
     target: DatabaseTarget,
     *,
     captured_generation: int,
+    expected_identity: PublicationIdentity | None = None,
+    expected_state: EvidenceProjectionState | None = None,
+    full_audit: bool = False,
 ):
     project_id = target.project.project_id
-    with closing(connect_initialized_readonly(target)) as connection:
+    physical = database_object(target) if expected_identity is not None else None
+    with closing(connect_initialized_readonly(target, operation_local=not full_audit)) as connection:
+        if expected_identity is not None and publication_identity(connection, target, physical) != expected_identity:
+            raise _EvidenceSourceChanged()
         maintenance = read_project_maintenance(connection, project_id)
         state = read_evidence_projection_state(
             connection,
@@ -383,6 +420,10 @@ def _generation_guard(
         if maintenance is None or not maintenance.enabled:
             raise _EvidenceOptedOut()
         if state.source_generation != captured_generation:
+            raise _EvidenceSourceChanged()
+        if expected_state is not None and (
+            state.published_generation, state.index_digest
+        ) != (expected_state.published_generation, expected_state.index_digest):
             raise _EvidenceSourceChanged()
         yield
 
@@ -393,6 +434,8 @@ def _replace_index(
     *,
     captured_generation: int,
     replace_existing_unbounded: bool = False,
+    expected_identity: PublicationIdentity | None = None,
+    expected_state: EvidenceProjectionState | None = None,
 ) -> None:
     state_root, evidence_root, index_path, _, _ = _fixed_output_paths(target)
     _, destination_identity = _observe_replace_destination(
@@ -413,6 +456,9 @@ def _replace_index(
         with _generation_guard(
             target,
             captured_generation=captured_generation,
+            expected_identity=expected_identity,
+            expected_state=expected_state,
+            full_audit=replace_existing_unbounded,
         ):
             _atomic_replace_temporary(
                 temporary,
@@ -426,19 +472,49 @@ def _replace_index(
         _discard_temporary(temporary, root=state_root)
 
 
+def _save_baseline(
+    target: DatabaseTarget, identity: PublicationIdentity, index_document: bytes,
+    *, repair: bool = False,
+) -> None:
+    """Retain acknowledged membership under the Evidence lock, after DB outcome."""
+    root = target.resolved_evidence_root
+    destination = root / BASELINE_FILENAME
+    data = baseline_document(identity, index_document)
+    observed, previous = _observe_replace_destination(target, destination,
+        root=root, maximum=BASELINE_MAX_BYTES, allow_unbounded=repair)
+    if observed == data:
+        return
+    if database_object(target) != (identity.database_device, identity.database_inode):
+        raise _inconsistent()
+    temporary = _temporary_file(root, root=root, prefix=BASELINE_TEMP_PREFIX,
+                                data=data, maximum=BASELINE_MAX_BYTES)
+    try:
+        _atomic_replace_temporary(temporary, destination, root=root,
+            maximum=BASELINE_MAX_BYTES, expected_destination=previous)
+        temporary = None
+    finally:
+        _discard_temporary(temporary, root=root)
+
+
 def _record_failure(
     target: DatabaseTarget,
     *,
     generation: int,
     code: str,
     occurred_at: str,
+    expected_identity: PublicationIdentity | None,
+    expected_state: EvidenceProjectionState | None,
 ) -> None:
+    if expected_identity is None or expected_state is None:
+        return
     with suppress(Exception):
         record_evidence_projection_outcome(
             target,
             captured_generation=generation,
             outcome_code=code,
             recorded_at=occurred_at,
+            expected_identity=expected_identity,
+            expected_state=expected_state,
         )
 
 
@@ -457,24 +533,26 @@ def _publish_evidence_projection(
         )
         publications = 0
         captured_generation = 0
+        outcome_identity = None
+        outcome_state = None
         try:
             first = _capture(target, include_basis=False)
             captured_generation = first.state.source_generation
+            outcome_identity, outcome_state = first.identity, first.state
             if not first.maintenance.enabled:
                 measurement.mark('skipped')
                 return EvidenceProjectionRefreshResult("not_opted_in", 0)
-            if not force and not first.state.due:
-                measurement.mark('unchanged')
-                return EvidenceProjectionRefreshResult("current", 0)
-
             _prepare_output_directories(target)
             _, _, _, _, lock_path = _fixed_output_paths(target)
             with zero_wait_artifact_lock(lock_path):
-                capture = _capture(target, include_basis=True, only_when_due=not force)
+                capture = _capture(target, include_basis=True, only_when_due=not force,
+                                   incremental=not force)
                 for attempt in range(MAX_PUBLICATIONS_PER_ATTEMPT):
                     if attempt:
-                        capture = _capture(target, include_basis=True, only_when_due=not force)
+                        capture = _capture(target, include_basis=True, only_when_due=not force,
+                                           incremental=not force)
                     captured_generation = capture.state.source_generation
+                    outcome_identity, outcome_state = capture.identity, capture.state
                     if not capture.maintenance.enabled:
                         return EvidenceProjectionRefreshResult(
                             "not_opted_in",
@@ -484,6 +562,10 @@ def _publish_evidence_projection(
                         not force
                         and not capture.state.due
                     ):
+                        if capture.acknowledged_index is not None:
+                            _save_baseline(target, capture.identity, capture.acknowledged_index.document)
+                        if not publications:
+                            measurement.mark('unchanged')
                         return EvidenceProjectionRefreshResult(
                             "succeeded" if publications else "current", publications,
                         )
@@ -504,6 +586,8 @@ def _publish_evidence_projection(
                             rendered.index,
                             captured_generation=rendered.source_generation,
                             replace_existing_unbounded=force,
+                            expected_identity=capture.identity,
+                            expected_state=capture.state,
                         )
                     except _EvidenceSourceChanged:
                         measurement.mark('revalidated')
@@ -527,7 +611,11 @@ def _publish_evidence_projection(
                         outcome_code="succeeded",
                         recorded_at=utc_now(),
                         index_digest=rendered.index.index_digest,
+                        expected_identity=capture.identity,
+                        expected_state=capture.state,
                     )
+                    outcome_state = state
+                    _save_baseline(target, capture.identity, rendered.index.document, repair=force)
                     publications += 1
                     measurement.count(1)
                     measurement.mark('published')
@@ -550,6 +638,8 @@ def _publish_evidence_projection(
                 generation=captured_generation,
                 code=code,
                 occurred_at=observed_at,
+                expected_identity=outcome_identity,
+                expected_state=outcome_state,
             )
             return EvidenceProjectionRefreshResult(code, publications)
         except Exception:
@@ -559,6 +649,8 @@ def _publish_evidence_projection(
                 generation=captured_generation,
                 code="failed",
                 occurred_at=observed_at,
+                expected_identity=outcome_identity,
+                expected_state=outcome_state,
             )
             return EvidenceProjectionRefreshResult("failed", publications)
         return EvidenceProjectionRefreshResult("succeeded", publications)
@@ -624,6 +716,11 @@ def inspect_canonical_evidence_status(target: DatabaseTarget) -> str:
                 maximum=BUNDLE_MAX_BYTES,
             ):
                 return "repair_required"
+        baseline, _ = _observe_replace_destination(target, evidence_root / BASELINE_FILENAME,
+            root=evidence_root, maximum=BASELINE_MAX_BYTES, allow_unbounded=False)
+        if baseline is None:
+            return "repair_required"
+        admitted_baseline(baseline, capture.identity, capture.state, rendered.index.document)
     except (OSError, StatePathError, EvidenceProjectionError):
         return "repair_required"
     return (

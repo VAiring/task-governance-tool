@@ -1110,7 +1110,10 @@ may retry already-due Evidence. Read-only, failed, replayed, no-op,
 setup configuration, and maintenance-internal operations trigger nothing.
 Eligibility checks validate structural state and the consumed maintenance
 metadata without traversing all Task histories when disabled, current or not
-due. Evidence projection retains complete source validation. Viewer uses its
+due. Routine Evidence validates unpublished Bundle closure and its acknowledged
+membership under the [publication contract](evidence-specification.md#canonical-evidence-bundle-and-index-formats).
+Explicit Setup establishes or repairs that disposable baseline with complete
+source validation, including after DB replacement or format change. Viewer uses its
 selected-Task capture, checked display cache and fresh structural effect guards;
 asynchronous backup validates its consistent private copy as specified below.
 Metadata observed before a lock never authorizes publication.

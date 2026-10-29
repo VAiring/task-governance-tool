@@ -14,7 +14,7 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 
 from task_governance_tool.state_paths import (
-    EVIDENCE_BUNDLE_MAX_BYTES, EVIDENCE_INDEX_MAX_BYTES,
+    EVIDENCE_BUNDLE_MAX_BYTES, EVIDENCE_INDEX_MAX_BYTES, EVIDENCE_BASELINE_MAX_BYTES,
     EVIDENCE_MAX_BUNDLE_FILES, ValidatedDirectory, ValidatedFile,
     copy_physical_file_exclusive, create_exclusive_durable_file,
     create_physical_directory_exclusive, evidence_relative_file_kind,
@@ -151,7 +151,7 @@ def inspect_inventory(
                 entries.extend(sorted(entry.iterdir(), key=lambda p: p.name))
             else:
                 entries.append(entry)
-        if len(entries) > EVIDENCE_MAX_BUNDLE_FILES + 4:
+        if len(entries) > EVIDENCE_MAX_BUNDLE_FILES + 6:
             raise SeparationError()
         for entry in entries:
             kind = evidence_relative_file_kind(entry.relative_to(path).as_posix())
@@ -165,9 +165,10 @@ def inspect_inventory(
                 if kind in temporary_kinds:
                     raise SeparationError()
                 temporary_kinds.add(kind)
-            maximum = (1 if kind == "lock" else EVIDENCE_INDEX_MAX_BYTES
+            maximum = (1 if kind == "lock" else EVIDENCE_BASELINE_MAX_BYTES
+                       if kind.startswith("baseline") else EVIDENCE_INDEX_MAX_BYTES
                        if kind.startswith("index") else EVIDENCE_BUNDLE_MAX_BYTES)
-            if repair_evidence and kind in {"index", "bundle"}:
+            if repair_evidence and kind in {"index", "bundle", "baseline"}:
                 maximum = None
             file(entry, maximum)
 

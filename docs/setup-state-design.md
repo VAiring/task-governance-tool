@@ -36,6 +36,7 @@ usage lock       <fixed-root>/usage/taskgov-usage.lock
 managed backups  <fixed-root>/backups
 backup runtime   <fixed-root>/backups/runtime
 Evidence index   <fixed-root>/evidence/index.json
+Evidence baseline <fixed-root>/evidence/publication-baseline.json
 Evidence bundles <fixed-root>/evidence/bundles
 Evidence lock    <fixed-root>/evidence/taskgov-evidence.lock
 Viewer           <fixed-root>/viewer/task-viewer.html
@@ -1298,7 +1299,9 @@ normalization. Evidence and backup remain outside the Viewer replacement.
 
 Eligibility snapshots use structural admission and validated policy/generation
 metadata, without whole-project Task-history validation. Evidence repeats
-eligibility under its artifact lock and validates its complete source.
+eligibility under its artifact lock and validates only unpublished Bundle
+closure under the [Evidence publication protocol](evidence-design.md#provenance-evidence-ledger-and-bundle-structure).
+Explicit Setup repair and physical inspection retain complete-source validation.
 Viewer repeats eligibility under its lock, reads changed Task projections in one
 snapshot and rebuilds all display Tasks when cache reuse is invalid. Its
 [guards and result writers](viewer-design.md#incremental-cache-and-publication)

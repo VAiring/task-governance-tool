@@ -26,6 +26,26 @@ def _validate_selected_completion_bundle_history(
 ) -> None:
     """Validate and replay only Bundles owned by the returned history cycles."""
 
+    for _ in _selected_completion_bundle_documents(
+        connection, cycles=cycles, runner_generations=runner_generations,
+        container_schema_version=container_schema_version,
+    ):
+        pass
+
+
+def _selected_completion_bundle_documents(
+    connection: sqlite3.Connection,
+    *,
+    cycles: tuple[_storage.CompletionCycle, ...],
+    runner_generations: dict[tuple[str, str, int], dict[str, Any]],
+    container_schema_version: int,
+):
+    """Validate a bounded same-Task selection and yield only canonical documents."""
+
+    from task_governance_tool.evidence_projection import (
+        _BundleDocument, EvidenceProjectionError, build_projection_bundle_artifact,
+    )
+
     from task_governance_tool.completion_bundle_repository import (
         _validate_prepared_completion_bundle,
     )
@@ -104,7 +124,6 @@ def _validate_selected_completion_bundle_history(
     link_rows_by_id: dict[str, sqlite3.Row | dict[str, Any]] = {}
     reference_ids: set[str] = set()
     review_receipt_ids: set[str] = set()
-    review_finding_ids: set[str] = set()
     verification_receipt_ids: set[str] = set()
     snapshot_ids: set[str] = set()
     manifest_ids: set[str] = set()
@@ -135,9 +154,6 @@ def _validate_selected_completion_bundle_history(
                 raise evidence_ledger_inconsistent()
             link_rows_by_id[link.criterion_evidence_link_id] = link_row
         review_receipt_ids.update(cycle.gate_basis.qualifying_receipt_ids)
-        review_finding_ids.update(
-            finding.review_finding_id for finding in bundle.finding_snapshots
-        )
         if bundle.verification_receipt_id is not None:
             verification_receipt_ids.add(bundle.verification_receipt_id)
         snapshot_ids.add(bundle.authority_snapshot_id)
@@ -145,14 +161,19 @@ def _validate_selected_completion_bundle_history(
 
     project_id = native_cycles[0].project_id
     task_id = native_cycles[0].task_id
-    validate_selected_task_receipt_evidence(
-        connection,
-        project_id=project_id,
-        task_id=task_id,
-        review_receipt_ids=review_receipt_ids,
-        review_finding_ids=review_finding_ids,
-        verification_receipt_ids=verification_receipt_ids,
-    )
+    # A valid individual Bundle must not become invalid when another cycle is
+    # selected beside it. The receipt validator's bound is per source set, not
+    # the sum of every Bundle in a history/publication window.
+    for bundle_id, bundle in prepared_by_id.items():
+        validate_selected_task_receipt_evidence(
+            connection,
+            project_id=project_id,
+            task_id=task_id,
+            review_receipt_ids=set(cycles_by_bundle[bundle_id].gate_basis.qualifying_receipt_ids),
+            review_finding_ids={finding.review_finding_id for finding in bundle.finding_snapshots},
+            verification_receipt_ids=({bundle.verification_receipt_id}
+                                     if bundle.verification_receipt_id is not None else set()),
+        )
     authority = _validated_authority_context(
         connection,
         snapshot_ids=snapshot_ids,
@@ -302,7 +323,14 @@ def _validate_selected_completion_bundle_history(
                 (bundle.project_id, bundle.task_id, bundle.target_generation)
             ),
         )
-        _validate_projection_bundle_record(record)
+        try:
+            artifact = build_projection_bundle_artifact(record)
+        except EvidenceProjectionError as exc:
+            raise evidence_ledger_inconsistent() from exc
+        yield bundle.completion_evidence_bundle_id, _BundleDocument(
+            artifact.document, artifact.bundle_digest, artifact.file_digest,
+        )
+        del artifact, record
 
 
 def _validate_selected_schema21_completion_bundle_history(

@@ -154,8 +154,10 @@ admission proof nor authority to mutate Task state.
 Maintenance eligibility reads use the structural boundary and validated policy,
 generation and managed-backup metadata. Disabled, current and not-due paths do
 not audit Task histories. Such observations never certify an artifact: actual
-Evidence whole-project capture/publication retains global validation at its existing
-locked effect boundaries. Routine backup has the separately bounded
+Evidence routine capture validates unpublished Bundles and their consumed
+closure plus thin published membership; its fresh guards and outcome writer
+use structural admission and exact projection controls. Explicit full Evidence
+capture and Setup repair retain global validation. Routine backup has the separately bounded
 [asynchronous admission](#asynchronous-backup-admission) below; Setup and
 recovery backup retain complete source validation.
 Incremental Viewer capture validates changed Tasks and their consumed relations
@@ -170,7 +172,7 @@ the consumed maintenance metadata, repeated under the writer. They compare the
 observed success generation, outcome basis and complete generation metadata
 inventory before updating, as specified by
 [same-process maintenance](setup-state-specification.md#same-process-maintenance).
-Setup, doctor, migration/reentry, recovery and whole-project Evidence publication
+Setup, doctor, migration/reentry, recovery and explicit whole-project Evidence capture
 retain complete applicable validation. The approved remaining work is owned
 by [operation admission correction](operation-admission-plan.md).
 

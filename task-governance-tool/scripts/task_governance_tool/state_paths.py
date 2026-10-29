@@ -23,6 +23,9 @@ _COPY_CHUNK_BYTES = 1024 * 1024
 
 EVIDENCE_DIRECTORY_NAME = "evidence"
 EVIDENCE_INDEX_FILENAME = "index.json"
+EVIDENCE_BASELINE_FILENAME = "publication-baseline.json"
+EVIDENCE_BASELINE_MAX_BYTES = 67_108_864 + 4096
+EVIDENCE_BASELINE_TEMP_PREFIX = ".taskgov-evidence-baseline-"
 EVIDENCE_BUNDLES_DIRECTORY_NAME = "bundles"
 EVIDENCE_LOCK_FILENAME = "taskgov-evidence.lock"
 EVIDENCE_INDEX_MAX_BYTES = 67_108_864
@@ -44,6 +47,10 @@ def evidence_relative_file_kind(relative_name: str) -> str | None:
 
     if relative_name == EVIDENCE_INDEX_FILENAME:
         return "index"
+    if relative_name == EVIDENCE_BASELINE_FILENAME:
+        return "baseline"
+    if re.fullmatch(r"\.taskgov-evidence-baseline-[a-z0-9_]{8}\.tmp", relative_name):
+        return "baseline_temporary"
     if relative_name == EVIDENCE_LOCK_FILENAME:
         return "lock"
     if _EVIDENCE_INDEX_TEMP_FILENAME_PATTERN.fullmatch(relative_name):

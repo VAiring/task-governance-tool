@@ -11,6 +11,7 @@ from task_governance_tool.sqlite_connection import StorageError
 
 if TYPE_CHECKING:
     from task_governance_tool.storage import DatabaseTarget
+    from task_governance_tool.evidence_publication_baseline import PublicationIdentity
 
 
 EVIDENCE_PROJECTION_OUTCOMES = {"succeeded", "deferred", "failed"}
@@ -329,6 +330,8 @@ def record_evidence_projection_outcome(
     outcome_code: str,
     recorded_at: str,
     index_digest: str | None = None,
+    expected_identity: PublicationIdentity,
+    expected_state: EvidenceProjectionState,
 ) -> EvidenceProjectionState:
     """Record one projector outcome through the initialized writer boundary."""
 
@@ -337,9 +340,29 @@ def record_evidence_projection_outcome(
         connect_initialized,
     )
 
-    with closing(connect_initialized(target)) as connection:
+    from task_governance_tool.evidence_publication_baseline import database_object, publication_identity
+    from task_governance_tool.storage import evidence_ledger_inconsistent
+    from task_governance_tool.backup_metadata_repository import read_project_maintenance
+    physical = database_object(target)
+    if physical != (expected_identity.database_device, expected_identity.database_inode):
+        raise evidence_ledger_inconsistent()
+    with closing(connect_initialized(target, operation_local=True)) as connection:
         try:
-            begin_initialized_write(connection, target)
+            begin_initialized_write(connection, target, operation_local=True)
+            if publication_identity(connection, target, physical) != expected_identity:
+                raise evidence_ledger_inconsistent()
+            current = read_evidence_projection_state(connection, project_id=target.project.project_id)
+            if (
+                current.published_generation, current.index_digest
+            ) != (expected_state.published_generation, expected_state.index_digest):
+                raise evidence_ledger_inconsistent()
+            if outcome_code != "succeeded" and current != expected_state:
+                # A delayed error must not replace a newer outcome, including
+                # a successful retry of the same publication generation.
+                raise evidence_ledger_inconsistent()
+            maintenance = read_project_maintenance(connection, target.project.project_id)
+            if outcome_code == "succeeded" and (maintenance is None or not maintenance.enabled):
+                raise evidence_ledger_inconsistent()
             state = record_evidence_projection_outcome_locked(
                 connection,
                 project_id=target.project.project_id,

@@ -4,6 +4,9 @@ This inventories attribute access as well as calls, so bound-method aliases
 cannot disappear from the map. It is not a general Python type/dataflow proof.
 
 Connection ownership behind the refreshed application entries:
+- evidence_incremental_repository borrows publication's operation-local,
+  query-only storage connection; selected closure helpers borrow that same
+  observed connection, and publication metadata uses the initialized writer.
 - review_continuation_repository borrows the caller's connection; native and
   collected registration reach it through storage.connect_initialized, and
   read-only preparation uses storage.connect_initialized_readonly.

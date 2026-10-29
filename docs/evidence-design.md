@@ -301,9 +301,10 @@ source commits.
 Projection state stores nonnegative source generation, nullable published
 generation no greater than source, nullable index digest, and the closed
 maintenance outcome/time. Every cycle insertion advances source generation
-exactly once, including the legacy bridge; no other write does. The projector
-captures project/schema, generation, all cycles, native Bundles/members, and
-legacy state in one query-only transaction. Its publication entry validates
+exactly once, including the legacy bridge; no other write does. Explicit Setup
+repair and full physical inspection capture project/schema, generation, all
+cycles, native Bundles/members, and legacy state in one query-only transaction.
+That full capture entry validates
 the complete ledger, cycles and Bundle relations, then renders each raw basis
 once in that same read. Canonical Bundle construction is also record validation:
 it retains the stored digest/payload-size comparison and document size bound.
@@ -336,7 +337,9 @@ error normalization remains at the same boundary.
 The composition accepts no caller-provided graph or validation flag and returns
 only the rendered documents. Standalone capture, raw basis and Bundle validators
 still acquire and validate their own Runner relations; native completion,
-independent Reader and the fresh publication guard are unchanged. No result is
+independent Reader are unchanged. The fresh publication guard uses the separate
+control boundary below for routine updates; explicit repair retains its full
+guard admission. No result is
 attached to a connection, persisted or carried to another capture. The complete
 expected-Reference tuple and generation map remain live until rendering ends,
 alongside the existing raw basis and documents; this is O(Runner graph size)
@@ -344,7 +347,7 @@ retained data, not an O(1) memory promise. They are not part of the returned
 projection and do not survive into physical publication; a failed composition
 returns no projection, and recapture obtains fresh values.
 
-Retained publication memory still scales with all Bundle document bytes plus
+Retained full-capture memory still scales with all Bundle document bytes plus
 the complete index and its metadata. This is not streaming, spooling, an O(1)
 memory bound or a persistent cache. Capacity comparisons include acquisition of
 the raw basis and canonical construction, not just post-capture rendering.
@@ -364,23 +367,66 @@ format/domain selector. The completion writer stores the version from the
 validated Bundle plan instead of selecting it again. Structural validators and
 the independent test Reader retain their existing admission responsibilities.
 
-Under the zero-wait Evidence lock publication validates or atomically writes
-all required Bundle files through flushed same-directory temporaries. Before
-capture, `_capture` reads maintenance and generation through structural
-admission. Routine disabled/current observations skip full-source validation
-and Bundle construction, including after lock acquisition or a bounded
-follow-up. A due capture, force repair or physical-status inspection validates
-the complete database through that same-snapshot admission/render composition
-before constructing a basis.
-The index-generation guard retains its global admission. Publication writes
-Bundles first, flushes
-and atomically replaces the index last, conditionally records the captured
-generation/digest in a short transaction, then rechecks once and permits at
-most one follow-up capture. The index is the commit point. Missing, ahead,
-behind, wrong-project/version/digest, unsafe, or otherwise mismatched projection
-is never consumed. SQLite stays authoritative and setup regenerates only
-one-way; no JSON is imported. Failure or contention keeps the last-good index,
-records the fixed maintenance outcome, and does not undo the business mutation.
+Routine capture instead uses `evidence_incremental_repository` with structural
+admission. Its single thin cycle/Bundle join reads only identifiers, ordinal,
+format, seal and digest; counts cross-check completeness, never select a row
+cursor. Exact acknowledged cycle IDs select old entries. They must still match
+the thin DB metadata; old file digests are preserved. Only new IDs load cycle
+bodies, selected authority/manifest/Receipt/Reference/Runner relations and
+immutable Finding snapshots. The bounded same-Task document iterator is shared
+with history validation. It validates and encodes each selected Bundle once;
+Receipt/Finding source limits apply separately to each Bundle, so combining
+valid cycles cannot overflow an aggregate validation allowance. Selected cycle
+Receipt links also validate native continuation graphs and their complete
+collected-capture inventories against the frozen assertions in the same read.
+History drains the documents; publication retains only document bytes/digests.
+No old current Finding state reconstructs an acknowledged Bundle. Complete
+index construction still enforces every entry, ordering, identity and bound.
+Routine retained memory scales with the thin index plus unpublished documents.
+
+`evidence_publication_baseline` owns a closed canonical JSON baseline containing
+`format_version=1`, `identity`, and the exact acknowledged index envelope.
+Identity contains project ID, binding generation/path hash, source schema, and
+DB device/inode. It deliberately excludes changing DB size/mtime as validation
+proof. The fixed `publication-baseline.json` is limited to the index cap plus
+4096 bytes; its same-directory temporary uses
+`.taskgov-evidence-baseline-<8 characters from [a-z0-9_]>.tmp`. Resolver, Setup inventory,
+staged-state and cleanup admission recognize only these additional names and
+reject aliases/links using the existing physical primitives. There is one
+baseline and at most one baseline temporary. This adds no schema or user path.
+
+Baseline and physical index bytes are read before the capture transaction.
+Strict duplicate-free integer-only JSON, canonical bytes, full index digest,
+project/binding/schema/file identity, and SQLite's acknowledged generation/digest
+bind their use. Missing/invalid baseline or changed DB instance requires explicit
+Setup; the routine path never escalates to global audit. Initial and repair
+Setup performs full validation and recreates the baseline. The baseline does
+not certify old body bytes or unrelated rows. Full diagnostics and independent
+Reader validation remain separate.
+
+Under the zero-wait Evidence lock, only newly selected Bundle documents are
+published through flushed same-directory temporaries. The reader closes before
+physical I/O. The fresh structural index guard checks binding, DB instance,
+enabled policy, captured source generation and prior acknowledged generation/
+digest, holding its reader through atomic index replacement. The short outcome
+writer repeats control admission and acknowledgement comparison; a later source
+generation is allowed without regressing the acknowledged generation. Baseline
+saving errors retain the successfully recorded state as their outcome basis.
+Failed/deferred recording requires the observed DB identity and entire projection
+state, including prior outcome/time; an unreadable basis or stale observation is
+discarded without writing into a replacement database or overwriting a newer
+outcome. A lock-entry failure uses the pre-lock observation. This is control
+comparison, not a body-integrity proof or additional whole-history audit. Baseline
+saving follows successful SQLite recording. If interruption leaves index ahead
+of SQLite, its new IDs are revalidated from the previous baseline; an index is
+adopted after a missed baseline save only when its exact digest/generation is
+already acknowledged in SQLite. Nothing imports JSON into business state.
+There is at most one follow-up capture. Changed identity/schema/format, lost
+membership or malformed control data fails closed. Current routine observations
+check baseline controls but construct no Bundle body. Failure or contention
+records the fixed maintenance outcome without undoing the business mutation;
+the existing index remains the filesystem commit point and last-good output
+until a fully constructed replacement is published.
 
 ## Continuation Graph Validation
 

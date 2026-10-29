@@ -17,8 +17,13 @@ class SelectedRelations:
     boundary_order: dict
 
 
-_BOUNDARIES = ("SELECT boundary.*,boundary.rowid AS relation_order,source.thread_id AS source_thread,source.incarnation AS current_incarnation "
-               "FROM usage_response_boundaries boundary JOIN usage_sources source ON source.source_id=boundary.source_id WHERE ")
+_COLUMNS = "SELECT boundary.*,boundary.rowid AS relation_order,source.thread_id AS source_thread,source.incarnation AS current_incarnation "
+_BOUNDARIES = (_COLUMNS + "FROM usage_response_boundaries boundary "
+               "JOIN usage_sources source ON source.source_id=boundary.source_id WHERE ")
+# Composite JSON-expression IN predicates can scan all boundaries despite the
+# expression indexes. Drive equality probes from the small selected-key input.
+_KEY_BOUNDARIES = (_COLUMNS + "FROM json_each(?) wanted CROSS JOIN usage_response_boundaries boundary "
+                   "JOIN usage_sources source ON source.source_id=boundary.source_id WHERE ")
 
 
 def read_selected_relations(connection, *, task_ids=(), turns=(), source_ids=(), response_keys=()):
@@ -28,17 +33,17 @@ def read_selected_relations(connection, *, task_ids=(), turns=(), source_ids=(),
     seeds = {}
     selectors = []
     if task_ids:
-        selectors.append(("json_extract(boundary.document,'$.task_id') IN (SELECT value FROM json_each(?))", sorted(task_ids)))
+        selectors.append((_BOUNDARIES, "json_extract(boundary.document,'$.task_id') IN (SELECT value FROM json_each(?))", sorted(task_ids)))
     if turns:
-        selectors.append(("(json_extract(boundary.document,'$.thread_id'),json_extract(boundary.document,'$.turn_id')) "
-                          "IN (SELECT json_extract(value,'$[0]'),json_extract(value,'$[1]') FROM json_each(?))", sorted(turns)))
+        selectors.append((_KEY_BOUNDARIES, "json_extract(boundary.document,'$.thread_id')=json_extract(wanted.value,'$[0]') "
+                          "AND json_extract(boundary.document,'$.turn_id')=json_extract(wanted.value,'$[1]')", sorted(turns)))
     if source_ids:
-        selectors.append(("boundary.source_id IN (SELECT value FROM json_each(?))", sorted(source_ids)))
+        selectors.append((_BOUNDARIES, "boundary.source_id IN (SELECT value FROM json_each(?))", sorted(source_ids)))
     if response_keys:
-        selectors.append(("(json_extract(boundary.document,'$.provider'),json_extract(boundary.document,'$.response_id')) "
-                          "IN (SELECT json_extract(value,'$[0]'),json_extract(value,'$[1]') FROM json_each(?))", sorted(set(response_keys))))
-    for predicate, values in selectors:
-        for row in connection.execute(_BOUNDARIES + "boundary.incarnation=source.incarnation AND " + predicate,
+        selectors.append((_KEY_BOUNDARIES, "json_extract(boundary.document,'$.provider')=json_extract(wanted.value,'$[0]') "
+                          "AND json_extract(boundary.document,'$.response_id')=json_extract(wanted.value,'$[1]')", sorted(set(response_keys))))
+    for query, predicate, values in selectors:
+        for row in connection.execute(query + "boundary.incarnation=source.incarnation AND " + predicate,
                                       (encode(values).decode(),)):
             seeds[row["source_id"], row["incarnation"], row["observation_id"]] = row
     decoded = {key: _decode_boundary_relation(row) for key, row in seeds.items()}
@@ -48,12 +53,12 @@ def read_selected_relations(connection, *, task_ids=(), turns=(), source_ids=(),
     history = dict(seeds)
     closure = []
     if event_ids:
-        closure.append(("json_extract(boundary.document,'$.event_id') IN (SELECT value FROM json_each(?))", sorted(event_ids)))
+        closure.append((_BOUNDARIES, "json_extract(boundary.document,'$.event_id') IN (SELECT value FROM json_each(?))", sorted(event_ids)))
     if calls:
-        closure.append(("(json_extract(boundary.document,'$.thread_id'),json_extract(boundary.document,'$.call_id')) "
-                        "IN (SELECT json_extract(value,'$[0]'),json_extract(value,'$[1]') FROM json_each(?))", sorted(calls)))
-    for predicate, values in closure:
-        for row in connection.execute(_BOUNDARIES + predicate, (encode(values).decode(),)):
+        closure.append((_KEY_BOUNDARIES, "json_extract(boundary.document,'$.thread_id')=json_extract(wanted.value,'$[0]') "
+                        "AND json_extract(boundary.document,'$.call_id')=json_extract(wanted.value,'$[1]')", sorted(calls)))
+    for query, predicate, values in closure:
+        for row in connection.execute(query + predicate, (encode(values).decode(),)):
             history[row["source_id"], row["incarnation"], row["observation_id"]] = row
     # The history closure is validation-only. It must not admit old positions
     # or unrelated current calls as numerical owners of the selected region.

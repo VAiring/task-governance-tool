@@ -22,6 +22,8 @@ from tests.test_usage_attribution import turn
 from task_governance_tool import cli, storage
 from task_governance_tool import state_resolver
 from task_governance_tool.usage_incremental_repository import UsageIncrementalRepository
+from task_governance_tool.usage_reconciliation_repository import UsageReconciliationRepository
+from task_governance_tool import usage_reconciliation_snapshots as snapshots
 from task_governance_tool import usage_lifecycle as lifecycle
 from task_governance_tool import usage_evidence_service as service
 
@@ -85,7 +87,6 @@ class UsageReadPerformanceTests(unittest.TestCase):
     def measure(self, operation):
         counts, seconds = Counter(), Counter()
         factory = service.repository_for
-        instances = []
 
         def trace(key):
             def count(statement):
@@ -121,7 +122,9 @@ class UsageReadPerformanceTests(unittest.TestCase):
 
         def repository(target):
             result = factory(target)
-            instances.append(result)
+            # A changed factory must not silently disable current-schema
+            # instrumentation and turn a missing measurement into zero work.
+            self.assertIsInstance(result, UsageReconciliationRepository)
             for name, metric in (("members", "member_reads"), ("_snapshot", "snapshot_original_checks"),
                                  ("_responses", "original_reads"), ("prepare_publication", "capture")):
                 original = getattr(result, name)
@@ -155,11 +158,14 @@ class UsageReadPerformanceTests(unittest.TestCase):
             stack.enter_context(mock.patch.object(lifecycle, "refresh_usage", side_effect=service.refresh_usage))
             stack.enter_context(mock.patch.object(lifecycle, "repository_for", side_effect=repository))
             stack.enter_context(mock.patch.object(service, "repository_for", side_effect=repository))
+            # Observe actual current aggregation, not a retired repository
+            # attribute. Explicit zero means this observer ran for the window.
+            stack.enter_context(wrap(snapshots, "_models", "components_aggregated"))
+            counts["components_aggregated"] = 0
+            seconds["components_aggregated"] = 0.0
             started = perf_counter()
             result = operation()
             seconds["total"] = perf_counter() - started
-        counts["components_aggregated"] = sum(getattr(item, "last_projection_work", {}).get("components_aggregated", 0)
-                                              for item in instances)
         return result, {"counts": dict(counts), "seconds": dict(seconds)}
 
     def test_canonical_many_completed_tasks_no_append_single_append_and_display(self):
@@ -168,12 +174,13 @@ class UsageReadPerformanceTests(unittest.TestCase):
         no_append, no_work = self.measure(self.event)
         self.assertIn("evidence_verification_deferred", no_append["diagnostics"])
         self.assertEqual(no_work["counts"].get("global_review_audits", 0), 0)
-        self.assertEqual(no_work["counts"].get("components_aggregated", 0), 0)
+        self.assertEqual(no_work["counts"]["components_aggregated"], 0)
         self.assertLessEqual(no_work["counts"].get("member_reads", 0), len(tasks))
         with self.path.open("ab") as stream:
             stream.write(json.dumps(usage("single-late", turn=turn(len(tasks)), thread=THREAD)).encode() + b"\n")
         appended, append_work = self.measure(self.event)
         self.assertIn("evidence_verification_deferred", appended["diagnostics"])
+        self.assertGreater(append_work["counts"]["components_aggregated"], 0)
         normal, normal_work = self.measure(lambda: self.cli("task", "show", tasks[0]))
         self.assertNotIn("usage", normal["data"])
         self.assertEqual(normal_work["counts"].get("numerical_sql_after_open", 0), 0)

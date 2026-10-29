@@ -5,6 +5,7 @@ from contextlib import closing, contextmanager
 from dataclasses import asdict, replace
 import json
 import sqlite3
+from time import perf_counter
 import unittest
 from unittest import mock
 
@@ -341,6 +342,112 @@ class SelectedRelationInputsTests(_UsageRelationFixture):
         from task_governance_tool.usage_reconciliation_repository import UsageReconciliationRepository
         self.repository = UsageReconciliationRepository(self.repository.path, *self.repository.basis)
         self.repository.initialize()
+
+    def test_selected_composite_keys_do_not_scan_unrelated_boundary_history(self):
+        from task_governance_tool.usage_reconciliation_relations import read_selected_relations
+        self.add_boundaries(1, historical=True, conflict=True)
+        measurements = []
+        with self.repository.connection(write=True) as connection:
+            source, incarnation, target = self.repository._relations(connection)[1][0]
+            previous = 0
+            for size in (128, 1024, 8192):
+                for number in range(previous, size):
+                    body = asdict(replace(target, command="task.context", turn_id=turn(number + 100), response_id=f"unrelated-{number}",
+                        call_id=f"unrelated-{number}", event_id=None, task_id=None, generation=None, status=None))
+                    connection.execute("INSERT INTO usage_response_boundaries VALUES (?,?,?,?)",
+                        (source, incarnation, digest(body), encode(body).decode()))
+                previous = size
+                samples = []
+
+                class MeasuredConnection:
+                    in_transaction = True
+
+                    def execute(self, sql, parameters):
+                        plan = [row[3] for row in connection.execute("EXPLAIN QUERY PLAN " + sql, parameters)]
+                        steps = [0]
+                        def progress():
+                            steps[0] += 1
+                            return 0
+                        connection.set_progress_handler(progress, 1)
+                        started = perf_counter()
+                        try:
+                            rows = tuple(connection.execute(sql, parameters))
+                        finally:
+                            elapsed = perf_counter() - started
+                            connection.set_progress_handler(None, 0)
+                        samples.append({"vm_steps": steps[0], "rows": len(rows), "seconds": elapsed, "plan": plan})
+                        return iter(rows)
+
+                selected = read_selected_relations(MeasuredConnection(), turns={(target.thread_id, target.turn_id)},
+                    response_keys={(target.provider, target.response_id)})
+                self.assertEqual(len(selected.current), 1)
+                self.assertEqual(len(selected.history), 2)
+                self.assertNotIn("old-position", {item.response_id for _, _, item in selected.positions})
+                measurements.append({"unrelated_boundaries": size, "queries": samples})
+        print(json.dumps({"selected_relation_scaling": measurements}))
+        first = measurements[0]["queries"]
+        for measurement in measurements[1:]:
+            self.assertEqual(len(measurement["queries"]), len(first))
+            for baseline, current in zip(first, measurement["queries"]):
+                self.assertEqual(current["rows"], baseline["rows"])
+                # Permit planner/SQLite-version differences, but not work
+                # proportional to thousands of unrelated boundary rows.
+                self.assertLessEqual(current["vm_steps"], baseline["vm_steps"] * 2 + 200)
+
+    def test_selected_keys_match_full_relation_oracle_and_deduplicate(self):
+        from task_governance_tool.usage_reconciliation_relations import read_selected_relations
+        self.add_boundaries(1, historical=True, conflict=True)
+        with self.repository.connection(write=True) as connection:
+            source, incarnation, target = self.repository._relations(connection)[1][0]
+            second = replace(target, command="task.context", turn_id=turn(9), response_id="second", call_id="second",
+                             event_id=None, task_id=None, generation=None, status=None)
+            body = asdict(second)
+            connection.execute("INSERT INTO usage_response_boundaries VALUES (?,?,?,?)",
+                               (source, incarnation, digest(body), encode(body).decode()))
+            positions, all_current = legacy_relations(connection)
+            _, all_history = legacy_relations(connection, True)
+            for keys in ([], [(target.provider, target.response_id)],
+                         [(target.provider, target.response_id)] * 2 + [(second.provider, second.response_id)]):
+                with self.subTest(keys=keys):
+                    selected = read_selected_relations(connection, response_keys=keys)
+                    expected = {entry for entry in all_current if (entry[2].provider, entry[2].response_id) in keys}
+                    calls = {(item.thread_id, item.call_id) for _, _, item in expected}
+                    events = {item.event_id for _, _, item in expected if item.event_id is not None}
+                    history = {entry for entry in all_history if (entry[2].thread_id, entry[2].call_id) in calls
+                               or entry[2].event_id in events}
+                    owners = {(source, incarnation, item.provider, item.response_id) for source, incarnation, item in expected}
+                    self.assertEqual(set(selected.current), expected)
+                    self.assertEqual(set(selected.history), history)
+                    self.assertEqual(set(selected.positions), {entry for entry in positions
+                        if (entry[0], entry[1], entry[2].provider, entry[2].response_id) in owners})
+                    self.assertEqual(len(selected.current), len(expected))
+                    self.assertEqual(len(selected.history), len(history))
+            # The historical conflict arrives after the first current record,
+            # and must still participate when selecting by turn as well.
+            selected = read_selected_relations(connection, turns=[(target.thread_id, target.turn_id)] * 2)
+            self.assertEqual(len(selected.current), 1)
+            self.assertEqual(len(selected.history), 2)
+
+    def test_selected_rows_retain_digest_type_and_source_ownership_validation(self):
+        from task_governance_tool.usage_reconciliation_relations import read_selected_relations
+        for invalid in ("digest", "type", "ownership"):
+            with self.subTest(invalid=invalid), self.repository.connection(write=True) as connection:
+                row = connection.execute("SELECT * FROM usage_response_boundaries LIMIT 1").fetchone()
+                body = json.loads(row["document"])
+                key = body["provider"], body["response_id"]
+                if invalid == "type":
+                    body["record_order"] = "invalid"
+                elif invalid == "ownership":
+                    body["thread_id"] = "ffffffff-ffff-ffff-ffff-ffffffffffff"
+                else:
+                    body["call_id"] = "changed-without-digest"
+                connection.execute("SAVEPOINT corruption")
+                connection.execute("UPDATE usage_response_boundaries SET document=?,observation_id=? WHERE observation_id=?",
+                    (encode(body).decode(), row["observation_id"] if invalid == "digest" else digest(body), row["observation_id"]))
+                with self.assertRaisesRegex(UsageError, "response_binding_unknown" if invalid == "type" else "usage_schema_invalid"):
+                    read_selected_relations(connection, response_keys=[key])
+                connection.execute("ROLLBACK TO corruption")
+                connection.execute("RELEASE corruption")
 
     def test_selected_task_origin_closure_keeps_historical_conflicts_and_skips_unrelated_calls(self):
         from task_governance_tool.usage_reconciliation_relations import read_selected_relations

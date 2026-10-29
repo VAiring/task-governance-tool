@@ -410,6 +410,7 @@ LANE_MODULES: dict[str, tuple[str, ...]] = {
         "test_usage_hook_setup",
         "test_usage_legacy_review_repository",
         "test_usage_lifecycle_install",
+        "test_usage_normal_output",
         "test_usage_read_performance",
         "test_usage_review_input_validation",
         "test_usage_setup",

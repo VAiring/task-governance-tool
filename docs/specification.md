@@ -325,7 +325,7 @@ Current success-data projections are:
 | default `task.next` | `tasks`, `count`, `limit`, `selection_rules` |
 | default `task.current` | `tasks`, `count`, `limit`, `statuses` |
 | `task.effort` enabled | `task_id`, `enabled`, `profile`, `measurements`, `thresholds`, `exceeded`, `basis`, `observation`, `coverage`, `attribution`, `unknown_reasons`, `warning_key`, `suggested_action` |
-| `task.show` | exactly `task`, `events`, `suggested_next_action`, `review_evidence`, `handoff_summary`, `contract`, `latest_checkpoint`, `effort_advisory_enabled`, `completion_history`, `verification_evidence`, `usage` on success; the existing empty failure projection is unchanged |
+| `task.show` | exactly `task`, `events`, `suggested_next_action`, `review_evidence`, `handoff_summary`, `contract`, `latest_checkpoint`, `effort_advisory_enabled`, `completion_history`, `verification_evidence` on normal success; explicit audit also includes `usage`; the existing empty failure projection is unchanged |
 | `task.context` | `selection`, `current`, `next`, `selected`; fixed composition of compact recall/selection and complete show data |
 | `task.edit` | `task`, `changed_fields`, `event`, plus `contract_write` only for Contract input, `runner_plan_update` only when a Runner Plan action was supplied, and `usage` on successful done acknowledgement |
 | `task.complete` | `task`, `changed_fields`, `event`, `usage` on write success; failure/check projections are unchanged |
@@ -360,12 +360,14 @@ target-set partial success follow the [Review/completion owner](review-completio
 stored-row validation still precedes this presentation-only omission.
 
 `task.show` uses a fixed normal working projection; `--audit` selects the
-previous bounded historical detail. The top-level keys above are shared, while
+previous bounded historical detail, including numerical `usage`. Other top-level keys are shared, while
 the nested evidence/history forms belong to the
 [Task read](task-operation-specification.md#task-selection-and-read-commands)
 and [Review/completion](review-completion-specification.md#public-and-read-projection)
 owners. `task.context.selected` always uses normal working detail. These are
-display choices only; stored Evidence, validation and current gates are unchanged.
+fixed projections; ordinary detail performs no numerical usage acquisition or
+numerical database open. Stored Evidence, Task/evidence validation and current
+gates are unchanged; audit and internal numerical access retain their checks.
 
 `task.show` failure keeps both `completion_history=null` and
 `verification_evidence=null` in its bounded empty data.

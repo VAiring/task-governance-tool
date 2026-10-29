@@ -1531,8 +1531,9 @@ checks, completed/check recovery and notification checks all use that internal
 reader; no value is reused across snapshots. Exact collected-registration
 inspection separately validates the selected Task and complete review storage,
 then reads only the exact preparation/submission inventory in that snapshot.
-It does not assemble report detail. Public show/context and post-registration
-context retain their numerical usage projection. Registration/completion writers
+It does not assemble report detail. Public audit retains its numerical usage
+projection; ordinary show/context and post-registration context do not acquire
+usage, as defined by the Task read owner. Registration/completion writers
 and locked rechecks remain unchanged.
 `review_finalization_basis.py` carries the immutable retained project, execution,
 owner generation, Contract, target and manifest constraints through those handlers.

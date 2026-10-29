@@ -1909,8 +1909,9 @@ review and verification relationships at each existing fresh boundary. They do
 not acquire numerical usage or assemble public display-only fields. Exact
 collected-registration inspection validates that same selected Task/review
 boundary and exact registration inventory without reading report-only detail.
-This does not change public show/context or registration-context usage, native
-writer checks, completion gates or report content.
+Public audit and internal numerical consumers retain their separate usage read;
+ordinary show/context and registration context omit it under the Task read
+contract. Native writer checks, completion gates and report content are unchanged.
 
 Reports distinguish journal intent from observed registration IDs, Git publication
 and Task status. They include every registered Finding, including resolved low

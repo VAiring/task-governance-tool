@@ -1284,10 +1284,11 @@ def handle_task_show(context: CommandContext, *, current_checkpoint: tuple[sqlit
 
 def read_task_detail(context: CommandContext, *, current_checkpoint: tuple[sqlite3.Connection, str, dict[str, Any] | None] | None = None, selected_task_read: ValidatedTaskRead | None = None, public_display: bool = False) -> CommandResult:
     """Shared validated detail; internal finalization does not consume usage/display."""
-    from task_governance_tool.usage_evidence_service import read_task_usage
     from task_governance_tool import review_answer_audit
     target = resolve_context_target(context)
     audit = bool(getattr(context.args, "audit", False))
+    if public_display and audit:
+        from task_governance_tool.usage_evidence_service import read_task_usage
     try:
         collection_selectors = review_answer_audit.selection(context.args)
         task_id = validate_task_id(getattr(context.args, "task_id", ""))
@@ -1335,7 +1336,7 @@ def read_task_detail(context: CommandContext, *, current_checkpoint: tuple[sqlit
                             and current_checkpoint[0] is connection and connection.in_transaction
                             and current_checkpoint[1] == task_id else None),
                     )
-                    if public_display:
+                    if public_display and audit:
                         usage = read_task_usage(target, connection, task_id, audit=audit)
                     collection_registration = review_answer_audit.read(connection, target.project.project_id,
                         task_id, collection_selectors)
@@ -1368,7 +1369,7 @@ def read_task_detail(context: CommandContext, *, current_checkpoint: tuple[sqlit
                     caller=context.caller,
                     validated_task_read=current_read,
                 )
-                if public_display:
+                if public_display and audit:
                     usage = read_task_usage(target, connection, task_id, audit=audit)
                 collection_registration = review_answer_audit.read(connection, target.project.project_id,
                     task_id, collection_selectors)
@@ -1446,7 +1447,8 @@ def read_task_detail(context: CommandContext, *, current_checkpoint: tuple[sqlit
     if not public_display:
         return CommandResult(ok=True, command=context.command,
             project_id=target.project.project_id, data=data, text="", exit_code=EXIT_SUCCESS)
-    data["usage"] = usage
+    if audit:
+        data["usage"] = usage
     effort_profile = load_effort_profile(skill_root_from_script(cli_script_path()))
     data["effort_advisory_enabled"] = bool(
         effort_profile.valid and effort_profile.enabled

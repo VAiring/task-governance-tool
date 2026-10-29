@@ -92,7 +92,9 @@ class OperationAdmissionTests(unittest.TestCase):
             for operation in ("show", "context"):
                 args = ("task", operation, self.task_id) if operation == "show" else ("task", operation)
                 self.success(*args)
-            self.assertEqual(usage.call_count, 2)
+            self.assertEqual(usage.call_count, 0)
+            self.success("task", "show", self.task_id, "--audit")
+            self.assertEqual(usage.call_count, 1)
         self.success("task", "show", self.task_id)
         self.fixture.extra_v2_provenance(self.task_id)
         with self.assertRaises(FinalizationError) as rejected:

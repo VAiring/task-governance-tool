@@ -72,14 +72,14 @@ class UsageWaitInstallTests(unittest.TestCase):
         supervisor = self.log(OTHER, "supervisor", {4: [marker], 7: [marker]}, range(1, 9))
         core = self.target.db_path.read_bytes()
         self.hook()
-        first = self.cli("task", "show", task)["data"]["usage"]["periods"][0]
+        first = self.cli("task", "show", task, "--audit")["data"]["usage"]["periods"][0]
         self.assertEqual(first["response_count"], 6, first)
         with self.repository.connection() as connection:
             members = {key for identity in first["snapshot_ids"] for key in self.repository.members(connection, identity)}
         self.assertEqual(members, {*(('openai', f'parent-{n}') for n in range(2, 7)), ('openai', 'supervisor-4')})
         self.assertEqual(self.target.db_path.read_bytes(), core)
         self.hook()
-        self.assertEqual(self.cli("task", "show", task)["data"]["usage"]["periods"][0], first)
+        self.assertEqual(self.cli("task", "show", task, "--audit")["data"]["usage"]["periods"][0], first)
 
         with supervisor.open("ab") as stream:
             stream.write(json.dumps(usage("late-decision", thread=OTHER, turn=turn(4))).encode() + b"\n")
@@ -105,7 +105,7 @@ class UsageWaitInstallTests(unittest.TestCase):
         self.log(THREAD, "parent", {2: [start], 3: [end]}, range(1, 5))
         self.log(OTHER, "supervisor", {4: [marker]}, range(1, 6))
         self.hook()
-        self.assertEqual(self.cli("task", "show", task)["data"]["usage"]["periods"][0]["response_count"], 4)
+        self.assertEqual(self.cli("task", "show", task, "--audit")["data"]["usage"]["periods"][0]["response_count"], 4)
         # Restore a valid real core with the original execution but before the
         # target capture. The numerical store must not supply the missing anchor.
         self.target.db_path.write_bytes(before_target)
@@ -113,7 +113,7 @@ class UsageWaitInstallTests(unittest.TestCase):
             with self.assertRaises(UsageError):
                 self.repository.read(core, task_id=task)
         self.hook()
-        shown = self.cli("task", "show", task)["data"]["usage"]
+        shown = self.cli("task", "show", task, "--audit")["data"]["usage"]
         self.assertEqual(shown["periods"][0]["response_count"], 3)  # Owner is now open through turn 4.
         with self.repository.connection() as connection:
             members = {key for identity in shown["periods"][0]["snapshot_ids"]

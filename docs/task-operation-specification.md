@@ -177,13 +177,21 @@ The read is query-only. Both modes return exactly one routing Boolean
 the existing continuation warning. Human text remains concise and does not
 replace the complete JSON Contract or gate information.
 
-Successful detail additionally contains `usage`: a numerical-only read with
+Normal `task show`, selected `task context`, and registration's prepared context
+omit `usage` and do not fetch, validate or format numerical usage. They neither
+call `read_task_usage` nor open the numerical database for display. This is an
+acquisition boundary, not output filtering after a read. Task selection,
+Contract, notes, ownership, review/completion gates and query-only behavior
+retain their existing checks. Internal finalization already excludes display
+usage; edit/complete's constant pending acknowledgement is unchanged.
+
+Explicit audit detail additionally contains `usage`: a numerical-only read with
 `status`, `coverage=registered_only`, `periods`, and `cycle_links`. It never
 initializes or refreshes usage. Unknown/missing/corrupt/busy/incompatible usage
 returns `status=unknown`, empty lists and fixed `diagnostics=[usage_unavailable]`
 without failing the Task read. Admitted captures return `status=pending`; no
-final coverage is inferred. Normal detail selects the current execution period
-or latest completed period; audit selects the latest ten periods in core order.
+final coverage is inferred. Audit selects the latest ten periods in core order.
+Internal numerical consumers retain their existing period selection.
 Each period has `completion_cycle_id`, current `snapshot_ids`, `own_executions`,
 `shared_executions`, `models`, `response_count`, `quality`, and fixed `gaps`.
 Links contain `snapshot_id`, `completion_cycle_id`, and `task_id`. Model counters
@@ -191,8 +199,8 @@ and immutable adoption follow the
 [usage evidence contract](database-specification.md#immutable-usage-evidence).
 Reopened ready work has an empty pending period, not the preceding cycle's cost.
 Numbers describe the last captured registered shared work, not Task-exclusive
-cost or a complete session total. Existing context inherits the same field;
-selection, gate checks, text output and read failure projections stay unchanged.
+cost or a complete session total. Collection, capture and publication are
+unchanged. Text output and read failure projections stay unchanged.
 
 Within that read, numerical originals are validated only for this Task's current
 components, including shared components and successors; unrelated numerical

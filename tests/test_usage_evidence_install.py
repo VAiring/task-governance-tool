@@ -51,12 +51,12 @@ class UsageEvidenceInstallTests(unittest.TestCase):
         with source.path.open("ab") as output:
             output.write(b"".join(json.dumps(row).encode() + b"\n" for row in later))
         self.collect_responses(source)
-        shown = self.cli("task", "show", aid)["data"]["usage"]
+        shown = self.cli("task", "show", aid, "--audit")["data"]["usage"]
         unit = shown["periods"][0]["work_units"][0]
         self.assertEqual(unit["exclusive"]["response_count"], 3)
         self.assertEqual(sum(part["response_count"] for part in unit["partial"]), 4)
         self.assertEqual(shown["total"]["models"][0]["total_tokens"], 840)
-        self.assertEqual(self.cli("task", "show", bid)["data"]["usage"]["total"]["response_count"], 2)
+        self.assertEqual(self.cli("task", "show", bid, "--audit")["data"]["usage"]["total"]["response_count"], 2)
         index = json.loads(self.target.resolved_usage_index.read_bytes())
         self.assertEqual(index["unattributed"]["unknown"]["response_count"], 4)
         self.assertEqual(index["unattributed"]["unassigned"]["response_count"], 0)
@@ -129,7 +129,7 @@ class UsageEvidenceInstallTests(unittest.TestCase):
                 core_bytes = self.target.db_path.read_bytes()
                 evidence = file_snapshot(self.target.resolved_evidence_root)
                 before = file_snapshot(self.root)
-                unknown = self.cli("task", "show", task)["data"]["usage"]
+                unknown = self.cli("task", "show", task, "--audit")["data"]["usage"]
                 self.assertEqual(unknown["status"], "unknown")
                 self.assertFalse(unknown["periods"])
                 self.assertEqual(file_snapshot(self.root), before)
@@ -142,7 +142,7 @@ class UsageEvidenceInstallTests(unittest.TestCase):
                 self.assertEqual(unit["exclusive"]["response_count"], 5 if status == "paused" else 1)
                 self.assertEqual(sum(part["response_count"] for part in unit["partial"]), 5)
                 self.assertEqual(actual["total"]["models"][0]["total_tokens"], 1200)
-                self.assertEqual(self.cli("task", "show", other_id)["data"]["usage"]["total"]["response_count"], 2)
+                self.assertEqual(self.cli("task", "show", other_id, "--audit")["data"]["usage"]["total"]["response_count"], 2)
                 index = json.loads(self.target.resolved_usage_index.read_bytes())
                 self.assertEqual(index["unattributed"]["unknown"]["response_count"], 5)
                 self.assertFalse(index["unattributed"]["unassigned"]["response_count"])
@@ -188,7 +188,7 @@ class UsageEvidenceInstallTests(unittest.TestCase):
         core, sealed = self.target.db_path.read_bytes(), file_snapshot(self.target.resolved_evidence_root)
         self.collect_responses(source)
         for task in completed:
-            unit = self.cli("task", "show", task)["data"]["usage"]["periods"][0]["work_units"][0]
+            unit = self.cli("task", "show", task, "--audit")["data"]["usage"]["periods"][0]["work_units"][0]
             self.assertEqual(unit["exclusive"]["response_count"], 4)
             self.assertFalse(unit["partial"] or unit["shared"])
         with closing(connect_initialized_readonly(self.target)) as connection:
@@ -221,7 +221,7 @@ class UsageEvidenceInstallTests(unittest.TestCase):
         for source, rows in ((former, old_rows), (recovery, new_rows)):
             source.path.write_bytes(b"".join(json.dumps(row).encode() + b"\n" for row in rows))
         self.collect_responses(former, recovery)
-        actual = self.cli("task", "show", task)["data"]["usage"]
+        actual = self.cli("task", "show", task, "--audit")["data"]["usage"]
         unit = actual["periods"][0]["work_units"][0]
         self.assertEqual(unit["execution_id"], execution)
         self.assertEqual(unit["exclusive"]["response_count"], 2)
@@ -234,7 +234,7 @@ class UsageEvidenceInstallTests(unittest.TestCase):
             stream.write(b"".join(json.dumps(row).encode() + b"\n" for row in append))
         core, sealed = self.target.db_path.read_bytes(), file_snapshot(self.target.resolved_evidence_root)
         self.collect_responses(former, recovery)
-        actual = self.cli("task", "show", task)["data"]["usage"]
+        actual = self.cli("task", "show", task, "--audit")["data"]["usage"]
         unit = actual["periods"][0]["work_units"][0]
         self.assertEqual(unit["execution_id"], execution)
         self.assertEqual(unit["exclusive"]["response_count"], 4)
@@ -322,7 +322,7 @@ class UsageEvidenceInstallTests(unittest.TestCase):
         self.assertEqual(unit["execution_id"], execution)
         self.assertEqual(unit["exclusive"]["response_count"], 13)
         self.assertFalse(unit["shared"] or unit["partial"])
-        self.assertEqual(self.cli("task", "show", bid)["data"]["usage"]["total"]["response_count"], 3)
+        self.assertEqual(self.cli("task", "show", bid, "--audit")["data"]["usage"]["total"]["response_count"], 3)
         with closing(connect_initialized_readonly(self.target)) as connection:
             index = self.repository.read(connection)
         self.assertEqual(index["unattributed"]["unassigned"]["response_count"], 2)
@@ -366,7 +366,7 @@ class UsageEvidenceInstallTests(unittest.TestCase):
         self.assertEqual(len({period["completion_cycle_id"] for period in actual["periods"]}), 2)
         self.assertTrue(all(unit["exclusive"]["response_count"] == 2 and not unit["shared"] and not unit["partial"]
                             for period in actual["periods"] for unit in period["work_units"]))
-        self.assertEqual(self.cli("task", "show", bid)["data"]["usage"]["total"]["response_count"], 2)
+        self.assertEqual(self.cli("task", "show", bid, "--audit")["data"]["usage"]["total"]["response_count"], 2)
         self.assertEqual(self.target.db_path.read_bytes(), core)
         self.assertEqual(file_snapshot(self.target.resolved_evidence_root), sealed)
 
@@ -433,7 +433,7 @@ class UsageEvidenceInstallTests(unittest.TestCase):
         core = self.target.db_path.read_bytes()
         evidence = file_snapshot(self.target.resolved_evidence_root) if self.target.resolved_evidence_root.exists() else {}
         self.assertEqual(service.refresh_usage(self.target)["publication"], "current")
-        shown = self.cli("task", "show", task)["data"]["usage"]
+        shown = self.cli("task", "show", task, "--audit")["data"]["usage"]
         # Response partitions do not propagate the other Task's later turn 8
         # through the overlapping turn 7. Turn-only observations stay partial.
         self.assertEqual(shown["periods"][0]["models"][0]["total_tokens"], 6 * 120)
@@ -495,7 +495,7 @@ class UsageEvidenceInstallTests(unittest.TestCase):
                     self.assertEqual(done["data"]["task"]["status"], "done")
                     self.assertEqual(done["data"]["usage"], {"status": "pending", "coverage": "registered_only"})
                     if mode != "busy":
-                        self.assertEqual(self.cli("task", "show", task)["data"]["usage"]["status"], "unknown")
+                        self.assertEqual(self.cli("task", "show", task, "--audit")["data"]["usage"]["status"], "unknown")
                 finally:
                     if connection:
                         connection.close()

@@ -157,7 +157,7 @@ class UsageLifecycleInstallTests(unittest.TestCase):
         core = self.target.db_path.read_bytes()
         evidence = file_snapshot(self.target.resolved_evidence_root)
         self.hook()
-        result = self.cli("task", "show", task)["data"]["usage"]
+        result = self.cli("task", "show", task, "--audit")["data"]["usage"]
         # Review-pending retains the owner interval through the completion turn.
         self.assertEqual(result["periods"][0]["models"][0]["total_tokens"], 4 * 120)
         cycle = result["cycle_links"][0]["completion_cycle_id"]
@@ -255,7 +255,7 @@ class UsageLifecycleReviewInstallTests(unittest.TestCase):
         core = target.db_path.read_bytes()
         evidence = file_snapshot(target.resolved_evidence_root)
         hook()
-        initial = self.cli("task", "show", self.task)["data"]["usage"]
+        initial = self.cli("task", "show", self.task, "--audit")["data"]["usage"]
         self.assertEqual(initial["periods"][0]["response_count"], 6)
         cycle = initial["cycle_links"][0]["completion_cycle_id"]
         old_snapshots = file_snapshot(target.resolved_usage_snapshots)
@@ -268,7 +268,7 @@ class UsageLifecycleReviewInstallTests(unittest.TestCase):
         expected.update(("openai", f"parent-{n}") for n in (2, 3, 4, 5))
 
         def assert_current():
-            current = self.cli("task", "show", self.task)["data"]["usage"]
+            current = self.cli("task", "show", self.task, "--audit")["data"]["usage"]
             period = current["periods"][0]
             self.assertEqual(period["response_count"], len(expected))
             self.assertEqual(period["models"][0]["total_tokens"], len(expected) * 120)
@@ -339,12 +339,12 @@ class UsageLifecycleReviewInstallTests(unittest.TestCase):
             self.assertEqual((result.returncode, result.stdout, result.stderr), (0, b"{}\n", b""))
         hook()
         self.assertEqual(repository.summary()["models"][0]["response_count"], 5)
-        initial = self.cli("task", "show", self.task)["data"]["usage"]
+        initial = self.cli("task", "show", self.task, "--audit")["data"]["usage"]
         self.assertEqual(initial["periods"][0]["models"], [])
         self.helper("submit", "--packet", self.packet_path, output)
         core = target.db_path.read_bytes()
         hook()
-        shown = self.cli("task", "show", self.task)["data"]["usage"]
+        shown = self.cli("task", "show", self.task, "--audit")["data"]["usage"]
         self.assertEqual(shown["periods"][0]["models"][0]["total_tokens"], 360)
         self.assertEqual(target.db_path.read_bytes(), core)
 

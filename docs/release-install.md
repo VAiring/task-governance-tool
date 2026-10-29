@@ -41,7 +41,8 @@ Schema v25 adds automatic actual-reviewer binding through existing read/save and
 submission, including direct reviewers without acquiring Task ownership. Its
 separate numerical schema 9 adds indexed attempt ordering, retaining source locators, resumable history validation/publication and response-boundary attribution, incremental collection and deferred prefix
 audits, inclusive-turn attribution, the supervisor's
-all-ended decision turn, and immutable cycle-linked snapshots. Task detail adds a non-gating `usage` summary and done
+all-ended decision turn, and immutable cycle-linked snapshots. Explicit Task audit
+adds a non-gating `usage` summary; normal show/context do not acquire it, and done
 acknowledgements report pending usage without opening the numerical store.
 Explicit setup alone migrates the numerical store; existing core schema and
 sealed Bundles are unchanged. Optional [trusted project-local lifecycle hooks](setup-state-specification.md#optional-lifecycle-usage-collection)

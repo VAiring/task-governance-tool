@@ -315,6 +315,13 @@ class RegistrationProjectionTests(unittest.TestCase):
 
 
 class RegistrationRunnerContextTests(unittest.TestCase):
+    def setUp(self):
+        from task_governance_tool import usage_evidence_service, usage_repository
+        for owner, name in ((usage_evidence_service, "read_task_usage"),
+                            (usage_repository.UsageRepository, "connection")):
+            observed = self.enterContext(mock.patch.object(owner, name, side_effect=AssertionError("unexpected numerical display read")))
+            self.addCleanup(observed.assert_not_called)
+
     def test_existing_marker_two_uses_same_show_route_after_registration(self):
         from tests.test_m242_runner_service import RunnerServiceFixture
         from tests.test_m243c_runner_gate import _launch, _persist_terminal

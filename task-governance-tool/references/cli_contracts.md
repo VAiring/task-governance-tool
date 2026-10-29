@@ -1066,8 +1066,12 @@ under `task context`'s `data.selected`; no follow-up read is needed:
 | `handoff_summary` | Counts for `pending_handoff`, `handed_off`, and `handoff_withdrawn_by_user`; these do not expand Task scope. |
 | `completion_history` | `total` and `legacy_history_incomplete`, not current completion evidence. |
 | `effort_advisory_enabled` | Whether the normal loop uses the optional Effort observation. Invalid configuration returns false with a continuation warning. |
-| `usage` | Last captured registered shared-work summary and cycle links, or explicit unknown. Numerical gaps never change Task gates. Optional [collection coverage and recovery](usage_hooks.md#coverage-and-recovery) explain gaps without an extra normal-loop command. |
 | `suggested_next_action` | A next-action hint, not authority or proof of completion. In review-pending detail, satisfied required verification and only missing independent PASS reviews yield a remaining count; otherwise the status-based hint remains. Obtain any unperformed reviews, then process actual results through the already selected completion route and retained continuation instructions. This does not request separate parent registration for integrated completion or another guide/state read. |
+
+Normal show, selected context and registration context omit numerical usage and
+do not open its store. Explicit audit retains the captured usage projection;
+collection and internal use continue independently. No additional normal-loop
+command is needed.
 
 Keep the selected route's generated continuation or direct-transport instructions.
 Each returned event has `note_body`, the complete validated text accepted by
@@ -1127,7 +1131,7 @@ another candidate. Neither mode exposes raw reviews or private reasoning.
 
 ### Historical Investigation (`--audit`)
 
-Use this mode only for explicit Receipt/provenance or completion-history
+Use this mode only for explicit Receipt/provenance, captured numerical usage or completion-history
 investigation. It is bounded detail, not an exhaustive export or an additional
 normal-loop read. Use the same `<task-id>` as the [normal show operation](#task-show)
 and apply the shared [Task Read Conditions](#task-read-conditions):
@@ -1139,6 +1143,11 @@ python .agents/skills/task-governance-tool/scripts/taskgov.py task show --repo <
 Audit does not change saved Evidence, validation, or current gates. Its
 `review_evidence` retains the target, full gate/counts, blocking Findings, and
 bounded recent Receipt/provenance and Finding rows; events retain the newest ten.
+Audit also contains `usage`: the last captured registered shared-work summary,
+latest ten periods and cycle links, or fixed `usage_unavailable` diagnostics.
+It neither collects nor refreshes numerical data. Numerical gaps never change
+Task gates; optional [collection recovery](usage_hooks.md#coverage-and-recovery)
+remains separate from the normal Task loop.
 For a lost collected-registration response only, pair
 `--collection-preparation <saved-id>` and
 `--collection-submission <saved-sha256:digest>` with `--audit`.

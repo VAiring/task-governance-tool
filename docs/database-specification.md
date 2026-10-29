@@ -1543,7 +1543,7 @@ overlapping original keys, not transitive execution-graph merging.
 
 The usage index is `taskgov-usage-index-v2`, retains existing index fields and
 adds `attribution` and `unattributed` with separate `unknown`/`unassigned`
-observed model totals. Existing Task usage detail retains its fields and adds
+observed model totals. Explicit audit and internal Task usage detail retain their fields and add
 `attribution`, a `total` union over that Task's original response keys, and
 per-period `work_units`. Each unit gives its `execution_id`, exclusive totals,
 and shared/partial parts with snapshot IDs, execution sets, actual
@@ -1597,12 +1597,14 @@ transaction, a new connection or event, and never replaces the fresh final
 publication guard. Internal batch requests are bounded separately: combining
 individually admissible snapshots must not apply one document's byte limit to
 their original-key union. The existing per-snapshot/file limits remain unchanged.
-Capture still validates all current components. Task detail
+Capture still validates all current components. Explicit audit/internal usage detail
 validates all current snapshot metadata before selecting by execution identity;
 it then validates exact members, original counters and predecessor edges only
 for components containing this Task's executions, including shared components
-and current successors. Its total includes all its periods even when the normal
-display shows only the latest period. Unrelated original counters remain subject
+and current successors. Its total includes all its periods even when an internal
+consumer selects only the latest period. Ordinary Task display does not acquire
+usage or open its numerical store; explicit audit and internal consumers keep
+this numerical validation. Unrelated original counters remain subject
 to the existing rotating audit. Common capture-basis ownership, cycle and actual
 reviewer identities are still checked; this is not an audit of unrelated review
 history. Missing or changed selected originals, tampered selection metadata and

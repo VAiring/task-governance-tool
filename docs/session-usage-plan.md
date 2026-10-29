@@ -452,8 +452,9 @@ tail/lost logs retain observed totals and incomplete/pending status. This is
 numerical snapshot quality, never an additional gate on ordinary Task completion
 or on recording that Task's observed cumulative usage while others still work.
 
-The existing Task detail and audit surfaces expose usage summary/current
-snapshot/cycle links, without adding a normal loop command. The shared
+Explicit Task audit and internal numerical reads expose usage summary/current
+snapshot/cycle links; normal Task display does not acquire them, under the
+current Task read contract. No normal loop command is added. The shared
 projection contains no per-viewer self flags. Use a separate canonical
 `usage/index.json` and immutable snapshot files under the resolver-owned state
 root, published snapshot-first/index-last; do not insert usage as a qualifying

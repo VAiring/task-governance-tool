@@ -1529,7 +1529,7 @@ includes predecessors in its hashed identity, so later counter/conflict changes
 cannot revive an already superseded snapshot or form a successor cycle.
 No callback touches the core writer; late replay requires no ownership takeover.
 
-`usage_evidence_service.py` supplies safe existing-Task JSON projection and a
+`usage_evidence_service.py` supplies safe explicit-audit/internal Task usage projection and a
 replayable internal publication worker. The optional lifecycle adapter invokes
 it; it is not a public command or a hook installer. It uses the resolver's usage paths and the existing physical
 path, durable-file, no-replace and atomic-replace primitives. A zero-wait usage
@@ -1539,7 +1539,10 @@ and pending publication, not a truncated or complete claim. Immutable bytes
 are matched, never repaired in place. Reads validate closed stored snapshot
 shape, digest, members and counters before output; errors become fixed unknown
 usage, not private diagnostics or a failed Task read. Only explicit setup
-migrates; ordinary completion does not even open the numerical store.
+migrates; ordinary completion does not even open the numerical store. Normal
+Task show, context and registration context also perform no usage read or
+numerical open. The CLI selects the audit boundary before calling this service;
+collection and internal numerical reads retain their existing behavior.
 
 `usage_publication_repository.py` adds numerical schema 7 and the mutable
 singleton `usage_publication` (`revision`, exact index `basis`, `position`,

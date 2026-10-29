@@ -181,6 +181,13 @@ compact current keeps its existing formatter. Completion revalidation is unchang
 That module also owns the fixed normal/audit presentation boundary. The audit
 form preserves the previous bounded detail; normal presentation removes
 redundant parent values and historical detail only after the same validation.
+Numerical usage is a separate acquisition boundary in `cli.read_task_detail`:
+only public audit detail calls `read_task_usage` and adds its result. Both the
+ordinary and live marker-2 read branches apply this condition before numerical
+access. Normal show, context and post-registration context never load the usage
+reader or open its store for display. Internal finalization's existing
+`public_display=False` path remains unchanged, as do constant pending write
+acknowledgements and all selected Task/evidence validation.
 Show-only collectors reuse the validated Review and Verification streams for
 operational Findings and exact-current Receipts, not their recent-ten windows.
 The normal event query retains the newest event and all four note-capable

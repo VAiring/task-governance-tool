@@ -166,10 +166,14 @@ class UsageReadPerformanceTests(unittest.TestCase):
             stream.write(json.dumps(usage("single-late", turn=turn(len(tasks)), thread=THREAD)).encode() + b"\n")
         appended, append_work = self.measure(self.event)
         self.assertIn("evidence_verification_deferred", appended["diagnostics"])
-        shown, display_work = self.measure(lambda: self.cli("task", "show", tasks[0]))
+        normal, normal_work = self.measure(lambda: self.cli("task", "show", tasks[0]))
+        self.assertNotIn("usage", normal["data"])
+        self.assertEqual(normal_work["counts"].get("numerical_sql_after_open", 0), 0)
+        shown, display_work = self.measure(lambda: self.cli("task", "show", tasks[0], "--audit"))
         self.assertEqual(shown["data"]["usage"]["total"]["response_count"], 3)
         self.assertEqual(display_work["counts"].get("snapshot_original_checks", 0), 1)
         self.assertEqual(display_work["counts"].get("original_rows", 0), 3)
         self.assertEqual(self.target.db_path.read_bytes(), before)
         print(json.dumps({"tasks": len(tasks), "responses": len(tasks) * 3 + 1,
-                          "no_append": no_work, "single_append": append_work, "task_display": display_work}))
+                          "no_append": no_work, "single_append": append_work,
+                          "task_display": normal_work, "audit_display": display_work}))

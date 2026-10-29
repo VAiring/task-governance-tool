@@ -204,6 +204,16 @@ three sequential stages within the existing backup inspection Task. Setup/state
 and database owners retain durable behavior and structure. The plan does not
 activate an unreviewed inspection cache or authorize live Setup or recovery.
 
+## Conditional Integrity Validation Transition
+
+[Integrity validation placement and transition](integrity-validation-plan.md)
+owns the approved placement, pre-change protection and ordered implementation
+units. Its [transition inventory](integrity-validation-inventory.md) records
+call-family coverage and disposition under that owner, not live Task status.
+Current database, Task, Review/completion, Evidence, Viewer and Setup/state
+contracts remain active until each reviewed implementation synchronizes them.
+This route does not execute protection, remove a checker or authorize live restore.
+
 ## Delegated Repository Operating Guides
 
 - [Artifact authoring](artifact-authoring.md)
@@ -262,11 +272,11 @@ enforced meaning.
 
 ```json
 {
-  "schema": "taskgov-document-authority-v28",
+  "schema": "taskgov-document-authority-v29",
   "mandatory_start": ["AGENTS.md", "docs/authority.md", "live_task_contract"],
   "current": ["docs/specification.md", "docs/design.md", "plan.md", "docs/viewer-specification.md", "docs/viewer-design.md", "docs/runner-plan-authoring-specification.md", "docs/runner-plan-authoring-design.md", "docs/task-operation-specification.md", "docs/task-operation-design.md", "docs/runner-execution-specification.md", "docs/runner-execution-design.md", "docs/evidence-specification.md", "docs/evidence-design.md", "docs/review-completion-specification.md", "docs/review-completion-design.md", "docs/setup-state-specification.md", "docs/setup-state-design.md", "docs/database-specification.md", "docs/database-design.md"],
   "mixed_execution": [],
-  "conditional": ["docs/state-layout-separation-plan.md", "docs/verification-declaration-plan.md", "docs/session-usage-plan.md", "docs/review-finalization-plan.md", "docs/usage-response-attribution-design.md", "docs/review-continuation-plan.md", "docs/review-answer-collection-design.md", "docs/operation-admission-plan.md", "docs/logger-design.md", "docs/async-backup-plan.md", "docs/backup-validation-reuse-plan.md"],
+  "conditional": ["docs/state-layout-separation-plan.md", "docs/verification-declaration-plan.md", "docs/session-usage-plan.md", "docs/review-finalization-plan.md", "docs/usage-response-attribution-design.md", "docs/review-continuation-plan.md", "docs/review-answer-collection-design.md", "docs/operation-admission-plan.md", "docs/logger-design.md", "docs/async-backup-plan.md", "docs/backup-validation-reuse-plan.md", "docs/integrity-validation-plan.md"],
   "history_index": "docs/history/README.md"
 }
 ```

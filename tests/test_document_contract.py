@@ -51,6 +51,8 @@ EXPECTED_CANONICAL_DOCS = (
     "docs/logger-design.md",
     "docs/async-backup-plan.md",
     "docs/backup-validation-reuse-plan.md",
+    "docs/integrity-validation-plan.md",
+    "docs/integrity-validation-inventory.md",
     "docs/history/README.md",
 )
 EXPECTED_METRIC_DOCS = EXPECTED_CANONICAL_DOCS + (
@@ -62,6 +64,7 @@ FIXTURE_LINK_TARGETS = (
     "requirements-dev.txt",
     "ruff.toml",
     "docs/proposals/review-wait-notification.md",
+    "docs/proposals/integrity-check-placement-proposal-v2.1.md",
     "docs/releases/v0.10.0.md",
     "docs/releases/v0.11.0.md",
     "docs/releases/v0.12.0.md",
@@ -257,9 +260,9 @@ class DocumentContractTests(unittest.TestCase):
         self.assertNotIn(secret, serialized)
         self.assertNotIn("Traceback", serialized)
 
-    def test_registry_v28_is_closed(self):
+    def test_registry_v29_is_closed(self):
         expected = {
-            "schema": "taskgov-document-authority-v28",
+            "schema": "taskgov-document-authority-v29",
             "mandatory_start": [
                 "AGENTS.md",
                 "docs/authority.md",
@@ -284,7 +287,7 @@ class DocumentContractTests(unittest.TestCase):
                 "docs/database-design.md",
             ],
             "mixed_execution": [],
-            "conditional": ["docs/state-layout-separation-plan.md", "docs/verification-declaration-plan.md", "docs/session-usage-plan.md", "docs/review-finalization-plan.md", "docs/usage-response-attribution-design.md", "docs/review-continuation-plan.md", "docs/review-answer-collection-design.md", "docs/operation-admission-plan.md", "docs/logger-design.md", "docs/async-backup-plan.md", "docs/backup-validation-reuse-plan.md"],
+            "conditional": ["docs/state-layout-separation-plan.md", "docs/verification-declaration-plan.md", "docs/session-usage-plan.md", "docs/review-finalization-plan.md", "docs/usage-response-attribution-design.md", "docs/review-continuation-plan.md", "docs/review-answer-collection-design.md", "docs/operation-admission-plan.md", "docs/logger-design.md", "docs/async-backup-plan.md", "docs/backup-validation-reuse-plan.md", "docs/integrity-validation-plan.md"],
             "history_index": "docs/history/README.md",
         }
         with self.fixture() as root:
@@ -356,6 +359,21 @@ class DocumentContractTests(unittest.TestCase):
             self.assertIn(
                 "document_unavailable", self.codes(contract.check_document_contract(root))
             )
+
+    def test_integrity_transition_keeps_conditional_owner_and_coverage(self):
+        with self.fixture() as root:
+            registry = self.registry(root)
+            registry["conditional"].remove("docs/integrity-validation-plan.md")
+            registry["current"].append("docs/integrity-validation-plan.md")
+            self.write_registry(root, registry)
+            self.assertIn("authority_registry", self.codes(contract.check_document_contract(root)))
+        for name in ("integrity-validation-plan.md", "integrity-validation-inventory.md"):
+            with self.subTest(name=name), self.fixture() as root:
+                self.replace(root, contract.AUTHORITY, f"]({name})", "](database-design.md)")
+                self.assertIn("authority_route", self.codes(contract.check_document_contract(root)))
+        with self.fixture() as root:
+            root.joinpath("docs/integrity-validation-inventory.md").unlink()
+            self.assertIn("document_unavailable", self.codes(contract.check_document_contract(root)))
 
     def test_viewer_detail_routes_are_required(self):
         for source, destination in (
@@ -489,6 +507,11 @@ class DocumentContractTests(unittest.TestCase):
         self.assertEqual(
             contract.ROUTE_SECTIONS,
             (
+                (
+                    contract.AUTHORITY,
+                    "## Conditional Integrity Validation Transition",
+                    ("integrity-validation-plan.md", "integrity-validation-inventory.md"),
+                ),
                 (
                     contract.AUTHORITY,
                     "## Conditional Backup Validation Reuse Plan",
